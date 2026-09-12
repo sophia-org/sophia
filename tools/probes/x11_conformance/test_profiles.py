@@ -34,10 +34,11 @@ class ProfileTests(unittest.TestCase):
             self.assertEqual(read_profile(output, 0)['status'], 'PASS')
             self.assertEqual(read_profile(output, 124)['status'], 'FAIL')
 
-    def test_xtest_direct_child_and_inside_refused_before_connections(self):
-        for options in (['--child', '/fabricated/never-connect'], ['--inside']):
-            result = subprocess.run([sys.executable, '-B', str(HERE / 'run.py'), '--profile', 'xtest',
-                                     *options], capture_output=True, timeout=3)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertNotIn(b'FileNotFoundError', result.stderr)
-            self.assertNotIn(b'ConnectionRefusedError', result.stderr)
+    def test_direct_child_and_inside_refused_before_connections(self):
+        for profile in ('core', 'xtest'):
+            for options in (['--child', '/fabricated/never-connect'], ['--inside']):
+                result = subprocess.run([sys.executable, '-B', str(HERE / 'run.py'), '--profile',
+                                         profile, *options], capture_output=True, timeout=3)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn(b'FileNotFoundError', result.stderr)
+                self.assertNotIn(b'ConnectionRefusedError', result.stderr)

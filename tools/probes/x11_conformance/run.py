@@ -78,18 +78,11 @@ def one_case(host, manifest, case, order, timeout, log, profile='core'):
                     if time.monotonic() >= ready_deadline:
                         return {'status': 'TIMEOUT', 'detail': 'host bind deadline'}
                     time.sleep(0.01)
-                if profile == 'xtest':
-                    # Already inside the per-case supervised namespace process.
-                    # Its external watchdog bounds even a nonsocket client hang.
-                    _, implementations = profile_definition(profile)
-                    result = execute_client(implementations, manifest, sock, case, order,
-                                            timeout, authorization, profile)
-                else:
-                    command = [sys.executable, '-B', str(HERE / 'run.py'), '--child', str(sock),
-                               '--case', case, '--order', order, '--timeout', str(timeout)]
-                    status, stdout, stderr = bounded(command, timeout + 1, env=clean_environment(),
-                                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    result = decode_result(status, stdout, stderr)
+                # Already inside the per-case supervised namespace process.
+                # Its external watchdog bounds even a nonsocket client hang.
+                _, implementations = profile_definition(profile)
+                result = execute_client(implementations, manifest, sock, case, order,
+                                        timeout, authorization, profile)
                 if server.poll() is not None:
                     return {'status': 'FAIL', 'detail': f'host exited unexpectedly {server.returncode}'}
                 return result
@@ -144,13 +137,13 @@ def profile_definition(profile):
     return manifest, implementations
 
 
-def isolated_case(host, case, order, timeout, log):
+def isolated_case(host, case, order, timeout, log, profile='xtest'):
     from isolation import Mount, launch
     with tempfile.TemporaryDirectory(prefix='sophia-input-report-') as temporary:
         output = Path(temporary)
         command = ['/usr/bin/python3', '-B',
                    '/work/repo/tools/probes/x11_conformance/run.py',
-                   '--inside', '--activation-fd', '{activation_fd}', '--profile', 'xtest',
+                   '--inside', '--activation-fd', '{activation_fd}', '--profile', profile,
                    '--host', '/work/host', '--output', '/work/results',
                    '--case', case, '--order', order, '--timeout', str(timeout)]
         result = launch(command, mounts=[Mount(HERE, '/work/repo/tools/probes/x11_conformance'),
@@ -179,23 +172,18 @@ def main():
     args = parser.parse_args()
     if not 0 < args.timeout <= 60:
         parser.error('timeout must be in (0, 60] seconds')
-    if args.child and args.profile == 'xtest':
-        parser.error('XTEST clients require supervised private entry')
+    if args.child:
+        parser.error('clients require supervised private entry; direct socket paths are refused')
     # Validate the supervised entry before any fixture can create a socket.
     if args.inside:
         from isolation import validate_entry
         validate_entry(args.activation_fd)
-        if args.profile != 'xtest' or args.child or not all((args.host, args.output, args.case, args.order)):
-            parser.error('private entry requires an exact XTEST fixture')
+        if not all((args.host, args.output, args.case, args.order)):
+            parser.error('private entry requires an exact fixture')
     manifest, implementations = profile_definition(args.profile)
     if args.inside:
         result = one_case(args.host, manifest, args.case, args.order, args.timeout,
-                          args.output / 'host.log', profile='xtest')
-        print(json.dumps(result))
-        return 0 if result['status'] == 'PASS' else 1
-    if args.child:
-        result = execute_client(implementations, manifest, args.child, args.case,
-                                args.order, args.timeout)
+                          args.output / 'host.log', profile=args.profile)
         print(json.dumps(result))
         return 0 if result['status'] == 'PASS' else 1
     if not args.host or not args.output:
@@ -208,10 +196,7 @@ def main():
         for order in manifest['byte_orders']:
             try:
                 log = args.output / f'{case["id"]}-{order}.host.log'
-                if args.profile == 'core':
-                    result = one_case(host, manifest, case['id'], order, args.timeout, log)
-                else:
-                    result = isolated_case(host, case['id'], order, args.timeout, log)
+                result = isolated_case(host, case['id'], order, args.timeout, log, args.profile)
             except Exception as error:
                 result = {'status': 'FAIL', 'detail': f'harness/host failure: {type(error).__name__}: {error}'}
             result.update(case=case['id'], byte_order=order)

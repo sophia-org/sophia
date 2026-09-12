@@ -143,7 +143,9 @@ reporting only; they are not XTS evidence.
 
 The implementation contract is
 [7xqjn8rp](../../../docs/notes/plans/7xqjn8rp-private-native-input-authority-and-xtest-adapter.md).
-`core` remains the default-off 100-execution profile. `native-input` runs exact
+`core` remains the default-off 100-execution profile. Both wire profiles launch
+their clients only through the supervised containment entry; the old internal
+`--child SOCKET` path is refused. `native-input` runs exact
 named Rust obligations. `xtest` runs independent XTEST 2.1 clients in both byte
 orders against the Session example. `all` requires all three profiles plus the
 real containment regressions. An incomplete implementation fails; these

@@ -229,5 +229,22 @@ them before executor work relies on the crate. Guarded submission must cover
 release, retirement and control mutations as well as press; a public packet
 key or copyable binding cannot stand in for that authority.
 
+On candidate `55651225`, the original seven external assertions pass. A second
+set, retained in `after-55651225/remaining-safety-v2.log`, passes two controls
+and fails ten additional desired-safety assertions: revoked-generation device
+allocation, unreclaimed grant slots, foreign physical-source identity, clearing
+debt for A blocking synthetic or physical B, obsolete publication reopening a
+transition, ordinary release during a transition or after an epoch advance,
+heap allocation during revocation, and reuse of a caller-created hold identity
+allowing stale settlement. Both B-recipient tests finish native reconciliation
+first; only A's transport debt remains. These remain M2 blockers under t093.
+
+Harness review also found that the old hidden core `--child SOCKET` entry
+accepted an arbitrary socket path. A fabricated listener received its setup
+bytes. Both core and XTEST profiles now use the same supervised containment
+entry, and direct child paths are refused. The stronger contained core run in
+`/tmp/sophia-native-input-evidence/core-contained` passes all 100 executions;
+61 harness regressions also pass. No operator endpoint was contacted.
+
 t093 tracks this implementation, t094 the deferred physical-device prerequisite,
 and t057 remains the broader protocol conformance task.

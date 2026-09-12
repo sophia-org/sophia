@@ -51,7 +51,7 @@ def main():
                               '-s', str(HERE), '-p', name], env)
         if status:
             return status
-    if args.profile in ('xtest', 'all'):
+    if args.profile in ('core', 'xtest', 'all'):
         # Direct entry returns BLOCKED, not success, if any kernel test skipped.
         for name in ('test_isolation.py', 'test_xts_adapter.py'):
             status = run_command([sys.executable, '-B', str(HERE / name)], env)

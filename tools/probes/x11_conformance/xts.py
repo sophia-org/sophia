@@ -24,8 +24,8 @@ def dependency_errors(root, bwrap):
         errors.append(f'XTS checkout with check.sh missing: {root}; yserver is not XTS')
     if root and not (root / 'xts5').is_dir():
         errors.append(f'built XTS5 suite directory missing: {root / "xts5"}')
-    if root and not any(p.is_file() and os.access(p, os.X_OK) for p in root.glob('**/tcc')) and not shutil.which('tcc'):
-        errors.append('TET tcc executable missing from the XTS checkout and PATH')
+    if root and not any(p.is_file() and os.access(p, os.X_OK) for p in root.glob('**/tcc')) and not shutil.which('tcc', path='/usr/bin:/bin'):
+        errors.append('TET tcc executable missing from the XTS checkout and contained /usr/bin:/bin')
     if not bwrap:
         errors.append('bubblewrap unavailable: private /tmp, network and device namespaces are required')
     return errors
@@ -93,8 +93,8 @@ def main():
         return inside(args.host, args.activation_fd)
     if not args.output:
         parser.error('--output is required and must be new')
-    if not 0 < args.timeout <= 1800:
-        parser.error('timeout must be in (0, 1800]')
+    if not 0 < args.timeout <= 1785:
+        parser.error('timeout must be in (0, 1785], leaving 15 seconds for contained host cleanup')
     args.output.mkdir(parents=True, exist_ok=False)
     root = args.xts_root.resolve() if args.xts_root else None
     bwrap = shutil.which('bwrap')

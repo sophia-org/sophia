@@ -105,6 +105,13 @@ class GateTests(unittest.TestCase):
             failures = dependency_errors(Path('/nonexistent-sophia-xts'), None)
         self.assertEqual(len(failures), 4)
 
+    def test_xts_dependency_search_uses_only_the_contained_path(self):
+        from unittest.mock import patch
+        from xts import dependency_errors
+        with patch('shutil.which', return_value=None) as search:
+            dependency_errors(Path('/nonexistent-sophia-xts'), '/usr/bin/bwrap')
+        search.assert_called_once_with('tcc', path='/usr/bin:/bin')
+
     def test_new_accepted_request_cannot_disappear_from_inventory(self):
         from inventory import check_inventory
         root = HERE.parents[2]
