@@ -93,7 +93,8 @@ Fair cursors persist across stops. These are ceilings, not latency guarantees.
 
 ## Synchronization and execution
 
-The selected acquisition rank is outer X runtime, common authority, surfaces,
+The selected acquisition rank is outer X runtime, coordinator transition gate,
+common authority, surfaces,
 pointer state, frozen input, core subscriptions, clients, XFixes subscriptions,
 then X input authority. Acquire only needed locks through guarded APIs. Audit
 all integration writers; dependency direction alone does not establish order.
@@ -475,8 +476,12 @@ The privileged transition candidate `3c399a00` has new source-confirmed blockers
 its co-held X locks reverse the selected rank; state is cleared before token
 validation and for publication-only transitions; failed installation discards
 revocation receipts; and receipt delivery still occurs within the caller's
-control/common guards. The runtime owner is repairing these before integration.
-These are private candidate findings, not observations on the operator's session.
+control/common guards. Repairs `e2591ed5` and `2aa65b09` address those paths and bind the coordinator
+to the common authority lifetime. Review still requires the broker itself to
+match that coordinator, and receipt batches to retain their originating sink;
+a valid permit/coordinator pair from another private instance must not clear
+this broker or deliver its receipts. These are private candidate findings,
+not observations on the operator's session.
 
 Common `617651ae` supplies an issuer-checked opaque authority lifetime identity
 and an exclusive `ControlPermit` that remains available after revocation and
@@ -487,3 +492,14 @@ or grant bypass. Seventy-seven common integration tests and one exclusive-borrow
 compile-fail doctest pass, with warnings-as-errors Clippy and layout. Evidence:
 `/tmp/sophia-native-input-evidence/common-control-permit`. These primitives do
 not establish that production callers participate in the guarded transaction.
+
+
+The native profile at clean `a8a43271` executes 91 exact tests successfully.
+Its overall result remains FAIL: 18 obligations PASS and 19 mandatory
+production obligations NORESULT. Evidence is
+`/tmp/sophia-native-input-evidence/native-a8a43271/report.json`. The result
+includes the narrow common/control tests, not production executor acceptance.
+The private setup authentication seam `57bb1dba` separately passes seven real
+socket tests covering both byte orders and deliberate credential faults. It
+produces verified admission evidence only and awaits coordinated integration;
+it implements neither grants nor XTEST execution.
