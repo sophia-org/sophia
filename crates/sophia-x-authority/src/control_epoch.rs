@@ -338,6 +338,45 @@ impl ControlEpochCoordinator {
         })
     }
 
+    /// The kind of transition this token names, without changing anything.
+    ///
+    /// Validation has to be separable from application, because the work a
+    /// transition does is destructive: a stale or foreign token discovered
+    /// after the clearing has already destroyed live state it had no standing
+    /// to touch.
+    pub fn pending_kind_for(
+        &self,
+        token: TransitionToken,
+    ) -> Result<TransitionKind, ControlEpochRefusal> {
+        let pending = self.pending.ok_or(ControlEpochRefusal::NoTransition)?;
+        if token
+            != (TransitionToken {
+                coordinator: self.incarnation,
+                transition: pending.id,
+            })
+        {
+            return Err(ControlEpochRefusal::WrongTransition);
+        }
+        Ok(pending.kind)
+    }
+
+    /// Whether this installation would satisfy the transition in flight.
+    ///
+    /// Asked before any of it is performed, so an incomplete report refuses
+    /// while the state it describes is still intact.
+    pub fn would_install(
+        &self,
+        token: TransitionToken,
+        installed: TransitionInstallation,
+    ) -> Result<(), ControlEpochRefusal> {
+        let kind = self.pending_kind_for(token)?;
+        if installed.satisfies(kind) {
+            Ok(())
+        } else {
+            Err(ControlEpochRefusal::NotInstalled { kind })
+        }
+    }
+
     /// Record what the transition installed.
     ///
     /// The applied epoch takes the exact requested value. It is never

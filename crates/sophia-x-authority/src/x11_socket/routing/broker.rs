@@ -11,6 +11,25 @@
 /// quarantined without terminating the shared frontend; corruption of shared
 /// registry state remains service-fatal.
 #[cfg(unix)]
+/// What a control transition left for its caller to deliver.
+///
+/// Carried rather than sent, because delivery must happen with the guards
+/// released, and owed regardless of whether the transition applied: work
+/// already taken off the frozen queue has no other way to be answered.
+#[must_use = "revoked input owes its clients a receipt"]
+pub struct ControlTransitionOutcome {
+    receipts: VecDeque<XDeferredRoutedInput>,
+    applied: bool,
+}
+
+impl ControlTransitionOutcome {
+    /// Whether the coordinator recorded the transition as applied.
+    pub fn applied(&self) -> bool {
+        self.applied
+    }
+}
+
+#[cfg(unix)]
 pub struct XServerFrontendRouteBroker {
     registry: XServerFrontendRouteRegistry,
     input_sender: SyncSender<XAuthorityClientInputEvent>,
@@ -554,38 +573,88 @@ impl XServerFrontendRouteBroker {
         self.control_gate.get().is_some()
     }
 
-    /// Apply a control transition's X-side clearing and report it.
+    /// Apply a control transition's X-side clearing.
     ///
-    /// The privileged control path. The caller already holds the coordinator
-    /// and, beneath it, the common guard it used to open this transition;
-    /// this takes only the later-ranked X guards. That order matters: opening
-    /// a transition takes the coordinator and then common, so acquiring them
-    /// the other way round here would close a cycle between them.
+    /// The privileged control path. Taking `&mut AuthorityInstance` is how the
+    /// signature requires what the documentation used to only assert: a caller
+    /// without the common guard cannot produce one. The issuer is checked
+    /// against it too, so this confirms with common that a transition really is
+    /// open rather than trusting the coordinator alone.
     ///
-    /// `snapshot_installed` is the caller's, because Session installs the
-    /// publication snapshot and this path speaks only for what it cleared. The
-    /// coordinator stamps its applied epoch only if the two together satisfy
-    /// the kind of transition in flight.
+    /// Lock order is the one a transition is opened with: coordinator, then
+    /// common, then the X guards. The caller already holds the first two, so
+    /// this takes only what ranks below them. Reaching for the gate here while
+    /// holding common would close a cycle between exactly those two, which is
+    /// why the coordinator arrives by reference.
     ///
-    /// Receipts for revoked work are sent after the X guards are released, so
-    /// a transition never waits on a queue while holding them.
+    /// Everything is validated before anything is destroyed. A stale or
+    /// foreign token, or an installation that would not satisfy the kind in
+    /// flight, refuses while the state it describes is still intact.
+    ///
+    /// A publication-only transition clears nothing. Grabs, pointer state and
+    /// frozen input belong to an epoch it is not replacing, and destroying
+    /// them would make every focus change cost a client its grab.
+    ///
+    /// The outcome must be delivered by the caller once every guard is
+    /// released. It carries its receipts whether or not the transition
+    /// applied, because work already taken off the frozen queue is owed a
+    /// receipt no matter what happened afterwards.
     pub fn apply_control_transition(
         &self,
+        authority: &mut sophia_input_authority::AuthorityInstance,
+        issuer: &sophia_input_authority::IssuerHandle,
         coordinator: &mut crate::ControlEpochCoordinator,
         token: crate::TransitionToken,
         snapshot_installed: bool,
-    ) -> Result<usize, XServerFrontendRouteError> {
-        let (cleared, drained) = self.registry.clear_revoked_x_populations()?;
-        coordinator
-            .apply(
-                token,
-                crate::TransitionInstallation {
-                    snapshot_installed,
-                    ..cleared
-                },
-            )
+    ) -> Result<ControlTransitionOutcome, XServerFrontendRouteError> {
+        // Common must agree a transition is open. A published revision here
+        // means the coordinator and the authority disagree about what is in
+        // flight, and this path must not act on that.
+        if authority.published_revision(issuer).is_ok() {
+            return Err(XServerFrontendRouteError::RegistryPoisoned);
+        }
+        let kind = coordinator
+            .pending_kind_for(token)
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-        self.registry.report_revoked_input(drained)
+        let cleared = match kind {
+            crate::TransitionKind::SecurityControl => crate::TransitionInstallation {
+                x_grabs_cleared: true,
+                pointer_state_cleared: true,
+                frozen_input_cleared: true,
+                snapshot_installed,
+            },
+            crate::TransitionKind::Publication => crate::TransitionInstallation {
+                snapshot_installed,
+                ..crate::TransitionInstallation::default()
+            },
+        };
+        // Asked before the clearing, so an incomplete report refuses without
+        // having already destroyed what it was reporting on.
+        coordinator
+            .would_install(token, cleared)
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+
+        let drained = match kind {
+            crate::TransitionKind::SecurityControl => {
+                self.registry.clear_revoked_x_populations()?
+            }
+            crate::TransitionKind::Publication => VecDeque::new(),
+        };
+        let applied = coordinator.apply(token, cleared);
+        Ok(ControlTransitionOutcome {
+            receipts: drained,
+            applied: applied.is_ok(),
+        })
+    }
+
+    /// Deliver what a control transition revoked.
+    ///
+    /// Separate from the apply so it runs with every guard released.
+    pub fn report_control_transition(
+        &self,
+        outcome: ControlTransitionOutcome,
+    ) -> Result<usize, XServerFrontendRouteError> {
+        self.registry.report_revoked_input(outcome.receipts)
     }
 
     /// Routes every value currently available at the bounded ingress.

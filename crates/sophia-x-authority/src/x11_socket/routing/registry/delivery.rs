@@ -33,21 +33,21 @@ impl XServerFrontendRouteRegistry {
     /// grant would deadlock against its own revocation. The caller holds the
     /// common guard; this takes the later-ranked X guards beneath it.
     ///
-    /// Unlike the ordinary path the three guards are held together rather than
-    /// taken and dropped one at a time, so no observer sees grabs cleared
-    /// while pointer state still describes the revision being replaced.
+    /// The order is pointer state, then frozen input, then the input
+    /// authority. That is not arbitrary: client teardown already co-holds
+    /// pointer state and then the input authority, so taking them the other
+    /// way round here would be a reverse nesting against a live caller.
+    ///
+    /// The three are held together rather than taken and dropped one at a
+    /// time, so no observer sees grabs cleared while pointer state still
+    /// describes the revision being replaced.
     ///
     /// Nothing is delivered from in here. The frozen queue is handed back so
-    /// its receipts can be sent once the guards are released, because a
+    /// its receipts can be sent once every guard is released, because a
     /// transition must not wait on anything while it holds them.
     fn clear_revoked_x_populations(
         &self,
-    ) -> Result<(crate::TransitionInstallation, VecDeque<XDeferredRoutedInput>), XServerFrontendRouteError>
-    {
-        let mut input_authority = self
-            .input_authority
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+    ) -> Result<VecDeque<XDeferredRoutedInput>, XServerFrontendRouteError> {
         let mut pointer_state = self
             .pointer_state
             .lock()
@@ -56,22 +56,16 @@ impl XServerFrontendRouteRegistry {
             .frozen_input
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let mut input_authority = self
+            .input_authority
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
 
-        input_authority.advance_security_epoch();
         pointer_state.clear();
         let drained = std::mem::take(&mut *frozen_input);
+        input_authority.advance_security_epoch();
 
-        Ok((
-            crate::TransitionInstallation {
-                x_grabs_cleared: true,
-                pointer_state_cleared: true,
-                frozen_input_cleared: true,
-                // Session installs the snapshot; this path speaks only for the
-                // populations it just cleared.
-                snapshot_installed: false,
-            },
-            drained,
-        ))
+        Ok(drained)
     }
 
     /// Send the receipts a cleared transition owes, after its guards are gone.

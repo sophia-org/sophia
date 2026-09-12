@@ -1486,11 +1486,14 @@ fn the_privileged_apply_clears_every_population_and_reports_them_together() {
                 )
                 .expect("the transition to be requested");
             // Session installs the snapshot; the X side speaks for the rest.
-            let routed = broker
-                .apply_control_transition(coordinator, token, true)
+            let outcome = broker
+                .apply_control_transition(&mut instance, &issuer, coordinator, token, true)
                 .expect("the transition to apply");
+            assert!(outcome.applied());
             assert_eq!(coordinator.applied_control_epoch(), 1);
-            routed
+            broker
+                .report_control_transition(outcome)
+                .expect("the receipts to be delivered")
         })
         .expect("the gate");
 
@@ -1549,7 +1552,7 @@ fn the_privileged_apply_does_not_stamp_without_the_session_snapshot() {
         // installed the snapshot, so the transition is not applied.
         assert!(
             broker
-                .apply_control_transition(coordinator, token, false)
+                .apply_control_transition(&mut instance, &issuer, coordinator, token, false)
                 .is_err(),
             "an incomplete installation must not stamp the applied epoch"
         );
@@ -1557,4 +1560,257 @@ fn the_privileged_apply_does_not_stamp_without_the_session_snapshot() {
         assert!(!coordinator.is_open());
     })
     .expect("the gate");
+}
+
+#[test]
+fn a_publication_transition_preserves_grabs_and_frozen_input() {
+    let namespace = NamespaceId::from_raw(28);
+    let client = XServerFrontendClientId(24);
+    let surface = SurfaceId::new(38, 1);
+    let window = XResourceId::new(0x200080, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, mut instance, issuer) = control_gate();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+    let (_registration, _channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: client.raw(),
+                window,
+                owner_events: false,
+                pointer_mode: 0,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
+            },
+        )
+        .unwrap();
+    broker
+        .routed_input_sender()
+        .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(70)))
+        .expect("an open coordinator to admit work");
+    assert_eq!(broker.route_pending(), Ok(1));
+
+    gate.with(|coordinator| {
+        let token = coordinator
+            .request(&mut instance, &issuer, crate::TransitionKind::Publication, 0, 1)
+            .expect("a publication-only transition to be requested");
+        let outcome = broker
+            .apply_control_transition(&mut instance, &issuer, coordinator, token, true)
+            .expect("the publication to apply");
+        assert!(outcome.applied());
+        assert_eq!(
+            broker.report_control_transition(outcome),
+            Ok(0),
+            "a publication revokes nothing, so it owes no receipts"
+        );
+    })
+    .expect("the gate");
+
+    // A focus change must not cost this client its grab or its frozen work.
+    assert!(
+        broker
+            .registry
+            .input_authority
+            .lock()
+            .unwrap()
+            .pointer_grab(namespace)
+            .is_some(),
+        "a publication-only transition must preserve active grabs"
+    );
+    assert_eq!(
+        broker.registry.frozen_input.lock().unwrap().len(),
+        1,
+        "a publication-only transition must preserve frozen input"
+    );
+}
+
+#[test]
+fn a_foreign_token_is_refused_before_anything_is_destroyed() {
+    let namespace = NamespaceId::from_raw(29);
+    let client = XServerFrontendClientId(25);
+    let surface = SurfaceId::new(39, 1);
+    let window = XResourceId::new(0x200090, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, mut instance, issuer) = control_gate();
+    let (other_gate, mut other_instance, other_issuer) = control_gate();
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+    let (_registration, _channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: client.raw(),
+                window,
+                owner_events: false,
+                pointer_mode: 1,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
+            },
+        )
+        .unwrap();
+
+    let foreign = other_gate
+        .with(|other| {
+            other
+                .request(
+                    &mut other_instance,
+                    &other_issuer,
+                    crate::TransitionKind::SecurityControl,
+                    1,
+                    1,
+                )
+                .expect("the other transition to be requested")
+        })
+        .expect("the other gate");
+
+    gate.with(|coordinator| {
+        coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("this transition to be requested");
+        assert!(
+            broker
+                .apply_control_transition(&mut instance, &issuer, coordinator, foreign, true)
+                .is_err(),
+            "a token from another coordinator must not drive this transition"
+        );
+    })
+    .expect("the gate");
+
+    // Refused before the clearing, so the grab this token had no standing to
+    // touch is still there.
+    assert!(
+        broker
+            .registry
+            .input_authority
+            .lock()
+            .unwrap()
+            .pointer_grab(namespace)
+            .is_some(),
+        "a refused token must not destroy live state"
+    );
+}
+
+#[test]
+fn an_authority_with_no_transition_open_cannot_drive_anothers() {
+    let namespace = NamespaceId::from_raw(30);
+    let client = XServerFrontendClientId(26);
+    let surface = SurfaceId::new(40, 1);
+    let window = XResourceId::new(0x2000a0, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, mut instance, issuer) = control_gate();
+    // A second authority, entirely uninvolved, with its own legitimate issuer.
+    let (_other_gate, mut other_instance, other_issuer) = control_gate();
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+    let (_registration, _channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: client.raw(),
+                window,
+                owner_events: false,
+                pointer_mode: 1,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
+            },
+        )
+        .unwrap();
+
+    gate.with(|coordinator| {
+        let token = coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("the transition to be requested");
+
+        // The token and coordinator are this transition's own, but the
+        // authority presented has nothing in flight. Its revision is published,
+        // so it cannot be the one this transition was opened against.
+        assert!(
+            broker
+                .apply_control_transition(
+                    &mut other_instance,
+                    &other_issuer,
+                    coordinator,
+                    token,
+                    true
+                )
+                .is_err(),
+            "an authority with no transition open must not drive another's"
+        );
+    })
+    .expect("the gate");
+
+    assert!(
+        broker
+            .registry
+            .input_authority
+            .lock()
+            .unwrap()
+            .pointer_grab(namespace)
+            .is_some(),
+        "the refused apply must not have cleared anything"
+    );
 }
