@@ -2,60 +2,72 @@
 
 use crate::capacity::{Capacity, CapacityError};
 use crate::grant::{GrantGeneration, GrantId, IssuerHandle, SubmitHandle};
-use crate::identity::{DeviceCapability, HoldIncarnation, Input, Origin, SeatBinding, SourceId};
+use crate::identity::{
+    AuthorityUid, DeviceCapability, HoldIncarnation, Input, Origin, SeatBinding, SourceId,
+};
 use crate::ledger::{Applied, ReleaseOutcome, SettlementBit};
 use sophia_protocol::DeviceId;
 
 /// Why a registration or submission was refused.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RegistrationError {
-    /// The capability names a different instance or seat than this authority.
-    ForeignBinding,
-    /// The capability's grant has been revoked or reissued since.
+    /// The handle or capability belongs to a different authority. Checked
+    /// against an identity the caller cannot construct, not against the public
+    /// seat binding, which anyone can rebuild.
+    ForeignAuthority,
+    /// The grant has been revoked or reissued since this capability was minted.
     StaleGeneration,
-    /// The request was accepted under an epoch or publication that has moved.
+    /// Accepted under an epoch or publication that has since moved.
     StaleExecution,
-    /// Synthetic routing is unavailable: a transition is between commit and
-    /// publication, so there is no current target to route against.
+    /// A transition has committed and not yet published, so there is no current
+    /// target to route against.
     RoutingUnavailable,
+    /// This input is still owed a release to an earlier recipient. A new hold
+    /// waits rather than racing the old one's settlement.
+    ReleaseBarrier,
     /// A bound was reached.
     Capacity(CapacityError),
 }
 
-/// One registered source, immutable once created.
 #[derive(Clone, Copy, Debug)]
 struct SourceRecord {
     origin: Origin,
     owner: Option<GrantId>,
     generation: GrantGeneration,
     device: DeviceId,
-    incarnation: u64,
+    live: bool,
 }
 
-/// One preallocated hold record.
+/// One input's aggregate hold.
 #[derive(Clone, Copy, Debug, Default)]
 struct HoldRecord {
-    /// Sources currently contributing. Index into the source table.
-    holders: u32,
-    held: bool,
+    holders: u64,
     delivered_to: Option<HoldIncarnation>,
-    debt: Option<SettlementBit>,
+    /// An earlier incarnation whose release has not settled. A new hold on this
+    /// input is refused until it clears, so a stale release cannot arrive after
+    /// a newer press and clear it.
+    awaiting_settlement: Option<HoldIncarnation>,
+}
+
+/// One retained debt: a release owed to a recipient that no longer holds.
+#[derive(Clone, Copy, Debug)]
+struct DebtRecord {
+    incarnation: HoldIncarnation,
+    settlement: SettlementBit,
 }
 
 /// One seat's input authority inside one instance.
-///
-/// Construction fixes the binding and the capacity, and verifies the advertised
-/// button domain against what it preallocated for. Nothing later can widen it.
 pub struct AuthorityInstance {
+    uid: AuthorityUid,
     binding: SeatBinding,
     capacity: Capacity,
-    sources: Vec<SourceRecord>,
+    synthetic: Vec<SourceRecord>,
+    physical: Vec<SourceRecord>,
     holds: Vec<HoldRecord>,
-    grants_in_use: usize,
+    debts: Vec<Option<DebtRecord>>,
+    grants: Vec<GrantGeneration>,
     next_generation: u64,
     next_hold: u64,
-    /// Set while a focus, seat or security transition is between commit and
-    /// publication. Execution refuses rather than using the previous snapshot.
     routing_unavailable: bool,
     publication: u64,
     epoch: u64,
@@ -69,34 +81,74 @@ impl AuthorityInstance {
         advertised_buttons: u16,
     ) -> Result<(Self, IssuerHandle, SubmitHandle), CapacityError> {
         capacity.verify_button_domain(advertised_buttons)?;
+        capacity.verify_holder_width()?;
+        let uid = AuthorityUid::allocate();
         let instance = Self {
+            uid,
             binding,
             capacity,
-            sources: Vec::with_capacity(capacity.grants * capacity.devices_per_grant),
-            holds: vec![HoldRecord::default(); capacity.hold_records()],
-            grants_in_use: 0,
+            synthetic: Vec::with_capacity(capacity.synthetic_sources()),
+            physical: Vec::with_capacity(capacity.physical_sources),
+            holds: vec![HoldRecord::default(); capacity.input_slots()],
+            debts: vec![None; capacity.debt_records()],
+            grants: Vec::with_capacity(capacity.grants),
             next_generation: 1,
             next_hold: 1,
             routing_unavailable: false,
             publication: 0,
             epoch: 0,
         };
-        Ok((instance, IssuerHandle { binding }, SubmitHandle { binding }))
+        Ok((
+            instance,
+            IssuerHandle::new(uid, binding),
+            SubmitHandle::new(uid, binding),
+        ))
     }
 
-    fn hold_index(&self, input: Input) -> usize {
-        match input {
-            Input::Key(code) => usize::from(code),
-            Input::Button(button) => self.capacity.keys + usize::from(button),
+    fn check_issuer(&self, issuer: &IssuerHandle) -> Result<(), RegistrationError> {
+        if issuer.authority() == self.uid {
+            Ok(())
+        } else {
+            Err(RegistrationError::ForeignAuthority)
         }
+    }
+
+    /// A submit handle proves the caller is this authority's adapter. Required
+    /// alongside the capability, so a capability that leaked on its own is not
+    /// enough to move the seat.
+    fn check_submit(&self, submit: &SubmitHandle) -> Result<(), RegistrationError> {
+        if submit.authority() == self.uid {
+            Ok(())
+        } else {
+            Err(RegistrationError::ForeignAuthority)
+        }
+    }
+
+    fn record(&self, source: SourceId) -> Option<&SourceRecord> {
+        let table = if source.synthetic {
+            &self.synthetic
+        } else {
+            &self.physical
+        };
+        table.get(usize::from(source.index))
+    }
+
+    /// Resolve a capability to a live source, or say why not.
+    fn resolve(&self, capability: DeviceCapability) -> Result<SourceId, RegistrationError> {
+        if capability.authority != self.uid {
+            return Err(RegistrationError::ForeignAuthority);
+        }
+        let record = self
+            .record(capability.source)
+            .ok_or(RegistrationError::ForeignAuthority)?;
+        if !record.live || record.generation != capability.generation {
+            return Err(RegistrationError::StaleGeneration);
+        }
+        Ok(capability.source)
     }
 }
 
-/// What one press execution is accepted under.
-///
-/// Passed whole to [`AuthorityInstance::execute_press`] rather than checked by
-/// a separate call, so there is no window between deciding a request is valid
-/// and acting on it.
+/// What one execution is accepted under.
 #[derive(Clone, Copy, Debug)]
 pub struct ExecutionContext {
     pub generation: GrantGeneration,
@@ -108,36 +160,61 @@ pub struct ExecutionContext {
 /// How many records a retirement marked, without allocating to say so.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RetiredDebt {
-    /// Holds this source was the last holder of; each owes a release.
     pub owed_releases: usize,
-    /// Holds where a survivor remains; nothing is owed for these.
     pub survivors: usize,
 }
 
 impl AuthorityInstance {
-    /// Issue a grant. Issuer only.
+    // ---- privileged: issuer only -------------------------------------------
+
     pub fn issue_grant(
         &mut self,
         issuer: &IssuerHandle,
     ) -> Result<(GrantId, GrantGeneration), RegistrationError> {
-        if issuer.binding != self.binding {
-            return Err(RegistrationError::ForeignBinding);
-        }
-        if self.grants_in_use >= self.capacity.grants {
+        self.check_issuer(issuer)?;
+        if self.grants.len() >= self.capacity.grants {
             return Err(RegistrationError::Capacity(CapacityError::NoGrantSlot));
         }
-        let id = GrantId(u32::try_from(self.grants_in_use).unwrap_or(u32::MAX));
+        let id = GrantId(u32::try_from(self.grants.len()).unwrap_or(u32::MAX));
         let generation = GrantGeneration(self.next_generation);
         self.next_generation = self.next_generation.saturating_add(1);
-        self.grants_in_use += 1;
+        self.grants.push(generation);
         Ok((id, generation))
     }
 
-    /// Register a synthetic device for a grant and return its capability.
-    ///
-    /// Issuer only: an adapter receives capabilities and cannot mint one, so a
-    /// forged or cross-instance device is not a check that can be skipped but
-    /// a value that cannot be constructed.
+    /// Revoke a grant: its devices stop being live and its capabilities stop
+    /// validating, immediately and without needing to find them.
+    pub fn revoke_grant(
+        &mut self,
+        issuer: &IssuerHandle,
+        grant: GrantId,
+    ) -> Result<RetiredDebt, RegistrationError> {
+        self.check_issuer(issuer)?;
+        let mut debt = RetiredDebt::default();
+        let doomed: Vec<SourceId> = self
+            .synthetic
+            .iter()
+            .enumerate()
+            .filter(|(_, record)| record.owner == Some(grant) && record.live)
+            .map(|(index, _)| SourceId {
+                synthetic: true,
+                index: u16::try_from(index).unwrap_or(u16::MAX),
+            })
+            .collect();
+        for source in doomed {
+            let retired = self.retire_source_inner(source);
+            debt.owed_releases += retired.owed_releases;
+            debt.survivors += retired.survivors;
+        }
+        if let Some(slot) = self.grants.get_mut(grant.0 as usize) {
+            // A new generation for this slot, so nothing minted under the old
+            // one validates even if it is presented a moment later.
+            self.next_generation = self.next_generation.saturating_add(1);
+            *slot = GrantGeneration(self.next_generation);
+        }
+        Ok(debt)
+    }
+
     pub fn allocate_device(
         &mut self,
         issuer: &IssuerHandle,
@@ -145,87 +222,62 @@ impl AuthorityInstance {
         generation: GrantGeneration,
         device: DeviceId,
     ) -> Result<DeviceCapability, RegistrationError> {
-        if issuer.binding != self.binding {
-            return Err(RegistrationError::ForeignBinding);
+        self.check_issuer(issuer)?;
+        let owned = self
+            .synthetic
+            .iter()
+            .filter(|record| record.owner == Some(grant) && record.live)
+            .count();
+        if owned >= self.capacity.devices_per_grant {
+            return Err(RegistrationError::Capacity(CapacityError::NoDeviceSlot));
         }
-        let source = SourceId::from_index(u32::try_from(self.sources.len()).unwrap_or(u32::MAX));
-        self.sources.push(SourceRecord {
+        if self.synthetic.len() >= self.capacity.synthetic_sources() {
+            return Err(RegistrationError::Capacity(CapacityError::NoDeviceSlot));
+        }
+        let index = u16::try_from(self.synthetic.len()).unwrap_or(u16::MAX);
+        self.synthetic.push(SourceRecord {
             origin: Origin::Synthetic,
             owner: Some(grant),
             generation,
             device,
-            incarnation: 0,
+            live: true,
         });
         Ok(DeviceCapability {
-            source,
+            source: SourceId {
+                synthetic: true,
+                index,
+            },
             binding: self.binding,
+            authority: self.uid,
             grant,
             generation,
             device,
         })
     }
 
-    /// Register a physical source. Issuer only, and never reachable from an
-    /// adapter's handle.
     pub fn register_physical(
         &mut self,
         issuer: &IssuerHandle,
         device: DeviceId,
     ) -> Result<SourceId, RegistrationError> {
-        if issuer.binding != self.binding {
-            return Err(RegistrationError::ForeignBinding);
+        self.check_issuer(issuer)?;
+        if self.physical.len() >= self.capacity.physical_sources {
+            return Err(RegistrationError::Capacity(CapacityError::NoPhysicalSlot));
         }
-        let source = SourceId::from_index(u32::try_from(self.sources.len()).unwrap_or(u32::MAX));
-        self.sources.push(SourceRecord {
+        let index = u16::try_from(self.physical.len()).unwrap_or(u16::MAX);
+        self.physical.push(SourceRecord {
             origin: Origin::Physical,
             owner: None,
             generation: GrantGeneration(0),
             device,
-            incarnation: 0,
+            live: true,
         });
-        Ok(source)
+        Ok(SourceId {
+            synthetic: false,
+            index,
+        })
     }
 
-    /// Validate and apply one press in a single step.
-    ///
-    /// There is deliberately no public `validate`. A caller that could check
-    /// first and apply second would hold a decision across a window in which
-    /// revocation, an epoch advance or a publication transition could land,
-    /// and the whole point of the guard is that those cannot interleave here.
-    pub fn execute_press(
-        &mut self,
-        capability: DeviceCapability,
-        input: Input,
-        context: ExecutionContext,
-        deliver_to: impl FnOnce() -> HoldIncarnation,
-    ) -> Result<Applied, RegistrationError> {
-        if capability.binding != self.binding {
-            return Err(RegistrationError::ForeignBinding);
-        }
-        if self.routing_unavailable {
-            return Err(RegistrationError::RoutingUnavailable);
-        }
-        if context.epoch != self.epoch || context.publication != self.publication {
-            return Err(RegistrationError::StaleExecution);
-        }
-        let record = self
-            .sources
-            .get(capability.source.index() as usize)
-            .ok_or(RegistrationError::ForeignBinding)?;
-        if record.generation != capability.generation || context.generation != capability.generation
-        {
-            return Err(RegistrationError::StaleGeneration);
-        }
-
-        self.apply_press(capability.source, input, deliver_to)
-    }
-
-    /// Apply a press from a physical source.
-    ///
-    /// Issuer only, because a physical source belongs to no grant and so has no
-    /// capability to present. Session owns physical ingress and is the only
-    /// holder of an issuer, which is what keeps an adapter from claiming to be
-    /// a keyboard.
     pub fn execute_physical_press(
         &mut self,
         issuer: &IssuerHandle,
@@ -233,14 +285,84 @@ impl AuthorityInstance {
         input: Input,
         deliver_to: impl FnOnce() -> HoldIncarnation,
     ) -> Result<Applied, RegistrationError> {
-        if issuer.binding != self.binding {
-            return Err(RegistrationError::ForeignBinding);
-        }
-        if !self.is_physical(source) {
-            return Err(RegistrationError::ForeignBinding);
+        self.check_issuer(issuer)?;
+        if source.synthetic {
+            return Err(RegistrationError::ForeignAuthority);
         }
         self.apply_press(source, input, deliver_to)
     }
+
+    pub fn release_physical(
+        &mut self,
+        issuer: &IssuerHandle,
+        source: SourceId,
+        input: Input,
+    ) -> Result<ReleaseOutcome, RegistrationError> {
+        self.check_issuer(issuer)?;
+        if source.synthetic {
+            return Err(RegistrationError::ForeignAuthority);
+        }
+        Ok(self.release_inner(source, input))
+    }
+
+    pub fn begin_transition(&mut self, issuer: &IssuerHandle) -> Result<(), RegistrationError> {
+        self.check_issuer(issuer)?;
+        self.routing_unavailable = true;
+        Ok(())
+    }
+
+    pub fn publish(
+        &mut self,
+        issuer: &IssuerHandle,
+        publication: u64,
+        epoch: u64,
+    ) -> Result<(), RegistrationError> {
+        self.check_issuer(issuer)?;
+        self.publication = publication;
+        self.epoch = epoch;
+        self.routing_unavailable = false;
+        Ok(())
+    }
+
+    // ---- submission: capability validated ----------------------------------
+
+    /// Validate and apply one synthetic press in a single step.
+    pub fn execute_press(
+        &mut self,
+        submit: &SubmitHandle,
+        capability: DeviceCapability,
+        input: Input,
+        context: ExecutionContext,
+        deliver_to: impl FnOnce() -> HoldIncarnation,
+    ) -> Result<Applied, RegistrationError> {
+        self.check_submit(submit)?;
+        if self.routing_unavailable {
+            return Err(RegistrationError::RoutingUnavailable);
+        }
+        if context.epoch != self.epoch || context.publication != self.publication {
+            return Err(RegistrationError::StaleExecution);
+        }
+        let source = self.resolve(capability)?;
+        if context.generation != capability.generation {
+            return Err(RegistrationError::StaleGeneration);
+        }
+        self.apply_press(source, input, deliver_to)
+    }
+
+    /// Release a synthetic contribution. Capability validated, so a raw source
+    /// from elsewhere cannot reach a hold here.
+    pub fn release(
+        &mut self,
+        submit: &SubmitHandle,
+        capability: DeviceCapability,
+        input: Input,
+    ) -> Result<ReleaseOutcome, RegistrationError> {
+        self.check_submit(submit)?;
+        let source = self.resolve(capability)?;
+        Ok(self.release_inner(source, input))
+    }
+
+    // ---- shared internals --------------------------------------------------
 
     fn apply_press(
         &mut self,
@@ -248,17 +370,18 @@ impl AuthorityInstance {
         input: Input,
         deliver_to: impl FnOnce() -> HoldIncarnation,
     ) -> Result<Applied, RegistrationError> {
-        let index = self.hold_index(input);
+        let width = self.capacity.synthetic_sources();
+        let bit_index = source.holder_bit(width);
+        let slot = input.slot();
         let hold = self
             .holds
-            .get_mut(index)
+            .get_mut(slot)
             .ok_or(RegistrationError::Capacity(CapacityError::NoHoldRecord))?;
-
-        let bit = 1u32 << (source.index() % 32);
+        if hold.awaiting_settlement.is_some() {
+            return Err(RegistrationError::ReleaseBarrier);
+        }
+        let bit = 1u64 << bit_index;
         if hold.holders & bit != 0 {
-            // Duplicate press from a source already holding: not a second hold
-            // and not an error. It reports the recipient the hold already has,
-            // and never invents one, because a duplicate delivers nothing.
             let incarnation = hold
                 .delivered_to
                 .ok_or(RegistrationError::Capacity(CapacityError::NoHoldRecord))?;
@@ -270,11 +393,8 @@ impl AuthorityInstance {
         }
         let first = hold.holders == 0;
         hold.holders |= bit;
-        hold.held = true;
         if first {
-            let incarnation = deliver_to();
-            hold.delivered_to = Some(incarnation);
-            hold.debt = Some(SettlementBit::default());
+            hold.delivered_to = Some(deliver_to());
         }
         Ok(Applied {
             source,
@@ -283,13 +403,14 @@ impl AuthorityInstance {
         })
     }
 
-    /// Release one source's contribution.
-    pub fn release(&mut self, source: SourceId, input: Input) -> ReleaseOutcome {
-        let index = self.hold_index(input);
-        let Some(hold) = self.holds.get_mut(index) else {
+    fn release_inner(&mut self, source: SourceId, input: Input) -> ReleaseOutcome {
+        let width = self.capacity.synthetic_sources();
+        let bit_index = source.holder_bit(width);
+        let slot = input.slot();
+        let Some(hold) = self.holds.get_mut(slot) else {
             return ReleaseOutcome::NotHeld;
         };
-        let bit = 1u32 << (source.index() % 32);
+        let bit = 1u64 << bit_index;
         if hold.holders & bit == 0 {
             return ReleaseOutcome::NotHeld;
         }
@@ -297,22 +418,32 @@ impl AuthorityInstance {
         if hold.holders != 0 {
             return ReleaseOutcome::SurvivorRemains;
         }
-        hold.held = false;
-        match hold.delivered_to.take() {
-            Some(incarnation) => ReleaseOutcome::DeliverTo(incarnation),
+        let owed = hold.delivered_to.take();
+        if let Some(incarnation) = owed {
+            hold.awaiting_settlement = Some(incarnation);
+        }
+        match owed {
+            Some(incarnation) => {
+                // The barrier is raised above; the debt must be recorded too.
+                // A barrier without a debt record can never be cleared, which
+                // blocks the input forever rather than protecting it.
+                if let Some(cell) = self.debts.get_mut(slot) {
+                    *cell = Some(DebtRecord {
+                        incarnation,
+                        settlement: SettlementBit::default(),
+                    });
+                }
+                ReleaseOutcome::DeliverTo(incarnation)
+            }
             None => ReleaseOutcome::NotHeld,
         }
     }
 
-    /// Retire every contribution a source holds, without allocating.
-    ///
-    /// Marks the preallocated records and reports counts. The attempt
-    /// scheduler walks the marked population afterwards; nothing here builds a
-    /// list, because revocation must not need memory it might not get.
-    pub fn retire_source(&mut self, source: SourceId) -> RetiredDebt {
-        let bit = 1u32 << (source.index() % 32);
+    fn retire_source_inner(&mut self, source: SourceId) -> RetiredDebt {
+        let width = self.capacity.synthetic_sources();
+        let bit = 1u64 << source.holder_bit(width);
         let mut debt = RetiredDebt::default();
-        for hold in &mut self.holds {
+        for (slot, hold) in self.holds.iter_mut().enumerate() {
             if hold.holders & bit == 0 {
                 continue;
             }
@@ -321,80 +452,87 @@ impl AuthorityInstance {
                 debt.survivors += 1;
                 continue;
             }
-            hold.held = false;
-            if hold.delivered_to.is_some() {
+            if let Some(incarnation) = hold.delivered_to.take() {
+                hold.awaiting_settlement = Some(incarnation);
                 debt.owed_releases += 1;
+                if let Some(cell) = self.debts.get_mut(slot) {
+                    *cell = Some(DebtRecord {
+                        incarnation,
+                        settlement: SettlementBit::default(),
+                    });
+                }
             }
+        }
+        let table = if source.synthetic {
+            &mut self.synthetic
+        } else {
+            &mut self.physical
+        };
+        if let Some(record) = table.get_mut(usize::from(source.index)) {
+            // Stops every capability naming this source from validating again,
+            // which is what keeps a retired injector from pressing once more.
+            record.live = false;
         }
         debt
     }
 
-    /// Mark synthetic routing unavailable while a transition is in flight.
-    pub fn begin_transition(&mut self) {
-        self.routing_unavailable = true;
+    /// Record that a debt's obligations were met, clearing the barrier when
+    /// both are.
+    pub fn settle(
+        &mut self,
+        issuer: &IssuerHandle,
+        input: Input,
+        incarnation: HoldIncarnation,
+        bit: SettlementBit,
+    ) -> Result<bool, RegistrationError> {
+        self.check_issuer(issuer)?;
+        let slot = input.slot();
+        let Some(Some(record)) = self.debts.get_mut(slot) else {
+            return Ok(false);
+        };
+        if record.incarnation != incarnation {
+            // A late completion for an older hold. Discarded here rather than
+            // allowed to clear a newer one.
+            return Ok(false);
+        }
+        record.settlement.native_reconciled |= bit.native_reconciled;
+        record.settlement.recipient_settled |= bit.recipient_settled;
+        if record.settlement.is_settled() {
+            self.debts[slot] = None;
+            if let Some(hold) = self.holds.get_mut(slot) {
+                hold.awaiting_settlement = None;
+            }
+            return Ok(true);
+        }
+        Ok(false)
     }
 
-    /// Install the matching publication and re-enable routing.
-    pub fn publish(&mut self, publication: u64, epoch: u64) {
-        self.publication = publication;
-        self.epoch = epoch;
-        self.routing_unavailable = false;
-    }
-}
-
-impl AuthorityInstance {
-    /// Whether a source is physical.
-    ///
-    /// The emergency recognizer consumes physical transitions only, and this is
-    /// how it asks. A predicate over the registered origin rather than a filter
-    /// applied per event, so an overlapping synthetic hold cannot mask a
-    /// physical press by making the aggregate look unchanged.
     pub fn is_physical(&self, source: SourceId) -> bool {
-        self.sources
-            .get(source.index() as usize)
+        self.record(source)
             .is_some_and(|record| matches!(record.origin, Origin::Physical))
     }
 
-    /// The packet key registered for a source.
     pub fn device_of(&self, source: SourceId) -> Option<DeviceId> {
-        self.sources
-            .get(source.index() as usize)
-            .map(|record| record.device)
+        self.record(source).map(|record| record.device)
     }
 
-    /// Which grant owns a source, if any. Physical sources are owned by none.
     pub fn owner_of(&self, source: SourceId) -> Option<GrantId> {
-        self.sources
-            .get(source.index() as usize)
-            .and_then(|record| record.owner)
+        self.record(source).and_then(|record| record.owner)
     }
 
-    /// Allocate the next hold identity.
-    fn next_hold_identity(&mut self) -> u64 {
-        let hold = self.next_hold;
-        self.next_hold = self.next_hold.saturating_add(1);
-        hold
-    }
-
-    /// Build the incarnation for a delivery, consuming a hold identity.
     pub fn incarnate(
         &mut self,
         recipient: u64,
         connection_generation: u64,
         input: Input,
     ) -> HoldIncarnation {
+        let hold = self.next_hold;
+        self.next_hold = self.next_hold.saturating_add(1);
         HoldIncarnation {
             recipient,
             connection_generation,
             input,
-            hold: self.next_hold_identity(),
+            hold,
         }
-    }
-
-    /// Bump a source's incarnation counter when its device is reissued.
-    pub fn reincarnate_source(&mut self, source: SourceId) -> Option<u64> {
-        let record = self.sources.get_mut(source.index() as usize)?;
-        record.incarnation = record.incarnation.saturating_add(1);
-        Some(record.incarnation)
     }
 }

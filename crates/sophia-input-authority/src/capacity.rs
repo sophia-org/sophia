@@ -14,6 +14,13 @@ pub enum CapacityError {
     /// No grant slot is free. Retiring grants still hold theirs until their
     /// debt settles, so this counts them.
     NoGrantSlot,
+    /// No synthetic device slot is free for this grant.
+    NoDeviceSlot,
+    /// No physical source slot is free. Counted separately so a saturating
+    /// injector cannot consume what a real device needs.
+    NoPhysicalSlot,
+    /// The holder set cannot address every source this capacity allows.
+    HolderWidthExceeded { sources: usize, width: usize },
     /// No hold or debt record is free.
     NoHoldRecord,
     /// No completion cell is free for this grant.
@@ -35,6 +42,8 @@ pub struct Capacity {
     pub completions: usize,
     /// Attempt records scheduling over the debt population.
     pub attempts: usize,
+    /// Physical sources, counted apart from synthetic ones.
+    pub physical_sources: usize,
 }
 
 impl Capacity {
@@ -46,14 +55,38 @@ impl Capacity {
         buttons: 9,
         completions: 16,
         attempts: 64,
+        physical_sources: 16,
     };
 
-    /// Hold and debt records to preallocate.
-    ///
-    /// Every source that could hold every input at once. Incarnations consume
-    /// from this same population, so a record is never conjured mid-retirement.
-    pub const fn hold_records(&self) -> usize {
-        self.grants * (self.keys + self.buttons)
+    /// Synthetic device slots: every grant's full allowance.
+    pub const fn synthetic_sources(&self) -> usize {
+        self.grants * self.devices_per_grant
+    }
+
+    /// Addressable inputs: every X keycode plus every advertised button, with
+    /// keys and buttons in disjoint ranges so neither can alias the other.
+    pub const fn input_slots(&self) -> usize {
+        self.keys + self.buttons
+    }
+
+    /// Retained debts: one per input that can owe a release.
+    pub const fn debt_records(&self) -> usize {
+        self.input_slots()
+    }
+
+    /// Refuse a capacity whose sources cannot all be addressed in the holder
+    /// set. Without this a source silently aliases another and one release
+    /// clears a hold it never took.
+    pub fn verify_holder_width(&self) -> Result<(), CapacityError> {
+        let sources = self.synthetic_sources() + self.physical_sources;
+        if sources <= u64::BITS as usize {
+            Ok(())
+        } else {
+            Err(CapacityError::HolderWidthExceeded {
+                sources,
+                width: u64::BITS as usize,
+            })
+        }
     }
 
     /// Confirm the server's advertised button domain matches what this
