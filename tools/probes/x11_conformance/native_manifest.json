@@ -1015,6 +1015,70 @@
         }
       ],
       "evidence_scope": "Common/coordinator state-machine calls only. Installation booleans are writer declarations. The production transition, lock order, actual snapshot/population clearing, queue/thaw and executor race obligations remain separate and unimplemented."
+    },
+    {
+      "id": "m4_setup_authentication",
+      "description": "Private setup verifies configured cookie/instance, rejects wrong or partial credentials before policy, and preserves anonymous ordinary access",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "private_setup_anonymous_remains_ordinary_in_both_orders"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "private_setup_cookie_verifies_configured_instance_in_both_orders"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "private_setup_supplied_wrong_or_partial_credentials_never_reach_policy"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "private_setup_instance_binding_comes_from_configuration"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "strict_mit_cookie_does_not_gain_anonymous_fallback"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "ordinary_setup_does_not_convert_claimed_private_name_into_verified_authorization"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "private_setup_debug_redacts_cookie"
+        }
+      ],
+      "evidence_scope": "Real private setup sockets in both byte orders; verified admission evidence only. Does not establish grant issuance, executor, XTEST effects or live admission."
     }
   ]
 }

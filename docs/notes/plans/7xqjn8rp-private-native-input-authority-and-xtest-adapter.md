@@ -503,3 +503,14 @@ The private setup authentication seam `57bb1dba` separately passes seven real
 socket tests covering both byte orders and deliberate credential faults. It
 produces verified admission evidence only and awaits coordinated integration;
 it implements neither grants nor XTEST execution.
+
+
+Setup seam `57bb1dba` was approved by the runtime owner and integrated as
+`161ec805`. An independent rerun of its seven tests passes; evidence is
+`/tmp/sophia-native-input-evidence/setup-161ec805/tests.log`. Its manifest entry
+is limited to setup authentication. The default-off core baseline at
+`28417f90`, including the then-current master content foundation, passes
+100/100 wire executions and 90 harness regressions, with all 14 real isolation
+tests executed. Evidence is
+`/tmp/sophia-native-input-evidence/core-28417f90/report.json`. Neither result
+constitutes XTEST execution or hardware acceptance.
