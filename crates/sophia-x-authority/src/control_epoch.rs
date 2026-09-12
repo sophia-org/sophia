@@ -255,6 +255,11 @@ impl ControlEpochCoordinator {
         })
     }
 
+    /// Which authority this coordinator drives.
+    pub fn authority(&self) -> AuthorityIdentity {
+        self.authority
+    }
+
     /// Which coordinator this is, readable without taking it.
     pub fn incarnation(&self) -> u64 {
         self.incarnation

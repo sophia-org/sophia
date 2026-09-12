@@ -6,21 +6,10 @@
 //! free to land in between, which is precisely the window this closes.
 
 use sophia_input_authority::{
-    ConnectionIdentity, Input, Recipient, RegistrationError, RequestCompletion, RequestToken,
+    ConnectionIdentity, HoldIncarnation, Input, InputKind, Recipient, RegistrationError,
+    ReleaseOutcome, RequestCompletion, RequestToken,
 };
 use sophia_protocol::NamespaceId;
-
-/// Which device an admitted request speaks for.
-///
-/// Carried rather than derived: the authority's `Input` deliberately does not
-/// say whether it is a key or a button, and the caller decoding the request
-/// already knows. Asking the input to tell us would mean widening a type whose
-/// narrowness is the point.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SyntheticDevice {
-    Keyboard,
-    Pointer,
-}
 
 /// What an admitted request asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,28 +33,24 @@ pub struct ResolvedRecipient {
 
 /// Resolve where input in this namespace goes right now.
 ///
-/// A server grab outranks a device grab, and either outranks focus: an
-/// impervious holder is the only client entitled to see input while it holds
-/// the server, and a device grab redirects what would otherwise follow focus.
+/// A device grab redirects what would otherwise follow the route. A SERVER
+/// grab does not appear here at all: it schedules requests, deciding who may
+/// proceed while others wait, and says nothing about who is entitled to
+/// receive input. Treating its holder as the recipient would hand a client
+/// that merely asked to be impervious every event on the seat.
 pub(crate) fn resolve_recipient(
     authority: &crate::XInputAuthorityState,
     namespace: NamespaceId,
     focused: Option<u64>,
     connection_generation: u64,
-    device: SyntheticDevice,
+    input: Input,
 ) -> Option<ResolvedRecipient> {
-    if let Some(owner) = authority.server_owner(namespace) {
-        return Some(ResolvedRecipient {
-            recipient: Recipient {
-                recipient: owner,
-                connection_generation,
-            },
-            grabbed: true,
-        });
-    }
-    let grab = match device {
-        SyntheticDevice::Keyboard => authority.keyboard_grab(namespace),
-        SyntheticDevice::Pointer => authority.pointer_grab(namespace),
+    // The input classifies itself. Carrying a separate device alongside it
+    // meant two values that could disagree, and nothing to say which one was
+    // right when they did.
+    let grab = match input.kind() {
+        InputKind::Key => authority.keyboard_grab(namespace),
+        InputKind::Button => authority.pointer_grab(namespace),
     };
     if let Some(grab) = grab {
         return Some(ResolvedRecipient {
@@ -85,12 +70,40 @@ pub(crate) fn resolve_recipient(
     })
 }
 
+/// What a press recorded, once it succeeded.
+///
+/// The recipient here is the LEDGER's, taken from the hold the press joined or
+/// began, not the one resolution proposed. Those differ whenever a press joins
+/// an existing hold: the route may point somewhere new, while the hold still
+/// answers to where the first press went. Reporting the proposal would name a
+/// client that will never receive the matching release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyntheticRecord {
+    pub incarnation: HoldIncarnation,
+    /// Whether this press began the hold rather than joining one.
+    ///
+    /// A duplicate or a join moves the ledger without being a delivery, so a
+    /// caller that treats every success as an event would emit input twice.
+    pub first_press: bool,
+    /// How resolution chose the target it proposed.
+    ///
+    /// Kept for the press that began the hold; for a join it describes a
+    /// proposal the ledger did not adopt.
+    pub proposed: ResolvedRecipient,
+}
+
 /// What an execution attempt produced.
+///
+/// `completion` reports a ledger transition and nothing else. It is not an
+/// XTEST reply, and it says nothing about XKB state, routing, or anything a
+/// writer did: no delivery has happened at this point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyntheticOutcome {
     pub completion: RequestCompletion,
-    /// Absent when nothing was delivered, which is not the same as refused.
-    pub recipient: Option<ResolvedRecipient>,
+    /// Present only for a press that succeeded.
+    pub record: Option<SyntheticRecord>,
+    /// Present only for a release that was applied.
+    pub release: Option<ReleaseOutcome>,
 }
 
 /// A request that could not be executed, and why, without having touched
@@ -111,7 +124,6 @@ pub struct SyntheticRequest {
     pub namespace: NamespaceId,
     /// Session's, not the client's: X mints no such value.
     pub connection_generation: u64,
-    pub device: SyntheticDevice,
     pub action: SyntheticAction,
     pub input: Input,
 }

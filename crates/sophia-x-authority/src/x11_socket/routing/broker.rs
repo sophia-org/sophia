@@ -731,7 +731,25 @@ impl XServerFrontendRouteBroker {
         request: crate::SyntheticRequest,
         focused: Option<u64>,
     ) -> Result<crate::SyntheticOutcome, sophia_input_authority::RegistrationError> {
-        let mut resolved = None;
+        // Which authority this broker serves, checked before common is taken:
+        // the gate ranks above it. An identity is fixed for an authority's
+        // lifetime, so reading it here and acting on it below cannot go stale.
+        // Without this, another authority's grant executes through this broker
+        // and creates a hold here that belongs to neither.
+        let identity = authority.authority_identity(issuer)?;
+        let gate = self
+            .control_gate
+            .get()
+            .ok_or(sophia_input_authority::RegistrationError::RoutingUnavailable)?;
+        let bound = gate
+            .with(|coordinator| coordinator.authority())
+            .map_err(|_| sophia_input_authority::RegistrationError::RoutingUnavailable)?;
+        if bound != identity {
+            return Err(sophia_input_authority::RegistrationError::RoutingUnavailable);
+        }
+
+        let mut recorded = None;
+        let mut released = None;
         let completion = authority.execute_reserved(
             issuer,
             request.token,
@@ -739,34 +757,56 @@ impl XServerFrontendRouteBroker {
             |permit| {
                 // Beneath common, and on its own: this reads grab ownership
                 // and nothing that would need the other two.
-                let target = {
-                    let input_authority = self
-                        .registry
-                        .input_authority
-                        .lock()
-                        .map_err(|_| {
-                            sophia_input_authority::RegistrationError::RoutingUnavailable
-                        })?;
-                    crate::resolve_recipient(
-                        &input_authority,
-                        request.namespace,
-                        focused,
-                        request.connection_generation,
-                        request.device,
-                    )
-                };
-                let Some(target) = target else {
-                    // Nobody is entitled to this input. Refusing before any
-                    // effect keeps it distinct from a delivery that failed.
-                    return Err(sophia_input_authority::RegistrationError::RoutingUnavailable);
-                };
-                resolved = Some(target);
                 match request.action {
                     crate::SyntheticAction::Press => {
-                        permit.press(request.input, target.recipient)?;
+                        // The guard is held across BOTH the resolution and the
+                        // application. Scoping it to the resolution alone left
+                        // a window in which a writer could change the grab
+                        // that chose this recipient before the press recorded
+                        // it, which is the same check-then-act defect one
+                        // level down.
+                        let input_authority =
+                            self.registry.input_authority.lock().map_err(|_| {
+                                sophia_input_authority::RegistrationError::RoutingUnavailable
+                            })?;
+                        let Some(target) = crate::resolve_recipient(
+                            &input_authority,
+                            request.namespace,
+                            focused,
+                            request.connection_generation,
+                            request.input,
+                        ) else {
+                            // Nobody is entitled to this input. Refusing
+                            // before any effect keeps it distinct from a
+                            // delivery that failed.
+                            return Err(
+                                sophia_input_authority::RegistrationError::RoutingUnavailable,
+                            );
+                        };
+                        let applied = permit.press(request.input, target.recipient)?;
+                        // Recorded only once the press succeeded, and only for
+                        // a press that actually began a hold. A duplicate or a
+                        // join is a ledger transition, not a delivery, and
+                        // reporting one as the other would credit this request
+                        // with an effect it did not have.
+                        recorded = Some(crate::SyntheticRecord {
+                            // From the ledger, not from resolution. A press
+                            // that joined an existing hold answers to where
+                            // that hold went, however the route has moved
+                            // since.
+                            incarnation: applied.incarnation(),
+                            first_press: applied.first_press(),
+                            proposed: target,
+                        });
+                        drop(input_authority);
                     }
                     crate::SyntheticAction::Release => {
-                        permit.release(request.input)?;
+                        // No resolution at all. A release answers to the
+                        // recipient the press reached, which the ledger holds;
+                        // asking the route again would refuse whenever the
+                        // grab that chose it has since gone, which is exactly
+                        // when a release matters most.
+                        released = Some(permit.release(request.input)?);
                     }
                 }
                 Ok(())
@@ -774,7 +814,8 @@ impl XServerFrontendRouteBroker {
         )?;
         Ok(crate::SyntheticOutcome {
             completion,
-            recipient: resolved,
+            record: recorded,
+            release: released,
         })
     }
 
