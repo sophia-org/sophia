@@ -1424,3 +1424,137 @@ fn the_lockless_epoch_advance_is_refused_under_a_gate() {
     assert!(!sender.advance_control_epoch(3));
     assert!(!ungated_sender.advance_control_epoch(4));
 }
+
+#[test]
+fn the_privileged_apply_clears_every_population_and_reports_them_together() {
+    let namespace = NamespaceId::from_raw(27);
+    let client = XServerFrontendClientId(23);
+    let surface = SurfaceId::new(37, 1);
+    let window = XResourceId::new(0x200070, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, delivery_receiver) = channel();
+    let (gate, mut instance, issuer) = control_gate();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+    let (_registration, _channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: client.raw(),
+                window,
+                owner_events: false,
+                pointer_mode: 0,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
+            },
+        )
+        .unwrap();
+    // A synchronous grab freezes delivery, so this lands in the frozen queue
+    // rather than reaching the client.
+    let delivery = XAuthorityInputDeliveryId::from_raw(60);
+    broker
+        .routed_input_sender()
+        .send(motion_to(surface, delivery))
+        .expect("an open coordinator to admit work");
+    assert_eq!(broker.route_pending(), Ok(1));
+
+    let routed = gate
+        .with(|coordinator| {
+            let token = coordinator
+                .request(
+                    &mut instance,
+                    &issuer,
+                    crate::TransitionKind::SecurityControl,
+                    1,
+                    1,
+                )
+                .expect("the transition to be requested");
+            // Session installs the snapshot; the X side speaks for the rest.
+            let routed = broker
+                .apply_control_transition(coordinator, token, true)
+                .expect("the transition to apply");
+            assert_eq!(coordinator.applied_control_epoch(), 1);
+            routed
+        })
+        .expect("the gate");
+
+    // The grab is gone, and the frozen work was reported revoked rather than
+    // delivered into the revision that replaced it.
+    assert_eq!(routed, 1);
+    // Taken, not copied: work left behind here would be routed again into the
+    // revision that replaced it.
+    assert!(
+        broker.registry.frozen_input.lock().unwrap().is_empty(),
+        "the frozen queue must be emptied by the transition that revoked it"
+    );
+    assert!(
+        broker
+            .registry
+            .input_authority
+            .lock()
+            .unwrap()
+            .pointer_grab(namespace)
+            .is_none(),
+        "a security transition must clear active grabs"
+    );
+    assert_eq!(
+        delivery_receiver.recv().unwrap(),
+        XAuthorityClientInputDelivery {
+            client,
+            delivery,
+            outcome: XAuthorityInputDeliveryOutcome::EpochRevoked,
+        }
+    );
+}
+
+#[test]
+fn the_privileged_apply_does_not_stamp_without_the_session_snapshot() {
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, mut instance, issuer) = control_gate();
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+
+    gate.with(|coordinator| {
+        let token = coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("the transition to be requested");
+        // Everything this path can clear is cleared, but Session has not
+        // installed the snapshot, so the transition is not applied.
+        assert!(
+            broker
+                .apply_control_transition(coordinator, token, false)
+                .is_err(),
+            "an incomplete installation must not stamp the applied epoch"
+        );
+        assert_eq!(coordinator.applied_control_epoch(), 0);
+        assert!(!coordinator.is_open());
+    })
+    .expect("the gate");
+}

@@ -24,6 +24,72 @@ impl XServerFrontendRouteRegistry {
         Ok(count)
     }
 
+    /// Clear everything an X security epoch revokes, in ranked order.
+    ///
+    /// This is the privileged control path, not input execution. A transition
+    /// cancels reservations and revokes grants, so running it through the
+    /// execution transaction would demand the very authority the transition is
+    /// in the middle of withdrawing, and the cleanup that has to outlive a
+    /// grant would deadlock against its own revocation. The caller holds the
+    /// common guard; this takes the later-ranked X guards beneath it.
+    ///
+    /// Unlike the ordinary path the three guards are held together rather than
+    /// taken and dropped one at a time, so no observer sees grabs cleared
+    /// while pointer state still describes the revision being replaced.
+    ///
+    /// Nothing is delivered from in here. The frozen queue is handed back so
+    /// its receipts can be sent once the guards are released, because a
+    /// transition must not wait on anything while it holds them.
+    fn clear_revoked_x_populations(
+        &self,
+    ) -> Result<(crate::TransitionInstallation, VecDeque<XDeferredRoutedInput>), XServerFrontendRouteError>
+    {
+        let mut input_authority = self
+            .input_authority
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let mut pointer_state = self
+            .pointer_state
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let mut frozen_input = self
+            .frozen_input
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+
+        input_authority.advance_security_epoch();
+        pointer_state.clear();
+        let drained = std::mem::take(&mut *frozen_input);
+
+        Ok((
+            crate::TransitionInstallation {
+                x_grabs_cleared: true,
+                pointer_state_cleared: true,
+                frozen_input_cleared: true,
+                // Session installs the snapshot; this path speaks only for the
+                // populations it just cleared.
+                snapshot_installed: false,
+            },
+            drained,
+        ))
+    }
+
+    /// Send the receipts a cleared transition owes, after its guards are gone.
+    fn report_revoked_input(
+        &self,
+        drained: VecDeque<XDeferredRoutedInput>,
+    ) -> Result<usize, XServerFrontendRouteError> {
+        let count = drained.len();
+        for deferred in drained {
+            self.send_input_delivery(
+                deferred.client,
+                deferred.route.delivery,
+                XAuthorityInputDeliveryOutcome::EpochRevoked,
+            )?;
+        }
+        Ok(count)
+    }
+
     fn release_route_lease(
         &self,
         release: XAuthorityRouteLeaseRelease,

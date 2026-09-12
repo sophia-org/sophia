@@ -554,6 +554,40 @@ impl XServerFrontendRouteBroker {
         self.control_gate.get().is_some()
     }
 
+    /// Apply a control transition's X-side clearing and report it.
+    ///
+    /// The privileged control path. The caller already holds the coordinator
+    /// and, beneath it, the common guard it used to open this transition;
+    /// this takes only the later-ranked X guards. That order matters: opening
+    /// a transition takes the coordinator and then common, so acquiring them
+    /// the other way round here would close a cycle between them.
+    ///
+    /// `snapshot_installed` is the caller's, because Session installs the
+    /// publication snapshot and this path speaks only for what it cleared. The
+    /// coordinator stamps its applied epoch only if the two together satisfy
+    /// the kind of transition in flight.
+    ///
+    /// Receipts for revoked work are sent after the X guards are released, so
+    /// a transition never waits on a queue while holding them.
+    pub fn apply_control_transition(
+        &self,
+        coordinator: &mut crate::ControlEpochCoordinator,
+        token: crate::TransitionToken,
+        snapshot_installed: bool,
+    ) -> Result<usize, XServerFrontendRouteError> {
+        let (cleared, drained) = self.registry.clear_revoked_x_populations()?;
+        coordinator
+            .apply(
+                token,
+                crate::TransitionInstallation {
+                    snapshot_installed,
+                    ..cleared
+                },
+            )
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        self.registry.report_revoked_input(drained)
+    }
+
     /// Routes every value currently available at the bounded ingress.
     pub fn route_pending(&mut self) -> Result<usize, XServerFrontendRouteError> {
         // Under a coordinator this application belongs to the ranked apply,
