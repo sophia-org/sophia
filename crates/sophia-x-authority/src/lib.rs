@@ -39,6 +39,7 @@ mod setup;
 mod shm;
 mod socket;
 mod software;
+mod synthetic_executor;
 mod transport;
 mod window;
 mod window_allocation;
@@ -61,6 +62,7 @@ pub use explicit_pointer_grab::*;
 pub use font::*;
 pub use frontend_config::*;
 pub use frontend_types::*;
+pub use synthetic_executor::*;
 
 /// Whether the operator asked to watch protocol traffic.
 ///

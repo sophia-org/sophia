@@ -2077,3 +2077,200 @@ fn one_brokers_receipts_cannot_be_delivered_by_another() {
         XAuthorityInputDeliveryOutcome::EpochRevoked
     );
 }
+
+/// A grant, a device and a reserved request, ready to execute.
+fn reserved_request(
+    instance: &mut sophia_input_authority::AuthorityInstance,
+    issuer: &sophia_input_authority::IssuerHandle,
+    submit: &sophia_input_authority::SubmitHandle,
+    connection: sophia_input_authority::ConnectionIdentity,
+) -> (
+    sophia_input_authority::RequestToken,
+    sophia_input_authority::DeviceCapability,
+) {
+    let (grant, generation) = instance
+        .issue_grant(issuer, connection)
+        .expect("a grant to be issued");
+    let capability = instance
+        .allocate_device(issuer, grant, generation, sophia_protocol::DeviceId::from_raw(1))
+        .expect("a device to be allocated");
+    let context = sophia_input_authority::ExecutionContext {
+        generation,
+        connection,
+        epoch: 0,
+        publication: 0,
+        request: 1,
+    };
+    let token = instance
+        .reserve_request(submit, capability, context)
+        .expect("a request to be reserved");
+    (token, capability)
+}
+
+#[test]
+fn a_synthetic_press_goes_to_the_grab_holder_rather_than_focus() {
+    let namespace = NamespaceId::from_raw(34);
+    let grab_holder = XServerFrontendClientId(30);
+    let focused = XServerFrontendClientId(31);
+    let surface = SurfaceId::new(44, 1);
+    let window = XResourceId::new(0x2000e0, 1);
+    let (gate, _instance, _issuer) = control_gate();
+    let (broker, _deliveries, _lease) =
+        gated_broker_with_grab(&gate, namespace, grab_holder, surface, window);
+
+    let binding = sophia_input_authority::SeatBinding::new(
+        sophia_input_authority::InstanceId::new(1),
+        sophia_protocol::SeatId::from_raw(1),
+    );
+    let (mut instance, issuer, submit) = sophia_input_authority::AuthorityInstance::new(
+        binding,
+        sophia_input_authority::Capacity::PLANNED,
+        9,
+    )
+    .expect("planned capacity");
+    let connection = sophia_input_authority::ConnectionIdentity {
+        recipient: 99,
+        connection_generation: 5,
+    };
+    let (token, _capability) = reserved_request(&mut instance, &issuer, &submit, connection);
+
+    let outcome = broker
+        .execute_synthetic_input(
+            &mut instance,
+            &issuer,
+            crate::SyntheticRequest {
+                token,
+                connection,
+                namespace,
+                connection_generation: 5,
+                device: crate::SyntheticDevice::Pointer,
+                action: crate::SyntheticAction::Press,
+                input: sophia_input_authority::Input::button(1, 9).expect("button one"),
+            },
+            Some(focused.raw()),
+        )
+        .expect("the request to execute");
+
+    let resolved = outcome.recipient.expect("a resolved recipient");
+    assert!(resolved.grabbed, "a grab must outrank focus");
+    assert_eq!(
+        resolved.recipient.recipient,
+        grab_holder.raw(),
+        "the press belongs to the client holding the grab, not the focused one"
+    );
+    assert_eq!(
+        outcome.completion,
+        sophia_input_authority::RequestCompletion::Processed
+    );
+}
+
+#[test]
+fn a_synthetic_press_follows_focus_when_nothing_is_grabbed() {
+    let namespace = NamespaceId::from_raw(35);
+    let focused = XServerFrontendClientId(32);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _gate_instance, _gate_issuer) = control_gate();
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+
+    let binding = sophia_input_authority::SeatBinding::new(
+        sophia_input_authority::InstanceId::new(1),
+        sophia_protocol::SeatId::from_raw(1),
+    );
+    let (mut instance, issuer, submit) = sophia_input_authority::AuthorityInstance::new(
+        binding,
+        sophia_input_authority::Capacity::PLANNED,
+        9,
+    )
+    .expect("planned capacity");
+    let connection = sophia_input_authority::ConnectionIdentity {
+        recipient: 98,
+        connection_generation: 7,
+    };
+    let (token, _capability) = reserved_request(&mut instance, &issuer, &submit, connection);
+
+    let outcome = broker
+        .execute_synthetic_input(
+            &mut instance,
+            &issuer,
+            crate::SyntheticRequest {
+                token,
+                connection,
+                namespace,
+                connection_generation: 7,
+                device: crate::SyntheticDevice::Keyboard,
+                action: crate::SyntheticAction::Press,
+                input: sophia_input_authority::Input::key(38).expect("a keycode"),
+            },
+            Some(focused.raw()),
+        )
+        .expect("the request to execute");
+
+    let resolved = outcome.recipient.expect("a resolved recipient");
+    assert!(!resolved.grabbed);
+    assert_eq!(resolved.recipient.recipient, focused.raw());
+}
+
+#[test]
+fn a_synthetic_press_with_nobody_entitled_is_refused_without_effect() {
+    let namespace = NamespaceId::from_raw(36);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _gate_instance, _gate_issuer) = control_gate();
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+
+    let binding = sophia_input_authority::SeatBinding::new(
+        sophia_input_authority::InstanceId::new(1),
+        sophia_protocol::SeatId::from_raw(1),
+    );
+    let (mut instance, issuer, submit) = sophia_input_authority::AuthorityInstance::new(
+        binding,
+        sophia_input_authority::Capacity::PLANNED,
+        9,
+    )
+    .expect("planned capacity");
+    let connection = sophia_input_authority::ConnectionIdentity {
+        recipient: 97,
+        connection_generation: 3,
+    };
+    let (token, _capability) = reserved_request(&mut instance, &issuer, &submit, connection);
+
+    // No grab and no focus: nobody is entitled to this input.
+    let outcome = broker.execute_synthetic_input(
+        &mut instance,
+        &issuer,
+        crate::SyntheticRequest {
+            token,
+            connection,
+            namespace,
+            connection_generation: 3,
+            device: crate::SyntheticDevice::Keyboard,
+            action: crate::SyntheticAction::Press,
+            input: sophia_input_authority::Input::key(38).expect("a keycode"),
+        },
+        None,
+    );
+
+    let outcome = outcome.expect("the refusal to be reported rather than raised");
+    assert_eq!(
+        outcome.completion,
+        sophia_input_authority::RequestCompletion::Refused(
+            sophia_input_authority::RegistrationError::RoutingUnavailable
+        ),
+        "an unentitled press is refused before any effect"
+    );
+    assert!(
+        outcome.recipient.is_none(),
+        "a refused press resolved nobody, so it recorded nobody"
+    );
+}

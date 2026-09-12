@@ -1,21 +1,9 @@
-/// Engine-facing ingress and per-client queue registry for a routed X11
-/// session.
-///
-/// Engine code sends client-addressed input through the bounded ingress queues,
-/// then its session loop calls [`Self::route_pending`] to move it into the
-/// registered worker's private queue. Latency-sensitive control can instead use
-/// [`Self::control_router`] to reach the selected client's bounded queue
-/// directly. The broker never broadcasts a route. Routes whose client
-/// disappeared after Engine selection are retired with a negative
-/// acknowledgement. A client that saturates its private input queue is
-/// quarantined without terminating the shared frontend; corruption of shared
-/// registry state remains service-fatal.
-#[cfg(unix)]
 /// What a control transition left for its caller to deliver.
 ///
 /// Carried rather than sent, because delivery must happen with the guards
 /// released, and owed regardless of whether the transition applied: work
 /// already taken off the frozen queue has no other way to be answered.
+#[cfg(unix)]
 #[must_use = "revoked input owes its clients a receipt"]
 pub struct ControlTransitionOutcome {
     /// Which broker revoked this work.
@@ -40,6 +28,18 @@ impl ControlTransitionOutcome {
     }
 }
 
+/// Engine-facing ingress and per-client queue registry for a routed X11
+/// session.
+///
+/// Engine code sends client-addressed input through the bounded ingress queues,
+/// then its session loop calls [`Self::route_pending`] to move it into the
+/// registered worker's private queue. Latency-sensitive control can instead use
+/// [`Self::control_router`] to reach the selected client's bounded queue
+/// directly. The broker never broadcasts a route. Routes whose client
+/// disappeared after Engine selection are retired with a negative
+/// acknowledgement. A client that saturates its private input queue is
+/// quarantined without terminating the shared frontend; corruption of shared
+/// registry state remains service-fatal.
 #[cfg(unix)]
 pub struct XServerFrontendRouteBroker {
     registry: XServerFrontendRouteRegistry,
@@ -709,6 +709,73 @@ impl XServerFrontendRouteBroker {
                     },
                 )
             })
+    }
+
+    /// Execute one admitted synthetic request.
+    ///
+    /// This is where the check-then-act window closes. Resolving the recipient
+    /// and applying the press happen inside one hold on the common authority,
+    /// so a transition cannot land between deciding that input may be
+    /// delivered and delivering it. Nothing here waits, and nothing here
+    /// writes to a socket: the X guard is taken beneath common, used, and
+    /// dropped before this returns.
+    ///
+    /// The recipient is resolved now rather than at admission. A grab can be
+    /// taken or released between a request being accepted and becoming
+    /// runnable, so a recipient chosen earlier would name a client the press
+    /// never reached. What is recorded here is what later releases answer to.
+    pub fn execute_synthetic_input(
+        &self,
+        authority: &mut sophia_input_authority::AuthorityInstance,
+        issuer: &sophia_input_authority::IssuerHandle,
+        request: crate::SyntheticRequest,
+        focused: Option<u64>,
+    ) -> Result<crate::SyntheticOutcome, sophia_input_authority::RegistrationError> {
+        let mut resolved = None;
+        let completion = authority.execute_reserved(
+            issuer,
+            request.token,
+            request.connection,
+            |permit| {
+                // Beneath common, and on its own: this reads grab ownership
+                // and nothing that would need the other two.
+                let target = {
+                    let input_authority = self
+                        .registry
+                        .input_authority
+                        .lock()
+                        .map_err(|_| {
+                            sophia_input_authority::RegistrationError::RoutingUnavailable
+                        })?;
+                    crate::resolve_recipient(
+                        &input_authority,
+                        request.namespace,
+                        focused,
+                        request.connection_generation,
+                        request.device,
+                    )
+                };
+                let Some(target) = target else {
+                    // Nobody is entitled to this input. Refusing before any
+                    // effect keeps it distinct from a delivery that failed.
+                    return Err(sophia_input_authority::RegistrationError::RoutingUnavailable);
+                };
+                resolved = Some(target);
+                match request.action {
+                    crate::SyntheticAction::Press => {
+                        permit.press(request.input, target.recipient)?;
+                    }
+                    crate::SyntheticAction::Release => {
+                        permit.release(request.input)?;
+                    }
+                }
+                Ok(())
+            },
+        )?;
+        Ok(crate::SyntheticOutcome {
+            completion,
+            recipient: resolved,
+        })
     }
 
     /// Routes every value currently available at the bounded ingress.
