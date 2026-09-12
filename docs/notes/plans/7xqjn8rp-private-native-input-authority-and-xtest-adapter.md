@@ -536,8 +536,12 @@ control. A separate helper-under-coordinator call times out at its three-second
 watchdog: the identity check reacquires the coordinator from a method receiving
 mutable common state. A caller holding common would also invert the selected
 rank. Evidence is `.artifacts/synthetic-executor-review-2caba34c/`. Repair
-`b5d371c4` captures immutable authority identity in the gate for lock-free checks
-and awaits the same independent rerun. Committed focus, actual recipient routing,
+`b5d371c4` captures authority identity in the gate for lock-free checks. All nine
+retained tests and the previously hanging re-entry case pass independently;
+evidence is `.artifacts/synthetic-executor-review-b5d371c4/`. Public mutable access
+to the whole coordinator still permits replacement while the gate retains the old
+cached identity; that API must preserve ownership before the cache can serve as
+an invariant. Committed focus, actual recipient routing,
 modifier publication and StateOnly thaw remain required before production-path
 acceptance; the helper is still unintegrated.
 
