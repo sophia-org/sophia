@@ -2467,7 +2467,7 @@ fn desired_duplicate_press_does_not_report_new_delivery() {
 }
 
 #[test]
-fn desired_release_after_focus_changes_reports_original_recipient() {
+fn desired_joined_press_reports_the_incarnation_not_the_proposal() {
     let namespace = NamespaceId::from_raw(40);
     let first_focus = XServerFrontendClientId(77);
     let later_focus = XServerFrontendClientId(88);
@@ -2602,5 +2602,96 @@ fn desired_foreign_authority_cannot_execute_through_bound_broker() {
             .expect("the cell to be readable")
             .is_none(),
         "a refusal before execution leaves the completion cell untouched"
+    );
+}
+
+#[test]
+fn desired_release_after_focus_changes_reports_original_recipient() {
+    let namespace = NamespaceId::from_raw(42);
+    let first_focus = XServerFrontendClientId(77);
+    let later_focus = XServerFrontendClientId(88);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, mut instance, issuer, submit) = control_gate_with_submit();
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+    let connection = sophia_input_authority::ConnectionIdentity {
+        recipient: 91,
+        connection_generation: 29,
+    };
+    let (token, capability) = reserved_request(&mut instance, &issuer, &submit, connection);
+    let input = sophia_input_authority::Input::key(38).expect("a keycode");
+
+    let pressed = broker
+        .execute_synthetic_input(
+            &mut instance,
+            &issuer,
+            crate::SyntheticRequest {
+                token,
+                connection,
+                namespace,
+                connection_generation: 29,
+                action: crate::SyntheticAction::Press,
+                input,
+            },
+            Some(first_focus.raw()),
+        )
+        .expect("the press to execute");
+    assert_eq!(
+        pressed.completion,
+        sophia_input_authority::RequestCompletion::Processed
+    );
+
+    instance
+        .take_completion(&submit, token, connection)
+        .expect("the completion to be taken");
+    let context = sophia_input_authority::ExecutionContext {
+        generation: capability.generation(),
+        connection,
+        epoch: 0,
+        publication: 0,
+        request: 2,
+    };
+    let release_token = instance
+        .reserve_request(&submit, capability, context)
+        .expect("a second request to be reserved");
+
+    // Focus has moved to another client before the release runs.
+    let released = broker
+        .execute_synthetic_input(
+            &mut instance,
+            &issuer,
+            crate::SyntheticRequest {
+                token: release_token,
+                connection,
+                namespace,
+                connection_generation: 29,
+                action: crate::SyntheticAction::Release,
+                input,
+            },
+            Some(later_focus.raw()),
+        )
+        .expect("the release to execute");
+    assert_eq!(
+        released.completion,
+        sophia_input_authority::RequestCompletion::Processed
+    );
+
+    let Some(sophia_input_authority::ReleaseOutcome::DeliverTo(incarnation)) = released.release
+    else {
+        panic!("the last holder letting go owes a delivery: {:?}", released.release);
+    };
+    assert_eq!(
+        incarnation.recipient,
+        first_focus.raw(),
+        "the release is owed to the client the press reached, not the one focus now names"
+    );
+    assert!(
+        released.record.is_none(),
+        "a release proposes no recipient of its own"
     );
 }
