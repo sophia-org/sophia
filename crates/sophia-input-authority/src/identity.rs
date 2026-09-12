@@ -144,6 +144,15 @@ pub struct Input {
     slot: u16,
 }
 
+/// The class of an already validated input. This observation cannot construct
+/// an input or change its domain, so an adapter need not carry a second,
+/// potentially contradictory keyboard/pointer discriminator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InputKind {
+    Key,
+    Button,
+}
+
 /// Why an input was outside the advertised domain.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InputError {
@@ -154,6 +163,14 @@ pub enum InputError {
 }
 
 impl Input {
+    pub const fn kind(self) -> InputKind {
+        if self.slot < Self::KEY_SLOTS {
+            InputKind::Key
+        } else {
+            InputKind::Button
+        }
+    }
+
     /// The lowest X keycode. Below this is not a key at all.
     pub const MIN_KEYCODE: u8 = 8;
 
