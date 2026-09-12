@@ -11,13 +11,6 @@
 /// quarantined without terminating the shared frontend; corruption of shared
 /// registry state remains service-fatal.
 #[cfg(unix)]
-/// Distinguishes brokers, so their receipts cannot be interchanged.
-static REGISTRY_IDENTITIES: AtomicU64 = AtomicU64::new(1);
-
-fn next_registry_identity() -> u64 {
-    REGISTRY_IDENTITIES.fetch_add(1, Ordering::Relaxed)
-}
-
 /// What a control transition left for its caller to deliver.
 ///
 /// Carried rather than sent, because delivery must happen with the guards
@@ -31,7 +24,11 @@ pub struct ControlTransitionOutcome {
     /// one frontend. Handing this batch to another broker would deliver one
     /// frontend's revocations to whichever of its clients happened to share
     /// those numbers.
-    registry: u64,
+    ///
+    /// An allocation rather than a number: identity by address cannot be
+    /// exhausted, and holding it keeps it distinct for as long as any batch
+    /// still refers to it, which a counter could not promise.
+    registry: Arc<()>,
     receipts: VecDeque<XDeferredRoutedInput>,
     applied: bool,
 }
@@ -56,7 +53,7 @@ pub struct XServerFrontendRouteBroker {
     /// Unset in ordinary mode, leaving every path below exactly as it was.
     control_gate: Arc<std::sync::OnceLock<crate::ControlEpochGate>>,
     /// Distinguishes this broker's receipts from another's.
-    registry_identity: u64,
+    registry_identity: Arc<()>,
     route_lease_release_sender: SyncSender<XAuthorityRouteLeaseRelease>,
     route_lease_release_receiver: Receiver<XAuthorityRouteLeaseRelease>,
     control_sender: SyncSender<XAuthorityClientControlCommand>,
@@ -446,7 +443,7 @@ impl XServerFrontendRouteBroker {
         let input_authority = Arc::new(Mutex::new(crate::XInputAuthorityState::default()));
         Self {
             control_gate: Arc::new(std::sync::OnceLock::new()),
-            registry_identity: next_registry_identity(),
+            registry_identity: Arc::new(()),
             registry: XServerFrontendRouteRegistry {
                 // Ingress + frozen + every possible client's private queue and
                 // active writer. Terminal receipts retain their credit until
@@ -672,7 +669,7 @@ impl XServerFrontendRouteBroker {
         };
         let applied = coordinator.apply(token, cleared);
         Ok(ControlTransitionOutcome {
-            registry: self.registry_identity,
+            registry: Arc::clone(&self.registry_identity),
             receipts: drained,
             applied: applied.is_ok(),
         })
@@ -681,14 +678,32 @@ impl XServerFrontendRouteBroker {
     /// Deliver what a control transition revoked.
     ///
     /// Separate from the apply so it runs with every guard released.
+    /// Deliver what a control transition revoked.
+    ///
+    /// A batch offered to the wrong broker is handed back with the refusal
+    /// rather than consumed. Dropping it would lose receipts that clients of
+    /// the originating broker are owed, turning a caller's mistake into
+    /// silently abandoned work; returning it leaves the origin able to deliver
+    /// what it revoked.
     pub fn report_control_transition(
         &self,
         outcome: ControlTransitionOutcome,
-    ) -> Result<usize, XServerFrontendRouteError> {
-        if outcome.registry != self.registry_identity {
-            return Err(XServerFrontendRouteError::RegistryPoisoned);
+    ) -> Result<usize, (XServerFrontendRouteError, ControlTransitionOutcome)> {
+        if !Arc::ptr_eq(&outcome.registry, &self.registry_identity) {
+            return Err((XServerFrontendRouteError::RegistryPoisoned, outcome));
         }
-        self.registry.report_revoked_input(outcome.receipts)
+        self.registry
+            .report_revoked_input(outcome.receipts)
+            .map_err(|error| {
+                (
+                    error,
+                    ControlTransitionOutcome {
+                        registry: Arc::clone(&self.registry_identity),
+                        receipts: VecDeque::new(),
+                        applied: false,
+                    },
+                )
+            })
     }
 
     /// Routes every value currently available at the bounded ingress.

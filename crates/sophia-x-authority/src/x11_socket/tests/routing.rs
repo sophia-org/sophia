@@ -1493,7 +1493,7 @@ fn the_privileged_apply_clears_every_population_and_reports_them_together() {
             assert_eq!(coordinator.applied_control_epoch(), 1);
             broker
                 .report_control_transition(outcome)
-                .expect("the receipts to be delivered")
+                .unwrap_or_else(|(_, _)| panic!("the origin broker to accept its own batch"))
         })
         .expect("the gate");
 
@@ -1617,8 +1617,10 @@ fn a_publication_transition_preserves_grabs_and_frozen_input() {
             .expect("the publication to apply");
         assert!(outcome.applied());
         assert_eq!(
-            broker.report_control_transition(outcome),
-            Ok(0),
+            broker
+                .report_control_transition(outcome)
+                .unwrap_or_else(|(_, _)| panic!("the origin broker to accept its own batch")),
+            0,
             "a publication revokes nothing, so it owes no receipts"
         );
     })
@@ -1851,7 +1853,7 @@ fn gated_broker_with_grab(
                 owner: client.raw(),
                 window,
                 owner_events: false,
-                pointer_mode: 1,
+                pointer_mode: 0,
                 keyboard_mode: 1,
                 event_mask: u16::MAX,
                 xi_event_mask: [0; 8],
@@ -2000,13 +2002,23 @@ fn an_ungated_broker_refuses_a_privileged_transition_entirely() {
 #[test]
 fn one_brokers_receipts_cannot_be_delivered_by_another() {
     let (gate, mut instance, issuer) = control_gate();
-    let (broker, _deliveries, _lease) = gated_broker_with_grab(
+    let (mut broker, deliveries, _lease) = gated_broker_with_grab(
         &gate,
         NamespaceId::from_raw(33),
         XServerFrontendClientId(29),
         SurfaceId::new(43, 1),
         XResourceId::new(0x2000d0, 1),
     );
+    // Work frozen behind that grab, so the revoked batch is not empty and the
+    // return path has something to prove.
+    broker
+        .routed_input_sender()
+        .send(motion_to(
+            SurfaceId::new(43, 1),
+            XAuthorityInputDeliveryId::from_raw(80),
+        ))
+        .expect("an open coordinator to admit work");
+    assert_eq!(broker.route_pending(), Ok(1));
     // A second broker under the same coordinator, with a client whose
     // identifier collides, which is ordinary: client ids are unique per
     // frontend, not across frontends.
@@ -2042,12 +2054,26 @@ fn one_brokers_receipts_cannot_be_delivered_by_another() {
         })
         .expect("the gate");
 
-    assert!(
-        other_broker.report_control_transition(outcome).is_err(),
-        "receipts must be delivered by the broker that revoked the work"
-    );
+    let Err((_, returned)) = other_broker.report_control_transition(outcome) else {
+        panic!("receipts must be delivered by the broker that revoked the work");
+    };
     assert!(
         other_deliveries.try_recv().is_err(),
         "the other broker's clients must receive nothing"
+    );
+
+    // The refusal handed the batch back rather than consuming it, so the work
+    // it revoked is still answerable. Dropping it would turn a caller's
+    // mistake into receipts that no client ever gets.
+    assert_eq!(
+        broker
+            .report_control_transition(returned)
+            .unwrap_or_else(|(_, _)| panic!("the origin broker to accept its own batch")),
+        1,
+        "the origin must still be able to deliver what it revoked"
+    );
+    assert_eq!(
+        deliveries.recv().unwrap().outcome,
+        XAuthorityInputDeliveryOutcome::EpochRevoked
     );
 }
