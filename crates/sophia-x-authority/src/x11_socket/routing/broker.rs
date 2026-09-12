@@ -20,6 +20,8 @@ pub struct XServerFrontendRouteBroker {
     input_control_epoch: Arc<AtomicU64>,
     routed_input_capacity: usize,
     applied_input_control_epoch: u64,
+    /// Absent in ordinary mode, leaving every path below exactly as it was.
+    control_gate: Option<crate::ControlEpochGate>,
     route_lease_release_sender: SyncSender<XAuthorityRouteLeaseRelease>,
     route_lease_release_receiver: Receiver<XAuthorityRouteLeaseRelease>,
     control_sender: SyncSender<XAuthorityClientControlCommand>,
@@ -38,6 +40,26 @@ pub struct XAuthorityRoutedInputSender {
     control_epoch: Arc<AtomicU64>,
     capacity: usize,
     recovery: InputRecovery,
+    /// Absent in ordinary mode, where the bare counter is the whole answer.
+    control_gate: Option<crate::ControlEpochGate>,
+}
+
+#[cfg(unix)]
+impl XAuthorityRoutedInputSender {
+    /// Stamp work once, at enqueue.
+    ///
+    /// Without a coordinator this is the counter, exactly as before. With one,
+    /// a transition in flight yields no stamp at all, so the work is refused
+    /// here rather than queued against a revision that is being replaced.
+    fn stamp(&self) -> Result<crate::ControlStamp, ()> {
+        match &self.control_gate {
+            Some(gate) => gate.stamp().map_err(|_| ()),
+            None => Ok(crate::ControlStamp {
+                control_epoch: self.control_epoch.load(Ordering::Acquire),
+                publication: 0,
+            }),
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -46,8 +68,13 @@ impl XAuthorityRoutedInputSender {
         &self,
         route: XAuthorityRoutedInput,
     ) -> Result<(), std::sync::mpsc::SendError<XAuthorityRoutedInput>> {
+        let stamp = match self.stamp() {
+            Ok(stamp) => stamp,
+            Err(()) => return Err(std::sync::mpsc::SendError(route)),
+        };
         let envelope = XAuthorityEpochRoutedInput {
-            control_epoch: self.control_epoch.load(Ordering::Acquire),
+            control_epoch: stamp.control_epoch,
+            publication: stamp.publication,
             route,
         };
         if !self.recovery.admit(&envelope.route, envelope.control_epoch, Instant::now()) {
@@ -63,8 +90,13 @@ impl XAuthorityRoutedInputSender {
         &self,
         route: XAuthorityRoutedInput,
     ) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityRoutedInput>> {
+        let stamp = match self.stamp() {
+            Ok(stamp) => stamp,
+            Err(()) => return Err(std::sync::mpsc::TrySendError::Full(route)),
+        };
         let envelope = XAuthorityEpochRoutedInput {
-            control_epoch: self.control_epoch.load(Ordering::Acquire),
+            control_epoch: stamp.control_epoch,
+            publication: stamp.publication,
             route,
         };
         if !self.recovery.admit(&envelope.route, envelope.control_epoch, Instant::now()) {
@@ -369,6 +401,7 @@ impl XServerFrontendRouteBroker {
         let (raster_sender, raster_receiver) = sync_channel(capacities.control.get());
         let input_authority = Arc::new(Mutex::new(crate::XInputAuthorityState::default()));
         Self {
+            control_gate: None,
             registry: XServerFrontendRouteRegistry {
                 // Ingress + frozen + every possible client's private queue and
                 // active writer. Terminal receipts retain their credit until
@@ -433,6 +466,7 @@ impl XServerFrontendRouteBroker {
 
     pub fn routed_input_sender(&self) -> XAuthorityRoutedInputSender {
         XAuthorityRoutedInputSender {
+            control_gate: self.control_gate.clone(),
             sender: self.routed_input_sender.clone(),
             control_epoch: self.input_control_epoch.clone(),
             capacity: self.routed_input_capacity,
@@ -492,6 +526,17 @@ impl XServerFrontendRouteBroker {
         self.source_payload_receiver.recv_timeout(timeout)
     }
 
+    /// Put this broker under a coordinator.
+    ///
+    /// Absent one, every path here is what it was: the counter is the whole
+    /// answer and publication plays no part. Present, stamping and admission
+    /// both defer to it, and a transition in flight refuses new work at
+    /// enqueue rather than queueing it against a revision being replaced.
+    pub fn under_control_gate(mut self, gate: crate::ControlEpochGate) -> Self {
+        self.control_gate = Some(gate);
+        self
+    }
+
     /// Routes every value currently available at the bounded ingress.
     pub fn route_pending(&mut self) -> Result<usize, XServerFrontendRouteError> {
         let input_control_epoch = self.input_control_epoch.load(Ordering::Acquire);
@@ -512,10 +557,23 @@ impl XServerFrontendRouteBroker {
             }
             match self.routed_input_receiver.try_recv() {
                 Ok(route) => {
-                    match self
-                        .registry
-                        .route_engine_input(route.route, route.control_epoch, self.input_control_epoch.load(Ordering::Acquire))
-                    {
+                    let admitted = match &self.control_gate {
+                        Some(gate) => gate
+                            .admits(crate::ControlStamp {
+                                control_epoch: route.control_epoch,
+                                publication: route.publication,
+                            })
+                            .is_ok(),
+                        None => {
+                            route.control_epoch
+                                == self.input_control_epoch.load(Ordering::Acquire)
+                        }
+                    };
+                    match self.registry.route_engine_input_admitted(
+                        route.route,
+                        route.control_epoch,
+                        admitted,
+                    ) {
                         Ok(()) => routed = routed.saturating_add(1),
                         Err(
                             XServerFrontendRouteError::UnknownSurface { .. }

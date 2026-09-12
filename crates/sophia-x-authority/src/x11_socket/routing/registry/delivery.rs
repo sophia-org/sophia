@@ -68,10 +68,29 @@ impl XServerFrontendRouteRegistry {
         route_control_epoch: u64,
         current_control_epoch: u64,
     ) -> Result<(), XServerFrontendRouteError> {
+        self.route_engine_input_admitted(
+            route,
+            route_control_epoch,
+            route_control_epoch == current_control_epoch,
+        )
+    }
+
+    /// Route an event whose admission has already been decided.
+    ///
+    /// The decision is a parameter because comparing two epochs is only how it
+    /// is reached without a coordinator. With one, admission also depends on
+    /// the publication and on whether a transition is in flight, none of which
+    /// a single equality can express.
+    fn route_engine_input_admitted(
+        &self,
+        route: XAuthorityRoutedInput,
+        route_control_epoch: u64,
+        admitted: bool,
+    ) -> Result<(), XServerFrontendRouteError> {
         if !self.input_recovery.begin_routing(route.delivery) { return Ok(()); }
         // An event stamped with a closed epoch is one the session revoked
         // between routing and delivery, not one that failed to route.
-        if route_control_epoch != current_control_epoch {
+        if !admitted {
             // Preserve the known target owner in the receipt without binding
             // it as the receiving client: grab routing never happened.
             let client = self.surfaces.lock()

@@ -442,3 +442,55 @@ pub fn next_transition_identity(current: u64) -> Result<u64, ControlEpochRefusal
         .checked_add(1)
         .ok_or(ControlEpochRefusal::TransitionIdentitiesExhausted)
 }
+
+/// A coordinator shared between the thread that drives transitions and the
+/// threads that stamp and admit work against them.
+///
+/// Enqueue and delivery run on different threads from the Session loop that
+/// requests a transition, so the coordinator they consult has to be the same
+/// one, not a copy that could describe a different moment.
+#[derive(Clone, Debug)]
+pub struct ControlEpochGate {
+    coordinator: std::sync::Arc<std::sync::Mutex<ControlEpochCoordinator>>,
+}
+
+impl ControlEpochGate {
+    pub fn new(coordinator: ControlEpochCoordinator) -> Self {
+        Self {
+            coordinator: std::sync::Arc::new(std::sync::Mutex::new(coordinator)),
+        }
+    }
+
+    /// The stamp new work should carry, or a refusal.
+    ///
+    /// A poisoned guard refuses rather than reporting a value: the coordinator
+    /// behind it is of unknown currency, and admitting work against an unknown
+    /// transition state is the failure this type exists to prevent.
+    pub fn stamp(&self) -> Result<ControlStamp, ControlEpochRefusal> {
+        self.coordinator
+            .lock()
+            .map_err(|_| ControlEpochRefusal::TransitionPending)?
+            .stamp()
+    }
+
+    /// Whether work carrying this stamp may be delivered now.
+    pub fn admits(&self, stamp: ControlStamp) -> Result<(), ControlEpochRefusal> {
+        self.coordinator
+            .lock()
+            .map_err(|_| ControlEpochRefusal::TransitionPending)?
+            .admits(stamp)
+    }
+
+    /// Drive a transition. Used by whoever owns the authority, not by the
+    /// threads that merely stamp and admit.
+    pub fn with<R>(
+        &self,
+        act: impl FnOnce(&mut ControlEpochCoordinator) -> R,
+    ) -> Result<R, ControlEpochRefusal> {
+        let mut coordinator = self
+            .coordinator
+            .lock()
+            .map_err(|_| ControlEpochRefusal::TransitionPending)?;
+        Ok(act(&mut coordinator))
+    }
+}

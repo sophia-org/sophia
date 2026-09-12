@@ -1205,3 +1205,151 @@ fn pending_control_gets_the_next_output_lock() {
     control.join().expect("control owner");
     normal.join().expect("normal owner");
 }
+
+/// A coordinator over a fresh authority, plus the issuer that drives it.
+fn control_gate() -> (
+    crate::ControlEpochGate,
+    sophia_input_authority::AuthorityInstance,
+    sophia_input_authority::IssuerHandle,
+) {
+    let binding = sophia_input_authority::SeatBinding::new(
+        sophia_input_authority::InstanceId::new(1),
+        sophia_protocol::SeatId::from_raw(1),
+    );
+    let (instance, issuer, _submit) = sophia_input_authority::AuthorityInstance::new(
+        binding,
+        sophia_input_authority::Capacity::PLANNED,
+        9,
+    )
+    .expect("planned capacity");
+    let coordinator = crate::ControlEpochCoordinator::derive(&instance, &issuer)
+        .expect("a published revision to derive from");
+    (crate::ControlEpochGate::new(coordinator), instance, issuer)
+}
+
+fn motion_to(surface: SurfaceId, delivery: XAuthorityInputDeliveryId) -> XAuthorityRoutedInput {
+    XAuthorityRoutedInput {
+        request: RoutedInputRequest {
+            serial: 1,
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(2),
+            time_msec: 1,
+            target_surface: surface,
+            global_position: Point::default(),
+            local_position: Point::default(),
+            kind: InputEventKind::PointerMotion,
+        },
+        route_lease: None,
+        delivery: Some(delivery),
+        mode: XAuthorityRoutedInputMode::Deliver,
+    }
+}
+
+#[test]
+fn a_transition_in_flight_refuses_to_stamp_new_routed_input() {
+    let namespace = NamespaceId::from_raw(24);
+    let client = XServerFrontendClientId(20);
+    let surface = SurfaceId::new(34, 1);
+    let window = XResourceId::new(0x200040, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, mut instance, issuer) = control_gate();
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+    let (_registration, _channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    let sender = broker.routed_input_sender();
+
+    // Open, so work is stamped and accepted.
+    sender
+        .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(50)))
+        .expect("an open coordinator to admit work");
+
+    gate.with(|coordinator| {
+        coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("the transition to be requested");
+    })
+    .expect("the gate");
+
+    // Closed. There is no stamp to give, so the work is refused here rather
+    // than queued against a revision that is being replaced.
+    assert!(
+        sender
+            .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(51)))
+            .is_err(),
+        "a transition in flight must refuse new routed input"
+    );
+}
+
+#[test]
+fn input_stamped_before_a_transition_is_not_delivered_after_it() {
+    let namespace = NamespaceId::from_raw(25);
+    let client = XServerFrontendClientId(21);
+    let surface = SurfaceId::new(35, 1);
+    let window = XResourceId::new(0x200050, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, delivery_receiver) = channel();
+    let (gate, mut instance, issuer) = control_gate();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+    let (_registration, channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    let sender = broker.routed_input_sender();
+    let delivery = XAuthorityInputDeliveryId::from_raw(52);
+    sender
+        .send(motion_to(surface, delivery))
+        .expect("an open coordinator to admit work");
+
+    // A whole transition completes between stamping and routing.
+    gate.with(|coordinator| {
+        let token = coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("the transition to be requested");
+        coordinator
+            .apply(token, crate::TransitionInstallation::security_control())
+            .expect("the transition to apply");
+        coordinator
+            .reopen(&mut instance, &issuer, 1)
+            .expect("the transition to reopen");
+    })
+    .expect("the gate");
+
+    assert_eq!(broker.route_pending(), Ok(1));
+    // The stamp it carried is the one it was given, and that revision is gone.
+    assert_eq!(channels.input.try_recv(), Err(TryRecvError::Empty));
+    assert_eq!(
+        delivery_receiver.recv().unwrap(),
+        XAuthorityClientInputDelivery {
+            client,
+            delivery,
+            outcome: XAuthorityInputDeliveryOutcome::EpochRevoked,
+        }
+    );
+}

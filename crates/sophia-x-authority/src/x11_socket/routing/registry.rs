@@ -93,6 +93,8 @@ struct XDeferredRoutedInput {
 #[derive(Clone, Debug)]
 struct XAuthorityEpochRoutedInput {
     control_epoch: u64,
+    /// Zero when no coordinator is present, where publication plays no part.
+    publication: u64,
     route: XAuthorityRoutedInput,
 }
 
