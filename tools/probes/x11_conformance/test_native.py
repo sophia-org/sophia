@@ -1,10 +1,16 @@
 import copy
 import unittest
 
-from native import evaluate, test_command, verdict
+from native import aggregate, evaluate, test_command, verdict
 
 
 class NativeAccountingTests(unittest.TestCase):
+    def test_every_test_in_an_obligation_must_execute_and_pass(self):
+        self.assertEqual(aggregate([])['status'], 'NORESULT')
+        self.assertEqual(aggregate([{'status': 'PASS'}, {'status': 'PASS'}])['status'], 'PASS')
+        for status in ('NORESULT', 'TIMEOUT', 'FAIL', 'SKIP'):
+            self.assertEqual(aggregate([{'status': 'PASS'}, {'status': status}])['status'], 'FAIL')
+
     def test_integration_target_is_explicit_and_name_not_prefixed(self):
         command = test_command({'package': 'sophia-input-authority',
                                 'target': {'kind': 'test', 'name': 'ledger'},

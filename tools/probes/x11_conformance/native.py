@@ -30,13 +30,20 @@ def load(path):
     manifest = json.loads(path.read_text())
     obligations = manifest['obligations']
     ids = [item['id'] for item in obligations]
-    if manifest['schema'] != 1 or not ids or len(ids) != len(set(ids)):
+    if (manifest['schema'] != 1 or not ids or len(ids) != len(set(ids))
+            or any(not re.fullmatch(r'[a-z0-9_]+', name) for name in ids)):
         raise ValueError('empty, duplicate or unsupported native obligations')
     for item in obligations:
         if item.get('mandatory') is not True:
             raise ValueError('native obligations may not be silently optional')
-        implementation = item.get('implementation')
-        if implementation is not None:
+        value = item.get('implementation')
+        implementations = [] if value is None else value if isinstance(value, list) else [value]
+        if value is not None and not implementations:
+            raise ValueError('empty native implementation list')
+        identities = [json.dumps(entry, sort_keys=True) for entry in implementations]
+        if len(identities) != len(set(identities)):
+            raise ValueError('duplicate tests within a native obligation')
+        for implementation in implementations:
             if set(implementation) != {'package', 'target', 'test'}:
                 raise ValueError('native implementation requires package, target and exact test')
             if not all(re.fullmatch(r'[A-Za-z0-9_:-]+', implementation[key])
@@ -55,6 +62,17 @@ def test_command(implementation):
     flags = ['--lib'] if target['kind'] == 'lib' else ['--test', target['name']]
     return ['cargo', 'test', '--offline', '-p', implementation['package'], *flags,
             implementation['test'], '--', '--exact', '--test-threads=1']
+
+
+def aggregate(evidence):
+    if not evidence:
+        return {'status': 'NORESULT', 'detail': 'no native tests executed'}
+    failed = [test for test in evidence if test['status'] != 'PASS']
+    result = {'status': 'FAIL' if failed else 'PASS', 'tests': evidence}
+    if failed:
+        result['detail'] = '; '.join(f'{test["status"]}: {test.get("detail", "")}'
+                                     for test in failed)
+    return result
 
 
 def evaluate(manifest, results):
@@ -88,23 +106,32 @@ def main():
     environment = clean_environment()
     environment['CARGO_TARGET_DIR'] = str(args.target_dir.resolve())
     results = []
+    executions = {}
     for item in manifest['obligations']:
         implementation = item.get('implementation')
         if implementation is None:
             result = {'status': 'NORESULT', 'detail': 'mandatory obligation has no implementation'}
         else:
-            command = test_command(implementation)
-            status, stdout, stderr = bounded(command, args.timeout, cwd=ROOT, env=environment,
-                                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            log = stdout + stderr
-            (args.output / f'{item["id"]}.log').write_bytes(log)
-            result = verdict(status, stdout.decode(errors='replace'), implementation['test'])
-            result['command'] = command
-            result['output_sha256'] = digest(args.output / f'{item["id"]}.log')
+            implementations = implementation if isinstance(implementation, list) else [implementation]
+            evidence = []
+            for index, test in enumerate(implementations):
+                identity = json.dumps(test, sort_keys=True)
+                if identity not in executions:
+                    command = test_command(test)
+                    status, stdout, stderr = bounded(command, args.timeout, cwd=ROOT, env=environment,
+                                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    log = args.output / f'{item["id"]}-{index}.log'
+                    log.write_bytes(stdout + stderr)
+                    execution = verdict(status, stdout.decode(errors='replace'), test['test'])
+                    execution.update(command=command, output_sha256=digest(log), output=log.name)
+                    executions[identity] = execution
+                evidence.append(executions[identity])
+            result = aggregate(evidence)
         result['case'] = item['id']
         results.append(result)
         print(f'{item["id"]}: {result["status"]}', flush=True)
     report = evaluate(manifest, results)
+    report['test_executions'] = len(executions)
     report['manifest_sha256'] = digest(args.manifest)
     report['source_commit'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
                                                      text=True).strip()
