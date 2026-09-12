@@ -42,6 +42,8 @@ pub enum ControlEpochRefusal {
     WrongTransition,
     /// Transition identities are exhausted; none may be reused.
     TransitionIdentitiesExhausted,
+    /// Coordinator incarnations are exhausted; none may be reused.
+    CoordinatorIncarnationsExhausted,
     /// The state this kind of transition requires was not installed.
     NotInstalled { kind: TransitionKind },
     /// The common authority refused the transition itself.
@@ -77,6 +79,9 @@ impl fmt::Display for ControlEpochRefusal {
             ),
             Self::TransitionIdentitiesExhausted => {
                 write!(formatter, "control transition identities are exhausted")
+            }
+            Self::CoordinatorIncarnationsExhausted => {
+                write!(formatter, "control coordinator incarnations are exhausted")
             }
             Self::NotInstalled { kind } => {
                 write!(
@@ -226,7 +231,7 @@ impl ControlEpochCoordinator {
             committed_publication: revision.publication,
             pending: None,
             applied_transition: None,
-            incarnation: COORDINATOR_INCARNATIONS.fetch_add(1, Ordering::Relaxed),
+            incarnation: allocate_incarnation()?,
             next_transition: 1,
         })
     }
@@ -411,6 +416,19 @@ impl ControlEpochCoordinator {
         }
         Ok(())
     }
+}
+
+/// Take the next coordinator incarnation, or refuse.
+///
+/// Wrapping here would eventually hand a new coordinator an incarnation an
+/// older one still stamps its tokens with, which is exactly the confusion the
+/// incarnation exists to prevent.
+fn allocate_incarnation() -> Result<u64, ControlEpochRefusal> {
+    COORDINATOR_INCARNATIONS
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+            current.checked_add(1)
+        })
+        .map_err(|_| ControlEpochRefusal::CoordinatorIncarnationsExhausted)
 }
 
 /// The identity a transition after this one would carry.
