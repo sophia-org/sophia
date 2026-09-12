@@ -353,3 +353,42 @@ Clippy and the layout gate. Evidence is
 completion, attempt-retention and connection-binding reviews found no remaining
 blocker in these primitives. This does not close the production executor,
 notifier, receipt, lock-participant or Session-currency obligations.
+
+
+### Integration checkpoint after the shell-content foundation
+
+The private branch was rebased onto `deb3dab0` as `6171c351`; earlier evidence
+keeps its original commit and archive identities. The fresh native profile at
+`/tmp/sophia-native-input-evidence/native-m3-6171c351` reports **17 PASS and
+19 NORESULT** across 36 obligations. Its mapped common tests pass, but the
+production executor, Session, writer and XTEST obligations remain open under
+t093. A preceding restricted-tool invocation could not send on a fabricated
+socket pair; its failure log is retained separately from the permitted run.
+
+Independent coordinator review of `2c3e3a5d` found that a superseded
+installation report could satisfy a later transition, and that mismatched
+coordinator/common starting revisions turned a publication into revocation.
+The desired-safety run was one positive PASS and three FAIL, retained in
+`/tmp/sophia-coordinator-review-2c3e3a5d/REVIEW.md`. Transition-counter saturation
+was also a source finding, not a practical exhaustion reproduction. Claude's
+later repairs remain subject to production integration review; sequencing tests
+alone do not prove that grab, pointer and frozen populations were cleared.
+
+Common authority now exposes an issuer-checked `published_revision` read for
+coordinator construction under the common guard. It refuses during a pending
+transition instead of returning the previous publication as usable. The returned
+revision is observation, not authorization or a promise of future currency.
+Two regressions cover both transition kinds and an identically bound foreign
+issuer. This does not replace final execution validation.
+
+The contained canonical run at `2fc6def5` passed workspace tests, Clippy and
+layout, then failed the bounded-xterm orphan regression. Tracing proved that
+xterm could exit before its command sampled PPID, leaving the command watching
+namespace init and retaining the caller's pipe for the full workload. This is
+a probe-lifecycle defect, not an input-runtime or hardware observation.
+The repair records the outer launcher's PID and starttime before spawning and
+checks that identity, including zombie state. A deterministic regression starts
+the command only after reparenting. Retained isolated evidence in
+`.artifacts/offline-xterm-fix-6171c351` reports original FAIL in 22.142s, fixed
+PASS in 2.166s, and restored-PPID mutant FAIL in 22.197s. No full canonical PASS
+is inferred from that targeted repair. Render proofs remain NOT_RUN.

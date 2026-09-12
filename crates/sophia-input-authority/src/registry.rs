@@ -93,6 +93,15 @@ pub struct ExecutionContext {
     pub request: u64,
 }
 
+/// The committed revision read while the caller holds the common guard.
+/// This is a construction/observation value, not a capability or a promise
+/// that the revision will remain current after that guard is released.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PublishedRevision {
+    pub control_epoch: u64,
+    pub publication: u64,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RetiredDebt {
     pub owed_releases: usize,
@@ -100,6 +109,22 @@ pub struct RetiredDebt {
 }
 
 impl AuthorityInstance {
+    /// Derive a coordinator's initial state from its authority. Never expose
+    /// the previous publication as usable while a transition is in progress.
+    pub fn published_revision(
+        &self,
+        issuer: &IssuerHandle,
+    ) -> Result<PublishedRevision, RegistrationError> {
+        self.check_issuer(issuer)?;
+        if self.pending_revision.is_some() {
+            return Err(RegistrationError::RoutingUnavailable);
+        }
+        Ok(PublishedRevision {
+            control_epoch: self.epoch,
+            publication: self.publication,
+        })
+    }
+
     pub fn new(
         binding: SeatBinding,
         capacity: Capacity,

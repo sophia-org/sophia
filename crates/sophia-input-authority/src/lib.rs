@@ -25,5 +25,5 @@ pub use identity::{
 pub use ledger::{Applied, ReleaseOutcome, SettlementBit};
 pub use registry::{
     AttemptClaim, AttemptToken, AuthorityInstance, ExecutionContext, ExecutionPermit,
-    RegistrationError, RequestCompletion, RequestToken, RetiredDebt,
+    PublishedRevision, RegistrationError, RequestCompletion, RequestToken, RetiredDebt,
 };

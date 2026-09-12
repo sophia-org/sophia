@@ -382,6 +382,22 @@
             "name": "pool_safety"
           },
           "test": "old_epoch_capability_cannot_release_after_epoch_advance"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "publication_observation"
+          },
+          "test": "a_pending_transition_never_exposes_the_previous_published_revision"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "publication_observation"
+          },
+          "test": "an_identically_bound_foreign_issuer_cannot_read_coordinator_state"
         }
       ]
     },
