@@ -1,0 +1,150 @@
+{
+  "schema": 1,
+  "scope": "Private native authority; fixtures with physical origin are headless models, not physical acceptance.",
+  "obligations": [
+    {
+      "id": "native_identity",
+      "description": "Opaque source ownership, origin, instance and seat validation",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_first_press",
+      "description": "First press and last release reconcile authority and recorded recipient",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_overlap",
+      "description": "Two synthetic holders preserve the surviving contribution",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_physical_overlap",
+      "description": "Registered fixture physical source survives synthetic retirement (headless model)",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_duplicate",
+      "description": "Duplicate press and stale release do not mutate another hold",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_revoke_pending",
+      "description": "Revocation before final guard discards pending work without effects",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_revoke_applied",
+      "description": "Revocation after authority application preserves debt before writer completion",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_publication",
+      "description": "Publication transition refuses old focus/seat snapshot during the gap",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_thaw",
+      "description": "Thawed work revalidates generation, epoch and publication",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_reconnect",
+      "description": "New connection or grant generation inherits no queued work or holds",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_retirement",
+      "description": "Retirement and tombstones persist until native and recipient obligations settle",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_stale_release",
+      "description": "Delayed old writer release cannot clear a newer recipient hold",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_recipient_removal",
+      "description": "Route removal while recipient lives retains targeted debt",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_debt_capacity",
+      "description": "More than64 simultaneous debts remain represented without retirement allocation",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_completion",
+      "description": "Reserved completion survives wake coalescing and grant-slot retirement",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_capacity",
+      "description": "Seventeenth grant and full domain refuse before any side effect",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_protected_action",
+      "description": "Synthetic cannot supply protected chord and cannot taint sufficient fixture physical chord",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_executor_order",
+      "description": "Key, pointer, repeat and cleanup share instance execution order",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_executor_liveness",
+      "description": "Stuck before guard, inside execution and after commit fail owned instance without replay",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_internal_wait",
+      "description": "Delay, frozen work, scheduler and control waits never accrue recipient nonresponse",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_transport_wait",
+      "description": "Only actual EAGAIN/POLLOUT blockage accumulates toward six-second recovery",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_stalled_reader",
+      "description": "Real private stalled socket reader is contained while healthy peer continues",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_lock_order",
+      "description": "Guarded APIs and contending writers preserve selected lock order",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_no_fallback",
+      "description": "Unavailable or revoked instance authority refuses without ambient backend acquisition",
+      "mandatory": true,
+      "implementation": null
+    }
+  ]
+}

@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import secrets
 import time
 import traceback
 
@@ -22,7 +23,7 @@ ROOT = HERE.parents[2]
 
 def clean_environment():
     return {k: v for k, v in os.environ.items()
-            if not k.startswith(('SOPHIA_', 'HAGIA_'))
+            if not k.startswith(('SOPHIA_', 'HAGIA_', 'DBUS_', 'XDG_'))
             and k not in ('DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'WAYLAND_SOCKET',
                           'PYTHONOPTIMIZE')}
 
@@ -52,12 +53,22 @@ def bounded(command, timeout, **kwargs):
             return 124, stdout, stderr
 
 
-def one_case(host, manifest, case, order, timeout, log):
+def one_case(host, manifest, case, order, timeout, log, profile='core'):
     # Private directory has mode 0700, no global /tmp/.X11-unix listener.
     with tempfile.TemporaryDirectory(prefix='sophia-x11-') as tmp:
         sock = Path(tmp) / 'authority.sock'
+        host_command = [str(host), str(sock)]
+        authorization = None
+        if profile == 'xtest':
+            specification = next(item for item in manifest['cases'] if item['id'] == case)
+            authorization = Path(tmp) / 'authorization.json'
+            authorization.write_text(json.dumps({'auth_name': 'SOPHIA-PRIVATE-INPUT-1',
+                                                 'auth_data_hex': secrets.token_hex(32)}))
+            authorization.chmod(0o600)
+            host_command += ['--private-input', specification.get('fixture', 'enabled'),
+                             '--authorization-file', str(authorization)]
         with log.open('wb') as output:
-            server = subprocess.Popen([str(host), str(sock)], env=clean_environment(),
+            server = subprocess.Popen(host_command, env=clean_environment(),
                                       stdout=output, stderr=output, start_new_session=True)
             try:
                 ready_deadline = time.monotonic() + 5
@@ -67,12 +78,18 @@ def one_case(host, manifest, case, order, timeout, log):
                     if time.monotonic() >= ready_deadline:
                         return {'status': 'TIMEOUT', 'detail': 'host bind deadline'}
                     time.sleep(0.01)
-                # A separate client process enforces even non-socket hangs.
-                command = [sys.executable, '-B', str(HERE / 'run.py'), '--child', str(sock),
-                           '--case', case, '--order', order, '--timeout', str(timeout)]
-                status, stdout, stderr = bounded(command, timeout + 1, env=clean_environment(),
-                                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                result = decode_result(status, stdout, stderr)
+                if profile == 'xtest':
+                    # Already inside the per-case supervised namespace process.
+                    # Its external watchdog bounds even a nonsocket client hang.
+                    _, implementations = profile_definition(profile)
+                    result = execute_client(implementations, manifest, sock, case, order,
+                                            timeout, authorization, profile)
+                else:
+                    command = [sys.executable, '-B', str(HERE / 'run.py'), '--child', str(sock),
+                               '--case', case, '--order', order, '--timeout', str(timeout)]
+                    status, stdout, stderr = bounded(command, timeout + 1, env=clean_environment(),
+                                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    result = decode_result(status, stdout, stderr)
                 if server.poll() is not None:
                     return {'status': 'FAIL', 'detail': f'host exited unexpectedly {server.returncode}'}
                 return result
@@ -90,6 +107,62 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def execute_client(implementations, manifest, sock, case, order, timeout,
+                   authorization_path=None, profile='core'):
+    try:
+        context = {'socket': sock, 'order': '<' if order == 'little' else '>',
+                   'deadline': time.monotonic() + timeout, 'case': case,
+                   'extensions': manifest['extensions'],
+                   'fixture_absence': manifest.get('fixture_absence', []),
+                   'denied_extensions': manifest.get('intentional_absence', [])}
+        if authorization_path:
+            authorization = json.loads(authorization_path.read_text())
+            context.update(auth_name=authorization['auth_name'].encode('ascii'),
+                           auth_data=bytes.fromhex(authorization['auth_data_hex']))
+        if profile == 'xtest':
+            specification = next(item for item in manifest['cases'] if item['id'] == case)
+            context['xtest_enabled'] = specification.get('fixture', 'enabled') == 'enabled'
+            context['known_xtest_major'] = 146
+        implementations[case](context)
+        return {'status': 'PASS'}
+    except TimeoutError as error:
+        return {'status': 'TIMEOUT', 'detail': str(error)}
+    except Exception as error:
+        return {'status': 'FAIL', 'detail': f'{type(error).__name__}: {error}',
+                'traceback': traceback.format_exc(limit=5)}
+
+
+def profile_definition(profile):
+    if profile == 'core':
+        implementations = CASES
+        manifest = load_manifest(HERE / 'manifest.json')
+    else:
+        from xtest_cases import CASES as implementations
+        manifest = load_manifest(HERE / 'xtest_manifest.json')
+    if set(implementations) != {case['id'] for case in manifest['cases']}:
+        raise ValueError('implementation/manifest drift')
+    return manifest, implementations
+
+
+def isolated_case(host, case, order, timeout, log):
+    from isolation import Mount, launch
+    with tempfile.TemporaryDirectory(prefix='sophia-input-report-') as temporary:
+        output = Path(temporary)
+        command = ['/usr/bin/python3', '-B',
+                   '/work/repo/tools/probes/x11_conformance/run.py',
+                   '--inside', '--activation-fd', '{activation_fd}', '--profile', 'xtest',
+                   '--host', '/work/host', '--output', '/work/results',
+                   '--case', case, '--order', order, '--timeout', str(timeout)]
+        result = launch(command, mounts=[Mount(HERE, '/work/repo/tools/probes/x11_conformance'),
+                                        Mount(host, '/work/host'),
+                                        Mount(output, '/work/results', writable=True)],
+                        timeout=timeout + 10)
+        host_log = output / 'host.log'
+        log.write_bytes(host_log.read_bytes() if host_log.exists() else result.stderr)
+        log.with_suffix('.adapter.log').write_bytes(result.stderr)
+        return decode_result(result.returncode, result.stdout, result.stderr)
+
+
 def main():
     if not __debug__:
         raise SystemExit('conformance assertions require Python without -O')
@@ -97,40 +170,48 @@ def main():
     parser.add_argument('--host', type=Path)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--timeout', type=float, default=3)
+    parser.add_argument('--profile', choices=['core', 'xtest'], default='core')
     parser.add_argument('--child', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--case', help=argparse.SUPPRESS)
     parser.add_argument('--order', choices=['little', 'big'], help=argparse.SUPPRESS)
+    parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--activation-fd', type=int, default=-1, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not 0 < args.timeout <= 60:
         parser.error('timeout must be in (0, 60] seconds')
-    manifest = load_manifest(HERE / 'manifest.json')
-    assert set(CASES) == {case['id'] for case in manifest['cases']}, 'implementation/manifest drift'
+    if args.child and args.profile == 'xtest':
+        parser.error('XTEST clients require supervised private entry')
+    # Validate the supervised entry before any fixture can create a socket.
+    if args.inside:
+        from isolation import validate_entry
+        validate_entry(args.activation_fd)
+        if args.profile != 'xtest' or args.child or not all((args.host, args.output, args.case, args.order)):
+            parser.error('private entry requires an exact XTEST fixture')
+    manifest, implementations = profile_definition(args.profile)
+    if args.inside:
+        result = one_case(args.host, manifest, args.case, args.order, args.timeout,
+                          args.output / 'host.log', profile='xtest')
+        print(json.dumps(result))
+        return 0 if result['status'] == 'PASS' else 1
     if args.child:
-        try:
-            CASES[args.case]({'socket': args.child, 'order': '<' if args.order == 'little' else '>',
-                             'deadline': time.monotonic() + args.timeout, 'case': args.case,
-                             'extensions': manifest['extensions'],
-                             'fixture_absence': manifest['fixture_absence'],
-                             'denied_extensions': manifest['intentional_absence']})
-            result = {'status': 'PASS'}
-        except TimeoutError as error:
-            result = {'status': 'TIMEOUT', 'detail': str(error)}
-        except Exception as error:
-            result = {'status': 'FAIL', 'detail': f'{type(error).__name__}: {error}',
-                      'traceback': traceback.format_exc(limit=5)}
+        result = execute_client(implementations, manifest, args.child, args.case,
+                                args.order, args.timeout)
         print(json.dumps(result))
         return 0 if result['status'] == 'PASS' else 1
     if not args.host or not args.output:
         parser.error('--host and --output are required; --output must be new')
     host = args.host.resolve(strict=True)
-    inventory = check_inventory(ROOT, manifest)
+    inventory = check_inventory(ROOT, manifest) if args.profile == 'core' else None
     args.output.mkdir(parents=True, exist_ok=False)
     results = []
     for case in manifest['cases']:
         for order in manifest['byte_orders']:
             try:
-                result = one_case(host, manifest, case['id'], order, args.timeout,
-                                  args.output / f'{case["id"]}-{order}.host.log')
+                log = args.output / f'{case["id"]}-{order}.host.log'
+                if args.profile == 'core':
+                    result = one_case(host, manifest, case['id'], order, args.timeout, log)
+                else:
+                    result = isolated_case(host, case['id'], order, args.timeout, log)
             except Exception as error:
                 result = {'status': 'FAIL', 'detail': f'harness/host failure: {type(error).__name__}: {error}'}
             result.update(case=case['id'], byte_order=order)

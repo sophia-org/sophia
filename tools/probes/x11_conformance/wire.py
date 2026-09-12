@@ -9,17 +9,28 @@ import time
 
 
 class Client:
-    def __init__(self, path, order, deadline):
+    def __init__(self, path, order, deadline, *, auth_name=b'', auth_data=b''):
+        if len(auth_name) > 65535 or len(auth_data) > 65535:
+            raise ValueError('X11 setup authorization field exceeds CARD16')
         self.order, self.deadline = order, deadline
         self.sock = socket.socket(socket.AF_UNIX)
+        try:
+            self.setup(path, auth_name, auth_data)
+        except BaseException:
+            self.sock.close()
+            raise
+
+    def setup(self, path, auth_name, auth_data):
         self.sock.settimeout(self.remaining())
         self.sock.connect(str(path))
         self.sequence, self.events = 0, []
-        self.sock.sendall(bytes([ord('l' if order == '<' else 'B'), 0]) +
-                          self.pack('HHHHH', 11, 0, 0, 0, 0))
+        self.sock.sendall(bytes([ord('l' if self.order == '<' else 'B'), 0]) +
+                          self.pack('HHHHH', 11, 0, len(auth_name), len(auth_data), 0) +
+                          auth_name + bytes(-len(auth_name) % 4) +
+                          auth_data + bytes(-len(auth_data) % 4))
         prefix = self.read(8)
         data = self.read(self.u16(prefix, 6) * 4)
-        assert prefix[0] == 1, f'X11 setup failed: {prefix[0]} {data!r}'
+        assert prefix[0] == 1, f'X11 setup failed with status {prefix[0]}'
         assert self.u16(prefix, 2) == 11
         self.base, self.mask = self.unpack('II', data, 4)
         vendor_len = self.u16(data, 16)
