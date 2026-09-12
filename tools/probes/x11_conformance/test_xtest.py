@@ -6,6 +6,7 @@ import struct
 import time
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import report
 import xtest_cases as cases
@@ -19,7 +20,157 @@ class PackingClient:
         return struct.pack(self.order + fmt, *values)
 
 
+class ScriptedClient(PackingClient):
+    """A fabricated peer; no pathname or network connection exists."""
+    root = 11
+
+    def __init__(self):
+        super().__init__()
+        self.events = []
+        self.deadline = 10
+        self.sock = SimpleNamespace(shutdown=lambda _: None, recv=lambda _: b'',
+                                    settimeout=lambda _: None)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def send(self, *args, **kwargs):
+        return 1
+
+    def sync(self):
+        pass
+
+    def remaining(self):
+        return self.deadline - time.monotonic()
+
+    def completion(self, *args, **kwargs):
+        pass
+
+    def u32(self, data, offset):
+        return struct.unpack_from('<I', data, offset)[0]
+
+    def record(self):
+        raise AssertionError('script has no additional input record')
+
+    def event(self, kind, predicate):
+        # Use the actual client's backlog search, including its ability to
+        # reorder observations when asked for one event kind at a time.
+        return cases.Client.event(self, kind, predicate)
+
+
+def input_record(kind, key=38):
+    event = bytearray(32)
+    event[0], event[1] = kind, key
+    struct.pack_into('<II', event, 8, 11, 22)
+    return bytes(event)
+
+
 class XTestClientTests(unittest.TestCase):
+    def run_bad_delay(self, bug, half_close=False):
+        observer, injector, peer = ScriptedClient(), ScriptedClient(), ScriptedClient()
+        clock, due, pending = [0.0], [0.0], []
+
+        def fake(c, opcode, kind, **fields):
+            if kind == 2:
+                due[0] = clock[0] + fields.get('delay', 0) / 1000
+            event = input_record(kind)
+            if bug == 'early-effect' or (kind == 3 and not pending):
+                observer.events.append(event)
+            else:
+                pending.append(event)
+
+        def complete(*args, **kwargs):
+            if bug != 'half-close-ignores-delay':
+                clock[0] = max(clock[0], due[0])
+            observer.events.extend(pending)
+            pending.clear()
+
+        injector.completion = complete
+        if bug == 'global-block':
+            peer.sync = lambda: clock.__setitem__(0, max(clock[0], due[0]))
+        def selected(readers, writers, errors, timeout):
+            if bug == 'mid-delay-effect' and clock[0] + timeout >= due[0] / 2:
+                clock[0] = max(clock[0], due[0] / 2)
+                return readers, [], []
+            clock[0] += timeout
+            return [], [], []
+        if bug == 'mid-delay-effect':
+            observer.record = lambda: input_record(2)
+        clients = iter([observer, injector] if half_close else [observer, injector, peer])
+        # Silence timing is mocked only in tests of the separate progress and
+        # completion-time obligations. Early-effect uses the real backlog check.
+        silence = (getattr(cases, 'no_input_yet', lambda *args: None)
+                   if bug in ('early-effect', 'mid-delay-effect') else lambda *args: None)
+        with patch.object(cases, 'client', side_effect=lambda _: next(clients)), \
+                patch.object(cases, 'target', return_value=22), \
+                patch.object(cases, 'major', return_value=146), \
+                patch.object(cases, 'fake', side_effect=fake), \
+                patch.object(cases, 'no_reply_yet', side_effect=lambda _, interval: clock.__setitem__(0, clock[0] + interval)), \
+                patch.object(cases, 'no_input_yet', side_effect=silence, create=True), \
+                patch.object(cases.select, 'select', side_effect=selected), \
+                patch.object(cases.time, 'monotonic', side_effect=lambda: clock[0]):
+            (cases.half_close if half_close else cases.delayed)({})
+
+    def test_global_server_delay_cannot_satisfy_healthy_peer_obligation(self):
+        with self.assertRaisesRegex(AssertionError, 'healthy peer waited'):
+            self.run_bad_delay('global-block')
+
+    def test_early_effect_with_delayed_reply_cannot_satisfy_delay_obligation(self):
+        with self.assertRaisesRegex(AssertionError, 'early or duplicate input'):
+            self.run_bad_delay('early-effect')
+
+    def test_mid_delay_effect_cannot_hide_after_the_first_quiet_sample(self):
+        with self.assertRaisesRegex(AssertionError, 'early or duplicate input'):
+            self.run_bad_delay('mid-delay-effect')
+
+    def test_half_close_cannot_discard_the_delay(self):
+        with self.assertRaisesRegex(AssertionError, 'half-close bypassed'):
+            self.run_bad_delay('half-close-ignores-delay', half_close=True)
+
+    def test_reversed_key_pair_does_not_pass_by_searching_for_each_kind(self):
+        observer = ScriptedClient()
+        observer.events = [input_record(3), input_record(2)]
+        with self.assertRaisesRegex(AssertionError, 'out of order'):
+            cases.key_event(observer, 2, 22)
+
+    def test_denial_with_a_pointer_side_effect_is_not_a_pass(self):
+        c, pointer = ScriptedClient(), [(0, 0)]
+        c.query_extension = lambda _: bytes(32)
+
+        def send(opcode, body, detail):
+            if detail == 2:
+                pointer[0] = struct.unpack_from('<hh', body, 20)
+            return 1
+
+        c.send = send
+        with patch.object(cases, 'client', return_value=c), \
+                patch.object(cases, 'extension_names', return_value=[]), \
+                patch.object(cases, 'query_pointer', side_effect=lambda _: pointer[0]):
+            with self.assertRaisesRegex(AssertionError, 'denied FakeInput changed pointer'):
+                cases.denied({})
+
+    def test_input_silence_checks_buffered_and_socket_events_with_quiet_control(self):
+        for buffered in (True, False):
+            with self.subTest(buffered=buffered):
+                a, b = socket.socketpair()
+                try:
+                    observer = object.__new__(cases.Client)
+                    observer.sock, observer.order, observer.root = a, '<', 11
+                    observer.deadline, observer.events = time.monotonic() + 1, []
+                    cases.no_input_yet(observer, 22, .01)  # Reachable quiet peer.
+                    if buffered:
+                        observer.events.append(input_record(2))
+                    else:
+                        b.sendall(input_record(2))
+                    with self.assertRaisesRegex(AssertionError, 'early or duplicate input'):
+                        cases.no_input_yet(observer, 22, .01)
+                finally:
+                    a.close()
+                    b.close()
+
     def test_setup_frame_keeps_missing_name_and_data_distinct(self):
         for order, prefix, lengths in (
                 ('<', b'l\0', bytes.fromhex('0b000000030002000000')),
@@ -138,12 +289,12 @@ class XTestClientTests(unittest.TestCase):
     def test_key_observer_rejects_send_event_substitute(self):
         class Observer:
             root = 11
+            events = []
 
-            def event(self, kind, predicate):
+            def record(self):
                 event = bytearray(32)
-                event[0], event[1] = kind | 128, 38
+                event[0], event[1] = 2 | 128, 38
                 struct.pack_into('<II', event, 8, 11, 22)
-                assert predicate(event)
                 return event
 
             def u32(self, data, offset):

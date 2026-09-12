@@ -65,11 +65,60 @@ def target(c):
 
 
 def key_event(c, kind, window, key=38):
-    event = c.event(kind, lambda data: c.u32(data, 12) == window)
+    event = ordered_input_event(c, kind, window)
     assert event[0] == kind, 'FakeInput became a SendEvent synthetic event'
     assert event[1] == key, ('wrong keycode', event.hex())
     assert c.u32(event, 8) == c.root
     return event
+
+
+def ordered_input_event(c, kind, window):
+    family = (2, 3) if kind in (2, 3) else (4, 5)
+    while True:
+        for index, data in enumerate(c.events):
+            if data[0] & 127 in family and c.u32(data, 12) == window:
+                event = c.events.pop(index)
+                assert event[0] == kind, 'input transition was out of order or SendEvent'
+                return event
+        data = c.record()
+        assert data[0] >= 2, 'unexpected completion while awaiting input'
+        c.events.append(data)
+        assert len(c.events) <= 256, 'unbounded input backlog'
+
+
+def no_input_yet(c, window, interval, kinds=(2, 3, 4, 5)):
+    """Check buffered and newly arriving input against one absolute deadline."""
+    until = min(c.deadline, time.monotonic() + interval)
+    while True:
+        assert not any(data[0] & 127 in kinds and c.u32(data, 12) == window
+                       for data in c.events), 'unexpected early or duplicate input transition'
+        remaining = until - time.monotonic()
+        if remaining <= 0:
+            c.remaining()  # Exhausting the case deadline is not a quiet PASS.
+            return
+        ready, _, _ = select.select([c.sock], [], [], remaining)
+        if not ready:
+            c.remaining()
+            return
+        original = c.deadline
+        c.deadline = until
+        try:
+            data = c.record()
+        finally:
+            c.deadline = original
+        assert data[0] >= 2, 'unexpected completion during input silence check'
+        c.events.append(data)
+        assert len(c.events) <= 256, 'unbounded input backlog'
+
+
+def sync_before(c, deadline):
+    original = c.deadline
+    c.deadline = min(original, deadline)
+    try:
+        c.sync()
+        assert time.monotonic() < deadline, 'healthy peer waited for another client delay'
+    finally:
+        c.deadline = original
 
 
 def no_reply_yet(c, interval):
@@ -93,13 +142,16 @@ def denied(context):
         reply = c.query_extension('XTEST')
         assert reply[8] == 0 and 'XTEST' not in extension_names(c)
         opcode = context.get('known_xtest_major', 146)
+        before = query_pointer(c)
+        x, y = (13, 14) if before == (11, 12) else (11, 12)
         for minor, body in ((0, c.pack('BBH', 2, 0, 1)),
                             (1, c.pack('II', c.root, 0)),
-                            (2, fake_body(c, 6, x=11, y=12)),
+                            (2, fake_body(c, 6, x=x, y=y)),
                             (3, c.pack('B3x', 1))):
             c.completion(c.send(opcode, body, detail=minor), error=10,
                          opcode=opcode, minor=minor)
         c.sync()
+        assert query_pointer(c) == before, 'denied FakeInput changed pointer despite BadAccess'
 
 
 def setup_request(order, name, data):
@@ -167,6 +219,7 @@ def key_pair(context):
         injector.sync()
         key_event(observer, 2, window)
         key_event(observer, 3, window)
+        no_input_yet(observer, window, .04)
 
 
 def padding(context):
@@ -208,12 +261,13 @@ def button_pair(context):
         fake(injector, opcode, 4, detail=1)
         fake(injector, opcode, 5, detail=1)
         injector.sync()
-        press = observer.event(4, lambda event: observer.u32(event, 12) == window)
-        release = observer.event(5, lambda event: observer.u32(event, 12) == window)
+        press = ordered_input_event(observer, 4, window)
+        release = ordered_input_event(observer, 5, window)
         assert press[0] == 4 and release[0] == 5
         assert press[1] == release[1] == 1
         assert not observer.u16(press, 28) & (1 << 8), 'press reports post-transition state'
         assert observer.u16(release, 28) & (1 << 8), 'release lost prior button state'
+        no_input_yet(observer, window, .04)
 
 
 def fake_errors(context):
@@ -308,28 +362,37 @@ def delayed(context):
     with client(context) as observer, client(context) as injector, client(context) as peer:
         window, opcode = target(observer), major(injector)
         started = time.monotonic()
-        fake(injector, opcode, 2, detail=38, delay=180)
+        # Leave a substantial wall-clock gap between peer progress and expiry.
+        # This is socket scheduling evidence, not a native timing guarantee.
+        fake(injector, opcode, 2, detail=38, delay=1000)
         sequence = injector.send(43)
         no_reply_yet(injector, .05)
-        peer.sync()  # A delay belongs to one connection, not to the server.
+        sync_before(peer, started + .60)
+        no_input_yet(observer, window, max(0, started + .95 - time.monotonic()))
         injector.completion(sequence)
-        assert time.monotonic() - started >= .17, 'FakeInput delay completed early'
+        assert time.monotonic() - started >= .95, 'FakeInput delay completed early'
         key_event(observer, 2, window)
         fake(injector, opcode, 3, detail=38)
         injector.sync()
         key_event(observer, 3, window)
+        no_input_yet(observer, window, .04)
 
 
 def half_close(context):
     with client(context) as observer, client(context) as injector:
         window, opcode = target(observer), major(injector)
-        fake(injector, opcode, 2, detail=38, delay=80)
+        started = time.monotonic()
+        fake(injector, opcode, 2, detail=38, delay=500)
         fake(injector, opcode, 3, detail=38)
         sequence = injector.send(43)
         injector.sock.shutdown(socket.SHUT_WR)
+        no_reply_yet(injector, .05)
+        no_input_yet(observer, window, max(0, started + .45 - time.monotonic()))
         injector.completion(sequence)
+        assert time.monotonic() - started >= .45, 'half-close bypassed FakeInput delay'
         key_event(observer, 2, window)
         key_event(observer, 3, window)
+        no_input_yet(observer, window, .04)
         injector.sock.settimeout(injector.remaining())
         assert injector.sock.recv(1) == b'', 'write-half-close never completed after buffered requests'
 
@@ -361,6 +424,7 @@ def disconnect_release(context):
         injector.close()
         key_event(observer, 3, window)
         observer.sync()
+        no_input_yet(observer, window, .04)
 
 
 def two_injectors(context):
