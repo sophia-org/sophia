@@ -100,13 +100,6 @@ impl LiveMetadataShell {
     }
 }
 
-/// Project a policy indicator publication onto the wire snapshot.
-///
-/// Extracted from the transport so the conformance host publishes through the
-/// same code the session does. A host that built its own snapshot would be
-/// re-implementing exactly the mapping most worth checking, and agreement would
-/// then prove only that two encoders match each other.
-
 /// Decide what an activation is worth against the set the shell was last sent.
 ///
 /// Split out from the transport so it can be exercised directly: these are the
