@@ -62,19 +62,6 @@ impl XServerFrontendRouteRegistry {
         Ok(())
     }
 
-    fn route_engine_input(
-        &self,
-        route: XAuthorityRoutedInput,
-        route_control_epoch: u64,
-        current_control_epoch: u64,
-    ) -> Result<(), XServerFrontendRouteError> {
-        self.route_engine_input_admitted(
-            route,
-            route_control_epoch,
-            route_control_epoch == current_control_epoch,
-        )
-    }
-
     /// Route an event whose admission has already been decided.
     ///
     /// The decision is a parameter because comparing two epochs is only how it
@@ -84,7 +71,7 @@ impl XServerFrontendRouteRegistry {
     fn route_engine_input_admitted(
         &self,
         route: XAuthorityRoutedInput,
-        route_control_epoch: u64,
+        stamp: crate::ControlStamp,
         admitted: bool,
     ) -> Result<(), XServerFrontendRouteError> {
         if !self.input_recovery.begin_routing(route.delivery) { return Ok(()); }
@@ -149,8 +136,9 @@ impl XServerFrontendRouteRegistry {
                 });
             }
             frozen.push_back(XDeferredRoutedInput {
+                publication: stamp.publication,
                 client: surface_route.client,
-                control_epoch: route_control_epoch,
+                control_epoch: stamp.control_epoch,
                 route,
             });
             return Ok(());

@@ -1353,3 +1353,74 @@ fn input_stamped_before_a_transition_is_not_delivered_after_it() {
         }
     );
 }
+
+#[test]
+fn a_sender_taken_before_the_gate_was_installed_is_still_gated() {
+    let namespace = NamespaceId::from_raw(26);
+    let client = XServerFrontendClientId(22);
+    let surface = SurfaceId::new(36, 1);
+    let window = XResourceId::new(0x200060, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    let (_registration, _channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    // Taken while the broker is still ungated.
+    let early_sender = broker.routed_input_sender();
+
+    let (gate, mut instance, issuer) = control_gate();
+    let broker = broker.under_control_gate(gate.clone());
+    let _ = &broker;
+    gate.with(|coordinator| {
+        coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("the transition to be requested");
+    })
+    .expect("the gate");
+
+    // The early sender shares the broker's cell rather than a copy of it, so
+    // it cannot keep stamping from the bare counter into a gated broker.
+    assert!(
+        early_sender
+            .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(53)))
+            .is_err(),
+        "a sender taken before the gate must not route around it"
+    );
+}
+
+#[test]
+fn the_lockless_epoch_advance_is_refused_under_a_gate() {
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer) = control_gate();
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    let ungated_sender = broker.routed_input_sender();
+    // Ungated, the bare advance is the ordinary mechanism and still works.
+    assert!(ungated_sender.advance_control_epoch(2));
+
+    let broker = broker.under_control_gate(gate);
+    let sender = broker.routed_input_sender();
+
+    // Gated, a coordinator owns every transition, so this escape is closed
+    // rather than left to race the ranked apply.
+    assert!(!sender.advance_control_epoch(3));
+    assert!(!ungated_sender.advance_control_epoch(4));
+}

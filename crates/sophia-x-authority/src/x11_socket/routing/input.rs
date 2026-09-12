@@ -577,9 +577,15 @@ impl XServerFrontendRouteRegistry {
         })
     }
 
+    /// Re-route what a grab had frozen.
+    ///
+    /// Each item is validated again here against the stamp it was given, not
+    /// against whatever is current. A thaw is a second chance to execute, so
+    /// it is also a second place a revoked revision could slip through.
     fn drain_thawed_input(
         &self,
         current_control_epoch: u64,
+        gate: Option<&crate::ControlEpochGate>,
     ) -> Result<usize, XServerFrontendRouteError> {
         let queued = self
             .frozen_input
@@ -620,14 +626,19 @@ impl XServerFrontendRouteRegistry {
                     .push_back(XDeferredRoutedInput {
                         client: deferred.client,
                         control_epoch: deferred.control_epoch,
+                        publication: deferred.publication,
                         route,
                     });
             } else {
-                self.route_engine_input(
-                    route,
-                    deferred.control_epoch,
-                    current_control_epoch,
-                )?;
+                let stamp = crate::ControlStamp {
+                    control_epoch: deferred.control_epoch,
+                    publication: deferred.publication,
+                };
+                let admitted = match gate {
+                    Some(gate) => gate.admits(stamp).is_ok(),
+                    None => deferred.control_epoch == current_control_epoch,
+                };
+                self.route_engine_input_admitted(route, stamp, admitted)?;
                 routed = routed.saturating_add(1);
             }
         }

@@ -86,6 +86,9 @@ struct XPendingPresentRegistry {
 struct XDeferredRoutedInput {
     client: XServerFrontendClientId,
     control_epoch: u64,
+    /// Kept alongside the epoch so a thaw validates the stamp the work was
+    /// given, rather than half of it. Zero where no coordinator is present.
+    publication: u64,
     route: XAuthorityRoutedInput,
 }
 

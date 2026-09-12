@@ -20,8 +20,8 @@ pub struct XServerFrontendRouteBroker {
     input_control_epoch: Arc<AtomicU64>,
     routed_input_capacity: usize,
     applied_input_control_epoch: u64,
-    /// Absent in ordinary mode, leaving every path below exactly as it was.
-    control_gate: Option<crate::ControlEpochGate>,
+    /// Unset in ordinary mode, leaving every path below exactly as it was.
+    control_gate: Arc<std::sync::OnceLock<crate::ControlEpochGate>>,
     route_lease_release_sender: SyncSender<XAuthorityRouteLeaseRelease>,
     route_lease_release_receiver: Receiver<XAuthorityRouteLeaseRelease>,
     control_sender: SyncSender<XAuthorityClientControlCommand>,
@@ -40,8 +40,12 @@ pub struct XAuthorityRoutedInputSender {
     control_epoch: Arc<AtomicU64>,
     capacity: usize,
     recovery: InputRecovery,
-    /// Absent in ordinary mode, where the bare counter is the whole answer.
-    control_gate: Option<crate::ControlEpochGate>,
+    /// Shared with the broker rather than copied from it.
+    ///
+    /// A sender handed out before the gate was installed would otherwise keep
+    /// its own `None` and go on stamping from the bare counter, which is an
+    /// ungated route into a gated broker.
+    control_gate: Arc<std::sync::OnceLock<crate::ControlEpochGate>>,
 }
 
 #[cfg(unix)]
@@ -52,7 +56,7 @@ impl XAuthorityRoutedInputSender {
     /// a transition in flight yields no stamp at all, so the work is refused
     /// here rather than queued against a revision that is being replaced.
     fn stamp(&self) -> Result<crate::ControlStamp, ()> {
-        match &self.control_gate {
+        match self.control_gate.get() {
             Some(gate) => gate.stamp().map_err(|_| ()),
             None => Ok(crate::ControlStamp {
                 control_epoch: self.control_epoch.load(Ordering::Acquire),
@@ -124,6 +128,11 @@ impl XAuthorityRoutedInputSender {
     }
 
     pub fn advance_control_epoch(&self, next: u64) -> bool {
+        // A coordinator owns every transition it is installed for, so the
+        // lockless path is refused rather than quietly racing it.
+        if self.control_gate.get().is_some() {
+            return false;
+        }
         let mut current = self.control_epoch.load(Ordering::Acquire);
         loop {
             if next <= current {
@@ -401,7 +410,7 @@ impl XServerFrontendRouteBroker {
         let (raster_sender, raster_receiver) = sync_channel(capacities.control.get());
         let input_authority = Arc::new(Mutex::new(crate::XInputAuthorityState::default()));
         Self {
-            control_gate: None,
+            control_gate: Arc::new(std::sync::OnceLock::new()),
             registry: XServerFrontendRouteRegistry {
                 // Ingress + frozen + every possible client's private queue and
                 // active writer. Terminal receipts retain their credit until
@@ -466,7 +475,7 @@ impl XServerFrontendRouteBroker {
 
     pub fn routed_input_sender(&self) -> XAuthorityRoutedInputSender {
         XAuthorityRoutedInputSender {
-            control_gate: self.control_gate.clone(),
+            control_gate: Arc::clone(&self.control_gate),
             sender: self.routed_input_sender.clone(),
             control_epoch: self.input_control_epoch.clone(),
             capacity: self.routed_input_capacity,
@@ -532,17 +541,37 @@ impl XServerFrontendRouteBroker {
     /// answer and publication plays no part. Present, stamping and admission
     /// both defer to it, and a transition in flight refuses new work at
     /// enqueue rather than queueing it against a revision being replaced.
-    pub fn under_control_gate(mut self, gate: crate::ControlEpochGate) -> Self {
-        self.control_gate = Some(gate);
+    pub fn under_control_gate(self, gate: crate::ControlEpochGate) -> Self {
+        // Set once, into a cell every sender already holds. Senders taken
+        // before this call observe it too, so there is no ungated escape, and
+        // it cannot later be swapped for a different coordinator.
+        let _ = self.control_gate.set(gate);
         self
+    }
+
+    /// Whether a coordinator owns this broker's epoch transitions.
+    fn is_gated(&self) -> bool {
+        self.control_gate.get().is_some()
     }
 
     /// Routes every value currently available at the bounded ingress.
     pub fn route_pending(&mut self) -> Result<usize, XServerFrontendRouteError> {
-        let input_control_epoch = self.input_control_epoch.load(Ordering::Acquire);
-        if input_control_epoch != self.applied_input_control_epoch {
-            self.registry.advance_input_control_epoch()?;
-            self.applied_input_control_epoch = input_control_epoch;
+        // Under a coordinator this application belongs to the ranked apply,
+        // not here: running both would clear the same populations from two
+        // places, through three sequentially taken locks that no transition
+        // owns.
+        //
+        // Today this guard cannot be observed to matter, because the counter
+        // it reads has exactly one writer -- the compare-and-swap below, which
+        // a gate already refuses -- so under a gate the counter never moves.
+        // It is kept against a second writer appearing, which would otherwise
+        // reach this application silently.
+        if !self.is_gated() {
+            let input_control_epoch = self.input_control_epoch.load(Ordering::Acquire);
+            if input_control_epoch != self.applied_input_control_epoch {
+                self.registry.advance_input_control_epoch()?;
+                self.applied_input_control_epoch = input_control_epoch;
+            }
         }
         let mut routed = 0usize;
         loop {
@@ -557,7 +586,7 @@ impl XServerFrontendRouteBroker {
             }
             match self.routed_input_receiver.try_recv() {
                 Ok(route) => {
-                    let admitted = match &self.control_gate {
+                    let admitted = match self.control_gate.get() {
                         Some(gate) => gate
                             .admits(crate::ControlStamp {
                                 control_epoch: route.control_epoch,
@@ -571,7 +600,10 @@ impl XServerFrontendRouteBroker {
                     };
                     match self.registry.route_engine_input_admitted(
                         route.route,
-                        route.control_epoch,
+                        crate::ControlStamp {
+                            control_epoch: route.control_epoch,
+                            publication: route.publication,
+                        },
                         admitted,
                     ) {
                         Ok(()) => routed = routed.saturating_add(1),
@@ -628,7 +660,10 @@ impl XServerFrontendRouteBroker {
             }
             let thawed = match self
                 .registry
-                .drain_thawed_input(self.input_control_epoch.load(Ordering::Acquire))
+                .drain_thawed_input(
+                    self.input_control_epoch.load(Ordering::Acquire),
+                    self.control_gate.get(),
+                )
             {
                 Ok(thawed) => thawed,
                 Err(
