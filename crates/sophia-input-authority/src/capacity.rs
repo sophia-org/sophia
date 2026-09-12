@@ -14,6 +14,10 @@ pub enum CapacityError {
     /// No grant slot is free. Retiring grants still hold theirs until their
     /// debt settles, so this counts them.
     NoGrantSlot,
+    /// An identity counter reached its end. Reusing one would let a stale
+    /// capability validate against a fresh grant, so the authority stops
+    /// instead of wrapping.
+    IdentityExhausted,
     /// No synthetic device slot is free for this grant.
     NoDeviceSlot,
     /// No physical source slot is free. Counted separately so a saturating
@@ -34,7 +38,8 @@ pub struct Capacity {
     pub grants: usize,
     /// Synthetic devices each grant may hold: one keyboard, one pointer.
     pub devices_per_grant: usize,
-    /// X keycodes 8..=255.
+    /// X keycodes 8..=255. Fixed by the protocol, not a tunable: the authority
+    /// validates against it rather than trusting a caller's arithmetic.
     pub keys: usize,
     /// Core pointer buttons. Verified against the advertised domain.
     pub buttons: usize,
@@ -69,9 +74,30 @@ impl Capacity {
         self.keys + self.buttons
     }
 
-    /// Retained debts: one per input that can owe a release.
+    /// Retained debts.
+    ///
+    /// Every grant may owe a release on every input at once: one grant's debt
+    /// is unsettled while another presses the same input and owes its own.
+    /// Sizing this to the input count alone would make the second debt
+    /// unrecordable exactly when both exist.
     pub const fn debt_records(&self) -> usize {
-        self.input_slots()
+        self.grants * self.input_slots()
+    }
+
+    /// The keycode domain this authority validates against.
+    pub const fn key_domain(&self) -> u8 {
+        u8::MAX
+    }
+
+    /// The button domain this authority validates against.
+    pub const fn button_domain(&self) -> u8 {
+        // Checked against the advertised value at construction, so this is the
+        // verified domain rather than a hopeful constant.
+        if self.buttons > u8::MAX as usize {
+            u8::MAX
+        } else {
+            self.buttons as u8
+        }
     }
 
     /// Refuse a capacity whose sources cannot all be addressed in the holder

@@ -19,7 +19,8 @@ mod registry;
 pub use capacity::{Capacity, CapacityError};
 pub use grant::{GrantGeneration, GrantId, IssuerHandle, SubmitHandle};
 pub use identity::{
-    DeviceCapability, HoldIncarnation, Input, InputError, InstanceId, Origin, SeatBinding, SourceId,
+    DeviceCapability, HoldIncarnation, Input, InputError, InstanceId, Origin, Recipient,
+    SeatBinding, SourceId,
 };
 pub use ledger::{Applied, ReleaseOutcome, SettlementBit};
 pub use registry::{AuthorityInstance, ExecutionContext, RegistrationError, RetiredDebt};

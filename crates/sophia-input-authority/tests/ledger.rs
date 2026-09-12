@@ -6,8 +6,8 @@
 
 use sophia_input_authority::{
     AuthorityInstance, Capacity, CapacityError, DeviceCapability, ExecutionContext,
-    GrantGeneration, HoldIncarnation, Input, InputError, InstanceId, IssuerHandle,
-    RegistrationError, ReleaseOutcome, SeatBinding, SubmitHandle,
+    GrantGeneration, Input, InputError, InstanceId, IssuerHandle, Recipient, RegistrationError,
+    ReleaseOutcome, SeatBinding, SubmitHandle,
 };
 use sophia_protocol::{DeviceId, SeatId};
 
@@ -41,12 +41,10 @@ fn context(generation: GrantGeneration) -> ExecutionContext {
     }
 }
 
-fn to(id: u64) -> impl FnOnce() -> HoldIncarnation {
-    move || HoldIncarnation {
+fn to(id: u64) -> Recipient {
+    Recipient {
         recipient: id,
         connection_generation: 1,
-        input: Input::key(30).expect("valid keycode"),
-        hold: id,
     }
 }
 
@@ -168,27 +166,47 @@ fn a_new_hold_waits_behind_an_unsettled_release() {
     let ReleaseOutcome::DeliverTo(owed) = outcome else {
         panic!("the last holder's release is owed: {outcome:?}");
     };
+    let owner = f.authority.owner_of(first.source());
 
     let (second, second_generation) = granted(&mut f, 101);
+    // Same recipient: this is the press the barrier exists to stop, because a
+    // stale release for the old hold could otherwise clear the new one.
     assert_eq!(
         f.authority
-            .execute_press(&f.submit, second, key, context(second_generation), to(22))
+            .execute_press(&f.submit, second, key, context(second_generation), to(11))
             .unwrap_err(),
         RegistrationError::ReleaseBarrier,
-        "a new hold must not take this input while the old release is unsettled"
+        "a new hold at the same recipient must wait for the old release"
     );
 
-    // A late completion for a hold that is not this one settles nothing.
-    let stale = HoldIncarnation { hold: 999, ..owed };
+    // A late completion naming a different hold settles nothing. The other
+    // incarnation is obtained the only way one can be: by actually holding
+    // something. A caller cannot construct one, which is the point.
+    let other_key = Input::key(40).expect("keycode");
+    f.authority
+        .execute_press(&f.submit, first, other_key, context(generation), to(11))
+        .expect("a second hold, on a different input");
+    let ReleaseOutcome::DeliverTo(other) = f
+        .authority
+        .release(&f.submit, first, other_key)
+        .expect("release runs")
+    else {
+        panic!("the second hold owes a release too");
+    };
+    assert_ne!(
+        other.hold(),
+        owed.hold(),
+        "two holds must never share an identity"
+    );
     assert!(
         !f.authority
-            .settle(&f.issuer, key, stale, both_bits())
+            .settle(&f.issuer, owner, key, other, both_bits())
             .expect("settle runs"),
         "a completion naming another hold must not clear this barrier"
     );
     assert!(
         f.authority
-            .settle(&f.issuer, key, owed, both_bits())
+            .settle(&f.issuer, owner, key, owed, both_bits())
             .expect("settle runs"),
         "the matching completion clears it"
     );
@@ -222,6 +240,7 @@ fn transport_settlement_alone_does_not_discharge_native_reconciliation() {
     else {
         panic!("a release is owed");
     };
+    let owner = f.authority.owner_of(capability.source());
 
     let transport_only = sophia_input_authority::SettlementBit {
         native_reconciled: false,
@@ -229,7 +248,7 @@ fn transport_settlement_alone_does_not_discharge_native_reconciliation() {
     };
     assert!(
         !f.authority
-            .settle(&f.issuer, key, owed, transport_only)
+            .settle(&f.issuer, owner, key, owed, transport_only)
             .expect("settle runs"),
         "a flush proves the release left the server and nothing about the \
          shared modifier and grab state it never touched"
@@ -349,7 +368,9 @@ fn execution_refuses_while_a_transition_has_not_published() {
     let (capability, generation) = granted(&mut f, 100);
     let key = Input::key(30).expect("keycode");
 
-    f.authority.begin_transition(&f.issuer).expect("transition");
+    f.authority
+        .begin_transition(&f.issuer, 1, 0)
+        .expect("transition announces where it is going");
     assert_eq!(
         f.authority
             .execute_press(&f.submit, capability, key, context(generation), to(1))
@@ -358,6 +379,13 @@ fn execution_refuses_while_a_transition_has_not_published() {
         "between commit and publication there is no current target"
     );
 
+    // A publication naming a revision the transition did not announce must not
+    // reopen routing.
+    assert_eq!(
+        f.authority.publish(&f.issuer, 9, 0).unwrap_err(),
+        RegistrationError::StaleExecution,
+        "a stale publication cannot close a window it does not name"
+    );
     f.authority.publish(&f.issuer, 1, 0).expect("published");
     let after = ExecutionContext {
         generation,
@@ -403,5 +431,119 @@ fn a_grant_cannot_hold_more_devices_than_its_allowance() {
             .unwrap_err(),
         RegistrationError::Capacity(CapacityError::NoDeviceSlot),
         "a keyboard and a pointer is the allowance; a third is refused"
+    );
+}
+
+#[test]
+fn a_different_recipient_is_not_blocked_by_another_recipients_debt() {
+    // A owes a release to recipient 11. B pressing the same input toward
+    // recipient 22 is not implicated by that debt, and blocking it would let
+    // one client's unsettled release freeze an input for everyone.
+    let mut f = fixture();
+    let (first, first_generation) = granted(&mut f, 100);
+    let key = Input::key(30).expect("keycode");
+    f.authority
+        .execute_press(&f.submit, first, key, context(first_generation), to(11))
+        .expect("held");
+    let ReleaseOutcome::DeliverTo(_) = f
+        .authority
+        .release(&f.submit, first, key)
+        .expect("release runs")
+    else {
+        panic!("a release is owed");
+    };
+
+    let (second, second_generation) = granted(&mut f, 101);
+    assert!(
+        f.authority
+            .execute_press(&f.submit, second, key, context(second_generation), to(22))
+            .is_ok(),
+        "a press toward a different recipient proceeds"
+    );
+}
+
+#[test]
+fn a_physical_press_is_never_blocked_by_a_synthetic_debt() {
+    // The operator's keyboard must not stop because an injector owes a
+    // release, even on the same input and the same recipient.
+    let mut f = fixture();
+    let physical = f
+        .authority
+        .register_physical(&f.issuer, DeviceId::from_raw(1))
+        .expect("physical");
+    let (synthetic, generation) = granted(&mut f, 100);
+    let key = Input::key(30).expect("keycode");
+
+    f.authority
+        .execute_press(&f.submit, synthetic, key, context(generation), to(11))
+        .expect("the injector holds it");
+    let ReleaseOutcome::DeliverTo(_) = f
+        .authority
+        .release(&f.submit, synthetic, key)
+        .expect("release runs")
+    else {
+        panic!("a release is owed");
+    };
+
+    assert!(
+        f.authority
+            .execute_physical_press(&f.issuer, physical, key, to(11))
+            .is_ok(),
+        "a physical press proceeds despite an unsettled synthetic release"
+    );
+}
+
+#[test]
+fn sixteen_short_lived_clients_do_not_exhaust_the_instance() {
+    // Grants that never held anything must return their slots, or a private
+    // instance dies after sixteen connections regardless of what they did.
+    let mut f = fixture();
+    for round in 0..40u64 {
+        let (grant, generation) = f
+            .authority
+            .issue_grant(&f.issuer)
+            .unwrap_or_else(|error| panic!("round {round} could not get a grant: {error:?}"));
+        f.authority
+            .allocate_device(&f.issuer, grant, generation, DeviceId::from_raw(round))
+            .expect("a device");
+        f.authority.revoke_grant(&f.issuer, grant).expect("revoked");
+    }
+}
+
+#[test]
+fn a_revoked_grant_cannot_be_resurrected_by_allocating_another_device() {
+    let mut f = fixture();
+    let (grant, generation) = f.authority.issue_grant(&f.issuer).expect("grant");
+    f.authority
+        .allocate_device(&f.issuer, grant, generation, DeviceId::from_raw(1))
+        .expect("a device");
+    f.authority.revoke_grant(&f.issuer, grant).expect("revoked");
+
+    assert_eq!(
+        f.authority
+            .allocate_device(&f.issuer, grant, generation, DeviceId::from_raw(2))
+            .unwrap_err(),
+        RegistrationError::StaleGeneration,
+        "a dead grant must not accept another device under its old identity"
+    );
+}
+
+#[test]
+fn a_foreign_physical_source_cannot_claim_physical_origin() {
+    let mut first = fixture();
+    let mut second = fixture();
+    let foreign = second
+        .authority
+        .register_physical(&second.issuer, DeviceId::from_raw(1))
+        .expect("registered over there");
+    let key = Input::key(30).expect("keycode");
+    assert_eq!(
+        first
+            .authority
+            .execute_physical_press(&first.issuer, foreign, key, to(1))
+            .unwrap_err(),
+        RegistrationError::ForeignAuthority,
+        "an index from another authority is not a physical source here, and \
+         physical origin is what the emergency recognizer reads"
     );
 }

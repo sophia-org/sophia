@@ -14,8 +14,8 @@
 
 use sophia_input_authority::{
     AuthorityInstance, Capacity, CapacityError, DeviceCapability, ExecutionContext,
-    GrantGeneration, HoldIncarnation, Input, InstanceId, IssuerHandle, RegistrationError,
-    ReleaseOutcome, SeatBinding, SubmitHandle,
+    GrantGeneration, Input, InstanceId, IssuerHandle, Recipient, RegistrationError, ReleaseOutcome,
+    SeatBinding, SubmitHandle,
 };
 use sophia_protocol::{DeviceId, SeatId};
 
@@ -45,12 +45,10 @@ fn context(generation: GrantGeneration) -> ExecutionContext {
     }
 }
 
-fn to(id: u64) -> impl FnOnce() -> HoldIncarnation {
-    move || HoldIncarnation {
+fn to(id: u64) -> Recipient {
+    Recipient {
         recipient: id,
         connection_generation: 1,
-        input: Input::key(30).expect("keycode"),
-        hold: id,
     }
 }
 

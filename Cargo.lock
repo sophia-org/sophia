@@ -995,6 +995,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sophia-input-authority"
+version = "0.1.0"
+dependencies = [
+ "sophia-protocol",
+]
+
+[[package]]
 name = "sophia-linux-peer"
 version = "0.1.0"
 dependencies = [

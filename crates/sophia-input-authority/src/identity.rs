@@ -15,12 +15,21 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// build a second authority with the same public binding and use its issuer.
 static NEXT_AUTHORITY: AtomicU64 = AtomicU64::new(1);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct AuthorityUid(u64);
 
 impl AuthorityUid {
-    pub(crate) fn allocate() -> Self {
-        Self(NEXT_AUTHORITY.fetch_add(1, Ordering::Relaxed))
+    /// Allocate the next authority identity, or refuse.
+    ///
+    /// Wrapping would hand a new authority an identity a live one still uses,
+    /// so every handle and capability minted against the old one would start
+    /// validating against the new. Exhaustion stops construction instead.
+    pub(crate) fn allocate() -> Option<Self> {
+        let raw = NEXT_AUTHORITY.fetch_add(1, Ordering::Relaxed);
+        if raw == u64::MAX {
+            return None;
+        }
+        Some(Self(raw))
     }
 }
 
@@ -69,6 +78,7 @@ pub enum Origin {
 /// in the holder set.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SourceId {
+    pub(crate) authority: AuthorityUid,
     pub(crate) synthetic: bool,
     pub(crate) index: u16,
 }
@@ -129,8 +139,14 @@ pub enum InputError {
 }
 
 impl Input {
+    /// A slot no real input occupies, for initialising fixed scratch.
+    pub(crate) const PLACEHOLDER: Self = Self { slot: u16::MAX };
+
     /// The lowest X keycode. Below this is not a key at all.
     pub const MIN_KEYCODE: u8 = 8;
+
+    /// How many key slots the protocol's keycode range occupies.
+    pub(crate) const KEY_SLOTS: u16 = (u8::MAX as u16) - (Self::MIN_KEYCODE as u16) + 1;
 
     /// A key, normalized so keys and buttons cannot share a slot.
     pub fn key(keycode: u8) -> Result<Self, InputError> {
@@ -142,15 +158,19 @@ impl Input {
         })
     }
 
-    /// A button, checked against the advertised domain and placed above keys.
+    /// A button, checked against a domain and placed above every key.
+    ///
+    /// The domain belongs to the authority, which verified it against the
+    /// advertised value at construction. Passing one here is for callers that
+    /// already hold it; `AuthorityInstance::button` is the checked entry.
     pub fn button(button: u8, domain: u8) -> Result<Self, InputError> {
         if button == 0 || button > domain {
             return Err(InputError::ButtonOutsideDomain { button, domain });
         }
-        let keys = u16::from(u8::MAX - Self::MIN_KEYCODE) + 1;
-        Ok(Self {
-            slot: keys + u16::from(button - 1),
-        })
+        let slot = Self::KEY_SLOTS
+            .checked_add(u16::from(button - 1))
+            .ok_or(InputError::ButtonOutsideDomain { button, domain })?;
+        Ok(Self { slot })
     }
 
     pub(crate) fn slot(self) -> usize {
@@ -158,11 +178,33 @@ impl Input {
     }
 }
 
+/// Where a press is being delivered, as the router knows it.
+///
+/// This is all a caller supplies. It deliberately carries no hold identity:
+/// accepting one would let a caller hand back an old, settled identity on a new
+/// press, and the old completion would then clear the new debt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Recipient {
+    pub recipient: u64,
+    pub connection_generation: u64,
+}
+
 /// Which hold a release belongs to.
+///
+/// The `hold` field is minted inside the authority from a checked counter and
+/// cannot be constructed outside it, so two holds are never the same identity
+/// and a stale completion never matches a live one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HoldIncarnation {
     pub recipient: u64,
     pub connection_generation: u64,
     pub input: Input,
-    pub hold: u64,
+    pub(crate) hold: u64,
+}
+
+impl HoldIncarnation {
+    /// The minted identity, for records that must match it back.
+    pub fn hold(self) -> u64 {
+        self.hold
+    }
 }
