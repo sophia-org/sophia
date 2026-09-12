@@ -355,9 +355,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         stream,
         authorization,
         |setup_request| {
+            let Some((setup_authentication, verified_private_input)) =
+                authorization.verified_authentication(setup_request)
+            else {
+                return Ok(None);
+            };
             if let Some(policy) = admission_policy.as_ref() {
                 let request = XServerFrontendAdmissionRequest {
-                    setup_authentication: authorization.authentication_method(),
+                    setup_authentication,
+                    verified_private_input,
                     peer_credentials,
                 };
                 match policy.admit(request) {
