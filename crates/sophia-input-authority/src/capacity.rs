@@ -7,6 +7,8 @@
 /// Why a capacity was refused.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CapacityError {
+    /// Arithmetic overflow, unsupported domain, or an empty required pool.
+    InvalidCapacity,
     /// The advertised button domain does not match what this authority
     /// preallocated for. Checked at construction rather than trusted, because
     /// the record count is derived from it.
@@ -104,7 +106,11 @@ impl Capacity {
     /// set. Without this a source silently aliases another and one release
     /// clears a hold it never took.
     pub fn verify_holder_width(&self) -> Result<(), CapacityError> {
-        let sources = self.synthetic_sources() + self.physical_sources;
+        let sources = self
+            .grants
+            .checked_mul(self.devices_per_grant)
+            .and_then(|n| n.checked_add(self.physical_sources))
+            .ok_or(CapacityError::InvalidCapacity)?;
         if sources <= u64::BITS as usize {
             Ok(())
         } else {
@@ -113,6 +119,27 @@ impl Capacity {
                 width: u64::BITS as usize,
             })
         }
+    }
+
+    /// Validate arithmetic before allocating or computing table offsets.
+    pub(crate) fn verify(&self, advertised: u16) -> Result<(), CapacityError> {
+        self.verify_holder_width()?;
+        self.verify_button_domain(advertised)?;
+        if self.keys != 248
+            || self.buttons == 0
+            || self.buttons > 255
+            || self.grants == 0
+            || self.devices_per_grant == 0
+            || self.completions != self.grants
+            || self.attempts == 0
+        {
+            return Err(CapacityError::InvalidCapacity);
+        }
+        self.grants
+            .checked_add(self.physical_sources)
+            .and_then(|n| n.checked_mul(self.input_slots()))
+            .ok_or(CapacityError::InvalidCapacity)?;
+        Ok(())
     }
 
     /// Confirm the server's advertised button domain matches what this

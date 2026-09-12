@@ -1,10 +1,9 @@
 //! What is held, by whom, and what is still owed.
 //!
-//! A press arrives as a reservation and becomes a hold only when the authority
-//! applies it. That distinction is the whole reason revocation is safe: a
-//! reservation dropped before execution owes nothing, because nothing was ever
-//! delivered, while a hold applied before revocation owes a release even if no
-//! byte ever reached the recipient.
+//! A queued request has not applied a hold. The executor must retain its original
+//! context and validate it at execution. A successful press reserves its record
+//! before changing authority state; the record survives until native and
+//! recipient obligations both settle, whether or not the press writer succeeded.
 
 use crate::identity::{HoldIncarnation, Input, SourceId};
 
@@ -14,6 +13,7 @@ pub struct Applied {
     pub(crate) source: SourceId,
     pub(crate) input: Input,
     pub(crate) incarnation: HoldIncarnation,
+    pub(crate) first_press: bool,
 }
 
 /// What a release should do.
@@ -46,5 +46,21 @@ impl SettlementBit {
     /// Debt is discharged only when both obligations are met.
     pub fn is_settled(self) -> bool {
         self.native_reconciled && self.recipient_settled
+    }
+}
+
+impl Applied {
+    pub fn source(self) -> SourceId {
+        self.source
+    }
+    pub fn input(self) -> Input {
+        self.input
+    }
+    pub fn incarnation(self) -> HoldIncarnation {
+        self.incarnation
+    }
+    /// Only a first aggregate press asks the recipient to change state.
+    pub fn first_press(self) -> bool {
+        self.first_press
     }
 }

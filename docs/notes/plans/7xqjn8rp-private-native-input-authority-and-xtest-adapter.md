@@ -37,7 +37,7 @@ descriptors and connections to a different authority are not.
 | Milestone | Runtime work, Claude w9:p4 | Independent work, Codex w9:p6 |
 | --- | --- | --- |
 | M1 | Repair the default Session build by extracting indicator projection from the native module | Retain the fresh 100-execution default-off core baseline and this scope record |
-| M2 | Add `sophia-input-authority`, depending only on protocol and std; test native transitions before an adapter exists | Define required obligations and strict execution evidence |
+| M2 | Review the common API for executor integration | Own and repair `sophia-input-authority`, its pool and identity regressions, and independent evidence |
 | M3 | Guarded synchronization API, private ordered executor, retained completions and phase-aware delivery recovery | Review races, failure attribution, capacity and test mutations |
 | M4 | Expose production Session controller and broker integration with deterministic topology/clock adapters | Build the private Session host and containment runner with fabricated endpoint negatives |
 | M5 | Implement all four XTEST 2.1 requests, admission and cancellation | Independent clients in both byte orders with absolute deadlines |
@@ -248,3 +248,55 @@ entry, and direct child paths are refused. The stronger contained core run in
 
 t093 tracks this implementation, t094 the deferred physical-device prerequisite,
 and t057 remains the broader protocol conformance task.
+
+
+### M2 pool replacement
+
+Claude handed the common crate to Codex after candidate `935c3ac8`. The retained
+independent run against that candidate was 17/24 PASS: ordinary synthetic
+release still bypassed epoch/publication checks, and five new cases exposed
+overwritten recipient debt, a lost earlier barrier, grant reuse while ordinary
+release debt remained, stale revocation of a replacement grant, and physical
+delivery overtaking an old release to the same recipient. Evidence is
+`/tmp/sophia-native-input-m2-review/after-935c3ac8/README.md`. The helper
+`both_bits` is not a test and is excluded from the roster.
+
+The replacement reserves a pool record before a first press changes state.
+That record survives release and retirement until both settlement obligations
+finish. All retained incarnations participate in barrier lookup. Exact source
+participation references keep grant and device slots occupied through ordinary
+release as well as revoke; a joined source conservatively retains its reference
+until the shared incarnation settles. Grant identities include authority and
+generation, and source identities include their own incarnation. A stale revoke
+cannot address a replacement by its reused numeric slot. Ordinary synthetic
+release takes the original execution context; issuer cleanup outlives it.
+
+One previous regression asserted that physical delivery could bypass a pending
+release to the same recipient. That assertion was unsafe and is replaced:
+physical recognition remains separate, but recipient delivery must obey the
+clearing barrier. A later receipt cannot undo a stale release already sent on
+the wire. Different recipients may proceed once the earlier native obligation
+settles. The corresponding test now makes that settlement explicit.
+
+The common crate currently passes 46 tests and warnings-as-errors Clippy.
+These include the original seven, the corrected eighteen-test ledger roster,
+seventeen independent pool/reuse tests, and four source/reference regressions.
+The pool test fills all 4112 synthetic records, proves refusal before mutation,
+checks the independent physical reserve, and settles one record to prove reuse.
+Logs are `/tmp/sophia-native-input-evidence/m2-pool-rewrite`. This validates the
+common state machine, not production receipt producers, queued completion,
+executor ordering, or XTEST. Those remain M3–M6 obligations; discovery stays off.
+
+Canonical `cargo xtask check` must run through `offline_check.py`: clearing
+opt-in variables alone does not prevent its automatic render-node probes.
+Contained metadata validation on `68bc722d` passed with an empty device
+namespace. `.artifacts/offline-input-metadata-68bc722d/report.json` records
+`full_check_executed: false`; it is not evidence that the full check ran.
+
+Independent review also ran the seventeen pool assertions successfully and used
+an external allocator observer against a frozen candidate copy. Applied
+synthetic revocation and physical unplug each allocated zero times and retained
+the owed release (2/2 PASS). The external probe is necessary because the crate
+forbids unsafe code while Rust's allocator observation API requires it; evidence
+is `/tmp/sophia-native-input-m2-review/after-pool-rewrite/provenance.json`.
+That record names an uncommitted source hash, not a fabricated commit identity.

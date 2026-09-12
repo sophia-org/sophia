@@ -74,7 +74,12 @@ fn key_255_and_button_7_are_independent_inputs() {
         .expect("the key presses");
     assert_eq!(
         f.authority
-            .release(&f.submit, capability, button)
+            .release(
+                &f.submit,
+                capability,
+                button,
+                context(capability.generation())
+            )
             .expect("release runs"),
         ReleaseOutcome::NotHeld,
         "releasing a button must not clear a key"
@@ -164,7 +169,7 @@ fn foreign_source_id_cannot_release_a_local_hold() {
     assert_eq!(
         first
             .authority
-            .release(&first.submit, foreign, key)
+            .release(&first.submit, foreign, key, context(foreign.generation()))
             .unwrap_err(),
         RegistrationError::ForeignAuthority,
         "a capability from another authority must not reach this hold"
@@ -181,7 +186,7 @@ fn uncleared_release_blocks_a_new_same_recipient_hold() {
         .expect("held");
     let ReleaseOutcome::DeliverTo(_) = f
         .authority
-        .release(&f.submit, first, key)
+        .release(&f.submit, first, key, context(first.generation()))
         .expect("release runs")
     else {
         panic!("the last holder owes a release");

@@ -75,7 +75,12 @@ fn keys_and_buttons_never_share_a_record() {
         .expect("the key presses");
     assert_eq!(
         f.authority
-            .release(&f.submit, capability, first_button)
+            .release(
+                &f.submit,
+                capability,
+                first_button,
+                context(capability.generation())
+            )
             .expect("released"),
         ReleaseOutcome::NotHeld,
         "releasing a button must not clear a key that merely shares a number"
@@ -123,7 +128,12 @@ fn a_physical_source_cannot_alias_a_synthetic_one() {
         .expect("the physical press applies");
     assert_eq!(
         f.authority
-            .release(&f.submit, first_synthetic, key)
+            .release(
+                &f.submit,
+                first_synthetic,
+                key,
+                context(first_synthetic.generation())
+            )
             .expect("released"),
         ReleaseOutcome::NotHeld,
         "an injector releasing must not clear a physical hold it never shared"
@@ -161,7 +171,7 @@ fn a_new_hold_waits_behind_an_unsettled_release() {
         .expect("held");
     let outcome = f
         .authority
-        .release(&f.submit, first, key)
+        .release(&f.submit, first, key, context(first.generation()))
         .expect("released");
     let ReleaseOutcome::DeliverTo(owed) = outcome else {
         panic!("the last holder's release is owed: {outcome:?}");
@@ -188,7 +198,7 @@ fn a_new_hold_waits_behind_an_unsettled_release() {
         .expect("a second hold, on a different input");
     let ReleaseOutcome::DeliverTo(other) = f
         .authority
-        .release(&f.submit, first, other_key)
+        .release(&f.submit, first, other_key, context(first.generation()))
         .expect("release runs")
     else {
         panic!("the second hold owes a release too");
@@ -235,7 +245,7 @@ fn transport_settlement_alone_does_not_discharge_native_reconciliation() {
         .expect("held");
     let ReleaseOutcome::DeliverTo(owed) = f
         .authority
-        .release(&f.submit, capability, key)
+        .release(&f.submit, capability, key, context(capability.generation()))
         .expect("released")
     else {
         panic!("a release is owed");
@@ -445,13 +455,26 @@ fn a_different_recipient_is_not_blocked_by_another_recipients_debt() {
     f.authority
         .execute_press(&f.submit, first, key, context(first_generation), to(11))
         .expect("held");
-    let ReleaseOutcome::DeliverTo(_) = f
+    let ReleaseOutcome::DeliverTo(owed) = f
         .authority
-        .release(&f.submit, first, key)
+        .release(&f.submit, first, key, context(first.generation()))
         .expect("release runs")
     else {
         panic!("a release is owed");
     };
+
+    f.authority
+        .settle(
+            &f.issuer,
+            Some(first.grant()),
+            key,
+            owed,
+            sophia_input_authority::SettlementBit {
+                native_reconciled: true,
+                recipient_settled: false,
+            },
+        )
+        .expect("native state cleared; only A transport remains");
 
     let (second, second_generation) = granted(&mut f, 101);
     assert!(
@@ -463,9 +486,9 @@ fn a_different_recipient_is_not_blocked_by_another_recipients_debt() {
 }
 
 #[test]
-fn a_physical_press_is_never_blocked_by_a_synthetic_debt() {
-    // The operator's keyboard must not stop because an injector owes a
-    // release, even on the same input and the same recipient.
+fn physical_delivery_waits_for_the_old_same_recipient_release() {
+    // Recognition of physical input is independent of delivery. Delivering a
+    // new press here would let the old queued release erase the new hold.
     let mut f = fixture();
     let physical = f
         .authority
@@ -479,17 +502,18 @@ fn a_physical_press_is_never_blocked_by_a_synthetic_debt() {
         .expect("the injector holds it");
     let ReleaseOutcome::DeliverTo(_) = f
         .authority
-        .release(&f.submit, synthetic, key)
+        .release(&f.submit, synthetic, key, context(synthetic.generation()))
         .expect("release runs")
     else {
         panic!("a release is owed");
     };
 
-    assert!(
+    assert_eq!(
         f.authority
             .execute_physical_press(&f.issuer, physical, key, to(11))
-            .is_ok(),
-        "a physical press proceeds despite an unsettled synthetic release"
+            .unwrap_err(),
+        RegistrationError::ReleaseBarrier,
+        "the old release must not pass a new press to the same recipient"
     );
 }
 

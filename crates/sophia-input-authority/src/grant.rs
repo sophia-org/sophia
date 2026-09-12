@@ -8,7 +8,11 @@ use crate::identity::{AuthorityUid, SeatBinding};
 
 /// Identifies one grant within one authority.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct GrantId(pub(crate) u32);
+pub struct GrantId {
+    pub(crate) authority: AuthorityUid,
+    pub(crate) slot: usize,
+    pub(crate) generation: GrantGeneration,
+}
 
 /// Reissued whenever a grant is revoked and its slot reused.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

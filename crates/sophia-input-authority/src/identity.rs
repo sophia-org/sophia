@@ -25,11 +25,12 @@ impl AuthorityUid {
     /// so every handle and capability minted against the old one would start
     /// validating against the new. Exhaustion stops construction instead.
     pub(crate) fn allocate() -> Option<Self> {
-        let raw = NEXT_AUTHORITY.fetch_add(1, Ordering::Relaxed);
-        if raw == u64::MAX {
-            return None;
-        }
-        Some(Self(raw))
+        NEXT_AUTHORITY
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
+            .ok()
+            .map(Self)
     }
 }
 
@@ -81,6 +82,7 @@ pub struct SourceId {
     pub(crate) authority: AuthorityUid,
     pub(crate) synthetic: bool,
     pub(crate) index: u16,
+    pub(crate) incarnation: u64,
 }
 
 impl SourceId {
@@ -113,6 +115,14 @@ impl DeviceCapability {
         self.device
     }
 
+    pub fn generation(self) -> crate::GrantGeneration {
+        self.generation
+    }
+
+    pub fn grant(self) -> crate::GrantId {
+        self.grant
+    }
+
     /// The source this capability speaks for. Names a source, grants nothing.
     pub fn source(self) -> SourceId {
         self.source
@@ -139,9 +149,6 @@ pub enum InputError {
 }
 
 impl Input {
-    /// A slot no real input occupies, for initialising fixed scratch.
-    pub(crate) const PLACEHOLDER: Self = Self { slot: u16::MAX };
-
     /// The lowest X keycode. Below this is not a key at all.
     pub const MIN_KEYCODE: u8 = 8;
 
@@ -196,6 +203,7 @@ pub struct Recipient {
 /// and a stale completion never matches a live one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HoldIncarnation {
+    pub(crate) authority: AuthorityUid,
     pub recipient: u64,
     pub connection_generation: u64,
     pub input: Input,
