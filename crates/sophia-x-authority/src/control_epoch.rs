@@ -557,15 +557,33 @@ pub struct ControlEpochGate {
     /// Captured when the gate is built, so a caller already holding the
     /// coordinator can be checked against this gate without taking it again.
     incarnation: u64,
+    /// Captured for the same reason, and a sharper one.
+    ///
+    /// A caller holding the common guard cannot take the coordinator to ask
+    /// which authority this gate serves: opening a transition takes the
+    /// coordinator and then common, so reaching back the other way is the
+    /// inversion. Both facts are fixed for the gate's life, so reading them
+    /// here costs nothing and orders nothing.
+    authority: AuthorityIdentity,
 }
 
 impl ControlEpochGate {
     pub fn new(coordinator: ControlEpochCoordinator) -> Self {
         let incarnation = coordinator.incarnation();
+        let authority = coordinator.authority();
         Self {
             coordinator: std::sync::Arc::new(std::sync::Mutex::new(coordinator)),
             incarnation,
+            authority,
         }
+    }
+
+    /// Which authority this gate's coordinator drives.
+    ///
+    /// Lock-free, because the caller that needs it is already holding common
+    /// and must not reach back for the coordinator.
+    pub fn authority(&self) -> AuthorityIdentity {
+        self.authority
     }
 
     /// The coordinator this gate was built around.

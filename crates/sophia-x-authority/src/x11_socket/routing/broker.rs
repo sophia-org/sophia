@@ -711,19 +711,23 @@ impl XServerFrontendRouteBroker {
             })
     }
 
-    /// Execute one admitted synthetic request.
+    /// Record one admitted synthetic request in the ledger.
     ///
-    /// This is where the check-then-act window closes. Resolving the recipient
-    /// and applying the press happen inside one hold on the common authority,
-    /// so a transition cannot land between deciding that input may be
-    /// delivered and delivering it. Nothing here waits, and nothing here
-    /// writes to a socket: the X guard is taken beneath common, used, and
-    /// dropped before this returns.
+    /// A ledger helper, not the production path. No routing happens here, no
+    /// client is written to, and no XKB state moves; `route_pending` does not
+    /// call this, so the check-then-act window in ordinary admission remains
+    /// open. What it establishes is the shape that closes it: resolving where
+    /// a press belongs and recording it occur inside one hold on the common
+    /// authority, rather than as two steps a transition could land between.
+    ///
+    /// Nothing here waits, and nothing here writes to a socket. The X guard is
+    /// taken beneath common, used, and dropped before this returns.
     ///
     /// The recipient is resolved now rather than at admission. A grab can be
     /// taken or released between a request being accepted and becoming
     /// runnable, so a recipient chosen earlier would name a client the press
-    /// never reached. What is recorded here is what later releases answer to.
+    /// never reached. What the ledger records is what later releases answer
+    /// to, which is not always what resolution proposed.
     pub fn execute_synthetic_input(
         &self,
         authority: &mut sophia_input_authority::AuthorityInstance,
@@ -731,20 +735,21 @@ impl XServerFrontendRouteBroker {
         request: crate::SyntheticRequest,
         focused: Option<u64>,
     ) -> Result<crate::SyntheticOutcome, sophia_input_authority::RegistrationError> {
-        // Which authority this broker serves, checked before common is taken:
-        // the gate ranks above it. An identity is fixed for an authority's
-        // lifetime, so reading it here and acting on it below cannot go stale.
-        // Without this, another authority's grant executes through this broker
-        // and creates a hold here that belongs to neither.
+        // Which authority this broker serves, read from the gate WITHOUT
+        // taking the coordinator. Holding a &mut AuthorityInstance means the
+        // caller already holds common, and opening a transition takes the
+        // coordinator and then common, so reaching back for the coordinator
+        // from here is that rank inverted. Being earlier than execute_reserved
+        // is not the same as being earlier than the caller's own guard.
+        //
+        // Without this check another authority's grant executes through this
+        // broker and creates a hold here that belongs to neither.
         let identity = authority.authority_identity(issuer)?;
         let gate = self
             .control_gate
             .get()
             .ok_or(sophia_input_authority::RegistrationError::RoutingUnavailable)?;
-        let bound = gate
-            .with(|coordinator| coordinator.authority())
-            .map_err(|_| sophia_input_authority::RegistrationError::RoutingUnavailable)?;
-        if bound != identity {
+        if gate.authority() != identity {
             return Err(sophia_input_authority::RegistrationError::RoutingUnavailable);
         }
 

@@ -1,9 +1,12 @@
-//! Executing admitted synthetic input, once, under one guard.
+//! Recording admitted synthetic input in the ledger, under one guard.
 //!
-//! Everything that decides whether a press may happen, and everything that
-//! makes it happen, runs inside a single hold on the common authority. A
-//! design that checked first and acted afterwards would leave a transition
-//! free to land in between, which is precisely the window this closes.
+//! This is a ledger helper, not the production path. Nothing here routes,
+//! writes to a client, or touches XKB state: the routing loop does not call
+//! it, and until it does, the check-then-act window in ordinary admission is
+//! still open. What it does provide is the shape that window will be closed
+//! with -- deciding where a press belongs and recording it happen inside a
+//! single hold on the common authority, rather than as two steps a transition
+//! could land between.
 
 use sophia_input_authority::{
     ConnectionIdentity, HoldIncarnation, Input, InputKind, Recipient, RegistrationError,
