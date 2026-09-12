@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 rustix = { version = "1.1", default-features = false, features = ["event", "fs", "net", "std", "time"] }
+sophia-input-authority = { path = "../sophia-input-authority" }
 sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-sysv-shm = { path = "../sophia-sysv-shm" }

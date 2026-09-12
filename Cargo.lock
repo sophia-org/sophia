@@ -1114,6 +1114,7 @@ name = "sophia-x-authority"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "sophia-input-authority",
  "sophia-linux-peer",
  "sophia-portal",
  "sophia-protocol",
