@@ -514,3 +514,36 @@ is limited to setup authentication. The default-off core baseline at
 tests executed. Evidence is
 `/tmp/sophia-native-input-evidence/core-28417f90/report.json`. Neither result
 constitutes XTEST execution or hardware acceptance.
+
+The subsequent control slice at `57fdcfc0` passes independent instance-binding,
+transition and receipt checks: 676 X-authority tests PASS, one existing Qt probe
+is ignored, and the contained core profile passes 100/100 wire executions.
+Warnings-as-errors Clippy, layout and 90 harness regressions pass. Evidence is
+`.artifacts/native-control-57fdcfc0-evidence/`. Receipt batches now retain their
+origin by allocation identity; a wrong broker returns the batch so the origin
+can still deliver it. This closes the reviewed control-slice findings, not
+production execution admission.
+
+The proposed executor at `8cb09cb9` was rejected and remains unintegrated.
+Independent public-API checks pass three positive controls and fail five desired
+safety assertions: foreign-authority execution, release after focus disappears,
+release after focus changes, duplicate delivery reporting, and delivery reporting
+on a refused press. Evidence is
+`.artifacts/synthetic-executor-review-8cb09cb9-v2/`. Production `route_pending`
+does not call that helper; its check-then-act gap remains open. Revision
+`2caba34c` repairs the helper and is under independent review. Its identity check
+still takes the coordinator mutex from a method receiving mutable common state;
+a caller already holding common would invert the coordinator-before-common rank.
+Immutable authority identity must be available without that lock. Committed focus,
+actual recipient routing, modifier publication and StateOnly thaw remain required.
+
+The canonical contained check now passes on exact clean `49d38924`, using the
+device-hidden wrapper: command exit 0, 282 Rust result groups with 3,311 passes,
+zero failures and 29 ignored tests, and no compiler warning lines. Required
+Sophia and explicit sibling commit signatures pass. Evidence is
+`.artifacts/offline-input-full-49d38924/report.json` and its adjacent
+`execution-summary.json`. This snapshot includes master `4c4af8bd` and excludes
+later content commit `9cf6650a`; the result does not certify current master.
+Hardware proofs and promoted host archives are explicitly NOT_RUN. Passing the
+canonical checks does not discharge the native profile's missing production
+obligations or make the private XTEST host operational.
