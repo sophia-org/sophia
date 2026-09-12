@@ -678,13 +678,18 @@ impl XServerFrontendRouteBroker {
     /// Deliver what a control transition revoked.
     ///
     /// Separate from the apply so it runs with every guard released.
-    /// Deliver what a control transition revoked.
     ///
     /// A batch offered to the wrong broker is handed back with the refusal
     /// rather than consumed. Dropping it would lose receipts that clients of
     /// the originating broker are owed, turning a caller's mistake into
     /// silently abandoned work; returning it leaves the origin able to deliver
     /// what it revoked.
+    ///
+    /// Delivery by the right broker is a different matter. It fails only when
+    /// the recovery ledger is poisoned, which is a terminal fault of this
+    /// instance rather than something a caller can retry, so the batch that
+    /// comes back with that error is empty and carries no promise. Do not read
+    /// it as work still waiting to be delivered.
     pub fn report_control_transition(
         &self,
         outcome: ControlTransitionOutcome,
