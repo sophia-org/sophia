@@ -392,3 +392,60 @@ the command only after reparenting. Retained isolated evidence in
 `.artifacts/offline-xterm-fix-6171c351` reports original FAIL in 22.142s, fixed
 PASS in 2.166s, and restored-PPID mutant FAIL in 22.197s. No full canonical PASS
 is inferred from that targeted repair. Render proofs remain NOT_RUN.
+
+
+The next independent client review found six faulty behaviors that the original
+XTEST cases accepted: globally delayed healthy peers, immediate or mid-delay
+input effects, half-close bypassing delay, reversed transitions, and denied
+pointer input taking effect despite BadAccess. The corrected cases reject all
+six in scripted controls; 20 offline harness tests pass. Evidence is
+`/tmp/sophia-xtest-case-review/`. The 20 server cases (40 byte-order executions)
+have not run against a completed adapter. CARD32 cancellation and slot reuse
+still require native lifecycle evidence; a short socket observation cannot
+establish them alone.
+
+Master later integrated the wrapper and probe fix as `d0ee0160` and `c89fb1f8`.
+The private branch was rebased onto `c89fb1f8` as `8716a523`, dropping those
+duplicates and retaining the new content/client foundation. Wrapper and probe
+files match master exactly at that checkpoint. The preceding independent core
+run at `1c32f3ab` passed 100/100 wire executions and 75 harness regressions;
+that report is not validation of the later content/client tranche.
+
+Coordinator repairs from Claude's `f27cefc0` and `c8971472` are now included for
+independent testing. Construction derives common published state; transitions
+cannot supersede one another, installation names an opaque coordinator-bound
+token, and both identity counters refuse exhaustion. The narrow
+`m3_coordinator_state` manifest entry names the 24 actual test attributes, not
+helper functions. These tests check declared installation sequencing. Production
+clearing, final execution, queued/thawed validation and receipt producers remain
+open. The [writer investigation](../investigations/0t8n7mwl-asynchronous-client-writers-publish-seat-modifier-state-out-of-order.md)
+records source-confirmed modifier-publication and target-reselection hazards
+that t093's private integration must address; it is not live reproduction.
+
+The canonical run at `1c32f3ab` passed workspace, Clippy, layout and the repaired
+orphan regression, then failed an archive-verifier fixture that assumed a
+pre-existing release binary. That fixture synthesizes evidence to test the
+verifier; it is not a scanout run. The fix selects the actual built debug binary
+(or explicit override) consistently. Its remaining private-fixture prerequisites
+include parent history and public signature-verification material. No placeholder
+binary, disabled signature guard, or inherited private keyring may satisfy them.
+The complete run remains FAIL until those checks execute and pass.
+
+
+The independent coordinator run on `edc4237e` passes 24 tests and
+warnings-as-errors Clippy. Evidence is
+`/tmp/sophia-native-input-evidence/coordinator-edc4237e`. Its narrow sequencing
+obligation is mapped separately from the still-unimplemented production gates.
+Review of the subsequent broker scaffolding `9711c376` found that admission was
+returned as a boolean before effects, deferred routes lost publication stamps,
+and private mode still had bare-counter application paths. Those paths must join
+the final common-guard transaction and retain original identity on every thaw;
+the slice is not accepted as a complete authorization boundary. Gated construction
+must also prevent an earlier ungated sender from surviving as an alternate ingress.
+
+The repaired archive fixture at `553908a6` now passes in a fresh contained
+snapshot with its actual parent and minimal public verification keys. Genuine
+signature checks for both commits pass; the debug executable is used only as
+hash input, never executed. Evidence and public verification recipe are
+`.artifacts/offline-archive-fixture-553908a6/verification-recipe.md`.
+This is a verifier-fixture result, not scanout or full canonical acceptance.

@@ -791,6 +791,206 @@
           "test": "issuing_connection_is_not_confused_with_the_delivery_recipient"
         }
       ]
+    },
+    {
+      "id": "m3_coordinator_state",
+      "description": "Coordinator state-machine sequencing, transition identity and derived publication; no production population-clearing claim",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "the_applied_epoch_takes_the_exact_requested_value_however_far_it_jumped"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "work_is_refused_while_a_transition_has_not_published"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_transition_that_cleared_only_some_populations_has_not_applied"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "routing_does_not_reopen_before_the_transition_applied"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "routing_reopens_only_on_the_publication_the_transition_was_requested_under"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_stamp_from_before_a_transition_is_not_admitted_after_it"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_stamp_naming_another_publication_is_not_admitted"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_requested_epoch_that_does_not_move_forward_is_refused"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "the_stamp_survives_the_round_trip_it_is_meant_to_survive"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "an_ordinary_focus_publication_keeps_the_epoch_and_does_not_revoke_grabs"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_publication_only_transition_cannot_reopen_before_it_installed"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "the_initial_epoch_does_not_let_a_transition_reopen_without_installing"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_security_transition_must_advance_the_epoch"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_publication_only_transition_must_not_move_the_epoch"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_publication_transition_is_not_satisfied_by_security_clearing_alone"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "applying_without_a_requested_transition_is_refused"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_granted_capability_survives_an_ordinary_focus_publication"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_security_transition_does_revoke_the_granted_capability"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_second_transition_cannot_supersede_one_in_flight"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "an_installation_report_cannot_be_filed_against_a_later_transition"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "transition_identities_are_refused_rather_than_reused_when_exhausted"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_token_from_another_coordinator_is_not_this_ones_installation_identity"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_coordinator_cannot_be_derived_while_a_transition_is_pending"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_coordinator_derives_the_advanced_state_rather_than_resetting_to_zero"
+        }
+      ],
+      "evidence_scope": "Common/coordinator state-machine calls only. Installation booleans are writer declarations. The production transition, lock order, actual snapshot/population clearing, queue/thaw and executor race obligations remain separate and unimplemented."
     }
   ]
 }
