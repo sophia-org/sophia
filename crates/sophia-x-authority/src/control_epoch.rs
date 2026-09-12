@@ -255,6 +255,11 @@ impl ControlEpochCoordinator {
         })
     }
 
+    /// Which coordinator this is, readable without taking it.
+    pub fn incarnation(&self) -> u64 {
+        self.incarnation
+    }
+
     pub fn requested_control_epoch(&self) -> u64 {
         self.requested_control_epoch
     }
@@ -544,13 +549,27 @@ pub fn next_transition_identity(current: u64) -> Result<u64, ControlEpochRefusal
 #[derive(Clone, Debug)]
 pub struct ControlEpochGate {
     coordinator: std::sync::Arc<std::sync::Mutex<ControlEpochCoordinator>>,
+    /// Captured when the gate is built, so a caller already holding the
+    /// coordinator can be checked against this gate without taking it again.
+    incarnation: u64,
 }
 
 impl ControlEpochGate {
     pub fn new(coordinator: ControlEpochCoordinator) -> Self {
+        let incarnation = coordinator.incarnation();
         Self {
             coordinator: std::sync::Arc::new(std::sync::Mutex::new(coordinator)),
+            incarnation,
         }
+    }
+
+    /// The coordinator this gate was built around.
+    ///
+    /// Immutable and lock-free on purpose: the privileged apply is called with
+    /// the coordinator already held, so re-entering the mutex to ask which one
+    /// it is would deadlock on the caller's own guard.
+    pub fn coordinator_incarnation(&self) -> u64 {
+        self.incarnation
     }
 
     /// The stamp new work should carry, or a refusal.

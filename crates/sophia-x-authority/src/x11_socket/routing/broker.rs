@@ -11,6 +11,13 @@
 /// quarantined without terminating the shared frontend; corruption of shared
 /// registry state remains service-fatal.
 #[cfg(unix)]
+/// Distinguishes brokers, so their receipts cannot be interchanged.
+static REGISTRY_IDENTITIES: AtomicU64 = AtomicU64::new(1);
+
+fn next_registry_identity() -> u64 {
+    REGISTRY_IDENTITIES.fetch_add(1, Ordering::Relaxed)
+}
+
 /// What a control transition left for its caller to deliver.
 ///
 /// Carried rather than sent, because delivery must happen with the guards
@@ -18,6 +25,13 @@
 /// already taken off the frozen queue has no other way to be answered.
 #[must_use = "revoked input owes its clients a receipt"]
 pub struct ControlTransitionOutcome {
+    /// Which broker revoked this work.
+    ///
+    /// Receipts name clients, and client identifiers are only unique within
+    /// one frontend. Handing this batch to another broker would deliver one
+    /// frontend's revocations to whichever of its clients happened to share
+    /// those numbers.
+    registry: u64,
     receipts: VecDeque<XDeferredRoutedInput>,
     applied: bool,
 }
@@ -41,6 +55,8 @@ pub struct XServerFrontendRouteBroker {
     applied_input_control_epoch: u64,
     /// Unset in ordinary mode, leaving every path below exactly as it was.
     control_gate: Arc<std::sync::OnceLock<crate::ControlEpochGate>>,
+    /// Distinguishes this broker's receipts from another's.
+    registry_identity: u64,
     route_lease_release_sender: SyncSender<XAuthorityRouteLeaseRelease>,
     route_lease_release_receiver: Receiver<XAuthorityRouteLeaseRelease>,
     control_sender: SyncSender<XAuthorityClientControlCommand>,
@@ -430,6 +446,7 @@ impl XServerFrontendRouteBroker {
         let input_authority = Arc::new(Mutex::new(crate::XInputAuthorityState::default()));
         Self {
             control_gate: Arc::new(std::sync::OnceLock::new()),
+            registry_identity: next_registry_identity(),
             registry: XServerFrontendRouteRegistry {
                 // Ingress + frozen + every possible client's private queue and
                 // active writer. Terminal receipts retain their credit until
@@ -615,6 +632,17 @@ impl XServerFrontendRouteBroker {
         coordinator
             .check_permit(permit)
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        // The permit and the coordinator agreeing with each other says nothing
+        // about this broker. Without this, another authority's entirely valid
+        // coordinator, permit and token would clear these X populations, and
+        // an ungated broker would clear them for anyone at all.
+        let installed = self
+            .control_gate
+            .get()
+            .ok_or(XServerFrontendRouteError::RegistryPoisoned)?;
+        if installed.coordinator_incarnation() != coordinator.incarnation() {
+            return Err(XServerFrontendRouteError::RegistryPoisoned);
+        }
         let kind = coordinator
             .pending_kind_for(token)
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
@@ -644,6 +672,7 @@ impl XServerFrontendRouteBroker {
         };
         let applied = coordinator.apply(token, cleared);
         Ok(ControlTransitionOutcome {
+            registry: self.registry_identity,
             receipts: drained,
             applied: applied.is_ok(),
         })
@@ -656,6 +685,9 @@ impl XServerFrontendRouteBroker {
         &self,
         outcome: ControlTransitionOutcome,
     ) -> Result<usize, XServerFrontendRouteError> {
+        if outcome.registry != self.registry_identity {
+            return Err(XServerFrontendRouteError::RegistryPoisoned);
+        }
         self.registry.report_revoked_input(outcome.receipts)
     }
 

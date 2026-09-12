@@ -1813,3 +1813,241 @@ fn an_authority_with_no_transition_open_cannot_drive_anothers() {
         "the refused apply must not have cleared anything"
     );
 }
+
+/// A broker with a client, a surface and an active grab, for the cross-broker
+/// negatives below.
+fn gated_broker_with_grab(
+    gate: &crate::ControlEpochGate,
+    namespace: NamespaceId,
+    client: XServerFrontendClientId,
+    surface: SurfaceId,
+    window: XResourceId,
+) -> (
+    XServerFrontendRouteBroker,
+    std::sync::mpsc::Receiver<XAuthorityClientInputDelivery>,
+    impl std::any::Any,
+) {
+    let (control_ack_sender, control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, delivery_receiver) = channel();
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    )
+    .under_control_gate(gate.clone());
+    let registration = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: client.raw(),
+                window,
+                owner_events: false,
+                pointer_mode: 1,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
+            },
+        )
+        .unwrap();
+    // The registration lease retires the client when it drops, taking its
+    // grabs with it, so it has to outlive the caller's assertions.
+    (broker, delivery_receiver, Box::new((registration, control_ack_receiver)))
+}
+
+#[test]
+fn another_coordinators_transition_cannot_clear_this_brokers_populations() {
+    let namespace = NamespaceId::from_raw(31);
+    let client = XServerFrontendClientId(27);
+    let surface = SurfaceId::new(41, 1);
+    let window = XResourceId::new(0x2000b0, 1);
+    let (gate, _instance, _issuer) = control_gate();
+    let (other_gate, mut other_instance, other_issuer) = control_gate();
+    let (broker, _deliveries, _lease) =
+        gated_broker_with_grab(&gate, namespace, client, surface, window);
+
+    // Everything here is valid on its own terms: the other coordinator, its
+    // own authority's permit, and a token it really did issue. None of it says
+    // anything about this broker.
+    other_gate
+        .with(|other| {
+            let token = other
+                .request(
+                    &mut other_instance,
+                    &other_issuer,
+                    crate::TransitionKind::SecurityControl,
+                    1,
+                    1,
+                )
+                .expect("the other transition to be requested");
+            assert!(
+                broker
+                    .apply_control_transition(
+                        &other_instance
+                            .control_permit(&other_issuer)
+                            .expect("the issuer to hold a permit"),
+                        other,
+                        token,
+                        true
+                    )
+                    .is_err(),
+                "a broker must refuse a coordinator it is not under"
+            );
+        })
+        .expect("the other gate");
+
+    assert!(
+        broker
+            .registry
+            .input_authority
+            .lock()
+            .unwrap()
+            .pointer_grab(namespace)
+            .is_some(),
+        "another coordinator's transition must not clear this broker's grabs"
+    );
+}
+
+#[test]
+fn an_ungated_broker_refuses_a_privileged_transition_entirely() {
+    let namespace = NamespaceId::from_raw(32);
+    let client = XServerFrontendClientId(28);
+    let surface = SurfaceId::new(42, 1);
+    let window = XResourceId::new(0x2000c0, 1);
+    let (gate, mut instance, issuer) = control_gate();
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    // Deliberately never put under a gate.
+    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    let (_registration, _channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: client.raw(),
+                window,
+                owner_events: false,
+                pointer_mode: 1,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
+            },
+        )
+        .unwrap();
+
+    gate.with(|coordinator| {
+        let token = coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("the transition to be requested");
+        assert!(
+            broker
+                .apply_control_transition(
+                    &instance
+                        .control_permit(&issuer)
+                        .expect("the issuer to hold a permit"),
+                    coordinator,
+                    token,
+                    true
+                )
+                .is_err(),
+            "an ungated broker has no coordinator and must refuse one"
+        );
+    })
+    .expect("the gate");
+
+    assert!(
+        broker
+            .registry
+            .input_authority
+            .lock()
+            .unwrap()
+            .pointer_grab(namespace)
+            .is_some(),
+        "an ungated broker must not be cleared by a coordinator"
+    );
+}
+
+#[test]
+fn one_brokers_receipts_cannot_be_delivered_by_another() {
+    let (gate, mut instance, issuer) = control_gate();
+    let (broker, _deliveries, _lease) = gated_broker_with_grab(
+        &gate,
+        NamespaceId::from_raw(33),
+        XServerFrontendClientId(29),
+        SurfaceId::new(43, 1),
+        XResourceId::new(0x2000d0, 1),
+    );
+    // A second broker under the same coordinator, with a client whose
+    // identifier collides, which is ordinary: client ids are unique per
+    // frontend, not across frontends.
+    let (other_broker, other_deliveries, _other_lease) = gated_broker_with_grab(
+        &gate,
+        NamespaceId::from_raw(33),
+        XServerFrontendClientId(29),
+        SurfaceId::new(43, 1),
+        XResourceId::new(0x2000d0, 1),
+    );
+
+    let outcome = gate
+        .with(|coordinator| {
+            let token = coordinator
+                .request(
+                    &mut instance,
+                    &issuer,
+                    crate::TransitionKind::SecurityControl,
+                    1,
+                    1,
+                )
+                .expect("the transition to be requested");
+            broker
+                .apply_control_transition(
+                    &instance
+                        .control_permit(&issuer)
+                        .expect("the issuer to hold a permit"),
+                    coordinator,
+                    token,
+                    true,
+                )
+                .expect("the transition to apply")
+        })
+        .expect("the gate");
+
+    assert!(
+        other_broker.report_control_transition(outcome).is_err(),
+        "receipts must be delivered by the broker that revoked the work"
+    );
+    assert!(
+        other_deliveries.try_recv().is_err(),
+        "the other broker's clients must receive nothing"
+    );
+}
