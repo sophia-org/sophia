@@ -531,11 +531,15 @@ release after focus changes, duplicate delivery reporting, and delivery reportin
 on a refused press. Evidence is
 `.artifacts/synthetic-executor-review-8cb09cb9-v2/`. Production `route_pending`
 does not call that helper; its check-then-act gap remains open. Revision
-`2caba34c` repairs the helper and is under independent review. Its identity check
-still takes the coordinator mutex from a method receiving mutable common state;
-a caller already holding common would invert the coordinator-before-common rank.
-Immutable authority identity must be available without that lock. Committed focus,
-actual recipient routing, modifier publication and StateOnly thaw remain required.
+`2caba34c` passes all eight retained cases and a direct-common-under-coordinator
+control. A separate helper-under-coordinator call times out at its three-second
+watchdog: the identity check reacquires the coordinator from a method receiving
+mutable common state. A caller holding common would also invert the selected
+rank. Evidence is `.artifacts/synthetic-executor-review-2caba34c/`. Repair
+`b5d371c4` captures immutable authority identity in the gate for lock-free checks
+and awaits the same independent rerun. Committed focus, actual recipient routing,
+modifier publication and StateOnly thaw remain required before production-path
+acceptance; the helper is still unintegrated.
 
 The canonical contained check now passes on exact clean `49d38924`, using the
 device-hidden wrapper: command exit 0, 282 Rust result groups with 3,311 passes,

@@ -336,6 +336,14 @@
             "name": "ledger"
           },
           "test": "a_keycode_below_the_minimum_is_not_a_key"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "input_kind"
+          },
+          "test": "checked_inputs_report_their_own_class_across_both_domains"
         }
       ]
     },
