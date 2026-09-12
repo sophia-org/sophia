@@ -1,8 +1,6 @@
 use super::LiveMetadataShell;
-use sophia_protocol::{
-    OutputId, ShellIndicator, ShellIndicatorSnapshot, ShellOutputStatus,
-    encode_shell_indicator_snapshot,
-};
+use crate::shell_indicator_projection::indicator_snapshot;
+use sophia_protocol::{OutputId, ShellIndicatorSnapshot, encode_shell_indicator_snapshot};
 
 impl LiveMetadataShell {
     /// Republish the indicator set the Engine already holds, plus which output
@@ -108,40 +106,6 @@ impl LiveMetadataShell {
 /// same code the session does. A host that built its own snapshot would be
 /// re-implementing exactly the mapping most worth checking, and agreement would
 /// then prove only that two encoders match each other.
-pub fn indicator_snapshot(
-    publication: &sophia_engine::PolicyIndicatorPublication,
-    active_output: Option<OutputId>,
-    connection_epoch: u64,
-) -> ShellIndicatorSnapshot {
-    ShellIndicatorSnapshot {
-        connection_epoch,
-        generation: publication.generation,
-        active_output,
-        statuses: publication
-            .output_statuses
-            .iter()
-            .map(|status| ShellOutputStatus {
-                output: status.output,
-                focus_bits: status.focus_bits,
-                layout: status.layout.clone(),
-            })
-            .collect(),
-        indicators: publication
-            .indicators
-            .iter()
-            .map(|indicator| ShellIndicator {
-                output: indicator.output,
-                indicator: indicator.indicator,
-                // Identities are allocated from one, so zero is free to mean
-                // "not activatable" and can never collide with a real action.
-                action: indicator.action.map_or(0, sophia_protocol::WmActionId::raw),
-                slot: indicator.slot,
-                state_bits: indicator.state_bits,
-                label: indicator.label.clone(),
-            })
-            .collect(),
-    }
-}
 
 /// Decide what an activation is worth against the set the shell was last sent.
 ///

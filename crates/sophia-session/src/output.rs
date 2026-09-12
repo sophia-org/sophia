@@ -6,6 +6,9 @@ use std::sync::OnceLock;
 /// Host callbacks for exact line-oriented session evidence.
 #[derive(Clone, Copy)]
 pub struct SessionOutput {
+    // Written only by the live session's printer, which a default build does
+    // not compile.
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
     stdout: fn(&str),
     stderr: fn(&str),
 }
@@ -25,6 +28,7 @@ pub fn install(output: SessionOutput) -> Result<(), &'static str> {
         .map_err(|_| "Sophia session output is already installed")
 }
 
+#[cfg_attr(not(feature = "native-session"), allow(dead_code))]
 pub(crate) fn stdout(arguments: Arguments<'_>) {
     if let Some(output) = OUTPUT.get() {
         let line = arguments.to_string();

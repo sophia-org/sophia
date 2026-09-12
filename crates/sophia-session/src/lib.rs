@@ -1,11 +1,15 @@
 mod output;
 pub use output::{SessionOutput, install as install_session_output};
 
+// Only the live session prints; a default build compiles the macro without a
+// caller, which is not a defect worth a warning.
+#[allow(unused_macros)]
 macro_rules! session_println {
     ($($argument:tt)*) => {{
         crate::output::stdout(format_args!($($argument)*));
     }};
 }
+#[allow(unused_imports)]
 pub(crate) use session_println;
 
 macro_rules! session_eprintln {
@@ -46,6 +50,7 @@ pub mod session_control;
 pub mod session_keyboard;
 pub mod session_shutdown;
 pub mod session_startup;
+pub(crate) mod shell_indicator_projection;
 pub mod support;
 
 #[cfg(feature = "native-session")]
@@ -57,7 +62,7 @@ mod live_session;
 /// Exported as a single named item rather than by opening `metadata_shell`, so
 /// a host shares the production mapping without gaining the transport.
 pub mod shell_indicator_publication {
-    pub use crate::live_session::metadata_shell::indicators::indicator_snapshot;
+    pub use crate::shell_indicator_projection::indicator_snapshot;
 }
 /// Cadence of the bounded native-session resource evidence population.
 #[cfg(feature = "native-session")]
