@@ -579,6 +579,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         // request declares its FD arity instead of binding them to the first
         // header returned by recvmsg.
         let mut pending_request_fds = Vec::new();
+        // Created on the first block rather than per connection: most clients
+        // never wait behind another's server grab, and an eventfd each would
+        // be a descriptor per client for a case that rarely arises.
+        let mut grab_wait_notifier: Option<ConnectionNotifier> = None;
         while let Some(received) = read_x11_core_request(stream, setup.byte_order)? {
             let major_opcode = received.major_opcode;
             let request = received.bytes;
@@ -590,16 +594,60 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let ancillary_fds = received.fds;
             let mut received_fds = Vec::new();
             loop {
-                let server_owner = lock_x11_request_runtime(
-                    &state.runtime,
-                    &state.control_runtime_pending,
-                )?
-                    .input_authority_mut()
-                    .server_owner(namespace);
-                if server_owner.is_none_or(|owner| owner == client.raw()) {
+                if grab_wait_notifier.is_none() {
+                    grab_wait_notifier = Some(ConnectionNotifier::new().map_err(|error| {
+                        X11SetupSocketError::new(format!(
+                            "failed to create a server-grab wait notifier: {error}"
+                        ))
+                    })?);
+                }
+                let notifier = grab_wait_notifier
+                    .as_ref()
+                    .expect("the notifier was just created");
+                let blocked = {
+                    let runtime = lock_x11_request_runtime(
+                        &state.runtime,
+                        &state.control_runtime_pending,
+                    )?;
+                    let mut authority = runtime.input_authority_mut();
+                    if authority
+                        .server_owner(namespace)
+                        .is_none_or(|owner| owner == client.raw())
+                    {
+                        false
+                    } else {
+                        // Registered under the same guard that read the owner.
+                        // Registering after releasing it would let a release
+                        // in the gap wake nobody, parking this connection
+                        // until some unrelated notification arrived.
+                        authority.await_server_grab(namespace, notifier);
+                        true
+                    }
+                };
+                if !blocked {
                     break;
                 }
-                std::thread::sleep(Duration::from_millis(1));
+                // No deadline: the wait ends when the grab is released, the
+                // epoch is revoked, the holder disconnects, or this peer
+                // departs. A backstop timer here would convert a missing wake
+                // into a slow poll, hiding the defect instead of failing on it.
+                // A poll failure over descriptors this server owns is a
+                // local fault, not peer behaviour, so it keeps the
+                // unclassified constructor and reaches the reaper as the
+                // server problem it is.
+                let wake = ConnectionWait::new(stream.as_fd(), notifier)
+                    .wait_until(None)
+                    .map_err(|error| {
+                        X11SetupSocketError::new(format!(
+                            "failed to wait for the server grab to be released: {error}"
+                        ))
+                    })?;
+                match wake {
+                    ConnectionWake::Notified | ConnectionWake::Deadline => continue,
+                    // The peer is gone. Its remaining requests are moot, and
+                    // dispatch ends the same way an ordinary EOF ends it.
+                    ConnectionWake::Departed => return Ok(()),
+                }
             }
             sequence = sequence.wrapping_add(1);
             let transaction = state.allocate_transaction()?;

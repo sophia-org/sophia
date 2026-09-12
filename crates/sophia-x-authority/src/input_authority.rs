@@ -57,6 +57,8 @@ struct XNamespaceInputAuthority {
     buttons: Vec<XPassiveInputGrab>,
     keys: Vec<XPassiveInputGrab>,
     server_owner: Option<u64>,
+    /// Connections parked because another client holds the server grab.
+    server_grab_waiters: crate::connection_wait::NotifierRegistry,
     pointer_frozen: bool,
     keyboard_frozen: bool,
     pointer_implicit: bool,
@@ -207,7 +209,24 @@ impl XInputAuthorityState {
             && state.server_owner == Some(owner)
         {
             state.server_owner = None;
+            state.server_grab_waiters.notify_all();
         }
+    }
+
+    /// Park a connection until this namespace's server grab is released.
+    ///
+    /// Registration happens under the same guard that reads the owner, so a
+    /// release between the two cannot be missed.
+    pub fn await_server_grab(
+        &mut self,
+        namespace: NamespaceId,
+        notifier: &crate::connection_wait::ConnectionNotifier,
+    ) {
+        self.namespaces
+            .entry(namespace)
+            .or_default()
+            .server_grab_waiters
+            .register(notifier);
     }
 
     pub fn allow_events(
@@ -293,6 +312,7 @@ impl XInputAuthorityState {
             state.pointer_frozen = false;
             state.keyboard_frozen = false;
             state.server_owner = None;
+            state.server_grab_waiters.notify_all();
         }
     }
 
@@ -441,6 +461,7 @@ impl XInputAuthorityState {
             state.keys.retain(|grab| grab.owner != owner);
             if state.server_owner == Some(owner) {
                 state.server_owner = None;
+                state.server_grab_waiters.notify_all();
             }
             if state.pointer.is_none() && state.keyboard.is_none() {
                 state.pointer_frozen = false;

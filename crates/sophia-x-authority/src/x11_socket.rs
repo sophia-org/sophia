@@ -27,6 +27,8 @@ use std::{
 };
 
 #[cfg(unix)]
+use crate::connection_wait::{ConnectionNotifier, ConnectionWait, ConnectionWake};
+#[cfg(unix)]
 use crate::{
     X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL, X_ATOM_NAME_WM_DELETE_WINDOW,
     X_ATOM_NAME_WM_PROTOCOLS, X_SETUP_CLIENT_PREFIX_LEN, X_SETUP_DEFAULT_RESOURCE_ID_MASK,

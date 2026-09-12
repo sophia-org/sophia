@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-rustix = { version = "1.1", default-features = false, features = ["fs", "net", "std", "time"] }
+rustix = { version = "1.1", default-features = false, features = ["event", "fs", "net", "std", "time"] }
 sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-sysv-shm = { path = "../sophia-sysv-shm" }
