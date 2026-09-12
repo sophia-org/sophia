@@ -52,7 +52,7 @@ recorded when the event was admitted. `writers/input.rs:75` loads
 
 So an event admitted under one focus can be targeted using a focus committed
 afterwards. For ordinary delivery this is the existing behaviour and is not
-being changed here, but it means a recorded recipient cannot be cleaned up by
+being changed here, but it means a recorded recipient cannot be recovered by
 re-running selection: doing so would silently resolve against new focus and
 retire the wrong recipient.
 
@@ -64,9 +64,16 @@ client's own view of its own delivery; what must not continue is asynchronous
 writer completion overwriting current seat state that the executor is
 responsible for.
 
-Recorded-recipient cleanup must use the recipient recorded at admission. The
-writer's re-selection path is not a substitute, because it answers a different
-question: where would this go now, rather than where was this sent.
+A first press resolves and records its recipient at final authoritative
+execution, not at request admission. Admission reserves the request and the
+cell its completion will be written into; focus and grabs may still change
+between then and the moment the press becomes runnable, so a recipient chosen
+at admission would name a window the press never reached.
+
+Every later release and retirement then uses that recorded reached recipient.
+The writer's re-selection path is not a substitute for it, because it answers
+a different question: where would this go now, rather than where did this
+actually arrive.
 
 Both belong to the private `Option` integration alongside final recipient
 ordering. Ordinary mode is unchanged.
