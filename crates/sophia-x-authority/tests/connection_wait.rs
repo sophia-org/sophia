@@ -4,9 +4,11 @@ use std::os::unix::net::UnixStream;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use rustix::io::Errno;
 use sophia_protocol::NamespaceId;
 use sophia_x_authority::{
-    ConnectionNotifier, ConnectionWait, ConnectionWake, NotifierRegistry, XInputAuthorityState,
+    ConnectionNotifier, ConnectionWait, ConnectionWake, NotifierRegistry, WakeAttempt,
+    XInputAuthorityState, deliver_wake, wake_attempt,
 };
 
 fn pair() -> (UnixStream, UnixStream) {
@@ -176,4 +178,89 @@ fn another_clients_ungrab_does_not_wake_a_connection_still_blocked() {
     // the parked connection must stay parked.
     authority.ungrab_server(namespace, 9);
     assert!(!woke(&notifier));
+}
+
+#[test]
+fn an_interrupted_wake_is_retried_rather_than_treated_as_delivered() {
+    // A signal arriving mid-write delivers nothing. Counting it as success
+    // loses the only wake the waiter will ever get, and this wait has no
+    // backstop timer to recover from that.
+    assert_eq!(wake_attempt(Errno::INTR), WakeAttempt::Retry);
+}
+
+#[test]
+fn only_a_saturated_counter_means_the_wake_is_already_pending() {
+    // A counter one short of overflowing refuses further adds, but a waiter
+    // reading it still sees a nonzero count, so the wake is genuinely there.
+    assert_eq!(wake_attempt(Errno::AGAIN), WakeAttempt::Pending);
+    // Everything else is a descriptor that cannot carry a wake at all, and
+    // reporting it as pending would park a connection forever.
+    for broken in [Errno::BADF, Errno::INVAL, Errno::IO, Errno::PIPE] {
+        assert_eq!(wake_attempt(broken), WakeAttempt::Unusable);
+    }
+}
+
+#[test]
+fn repeated_wakes_coalesce_into_one_delivered_notification() {
+    let (ours, _peer) = pair();
+    let notifier = ConnectionNotifier::new().expect("an eventfd");
+    let mut registry = registry_with(&notifier);
+    for _ in 0..1024 {
+        registry.notify_all();
+    }
+    // Every subscriber survived, so no write was classified as unusable.
+    assert_eq!(registry.subscriber_count(), 1);
+
+    let mut wait = ConnectionWait::new(ours.as_fd(), &notifier);
+    let wake = wait
+        .wait_until(Some(Instant::now() + Duration::from_secs(5)))
+        .expect("the wait to complete");
+    assert_eq!(wake, ConnectionWake::Notified);
+}
+
+#[test]
+fn a_grab_held_across_connection_churn_does_not_accumulate_subscribers() {
+    // The grab holder never releases, so notify_all never runs and never
+    // prunes. Without pruning at registration this would grow by one dead
+    // entry per connection that parked and left.
+    let mut registry = NotifierRegistry::default();
+    for _ in 0..1024 {
+        let notifier = ConnectionNotifier::new().expect("an eventfd");
+        registry.register(&notifier);
+    }
+    assert!(
+        registry.subscriber_count() <= 2,
+        "churn left {} subscribers",
+        registry.subscriber_count()
+    );
+}
+
+#[test]
+fn an_interrupted_wake_is_written_again_until_it_lands() {
+    let mut attempts = 0usize;
+    let delivered = deliver_wake(|| {
+        attempts += 1;
+        if attempts < 3 {
+            Err(Errno::INTR)
+        } else {
+            Ok(8)
+        }
+    });
+
+    assert!(delivered);
+    // Two interruptions, then the write that actually carried the wake. A
+    // loop that gave up on the first would leave the waiter parked forever.
+    assert_eq!(attempts, 3);
+}
+
+#[test]
+fn a_wake_onto_an_unusable_descriptor_is_not_retried_forever() {
+    let mut attempts = 0usize;
+    let delivered = deliver_wake(|| {
+        attempts += 1;
+        Err(Errno::BADF)
+    });
+
+    assert!(!delivered);
+    assert_eq!(attempts, 1);
 }

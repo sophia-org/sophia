@@ -594,6 +594,23 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let ancillary_fds = received.fds;
             let mut received_fds = Vec::new();
             loop {
+                let holder_present = {
+                    let runtime = lock_x11_request_runtime(
+                        &state.runtime,
+                        &state.control_runtime_pending,
+                    )?;
+                    let authority = runtime.input_authority_mut();
+                    authority
+                        .server_owner(namespace)
+                        .is_some_and(|owner| owner != client.raw())
+                };
+                if !holder_present {
+                    break;
+                }
+                // Only now is a wake source worth its descriptor. Creating it
+                // before the check above would have meant an eventfd per
+                // client for a case most clients never reach, and creating it
+                // under the guard would put a syscall inside the lock.
                 if grab_wait_notifier.is_none() {
                     grab_wait_notifier = Some(ConnectionNotifier::new().map_err(|error| {
                         X11SetupSocketError::new(format!(
@@ -614,6 +631,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         .server_owner(namespace)
                         .is_none_or(|owner| owner == client.raw())
                     {
+                        // Released while the notifier was being made.
                         false
                     } else {
                         // Registered under the same guard that read the owner.
