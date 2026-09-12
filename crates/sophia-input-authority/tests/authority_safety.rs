@@ -38,6 +38,7 @@ fn fixture() -> Fixture {
 
 fn context(generation: GrantGeneration) -> ExecutionContext {
     ExecutionContext {
+        connection: fixture_connection(),
         generation,
         epoch: 0,
         publication: 0,
@@ -53,7 +54,10 @@ fn to(id: u64) -> Recipient {
 }
 
 fn granted(f: &mut Fixture, device: u64) -> (DeviceCapability, GrantGeneration) {
-    let (grant, generation) = f.authority.issue_grant(&f.issuer).expect("grant");
+    let (grant, generation) = f
+        .authority
+        .issue_grant(&f.issuer, fixture_connection())
+        .expect("grant");
     let capability = f
         .authority
         .allocate_device(&f.issuer, grant, generation, DeviceId::from_raw(device))
@@ -97,7 +101,10 @@ fn source_32_retirement_preserves_physical_source_0() {
     // the index that wrapped onto zero under the old holder set.
     let mut last = None;
     for device in 0..16u64 {
-        let (grant, generation) = f.authority.issue_grant(&f.issuer).expect("grant");
+        let (grant, generation) = f
+            .authority
+            .issue_grant(&f.issuer, fixture_connection())
+            .expect("grant");
         for slot in 0..2u64 {
             last = Some(
                 f.authority
@@ -148,7 +155,10 @@ fn same_binding_does_not_forge_another_authoritys_issuer() {
     let mut first = fixture();
     let second = fixture();
     assert_eq!(
-        first.authority.issue_grant(&second.issuer).unwrap_err(),
+        first
+            .authority
+            .issue_grant(&second.issuer, fixture_connection())
+            .unwrap_err(),
         RegistrationError::ForeignAuthority,
         "rebuilding the public binding must not produce a usable issuer"
     );
@@ -205,7 +215,10 @@ fn uncleared_release_blocks_a_new_same_recipient_hold() {
 #[test]
 fn a_grant_cannot_allocate_more_than_two_devices() {
     let mut f = fixture();
-    let (grant, generation) = f.authority.issue_grant(&f.issuer).expect("grant");
+    let (grant, generation) = f
+        .authority
+        .issue_grant(&f.issuer, fixture_connection())
+        .expect("grant");
     for device in 0..2u64 {
         f.authority
             .allocate_device(&f.issuer, grant, generation, DeviceId::from_raw(device))
@@ -217,4 +230,11 @@ fn a_grant_cannot_allocate_more_than_two_devices() {
             .unwrap_err(),
         RegistrationError::Capacity(CapacityError::NoDeviceSlot)
     );
+}
+
+fn fixture_connection() -> sophia_input_authority::ConnectionIdentity {
+    sophia_input_authority::ConnectionIdentity {
+        recipient: 1,
+        connection_generation: 1,
+    }
 }

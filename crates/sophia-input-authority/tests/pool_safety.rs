@@ -33,7 +33,10 @@ fn fixture(instance: u64) -> Fixture {
 }
 
 fn granted(f: &mut Fixture) -> (GrantId, GrantGeneration, DeviceCapability) {
-    let (grant, generation) = f.authority.issue_grant(&f.issuer).unwrap();
+    let (grant, generation) = f
+        .authority
+        .issue_grant(&f.issuer, fixture_connection())
+        .unwrap();
     let capability = f
         .authority
         .allocate_device(
@@ -49,6 +52,7 @@ fn granted(f: &mut Fixture) -> (GrantId, GrantGeneration, DeviceCapability) {
 
 fn context(generation: GrantGeneration) -> ExecutionContext {
     ExecutionContext {
+        connection: fixture_connection(),
         generation,
         epoch: 0,
         publication: 0,
@@ -155,7 +159,7 @@ fn revoked_generation_cannot_allocate_and_execute_again() {
 fn settled_empty_grants_are_reusable_after_sixteen_clients() {
     let mut f = fixture(1);
     for connection in 0..17 {
-        let grant = f.authority.issue_grant(&f.issuer);
+        let grant = f.authority.issue_grant(&f.issuer, fixture_connection());
         assert!(
             grant.is_ok(),
             "empty settled slots exhausted at {connection}: {grant:?}"
@@ -417,18 +421,24 @@ fn ordinary_release_debt_keeps_revoked_grant_slot_occupied() {
     let mut f = fixture(1);
     let (old_grant, generation, device) = granted(&mut f);
     for _ in 1..Capacity::PLANNED.grants {
-        f.authority.issue_grant(&f.issuer).unwrap();
+        f.authority
+            .issue_grant(&f.issuer, fixture_connection())
+            .unwrap();
     }
     press(&mut f, device, generation, 41);
     let owed = release(&mut f, device, 41);
     f.authority.revoke_grant(&f.issuer, old_grant).unwrap();
     assert!(
-        f.authority.issue_grant(&f.issuer).is_err(),
+        f.authority
+            .issue_grant(&f.issuer, fixture_connection())
+            .is_err(),
         "the full registry reused a slot with an ordinary release still outstanding"
     );
     assert!(settle(&mut f, old_grant, owed));
     assert!(
-        f.authority.issue_grant(&f.issuer).is_ok(),
+        f.authority
+            .issue_grant(&f.issuer, fixture_connection())
+            .is_ok(),
         "settlement must make the retiring slot reusable"
     );
 }
@@ -436,9 +446,14 @@ fn ordinary_release_debt_keeps_revoked_grant_slot_occupied() {
 #[test]
 fn stale_revocation_cannot_kill_reused_slot_generation() {
     let mut f = fixture(1);
-    let (old_grant, _) = f.authority.issue_grant(&f.issuer).unwrap();
+    let (old_grant, _) = f
+        .authority
+        .issue_grant(&f.issuer, fixture_connection())
+        .unwrap();
     for _ in 1..Capacity::PLANNED.grants {
-        f.authority.issue_grant(&f.issuer).unwrap();
+        f.authority
+            .issue_grant(&f.issuer, fixture_connection())
+            .unwrap();
     }
     f.authority.revoke_grant(&f.issuer, old_grant).unwrap();
     let (new_grant, new_generation, new_device) = granted(&mut f);
@@ -572,4 +587,11 @@ fn full_synthetic_pool_refuses_before_mutation_and_preserves_physical_reserve() 
         settle(&mut f, grant, new),
         "a settled record must be reusable without losing new debt"
     );
+}
+
+fn fixture_connection() -> sophia_input_authority::ConnectionIdentity {
+    sophia_input_authority::ConnectionIdentity {
+        recipient: 1,
+        connection_generation: 1,
+    }
 }

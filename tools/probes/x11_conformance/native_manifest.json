@@ -546,6 +546,235 @@
           "test": "full_synthetic_pool_refuses_before_mutation_and_preserves_physical_reserve"
         }
       ]
+    },
+    {
+      "id": "m3_completion_cells",
+      "description": "Common-state retained completion, cancellation and exact token reuse; no notifier or executor integration claim",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "duplicate_execution_observes_completion_without_replaying_effect"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "one_cell_per_grant_covers_both_devices_until_completion_consumed"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "revoke_before_execution_cancels_without_callback_or_debt"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "committed_completion_and_debt_survive_revocation_without_a_wakeup"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "callback_error_after_application_preserves_effect_and_completion"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "permit_refuses_a_second_transition_without_mutating_it"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "old_token_cannot_take_or_abandon_a_reused_slots_new_request"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "sixteen_retired_cells_pin_slots_until_each_exact_completion_is_consumed"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "abandonment_invalidates_pending_token_but_keeps_applied_debt"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "publication_transition_cancels_original_context_without_restamping"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "changed_epoch_cannot_be_laundered_by_fresh_context_on_old_capability"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "failed_release_and_refused_press_cannot_discharge_existing_debt"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "foreign_control_handles_cannot_observe_or_execute_retained_cells"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "an_external_effect_failure_is_not_reported_as_an_effect_free_refusal"
+        }
+      ]
+    },
+    {
+      "id": "m3_attempt_pool",
+      "description": "Common-state64 transport-attempt bound after native reconciliation, retained in-flight barriers and fair retry; no real writer outcome claim",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempts"
+          },
+          "test": "a_separate_settlement_does_not_let_a_pending_writer_overtake_a_new_press"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempts"
+          },
+          "test": "sixty_four_attempts_do_not_drop_the_sixty_fifth_debt_or_retry_inflight_work"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempts"
+          },
+          "test": "attempt_receipts_are_authority_bound_even_with_identical_public_seats"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempts"
+          },
+          "test": "native_reconciliation_must_finish_before_a_transport_attempt_is_eligible"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempt_retention"
+          },
+          "test": "epoch_revocation_keeps_completion_and_attempt_pins_in_either_consumption_order"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempt_retention"
+          },
+          "test": "old_finished_attempt_cannot_settle_new_hold_after_record_and_attempt_slot_reuse"
+        }
+      ]
+    },
+    {
+      "id": "m3_connection_binding",
+      "description": "Common-state caller and connection-generation binding at reservation, execution and completion; Session currency proof remains separate",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "wrong_current_connection_never_runs_callback_or_consumes_pending_cell"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "wrong_current_connection_cannot_observe_or_consume_completed_cell"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "mismatched_context_cannot_reserve_a_cell_or_apply_a_press"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "mismatched_release_preserves_the_original_connections_hold"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "independent_reconnect_grant_does_not_inherit_old_request_or_source"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "issuing_connection_is_not_confused_with_the_delivery_recipient"
+        }
+      ]
     }
   ]
 }

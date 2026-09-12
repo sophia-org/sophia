@@ -11,12 +11,13 @@ fn instance() -> (AuthorityInstance, IssuerHandle, SubmitHandle) {
     .unwrap()
 }
 fn grant(a: &mut AuthorityInstance, issuer: &IssuerHandle, device: u64) -> DeviceCapability {
-    let (grant, generation) = a.issue_grant(issuer).unwrap();
+    let (grant, generation) = a.issue_grant(issuer, fixture_connection()).unwrap();
     a.allocate_device(issuer, grant, generation, DeviceId::from_raw(device))
         .unwrap()
 }
 fn context(cap: DeviceCapability) -> ExecutionContext {
     ExecutionContext {
+        connection: fixture_connection(),
         generation: cap.generation(),
         epoch: 0,
         publication: 0,
@@ -69,9 +70,11 @@ fn retiring_one_injector_preserves_the_other_and_both_references_settle() {
     );
     a.revoke_grant(&issuer, second.grant()).unwrap();
     // Both participant references must retire, not just the release's owner.
-    let fresh: Vec<_> = (0..16).map(|_| a.issue_grant(&issuer).unwrap()).collect();
+    let fresh: Vec<_> = (0..16)
+        .map(|_| a.issue_grant(&issuer, fixture_connection()).unwrap())
+        .collect();
     assert_eq!(fresh.len(), 16);
-    assert!(a.issue_grant(&issuer).is_err());
+    assert!(a.issue_grant(&issuer, fixture_connection()).is_err());
 }
 
 #[test]
@@ -110,9 +113,9 @@ fn two_devices_of_one_grant_release_one_aggregate_and_reclaim_the_slot() {
         .unwrap()
     );
     for _ in 0..16 {
-        a.issue_grant(&issuer).unwrap();
+        a.issue_grant(&issuer, fixture_connection()).unwrap();
     }
-    assert!(a.issue_grant(&issuer).is_err());
+    assert!(a.issue_grant(&issuer, fixture_connection()).is_err());
 }
 
 #[test]
@@ -163,5 +166,12 @@ fn capacity_overflow_and_a_different_key_domain_are_refused() {
         },
     ] {
         assert!(AuthorityInstance::new(binding, capacity, capacity.buttons as u16).is_err());
+    }
+}
+
+fn fixture_connection() -> sophia_input_authority::ConnectionIdentity {
+    sophia_input_authority::ConnectionIdentity {
+        recipient: 1,
+        connection_generation: 1,
     }
 }

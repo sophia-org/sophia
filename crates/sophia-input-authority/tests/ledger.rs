@@ -34,6 +34,7 @@ fn fixture_for(instance: InstanceId) -> Fixture {
 
 fn context(generation: GrantGeneration) -> ExecutionContext {
     ExecutionContext {
+        connection: fixture_connection(),
         generation,
         epoch: 0,
         publication: 0,
@@ -49,7 +50,10 @@ fn to(id: u64) -> Recipient {
 }
 
 fn granted(f: &mut Fixture, device: u64) -> (DeviceCapability, GrantGeneration) {
-    let (grant, generation) = f.authority.issue_grant(&f.issuer).expect("grant");
+    let (grant, generation) = f
+        .authority
+        .issue_grant(&f.issuer, fixture_connection())
+        .expect("grant");
     let capability = f
         .authority
         .allocate_device(&f.issuer, grant, generation, DeviceId::from_raw(device))
@@ -273,7 +277,10 @@ fn a_handle_from_another_authority_is_refused_despite_an_identical_binding() {
     let mut first = fixture();
     let second = fixture_for(InstanceId::new(1));
     assert_eq!(
-        first.authority.issue_grant(&second.issuer).unwrap_err(),
+        first
+            .authority
+            .issue_grant(&second.issuer, fixture_connection())
+            .unwrap_err(),
         RegistrationError::ForeignAuthority,
         "a second authority's issuer must not command the first"
     );
@@ -398,6 +405,7 @@ fn execution_refuses_while_a_transition_has_not_published() {
     );
     f.authority.publish(&f.issuer, 1, 0).expect("published");
     let after = ExecutionContext {
+        connection: fixture_connection(),
         generation,
         epoch: 0,
         publication: 1,
@@ -429,7 +437,10 @@ fn a_button_domain_that_does_not_match_the_preallocation_is_refused() {
 #[test]
 fn a_grant_cannot_hold_more_devices_than_its_allowance() {
     let mut f = fixture();
-    let (grant, generation) = f.authority.issue_grant(&f.issuer).expect("grant");
+    let (grant, generation) = f
+        .authority
+        .issue_grant(&f.issuer, fixture_connection())
+        .expect("grant");
     for device in 0..2u64 {
         f.authority
             .allocate_device(&f.issuer, grant, generation, DeviceId::from_raw(device))
@@ -525,7 +536,7 @@ fn sixteen_short_lived_clients_do_not_exhaust_the_instance() {
     for round in 0..40u64 {
         let (grant, generation) = f
             .authority
-            .issue_grant(&f.issuer)
+            .issue_grant(&f.issuer, fixture_connection())
             .unwrap_or_else(|error| panic!("round {round} could not get a grant: {error:?}"));
         f.authority
             .allocate_device(&f.issuer, grant, generation, DeviceId::from_raw(round))
@@ -537,7 +548,10 @@ fn sixteen_short_lived_clients_do_not_exhaust_the_instance() {
 #[test]
 fn a_revoked_grant_cannot_be_resurrected_by_allocating_another_device() {
     let mut f = fixture();
-    let (grant, generation) = f.authority.issue_grant(&f.issuer).expect("grant");
+    let (grant, generation) = f
+        .authority
+        .issue_grant(&f.issuer, fixture_connection())
+        .expect("grant");
     f.authority
         .allocate_device(&f.issuer, grant, generation, DeviceId::from_raw(1))
         .expect("a device");
@@ -570,4 +584,11 @@ fn a_foreign_physical_source_cannot_claim_physical_origin() {
         "an index from another authority is not a physical source here, and \
          physical origin is what the emergency recognizer reads"
     );
+}
+
+fn fixture_connection() -> sophia_input_authority::ConnectionIdentity {
+    sophia_input_authority::ConnectionIdentity {
+        recipient: 1,
+        connection_generation: 1,
+    }
 }

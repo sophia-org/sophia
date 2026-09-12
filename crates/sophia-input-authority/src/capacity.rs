@@ -31,6 +31,8 @@ pub enum CapacityError {
     NoHoldRecord,
     /// No completion cell is free for this grant.
     NoCompletionCell,
+    /// Every reserved delivery attempt is still pending.
+    NoAttemptSlot,
 }
 
 /// The fixed shape of one authority instance.

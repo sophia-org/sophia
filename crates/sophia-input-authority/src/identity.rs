@@ -107,12 +107,17 @@ pub struct DeviceCapability {
     pub(crate) grant: crate::GrantId,
     pub(crate) generation: crate::GrantGeneration,
     pub(crate) device: DeviceId,
+    pub(crate) connection: ConnectionIdentity,
 }
 
 impl DeviceCapability {
     /// The packet key for this device. Not authority.
     pub fn device_id(self) -> DeviceId {
         self.device
+    }
+
+    pub fn connection(self) -> ConnectionIdentity {
+        self.connection
     }
 
     pub fn generation(self) -> crate::GrantGeneration {
@@ -183,6 +188,15 @@ impl Input {
     pub(crate) fn slot(self) -> usize {
         usize::from(self.slot)
     }
+}
+
+/// Session-supplied identity of the admitted caller, not the delivery target.
+/// These public numbers are names, not capabilities. Only the issuer can bind
+/// them to a grant; execution compares against the current proven connection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConnectionIdentity {
+    pub recipient: u64,
+    pub connection_generation: u64,
 }
 
 /// Where a press is being delivered, as the router knows it.

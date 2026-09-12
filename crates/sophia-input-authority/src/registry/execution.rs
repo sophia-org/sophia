@@ -55,7 +55,7 @@ impl AuthorityInstance {
         Ok(self.release_inner(source, input))
     }
 
-    fn check_input(&self, input: Input) -> Result<(), RegistrationError> {
+    pub(super) fn check_input(&self, input: Input) -> Result<(), RegistrationError> {
         if input.slot() < self.capacity.input_slots() {
             Ok(())
         } else {
@@ -78,7 +78,7 @@ impl AuthorityInstance {
         }
     }
 
-    fn apply_press(
+    pub(super) fn apply_press(
         &mut self,
         source: SourceId,
         input: Input,
@@ -104,7 +104,7 @@ impl AuthorityInstance {
             record.incarnation.input == input
                 && record.holders == 0
                 && (!record.settlement.native_reconciled
-                    || (!record.settlement.recipient_settled
+                    || ((!record.settlement.recipient_settled || record.attempt.is_some())
                         && record.incarnation.recipient == to.recipient
                         && record.incarnation.connection_generation == to.connection_generation))
         }) {
@@ -132,6 +132,7 @@ impl AuthorityInstance {
             holders: 0,
             participants: 0,
             settlement: SettlementBit::default(),
+            attempt: None,
         });
         self.add_participant(index, source);
         self.active[input.slot()] = Some(index);
@@ -143,7 +144,7 @@ impl AuthorityInstance {
         })
     }
 
-    fn release_inner(&mut self, source: SourceId, input: Input) -> ReleaseOutcome {
+    pub(super) fn release_inner(&mut self, source: SourceId, input: Input) -> ReleaseOutcome {
         let Some(index) = self.active[input.slot()] else {
             return ReleaseOutcome::NotHeld;
         };
@@ -236,10 +237,18 @@ impl AuthorityInstance {
         let record = self.records[index].as_mut().expect("retained");
         record.settlement.native_reconciled |= bit.native_reconciled;
         record.settlement.recipient_settled |= bit.recipient_settled;
-        if !record.settlement.is_settled() {
+        if !record.settlement.is_settled() || record.attempt.is_some() {
             return Ok(false);
         }
-        self.records[index] = None;
+        self.free_record(index);
+        Ok(true)
+    }
+
+    pub(super) fn free_record(&mut self, index: usize) {
+        let record = self.records[index].take().expect("retained record");
+        assert_eq!(record.holders, 0);
+        assert!(record.settlement.is_settled() && record.attempt.is_none());
+        let participants = record.participants;
         for i in 0..u64::BITS as usize {
             if participants & (1u64 << i) == 0 {
                 continue;
@@ -259,6 +268,5 @@ impl AuthorityInstance {
                     .expect("one retained grant reference");
             }
         }
-        Ok(true)
     }
 }

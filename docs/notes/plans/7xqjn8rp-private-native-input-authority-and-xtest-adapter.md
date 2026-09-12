@@ -300,3 +300,56 @@ the owed release (2/2 PASS). The external probe is necessary because the crate
 forbids unsafe code while Rust's allocator observation API requires it; evidence
 is `/tmp/sophia-native-input-m2-review/after-pool-rewrite/provenance.json`.
 That record names an uncommitted source hash, not a fabricated commit identity.
+
+
+### M3 common completion and attempt primitives
+
+The common authority now reserves one completion cell per grant before enqueue.
+The original request context remains in that cell. Final execution receives a
+restricted `ExecutionPermit` under the common guard; it cannot issue or revoke
+a grant. The result is stored before unlocking, with eventfd left as wakeup only.
+Completed cells pin retiring grant slots until consumed or abandoned by issuer
+cleanup. Repeated execution observes the retained result without replay.
+Publication changes cancel pending cells. A security-control epoch change also
+revokes old grants; issuing a new context cannot revive an old capability.
+
+A callback can fail after applying authority state. Such a result is explicitly
+`FailedAfterApplication`, separate from a pre-application refusal; it retains
+both the completion and any cleanup debt. Adapter-only effects must mark that
+boundary before mutating their state. This result is not proof of recipient
+processing, and `Processed` is not an XTEST success reply.
+
+A separate pool reserves at most 64 attempts over the retained debts. There is
+one outstanding attempt per hold and a persistent fair cursor. A failed attempt
+leaves debt retryable. Even if another receipt settles both obligation bits, an
+older attempt that could still send a release pins the record and the same
+recipient's clearing barrier until its actual terminal outcome. Stale attempt
+identities cannot settle a retry using the same slot. The runtime still owes
+actual receipt producers, cancellation acknowledgement, interval budgets and
+socket-phase accounting; these primitives do not establish them.
+
+The full native manifest on `e7531ba0` reports 14 PASS obligations and 19
+NORESULT, with 36 exact tests executed; it exits 1 as required. Evidence is
+`/tmp/sophia-native-input-evidence/native-m2-e7531ba0`. Unimplemented Session,
+writer, executor and notification obligations remain mandatory rather than
+being replaced with the passing common-state tests.
+
+
+Grant issuance now binds an explicit `ConnectionIdentity`, distinct from the
+delivery `Recipient`. Reservation retains that binding. Final execution and
+completion consumption require the currently proven pair; wrong callers cannot
+consume a result or change the original cell. Session still owns the actual
+admission/currency proof. The common library checks the binding; it does not
+infer it from an X packet, UID, socket path or caller-created numeric identity.
+
+Transport attempts become eligible only after synchronous native reconciliation
+has completed. They cannot contain deferred native key-ups: a different
+recipient may already have pressed that input while the old recipient's
+transport remains blocked. M3 integration must maintain that separation.
+
+The common M3 primitives and binding checks pass 72 tests, warnings-as-errors
+Clippy and the layout gate. Evidence is
+`/tmp/sophia-native-input-evidence/m3-common-bound-connections`. Independent
+completion, attempt-retention and connection-binding reviews found no remaining
+blocker in these primitives. This does not close the production executor,
+notifier, receipt, lock-participant or Session-currency obligations.

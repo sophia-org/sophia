@@ -1,13 +1,19 @@
 //! One seat's authority. All mutation requires exclusive access supplied by the
 //! integration guard; this crate never acquires an adapter or runtime lock.
 
+mod attempts;
+use attempts::AttemptRecord;
+pub use attempts::{AttemptClaim, AttemptToken};
 mod execution;
+mod requests;
+use requests::RequestCell;
+pub use requests::{ExecutionPermit, RequestCompletion, RequestToken};
 
 use crate::capacity::{Capacity, CapacityError};
 use crate::grant::{GrantGeneration, GrantId, IssuerHandle, SubmitHandle};
 use crate::identity::{
-    AuthorityUid, DeviceCapability, HoldIncarnation, Input, Origin, Recipient, SeatBinding,
-    SourceId,
+    AuthorityUid, ConnectionIdentity, DeviceCapability, HoldIncarnation, Input, Origin, Recipient,
+    SeatBinding, SourceId,
 };
 use crate::ledger::{Applied, ReleaseOutcome, SettlementBit};
 use sophia_protocol::DeviceId;
@@ -19,6 +25,9 @@ pub enum RegistrationError {
     StaleExecution,
     RoutingUnavailable,
     ReleaseBarrier,
+    StaleRequest,
+    RequestConsumed,
+    WrongConnection,
     Capacity(CapacityError),
 }
 
@@ -28,8 +37,11 @@ pub enum RegistrationError {
 #[derive(Clone, Copy, Debug)]
 struct GrantSlot {
     id: GrantId,
+    control_epoch: u64,
+    connection: ConnectionIdentity,
     live: bool,
     references: usize,
+    request: Option<RequestCell>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -51,6 +63,7 @@ struct HoldRecord {
     holders: u64,
     participants: u64,
     settlement: SettlementBit,
+    attempt: Option<AttemptToken>,
 }
 
 pub struct AuthorityInstance {
@@ -61,6 +74,7 @@ pub struct AuthorityInstance {
     physical: Vec<SourceRecord>,
     active: Vec<Option<usize>>,
     records: Vec<Option<HoldRecord>>,
+    attempts: Vec<Option<AttemptRecord>>,
     grants: Vec<GrantSlot>,
     next_identity: u64,
     pending_revision: Option<(u64, u64)>,
@@ -73,6 +87,7 @@ pub struct AuthorityInstance {
 #[derive(Clone, Copy, Debug)]
 pub struct ExecutionContext {
     pub generation: GrantGeneration,
+    pub connection: ConnectionIdentity,
     pub epoch: u64,
     pub publication: u64,
     pub request: u64,
@@ -104,6 +119,7 @@ impl AuthorityInstance {
                 capacity.debt_records()
                     + capacity.physical_sources * capacity.input_slots()
             ],
+            attempts: vec![None; capacity.attempts],
             grants: Vec::with_capacity(capacity.grants),
             next_identity: 1,
             pending_revision: None,
@@ -191,7 +207,11 @@ impl AuthorityInstance {
             return Err(RegistrationError::ForeignAuthority);
         }
         let grant = self.grant(cap.grant)?;
-        if !grant.live || cap.generation != grant.id.generation {
+        if grant.connection != cap.connection {
+            return Err(RegistrationError::WrongConnection);
+        }
+        if !grant.live || cap.generation != grant.id.generation || grant.control_epoch != self.epoch
+        {
             return Err(RegistrationError::StaleGeneration);
         }
         let record = self
@@ -216,6 +236,9 @@ impl AuthorityInstance {
         if context.epoch != self.epoch || context.publication != self.publication {
             return Err(RegistrationError::StaleExecution);
         }
+        if context.connection != cap.connection {
+            return Err(RegistrationError::WrongConnection);
+        }
         if context.generation != cap.generation {
             return Err(RegistrationError::StaleGeneration);
         }
@@ -233,12 +256,16 @@ impl AuthorityInstance {
     pub fn issue_grant(
         &mut self,
         issuer: &IssuerHandle,
+        connection: ConnectionIdentity,
     ) -> Result<(GrantId, GrantGeneration), RegistrationError> {
         self.check_issuer(issuer)?;
+        if self.pending_revision.is_some() {
+            return Err(RegistrationError::RoutingUnavailable);
+        }
         let index = self
             .grants
             .iter()
-            .position(|slot| !slot.live && slot.references == 0)
+            .position(|slot| !slot.live && slot.references == 0 && slot.request.is_none())
             .unwrap_or(self.grants.len());
         if index == self.capacity.grants {
             return Err(RegistrationError::Capacity(CapacityError::NoGrantSlot));
@@ -251,8 +278,11 @@ impl AuthorityInstance {
         };
         let slot = GrantSlot {
             id,
+            control_epoch: self.epoch,
+            connection,
             live: true,
             references: 0,
+            request: None,
         };
         if index == self.grants.len() {
             self.grants.push(slot);
@@ -274,6 +304,7 @@ impl AuthorityInstance {
         if !slot.live || generation != grant.generation {
             return Err(RegistrationError::StaleGeneration);
         }
+        let connection = slot.connection;
         let owned = self
             .synthetic
             .iter()
@@ -315,6 +346,7 @@ impl AuthorityInstance {
             grant,
             generation,
             device,
+            connection,
         })
     }
 
@@ -363,6 +395,11 @@ impl AuthorityInstance {
         self.check_issuer(issuer)?;
         self.grant(grant)?;
         self.grants[grant.slot].live = false;
+        if let Some(cell) = self.grants[grant.slot].request.as_mut()
+            && cell.completion.is_none()
+        {
+            cell.completion = Some(RequestCompletion::Cancelled);
+        }
         let mut debt = RetiredDebt::default();
         for index in 0..self.synthetic.len() {
             let record = self.synthetic[index];
@@ -401,6 +438,24 @@ impl AuthorityInstance {
             return Err(RegistrationError::StaleExecution);
         }
         self.pending_revision = Some((publication, epoch));
+        // A pending operation never resumes across a changed publication. Its
+        // cancellation remains observable even if the wake coalesces.
+        for slot in &mut self.grants {
+            if let Some(cell) = slot.request.as_mut()
+                && cell.completion.is_none()
+            {
+                cell.completion = Some(RequestCompletion::Cancelled);
+            }
+        }
+        // Security-control epochs revoke authority, not just queued requests.
+        // No fresh request may launder an old capability by restamping context.
+        if epoch != self.epoch {
+            for index in 0..self.grants.len() {
+                if self.grants[index].live {
+                    self.revoke_grant(issuer, self.grants[index].id)?;
+                }
+            }
+        }
         Ok(())
     }
 
