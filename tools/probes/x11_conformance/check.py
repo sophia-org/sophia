@@ -46,7 +46,7 @@ def main():
     env = clean_environment()
     target = args.target_dir.resolve()
     env['CARGO_TARGET_DIR'] = str(target)
-    for name in ('test_gate.py', 'test_native.py', 'test_xtest.py', 'test_profiles.py'):
+    for name in ('test_gate.py', 'test_native.py', 'test_xtest.py', 'test_profiles.py', 'test_offline_check.py'):
         status = run_command([sys.executable, '-B', '-W', 'error', '-m', 'unittest', 'discover',
                               '-s', str(HERE), '-p', name], env)
         if status:
