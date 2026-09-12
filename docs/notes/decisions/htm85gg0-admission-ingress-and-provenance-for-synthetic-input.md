@@ -7,6 +7,12 @@ tags: [adr]
 ---
 # Admission, ingress and provenance for synthetic input
 
+The operator later reopened the delegation gate and deferred the shared-seat
+host-user administrator mode recorded below. Implementation is authorized only
+for the [private native authority and XTEST adapter](../plans/7xqjn8rp-private-native-input-authority-and-xtest-adapter.md).
+That successor changes the implementation scope, not these provenance and
+cleanup principles. It authorizes no live-seat activation or deployment.
+
 ## Context
 
 [t030](../plans/queue-11-parallel-production-readiness.md) excluded `XTEST` and
