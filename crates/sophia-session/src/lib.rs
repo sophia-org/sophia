@@ -1,15 +1,16 @@
 mod output;
 pub use output::{SessionOutput, install as install_session_output};
 
-// Only the live session prints; a default build compiles the macro without a
-// caller, which is not a defect worth a warning.
-#[allow(unused_macros)]
+// Only the live session prints, so a default build compiles the macro without a
+// caller. Allowed exactly where that is true: under native-session the macro
+// has callers, and a warning there would mean something.
+#[cfg_attr(not(feature = "native-session"), allow(unused_macros))]
 macro_rules! session_println {
     ($($argument:tt)*) => {{
         crate::output::stdout(format_args!($($argument)*));
     }};
 }
-#[allow(unused_imports)]
+#[cfg_attr(not(feature = "native-session"), allow(unused_imports))]
 pub(crate) use session_println;
 
 macro_rules! session_eprintln {
