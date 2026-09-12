@@ -634,3 +634,77 @@ fn a_coordinator_derives_the_advanced_state_rather_than_resetting_to_zero() {
     assert_eq!(attached.applied_control_epoch(), 6);
     assert_eq!(attached.committed_publication(), 3);
 }
+
+#[test]
+fn a_coordinator_cannot_drive_a_different_authority_at_the_same_revision() {
+    let (instance, issuer) = authority();
+    let (mut other_instance, other_issuer) = authority();
+    let mut coordinator = derive_coordinator(&instance, &issuer);
+
+    // Both authorities are fresh, so their epochs and publications are
+    // identical. Deriving the numbers alone left nothing to tell them apart.
+    assert_eq!(
+        other_instance
+            .published_revision(&other_issuer)
+            .expect("a published revision"),
+        instance
+            .published_revision(&issuer)
+            .expect("a published revision")
+    );
+
+    assert_eq!(
+        coordinator.request(
+            &mut other_instance,
+            &other_issuer,
+            TransitionKind::SecurityControl,
+            1,
+            1,
+        ),
+        Err(ControlEpochRefusal::WrongAuthority)
+    );
+    // Refused before any effect: the other authority still has no transition
+    // open, and this coordinator still has nothing pending.
+    assert!(other_instance.published_revision(&other_issuer).is_ok());
+    assert!(coordinator.is_open());
+}
+
+#[test]
+fn a_permit_from_another_authority_does_not_satisfy_this_coordinator() {
+    let (instance, issuer) = authority();
+    let (mut other_instance, other_issuer) = authority();
+    let coordinator = derive_coordinator(&instance, &issuer);
+
+    let foreign = other_instance
+        .control_permit(&other_issuer)
+        .expect("the issuer to hold a permit");
+
+    assert_eq!(
+        coordinator.check_permit(&foreign),
+        Err(ControlEpochRefusal::WrongAuthority)
+    );
+}
+
+#[test]
+fn a_coordinator_cannot_reopen_against_a_different_authority() {
+    let (mut instance, issuer) = authority();
+    let (mut other_instance, other_issuer) = authority();
+    let mut coordinator = derive_coordinator(&instance, &issuer);
+    let token = coordinator
+        .request(
+            &mut instance,
+            &issuer,
+            TransitionKind::SecurityControl,
+            1,
+            1,
+        )
+        .expect("the transition to be requested");
+    coordinator
+        .apply(token, everything_cleared())
+        .expect("the transition to apply");
+
+    assert_eq!(
+        coordinator.reopen(&mut other_instance, &other_issuer, 1),
+        Err(ControlEpochRefusal::WrongAuthority)
+    );
+    assert!(!coordinator.is_open());
+}

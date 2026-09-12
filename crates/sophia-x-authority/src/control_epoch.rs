@@ -16,7 +16,9 @@ use std::fmt;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use sophia_input_authority::{AuthorityInstance, IssuerHandle, RegistrationError};
+use sophia_input_authority::{
+    AuthorityIdentity, AuthorityInstance, ControlPermit, IssuerHandle, RegistrationError,
+};
 
 /// Distinguishes coordinators, so their tokens cannot be confused.
 static COORDINATOR_INCARNATIONS: AtomicU64 = AtomicU64::new(1);
@@ -46,6 +48,8 @@ pub enum ControlEpochRefusal {
     CoordinatorIncarnationsExhausted,
     /// The state this kind of transition requires was not installed.
     NotInstalled { kind: TransitionKind },
+    /// The authority presented is not the one this coordinator drives.
+    WrongAuthority,
     /// The common authority refused the transition itself.
     Authority(RegistrationError),
 }
@@ -89,6 +93,10 @@ impl fmt::Display for ControlEpochRefusal {
                     "a {kind:?} transition has not installed its state"
                 )
             }
+            Self::WrongAuthority => write!(
+                formatter,
+                "the authority presented is not the one this coordinator drives"
+            ),
             Self::Authority(error) => write!(formatter, "{error:?}"),
         }
     }
@@ -202,6 +210,13 @@ pub struct ControlEpochCoordinator {
     committed_publication: u64,
     pending: Option<PendingTransition>,
     applied_transition: Option<u64>,
+    /// Which authority this coordinator drives.
+    ///
+    /// Deriving the revision numbers alone bound nothing: two authorities at
+    /// the same epoch and publication are indistinguishable by value, so a
+    /// coordinator derived from one could drive the other whenever their
+    /// revisions coincided, using that other authority's legitimate issuer.
+    authority: AuthorityIdentity,
     incarnation: u64,
     next_transition: u64,
 }
@@ -225,7 +240,11 @@ impl ControlEpochCoordinator {
         let revision = authority
             .published_revision(issuer)
             .map_err(ControlEpochRefusal::Authority)?;
+        let identity = authority
+            .authority_identity(issuer)
+            .map_err(ControlEpochRefusal::Authority)?;
         Ok(Self {
+            authority: identity,
             requested_control_epoch: revision.control_epoch,
             applied_control_epoch: revision.control_epoch,
             committed_publication: revision.publication,
@@ -286,6 +305,9 @@ impl ControlEpochCoordinator {
         control_epoch: u64,
         publication: u64,
     ) -> Result<TransitionToken, ControlEpochRefusal> {
+        // Checked before anything else, because everything after it acts on
+        // this authority.
+        self.check_authority(authority, issuer)?;
         // No supersession. A second request while one is in flight would leave
         // an installation report in the air with nothing to match it against,
         // and the first transition's clearing half-done.
@@ -336,6 +358,36 @@ impl ControlEpochCoordinator {
             coordinator: self.incarnation,
             transition: id,
         })
+    }
+
+    /// Refuse an authority that is not the one this coordinator was derived
+    /// from, before any of its state is touched.
+    fn check_authority(
+        &self,
+        authority: &AuthorityInstance,
+        issuer: &IssuerHandle,
+    ) -> Result<(), ControlEpochRefusal> {
+        let identity = authority
+            .authority_identity(issuer)
+            .map_err(ControlEpochRefusal::Authority)?;
+        if identity == self.authority {
+            Ok(())
+        } else {
+            Err(ControlEpochRefusal::WrongAuthority)
+        }
+    }
+
+    /// Refuse a permit that does not hold this coordinator's authority.
+    ///
+    /// The permit is exclusive access to common, so matching its identity is
+    /// what makes the privileged apply provably about this coordinator's
+    /// authority rather than some other one at the same revision.
+    pub fn check_permit(&self, permit: &ControlPermit<'_>) -> Result<(), ControlEpochRefusal> {
+        if permit.identity() == self.authority {
+            Ok(())
+        } else {
+            Err(ControlEpochRefusal::WrongAuthority)
+        }
     }
 
     /// The kind of transition this token names, without changing anything.
@@ -415,6 +467,7 @@ impl ControlEpochCoordinator {
         issuer: &IssuerHandle,
         publication: u64,
     ) -> Result<(), ControlEpochRefusal> {
+        self.check_authority(authority, issuer)?;
         let pending = self.pending.ok_or(ControlEpochRefusal::NoTransition)?;
         if publication != pending.publication {
             return Err(ControlEpochRefusal::PublicationMismatch {

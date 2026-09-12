@@ -575,11 +575,17 @@ impl XServerFrontendRouteBroker {
 
     /// Apply a control transition's X-side clearing.
     ///
-    /// The privileged control path. Taking `&mut AuthorityInstance` is how the
-    /// signature requires what the documentation used to only assert: a caller
-    /// without the common guard cannot produce one. The issuer is checked
-    /// against it too, so this confirms with common that a transition really is
-    /// open rather than trusting the coordinator alone.
+    /// The privileged control path. The permit is how the signature requires
+    /// what the documentation used to only assert: it borrows the common
+    /// authority exclusively, so a caller without that access cannot produce
+    /// one, and it remains obtainable after grants are revoked and while
+    /// publication is unavailable, which is exactly when a transition needs it.
+    ///
+    /// Its identity is checked against the coordinator's. Revision numbers
+    /// alone never bound the two together: two authorities at the same epoch
+    /// and publication are indistinguishable by value, so without this a
+    /// coordinator could drive a different authority whenever their revisions
+    /// coincided.
     ///
     /// Lock order is the one a transition is opened with: coordinator, then
     /// common, then the X guards. The caller already holds the first two, so
@@ -601,18 +607,14 @@ impl XServerFrontendRouteBroker {
     /// receipt no matter what happened afterwards.
     pub fn apply_control_transition(
         &self,
-        authority: &mut sophia_input_authority::AuthorityInstance,
-        issuer: &sophia_input_authority::IssuerHandle,
+        permit: &sophia_input_authority::ControlPermit<'_>,
         coordinator: &mut crate::ControlEpochCoordinator,
         token: crate::TransitionToken,
         snapshot_installed: bool,
     ) -> Result<ControlTransitionOutcome, XServerFrontendRouteError> {
-        // Common must agree a transition is open. A published revision here
-        // means the coordinator and the authority disagree about what is in
-        // flight, and this path must not act on that.
-        if authority.published_revision(issuer).is_ok() {
-            return Err(XServerFrontendRouteError::RegistryPoisoned);
-        }
+        coordinator
+            .check_permit(permit)
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
         let kind = coordinator
             .pending_kind_for(token)
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;

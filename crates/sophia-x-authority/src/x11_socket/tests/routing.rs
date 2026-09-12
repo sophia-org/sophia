@@ -1487,7 +1487,7 @@ fn the_privileged_apply_clears_every_population_and_reports_them_together() {
                 .expect("the transition to be requested");
             // Session installs the snapshot; the X side speaks for the rest.
             let outcome = broker
-                .apply_control_transition(&mut instance, &issuer, coordinator, token, true)
+                .apply_control_transition(&instance.control_permit(&issuer).expect("the issuer to hold a permit"), coordinator, token, true)
                 .expect("the transition to apply");
             assert!(outcome.applied());
             assert_eq!(coordinator.applied_control_epoch(), 1);
@@ -1552,7 +1552,7 @@ fn the_privileged_apply_does_not_stamp_without_the_session_snapshot() {
         // installed the snapshot, so the transition is not applied.
         assert!(
             broker
-                .apply_control_transition(&mut instance, &issuer, coordinator, token, false)
+                .apply_control_transition(&instance.control_permit(&issuer).expect("the issuer to hold a permit"), coordinator, token, false)
                 .is_err(),
             "an incomplete installation must not stamp the applied epoch"
         );
@@ -1613,7 +1613,7 @@ fn a_publication_transition_preserves_grabs_and_frozen_input() {
             .request(&mut instance, &issuer, crate::TransitionKind::Publication, 0, 1)
             .expect("a publication-only transition to be requested");
         let outcome = broker
-            .apply_control_transition(&mut instance, &issuer, coordinator, token, true)
+            .apply_control_transition(&instance.control_permit(&issuer).expect("the issuer to hold a permit"), coordinator, token, true)
             .expect("the publication to apply");
         assert!(outcome.applied());
         assert_eq!(
@@ -1710,7 +1710,7 @@ fn a_foreign_token_is_refused_before_anything_is_destroyed() {
             .expect("this transition to be requested");
         assert!(
             broker
-                .apply_control_transition(&mut instance, &issuer, coordinator, foreign, true)
+                .apply_control_transition(&instance.control_permit(&issuer).expect("the issuer to hold a permit"), coordinator, foreign, true)
                 .is_err(),
             "a token from another coordinator must not drive this transition"
         );
@@ -1791,8 +1791,7 @@ fn an_authority_with_no_transition_open_cannot_drive_anothers() {
         assert!(
             broker
                 .apply_control_transition(
-                    &mut other_instance,
-                    &other_issuer,
+                    &other_instance.control_permit(&other_issuer).expect("the issuer to hold a permit"),
                     coordinator,
                     token,
                     true
