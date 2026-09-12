@@ -617,14 +617,124 @@ impl ControlEpochGate {
 
     /// Drive a transition. Used by whoever owns the authority, not by the
     /// threads that merely stamp and admit.
+    ///
+    /// The closure receives a facade rather than the coordinator itself. A
+    /// `&mut ControlEpochCoordinator` would let safe code write
+    /// `*coordinator = other`, leaving the identity and incarnation this gate
+    /// cached naming one authority while the coordinator behind them named
+    /// another -- and a check made afterwards would be too late to undo it.
+    /// There is no `DerefMut` here for the same reason.
     pub fn with<R>(
         &self,
-        act: impl FnOnce(&mut ControlEpochCoordinator) -> R,
+        act: impl FnOnce(&mut TransitionAccess<'_>) -> R,
     ) -> Result<R, ControlEpochRefusal> {
         let mut coordinator = self
             .coordinator
             .lock()
             .map_err(|_| ControlEpochRefusal::TransitionPending)?;
-        Ok(act(&mut coordinator))
+        let mut access = TransitionAccess {
+            coordinator: &mut coordinator,
+        };
+        Ok(act(&mut access))
+    }
+}
+
+/// What a holder of the coordinator may do with it.
+///
+/// Every operation a transition needs, and nothing that could replace the
+/// coordinator wholesale. The borrow inside is private and there is no
+/// dereference to it, so the gate's cached identity cannot be made to describe
+/// a coordinator that is no longer there.
+///
+/// Replacing it is not merely discouraged, it does not compile:
+///
+/// ```compile_fail
+/// use sophia_x_authority::{ControlEpochCoordinator, TransitionAccess};
+///
+/// fn strand_the_cached_identity(
+///     access: &mut TransitionAccess<'_>,
+///     other: ControlEpochCoordinator,
+/// ) {
+///     // The gate cached its authority and incarnation when it was built.
+///     // Swapping the coordinator here would leave those naming one authority
+///     // while the coordinator behind them named another.
+///     //
+///     // Two stars, not one: a single one only says a facade is not a
+///     // coordinator, which would hold however reachable the coordinator was.
+///     // This asks for the coordinator itself, which is what must be absent.
+///     **access = other;
+/// }
+/// ```
+pub struct TransitionAccess<'a> {
+    coordinator: &'a mut ControlEpochCoordinator,
+}
+
+impl TransitionAccess<'_> {
+    pub fn request(
+        &mut self,
+        authority: &mut AuthorityInstance,
+        issuer: &IssuerHandle,
+        kind: TransitionKind,
+        control_epoch: u64,
+        publication: u64,
+    ) -> Result<TransitionToken, ControlEpochRefusal> {
+        self.coordinator
+            .request(authority, issuer, kind, control_epoch, publication)
+    }
+
+    pub fn apply(
+        &mut self,
+        token: TransitionToken,
+        installed: TransitionInstallation,
+    ) -> Result<(), ControlEpochRefusal> {
+        self.coordinator.apply(token, installed)
+    }
+
+    pub fn reopen(
+        &mut self,
+        authority: &mut AuthorityInstance,
+        issuer: &IssuerHandle,
+        publication: u64,
+    ) -> Result<(), ControlEpochRefusal> {
+        self.coordinator.reopen(authority, issuer, publication)
+    }
+
+    pub fn check_permit(&self, permit: &ControlPermit<'_>) -> Result<(), ControlEpochRefusal> {
+        self.coordinator.check_permit(permit)
+    }
+
+    pub fn pending_kind_for(
+        &self,
+        token: TransitionToken,
+    ) -> Result<TransitionKind, ControlEpochRefusal> {
+        self.coordinator.pending_kind_for(token)
+    }
+
+    pub fn would_install(
+        &self,
+        token: TransitionToken,
+        installed: TransitionInstallation,
+    ) -> Result<(), ControlEpochRefusal> {
+        self.coordinator.would_install(token, installed)
+    }
+
+    pub fn authority(&self) -> AuthorityIdentity {
+        self.coordinator.authority()
+    }
+
+    pub fn incarnation(&self) -> u64 {
+        self.coordinator.incarnation()
+    }
+
+    pub fn applied_control_epoch(&self) -> u64 {
+        self.coordinator.applied_control_epoch()
+    }
+
+    pub fn committed_publication(&self) -> u64 {
+        self.coordinator.committed_publication()
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.coordinator.is_open()
     }
 }

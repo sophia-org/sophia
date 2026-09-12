@@ -622,7 +622,7 @@ impl XServerFrontendRouteBroker {
     pub fn apply_control_transition(
         &self,
         permit: &sophia_input_authority::ControlPermit<'_>,
-        coordinator: &mut crate::ControlEpochCoordinator,
+        coordinator: &mut crate::TransitionAccess<'_>,
         token: crate::TransitionToken,
         snapshot_installed: bool,
     ) -> Result<ControlTransitionOutcome, XServerFrontendRouteError> {
