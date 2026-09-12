@@ -2,8 +2,10 @@
 //! integration guard; this crate never acquires an adapter or runtime lock.
 
 mod attempts;
+mod control;
 use attempts::AttemptRecord;
 pub use attempts::{AttemptClaim, AttemptToken};
+pub use control::{AuthorityIdentity, ControlPermit};
 mod execution;
 mod requests;
 use requests::RequestCell;

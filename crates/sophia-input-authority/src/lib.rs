@@ -24,6 +24,7 @@ pub use identity::{
 };
 pub use ledger::{Applied, ReleaseOutcome, SettlementBit};
 pub use registry::{
-    AttemptClaim, AttemptToken, AuthorityInstance, ExecutionContext, ExecutionPermit,
-    PublishedRevision, RegistrationError, RequestCompletion, RequestToken, RetiredDebt,
+    AttemptClaim, AttemptToken, AuthorityIdentity, AuthorityInstance, ControlPermit,
+    ExecutionContext, ExecutionPermit, PublishedRevision, RegistrationError, RequestCompletion,
+    RequestToken, RetiredDebt,
 };
