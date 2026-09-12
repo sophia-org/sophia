@@ -411,8 +411,8 @@ def full_delay_disconnect(context):
         assert query_pointer(observer) == before, 'cancelled CARD32 delay changed pointer'
         with client(context) as replacement:
             replacement_opcode = major(replacement)
-            fake(replacement, replacement_opcode, 6, x=29, y=37)
-            assert query_pointer(replacement) == (29, 37), 'departed delayed client blocked replacement'
+            fake(replacement, replacement_opcode, 6, x=29, y=30)
+            assert query_pointer(replacement) == (29, 30), 'departed delayed client blocked replacement'
 
 
 def disconnect_release(context):

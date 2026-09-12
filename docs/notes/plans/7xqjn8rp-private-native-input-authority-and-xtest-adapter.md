@@ -449,3 +449,41 @@ signature checks for both commits pass; the debug executable is used only as
 hash input, never executed. Evidence and public verification recipe are
 `.artifacts/offline-archive-fixture-553908a6/verification-recipe.md`.
 This is a verifier-fixture result, not scanout or full canonical acceptance.
+
+
+The wrapper prerequisite repair `4507c741` is integrated on master as
+`cce4b8cd`. It requires explicit public verification material for full checks,
+retains parent history, and verifies both signatures in a fresh private keyring.
+Twenty wrapper regressions and contained signature/metadata preflight pass.
+The full contained attempt at `4507c741` passed workspace, Clippy, layout,
+bounded-xterm and the repaired archive fixture, then failed because the Hagia
+matcher fixture required absent sibling Hagia/Narthex Git repositories. Its
+report is `.artifacts/offline-input-full-4507c741/report.json`, full FAIL and
+hardware NOT_RUN. It predates master's later content changes and cannot
+establish their acceptance. Separate source review found a Narthex archive
+identity omission, now tracked as t095 in the
+[verification investigation](../investigations/4cs9nf2q-native-archive-reverification-omits-the-narthex-commit.md).
+
+Review of broker `460297d6` confirms that existing senders observe gate
+installation, deferred ordinary routes retain publication stamps, and the bare
+epoch advancer refuses in private mode. Check-then-act, StateOnly thaw and all
+private writer participation remain open. The extra bare-application guard is
+currently unreachable behind the blocked counter writer; its mutation is not
+behavioral coverage.
+
+The privileged transition candidate `3c399a00` has new source-confirmed blockers:
+its co-held X locks reverse the selected rank; state is cleared before token
+validation and for publication-only transitions; failed installation discards
+revocation receipts; and receipt delivery still occurs within the caller's
+control/common guards. The runtime owner is repairing these before integration.
+These are private candidate findings, not observations on the operator's session.
+
+Common `617651ae` supplies an issuer-checked opaque authority lifetime identity
+and an exclusive `ControlPermit` that remains available after revocation and
+while publication is unavailable. An identical public seat binding is not the
+same authority. Coordinators must retain and check that identity; the permit
+keeps exclusive access through adapter-side control without exposing an input
+or grant bypass. Seventy-seven common integration tests and one exclusive-borrow
+compile-fail doctest pass, with warnings-as-errors Clippy and layout. Evidence:
+`/tmp/sophia-native-input-evidence/common-control-permit`. These primitives do
+not establish that production callers participate in the guarded transaction.

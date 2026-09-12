@@ -46,6 +46,30 @@
             "name": "retention"
           },
           "test": "a_replaced_physical_source_does_not_inherit_origin_or_release_authority"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_authority"
+          },
+          "test": "identical_public_bindings_have_distinct_control_identities"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_authority"
+          },
+          "test": "a_foreign_issuer_cannot_obtain_control_or_its_identity"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_authority"
+          },
+          "test": "control_survives_revocation_and_unavailable_publication"
         }
       ],
       "evidence_scope": "Common authority state-machine tests; no Session, writer, hardware or physical-path integration claim."
