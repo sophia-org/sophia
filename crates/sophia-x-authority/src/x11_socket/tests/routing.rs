@@ -4163,7 +4163,7 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
     // destroy what it held.
     drop(private.shutdown());
     assert_eq!(
-        durable.owed(),
+        durable.owed().expect("a readable owner"),
         1,
         "an abandoned obligation outlives the handle that held it"
     );
@@ -4174,7 +4174,7 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
     assert_eq!(first.acknowledgement.transaction, TransactionId::from_raw(1));
 
     assert_eq!(durable.drive().answered, 1, "the durable owner answers it");
-    assert_eq!(durable.owed(), 0);
+    assert_eq!(durable.owed().expect("a readable owner"), 0);
 
     let owed = control_ack_receiver
         .recv_timeout(std::time::Duration::from_secs(2))
@@ -4195,7 +4195,7 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
             .recv_timeout(std::time::Duration::from_millis(200))
             .is_err()
     );
-    assert_eq!(durable.reserved(), 0, "the answered credit is free again");
+    assert_eq!(durable.reserved().expect("a readable owner"), 0, "the answered credit is free again");
 }
 
 #[test]
@@ -4226,7 +4226,7 @@ fn an_unreadable_queue_is_owned_by_something_that_outlives_it() {
 
     // The fact outlives the handle rather than going away as a boolean on
     // something that has gone.
-    assert_eq!(durable.failed_instances(), 1);
+    assert_eq!(durable.failed_instances().expect("a readable owner"), 1);
 }
 
 /// One private instance that accepts a control and immediately shuts down,
@@ -4368,7 +4368,7 @@ fn review_settlement_dropped_pending_handle_preserves_accepted_outcome() {
     // Adapted as instructed: responsibility for the accepted work did not end
     // with the handle, so the durable owner still holds it and can discharge
     // it now that there is room.
-    assert_eq!(durable.owed(), 1);
+    assert_eq!(durable.owed().expect("a readable owner"), 1);
     assert_eq!(durable.drive().answered, 1);
     assert_eq!(
         receiver
@@ -4390,13 +4390,13 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
     // freeing its credit.
     let (filled, _r0, _c0) = review_settlement_queue(sender.clone(), &durable, 9800);
     assert!(filled.is_settled());
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
 
     // The second cannot settle, because the channel is now full, so it keeps
     // the only credit.
     let (owed, _r1, _c1) = review_settlement_queue(sender.clone(), &durable, 9801);
     assert_eq!(owed.owed(), 1);
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // A third cannot even be accepted: the storage that would have to hold its
     // work if abandoned is spoken for. Refusing here costs a producer only
@@ -4435,7 +4435,7 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
 
     // The second is still answerable: nothing was destroyed to make room.
     drop(owed);
-    assert_eq!(durable.owed(), 1);
+    assert_eq!(durable.owed().expect("a readable owner"), 1);
     assert_eq!(
         receiver
             .recv_timeout(std::time::Duration::from_millis(500))
@@ -4449,7 +4449,7 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
             .expect("the accepted work survives"),
         review_settlement_expected(9801)
     );
-    assert_eq!(durable.reserved(), 0, "the answered credit is free again");
+    assert_eq!(durable.reserved().expect("a readable owner"), 0, "the answered credit is free again");
 }
 
 #[test]
@@ -4481,7 +4481,7 @@ fn a_failed_instance_hands_over_its_queue_not_a_tally() {
     // The queue and its registry are retained under the owner, so the failure
     // belongs to something that can be asked about it later rather than to a
     // number that cannot.
-    assert_eq!(durable.failed_instances(), 1);
+    assert_eq!(durable.failed_instances().expect("a readable owner"), 1);
 }
 
 #[test]
@@ -4556,7 +4556,7 @@ fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
     assert!(!accepted.is_empty(), "at least one was accepted");
 
     drop(private.shutdown());
-    let owed_before = durable.owed();
+    let owed_before = durable.owed().expect("a readable owner");
 
     // Drain the prefill, then drive.
     assert_eq!(
@@ -4582,7 +4582,7 @@ fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
         settled, expected,
         "every accepted control is answered exactly once"
     );
-    assert_eq!(durable.owed(), 0);
+    assert_eq!(durable.owed().expect("a readable owner"), 0);
     let _ = owed_before;
 }
 
@@ -4641,21 +4641,21 @@ fn a_failed_instances_queue_can_still_be_answered() {
     .join();
 
     drop(private.shutdown());
-    assert_eq!(durable.failed_instances(), 1);
+    assert_eq!(durable.failed_instances().expect("a readable owner"), 1);
 
     // Retaining the queue was for this. A poisoned lock stays poisoned, but
     // the obligations behind it are intact and still owed, so they can be
     // answered against the registry that accepted them. A tally could have
     // been counted and never discharged.
-    assert_eq!(durable.recover_failed(), 1);
+    assert_eq!(durable.recover_failed().expect("a readable owner"), 1);
     assert_eq!(
         receiver
             .recv_timeout(std::time::Duration::from_millis(500))
             .expect("the work the failed instance had accepted"),
         review_settlement_expected(9950)
     );
-    assert_eq!(durable.failed_instances(), 0);
-    assert_eq!(durable.reserved(), 0, "its credit is free again");
+    assert_eq!(durable.failed_instances().expect("a readable owner"), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0, "its credit is free again");
 }
 
 #[test]
@@ -4747,8 +4747,8 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     })
     .join();
     drop(empty.shutdown());
-    assert_eq!(durable.failed_instances(), 1);
-    assert_eq!(durable.reserved(), 0, "A accepted nothing");
+    assert_eq!(durable.failed_instances().expect("a readable owner"), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0, "A accepted nothing");
 
     // B is refused before exposure, so it never accepts work that would be
     // evicted. This is the whole difference: a refusal here costs a caller an
@@ -4770,8 +4770,8 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     );
 
     // Resolving A returns the slot, and B can then be built.
-    assert_eq!(durable.recover_failed(), 0, "A had accepted nothing");
-    assert_eq!(durable.failed_instances(), 0);
+    assert_eq!(durable.recover_failed().expect("a readable owner"), 0, "A had accepted nothing");
+    assert_eq!(durable.failed_instances().expect("a readable owner"), 0);
     let (c_delivery, _c_delivery_receiver) = channel();
     let (c_gate, _ca, _ci) = control_gate();
     assert!(
@@ -4838,13 +4838,13 @@ fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
             },
         })
         .expect("the shared admission to accept control");
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // The consumer routes it to the client's writer queue. Nothing has
     // acknowledged it.
     assert_eq!(private.route_pending().expect("a turn").len(), 1);
     assert_eq!(
-        durable.reserved(),
+        durable.reserved().expect("a readable owner"),
         1,
         "enqueueing to a writer is not an acknowledgement"
     );
@@ -4911,13 +4911,13 @@ fn review_terminal_recorded_then_observed_reclaims_exactly_once() {
         .ingress()
         .submit(motion_to(surface, delivery))
         .expect("an open coordinator to accept work");
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     assert_eq!(private.route_pending().expect("a turn").len(), 1);
     // Routed to the client, not yet delivered: the ledger still holds a
     // ticket for it, so the credit stays with the work.
     assert_eq!(private.reclaim_settled(), 0);
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // The delivery reaches a terminal outcome and that outcome is observed,
     // which is when the ledger stops tracking it. Both halves matter: a
@@ -4950,7 +4950,7 @@ fn review_terminal_recorded_then_observed_reclaims_exactly_once() {
     );
 
     assert_eq!(private.reclaim_settled(), 1, "answered, so reclaimed");
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
 }
 
 #[test]
@@ -4984,7 +4984,7 @@ fn review_terminal_unreadable_recovery_cannot_prove_live_delivery_settled() {
         .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(10400)))
         .expect("an open coordinator to accept work");
     assert_eq!(private.route_pending().expect("a turn").len(), 1);
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // The ledger becomes unreadable while that delivery is still live.
     let recovery = private.broker.registry.input_recovery.clone();
@@ -5002,7 +5002,7 @@ fn review_terminal_unreadable_recovery_cannot_prove_live_delivery_settled() {
         0,
         "an unreadable ledger must not free a live credit"
     );
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
 }
 
 #[test]
@@ -5046,7 +5046,7 @@ fn independent_terminal_kept_shutdown_handle_reclaims_late_completion_once() {
         "routed work is carried, not destroyed with the instance"
     );
     assert!(!settlement.is_settled());
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // It can still finish afterwards, and the handle notices.
     settlement
@@ -5065,7 +5065,7 @@ fn independent_terminal_kept_shutdown_handle_reclaims_late_completion_once() {
         }
     ));
     assert_eq!(settlement.reclaim_outstanding(), 1);
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
     assert!(settlement.is_settled());
 }
 
@@ -5111,17 +5111,17 @@ fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamat
     drop(settlement);
 
     assert_eq!(
-        durable.outstanding(),
+        durable.outstanding().expect("a readable owner"),
         1,
         "routed work outlives an abandoned handle, however little else is owed"
     );
-    assert_eq!(durable.reserved(), 1, "and keeps the credit it already had");
+    assert_eq!(durable.reserved().expect("a readable owner"), 1, "and keeps the credit it already had");
 
     // Driving before it finishes releases nothing: the work is still live, and
     // a drive is not a terminal outcome.
     assert!(!durable.drive().made_progress());
-    assert_eq!(durable.outstanding(), 1, "still waiting on a real outcome");
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.outstanding().expect("a readable owner"), 1, "still waiting on a real outcome");
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // It finishes for real, and driving the owner reclaims it once.
     origin
@@ -5143,11 +5143,11 @@ fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamat
     assert_eq!(progress.answered, 0, "nothing was owed an acknowledgement");
     assert_eq!(progress.reclaimed, 1, "but a credit was released");
     assert!(progress.made_progress());
-    assert_eq!(durable.outstanding(), 0);
-    assert_eq!(durable.reserved(), 0, "released once, on a real outcome");
+    assert_eq!(durable.outstanding().expect("a readable owner"), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0, "released once, on a real outcome");
     let again = durable.drive();
     assert!(!again.made_progress(), "and not a second time");
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
 }
 
 #[test]
@@ -6283,7 +6283,7 @@ fn a_writer_applies_a_control_and_its_credit_is_released_once() {
         .submit(configure(client, surface, 71001))
         .expect("the shared admission to accept control");
     assert_eq!(private.route_pending().expect("a turn").len(), 1);
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
     assert_eq!(
         private.reclaim_settled(),
         0,
@@ -6312,7 +6312,7 @@ fn a_writer_applies_a_control_and_its_credit_is_released_once() {
 
     assert_eq!(private.reclaim_settled(), 1);
     assert_eq!(private.reclaim_settled(), 0);
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
     assert!(writer_join(writer));
     assert!(acks.try_recv().is_err(), "and exactly one outcome");
 }
@@ -6541,7 +6541,7 @@ fn a_full_channel_retains_the_outcome_of_an_effect_a_writer_really_applied() {
         0,
         "unpublished is not answered, so the credit stays"
     );
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // Drained, the retained outcome goes out once. The writer has already
     // gone, so nothing can apply the command a second time.
@@ -6567,7 +6567,7 @@ fn a_full_channel_retains_the_outcome_of_an_effect_a_writer_really_applied() {
     assert_eq!(private.republish_owed_acknowledgements(), 0);
     assert_eq!(private.reclaim_settled(), 1);
     assert_eq!(private.reclaim_settled(), 0);
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
     assert!(acks.try_recv().is_err());
     let mut byte = [0_u8; 1];
     assert_eq!(
@@ -6609,7 +6609,7 @@ fn transferring_an_unexecuted_command_moves_its_credit_rather_than_freeing_it() 
         .submit(configure(client, surface, 75001))
         .expect("the shared admission to accept control");
     assert_eq!(private.route_pending().expect("a turn").len(), 1);
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // A second is accepted while the client is still there, and the client
     // goes before it can be routed. It keeps its record and never claims
@@ -6618,7 +6618,7 @@ fn transferring_an_unexecuted_command_moves_its_credit_rather_than_freeing_it() 
         .control_producer()
         .submit(configure(client, surface, 75002))
         .expect("the shared admission to accept control");
-    assert_eq!(durable.reserved(), 2);
+    assert_eq!(durable.reserved().expect("a readable owner"), 2);
     drop(registration);
     assert!(matches!(
         private.route_pending(),
@@ -6640,7 +6640,7 @@ fn transferring_an_unexecuted_command_moves_its_credit_rather_than_freeing_it() 
         })
         .collect();
     assert_eq!(carried, vec![75002], "handed on, with one owner");
-    assert_eq!(durable.reserved(), 2, "and nothing freed by the move");
+    assert_eq!(durable.reserved().expect("a readable owner"), 2, "and nothing freed by the move");
 
     assert_eq!(report.retry(), 1, "the transfer settles, once");
     assert_eq!(
@@ -6653,7 +6653,7 @@ fn transferring_an_unexecuted_command_moves_its_credit_rather_than_freeing_it() 
     // for a different reason: one was handed on and answered, the other is
     // known to have had no effect.
     assert_eq!(report.reclaim_outstanding(), 1);
-    assert_eq!(durable.reserved(), 0, "each released exactly once");
+    assert_eq!(durable.reserved().expect("a readable owner"), 0, "each released exactly once");
     assert!(acks.try_recv().is_err(), "and exactly one outcome");
     let _ = channels;
 }
@@ -7003,7 +7003,7 @@ fn a_reservation_is_its_producers_until_the_instance_accepts_it() {
         acks.try_recv().is_err(),
         "and nothing answers for a command its producer still owns"
     );
-    assert_eq!(durable.reserved(), 0, "nor is a credit released that was never taken");
+    assert_eq!(durable.reserved().expect("a readable owner"), 0, "nor is a credit released that was never taken");
 
     // The producer resumes, is refused, and takes its command back. The
     // reservation goes with it, leaving nothing behind to answer later.
@@ -7262,7 +7262,7 @@ fn a_producer_reserves_nothing_for_a_client_that_has_gone() {
         0,
         "nothing was reserved, so nothing is owed and no credit was taken"
     );
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
 }
 
 #[test]
@@ -7351,7 +7351,7 @@ fn a_publication_that_fails_leaves_the_reservation_with_its_producer() {
         31000 + accepted_count as u64,
         "and the caller keeps the one that was refused"
     );
-    assert_eq!(durable.reserved(), accepted_count);
+    assert_eq!(durable.reserved().expect("a readable owner"), accepted_count);
 }
 
 #[test]
@@ -7385,7 +7385,7 @@ fn nothing_is_admitted_without_the_handover_it_was_accepted_for() {
         ),
         "the payload goes back to its caller"
     );
-    assert_eq!(durable.reserved(), 0, "and so does the credit it reserved");
+    assert_eq!(durable.reserved().expect("a readable owner"), 0, "and so does the credit it reserved");
     assert!(
         private.route_pending().expect("a turn").is_empty(),
         "and nothing was queued"
@@ -7474,7 +7474,7 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
         .control_producer()
         .submit(configure(client, surface, 33002))
         .expect("the shared admission to accept control");
-    assert_eq!(durable.reserved(), 2);
+    assert_eq!(durable.reserved().expect("a readable owner"), 2);
 
     // A writer is running for this client. The registration going is not
     // proof that it stopped: it may have claimed this operation and still be
@@ -8914,7 +8914,7 @@ fn publishing_an_outcome_does_not_free_a_credit_while_its_focus_out_is_queued() 
     else {
         panic!("a control that names its registration");
     };
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
     let registry = private
         .broker
         .registry
@@ -8944,7 +8944,7 @@ fn publishing_an_outcome_does_not_free_a_credit_while_its_focus_out_is_queued() 
         0,
         "no credit is released while its queued FocusOut can still run"
     );
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
     assert_eq!(registry.dependents_outstanding(token), Some(1));
 
     // The other client's writer takes it, or its queue goes. Either way the
@@ -8956,7 +8956,7 @@ fn publishing_an_outcome_does_not_free_a_credit_while_its_focus_out_is_queued() 
     drop(queued);
     assert_eq!(private.reclaim_settled(), 1);
     assert_eq!(private.reclaim_settled(), 0);
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
     drop(claimant_registration);
 }
 
@@ -9714,6 +9714,14 @@ fn an_effect_whose_intent_cannot_be_recorded_does_not_happen() {
 
 /// A private instance whose accepted Configure never began a step, with its
 /// writer gone: the state the never-started proof is about.
+///
+/// Composed rather than driven. Real accepted work is routed, but the writer
+/// lifecycle is stated through the registry: no writer thread runs and no
+/// surface-map failure produces it. An independent review reaches the same
+/// state through an actual writer that exits before its first step, and
+/// through an unwind injected after a native effect; those are its evidence
+/// and not this. What these establish is the owner and phase composition
+/// around that state.
 #[cfg(unix)]
 fn unstarted_after_its_writer_went(
     durable: &crate::PrivateSettlementOwner,
@@ -9756,16 +9764,16 @@ fn the_never_started_proof_survives_shutdown_and_reaches_the_retained_handle() {
 
     // Shut down without reconciling first. The frontend is consumed, so
     // nothing that only it could do will ever be done.
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
     let mut report = private.shutdown();
-    assert_eq!(durable.reserved(), 1, "still owed until something settles it");
+    assert_eq!(durable.reserved().expect("a readable owner"), 1, "still owed until something settles it");
 
     // The retained handle applies the same proof.
     assert_eq!(report.reclaim_outstanding(), 1);
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
     // Driving again finds nothing left, rather than releasing twice.
     assert_eq!(report.reclaim_outstanding(), 0);
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
     assert!(
         acks.try_recv().is_err(),
         "and nothing was answered for it"
@@ -9792,15 +9800,15 @@ fn the_never_started_proof_reaches_the_durable_owner_when_the_handle_goes() {
     // The only handle goes before anything drives it, so the work is now the
     // durable owner's and the proof has to reach it there.
     drop(private.shutdown());
-    assert_eq!(durable.reserved(), 1);
-    assert_eq!(durable.outstanding(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
+    assert_eq!(durable.outstanding().expect("a readable owner"), 1);
 
     assert!(durable.drive().made_progress());
-    assert_eq!(durable.reserved(), 0, "released exactly once");
-    assert_eq!(durable.outstanding(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0, "released exactly once");
+    assert_eq!(durable.outstanding().expect("a readable owner"), 0);
     // Driven twice, and the second finds nothing.
     assert!(!durable.drive().made_progress());
-    assert_eq!(durable.reserved(), 0);
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
     assert!(acks.try_recv().is_err(), "with nothing answered for it");
 }
 
@@ -9830,7 +9838,9 @@ fn an_interrupted_operation_keeps_its_credit_through_the_same_transfers() {
         panic!("a control that names its registration");
     };
 
-    // Begun and never reported finished: the effect may have happened.
+    // Begun and never reported finished: the effect may have happened. Seeded
+    // through the registry rather than by interrupting a writer inside its
+    // effect, which is an independent review's control and not this one.
     registry
         .record_progress(token, crate::ControlProgress::RuntimeBegun)
         .expect("an applying record");
@@ -9842,12 +9852,12 @@ fn an_interrupted_operation_keeps_its_credit_through_the_same_transfers() {
     // keeps its credit, because nothing about it is established.
     let mut report = private.shutdown();
     assert_eq!(report.reclaim_outstanding(), 0);
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
     drop(report);
     assert!(!durable.drive().made_progress());
-    assert_eq!(durable.reserved(), 1, "still owed after the durable owner too");
+    assert_eq!(durable.reserved().expect("a readable owner"), 1, "still owed after the durable owner too");
     assert!(!durable.drive().made_progress());
-    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
     assert!(acks.try_recv().is_err());
 }
 
@@ -9862,8 +9872,10 @@ fn one_instances_reconciliation_does_not_reach_anothers_identical_identity() {
     // so their local identities collide.
     let (mine, _channels, _registration, _deliveries) =
         unstarted_after_its_writer_went(&durable, acknowledgements.clone(), client, surface, 69001);
-    let theirs_client = XServerFrontendClientId(372);
-    let theirs_surface = SurfaceId::new(372, 1);
+    // The same client, surface and transaction as well as the same local
+    // completion counter, so nothing but the origin distinguishes the two.
+    let theirs_client = client;
+    let theirs_surface = surface;
     let (mut theirs, _their_channels, _their_registration, _their_deliveries) =
         private_with_client(acknowledgements, &durable, theirs_client, theirs_surface);
     let their_registry = theirs
@@ -9873,7 +9885,7 @@ fn one_instances_reconciliation_does_not_reach_anothers_identical_identity() {
         .expect("a private instance to install one");
     theirs
         .control_producer()
-        .submit(configure(theirs_client, theirs_surface, 69002))
+        .submit(configure(theirs_client, theirs_surface, 69001))
         .expect("the shared admission to accept control");
     let ran = theirs.route_pending().expect("a turn");
     let Some(crate::PrivateIdentity::Control {
@@ -9889,7 +9901,7 @@ fn one_instances_reconciliation_does_not_reach_anothers_identical_identity() {
     their_registry.writer_started(theirs_client);
     their_registry.writer_stopped(theirs_client);
     assert_eq!(their_registry.reconcile_client(theirs_client).abandoned, 1);
-    assert_eq!(durable.reserved(), 2);
+    assert_eq!(durable.reserved().expect("a readable owner"), 2);
 
     // Settling mine reaches only mine. The other instance's operation has the
     // same local identity and a different origin, and it is the origin that
@@ -9897,7 +9909,7 @@ fn one_instances_reconciliation_does_not_reach_anothers_identical_identity() {
     let mut report = mine.shutdown();
     assert_eq!(report.reclaim_outstanding(), 1);
     assert_eq!(
-        durable.reserved(),
+        durable.reserved().expect("a readable owner"),
         1,
         "the other instance's interrupted operation still owes its credit"
     );
@@ -9948,4 +9960,167 @@ fn reconciliation_settles_only_abandoned_operations_with_nothing_still_queued() 
         registry.state_of(applying),
         crate::ControlRecordState::Retired
     );
+}
+
+#[test]
+fn a_poisoned_owner_still_takes_work_that_has_nowhere_else_to_go() {
+    let client = XServerFrontendClientId(374);
+    let surface = SurfaceId::new(374, 1);
+    let (acknowledgements, acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        unstarted_after_its_writer_went(&durable, acknowledgements, client, surface, 71001);
+    assert_eq!(durable.reserved(), Some(1));
+
+    let poisoner = durable.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.inner.lock().unwrap();
+            panic!("poisoning the owner");
+        })
+        .join()
+        .is_err()
+    );
+
+    // Unreadable is not empty. Answering zero here would tell a caller nothing
+    // is owed by an owner that cannot say.
+    assert_eq!(durable.reserved(), None);
+    assert_eq!(durable.owed(), None);
+    assert_eq!(durable.outstanding(), None);
+    assert_eq!(durable.failed_instances(), None);
+
+    // The handle goes, and its work moves to the owner. This move cannot
+    // refuse: the credits were taken before the work was accepted, so the
+    // space is already its own and declining would lose both. Doing nothing on
+    // a poisoned lock was exactly that loss.
+    drop(private.shutdown());
+    let held = durable.records_even_if_poisoned();
+    assert_eq!(held.outstanding.len(), 1, "the work was taken, not dropped");
+    assert_eq!(held.reserved, 1, "and it still holds its credit");
+    drop(held);
+    assert!(acks.try_recv().is_err());
+}
+
+#[test]
+fn a_poisoned_owner_still_releases_a_credit_that_is_answered() {
+    let durable = crate::PrivateSettlementOwner::with_capacity(2);
+    durable.reserve().expect("a fresh owner");
+    assert_eq!(durable.reserved(), Some(1));
+
+    let poisoner = durable.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.inner.lock().unwrap();
+            panic!("poisoning the owner");
+        })
+        .join()
+        .is_err()
+    );
+
+    // A release that does not happen is capacity lost for as long as this
+    // owner lives.
+    durable.release();
+    assert_eq!(durable.records_even_if_poisoned().reserved, 0);
+
+    // But taking one still refuses, because that is a refusal before
+    // acceptance and the caller keeps what it has.
+    assert!(matches!(
+        durable.reserve(),
+        Err(crate::AdmissionRefusal::Unavailable)
+    ));
+    assert!(matches!(
+        durable.reserve_failure_slot(),
+        Err(crate::AdmissionRefusal::Unavailable)
+    ));
+}
+
+#[test]
+fn a_poisoned_owner_reports_unavailable_rather_than_nothing_to_do() {
+    let durable = crate::PrivateSettlementOwner::with_capacity(2);
+    durable.reserve().expect("a fresh owner");
+
+    // Readable and idle first, so the difference below is the poison and not
+    // the emptiness.
+    let idle = durable.drive();
+    assert!(idle.readable);
+    assert!(!idle.made_progress());
+    assert_eq!(durable.recover_failed(), Some(0));
+
+    let poisoner = durable.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.inner.lock().unwrap();
+            panic!("poisoning the owner");
+        })
+        .join()
+        .is_err()
+    );
+
+    // A drive that could not look is not a drive that found nothing, and
+    // recovering nothing is not being unable to try. Only one of each says a
+    // later attempt might do something.
+    let blind = durable.drive();
+    assert!(!blind.readable);
+    assert!(!blind.made_progress());
+    assert_eq!(durable.recover_failed(), None);
+}
+
+#[test]
+fn a_poisoned_owner_still_takes_pending_work_from_a_dropping_handle() {
+    let client = XServerFrontendClientId(375);
+    let surface = SurfaceId::new(375, 1);
+    // One slot, filled, so the instance cannot answer what it accepted and
+    // the obligation is carried rather than discharged.
+    let (acknowledgements, acks) = sync_channel(1);
+    acknowledgements
+        .try_send(completion_ack(
+            configure(client, surface, 1),
+            XAuthorityControlOutcome::Delivered,
+        ))
+        .expect("the empty slot");
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    private
+        .control_producer()
+        .submit(configure(client, surface, 72001))
+        .expect("the shared admission to accept control");
+
+    let report = private.shutdown();
+    assert_eq!(report.pending.len(), 1, "it could not be answered");
+
+    // The owner becomes unreadable before the only handle goes.
+    let poisoner = durable.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.inner.lock().unwrap();
+            panic!("poisoning the owner");
+        })
+        .join()
+        .is_err()
+    );
+
+    // Dropping is the handover, and a drop cannot keep what it is handing over
+    // or report that it failed to. Declining here loses an accepted obligation
+    // and the credit it holds.
+    drop(report);
+    let held = durable.records_even_if_poisoned();
+    assert_eq!(held.held.len(), 1, "the obligation was taken, not dropped");
+    assert!(
+        matches!(
+            held.held[0].1,
+            PrivateOperation::Control(control, _)
+                if control.command.transaction() == TransactionId::from_raw(72001)
+        ),
+        "and it is the command itself, with its own identity"
+    );
+    assert_eq!(held.reserved, 1, "still holding its credit");
+    drop(held);
+
+    // The channel is still full, so nothing was answered on the way.
+    assert_eq!(
+        acks.try_recv().unwrap().acknowledgement.transaction,
+        TransactionId::from_raw(1)
+    );
+    assert!(acks.try_recv().is_err());
 }

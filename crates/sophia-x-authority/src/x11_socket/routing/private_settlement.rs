@@ -89,17 +89,40 @@ impl PrivateSettlementOwner {
         }
     }
 
+    /// Reach this owner's records even through poison.
+    ///
+    /// For the paths that cannot refuse. Taking abandoned work, taking a
+    /// failed instance's queue, and releasing a credit are all moves into
+    /// space the work already reserved, so declining is not a refusal: there
+    /// is nowhere to put what is declined, and the payload would be lost along
+    /// with the credits it holds. Silently doing nothing on a poisoned lock is
+    /// exactly that loss, and it is the shape this owner exists to prevent.
+    ///
+    /// Reading through poison is sound here because a panic elsewhere cannot
+    /// have left these mid-update: they are pushes, pops and a counter, with
+    /// no invariant spanning two of them.
+    ///
+    /// Everything that can refuse still refuses rather than coming through
+    /// here. Taking a credit or a failure slot on an owner nobody can read is
+    /// declined, because that is a refusal before acceptance and the caller
+    /// keeps what it has.
+    fn records_even_if_poisoned(&self) -> std::sync::MutexGuard<'_, AbandonedSettlements> {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// How many obligations are waiting for someone to drive them.
-    pub fn owed(&self) -> usize {
-        self.inner.lock().map(|held| held.held.len()).unwrap_or(0)
+    /// `None` where the owner cannot be read: nothing owed and nothing
+    /// knowable are different answers.
+    pub fn owed(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.held.len())
     }
 
     /// How many abandoned operations are still waiting on a terminal outcome.
-    pub fn outstanding(&self) -> usize {
-        self.inner
-            .lock()
-            .map(|held| held.outstanding.len())
-            .unwrap_or(0)
+    /// `None` where the owner cannot be read.
+    pub fn outstanding(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.outstanding.len())
     }
 
     fn take_outstanding(
@@ -110,10 +133,9 @@ impl PrivateSettlementOwner {
         // Cannot refuse, for the same reason abandoned obligations cannot:
         // every one of these already holds a credit taken before its work was
         // accepted, so this is a move into space already its own.
-        if let Ok(mut held) = self.inner.lock() {
-            for identity in outstanding {
-                held.outstanding.push((origin.clone(), identity));
-            }
+        let mut held = self.records_even_if_poisoned();
+        for identity in outstanding {
+            held.outstanding.push((origin.clone(), identity));
         }
     }
 
@@ -121,8 +143,9 @@ impl PrivateSettlementOwner {
     ///
     /// Each is retained with its queue and its registry, so it can be examined
     /// rather than merely counted.
-    pub fn failed_instances(&self) -> usize {
-        self.inner.lock().map(|held| held.failed.len()).unwrap_or(0)
+    /// `None` where the owner cannot be read.
+    pub fn failed_instances(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.failed.len())
     }
 
     fn take_failed_instance(
@@ -130,7 +153,8 @@ impl PrivateSettlementOwner {
         origin: &XServerFrontendRouteRegistry,
         queue: &Arc<Mutex<SharedQueue>>,
     ) {
-        if let Ok(mut held) = self.inner.lock() {
+        let mut held = self.records_even_if_poisoned();
+        {
             // No capacity check. This instance reserved its slot before it was
             // exposed, so the space is already its own; refusing here would be
             // refusing after the failure, with nowhere to put what is refused.
@@ -149,9 +173,12 @@ impl PrivateSettlementOwner {
     /// against the registry that accepted it, exactly as abandoned work is.
     /// This is what retaining the queue was for -- a tally could have been
     /// counted but never discharged.
-    pub fn recover_failed(&self) -> usize {
+    /// `None` where the owner cannot be read: recovering nothing and being
+    /// unable to try are different answers, and only one of them says a later
+    /// attempt might do something.
+    pub fn recover_failed(&self) -> Option<usize> {
         let Ok(mut held) = self.inner.lock() else {
-            return 0;
+            return None;
         };
         // Drained in place rather than taken: mem::take would swap in a fresh
         // vector of capacity zero and drop the buffer reserved at
@@ -184,15 +211,16 @@ impl PrivateSettlementOwner {
                 held.held.push((instance.origin.clone(), operation));
             }
         }
-        recovered
+        Some(recovered)
     }
 
     /// How many credits are outstanding, across every instance sharing this.
     ///
     /// A credit is taken when work is accepted and released only when that
     /// work is answered, so it covers pending, in-flight and abandoned alike.
-    pub fn reserved(&self) -> usize {
-        self.inner.lock().map(|held| held.reserved).unwrap_or(0)
+    /// `None` where the owner cannot be read.
+    pub fn reserved(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.reserved)
     }
 
     /// Take a failure slot for an instance about to be exposed.
@@ -213,9 +241,8 @@ impl PrivateSettlementOwner {
     /// Release a failure slot whose instance closed without failing, or whose
     /// failure has been resolved.
     fn release_failure_slot(&self) {
-        if let Ok(mut held) = self.inner.lock() {
-            held.failure_slots = held.failure_slots.saturating_sub(1);
-        }
+        let mut held = self.records_even_if_poisoned();
+        held.failure_slots = held.failure_slots.saturating_sub(1);
     }
 
     /// Take a credit for work about to be accepted, if one is free.
@@ -238,9 +265,10 @@ impl PrivateSettlementOwner {
 
     /// Release a credit whose work has been answered.
     fn release(&self) {
-        if let Ok(mut held) = self.inner.lock() {
-            held.reserved = held.reserved.saturating_sub(1);
-        }
+        // A release that does not happen is capacity lost for as long as this
+        // owner lives, so this is one of the moves that cannot decline.
+        let mut held = self.records_even_if_poisoned();
+        held.reserved = held.reserved.saturating_sub(1);
     }
 
     /// Try to discharge everything waiting.
@@ -255,7 +283,11 @@ impl PrivateSettlementOwner {
     /// credits as having achieved nothing.
     pub fn drive(&self) -> DriveProgress {
         let Ok(mut held) = self.inner.lock() else {
-            return DriveProgress::default();
+            // Not a drive that achieved nothing: one that could not look.
+            return DriveProgress {
+                readable: false,
+                ..DriveProgress::default()
+            };
         };
         let taken = std::mem::take(&mut held.held);
         let before = taken.len();
@@ -311,6 +343,7 @@ impl PrivateSettlementOwner {
             }
         }
         DriveProgress {
+            readable: true,
             answered: before.saturating_sub(held.held.len()),
             reclaimed,
         }
@@ -322,12 +355,11 @@ impl PrivateSettlementOwner {
     /// it was accepted, so the storage for it is reserved and this is a move
     /// into space that was set aside rather than a request for space.
     fn take(&self, origin: &XServerFrontendRouteRegistry, pending: Vec<PrivateOperation>) {
-        let Ok(mut held) = self.inner.lock() else {
-            // The owner itself is unreachable. Nothing can be moved into it,
-            // and pretending otherwise would lose the work silently; the
-            // caller keeps it and reports.
-            return;
-        };
+        // The caller here is a drop, which cannot keep what it is handing
+        // over or report that it failed to. Declining would be the silent loss
+        // this owner exists to prevent, and the space is already this work's
+        // own, so this is one of the moves that cannot refuse.
+        let mut held = self.records_even_if_poisoned();
         for operation in pending {
             held.held.push((origin.clone(), operation));
         }
@@ -342,6 +374,9 @@ impl PrivateSettlementOwner {
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DriveProgress {
+    /// Whether the owner could be read at all. A drive that achieved nothing
+    /// and a drive that could not look are different answers.
+    pub readable: bool,
     /// Obligations discharged by this drive.
     pub answered: usize,
     /// Credits released because their work reached a terminal outcome.

@@ -604,9 +604,11 @@ handle that outlived the instance, and `PrivateSettlementOwner::drive` for work
 that outlived the handle, where each carried origin settles its own before its
 records are read. A rule only the first could apply would stop being applied
 the moment a frontend was consumed, which is exactly when the work it is about
-starts outliving things. It allocates nothing, because two of those paths run
-under a lock that already exists for something else, and it is bound to the
-registry that issued the work rather than to anything handed in -- another
+starts outliving things. The scan itself allocates nothing, which matters
+because two of those paths run under a lock that already exists for something
+else -- that is a claim about the scan and not about its callers, and the
+durable drive still collects what it carries before it starts. It is bound to
+the registry that issued the work rather than to anything handed in -- another
 instance's identical local identity belongs to another origin, and the origin
 is what decides whose records these are.
 
@@ -626,6 +628,34 @@ actually are, and retirement only on established proof, are the work this
 leaves open. A cleanup reported as not done keeps the record and returns the
 responsibility to the caller, and every lookup that cannot read the registry
 says so rather than reporting nothing owed.
+
+### The durable owner through poison
+
+Three moves into that owner cannot refuse, because every one of them is a
+handover from a drop: taking pending obligations, taking abandoned work, and
+taking a failed instance's queue. Each is a move into space the work already
+reserved, and a drop cannot keep what it is handing over or report that it
+failed to -- so doing nothing on a poisoned lock is not a refusal, it is the
+silent loss this owner exists to prevent. Releasing a credit is the same: a
+release that does not happen is capacity lost for as long as the owner lives.
+Those four go through regardless. Reading through poison is sound for them
+because they are pushes, pops and a counter, with no invariant spanning two.
+
+Everything that can refuse still refuses. Taking a credit or a failure slot on
+an owner nobody can read is declined, because that is a refusal before
+acceptance and the caller keeps what it has.
+
+And nothing answers zero for unreadable any more. What is owed, outstanding,
+reserved and how many instances failed all say when they cannot say; a drive
+reports whether it could look at all, because a drive that achieved nothing and
+one that could not look are different answers; and recovering nothing is
+distinct from being unable to try, because only one of them means a later
+attempt might do something.
+
+What this does not yet do: there is no recovery path that settles a poisoned
+owner's accepted work. The obligations survive and are reachable, and the
+counters they were moved with cannot be assumed sound, so the settling itself
+is the next piece rather than something this claims.
 
 Not done here: the worker-join row is owned but the route registration at
 `dispatch.rs:468` and `state.register_client` at `:571` remain different
