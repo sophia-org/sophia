@@ -23,6 +23,32 @@ fn tx(raw: u64) -> TransactionId {
     TransactionId::from_raw(raw)
 }
 
+#[test]
+fn output_facts_publish_logical_extents_and_refuse_lossy_scale_conversion() {
+    let facts = output_facts_entry(HeadlessOutput {
+        id: OutputId::from_raw(8),
+        size: Size {
+            width: 2560,
+            height: 1440,
+        },
+        scale: 2,
+    })
+    .unwrap();
+    assert_eq!((facts.local_width, facts.local_height), (1280, 720));
+    assert_eq!((facts.scale_numerator, facts.scale_denominator), (2, 1));
+    assert!(
+        output_facts_entry(HeadlessOutput {
+            id: OutputId::from_raw(8),
+            size: Size {
+                width: 2559,
+                height: 1440,
+            },
+            scale: 2,
+        })
+        .is_err()
+    );
+}
+
 fn allocation() -> ContentAllocationSnapshot {
     ContentAllocationSnapshot {
         output: OUTPUT,

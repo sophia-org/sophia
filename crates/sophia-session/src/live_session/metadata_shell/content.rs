@@ -227,20 +227,9 @@ impl LiveContentSession {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let facts = outputs
             .iter()
-            .map(|output| {
-                Ok(sophia_protocol::ContentOutputFactsEntry {
-                    output: ContentOutputId {
-                        id: output.id.raw(),
-                        generation: 1,
-                    },
-                    local_width: u32::try_from(output.size.width)?,
-                    local_height: u32::try_from(output.size.height)?,
-                    scale_numerator: output.scale,
-                    scale_denominator: 1,
-                    scale_generation: 1,
-                })
-            })
-            .collect::<Result<Vec<_>, std::num::TryFromIntError>>()?;
+            .copied()
+            .map(output_facts_entry)
+            .collect::<Result<Vec<_>, _>>()?;
         if facts == self.published_facts {
             return Ok(());
         }
@@ -327,6 +316,33 @@ impl LiveContentSession {
             allowed_reservation_extent: u32::from(self.panel_limit.unwrap_or(0)),
         })
     }
+}
+
+fn output_facts_entry(
+    output: HeadlessOutput,
+) -> Result<sophia_protocol::ContentOutputFactsEntry, &'static str> {
+    let scale = i32::try_from(output.scale).map_err(|_| "content output scale is too large")?;
+    if scale == 0
+        || output.size.width <= 0
+        || output.size.height <= 0
+        || output.size.width % scale != 0
+        || output.size.height % scale != 0
+    {
+        return Err("content output has no exact integer logical extent");
+    }
+    Ok(sophia_protocol::ContentOutputFactsEntry {
+        output: ContentOutputId {
+            id: output.id.raw(),
+            generation: 1,
+        },
+        local_width: u32::try_from(output.size.width / scale)
+            .map_err(|_| "content output width is not representable")?,
+        local_height: u32::try_from(output.size.height / scale)
+            .map_err(|_| "content output height is not representable")?,
+        scale_numerator: output.scale,
+        scale_denominator: 1,
+        scale_generation: 1,
+    })
 }
 
 fn panel_rect(
