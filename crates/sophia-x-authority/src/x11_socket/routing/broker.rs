@@ -113,6 +113,44 @@ impl XAuthorityRoutedInputSender {
         })
     }
 
+    /// Submit work, distinguishing denial from saturation.
+    ///
+    /// The ordinary `try_send` reports a stamp refusal as `Full`, which tells
+    /// a caller to retry something that is being refused on policy. This says
+    /// which it is. Reservation still happens before acceptance, and is rolled
+    /// back only for this envelope's own delivery, only when this envelope was
+    /// the one that could not be placed.
+    pub(crate) fn try_send_private(
+        &self,
+        route: XAuthorityRoutedInput,
+    ) -> Result<(), PrivateSendError> {
+        let stamp = match self.stamp() {
+            Ok(stamp) => stamp,
+            Err(()) => return Err(PrivateSendError::Denied(route)),
+        };
+        let envelope = XAuthorityEpochRoutedInput {
+            control_epoch: stamp.control_epoch,
+            publication: stamp.publication,
+            route,
+        };
+        if !self
+            .recovery
+            .admit(&envelope.route, envelope.control_epoch, Instant::now())
+        {
+            return Err(PrivateSendError::Saturated(envelope.route));
+        }
+        self.sender.try_send(envelope).map_err(|error| match error {
+            TrySendError::Full(envelope) => {
+                self.recovery.abort_enqueue(envelope.route.delivery);
+                PrivateSendError::Saturated(envelope.route)
+            }
+            TrySendError::Disconnected(envelope) => {
+                self.recovery.abort_enqueue(envelope.route.delivery);
+                PrivateSendError::Disconnected(envelope.route)
+            }
+        })
+    }
+
     pub fn try_send(
         &self,
         route: XAuthorityRoutedInput,

@@ -3170,3 +3170,68 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
     }
     assert_eq!(received, sent as usize);
 }
+
+#[test]
+fn a_private_producer_is_told_denial_apart_from_saturation() {
+    let namespace = NamespaceId::from_raw(49);
+    let client = XServerFrontendClientId(66);
+    let surface = SurfaceId::new(53, 1);
+    let window = XResourceId::new(0x200170, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, mut instance, issuer, _submit) = control_gate_with_submit();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(2).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate.clone(),
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    // Open: accepted.
+    private
+        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(300)))
+        .expect("an open coordinator to accept work");
+
+    // Fill the bounded ingress. These are saturation, not policy.
+    let mut saturated = false;
+    for delivery in 301..320u64 {
+        match private.submit(motion_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(delivery),
+        )) {
+            Ok(()) => {}
+            Err(crate::PrivateSendError::Saturated(_)) => {
+                saturated = true;
+                break;
+            }
+            Err(other) => panic!("a full ingress is saturation, not {other:?}"),
+        }
+    }
+    assert!(saturated, "the bounded ingress filled");
+
+    // Now close the gate. The answer changes from 'try again' to 'refused',
+    // which the ordinary path reports as Full either way.
+    gate.with(|coordinator| {
+        coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("the transition to be requested");
+    })
+    .expect("the gate");
+
+    match private.submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(330))) {
+        Err(crate::PrivateSendError::Denied(_)) => {}
+        other => panic!("a closed revision is a denial, not {other:?}"),
+    }
+}

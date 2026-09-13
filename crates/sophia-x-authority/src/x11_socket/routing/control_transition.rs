@@ -1,3 +1,22 @@
+/// Why a private producer's work was not accepted.
+///
+/// Denial and saturation are different answers and a caller acts on them
+/// differently: saturation says try again, denial says this will not be
+/// accepted until something changes. The ordinary backend reports a stamp
+/// refusal as `TrySendError::Full`, which tells a caller to retry work that is
+/// being refused on policy. A private producer is told which it is.
+#[cfg(unix)]
+#[derive(Debug)]
+pub enum PrivateSendError {
+    /// No stamp: a transition is in flight, or routing is otherwise closed.
+    /// The work is handed back, unaccepted.
+    Denied(XAuthorityRoutedInput),
+    /// The ingress is full. The work is handed back, and retrying is sensible.
+    Saturated(XAuthorityRoutedInput),
+    /// The consumer is gone.
+    Disconnected(XAuthorityRoutedInput),
+}
+
 /// How much of a private host's ready capacity is kept for cleanup.
 #[cfg(unix)]
 const PRIVATE_CLEANUP_RESERVE: usize = 4;
@@ -265,6 +284,20 @@ impl PrivateXServerFrontend {
         )
         .expect("a reserve smaller than the capacity it was added to");
         Self { broker, ready }
+    }
+
+    /// Submit work, and be told why if it is not accepted.
+    ///
+    /// Reservation happens before acceptance and is rolled back exactly when
+    /// acceptance fails, so a refusal leaves no reservation behind and no
+    /// other request's delivery is disturbed: only this envelope's own id is
+    /// aborted, and only when this envelope was the one that failed.
+    pub fn submit(&self, route: XAuthorityRoutedInput) -> Result<(), PrivateSendError> {
+        let sender = self.broker.routed_input_sender();
+        match sender.try_send_private(route) {
+            Ok(()) => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     /// The stamped ingress. There is no unstamped one.
