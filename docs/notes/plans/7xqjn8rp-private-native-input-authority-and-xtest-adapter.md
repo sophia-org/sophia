@@ -775,3 +775,27 @@ the desired unavailable-error assertion fails. Evidence is
 and accepted work is inaccessible through this consumer path, not that the
 payload was destroyed or its completion settled. Consumer departure, poison
 handling and owned control refusal still block integration.
+
+Follow-up `7e1b0af3` returns refused controls, rejects producers after consumer
+close, and reports poisoned reads as errors. An independent six-case replay
+passes five controls covering rollback, duplicate identity, post-drop refusal,
+healthy emptiness and poison reporting. The remaining desired assertion fails:
+tracked delivery 9201 is accepted but not run before frontend drop; its terminal
+receipt does not arrive within the fixture's 200 ms bound and its recovery ticket
+remains present. Evidence is `.artifacts/private-close-review-7e1b0af3/`.
+
+The source explains that failure. `close` returns queued work in a vector, but
+`Drop` binds it to `_stranded` and then destroys it without reporting completion.
+Poisoned close returns an empty vector instead of handing failure ownership to a
+recovery path. Rejection of later work is therefore verified, while settlement
+of already accepted work still blocks integration. Ported poison control
+`11ea63aa` does not close this separate obligation.
+
+The new consumer report contains sequence and class, not the delivered operation
+identity. It also grows a vector until the queue is empty; concurrently refilling
+producers can make that report and service turn exceed the queue's fixed bound.
+Consumption needs a bounded service/report contract and assertions tying each
+consumed payload to its original delivery or transaction identity. Final
+authoritative execution remains separate from this reporting. Exhaustion tests
+stay in the copied-source fixture; no production-source setter or layout debt is
+requested. None of these runtime follow-ups has been integrated into this branch.
