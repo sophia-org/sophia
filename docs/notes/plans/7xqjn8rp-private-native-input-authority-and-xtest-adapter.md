@@ -588,3 +588,12 @@ Private construction must avoid exposing raw ingress before admission exists.
 Late activation with already accepted untracked raw work may explicitly refuse
 activation; it cannot retroactively return an error through a completed
 `SyncSender::send` or fabricate a receipt for that work.
+
+Ready-stream candidate `c6e4475e` remains unintegrated. Independent tests of its
+exact std-only source pass four controls for FIFO, reserve capacity, sequence
+accounting and accepted-payload ownership. A desired-safety assertion fails:
+capacity refusal destroys the incoming owned payload before returning, so its
+owner cannot retry cleanup or report the rejected operation. Evidence is
+`.artifacts/ready-stream-review-c6e4475e/`. Refusal must return the payload;
+durable cleanup debt must remain represented when even reserved queue space is
+full. These are queue-primitive checks, not execution by the five real producers.
