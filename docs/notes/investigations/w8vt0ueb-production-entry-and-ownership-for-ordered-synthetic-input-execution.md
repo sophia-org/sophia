@@ -483,6 +483,22 @@ and any repair has to keep the exact application and route provenance: a newer
 focus claim must never be cleared on the strength of older debt, and never on a
 bare window id.
 
+**A focus operation leaves work queued on another client.** `route_focus_out`
+puts `X11RoutedControl::FocusOut` on the *previously focused* client's writer
+queue, carrying its window and time and no completion token
+(`routing/focus.rs:152-166`). Nothing links that entry back to the operation
+that caused it, and the target client's router and writer going quiet says
+nothing about whether it has run, been cancelled, or is still sitting in
+another connection's queue waiting to run.
+
+That is what stops a snapshot from being proof. Comparing the registry's focus
+claim against the runtime can find everything agreeing and be made wrong
+immediately afterwards by an entry that was queued before any of this started.
+Either the origin's dependent work is tracked, joined or cancelled, or the
+operation is retained as unknown -- and neither of those means undoing runtime
+state that was legitimately applied, or inventing a receipt for a delivery
+nobody observed.
+
 **Closing a surface is not one branch.** It either writes a ClientMessage or
 takes the `terminate_client` path, which shuts the client's socket down and
 then acknowledges. The second is a real effect on the connection, not a
