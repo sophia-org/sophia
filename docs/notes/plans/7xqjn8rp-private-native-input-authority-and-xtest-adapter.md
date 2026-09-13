@@ -17,6 +17,21 @@ still governs provenance, revocation and physical evidence. The earlier
 host-user administrator mode is **deferred**; its delegation gate is reopened.
 Neither UID matching nor knowledge of a socket pathname authorizes injection.
 
+## Current integration state
+
+The isolated input branch is based on published content commit `d7654d23`.
+Reviewed common-authority and constructor/helper code is retained there; the
+later M3 producer/consumer candidates remain unintegrated. XTEST discovery stays
+disabled. The mandatory native manifest has 40 obligations, including 20 with no
+production implementation evidence.
+
+The next runtime slice is an explicit owned shutdown path: accepted input,
+control acknowledgements and lease cleanup must remain owned through poison,
+missing targets and output backpressure. Counting a failure is not settlement.
+The ordered executor still owes final guarded validation, authority/XKB state
+application, remaining producers and the chosen interval/cleanup budgets. These
+are already authorized implementation requirements, not new operator decisions.
+
 ## Deliverable and limits
 
 Build a protocol-neutral authority with an internal typed API, followed by an
@@ -826,3 +841,26 @@ implement the chosen per-interval execution/cleanup budgets. Close still grows
 a vector while holding the queue lock, rather than transferring preallocated
 cleanup storage. The runtime candidates remain unintegrated; final guarded
 execution and accepted control/cleanup settlement remain required.
+
+Independent `5120624b` checks pass live-target input rejection with recovery
+settlement and an exact `AuthorityRejected` control acknowledgement when its
+channel has room. A third desired assertion fails under ordinary bounded
+backpressure: an earlier real frontend close fills a capacity-1 channel with
+acknowledgement 9300; another frontend accepts transaction 9301 and closes before
+9300 is read. The original acknowledgement survives unchanged, but 9301 never
+arrives within 200 ms. Evidence is `.artifacts/private-ack-review-5120624b/`
+(two controls PASS, one desired assertion FAIL). Logging the failed `try_send`
+still discards an accepted outcome.
+
+The next fix must retain an owned drain/cancellation batch or reserved completion
+storage, including failures to report. A queued lease release is a request to
+perform settlement, not proof it happened; it must execute through privileged
+cleanup, transfer to its durable owner, or be discharged by proved teardown.
+No input receipt should be invented for it. Poison handling, unresolved input
+and control backpressure remain obligations of that same shutdown owner.
+
+Receipt attribution also needs precise language: `send_input_delivery` sends to
+the issuer's receipt channel, not to the X client named in the receipt. Frontend
+client IDs start at 1 and do not wrap. The former client-0 fallback was unsupported
+attribution/correlation, not demonstrated delivery to an actual client 0. Removing
+it does not by itself supply the missing completion owner.
