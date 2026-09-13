@@ -1023,3 +1023,27 @@ outcome; B's receipt times out after 200 ms, leaving `failed_instances=0` and
 this candidate instead accepts and loses the failure transfer. Buffer reuse
 and the removed cycle remain source-review findings, not additional runtime
 tests in this result.
+
+Candidate `d04359fa` adds failure-slot reservation before frontend construction
+and retains the instance's failed status so its subsequent Drop does not
+release a slot already handed off. The owner releases the separate slot after
+clean close or recovery of the retained failed queue. Independent
+`.artifacts/private-slot-review-d04359fa/` records three controls PASS, no FAIL
+(141 filtered; 9.78 seconds). An empty failed instance prevents a replacement
+from being constructed until recovery. A retained failed handle continues to
+hold its slot after the consumed frontend drops; handoff and recovery produce
+the exact `AuthorityRejected` acknowledgement once, without executing a command.
+Repeated recovery and old-instance teardown do not free a newer occupant's slot.
+Clean shutdown permits reuse, and dropping its older clean report does not free
+the replacement's slot either. This establishes only the bounded failure-slot
+lifecycle, not the outstanding terminal-credit or owner-poison paths. The
+combined runtime candidate remains unintegrated.
+
+Draining `held.failed` now preserves its backing allocation. Collecting that
+drain into another vector still allocates under the owner lock, so only the
+specific lost-buffer defect is repaired; allocation-free recovery is not
+established. Construction refusal also currently consumes the supplied gate
+and both sender handles. Preserve those caller-owned inputs in a returned
+configuration or borrow and clone them after reservation, so a refusal permits
+retry with the same inputs rather than requiring the caller to reconstruct
+capabilities it already supplied.
