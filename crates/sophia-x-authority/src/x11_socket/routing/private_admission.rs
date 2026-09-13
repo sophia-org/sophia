@@ -77,7 +77,9 @@ impl SharedAdmission {
     /// whose producer still owns the record.
     ///
     /// Lock rank: the admission queue is taken before anything `prepare`
-    /// takes. Nothing holds a completion registry and then admits.
+    /// takes, and nothing holds a completion registry and then admits. The
+    /// durable owner takes its own lock and then reads completion records, so
+    /// no path here holds a completion guard across a call into that owner.
     fn accept_with<'handoff>(
         &self,
         class: crate::ReadyClass,
@@ -116,7 +118,18 @@ impl SharedAdmission {
                 handoff.commit();
                 Ok(sequence)
             }
-            Err(refused) => match refused.refusal {
+            Err(refused) => {
+                // Rolled back, and the registry released, before any credit is
+                // touched. The durable owner walks completion records while
+                // holding its own lock, so holding a completion guard and then
+                // taking that lock is the other direction of the same pair.
+                // Nothing reaches both today -- an instance whose identities
+                // that owner carries has already closed, and a closed
+                // admission refuses above before this handover is prepared --
+                // but a rank that only holds because of how far apart two
+                // lifetimes happen to be is one edit from being a deadlock.
+                drop(handoff);
+                match refused.refusal {
                 crate::ReadyRefusal::AtCapacity => {
                     self.durable.release();
                     Err((AdmissionRefusal::Saturated, refused.payload))
@@ -129,7 +142,8 @@ impl SharedAdmission {
                     self.exhausted.store(true, Ordering::Release);
                     Err((AdmissionRefusal::Exhausted, refused.payload))
                 }
-            },
+                }
+            }
         }
     }
 
