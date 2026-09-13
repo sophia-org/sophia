@@ -578,3 +578,13 @@ route-relevant state needs a coherent publication boundary; ordinary property an
 clipboard operations need not move into the input executor. Unstamped private
 ingress must return an explicit producer refusal without mutating state, inventing
 a receipt identity, or terminating healthy-client service.
+
+On exact clean reconciled `ed3ffd9a`, the common and X-authority package suites
+pass 765 tests with one existing Qt probe ignored. All-targets Clippy with
+warnings denied and the layout check pass. Evidence is
+`.artifacts/native-input-integration-ed3ffd9a/`. These checks establish the
+integrated helper/facade slice, not production executor or canonical acceptance.
+Private construction must avoid exposing raw ingress before admission exists.
+Late activation with already accepted untracked raw work may explicitly refuse
+activation; it cannot retroactively return an error through a completed
+`SyncSender::send` or fabricate a receipt for that work.
