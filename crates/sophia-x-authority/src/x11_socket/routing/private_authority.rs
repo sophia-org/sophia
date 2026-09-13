@@ -226,20 +226,6 @@ pub enum PrivateKeyboardsRefusal {
     AlreadyIssued,
 }
 
-/// The keyboard state one executing thread owns.
-///
-/// Held by the thread that drives execution rather than by the frontend, and
-/// deliberately so. The frontend is moved between threads today -- it is sent
-/// into one to run a turn and comes back -- so putting keyboard state inside
-/// it would either make it thread-bound without saying so, or need an unsafe
-/// claim that a C library's state may cross threads. This says instead that
-/// the state belongs to whoever is executing, which is what "on the executing
-/// thread" has to mean to be worth anything.
-///
-/// The shared alternative is a worker thread reached by sending a command and
-/// blocking on a reply with a deadline. That is a wait, and the routing path
-/// takes it while already holding a guard; nothing may wait under the
-/// execution guards, so an ordered execution cannot use it.
 /// Names the instance and the seats, never the keymap state itself.
 ///
 /// Hand-written because the states inside are a C library's, and formatting
@@ -255,6 +241,20 @@ impl std::fmt::Debug for PrivateKeyboards {
     }
 }
 
+/// The keyboard state one executing thread owns.
+///
+/// Held by the thread that drives execution rather than by the frontend, and
+/// deliberately so. The frontend is moved between threads today -- it is sent
+/// into one to run a turn and comes back -- so putting keyboard state inside
+/// it would either make it thread-bound without saying so, or need an unsafe
+/// claim that a C library's state may cross threads. This says instead that
+/// the state belongs to whoever is executing, which is what "on the executing
+/// thread" has to mean to be worth anything.
+///
+/// The shared alternative is a worker thread reached by sending a command and
+/// blocking on a reply with a deadline. That is a wait, and the routing path
+/// takes it while already holding a guard; nothing may wait under the
+/// execution guards, so an ordered execution cannot use it.
 #[cfg(unix)]
 pub struct PrivateKeyboards {
     /// Which private instance this state answers for.
@@ -331,6 +331,12 @@ impl PrivateKeyboards {
 
     /// Apply one key to a seat this thread has already prepared.
     ///
+    /// Crate-internal on purpose. Mutating the seat's history is reachable
+    /// only through guarded execution: a public call would let the live path
+    /// move a seat's modifiers without the validation that decides whether the
+    /// key may be applied at all, and the state would then describe keys no
+    /// admitted request ever pressed.
+    ///
     /// Returns the X keycode, the modifier state *before* the key, and the
     /// state after it. Both are needed and they are different facts: X reports
     /// the pre-event modifiers on the event itself, while what follows has to
@@ -338,7 +344,12 @@ impl PrivateKeyboards {
     ///
     /// `None` where the seat was never prepared or the key does not map.
     /// Nothing is built here, so this cannot fail for want of a keymap.
-    pub fn apply(&mut self, seat: SeatId, keycode: u32, pressed: bool) -> Option<(u8, u16, u16)> {
+    ///
+    /// Its only production caller is the guarded execution path, which does
+    /// not exist yet; until it does, nothing outside tests reaches this, which
+    /// is the state the visibility is meant to produce.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn apply(&mut self, seat: SeatId, keycode: u32, pressed: bool) -> Option<(u8, u16, u16)> {
         let state = self.seats.get_mut(&seat)?;
         let (mapped, before) = state.map_evdev_key(keycode, pressed)?;
         Some((mapped, before, state.modifier_mask()))
