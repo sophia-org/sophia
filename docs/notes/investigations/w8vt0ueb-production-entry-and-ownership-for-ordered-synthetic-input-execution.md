@@ -763,6 +763,46 @@ interruption between the two now under-releases -- costing this owner one slot
 for its life -- rather than over-releasing. One direction loses capacity; the
 other hands out capacity that does not exist.
 
+## What the ordered-input production entry still lacks
+
+Source-confirmed against the tree at `62d24467`. The ledger side is built; the
+join from the private production entry is not.
+
+`XServerFrontendRouteBroker::execute_synthetic_input` already performs the
+aggregate transition: it checks that the authority the caller holds is the one
+this broker's gate serves, opens `execute_reserved`, resolves the recipient
+under the X guard held across both resolution and application, and applies
+`press`/`release` through the permit. `Applied::first_press` distinguishes a
+hold begun from a hold joined, and a release answers the recipient the ledger
+recorded rather than asking the route again.
+
+`PrivateXServerFrontend::route_pending` reaches none of it. Its `run_one`
+routes input through `route_engine_input_admitted`, and four things are wrong
+with that as the production entry:
+
+- The transaction is collapsed to a boolean. `gate.admits(stamp).is_ok()` is
+  computed and passed as `admitted: bool`, so what travels is the answer to a
+  question asked earlier, not a held transition.
+- The accepted request does not travel. `XAuthorityEpochRoutedInput` carries
+  `control_epoch`, `publication` and the route, and no `RequestToken` or
+  `ConnectionIdentity`. `reserve_request` at admission and `execute_reserved`
+  at execution are the two ends of an ownership that currently has no middle.
+- The private construction owns no authority. `PrivateFrontendParts` takes a
+  gate alone, and `execute_synthetic_input` requires `&mut AuthorityInstance`
+  and `&IssuerHandle`. `AuthorityInstance` has no production construction site
+  anywhere in the tree; every existing one is a test helper that drops it.
+- XKB is a request-reply to another thread, and the wait happens under a
+  guard. `XkbKeyboardWorker::request` sends on a bounded channel and blocks on
+  `recv_timeout` for 250ms while holding the replies lock, and the pointer
+  path calls it with `pointer_state` already held. The state it reaches is a
+  real `XkbKeyboardState`, so the type the executing thread needs already
+  exists; what is missing is ownership of one.
+
+One dependency is genuinely external and does not block the private path.
+`connection_generation` is Session's value -- X mints no such thing -- and
+`ConnectionIdentity` names a connection Session admitted. A private
+construction can take both as inputs; a live wiring cannot invent them.
+
 ## Status
 
 Source-confirmed inventory, and known to be incomplete: an independent audit
