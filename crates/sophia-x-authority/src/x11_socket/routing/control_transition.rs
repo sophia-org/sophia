@@ -297,7 +297,15 @@ pub struct PrivateXServerFrontend {
     /// of the press: resolving it again would describe wherever the route
     /// points now, which is a different client the moment a grab or a surface
     /// has moved.
-    holds: BTreeMap<u64, PrivateReachedResources>,
+    /// Storage is reserved before any work can be accepted, so publishing a
+    /// hold's plan cannot fail after the ledger has already moved.
+    holds: Vec<(u64, PrivateReachedResources)>,
+    /// Holds whose release has been decided and not yet handed on.
+    ///
+    /// An event having been built is not an event having been delivered, so
+    /// the plan moves here rather than being dropped: this is the only record
+    /// of who is owed one, and the terminal handoff is what clears it.
+    settling: Vec<(u64, PrivateReachedResources)>,
     /// Whether this instance has already handed out its keyboard state.
     ///
     /// One history per instance, so the answer is asked and answered once.
@@ -315,145 +323,6 @@ pub struct PrivateXServerFrontend {
     /// the instance settles twice, which double-counts an unreadable queue and
     /// would double-answer anything a second pass could reach.
     settled: bool,
-}
-
-#[cfg(unix)]
-impl PrivateXServerFrontend {
-    /// Stop accepting, settle what can be settled, and keep the means to
-    /// settle the rest.
-    ///
-    /// The returned handle retains the registry that accepted the work, so a
-    /// caller can retry without holding a frontend or naming an authority. A
-    /// report of bare operations would have been useless the moment this
-    /// consumed self: the component able to answer them would have gone with
-    /// it.
-    pub fn shutdown(mut self) -> PrivateSettlement {
-        self.settle_accepted()
-    }
-
-    /// Close and answer what was accepted, keeping what is still owed.
-    ///
-    /// Work that was routed and has not reached a terminal outcome is carried
-    /// too. Draining only the admission queue would destroy those identities
-    /// with the frontend, stranding their credits and losing any access to
-    /// their completion -- including input that could still finish.
-    fn settle_accepted(&mut self) -> PrivateSettlement {
-        let origin = self.broker.registry.clone();
-        if self.settled {
-            return PrivateSettlement {
-                origin,
-                durable: self.durable.clone(),
-                queue: Arc::clone(&self.admission.ready),
-                pending: Vec::new(),
-                outstanding: Vec::new(),
-                queue_unreadable: false,
-                settling: None,
-            };
-        }
-        self.settled = true;
-        let stranded = match self.admission.close() {
-            Ok(stranded) => stranded,
-            Err(()) => {
-                // The queue could not be opened, so nothing in it could be
-                // recovered. The handle still carries the capability, so a
-                // caller learns this from something that could have acted
-                // rather than from a log line.
-                self.failed = true;
-                return PrivateSettlement {
-                    origin,
-                    durable: self.durable.clone(),
-                    queue: Arc::clone(&self.admission.ready),
-                    pending: Vec::new(),
-                    outstanding: std::mem::take(&mut self.outstanding),
-                    queue_unreadable: true,
-                    settling: None,
-                };
-            }
-        };
-        // A credit belongs to work until that work is answered, wherever it
-        // is answered. Releasing only on the drive path would leave credits
-        // held against obligations that no longer exist.
-        // Reclaim what has genuinely finished first, so work already answered
-        // is not carried as though it were owed.
-        self.reclaim_settled();
-        let outstanding = std::mem::take(&mut self.outstanding);
-        // Everything still in the queue is about to be answered or handed
-        // back by the settlement below, so it already has an owner. Its
-        // records are given up first, or the cancellation pass further down
-        // would hand the same commands back a second time.
-        for operation in &stranded {
-            if let PrivateOperation::Control(_, Some(token)) = operation {
-                self.completion.discard(*token);
-            }
-        }
-        // Settled in place, through the same ownership gate every other
-        // settlement path uses. The handover above frees each record, so the
-        // gate passes; where it did not -- an unreadable registry, or a record
-        // that had begun applying -- the gate is what stops this from
-        // publishing an outcome someone else can still publish, and the credit
-        // leaves with an identity rather than with a command that could be
-        // sent again.
-        let mut settlement = PrivateSettlement {
-            origin,
-            durable: self.durable.clone(),
-            queue: Arc::clone(&self.admission.ready),
-            pending: stranded,
-            outstanding,
-            queue_unreadable: false,
-            settling: None,
-        };
-        let _answered = settlement.settle_pending();
-        // Records still unexecuted after the queue was answered belong to
-        // commands a writer took and never ran: they left the queue, so
-        // draining it did not reach them, and the instance is going. They are
-        // carried out with a home rather than left in a registry nobody will
-        // ask again.
-        //
-        // Their record is settled as it is taken, so the carried command has
-        // no second owner that could publish an outcome for it. Commands
-        // caught mid-application are not here: those stay in the registry,
-        // which the returned settlement still reaches through its origin.
-        let cancellation = self.completion.cancel_unfinished();
-        // Ownership moves; it does not terminate. The identity leaves
-        // `outstanding` in the same step that the command enters `pending`, so
-        // exactly one owner holds the operation and exactly one credit is
-        // released for it. Leaving the identity behind would let a watcher
-        // read the record's absence as completion and release the credit here,
-        // and settling `pending` would release it again.
-        settlement.outstanding.retain(|identity| match identity {
-            PrivateIdentity::Control {
-                completion: Some(token),
-                ..
-            } => !cancellation
-                .cancellable
-                .iter()
-                .any(|(cancelled, _)| cancelled == token),
-            _ => true,
-        });
-        settlement.pending.extend(
-            cancellation
-                .cancellable
-                .into_iter()
-                .map(|(_, command)| PrivateOperation::Control(command, None)),
-        );
-        settlement
-    }
-}
-
-#[cfg(unix)]
-impl Drop for PrivateXServerFrontend {
-    fn drop(&mut self) {
-        // The fallback for an owner that never called shutdown. The handle
-        // this produces is dropped immediately, and its own Drop makes one
-        // final attempt with the capability still in hand.
-        drop(self.settle_accepted());
-        if self.failure_slot_held && !self.failed {
-            // Closed without failing, so the slot belongs to whoever needs it
-            // next rather than to an instance that has gone.
-            self.durable.release_failure_slot();
-            self.failure_slot_held = false;
-        }
-    }
 }
 
 /// What settling the abandoned operations found.
@@ -626,7 +495,8 @@ impl PrivateXServerFrontend {
             controller,
             submit,
             keyboards_issued: std::sync::atomic::AtomicBool::new(false),
-            holds: BTreeMap::new(),
+            holds: Vec::with_capacity(capacity),
+            settling: Vec::with_capacity(capacity),
         })
     }
 

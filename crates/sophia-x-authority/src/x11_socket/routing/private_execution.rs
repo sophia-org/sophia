@@ -17,6 +17,13 @@ pub struct PrivateReachedResources {
     window: XResourceId,
     surface: SurfaceId,
     namespace: NamespaceId,
+    /// The seat whose pointer state this hold moved.
+    ///
+    /// Recorded with the plan so the release moves the same mapper the press
+    /// moved. Finding it from the current route or from whatever seat a
+    /// release happens to name would clear a different seat's buttons and
+    /// leave this one's held forever.
+    seat: SeatId,
     /// Whether a grab chose this rather than the route.
     grabbed: bool,
 }
@@ -34,6 +41,9 @@ impl PrivateReachedResources {
     }
     pub fn namespace(self) -> NamespaceId {
         self.namespace
+    }
+    pub fn seat(self) -> SeatId {
+        self.seat
     }
     pub fn grabbed(self) -> bool {
         self.grabbed
@@ -57,9 +67,20 @@ pub enum PrivateExecutionRefusal {
     /// focus record available is an intent that was queued rather than one a
     /// writer applied. Refused rather than delivered somewhere plausible.
     FocusNotApplied,
-    /// The transaction returned without deciding, so its cause is the
-    /// completion the authority recorded rather than anything named here.
-    NotDecided,
+    /// The ledger owes this release a delivery and the plan recording where
+    /// its press went is not here.
+    ///
+    /// Not the same as owing nobody an event. A hold that ended has a
+    /// recipient by definition, so an absent record is an obligation nobody
+    /// can currently discharge -- reporting it as nothing to emit would settle
+    /// a debt by losing the evidence of it.
+    HoldPlanMissing,
+    /// The transaction returned without deciding.
+    ///
+    /// Carries the completion the authority actually recorded, because that is
+    /// the cause. Discarding it and naming a plausible error here would
+    /// replace what happened with a guess about it.
+    NotDecided(sophia_input_authority::RequestCompletion),
     /// The admission boundary refused.
     Admission(PrivateAdmissionRefusal),
     /// The authority refused.
@@ -139,17 +160,39 @@ impl PrivateXServerFrontend {
             return Err(PrivateExecutionRefusal::SeatUnavailable);
         }
 
+        // Refused before the transaction, so each reason is its own. Deciding
+        // these inside would mean borrowing an authority error to stand for a
+        // question the authority was never asked -- and a caller acting on a
+        // release barrier that is really an unapplied focus looks in entirely
+        // the wrong place.
+        match route.request.kind {
+            InputEventKind::PointerButton { .. } => {}
+            InputEventKind::Key { .. } => return Err(PrivateExecutionRefusal::FocusNotApplied),
+            InputEventKind::PointerMotion | InputEventKind::PointerAxis { .. } => {
+                return Err(PrivateExecutionRefusal::Unmappable);
+            }
+        }
+
         let client = custody.client();
         let mut decided = None;
         let Self {
             participant,
             broker,
             holds,
+            settling,
             ..
         } = self;
         let completion = participant
             .execute_current(custody, client, |permit, bindings| {
-                resolve_and_apply(permit, bindings, &broker.registry, holds, route, &mut decided)
+                resolve_and_apply(
+                    permit,
+                    bindings,
+                    &broker.registry,
+                    holds,
+                    settling,
+                    route,
+                    &mut decided,
+                )
             })
             // Typed through, not collapsed. An unreadable boundary is not a
             // client nobody admitted, and saying so here would reinstate the
@@ -166,7 +209,7 @@ impl PrivateXServerFrontend {
             // The transaction returned without deciding anything, which means
             // the callback refused before recording. Its own cause travelled
             // in the completion rather than being renamed here.
-            return Err(PrivateExecutionRefusal::NotDecided);
+            return Err(PrivateExecutionRefusal::NotDecided(completion));
         };
         Ok(PrivateOrderedRun {
             reached: decided.reached,
@@ -197,7 +240,8 @@ fn resolve_and_apply(
     permit: &mut sophia_input_authority::ExecutionPermit<'_>,
     bindings: &PrivateAdmissionBindings,
     registry: &XServerFrontendRouteRegistry,
-    holds: &mut BTreeMap<u64, PrivateReachedResources>,
+    holds: &mut Vec<(u64, PrivateReachedResources)>,
+    settling: &mut Vec<(u64, PrivateReachedResources)>,
     route: &XAuthorityRoutedInput,
     decided: &mut Option<PrivateOrderedDecision>,
 ) -> Result<(), sophia_input_authority::RegistrationError> {
@@ -220,40 +264,87 @@ fn resolve_and_apply(
                 // grab, no namespace: all of that describes where the route
                 // points now, and a release is owed to where its press went.
                 let outcome = permit.release(input)?;
-                let reached = match outcome {
+                match outcome {
                     sophia_input_authority::ReleaseOutcome::DeliverTo(hold) => {
-                        holds.remove(&hold.hold())
+                        let Some(index) = holds.iter().position(|(id, _)| *id == hold.hold())
+                        else {
+                            // The ledger ended a hold and the record of where
+                            // it went is gone. Owing nobody an event and being
+                            // unable to say who is owed one are different
+                            // facts, and reporting the second as the first
+                            // settles a debt by losing the evidence of it.
+                            return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                        };
+                        let reached = holds[index].1;
+                        // The mapper the press moved, keyed by what the press
+                        // recorded. A release naming its own seat, or found
+                        // from the current route, would clear a different
+                        // seat's buttons and leave this one's held forever.
+                        let mut pointers =
+                            registry.pointer_state.lock().map_err(|_| unavailable)?;
+                        let pointer = pointers
+                            .entry((reached.namespace, reached.seat))
+                            .or_insert_with(crate::XCorePointerMapper::new);
+                        // Moved only on a final release, and the state it
+                        // reports is the one before this event -- which still
+                        // has this button down, because this is the event that
+                        // lifts it.
+                        let event = pointer.map_evdev_button(button, false).map(
+                            |(core, before)| {
+                                XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                                    kind: XAuthorityPointerEventKind::Button {
+                                        button: core,
+                                        pressed: false,
+                                    },
+                                    surface: reached.surface,
+                                    root_x: clamp_input_coordinate(
+                                        route.request.global_position.x,
+                                    ),
+                                    root_y: clamp_input_coordinate(
+                                        route.request.global_position.y,
+                                    ),
+                                    event_x: clamp_input_coordinate(
+                                        route.request.local_position.x,
+                                    ),
+                                    event_y: clamp_input_coordinate(
+                                        route.request.local_position.y,
+                                    ),
+                                    state: before,
+                                    time_msec: u32::try_from(route.request.time_msec)
+                                        .unwrap_or(u32::MAX),
+                                })
+                            },
+                        );
+                        // Moved to the continuation rather than deleted. An
+                        // event having been built is not an event having been
+                        // delivered, and dropping the plan here would discard
+                        // the only record of who is owed one.
+                        let ended = holds.remove(index);
+                        settling.push(ended);
+                        *decided = Some(PrivateOrderedDecision {
+                            reached: Some(reached),
+                            first_press: false,
+                            keyboard_applied: false,
+                            release: Some(outcome),
+                            event,
+                        });
                     }
                     // Not a delivery and not a failure. The source was not
                     // holding, or another still is, so the aggregate owes
-                    // nobody an event -- which is a different thing from a
-                    // target that has gone.
+                    // nobody an event and its buttons are unchanged: moving
+                    // the mapper here would lift a button somebody still
+                    // holds.
                     sophia_input_authority::ReleaseOutcome::NotHeld
-                    | sophia_input_authority::ReleaseOutcome::SurvivorRemains => None,
-                };
-                let event = reached.map(|reached| {
-                    let _ = &reached;
-                    XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
-                        kind: XAuthorityPointerEventKind::Button {
-                            button: core_button,
-                            pressed: false,
-                        },
-                        surface: reached.surface,
-                        root_x: clamp_input_coordinate(route.request.global_position.x),
-                        root_y: clamp_input_coordinate(route.request.global_position.y),
-                        event_x: clamp_input_coordinate(route.request.local_position.x),
-                        event_y: clamp_input_coordinate(route.request.local_position.y),
-                        state: 0,
-                        time_msec: u32::try_from(route.request.time_msec).unwrap_or(u32::MAX),
-                    })
-                });
-                *decided = Some(PrivateOrderedDecision {
-                    reached,
-                    first_press: false,
-                    keyboard_applied: false,
-                    release: Some(outcome),
-                    event,
-                });
+                    | sophia_input_authority::ReleaseOutcome::SurvivorRemains => {
+                        *decided = Some(PrivateOrderedDecision {
+                            reached: None,
+                            first_press: false,
+                            keyboard_applied: false,
+                            release: Some(outcome),
+                            event: None,
+                        });
+                    }
+                }
                 return Ok(());
             }
 
@@ -298,15 +389,24 @@ fn resolve_and_apply(
                     window,
                     surface: route.request.target_surface,
                     namespace: surface_route.namespace,
+                    seat: route.request.seat,
                     grabbed,
                 };
-                holds.insert(hold, reached);
+                // Published into storage reserved before anything was
+                // accepted, so recording where the press went cannot fail
+                // after the ledger has already moved.
+                holds.push((hold, reached));
                 Some(reached)
             } else {
                 // A join adopts the hold that already exists. What this press
                 // would have resolved is a proposal the ledger did not take,
                 // and reporting it would name a client the hold never went to.
-                holds.get(&hold).copied()
+                let Some((_, reached)) = holds.iter().find(|(id, _)| *id == hold) else {
+                    // The ledger joined a hold whose record is gone, so this
+                    // press has an owner nobody can name.
+                    return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                };
+                Some(*reached)
             };
             let event = if applied.first_press() {
                 pointer
@@ -340,14 +440,12 @@ fn resolve_and_apply(
             });
             Ok(())
         }
-        InputEventKind::Key { .. } => {
-            // A new press needs an authoritative reached target. The only
-            // focus record available is written after the writer command is
-            // queued, so it says a change was asked for, not applied.
-            Err(sophia_input_authority::RegistrationError::ReleaseBarrier)
-        }
-        // Neither names an input this ledger validates.
-        InputEventKind::PointerMotion | InputEventKind::PointerAxis { .. } => {
+        // Refused before the transaction was entered, with their own causes.
+        // Reaching here would mean something admitted a kind this path does
+        // not run.
+        InputEventKind::Key { .. }
+        | InputEventKind::PointerMotion
+        | InputEventKind::PointerAxis { .. } => {
             Err(sophia_input_authority::RegistrationError::StaleExecution)
         }
     }

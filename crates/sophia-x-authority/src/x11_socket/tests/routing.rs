@@ -12348,7 +12348,10 @@ fn a_key_press_refuses_rather_than_delivering_on_queued_focus() {
         pressed: true,
     };
     let refused = private.run_ordered_input(&mut keyboards, &key, &custody);
-    assert!(refused.is_err(), "a key press has no authoritative target yet");
+    assert!(
+        matches!(refused, Err(crate::PrivateExecutionRefusal::FocusNotApplied)),
+        "the reason is the missing applied focus, not an authority error standing in for it, got {refused:?}"
+    );
 
     // Refused before any keyboard effect: the seat is prepared but nothing
     // moved it, so no modifier describes a key no admitted request applied.
@@ -12555,4 +12558,202 @@ fn a_release_of_nothing_held_is_an_outcome_not_a_missing_target() {
     );
     assert!(run.reached.is_none(), "so nobody is owed an event");
     assert!(run.event.is_none());
+}
+
+/// The pointer state this seat/namespace currently projects.
+fn projected_buttons(
+    private: &crate::PrivateXServerFrontend,
+    namespace: NamespaceId,
+    seat: SeatId,
+) -> u16 {
+    private
+        .broker
+        .registry
+        .pointer_state
+        .lock()
+        .expect("the pointer state")
+        .get(&(namespace, seat))
+        .map_or(0, |mapper| mapper.state())
+}
+
+#[test]
+fn a_final_release_clears_what_its_press_projected_and_reports_it() {
+    let client = XServerFrontendClientId(761);
+    let surface = SurfaceId::new(761, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let seat = SeatId::from_raw(1);
+    let (mut private, _registration, role, mut keyboards) =
+        ordered_fixture(client, surface, XResourceId::new(0x200761, 1));
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+
+    let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(761), 272, true),
+            &pressed,
+        )
+        .expect("the press to run");
+    assert!(run.first_press);
+    let _ = pressed.observe();
+    assert_eq!(
+        projected_buttons(&private, namespace, seat),
+        256,
+        "the press projects button one"
+    );
+
+    let released = role.reserve(stamp, 2).expect("a reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(762), 272, false),
+            &released,
+        )
+        .expect("the release to run");
+    let Some(XAuthorityInputEvent::Pointer(event)) = run.event else {
+        panic!("a final release owes an event");
+    };
+    assert!(
+        matches!(
+            event.kind,
+            XAuthorityPointerEventKind::Button {
+                button: 1,
+                pressed: false
+            }
+        ),
+        "it lifts button one"
+    );
+    assert_eq!(
+        event.state, 256,
+        "and reports the state before it, which still has that button down"
+    );
+    assert_eq!(
+        projected_buttons(&private, namespace, seat),
+        0,
+        "the projection is cleared by the release, not left held"
+    );
+    let _ = released.observe();
+
+    // A new press on the same input is refused until the release that just
+    // happened is settled. The authority holds a barrier for it, and this path
+    // has no settlement step yet -- so the projection being clean is what can
+    // be shown here, and the barrier is named rather than worked around.
+    let again = role.reserve(stamp, 3).expect("a reservation").accepted();
+    let barred = private.run_ordered_input(
+        &mut keyboards,
+        &button_to(surface, XAuthorityInputDeliveryId::from_raw(763), 272, true),
+        &again,
+    );
+    assert!(
+        matches!(
+            barred,
+            Err(crate::PrivateExecutionRefusal::NotDecided(
+                sophia_input_authority::RequestCompletion::Refused(
+                    sophia_input_authority::RegistrationError::ReleaseBarrier
+                )
+            ))
+        ),
+        "the release's debt bars the next press until it is settled, got {barred:?}"
+    );
+    assert_eq!(
+        projected_buttons(&private, namespace, seat),
+        0,
+        "and the projection stayed clear, so no stale bit is hiding behind it"
+    );
+}
+
+#[test]
+fn a_release_with_a_survivor_leaves_the_projection_alone() {
+    let client = XServerFrontendClientId(771);
+    let surface = SurfaceId::new(771, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let seat = SeatId::from_raw(1);
+    let (mut private, _registration, role, mut keyboards) =
+        ordered_fixture(client, surface, XResourceId::new(0x200771, 1));
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+
+    // Two presses on one input: the second joins, so two participants hold it.
+    for (request, delivery) in [(1, 771), (2, 772)] {
+        let custody = role.reserve(stamp, request).expect("a reservation").accepted();
+        private
+            .run_ordered_input(
+                &mut keyboards,
+                &button_to(
+                    surface,
+                    XAuthorityInputDeliveryId::from_raw(delivery),
+                    272,
+                    true,
+                ),
+                &custody,
+            )
+            .expect("the press to run");
+        let _ = custody.observe();
+    }
+    assert_eq!(projected_buttons(&private, namespace, seat), 256);
+
+    // One release. Whether the aggregate is now clear is the ledger's to say,
+    // and the projection must not be cleared while anyone still holds it.
+    let released = role.reserve(stamp, 3).expect("a reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(773), 272, false),
+            &released,
+        )
+        .expect("the release to run");
+    match run.release.expect("a release outcome") {
+        sophia_input_authority::ReleaseOutcome::SurvivorRemains => {
+            assert!(run.event.is_none(), "a survivor owes nobody an event");
+            assert_eq!(
+                projected_buttons(&private, namespace, seat),
+                256,
+                "and the button somebody still holds stays projected"
+            );
+        }
+        sophia_input_authority::ReleaseOutcome::DeliverTo(_) => {
+            assert_eq!(
+                projected_buttons(&private, namespace, seat),
+                0,
+                "a final release clears it"
+            );
+        }
+        sophia_input_authority::ReleaseOutcome::NotHeld => {
+            panic!("the input was held")
+        }
+    }
+}
+
+#[test]
+fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing() {
+    let client = XServerFrontendClientId(781);
+    let surface = SurfaceId::new(781, 1);
+    let (mut private, _registration, role, mut keyboards) =
+        ordered_fixture(client, surface, XResourceId::new(0x200781, 1));
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+
+    let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
+    private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(781), 272, true),
+            &pressed,
+        )
+        .expect("the press to run");
+    let _ = pressed.observe();
+
+    // The record of where the press went is lost. The ledger still ends the
+    // hold, so somebody is owed the event that lifts the button -- and saying
+    // "nothing to emit" would settle that debt by losing the evidence of it.
+    private.holds.clear();
+
+    let released = role.reserve(stamp, 2).expect("a reservation").accepted();
+    let refused = private.run_ordered_input(
+        &mut keyboards,
+        &button_to(surface, XAuthorityInputDeliveryId::from_raw(782), 272, false),
+        &released,
+    );
+    assert!(
+        refused.is_err(),
+        "a hold that ended has a recipient; not knowing who is not the same as owing nobody"
+    );
 }
