@@ -378,14 +378,28 @@ unused origin is not built. Three of the rows above are now owned. A client conn
 together, so a setup failure after any spawn shuts down whatever had already
 started, and teardown stops every writer before joining any and joins every one
 whatever an earlier one reported -- returning on the first failure left the
-rest running, never told to stop, against a closing stream. Losing a client's
-route registration reconciles that client's control: an established outcome is
-untouched, a command that never started stays truthfully unexecuted, and one
-caught mid-application becomes abandoned. Abandoned is not an outcome. Nothing
-is published for it and nothing is replayed; what its registration now names is
-the cleanup it is owed, its credit stays held, and only cleanup recorded done
-retires it. A cleanup that failed keeps the record and tells the caller the
-responsibility is still theirs.
+rest running, never told to stop, against a closing stream. A control writer's own exit
+reconciles what it was applying: it is the executor, so it does not have to
+guess whether one is still there. An established outcome is untouched, a
+command that never started stays truthfully unexecuted, and one caught
+mid-application becomes abandoned. Losing a client's route registration
+reconciles too, but only where it can establish that nothing is still serving
+that client -- a registration ending is not proof that its writer stopped, and
+abandoning an operation whose writer is still inside it would refuse the real
+outcome that writer is about to establish.
+
+Abandoned is a state, not a completion. Nothing is published for it, nothing is
+replayed, it cannot be resumed, and its credit stays held.
+
+What is built for it is bookkeeping and nothing more. `cleanups_owed` and
+`record_cleanup` have no production owner: nothing performs or proves any
+operation's native cleanup, and a record is retired only because a caller said
+cleanup was done. Calling this Applying reconciliation would claim a step that
+does not exist. The reconciler that owns it, what each operation's obligations
+actually are, and retirement only on established proof, are the work this
+leaves open. A cleanup reported as not done keeps the record and returns the
+responsibility to the caller, and every lookup that cannot read the registry
+says so rather than reporting nothing owed.
 
 Not done here: the worker-join row is owned but the route registration at
 `dispatch.rs:468` and `state.register_client` at `:571` remain different

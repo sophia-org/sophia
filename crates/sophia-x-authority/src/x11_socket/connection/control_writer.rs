@@ -32,8 +32,17 @@ struct X11ControlWriterSeal<'a> {
 #[cfg(unix)]
 impl Drop for X11ControlWriterSeal<'_> {
     fn drop(&mut self) {
-        if let Some(routing) = self.routing {
-            routing.mark_control_writer_gone(self.client);
+        let Some(routing) = self.routing else {
+            return;
+        };
+        routing.mark_control_writer_gone(self.client);
+        // This writer is the executor, and it is going, so it does not have to
+        // guess whether one is still there. Anything it left mid-application
+        // has nothing left to establish an outcome for it: that is abandoned,
+        // which is not an outcome and not a cancellation, and what it names
+        // now is the cleanup it is owed.
+        if let Some(completion) = routing.control_completion() {
+            let _reconciled = completion.reconcile_client(self.client, true);
         }
     }
 }

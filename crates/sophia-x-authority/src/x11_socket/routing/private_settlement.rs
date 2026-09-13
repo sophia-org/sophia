@@ -418,11 +418,14 @@ impl PrivateSettlement {
     /// retained rather than reported as unexecuted, and they are reachable
     /// rather than counted and forgotten, because the registry holding them
     /// came with the origin this settlement kept.
-    pub fn outstanding_control(&self) -> usize {
+    ///
+    /// `None` where there is no registry to ask, or one that cannot be read.
+    /// An instance with nothing outstanding and one nobody can look at are
+    /// different answers.
+    pub fn outstanding_control(&self) -> Option<usize> {
         self.origin
             .control_completion()
-            .map(|owner| owner.outstanding())
-            .unwrap_or(0)
+            .map(|owner| owner.outstanding())?
     }
 
     /// Republish acknowledgements a client writer could not deliver.

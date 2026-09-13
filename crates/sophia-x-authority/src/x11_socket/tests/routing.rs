@@ -5169,7 +5169,7 @@ fn a_control_completion_closes_only_on_a_real_acknowledgement() {
         },
     };
     let token = accepted(&registry, command);
-    assert_eq!(registry.outstanding(), 1);
+    assert_eq!(registry.outstanding().expect("a readable registry"), 1);
 
     // A delivered acknowledgement retires the record.
     let (delivered, delivered_receiver) = sync_channel(4);
@@ -5188,7 +5188,7 @@ fn a_control_completion_closes_only_on_a_real_acknowledgement() {
         .send_ack_for(client, ack, Some(token))
         .expect("a free channel to publish");
     assert!(delivered_receiver.try_recv().is_ok());
-    assert_eq!(registry.outstanding(), 0, "a delivered ack retires it");
+    assert_eq!(registry.outstanding().expect("a readable registry"), 0, "a delivered ack retires it");
 }
 
 #[test]
@@ -5245,8 +5245,8 @@ fn a_full_channel_records_the_acknowledgement_rather_than_the_command() {
     // The outcome is retained, not the command. Where this is reached for
     // real the effect has already happened,
     // so this is republished later and never re-run.
-    assert_eq!(registry.owed(), 1);
-    assert_eq!(registry.outstanding(), 1);
+    assert_eq!(registry.owed().expect("a readable registry"), 1);
+    assert_eq!(registry.outstanding().expect("a readable registry"), 1);
 
     // Draining lets it publish, once.
     assert!(full_receiver.try_recv().is_ok());
@@ -5261,7 +5261,7 @@ fn a_full_channel_records_the_acknowledgement_rather_than_the_command() {
         republished[0].acknowledgement.transaction,
         TransactionId::from_raw(11002)
     );
-    assert_eq!(registry.owed(), 0);
+    assert_eq!(registry.owed().expect("a readable registry"), 0);
     assert_eq!(
         registry.publish_owed_with(|_| ControlPublication::Delivered),
         0,
@@ -5283,7 +5283,7 @@ fn a_full_channel_records_the_acknowledgement_rather_than_the_command() {
         Ok(ControlPublication::Retained)
     );
     assert_eq!(held.publish_owed_with(|_| ControlPublication::Retained), 0);
-    assert_eq!(held.owed(), 1, "a failed retry does not consume the outcome");
+    assert_eq!(held.owed().expect("a readable registry"), 1, "a failed retry does not consume the outcome");
 }
 
 #[test]
@@ -5329,11 +5329,11 @@ fn a_gone_receiver_is_not_a_published_acknowledgement() {
     // as publication would mark work complete whose acknowledgement nobody
     // received.
     assert_eq!(
-        registry.outstanding(),
+        registry.outstanding().expect("a readable registry"),
         1,
         "a gone receiver published nothing"
     );
-    assert_eq!(registry.owed(), 1);
+    assert_eq!(registry.owed().expect("a readable registry"), 1);
 }
 
 #[test]
@@ -5370,7 +5370,7 @@ fn a_cancellation_edge_does_not_call_a_partly_applied_command_unexecuted() {
         0,
         "a record with no outcome owes no acknowledgement"
     );
-    assert_eq!(registry.outstanding(), 2, "and both are still held");
+    assert_eq!(registry.outstanding().expect("a readable registry"), 2, "and both are still held");
 
     let cancellation = registry.cancel_unfinished();
 
@@ -5384,7 +5384,7 @@ fn a_cancellation_edge_does_not_call_a_partly_applied_command_unexecuted() {
     // runtime may already have changed. It is retained until something
     // establishes what happened.
     assert_eq!(cancellation.indeterminate, 1);
-    assert_eq!(registry.outstanding(), 1);
+    assert_eq!(registry.outstanding().expect("a readable registry"), 1);
 }
 
 /// Build a private frontend with a client and one surface registered.
@@ -5623,7 +5623,7 @@ fn an_owed_outcome_is_not_given_up_as_though_it_were_unexecuted() {
         !registry.discard(token),
         "an owed outcome is not something that can be handed on"
     );
-    assert_eq!(registry.owed(), 1);
+    assert_eq!(registry.owed().expect("a readable registry"), 1);
     assert_eq!(
         registry.state_of(token),
         crate::ControlRecordState::Outstanding
@@ -5735,7 +5735,7 @@ fn a_command_queued_to_a_writer_is_never_cancelled_as_unexecuted() {
         "a command a writer could still run is not handed to a second owner"
     );
     assert_eq!(
-        report.outstanding_control(),
+        report.outstanding_control().expect("a readable registry"),
         1,
         "it is retained, because what the runtime did is not established"
     );
@@ -5767,7 +5767,7 @@ fn a_rejected_control_leaves_no_record_behind_to_answer_again() {
         XAuthorityControlOutcome::AuthorityRejected
     );
     assert_eq!(
-        report.outstanding_control(),
+        report.outstanding_control().expect("a readable registry"),
         0,
         "a command handed to settlement gives up its record as it goes"
     );
@@ -6087,7 +6087,7 @@ fn a_retired_registration_cannot_answer_for_a_later_one() {
             if returned.command.transaction() == TransactionId::from_raw(21005)
     ));
     assert_eq!(
-        registry.outstanding(),
+        registry.outstanding().expect("a readable registry"),
         0,
         "nothing was accepted, so nothing is owed"
     );
@@ -6364,7 +6364,7 @@ fn a_claimed_control_is_not_cancelled_out_from_under_its_writer() {
     );
     assert_eq!(report.retry(), 0);
     assert_eq!(
-        report.outstanding_control(),
+        report.outstanding_control().expect("a readable registry"),
         1,
         "it is retained: what the runtime did is not established yet"
     );
@@ -7003,7 +7003,7 @@ fn a_reservation_is_its_producers_until_the_instance_accepts_it() {
     // The producer resumes, is refused, and takes its command back. The
     // reservation goes with it, leaving nothing behind to answer later.
     assert!(registry.release_reservation(reservation));
-    assert_eq!(registry.outstanding(), 0);
+    assert_eq!(registry.outstanding().expect("a readable registry"), 0);
 }
 
 #[test]
@@ -7108,7 +7108,7 @@ fn a_contradicting_outcome_is_refused_before_it_is_sent() {
             .is_err(),
         "a full channel is reported to the writer"
     );
-    assert_eq!(registry.owed(), 1);
+    assert_eq!(registry.owed().expect("a readable registry"), 1);
 
     // Drain, then contradict what was established. The effect that happened
     // does not become a different effect, and the receiver never sees a claim
@@ -7168,10 +7168,10 @@ fn a_real_submit_paused_before_acceptance_is_not_answered_by_a_close() {
         let _ = finished.send(producer.submit(configure(client, surface, 83001)));
     });
     let limit = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while registry.outstanding() == 0 && std::time::Instant::now() < limit {
+    while registry.outstanding().expect("a readable registry") == 0 && std::time::Instant::now() < limit {
         std::thread::yield_now();
     }
-    let reserved_while_stalled = registry.outstanding();
+    let reserved_while_stalled = registry.outstanding().expect("a readable registry");
 
     // The instance closes while that reservation exists. It is not accepted
     // work, so it is not the instance's to answer or hand on.
@@ -7218,7 +7218,7 @@ fn a_real_submit_paused_before_acceptance_is_not_answered_by_a_close() {
         "the caller keeps the command it was never told had been taken"
     );
     assert_eq!(
-        registry.outstanding(),
+        registry.outstanding().expect("a readable registry"),
         0,
         "and the reservation went back with it, leaving nothing to answer later"
     );
@@ -7253,7 +7253,7 @@ fn a_producer_reserves_nothing_for_a_client_that_has_gone() {
             if returned.command.transaction() == TransactionId::from_raw(84001)
     ));
     assert_eq!(
-        registry.outstanding(),
+        registry.outstanding().expect("a readable registry"),
         0,
         "nothing was reserved, so nothing is owed and no credit was taken"
     );
@@ -7296,7 +7296,7 @@ fn no_outcome_is_published_for_a_record_its_producer_still_owns() {
         "and the writer path refuses it too"
     );
     assert!(acks.try_recv().is_err(), "nothing was sent");
-    assert_eq!(registry.outstanding(), 1, "and the reservation is untouched");
+    assert_eq!(registry.outstanding().expect("a readable registry"), 1, "and the reservation is untouched");
 }
 
 #[test]
@@ -7337,7 +7337,7 @@ fn a_publication_that_fails_leaves_the_reservation_with_its_producer() {
     // releasing a reservation does not remove an accepted record: it would
     // have stayed here answering for work this caller was handed back.
     assert_eq!(
-        registry.outstanding(),
+        registry.outstanding().expect("a readable registry"),
         accepted_count,
         "only what was accepted has a record"
     );
@@ -7444,7 +7444,7 @@ fn stopping_one_writer_does_not_leave_the_others_running() {
 }
 
 #[test]
-fn losing_a_registration_leaves_a_partly_applied_control_owed_its_cleanup() {
+fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
     let client = XServerFrontendClientId(325);
     let surface = SurfaceId::new(325, 1);
     let (acknowledgements, acks) = sync_channel(8);
@@ -7470,26 +7470,24 @@ fn losing_a_registration_leaves_a_partly_applied_control_owed_its_cleanup() {
         .expect("the shared admission to accept control");
     assert_eq!(durable.reserved(), 2);
 
-    // The registration goes while the first is mid-application. Losing it is
-    // the edge, so nothing here re-runs the reconciliation to make it true:
-    // what follows observes what the drop already did.
-    assert!(
-        registry.cleanups_owed().is_empty(),
-        "nothing is owed a cleanup while the registration is alive"
-    );
+    // The registration goes while a writer is still serving this client. A
+    // registration ending is not proof that its writer stopped: it may have
+    // claimed this operation and still be inside it, about to establish an
+    // outcome that abandoning it here would then refuse.
     drop(registration);
-    assert_eq!(
-        registry.cleanups_owed().len(),
-        1,
-        "losing the registration is what makes the cleanup owed"
+    assert!(
+        registry
+            .cleanups_owed()
+            .expect("a readable registry")
+            .is_empty(),
+        "nothing is owed a cleanup while something could still answer"
     );
-
-    // Asking again says the same thing, and changes nothing.
-    let reconciled = registry.reconcile_client(client);
+    let reconciled = registry.reconcile_client(client, false);
     assert!(reconciled.readable);
+    assert_eq!(reconciled.abandoned, 0);
     assert_eq!(
-        reconciled.abandoned, 1,
-        "what was being applied is owed a cleanup, not an outcome"
+        reconciled.applying, 1,
+        "it is still being applied, and that is all anyone here knows"
     );
     assert_eq!(
         reconciled.unexecuted, 1,
@@ -7497,6 +7495,12 @@ fn losing_a_registration_leaves_a_partly_applied_control_owed_its_cleanup() {
     );
     assert_eq!(reconciled.owed, 0, "nothing was answered");
     assert_eq!(reconciled.reserved, 0);
+
+    // The writer going is the edge that establishes it, because the writer is
+    // the executor and does not have to guess.
+    let reconciled = registry.reconcile_client(client, true);
+    assert_eq!(reconciled.abandoned, 1);
+    assert_eq!(reconciled.applying, 0);
     assert!(
         acks.try_recv().is_err(),
         "nothing is published for an operation nobody can describe"
@@ -7508,7 +7512,7 @@ fn losing_a_registration_leaves_a_partly_applied_control_owed_its_cleanup() {
     );
 
     // It cannot be resumed, and no outcome may be published for it.
-    let cleanups = registry.cleanups_owed();
+    let cleanups = registry.cleanups_owed().expect("a readable registry");
     assert_eq!(cleanups.len(), 1);
     let owed = cleanups[0];
     assert_eq!(
@@ -7533,12 +7537,12 @@ fn losing_a_registration_leaves_a_partly_applied_control_owed_its_cleanup() {
         registry.record_cleanup(owed.token, false),
         Err(crate::ControlCleanupRefusal::StillOwed)
     );
-    assert_eq!(registry.cleanups_owed().len(), 1);
+    assert_eq!(registry.cleanups_owed().expect("a readable registry").len(), 1);
     assert_eq!(private.reclaim_settled(), 0, "so the credit stays too");
 
     // Cleanup done is not an outcome, but it is the end of what is owed.
     assert_eq!(registry.record_cleanup(owed.token, true), Ok(()));
-    assert!(registry.cleanups_owed().is_empty());
+    assert!(registry.cleanups_owed().expect("a readable registry").is_empty());
     assert_eq!(
         private.reclaim_settled(),
         1,
@@ -7610,7 +7614,7 @@ fn an_unreadable_registry_reconciles_nothing_and_says_so() {
     // Finding nothing because nothing could be looked at is not finding
     // nothing. A caller that read this as a clean teardown would walk away
     // from an operation still mid-application.
-    let reconciled = registry.reconcile_client(client);
+    let reconciled = registry.reconcile_client(client, true);
     assert!(!reconciled.readable);
     assert_eq!(reconciled.abandoned, 0);
     assert_eq!(
@@ -7640,7 +7644,7 @@ fn cleanup_is_only_recorded_for_an_operation_that_is_owed_one() {
             Err(crate::ControlCleanupRefusal::NotAbandoned)
         );
     }
-    assert_eq!(registry.outstanding(), 2);
+    assert_eq!(registry.outstanding().expect("a readable registry"), 2);
 
     // A foreign registration is not this registry's to clean up either.
     let other = crate::ControlCompletionRegistry::with_capacity(2).expect("an unused origin");
@@ -7648,4 +7652,83 @@ fn cleanup_is_only_recorded_for_an_operation_that_is_owed_one() {
         other.record_cleanup(applying, true),
         Err(crate::ControlCleanupRefusal::Foreign)
     );
+}
+
+#[test]
+fn a_writer_that_stops_mid_operation_leaves_it_owed_a_cleanup() {
+    let client = XServerFrontendClientId(329);
+    let surface = SurfaceId::new(329, 1);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(2).unwrap());
+    let (registration, _channels) = broker.registry.register_client(client).unwrap();
+    let routing = broker.registry.clone();
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    assert!(routing.install_control_completion(registry.clone()));
+
+    // An operation a writer claimed and is inside.
+    let token = accepted(&registry, configure(client, surface, 36001));
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+    assert!(
+        registry
+            .cleanups_owed()
+            .expect("a readable registry")
+            .is_empty()
+    );
+
+    // The writer goes. It is the executor, so it does not have to guess
+    // whether one is still there, and nothing else will establish an outcome
+    // for what it was applying.
+    drop(X11ControlWriterSeal {
+        routing: Some(&routing),
+        client,
+    });
+
+    let owed = registry.cleanups_owed().expect("a readable registry");
+    assert_eq!(owed.len(), 1, "the writer's exit is what establishes it");
+    assert_eq!(
+        owed[0].command.command.transaction(),
+        TransactionId::from_raw(36001)
+    );
+    assert_eq!(
+        registry.resume_execution(token),
+        crate::ControlExecutionClaim::Refused(crate::ControlClaimRefusal::Abandoned),
+        "and nothing picks it up afterwards"
+    );
+    drop(registration);
+}
+
+#[test]
+fn an_unreadable_registry_owes_an_answer_rather_than_an_empty_list() {
+    let client = XServerFrontendClientId(330);
+    let surface = SurfaceId::new(330, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let token = accepted(&registry, configure(client, surface, 37001));
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+    assert_eq!(registry.reconcile_client(client, true).abandoned, 1);
+    assert_eq!(registry.cleanups_owed().map(|owed| owed.len()), Ok(1));
+
+    let poisoner = registry.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.inner.lock().unwrap();
+            panic!("poisoning the registry");
+        })
+        .join()
+        .is_err()
+    );
+
+    // An empty list means nothing is owed. It must never also mean nobody
+    // could look: an owner told the first would walk away from a cleanup it
+    // is holding.
+    assert_eq!(
+        registry.cleanups_owed(),
+        Err(crate::ControlCleanupRefusal::Unavailable)
+    );
+    assert_eq!(registry.outstanding(), None);
+    assert_eq!(registry.owed(), None);
 }

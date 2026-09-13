@@ -489,26 +489,26 @@ impl ControlCompletionRegistry {
         Ok(publication)
     }
 
-    /// How many operations still have an unanswered record.
-    pub fn outstanding(&self) -> usize {
-        self.inner
-            .lock()
-            .map(|inner| inner.records.len())
-            .unwrap_or(0)
+    /// How many operations still have an unanswered record, or `None` if the
+    /// registry could not be read.
+    ///
+    /// Not zero on failure. Nothing outstanding and nothing knowable are
+    /// different answers, and a caller told the first when the second is true
+    /// walks away from work that is still owed.
+    pub fn outstanding(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|inner| inner.records.len())
     }
 
-    /// How many are holding an acknowledgement that could not be published.
-    pub fn owed(&self) -> usize {
-        self.inner
-            .lock()
-            .map(|inner| {
-                inner
-                    .records
-                    .iter()
-                    .filter(|held| matches!(held.phase, ControlPhase::Owed(_)))
-                    .count()
-            })
-            .unwrap_or(0)
+    /// How many are holding an acknowledgement that could not be published,
+    /// or `None` if the registry could not be read.
+    pub fn owed(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|inner| {
+            inner
+                .records
+                .iter()
+                .filter(|held| matches!(held.phase, ControlPhase::Owed(_)))
+                .count()
+        })
     }
 
     /// Retry the acknowledgements that could not be published.
@@ -582,10 +582,23 @@ impl ControlCompletionRegistry {
     ///
     /// Reservations are left alone: they are still their producer's.
     ///
+    /// `executor_gone` is what licenses the third of those, and it is asked
+    /// for rather than assumed. Losing a registration is not proof that the
+    /// writer serving it has stopped: it may have claimed the operation and
+    /// still be inside it. Abandoning one that is still being applied would
+    /// take an operation with a live executor and an outcome about to be
+    /// established, and turn it into one that can never be answered -- the
+    /// writer's real outcome would then be refused. Without that proof the
+    /// operation stays exactly what it is, still applying.
+    ///
     /// Counts, not payloads. This runs on a teardown path, and a caller that
     /// wanted the abandoned operations themselves asks for them separately
     /// rather than having a vector built for it on the way out.
-    pub fn reconcile_client(&self, client: XServerFrontendClientId) -> ControlReconciliation {
+    pub fn reconcile_client(
+        &self,
+        client: XServerFrontendClientId,
+        executor_gone: bool,
+    ) -> ControlReconciliation {
         let Ok(mut inner) = self.inner.lock() else {
             return ControlReconciliation::unavailable();
         };
@@ -605,8 +618,12 @@ impl ControlCompletionRegistry {
                     reconciled.unexecuted = reconciled.unexecuted.saturating_add(1);
                 }
                 ControlPhase::Applying(command) => {
-                    held.phase = ControlPhase::Abandoned(command);
-                    reconciled.abandoned = reconciled.abandoned.saturating_add(1);
+                    if executor_gone {
+                        held.phase = ControlPhase::Abandoned(command);
+                        reconciled.abandoned = reconciled.abandoned.saturating_add(1);
+                    } else {
+                        reconciled.applying = reconciled.applying.saturating_add(1);
+                    }
                 }
                 ControlPhase::Abandoned(_) => {
                     reconciled.abandoned = reconciled.abandoned.saturating_add(1);
@@ -624,11 +641,15 @@ impl ControlCompletionRegistry {
     /// For an owner that can actually perform the cleanup. The records stay
     /// here: this is what is owed, not a handover, and each is retired only
     /// when the cleanup is recorded done.
-    pub fn cleanups_owed(&self) -> Vec<ControlCleanup> {
+    ///
+    /// A registry that cannot be read says so rather than returning nothing.
+    /// An empty list means nothing is owed; it must never also mean nobody
+    /// could look.
+    pub fn cleanups_owed(&self) -> Result<Vec<ControlCleanup>, ControlCleanupRefusal> {
         let Ok(inner) = self.inner.lock() else {
-            return Vec::new();
+            return Err(ControlCleanupRefusal::Unavailable);
         };
-        inner
+        Ok(inner
             .records
             .iter()
             .filter_map(|held| match held.phase {
@@ -638,7 +659,7 @@ impl ControlCompletionRegistry {
                 }),
                 _ => None,
             })
-            .collect()
+            .collect())
     }
 
     /// Record what became of an abandoned operation's cleanup.
@@ -831,8 +852,13 @@ pub struct ControlReconciliation {
     /// Accepted and never started. Still held here, still truthfully
     /// unexecuted, and handed on when the instance closes.
     pub unexecuted: usize,
-    /// Caught mid-application. Retained, and owed the cleanup they name.
+    /// Caught mid-application with their executor gone. Retained, and owed
+    /// the cleanup they name.
     pub abandoned: usize,
+    /// Caught mid-application with their executor still there. Left exactly
+    /// as they are: an outcome may still be established for them, and nothing
+    /// here is entitled to decide it will not be.
+    pub applying: usize,
     /// Outcomes established and not yet published. Untouched: republishing is
     /// right and reconciling is not publication.
     pub owed: usize,

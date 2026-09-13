@@ -695,7 +695,19 @@ impl Drop for XServerFrontendClientRouteRegistration {
         // it is owed the cleanup it named, and saying so here is what keeps
         // that responsibility from ending with the registration.
         if let Some(completion) = self.control_completion.get() {
-            let _reconciled = completion.reconcile_client(self.client);
+            // Whether anything is still serving this client, established
+            // before its route senders go. A registration ending is not proof
+            // that its writer stopped, and a client that is already out of the
+            // map has nothing serving it. A map that cannot be read proves
+            // nothing either way, so nothing is abandoned on the strength of
+            // it.
+            let executor_gone = match self.clients.lock() {
+                Ok(clients) => clients.get(&self.client).is_none_or(|senders| {
+                    senders.control_writer_gone.load(Ordering::Acquire)
+                }),
+                Err(_) => false,
+            };
+            let _reconciled = completion.reconcile_client(self.client, executor_gone);
         }
         let _ = self.input_recovery.disconnect(self.client, XAuthorityInputDeliveryOutcome::ClientDisconnected);
         if let Ok(mut clients) = self.clients.lock() {
