@@ -11143,6 +11143,143 @@ fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
 }
 
 #[test]
+fn two_detached_producers_reserve_against_one_authority() {
+    let private = private_for_roles();
+    let first = private
+        .ingress_for(role_connection(511), DeviceId::from_raw(1))
+        .expect("an ingress for the first producer");
+    let second = private
+        .ingress_for(role_connection(512), DeviceId::from_raw(2))
+        .expect("an ingress for the second producer");
+
+    // Detached is the point: each is handed off and used on its own, and they
+    // contend for one order against one authority.
+    let first_sequence = first
+        .submit(motion_to(
+            SurfaceId::new(511, 1),
+            XAuthorityInputDeliveryId::from_raw(511),
+        ))
+        .expect("the first producer's work to be accepted");
+    let second_sequence = second
+        .submit(motion_to(
+            SurfaceId::new(512, 1),
+            XAuthorityInputDeliveryId::from_raw(512),
+        ))
+        .expect("the second producer's work to be accepted");
+    assert_ne!(
+        first_sequence, second_sequence,
+        "two producers take distinct places in one order"
+    );
+
+    // Each reserved against its own grant, so neither refused the other. A
+    // shared grant would have made the second submission fail for want of a
+    // completion cell, because a grant holds exactly one.
+    //
+    // That same bound is why a producer cannot get ahead of execution: its
+    // first request still holds its cell until that request is executed and
+    // its outcome consumed, so a second submission on the same grant is
+    // refused rather than queued behind it. Recorded here as the property it
+    // is -- a producer streaming input needs its requests executed, not just
+    // accepted.
+    let again = first.submit(motion_to(
+        SurfaceId::new(511, 1),
+        XAuthorityInputDeliveryId::from_raw(513),
+    ));
+    assert!(
+        matches!(again, Err(PrivateSendError::Denied(_))),
+        "a second request on one grant is refused while the first holds its cell, got {again:?}"
+    );
+
+    // And the refusal did not disturb the other producer, which still has its
+    // own grant and its own cell.
+    assert!(
+        matches!(
+            second.submit(motion_to(
+                SurfaceId::new(512, 1),
+                XAuthorityInputDeliveryId::from_raw(514),
+            )),
+            Err(PrivateSendError::Denied(_))
+        ),
+        "the same bound applies to each producer independently"
+    );
+}
+
+#[test]
+fn work_refused_by_the_order_takes_its_reservation_back() {
+    let (sender, _receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (authority, issuer, submit) = private_authority();
+    // Small on purpose, so the order genuinely fills.
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &crate::PrivateSettlementOwner::default(),
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+    let ingress = private
+        .ingress_for(role_connection(513), DeviceId::from_raw(1))
+        .expect("an ingress");
+
+    let mut refused = None;
+    for index in 0..64u32 {
+        let route = motion_to(
+            SurfaceId::new(513, 1),
+            XAuthorityInputDeliveryId::from_raw(u64::from(index) + 600),
+        );
+        match ingress.submit(route) {
+            Ok(_) => continue,
+            Err(error) => {
+                refused = Some(error);
+                break;
+            }
+        }
+    }
+    let Some(error) = refused else {
+        panic!("a bounded order must refuse eventually");
+    };
+
+    // The payload comes back rather than being consumed by the refusal.
+    let returned = match error {
+        PrivateSendError::Saturated(route)
+        | PrivateSendError::Denied(route)
+        | PrivateSendError::Exhausted(route)
+        | PrivateSendError::Unavailable(route)
+        | PrivateSendError::Disconnected(route)
+        | PrivateSendError::DeliveryAlreadyTracked(route) => route,
+    };
+    assert_eq!(
+        returned.request.target_surface,
+        SurfaceId::new(513, 1),
+        "the refused work is handed back intact"
+    );
+
+    // And the exact cell it reserved went back with it. If a refused
+    // submission stranded its cell, this producer's grant would hold a request
+    // nothing could publish or consume, and every later reservation on it
+    // would be refused for want of a completion cell -- so draining the order
+    // and submitting again would fail.
+    assert!(
+        !private.route_pending().expect("a readable order").is_empty(),
+        "the order had work to run"
+    );
+    assert!(
+        ingress
+            .submit(motion_to(
+                SurfaceId::new(513, 1),
+                XAuthorityInputDeliveryId::from_raw(700),
+            ))
+            .is_ok(),
+        "the refused submission's cell was released, so this one reserves"
+    );
+}
+
+#[test]
 fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
     let client = XServerFrontendClientId(377);
     let surface = SurfaceId::new(377, 1);

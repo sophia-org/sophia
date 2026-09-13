@@ -103,6 +103,7 @@ impl XAuthorityRoutedInputSender {
             control_epoch: stamp.control_epoch,
             publication: stamp.publication,
             route,
+            reservation: None,
         };
         if !self.recovery.admit(&envelope.route, envelope.control_epoch, Instant::now()) {
             return Err(std::sync::mpsc::SendError(envelope.route));
@@ -132,6 +133,7 @@ impl XAuthorityRoutedInputSender {
             control_epoch: stamp.control_epoch,
             publication: stamp.publication,
             route,
+            reservation: None,
         };
         match self
             .recovery
@@ -170,6 +172,7 @@ impl XAuthorityRoutedInputSender {
             control_epoch: stamp.control_epoch,
             publication: stamp.publication,
             route,
+            reservation: None,
         };
         if !self.recovery.admit(&envelope.route, envelope.control_epoch, Instant::now()) {
             return Err(TrySendError::Full(envelope.route));

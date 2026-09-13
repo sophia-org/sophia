@@ -463,7 +463,13 @@ pub struct ControlReconcileReport {
 /// Carried in a shutdown report so an owner can act on what it is handed, but
 /// crate-visible: publishing it would export the stamped envelope shape for
 /// the sake of a report.
+// Routed input is much the larger variant, and boxing it would put an
+// allocation on the admission path. The order reserves its storage before
+// anything is accepted precisely so that accepting never allocates, and a
+// refusal hands the payload back rather than dropping it -- both of which a
+// box would undo at exactly the wrong moment.
 #[cfg(unix)]
+#[allow(clippy::large_enum_variant)]
 enum PrivateOperation {
     /// Input admitted through the stamped envelope.
     RoutedInput(XAuthorityEpochRoutedInput),
@@ -672,7 +678,29 @@ impl PrivateXServerFrontend {
         PrivateIngress {
             sender: self.broker.routed_input_sender(),
             admission: Arc::clone(&self.admission),
+            role: None,
+            requests: Arc::new(std::sync::atomic::AtomicU64::new(1)),
         }
+    }
+
+    /// The stamped ingress for one admitted producer, reserving its requests
+    /// against this instance's authority before they are published.
+    ///
+    /// This is the production shape. The capability is issued here, on the
+    /// origin's side of the handover, and what the producer receives is the
+    /// right to reserve and to observe its own outcomes -- never the authority
+    /// and never the issuer.
+    pub fn ingress_for(
+        &self,
+        connection: sophia_input_authority::ConnectionIdentity,
+        device: sophia_protocol::DeviceId,
+    ) -> Result<PrivateIngress, PrivateAuthorityRefusal> {
+        Ok(PrivateIngress {
+            sender: self.broker.routed_input_sender(),
+            admission: Arc::clone(&self.admission),
+            role: Some(self.reservation_role(connection, device)?),
+            requests: Arc::new(std::sync::atomic::AtomicU64::new(1)),
+        })
     }
 
     /// A producer handle for control, bound to this instance's admission.

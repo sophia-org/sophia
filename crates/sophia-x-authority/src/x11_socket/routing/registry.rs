@@ -100,12 +100,25 @@ struct XDeferredRoutedInput {
 }
 
 #[cfg(unix)]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct XAuthorityEpochRoutedInput {
     control_epoch: u64,
     /// Zero when no coordinator is present, where publication plays no part.
     publication: u64,
     route: XAuthorityRoutedInput,
+    /// The request reserved for this work, when it was reserved before being
+    /// published.
+    ///
+    /// Owned rather than named. Travelling as a value is what makes the two
+    /// ends of the window the only reachable ones: the work is accepted and
+    /// the reservation goes on with it, or it is refused and dropping what
+    /// comes back disposes the cell. `None` on the ordinary path, which
+    /// reserves nothing.
+    ///
+    /// Not `Clone` for the same reason -- two copies of custody would let one
+    /// request be executed twice, or disposed while the other still expects to
+    /// publish for it.
+    reservation: Option<PrivateReservation>,
 }
 
 

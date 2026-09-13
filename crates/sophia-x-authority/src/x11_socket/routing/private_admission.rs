@@ -80,12 +80,19 @@ impl SharedAdmission {
     /// takes, and nothing holds a completion registry and then admits. The
     /// durable owner takes its own lock and then reads completion records, so
     /// no path here holds a completion guard across a call into that owner.
+    #[allow(clippy::result_large_err)]
     fn accept_with<'handoff>(
         &self,
         class: crate::ReadyClass,
         operation: PrivateOperation,
         prepare: impl FnOnce() -> Option<ControlAcceptance<'handoff>>,
     ) -> Result<crate::ReadySequence, (AdmissionRefusal, PrivateOperation)> {
+        // The refusal carries the work back, which is the whole point: a
+        // refusal with nowhere to put what it refuses destroys something
+        // already accepted, and now the reservation rides with it, so dropping
+        // what comes back is what releases the cell. Boxing to shrink the
+        // error would allocate on the refusal path -- the one place least able
+        // to afford it, since saturation is exactly when there is no room.
         // Checked before acceptance, so an exhausted stream never takes work
         // it cannot name.
         if self.exhausted.load(Ordering::Acquire) {
@@ -148,11 +155,18 @@ impl SharedAdmission {
     }
 
     /// Accept runnable work with nothing to hand over alongside it.
+    #[allow(clippy::result_large_err)]
     fn accept(
         &self,
         class: crate::ReadyClass,
         operation: PrivateOperation,
     ) -> Result<crate::ReadySequence, (AdmissionRefusal, PrivateOperation)> {
+        // The refusal carries the work back, which is the whole point: a
+        // refusal with nowhere to put what it refuses destroys something
+        // already accepted, and now the reservation rides with it, so dropping
+        // what comes back is what releases the cell. Boxing to shrink the
+        // error would allocate on the refusal path -- the one place least able
+        // to afford it, since saturation is exactly when there is no room.
         self.accept_with(class, operation, || Some(ControlAcceptance::ungoverned()))
     }
 
@@ -232,6 +246,18 @@ pub enum PrivateSendError {
 pub struct PrivateIngress {
     sender: XAuthorityRoutedInputSender,
     admission: Arc<SharedAdmission>,
+    /// Reserves a request before the work is published, when this ingress has
+    /// a role to reserve with.
+    ///
+    /// `None` leaves the ordinary shape untouched: work is stamped and
+    /// published, and nothing is reserved for it.
+    role: Option<PrivateReservationRole>,
+    /// Which request this is, within this ingress.
+    ///
+    /// Per ingress rather than global: the value distinguishes one producer's
+    /// requests from each other, and a counter shared between producers would
+    /// make two unrelated requests collide on it.
+    requests: Arc<std::sync::atomic::AtomicU64>,
 }
 
 /// A producer of control work, bound to one instance's shared admission.
@@ -311,7 +337,40 @@ impl PrivateIngress {
     /// admission's own hold, so a send that has returned cannot be overtaken
     /// by one that started afterwards.
     pub fn submit(&self, route: XAuthorityRoutedInput) -> Result<crate::ReadySequence, PrivateSendError> {
-        let envelope = self.sender.stamp_and_reserve(route)?;
+        // The stamp is captured through the coordinator here, and that guard is
+        // released before common is taken below. The coordinator is never
+        // reached from under common.
+        let mut envelope = self.sender.stamp_and_reserve(route)?;
+        if let Some(role) = &self.role {
+            // Reserved before the work is published, under common and nothing
+            // else: no X, client or route guard is held here, and common is
+            // released again before the queue is entered, so no queue-to-common
+            // edge exists -- including through the admission path's own
+            // callbacks.
+            //
+            // The stamp handed over is the one this envelope already carries,
+            // not a fresh reading. A transition landing between the two is
+            // caught by the authority's own validation rather than by a check
+            // racing it.
+            let stamp = crate::ControlStamp {
+                control_epoch: envelope.control_epoch,
+                publication: envelope.publication,
+            };
+            let request = self
+                .requests
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            match role.reserve(stamp, request) {
+                Ok(reservation) => envelope.reservation = Some(reservation),
+                Err(_refusal) => {
+                    // Nothing was published, so the delivery reservation this
+                    // send already took is rolled back and the work is handed
+                    // straight back. Denied rather than saturated: a refusal
+                    // to reserve is not a queue that is full.
+                    self.sender.abort_reservation(envelope.route.delivery);
+                    return Err(PrivateSendError::Denied(envelope.route));
+                }
+            }
+        }
         self.admission
             .accept(
                 crate::ReadyClass::RoutedInput,

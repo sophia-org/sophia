@@ -256,6 +256,20 @@ impl PrivateReservation {
     }
 }
 
+/// Names the request and nothing about the authority behind it.
+///
+/// Hand-written because the controller holds an instance whose debug would
+/// print an authority's internals into any log that formats an envelope.
+#[cfg(unix)]
+impl std::fmt::Debug for PrivateReservation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PrivateReservation")
+            .field("published", &self.token.is_none())
+            .finish_non_exhaustive()
+    }
+}
+
 #[cfg(unix)]
 impl Drop for PrivateReservation {
     fn drop(&mut self) {
