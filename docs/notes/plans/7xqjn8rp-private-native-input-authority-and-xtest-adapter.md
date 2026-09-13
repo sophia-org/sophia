@@ -630,3 +630,21 @@ integrated as `2c662b64` and `30279f29`. The exposure flag covers queued raw wor
 because the guarded getter is currently the only export of that channel; an
 internal producer bypassing the getter would invalidate that argument. The
 private constructor and production executor still require independent evidence.
+
+Exact combined source `a71fde82` passes 779 common/X-authority tests, with one
+existing ignored probe and no compiler warnings. All-targets Clippy with warnings
+denied and the layout-only check also pass. Evidence is
+`.artifacts/native-input-integration-a71fde82-sockets/`. The initial restricted
+sandbox run failed on owned Unix-socket operations and is retained separately at
+`.artifacts/native-input-integration-a71fde82/`. Neither run was a full canonical
+gate or a native/hardware test.
+
+Private-constructor candidate `7d92667e` passes two independent public sender
+checks and the missing-raw-method compile-fail check. The actual sender accepts
+an open-gate enqueue and returns rejected work during a pending transition,
+including when the facade is constructed with that transition already pending.
+Evidence is `.artifacts/private-constructor-review-7d92667e/`. The constructor is
+integrated at `18621044`; its facade currently provides only construction,
+stamped ingress and the existing `route_pending`. Client registration, service
+attachment and ordered production execution are not established by this slice.
+The preceding `a71fde82` package results do not include this later constructor.
