@@ -988,3 +988,38 @@ producing an acknowledgement. The owner already reports `reserved=0` and
 admits 10202 at sequence 2. The desired assertion that 10201 still holds its
 credit fails. Thus the admission/shutdown controls pass, while the production
 consumer still reclaims settlement capacity before the operation is answered.
+
+Candidate `33bfadc8` removes the failed-record strong cycle by retaining the
+queue as a leaf, and distinguishes unavailable owner reservation from ordinary
+capacity exhaustion. It adds a recovery operation that drains retained failed
+queues for cancellation against their originating registry, without resuming
+request execution. The known terminal-credit and owner-poison defects remain
+open.
+
+Source review finds that failed-instance slots are still not reserved before
+frontend exposure. Preallocating the owner's vector does not reserve a slot for
+each constructed frontend: `take_failed_instance` returns without retaining the
+queue when the vector is full. An empty failed instance can occupy that capacity
+without consuming an operation credit, leaving another already-exposed instance
+unable to transfer its accepted work on failure. A separate instance reservation
+must be acquired before exposure and retained until its failure/settlement
+obligations end. Capacity refusal belongs at that earlier boundary, not in Drop.
+
+`recover_failed` also replaces the preallocated failed-record vector with an
+empty capacity-0 vector through `mem::take`, then drops the original buffer.
+Subsequent failure transfer therefore allocates during cleanup. The storage
+must survive and be reused across recovery cycles. These source findings keep
+the candidate unintegrated.
+
+Independent `.artifacts/private-failed-review-33bfadc8/` records one positive
+PASS and one desired conservation assertion FAIL (139 filtered; 9.68 seconds).
+Recovering one poisoned queue emits the exact `AuthorityRejected` outcome once
+and sends no command for execution. In the capacity-1 negative, empty failed
+instance A occupies the failed-record slot while operation credits remain zero.
+Instance B can still be constructed and accept control 11101. B then fails and
+closes, but the owner retains only A. Recovery drains empty A and produces no
+outcome; B's receipt times out after 200 ms, leaving `failed_instances=0` and
+`reserved=1`. The test permits an explicit owned refusal before acceptance;
+this candidate instead accepts and loses the failure transfer. Buffer reuse
+and the removed cycle remain source-review findings, not additional runtime
+tests in this result.
