@@ -102,6 +102,117 @@ impl SharedAdmission {
     }
 }
 
+/// Where obligations go when the handle holding them is abandoned.
+///
+/// A handle that is dropped with work still owed cannot retry forever in its
+/// own `Drop`, and must not destroy what it holds either: a full channel with
+/// a live receiver is congestion, not teardown, and removing the last owner is
+/// the defect rather than proof the obligation ended. So the work moves here,
+/// with the capability that can answer it, and stays until something drives
+/// it.
+///
+/// Bounded. An owner that grew without limit would turn a settlement problem
+/// into an exhaustion one; past the bound, obligations are refused entry and
+/// counted as lost, which is a fact to report rather than a silence.
+#[cfg(unix)]
+#[derive(Clone)]
+pub struct PrivateSettlementOwner {
+    inner: Arc<Mutex<AbandonedSettlements>>,
+}
+
+#[cfg(unix)]
+struct AbandonedSettlements {
+    held: Vec<(XServerFrontendRouteRegistry, PrivateOperation)>,
+    /// Queues that could not be read when their instance closed. Their
+    /// contents were never recoverable, but the fact is owned here rather than
+    /// surviving as a boolean on something that has gone.
+    unreadable_queues: usize,
+    /// Obligations refused entry because this owner was full.
+    lost: usize,
+    capacity: usize,
+}
+
+#[cfg(unix)]
+impl Default for PrivateSettlementOwner {
+    fn default() -> Self {
+        Self::with_capacity(PRIVATE_ABANDONED_CAPACITY)
+    }
+}
+
+#[cfg(unix)]
+impl PrivateSettlementOwner {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(AbandonedSettlements {
+                held: Vec::with_capacity(capacity),
+                unreadable_queues: 0,
+                lost: 0,
+                capacity,
+            })),
+        }
+    }
+
+    /// How many obligations are waiting for someone to drive them.
+    pub fn owed(&self) -> usize {
+        self.inner.lock().map(|held| held.held.len()).unwrap_or(0)
+    }
+
+    /// How many were refused because this owner was full.
+    pub fn lost(&self) -> usize {
+        self.inner.lock().map(|held| held.lost).unwrap_or(0)
+    }
+
+    /// How many instances closed with a queue nobody could read.
+    pub fn unreadable_queues(&self) -> usize {
+        self.inner
+            .lock()
+            .map(|held| held.unreadable_queues)
+            .unwrap_or(0)
+    }
+
+    /// Try to discharge everything waiting, returning how many were answered.
+    ///
+    /// Each obligation is retried against the registry that accepted it, never
+    /// against another instance's. What still cannot be answered stays here.
+    pub fn drive(&self) -> usize {
+        let Ok(mut held) = self.inner.lock() else {
+            return 0;
+        };
+        let taken = std::mem::take(&mut held.held);
+        let before = taken.len();
+        for (origin, operation) in taken {
+            let mut remaining = settle_against(&origin, vec![operation]);
+            if let Some(operation) = remaining.pop() {
+                held.held.push((origin, operation));
+            }
+        }
+        before.saturating_sub(held.held.len())
+    }
+
+    fn take(&self, origin: &XServerFrontendRouteRegistry, pending: Vec<PrivateOperation>) {
+        let Ok(mut held) = self.inner.lock() else {
+            return;
+        };
+        for operation in pending {
+            if held.held.len() >= held.capacity {
+                held.lost = held.lost.saturating_add(1);
+                continue;
+            }
+            held.held.push((origin.clone(), operation));
+        }
+    }
+
+    fn record_unreadable_queue(&self) {
+        if let Ok(mut held) = self.inner.lock() {
+            held.unreadable_queues = held.unreadable_queues.saturating_add(1);
+        }
+    }
+}
+
+/// How many abandoned obligations one owner keeps.
+#[cfg(unix)]
+const PRIVATE_ABANDONED_CAPACITY: usize = 64;
+
 /// What a shutdown could not settle, and the means to settle it later.
 ///
 /// Counting an unsettled obligation and logging it is a diagnostic, not a
@@ -122,6 +233,8 @@ pub struct PrivateSettlement {
     /// argument would let one instance's obligations be settled against
     /// another's registry.
     origin: XServerFrontendRouteRegistry,
+    /// Where anything still owed goes if this handle is abandoned.
+    durable: PrivateSettlementOwner,
     pending: Vec<PrivateOperation>,
     queue_unreadable: bool,
 }
@@ -159,19 +272,23 @@ impl PrivateSettlement {
 #[cfg(unix)]
 impl Drop for PrivateSettlement {
     fn drop(&mut self) {
+        if self.queue_unreadable {
+            // Owned by something that outlives this rather than surviving as a
+            // boolean on a handle that is going away.
+            self.durable.record_unreadable_queue();
+        }
         if self.pending.is_empty() {
             return;
         }
-        // A last attempt with the capability still in hand, because a handle
-        // that is abandoned still owes what it holds. Whatever survives this
-        // has no owner left at all, and saying so is the most that remains.
+        // One attempt, not a loop: a Drop that retried until it succeeded
+        // would block teardown on a congested channel. What that attempt
+        // cannot answer moves to the durable owner rather than being
+        // destroyed here -- a full channel with a live receiver is congestion,
+        // and removing the last owner is not evidence the obligation ended.
         let pending = std::mem::take(&mut self.pending);
-        let owed = settle_against(&self.origin, pending).len();
-        if owed > 0 {
-            tracing::error!(
-                "sophia_private_settlement status=abandoned owed={owed} unreadable={}",
-                self.queue_unreadable
-            );
+        let survivors = settle_against(&self.origin, pending);
+        if !survivors.is_empty() {
+            self.durable.take(&self.origin, survivors);
         }
     }
 }
@@ -617,6 +734,14 @@ pub struct PrivateXServerFrontend {
     admission: Arc<SharedAdmission>,
     /// The most this will run in one turn.
     service_budget: usize,
+    /// Where obligations go if a settlement handle is abandoned.
+    durable: PrivateSettlementOwner,
+    /// Whether settlement has already run.
+    ///
+    /// shutdown consumes the frontend, so Drop still follows it. Without this
+    /// the instance settles twice, which double-counts an unreadable queue and
+    /// would double-answer anything a second pass could reach.
+    settled: bool,
 }
 
 #[cfg(unix)]
@@ -636,6 +761,15 @@ impl PrivateXServerFrontend {
     /// Close and answer what was accepted, keeping what is still owed.
     fn settle_accepted(&mut self) -> PrivateSettlement {
         let origin = self.broker.registry.clone();
+        if self.settled {
+            return PrivateSettlement {
+                origin,
+                durable: self.durable.clone(),
+                pending: Vec::new(),
+                queue_unreadable: false,
+            };
+        }
+        self.settled = true;
         let stranded = match self.admission.close() {
             Ok(stranded) => stranded,
             Err(()) => {
@@ -645,6 +779,7 @@ impl PrivateXServerFrontend {
                 // rather than from a log line.
                 return PrivateSettlement {
                     origin,
+                    durable: self.durable.clone(),
                     pending: Vec::new(),
                     queue_unreadable: true,
                 };
@@ -653,6 +788,7 @@ impl PrivateXServerFrontend {
         let pending = settle_against(&origin, stranded);
         PrivateSettlement {
             origin,
+            durable: self.durable.clone(),
             pending,
             queue_unreadable: false,
         }
@@ -702,6 +838,7 @@ impl PrivateXServerFrontend {
         control_acknowledgements: SyncSender<XAuthorityClientControlAck>,
         input_deliveries: std::sync::mpsc::Sender<XAuthorityClientInputDelivery>,
         gate: crate::ControlEpochGate,
+        durable: &PrivateSettlementOwner,
     ) -> Self {
         let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
             input_capacity,
@@ -734,6 +871,8 @@ impl PrivateXServerFrontend {
             broker,
             admission: Arc::new(SharedAdmission::new(staged)),
             service_budget: capacity,
+            durable: durable.clone(),
+            settled: false,
         }
     }
 

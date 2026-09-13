@@ -2954,6 +2954,7 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
         control_ack_sender,
         delivery_sender,
         gate.clone(),
+        &crate::PrivateSettlementOwner::default(),
     );
     // No client or surface registered: enqueue is an admission decision, and
     // admission does not depend on there being somewhere to route to yet.
@@ -3002,6 +3003,7 @@ fn the_private_host_delivers_each_admitted_input_exactly_once() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3044,6 +3046,7 @@ fn the_private_host_never_drains_raw_ingress() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
 
     // Raw ingress is not one of the sources the ordered pass reads, and a
@@ -3073,6 +3076,7 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
         control_ack_sender,
         delivery_sender,
         gate.clone(),
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3134,6 +3138,7 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3185,6 +3190,7 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
         control_ack_sender,
         delivery_sender,
         gate.clone(),
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3252,6 +3258,7 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3305,6 +3312,7 @@ fn two_producer_classes_share_one_order() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3401,6 +3409,7 @@ fn a_send_that_returned_is_never_overtaken_by_one_that_started_later() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3456,6 +3465,7 @@ fn a_refused_control_comes_back_to_its_producer() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let control = private.control_producer();
     let command = |transaction| XAuthorityClientControlCommand {
@@ -3494,6 +3504,7 @@ fn producers_are_refused_once_their_consumer_is_gone() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3539,6 +3550,7 @@ fn an_unreachable_queue_is_not_reported_as_a_finished_one() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3587,6 +3599,7 @@ fn accepted_work_is_answered_when_its_consumer_goes_away() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3634,6 +3647,7 @@ fn one_turn_of_service_is_bounded_while_a_producer_keeps_refilling() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     // The constructor's own sizing at an ingress capacity of one.
     let budget = 2 + PRIVATE_CLEANUP_RESERVE_FOR_TESTS;
@@ -3687,6 +3701,7 @@ fn accepted_control_is_acknowledged_when_its_consumer_goes_away() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3734,6 +3749,7 @@ fn every_control_run_names_its_own_transaction() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3781,6 +3797,7 @@ fn a_full_acknowledgement_channel_retains_the_obligation() {
         control_ack_sender.clone(),
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3839,6 +3856,7 @@ fn an_unresolved_target_is_handed_back_rather_than_attributed() {
         control_ack_sender,
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
 
     // No surface registered, so nothing resolves this target.
@@ -3873,6 +3891,7 @@ fn a_retained_handle_settles_once_the_channel_drains() {
         control_ack_sender.clone(),
         delivery_sender,
         gate,
+        &crate::PrivateSettlementOwner::default(),
     );
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
@@ -3953,6 +3972,7 @@ fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
             ack,
             delivery,
             gate,
+        &crate::PrivateSettlementOwner::default(),
         );
         let (registration, channels) = private.broker.registry.register_client(client).unwrap();
         private
@@ -4004,4 +4024,119 @@ fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
         TransactionId::from_raw(2002)
     );
     assert!(second_ack_receiver.try_recv().is_err());
+}
+
+#[test]
+fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
+    let namespace = NamespaceId::from_raw(62);
+    let client = XServerFrontendClientId(80);
+    let surface = SurfaceId::new(68, 1);
+    let window = XResourceId::new(0x200240, 1);
+    let (control_ack_sender, control_ack_receiver) = sync_channel(1);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let durable = crate::PrivateSettlementOwner::default();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender.clone(),
+        delivery_sender,
+        gate,
+        &durable,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(1234),
+                surface,
+            },
+        })
+        .expect("the shared admission to accept control");
+
+    // The only slot is taken, and the receiver is alive. Congestion, not
+    // teardown.
+    control_ack_sender
+        .try_send(XAuthorityClientControlAck {
+            client,
+            acknowledgement: XAuthorityControlAck {
+                kind: XAuthorityControlKind::FocusSurface,
+                transaction: TransactionId::from_raw(1),
+                surface,
+                outcome: XAuthorityControlOutcome::Delivered,
+            },
+        })
+        .expect("the empty slot");
+
+    // The handle is abandoned while still full, which is the case that used to
+    // destroy what it held.
+    drop(private.shutdown());
+    assert_eq!(
+        durable.owed(),
+        1,
+        "an abandoned obligation outlives the handle that held it"
+    );
+
+    // Capacity frees afterwards, and the durable owner discharges it against
+    // the registry that accepted it.
+    let first = control_ack_receiver.recv().expect("the prefilled ack");
+    assert_eq!(first.acknowledgement.transaction, TransactionId::from_raw(1));
+
+    assert_eq!(durable.drive(), 1, "the durable owner answers it");
+    assert_eq!(durable.owed(), 0);
+
+    let owed = control_ack_receiver
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("the obligation the abandoned handle left behind");
+    assert_eq!(
+        owed.acknowledgement.transaction,
+        TransactionId::from_raw(1234)
+    );
+    assert_eq!(
+        owed.acknowledgement.outcome,
+        XAuthorityControlOutcome::AuthorityRejected
+    );
+
+    // Driving again answers nothing twice, and no other instance was involved.
+    assert_eq!(durable.drive(), 0);
+    assert!(
+        control_ack_receiver
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .is_err()
+    );
+    assert_eq!(durable.lost(), 0);
+}
+
+#[test]
+fn an_unreadable_queue_is_owned_by_something_that_outlives_it() {
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let durable = crate::PrivateSettlementOwner::default();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+        &durable,
+    );
+
+    let admission = std::sync::Arc::clone(&private.admission);
+    let _ = std::thread::spawn(move || {
+        let _guard = admission.ready.lock().expect("the queue");
+        panic!("poisoning the shared queue");
+    })
+    .join();
+
+    drop(private.shutdown());
+
+    // The fact outlives the handle rather than going away as a boolean on
+    // something that has gone.
+    assert_eq!(durable.unreadable_queues(), 1);
 }
