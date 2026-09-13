@@ -1,7 +1,14 @@
-use sophia_x_authority::{ReadyClass, ReadyRefusal, ReadyStream};
+use std::num::NonZeroUsize;
+
+use sophia_x_authority::{ReadyClass, ReadyConfigurationError, ReadyRefusal, ReadyStream};
+
+fn bounded(capacity: usize, reserve: usize) -> ReadyStream<&'static str> {
+    ReadyStream::new(NonZeroUsize::new(capacity).expect("a capacity"), reserve)
+        .expect("a valid configuration")
+}
 
 fn stream() -> ReadyStream<&'static str> {
-    ReadyStream::new(8, 2)
+    bounded(8, 2)
 }
 
 #[test]
@@ -60,7 +67,7 @@ fn positions_rise_and_are_never_reused() {
 
 #[test]
 fn cleanup_keeps_capacity_that_ordinary_work_cannot_take() {
-    let mut ready = ReadyStream::new(4, 2);
+    let mut ready = bounded(4, 2);
     // Ordinary work fills everything except the reserve.
     for _ in 0..2 {
         ready
@@ -68,12 +75,18 @@ fn cleanup_keeps_capacity_that_ordinary_work_cannot_take() {
             .expect("capacity");
     }
     assert_eq!(
-        ready.admit(ReadyClass::RoutedInput, "press"),
-        Err(ReadyRefusal::AtCapacity)
+        ready
+            .admit(ReadyClass::RoutedInput, "press")
+            .expect_err("ordinary work is at capacity")
+            .refusal,
+        ReadyRefusal::AtCapacity
     );
     assert_eq!(
-        ready.admit(ReadyClass::Control, "focus"),
-        Err(ReadyRefusal::AtCapacity)
+        ready
+            .admit(ReadyClass::Control, "focus")
+            .expect_err("ordinary work is at capacity")
+            .refusal,
+        ReadyRefusal::AtCapacity
     );
 
     // Cleanup still fits. Refused input is a caller told no; refused cleanup
@@ -84,11 +97,14 @@ fn cleanup_keeps_capacity_that_ordinary_work_cannot_take() {
     ready
         .admit(ReadyClass::Cleanup, "teardown")
         .expect("the reserve");
-    assert_eq!(
-        ready.admit(ReadyClass::Cleanup, "teardown"),
-        Err(ReadyRefusal::AtCapacity),
-        "the reserve is finite too"
-    );
+    let refused = ready
+        .admit(ReadyClass::Cleanup, "teardown")
+        .expect_err("the reserve is finite too");
+    assert_eq!(refused.refusal, ReadyRefusal::AtCapacity);
+    // The reserve is an admission reserve, not durable storage for every debt.
+    // Cleanup it cannot take stays represented outside this queue, on the
+    // existing debt and sweep path, rather than being discarded here.
+    assert_eq!(refused.payload, "teardown");
 }
 
 #[test]
@@ -124,7 +140,7 @@ fn delayed_work_takes_its_position_when_it_becomes_runnable() {
 
 #[test]
 fn one_producers_order_survives_other_producers_interleaving() {
-    let mut ready = ReadyStream::new(16, 2);
+    let mut ready = bounded(16, 2);
     for step in 0..4 {
         ready
             .admit(ReadyClass::RoutedInput, ["a1", "a2", "a3", "a4"][step])
@@ -151,4 +167,61 @@ fn positions_are_refused_rather_than_reused_when_exhausted() {
         Err(ReadyRefusal::SequencesExhausted)
     );
     assert_eq!(sophia_x_authority::next_ready_sequence(41), Ok(42));
+}
+
+#[test]
+fn a_refused_payload_comes_back_and_can_be_admitted_once_afterwards() {
+    let mut ready = bounded(2, 0);
+    ready
+        .admit(ReadyClass::RoutedInput, "first")
+        .expect("capacity");
+    ready
+        .admit(ReadyClass::RoutedInput, "second")
+        .expect("capacity");
+
+    // Admission took ownership. A refusal that kept the payload would destroy
+    // it, and its Drop would run while this queue's guard is held.
+    let refused = ready
+        .admit(ReadyClass::Cleanup, "owed")
+        .expect_err("the queue is full");
+    assert_eq!(refused.refusal, ReadyRefusal::AtCapacity);
+    assert_eq!(refused.payload, "owed");
+
+    // Once there is room, the same payload goes in and comes out once.
+    ready.take_next().expect("drain one");
+    ready
+        .admit(ReadyClass::Cleanup, refused.payload)
+        .expect("room now");
+
+    let drained: Vec<_> = std::iter::from_fn(|| ready.take_next())
+        .map(|(_, _, payload)| payload)
+        .collect();
+    assert_eq!(drained, ["second", "owed"]);
+}
+
+#[test]
+fn an_oversized_reserve_is_refused_rather_than_quietly_changing_the_policy() {
+    // Clamping would turn a misconfiguration into a capacity policy nobody
+    // chose and nothing reports.
+    assert_eq!(
+        ReadyStream::<&str>::new(NonZeroUsize::new(4).expect("a capacity"), 5).err(),
+        Some(ReadyConfigurationError::ReserveExceedsCapacity {
+            capacity: 4,
+            reserve: 5,
+        })
+    );
+    // A reserve equal to the capacity is a choice, not a mistake: it means
+    // only cleanup is admitted.
+    let mut only_cleanup =
+        ReadyStream::new(NonZeroUsize::new(2).expect("a capacity"), 2).expect("valid");
+    assert_eq!(
+        only_cleanup
+            .admit(ReadyClass::RoutedInput, "press")
+            .expect_err("ordinary work has no share")
+            .payload,
+        "press"
+    );
+    only_cleanup
+        .admit(ReadyClass::Cleanup, "teardown")
+        .expect("cleanup has its share");
 }

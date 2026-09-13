@@ -11,6 +11,7 @@
 //! work that may never arrive or skip a position that later fills.
 
 use std::collections::VecDeque;
+use std::num::NonZeroUsize;
 
 /// What kind of operation an entry carries.
 ///
@@ -50,6 +51,27 @@ pub enum ReadyRefusal {
     SequencesExhausted,
 }
 
+/// A refusal, carrying back what was offered.
+///
+/// Admission takes ownership, so a refusal that kept the payload would destroy
+/// it: an owned cleanup or completion could not be retried or reported by the
+/// owner that handed it over, and its `Drop` would run while the queue's guard
+/// is still held. The payload comes back instead, and what to do with it is
+/// the caller's to decide.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ReadyAdmissionError<T> {
+    pub refusal: ReadyRefusal,
+    pub payload: T,
+}
+
+/// Why a stream could not be configured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadyConfigurationError {
+    /// The cleanup reserve would leave no room for anything else, or exceeds
+    /// the capacity it is carved from.
+    ReserveExceedsCapacity { capacity: usize, reserve: usize },
+}
+
 /// Where an admitted entry sits in the single order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ReadySequence(u64);
@@ -81,14 +103,28 @@ impl<T> ReadyStream<T> {
     ///
     /// Storage for the whole capacity is taken here, so admission never has to
     /// allocate: an entry is accepted only once there is somewhere to put it.
-    pub fn new(capacity: usize, cleanup_reserve: usize) -> Self {
-        let cleanup_reserve = cleanup_reserve.min(capacity);
-        Self {
+    ///
+    /// A reserve larger than the capacity is refused rather than clamped.
+    /// Silently correcting it would turn a misconfiguration into a different
+    /// capacity policy that nobody chose and nothing reports. Capacity is
+    /// non-zero by its type rather than by a check.
+    pub fn new(
+        capacity: NonZeroUsize,
+        cleanup_reserve: usize,
+    ) -> Result<Self, ReadyConfigurationError> {
+        let capacity = capacity.get();
+        if cleanup_reserve > capacity {
+            return Err(ReadyConfigurationError::ReserveExceedsCapacity {
+                capacity,
+                reserve: cleanup_reserve,
+            });
+        }
+        Ok(Self {
             entries: VecDeque::with_capacity(capacity),
             next_sequence: 1,
             capacity,
             cleanup_reserve,
-        }
+        })
     }
 
     pub fn len(&self) -> usize {
@@ -113,14 +149,30 @@ impl<T> ReadyStream<T> {
     ///
     /// There is no separate reservation step, and deliberately so: the
     /// sequence a caller is told is a sequence the consumer can already see.
-    pub fn admit(&mut self, class: ReadyClass, payload: T) -> Result<ReadySequence, ReadyRefusal> {
+    ///
+    /// A refusal hands the payload back. This queue is an admission reserve,
+    /// not durable storage for every debt and not a progress guarantee: work
+    /// it cannot take remains the caller's, to carry on the existing debt and
+    /// sweep path rather than being discarded or settled by age here.
+    pub fn admit(
+        &mut self,
+        class: ReadyClass,
+        payload: T,
+    ) -> Result<ReadySequence, ReadyAdmissionError<T>> {
         if self.remaining_for(class) == 0 {
-            return Err(ReadyRefusal::AtCapacity);
+            return Err(ReadyAdmissionError {
+                refusal: ReadyRefusal::AtCapacity,
+                payload,
+            });
         }
         let sequence = ReadySequence(self.next_sequence);
         // Checked before publishing, so a stream that can no longer name its
         // entries refuses rather than reusing a name an earlier one answers to.
-        self.next_sequence = next_ready_sequence(self.next_sequence)?;
+        let next = match next_ready_sequence(self.next_sequence) {
+            Ok(next) => next,
+            Err(refusal) => return Err(ReadyAdmissionError { refusal, payload }),
+        };
+        self.next_sequence = next;
         self.entries.push_back((sequence, class, payload));
         Ok(sequence)
     }
@@ -133,10 +185,12 @@ impl<T> ReadyStream<T> {
 
 /// The position an entry after this one would take.
 ///
-/// A rule that stands on its own, so exhaustion can be shown without a
-/// constructor that puts a stream into a state it could never reach by
-/// admitting. Wrapping here would hand out a position an earlier entry still
-/// answers to, which is the whole reason positions exist.
+/// A rule that stands on its own, so its arithmetic can be shown without a
+/// constructor that puts a stream into a state admitting could never reach.
+/// Testing it directly proves the arithmetic and not that admission reaches
+/// exhaustion; no test here claims otherwise. Wrapping would hand out a
+/// position an earlier entry still answers to, which is the whole reason
+/// positions exist.
 pub fn next_ready_sequence(current: u64) -> Result<u64, ReadyRefusal> {
     current
         .checked_add(1)
