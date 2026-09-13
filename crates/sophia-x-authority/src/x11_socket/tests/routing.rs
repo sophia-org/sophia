@@ -4485,3 +4485,72 @@ fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
     assert_eq!(durable.owed(), 0);
     let _ = owed_before;
 }
+
+#[test]
+fn a_failed_instances_queue_can_still_be_answered() {
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender, receiver) = sync_channel(4);
+    let surface = SurfaceId::new(251, 1);
+    let client = XServerFrontendClientId(251);
+    let (gate, _authority, _issuer) = control_gate();
+    let (delivery_sender, _delivery_receiver) = channel();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(4).unwrap(),
+        sender,
+        delivery_sender,
+        gate,
+        &durable,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(251),
+            surface,
+            XResourceId::new(0x200251, 1),
+        )
+        .unwrap();
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::ConfigureSurface {
+                transaction: TransactionId::from_raw(9950),
+                surface,
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 80,
+                    height: 60,
+                },
+            },
+        })
+        .expect("the shared admission to accept control");
+
+    // The queue becomes unreadable with that work still in it.
+    let admission = std::sync::Arc::clone(&private.admission);
+    let _ = std::thread::spawn(move || {
+        let _guard = admission.ready.lock().expect("the queue");
+        panic!("poisoning the shared queue");
+    })
+    .join();
+
+    drop(private.shutdown());
+    assert_eq!(durable.failed_instances(), 1);
+
+    // Retaining the queue was for this. A poisoned lock stays poisoned, but
+    // the obligations behind it are intact and still owed, so they can be
+    // answered against the registry that accepted them. A tally could have
+    // been counted and never discharged.
+    assert_eq!(durable.recover_failed(), 1);
+    assert_eq!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .expect("the work the failed instance had accepted"),
+        review_settlement_expected(9950)
+    );
+    assert_eq!(durable.failed_instances(), 0);
+    assert_eq!(durable.reserved(), 0, "its credit is free again");
+}

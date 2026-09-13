@@ -10,7 +10,7 @@ pub struct SharedAdmission {
     /// Credits for the storage that would hold this work if it were ever
     /// abandoned, taken before acceptance so that transfer cannot be refused.
     durable: PrivateSettlementOwner,
-    ready: Mutex<SharedQueue>,
+    ready: Arc<Mutex<SharedQueue>>,
     /// Set once the stream can no longer name an entry.
     ///
     /// Terminal, unlike a full queue. Retrying cannot produce an identity that
@@ -25,10 +25,10 @@ impl SharedAdmission {
     fn new(ready: crate::ReadyStream<PrivateOperation>, durable: PrivateSettlementOwner) -> Self {
         Self {
             durable,
-            ready: Mutex::new(SharedQueue {
+            ready: Arc::new(Mutex::new(SharedQueue {
                 ready,
                 closed: false,
-            }),
+            })),
             exhausted: AtomicBool::new(false),
         }
     }
@@ -71,8 +71,8 @@ impl SharedAdmission {
         // Reserved before acceptance. A producer refused here keeps work it
         // was never told had been taken; a bound applied later would have to
         // refuse work already accepted, with nowhere to put it.
-        if !self.durable.reserve() {
-            return Err((AdmissionRefusal::Saturated, operation));
+        if let Err(refusal) = self.durable.reserve() {
+            return Err((refusal, operation));
         }
         let Ok(mut queue) = self.ready.lock() else {
             self.durable.release();
@@ -480,7 +480,7 @@ impl PrivateXServerFrontend {
             return PrivateSettlement {
                 origin,
                 durable: self.durable.clone(),
-                    admission: Arc::clone(&self.admission),
+                    queue: Arc::clone(&self.admission.ready),
                 pending: Vec::new(),
                 queue_unreadable: false,
             };
@@ -496,7 +496,7 @@ impl PrivateXServerFrontend {
                 return PrivateSettlement {
                     origin,
                     durable: self.durable.clone(),
-                    admission: Arc::clone(&self.admission),
+                    queue: Arc::clone(&self.admission.ready),
                     pending: Vec::new(),
                     queue_unreadable: true,
                 };
@@ -513,7 +513,7 @@ impl PrivateXServerFrontend {
         PrivateSettlement {
             origin,
             durable: self.durable.clone(),
-            admission: Arc::clone(&self.admission),
+            queue: Arc::clone(&self.admission.ready),
             pending,
             queue_unreadable: false,
         }

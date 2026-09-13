@@ -26,12 +26,21 @@ struct AbandonedSettlements {
     held: Vec<(XServerFrontendRouteRegistry, PrivateOperation)>,
     /// Instances whose queue could not be read when they closed.
     ///
-    /// The queue itself is kept, not a tally of how many there were. Its
-    /// contents were never recoverable at the moment of failure, but the
-    /// authority over them has to belong to something: a counter cannot be
-    /// asked anything later, and cannot be shown to have been resolved.
-    /// Nothing here resumes execution on a poisoned queue.
-    failed: Vec<(XServerFrontendRouteRegistry, Arc<SharedAdmission>)>,
+    /// The queue itself is kept, not a tally of how many there were: a counter
+    /// cannot be asked anything later, and cannot be shown to have been
+    /// resolved. Nothing here resumes execution on a poisoned queue.
+    ///
+    /// A leaf, deliberately. Holding the admission itself would close a cycle
+    /// -- this owner holds the record, the record held the admission, and the
+    /// admission holds this owner -- so nothing would ever be freed. The queue
+    /// alone refers back to nothing.
+    failed: Vec<FailedInstance>,
+    /// The most failed instances this will hold.
+    ///
+    /// Bounded separately from credits, because a poisoned instance can arrive
+    /// having accepted nothing at all, so credits do not account for it. Space
+    /// is taken at construction rather than grown during cleanup.
+    failed_capacity: usize,
     /// Credits taken when work was accepted, held until it is discharged.
     ///
     /// Reserved before acceptance rather than checked at transfer. A bound
@@ -56,7 +65,8 @@ impl PrivateSettlementOwner {
         Self {
             inner: Arc::new(Mutex::new(AbandonedSettlements {
                 held: Vec::with_capacity(capacity),
-                failed: Vec::new(),
+                failed: Vec::with_capacity(capacity),
+                failed_capacity: capacity,
                 reserved: 0,
                 capacity,
             })),
@@ -79,11 +89,59 @@ impl PrivateSettlementOwner {
     fn take_failed_instance(
         &self,
         origin: &XServerFrontendRouteRegistry,
-        admission: &Arc<SharedAdmission>,
+        queue: &Arc<Mutex<SharedQueue>>,
     ) {
         if let Ok(mut held) = self.inner.lock() {
-            held.failed.push((origin.clone(), Arc::clone(admission)));
+            if held.failed.len() >= held.failed_capacity {
+                // Space was taken at construction. Past it there is nothing to
+                // record into, and growing here would allocate during the
+                // cleanup that is already going wrong.
+                return;
+            }
+            held.failed.push(FailedInstance {
+                origin: origin.clone(),
+                queue: Arc::clone(queue),
+            });
         }
+    }
+
+    /// Recover what a failed instance's queue still holds, and answer it.
+    ///
+    /// A poisoned lock stays poisoned, but the data behind it is intact, so
+    /// the obligations are readable even though the instance that accepted
+    /// them is not usable. Nothing is resumed: what comes out is settled
+    /// against the registry that accepted it, exactly as abandoned work is.
+    /// This is what retaining the queue was for -- a tally could have been
+    /// counted but never discharged.
+    pub fn recover_failed(&self) -> usize {
+        let Ok(mut held) = self.inner.lock() else {
+            return 0;
+        };
+        let failed = std::mem::take(&mut held.failed);
+        let mut recovered = 0usize;
+        for instance in failed {
+            let mut queue = match instance.queue.lock() {
+                Ok(queue) => queue,
+                // The guard is recoverable even though the lock is not: the
+                // work is still there and is still owed an answer.
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            let mut pending = Vec::new();
+            while let Some((_, _, operation)) = queue.ready.take_next() {
+                pending.push(operation);
+            }
+            drop(queue);
+            let before = pending.len();
+            let survivors = settle_against(&instance.origin, pending);
+            for _ in 0..before.saturating_sub(survivors.len()) {
+                held.reserved = held.reserved.saturating_sub(1);
+            }
+            recovered = recovered.saturating_add(before.saturating_sub(survivors.len()));
+            for operation in survivors {
+                held.held.push((instance.origin.clone(), operation));
+            }
+        }
+        recovered
     }
 
     /// How many credits are outstanding, across every instance sharing this.
@@ -98,15 +156,18 @@ impl PrivateSettlementOwner {
     ///
     /// Shared across instances on purpose: the storage that will hold
     /// abandoned work is shared, so the accounting for it has to be.
-    fn reserve(&self) -> bool {
+    fn reserve(&self) -> Result<(), AdmissionRefusal> {
+        // An unreachable owner and a full one are different answers. Reporting
+        // both as saturation tells a caller to retry something that will not
+        // improve, and hides that the accounting itself is broken.
         let Ok(mut held) = self.inner.lock() else {
-            return false;
+            return Err(AdmissionRefusal::Unavailable);
         };
         if held.reserved >= held.capacity {
-            return false;
+            return Err(AdmissionRefusal::Saturated);
         }
         held.reserved = held.reserved.saturating_add(1);
-        true
+        Ok(())
     }
 
     /// Release a credit whose work has been answered.
@@ -156,6 +217,13 @@ impl PrivateSettlementOwner {
     }
 }
 
+/// One instance that closed with a queue nobody could read.
+#[cfg(unix)]
+struct FailedInstance {
+    origin: XServerFrontendRouteRegistry,
+    queue: Arc<Mutex<SharedQueue>>,
+}
+
 /// How many abandoned obligations one owner keeps.
 #[cfg(unix)]
 const PRIVATE_ABANDONED_CAPACITY: usize = 64;
@@ -183,8 +251,9 @@ pub struct PrivateSettlement {
     /// Where anything still owed goes if this handle is abandoned.
     durable: PrivateSettlementOwner,
     /// The queue this came from, retained so a failed instance hands over its
-    /// queue rather than a note that one existed.
-    admission: Arc<SharedAdmission>,
+    /// queue rather than a note that one existed. The queue alone, not the
+    /// admission that holds the owner: that would be a cycle.
+    queue: Arc<Mutex<SharedQueue>>,
     pending: Vec<PrivateOperation>,
     queue_unreadable: bool,
 }
@@ -230,7 +299,7 @@ impl Drop for PrivateSettlement {
             // Owned by something that outlives this rather than surviving as a
             // boolean on a handle that is going away.
             self.durable
-                .take_failed_instance(&self.origin, &self.admission);
+                .take_failed_instance(&self.origin, &self.queue);
         }
         if self.pending.is_empty() {
             return;
