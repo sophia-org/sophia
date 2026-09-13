@@ -121,12 +121,10 @@ pub struct PrivateRun {
 pub enum PrivateIdentity {
     /// The delivery a routed input carried, when it carried one.
     Delivery(Option<XAuthorityInputDeliveryId>),
-    /// The transaction a control named.
+    /// The transaction a control named. Every control names one.
     Transaction(TransactionId),
-    /// A lease being retired.
-    Lease,
-    /// Control that names no transaction.
-    Untracked,
+    /// The lease being retired.
+    Lease(sophia_protocol::ApplicationRouteLeaseIdentity),
 }
 
 #[cfg(unix)]
@@ -134,13 +132,11 @@ impl PrivateIdentity {
     fn of(operation: &PrivateOperation) -> Self {
         match operation {
             PrivateOperation::RoutedInput(envelope) => Self::Delivery(envelope.route.delivery),
-            PrivateOperation::Control(control) => match control.command {
-                XAuthorityControlCommand::FocusSurface { transaction, .. } => {
-                    Self::Transaction(transaction)
-                }
-                _ => Self::Untracked,
-            },
-            PrivateOperation::LeaseRelease(_) => Self::Lease,
+            // Every control command carries a transaction, so singling one
+            // variant out and calling the rest untracked lost the identity of
+            // everything except focus.
+            PrivateOperation::Control(control) => Self::Transaction(control.command.transaction()),
+            PrivateOperation::LeaseRelease(release) => Self::Lease(release.identity),
         }
     }
 }
@@ -492,29 +488,89 @@ impl Drop for PrivateXServerFrontend {
         // was promised a consumer and is owed an answer, and this is the last
         // moment anything can give it one. The registry is still alive at this
         // point, because fields drop after this runs.
-        let Ok(stranded) = self.admission.close() else {
-            return;
+        let stranded = match self.admission.close() {
+            Ok(stranded) => stranded,
+            Err(()) => {
+                // Reported rather than swallowed. This path cannot settle
+                // anything, and a silent return would say there was nothing
+                // to settle.
+                tracing::error!(
+                    "sophia_private_admission status=unsettled reason=queue_unreadable"
+                );
+                return;
+            }
         };
+        let mut unresolved = 0usize;
+        let mut unreported = 0usize;
         for operation in stranded {
-            let PrivateOperation::RoutedInput(envelope) = operation else {
-                // Control and cleanup have no delivery receipt to issue, and
-                // inventing one would answer a question nobody asked.
-                continue;
-            };
-            let _ = self.broker.registry.send_input_delivery(
-                self.broker
-                    .registry
-                    .surfaces
-                    .lock()
-                    .ok()
-                    .and_then(|surfaces| {
-                        surfaces
-                            .get(&envelope.route.request.target_surface)
-                            .map(|route| route.client)
-                    })
-                    .unwrap_or(XServerFrontendClientId(0)),
-                envelope.route.delivery,
-                XAuthorityInputDeliveryOutcome::TargetGone,
+            match operation {
+                PrivateOperation::RoutedInput(envelope) => {
+                    // The consumer stopping is not evidence the target is
+                    // gone. This work was accepted and then not performed,
+                    // which is a rejected route, and the client may well still
+                    // be there.
+                    let client = self
+                        .broker
+                        .registry
+                        .surfaces
+                        .lock()
+                        .ok()
+                        .and_then(|surfaces| {
+                            surfaces
+                                .get(&envelope.route.request.target_surface)
+                                .map(|route| route.client)
+                        });
+                    let Some(client) = client else {
+                        // No client to name. Inventing one would send a
+                        // truthful-looking receipt to whoever holds that
+                        // number.
+                        unresolved = unresolved.saturating_add(1);
+                        continue;
+                    };
+                    if self
+                        .broker
+                        .registry
+                        .send_input_delivery(
+                            client,
+                            envelope.route.delivery,
+                            XAuthorityInputDeliveryOutcome::RouteRejected,
+                        )
+                        .is_err()
+                    {
+                        unreported = unreported.saturating_add(1);
+                    }
+                }
+                PrivateOperation::Control(control) => {
+                    // Control has its own acknowledgement contract, so it gets
+                    // that rather than nothing. Not ClientGone: the client may
+                    // be perfectly alive and it is the authority that stopped.
+                    if self
+                        .broker
+                        .registry
+                        .acknowledgement_sender
+                        .try_send(XAuthorityClientControlAck {
+                            client: control.client,
+                            acknowledgement: XAuthorityControlAck {
+                                kind: control.command.kind(),
+                                transaction: control.command.transaction(),
+                                surface: control.command.surface(),
+                                outcome: XAuthorityControlOutcome::AuthorityRejected,
+                            },
+                        })
+                        .is_err()
+                    {
+                        unreported = unreported.saturating_add(1);
+                    }
+                }
+                PrivateOperation::LeaseRelease(_) => {
+                    // A lease release is itself the settlement of something
+                    // else; there is nothing further owed for it.
+                }
+            }
+        }
+        if unresolved > 0 || unreported > 0 {
+            tracing::error!(
+                "sophia_private_admission status=unsettled unresolved={unresolved} unreported={unreported}"
             );
         }
     }

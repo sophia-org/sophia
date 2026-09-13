@@ -3615,7 +3615,10 @@ fn accepted_work_is_answered_when_its_consumer_goes_away() {
         XAuthorityClientInputDelivery {
             client,
             delivery,
-            outcome: XAuthorityInputDeliveryOutcome::TargetGone,
+            // Not TargetGone: the client and its surface are still
+            // registered, and it is the authority that stopped. A receipt that
+            // is merely terminal is weaker than one that is true.
+            outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
         }
     );
 }
@@ -3668,4 +3671,97 @@ fn one_turn_of_service_is_bounded_while_a_producer_keeps_refilling() {
             ran.len()
         );
     }
+}
+
+#[test]
+fn accepted_control_is_acknowledged_when_its_consumer_goes_away() {
+    let namespace = NamespaceId::from_raw(57);
+    let client = XServerFrontendClientId(75);
+    let surface = SurfaceId::new(62, 1);
+    let window = XResourceId::new(0x2001f0, 1);
+    let (control_ack_sender, control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(4242),
+                surface,
+            },
+        })
+        .expect("the shared admission to accept control");
+
+    drop(private);
+
+    // Control has its own acknowledgement contract, so it gets that rather
+    // than nothing and rather than a fabricated input receipt.
+    let ack = control_ack_receiver
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("accepted control must be acknowledged when its consumer goes");
+    assert_eq!(ack.client, client);
+    assert_eq!(ack.acknowledgement.transaction, TransactionId::from_raw(4242));
+    assert_eq!(
+        ack.acknowledgement.outcome,
+        XAuthorityControlOutcome::AuthorityRejected,
+        "the authority stopped; the client did not go anywhere"
+    );
+}
+
+#[test]
+fn every_control_run_names_its_own_transaction() {
+    let client = XServerFrontendClientId(76);
+    let surface = SurfaceId::new(63, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, NamespaceId::from_raw(58), surface, XResourceId::new(0x200200, 1))
+        .unwrap();
+
+    // Not FocusSurface. Every control command carries a transaction, so
+    // recognising one variant and calling the rest untracked lost the identity
+    // of all the others.
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::ClearFocus {
+                transaction: TransactionId::from_raw(5150),
+                surface,
+            },
+        })
+        .expect("the shared admission to accept control");
+
+    let ran = private.route_pending().expect("a turn");
+    assert_eq!(
+        ran.first().map(|run| run.identity),
+        Some(crate::PrivateIdentity::Transaction(TransactionId::from_raw(
+            5150
+        ))),
+        "a control that is not FocusSurface still names its transaction"
+    );
 }
