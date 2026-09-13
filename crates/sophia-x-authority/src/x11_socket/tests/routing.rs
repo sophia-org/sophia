@@ -2730,7 +2730,7 @@ fn desired_release_after_focus_changes_reports_original_recipient() {
 }
 
 #[test]
-fn a_refused_activation_leaves_the_broker_ordinary_and_working() {
+fn a_gated_broker_keeps_working_after_a_different_gate_is_refused() {
     let namespace = NamespaceId::from_raw(43);
     let client = XServerFrontendClientId(60);
     let surface = SurfaceId::new(47, 1);
@@ -2767,6 +2767,12 @@ fn a_refused_activation_leaves_the_broker_ordinary_and_working() {
     // The broker still exists and still works. A consuming form that refused
     // would have had to drop it to report, destroying the instance that was
     // supposed to stay as it was and stranding this client's queue.
+    //
+    // Note what this does and does not show: the broker was already under
+    // first_gate before the rejection, so this is a gated instance surviving a
+    // refused second gate. That an ORDINARY broker stays ungated after a
+    // refused first install is a different case, and belongs with the
+    // constructor work that refuses on exposed ingress or queued raw work.
     broker
         .routed_input_sender()
         .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(90)))
@@ -2776,4 +2782,51 @@ fn a_refused_activation_leaves_the_broker_ordinary_and_working() {
         channels.input.try_recv().is_ok(),
         "authorised work continues after a refused activation"
     );
+}
+
+#[test]
+fn reinstalling_the_same_gate_does_not_disturb_a_transition_in_flight() {
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, mut instance, issuer, _submit) = control_gate_with_submit();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a broker with no gate to accept one");
+
+    gate.with(|coordinator| {
+        coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("the transition to be requested");
+    })
+    .expect("the gate");
+
+    // Idempotent means changed nothing, not restarted. Reopening or resetting
+    // here would let a caller clear a transition in flight by reinstalling the
+    // coordinator that opened it.
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("the installed gate to be idempotent");
+
+    gate.with(|coordinator| {
+        assert!(
+            !coordinator.is_open(),
+            "the transition must still be in flight"
+        );
+        assert_eq!(coordinator.applied_control_epoch(), 0);
+    })
+    .expect("the gate");
+
+    // And routing is still closed, so nothing was admitted meanwhile.
+    assert!(gate.stamp().is_err());
 }
