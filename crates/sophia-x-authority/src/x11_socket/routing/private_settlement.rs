@@ -64,6 +64,13 @@ struct AbandonedSettlements {
     /// credit it already holds is released exactly when the work is genuinely
     /// answered. No fresh credit is taken at transfer: these already have one.
     outstanding: Vec<(XServerFrontendRouteRegistry, PrivateIdentity)>,
+    /// Terminal inventories handed over by instances that went.
+    ///
+    /// Kept as inventories rather than unpacked into the abandoned-work list:
+    /// what is in them has already applied, or may already be on a client's
+    /// queue, so turning it back into commands would replay effects. What is
+    /// carried is the right to finish answering for them.
+    terminal: Vec<PrivateTerminalInventory>,
     /// Instances whose queue could not be read when they closed.
     ///
     /// The queue itself is kept, not a tally of how many there were: a counter
@@ -184,6 +191,7 @@ impl PrivateSettlementOwner {
                 in_flight: Vec::with_capacity(capacity),
                 outstanding_in_flight: Vec::with_capacity(capacity),
                 failed_in_flight: Vec::with_capacity(capacity),
+                terminal: Vec::with_capacity(capacity),
                 settling: false,
                 indeterminate: Vec::with_capacity(capacity),
                 outstanding: Vec::with_capacity(capacity),
@@ -619,6 +627,23 @@ impl PrivateSettlementOwner {
     /// Cannot refuse. Every operation here already holds a credit taken when
     /// it was accepted, so the storage for it is reserved and this is a move
     /// into space that was set aside rather than a request for space.
+    /// Take an instance's terminal inventory.
+    ///
+    /// Cannot refuse. These are obligations already accepted, and the space
+    /// for them was reserved before any of it was; declining would destroy
+    /// what an instance was handing over precisely because it could no longer
+    /// answer for it.
+    fn take_terminal(&self, inventory: PrivateTerminalInventory) {
+        let mut held = self.records_even_if_poisoned();
+        held.terminal.push(inventory);
+    }
+
+    /// How many instances handed over obligations they could not finish.
+    /// `None` where the owner cannot be read.
+    pub fn terminal_inventories(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.terminal.len())
+    }
+
     /// One at a time, so the handle hands over from a list it still owns. A
     /// caller that emptied itself into an argument first would have nothing
     /// left to keep if the handover did not return.

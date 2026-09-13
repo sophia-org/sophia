@@ -185,14 +185,18 @@ impl PrivateXServerFrontend {
         keyboards: &mut PrivateKeyboards,
     ) -> Result<PrivateOrderedRun, PrivateExecutionRefusal> {
         let Self {
-            current,
+            terminal,
             participant,
             controller,
             broker,
+            ..
+        } = self;
+        let PrivateTerminalInventory {
+            current,
             holds,
             settling,
             ..
-        } = self;
+        } = terminal;
         let Some(PrivateOrderedItem::Refused { custody, route, .. }) = current.as_ref() else {
             return Err(PrivateExecutionRefusal::NotAttempted);
         };
@@ -226,13 +230,15 @@ impl PrivateXServerFrontend {
         custody: &PrivateOutstandingRequest,
     ) -> Result<PrivateOrderedRun, PrivateExecutionRefusal> {
         let Self {
+            terminal,
             participant,
             controller,
             broker,
-            holds,
-            settling,
             ..
         } = self;
+        let PrivateTerminalInventory {
+            holds, settling, ..
+        } = terminal;
         execute_owned(
             controller, participant, broker, holds, settling, keyboards, route, custody,
         )

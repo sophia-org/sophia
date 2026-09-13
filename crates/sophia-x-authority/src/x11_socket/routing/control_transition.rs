@@ -290,22 +290,12 @@ pub struct PrivateXServerFrontend {
     /// to this authority. Held rather than used directly: the frontend is the
     /// executor, and executing is not submitting.
     submit: sophia_input_authority::SubmitHandle,
-    /// Where each hold this executor began was delivered.
+    /// What this instance still owes for work it accepted.
     ///
-    /// Recorded when a press begins a hold and read when one ends. A release
-    /// answers to what the press reached, and that is a fact from the moment
-    /// of the press: resolving it again would describe wherever the route
-    /// points now, which is a different client the moment a grab or a surface
-    /// has moved.
-    /// Storage is reserved before any work can be accepted, so publishing a
-    /// hold's plan cannot fail after the ledger has already moved.
-    holds: Vec<(u64, PrivateReachedResources)>,
-    /// Holds whose release has been decided and not yet handed on.
-    ///
-    /// An event having been built is not an event having been delivered, so
-    /// the plan moves here rather than being dropped: this is the only record
-    /// of who is owed one, and the terminal handoff is what clears it.
-    settling: Vec<PrivateSettlingRelease>,
+    /// One inventory rather than several lists, because these are obligations
+    /// and an obligation that lives in several places can be answered in
+    /// several places -- or, when an instance goes, in none.
+    terminal: PrivateTerminalInventory,
     /// An earlier operation the ordered path does not execute, held in place.
     ///
     /// Nothing after it runs until its disposition is established, and that
@@ -315,50 +305,17 @@ pub struct PrivateXServerFrontend {
     /// Whether an earlier operation's disposition is still unestablished.
     ///
     /// Separate from holding the operation, because handing it to an owner is
-    /// not the same as executing or cancelling it. The barrier survives the
-    /// handover: an owner that takes the operation and then drops it has
-    /// established nothing, and letting later input apply at that point is the
-    /// overtaking the park exists to prevent.
-    ///
-    /// Nothing clears it yet. There is no path that establishes an ordered
-    /// execution or cancellation boundary for such an operation, so the honest
-    /// state is that the order stays blocked until there is one.
+    /// not the same as executing or cancelling it. Nothing clears it yet:
+    /// there is no path that establishes an ordered execution or cancellation
+    /// boundary for such an operation, so the honest state is that the order
+    /// stays blocked until there is one.
     parked_barrier: Option<crate::ReadySequence>,
-    /// The item currently being executed.
+    /// Whether the ordered consumer has taken this order.
     ///
-    /// Owned before the execution that could fail or unwind, not after it.
-    /// A dequeued item held in a local is one the order no longer has and
-    /// nothing else does either.
-    current: Option<PrivateOrderedItem>,
-    /// Decided work that has not been handed on.
-    ///
-    /// A refusal, or a decision whose event never reached a queue. Both still
-    /// owe something -- an answer, an outcome, or both -- and dropping either
-    /// destroys the custody the order accepted.
-    undelivered: Vec<PrivateUndelivered>,
-    /// Decided work being handed on right now.
-    ///
-    /// Owned for the same reason the turn is: an item that has left the order
-    /// and is waiting its turn to be delivered is one nothing else holds.
-    delivering: Vec<PrivateOrderedItem>,
-    /// How far the item at the head of `delivering` got toward its client.
-    ///
-    /// Beside the item rather than inside a local, because the case it
-    /// describes is an unwind inside the send -- which takes any local with
-    /// it, leaving exactly the question this answers unanswerable.
-    emission: PrivateEmissionPhase,
-    /// Whether the ordered consumer has taken a turn on this instance.
-    ///
-    /// Set by the first ordered turn and never cleared: an order this
-    /// consumer has begun draining is one the older route must not also
+    /// Claimed when a reserving producer is exposed and never cleared: an
+    /// order this consumer is draining is one the older route must not also
     /// drain, and that does not stop being true between turns.
     ordered_runner: bool,
-    /// The items of the turn in progress.
-    ///
-    /// Owned here rather than accumulated in a local, so a failure part-way
-    /// leaves everything already taken out of the order still owned instead of
-    /// dropping it with the frame.
-    turn: Vec<PrivateOrderedItem>,
     /// Whether this instance has already handed out its keyboard state.
     ///
     /// One history per instance, so the answer is asked and answered once.
@@ -550,14 +507,8 @@ impl PrivateXServerFrontend {
             keyboards_issued: std::sync::atomic::AtomicBool::new(false),
             parked: None,
             parked_barrier: None,
-            current: None,
-            undelivered: Vec::with_capacity(capacity),
-            delivering: Vec::with_capacity(capacity),
-            emission: PrivateEmissionPhase::NotOwed,
             ordered_runner: false,
-            turn: Vec::with_capacity(capacity),
-            holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
-            settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
+            terminal: PrivateTerminalInventory::with_capacity(capacity),
         })
     }
 

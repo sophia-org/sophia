@@ -72,6 +72,7 @@ include!("x11_socket/routing/private_authority.rs");
 include!("x11_socket/routing/private_participant.rs");
 include!("x11_socket/routing/private_execution.rs");
 include!("x11_socket/routing/private_terminal.rs");
+include!("x11_socket/routing/private_inventory.rs");
 include!("x11_socket/routing/private_settlement.rs");
 include!("x11_socket/routing/private_settlement_handle.rs");
 include!("x11_socket/routing/private_settlement_ownership.rs");

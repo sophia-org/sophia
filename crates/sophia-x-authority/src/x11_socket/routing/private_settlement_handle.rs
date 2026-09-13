@@ -38,6 +38,12 @@ pub struct PrivateSettlement {
     /// the only means of noticing.
     outstanding: Vec<PrivateIdentity>,
     queue_unreadable: bool,
+    /// What the instance still owed when it closed.
+    ///
+    /// Carried here so an owner that retries can finish answering, and handed
+    /// to the durable owner if this handle is abandoned. Never unpacked into
+    /// pending work: what is in it has applied, or may already be queued.
+    terminal: Option<PrivateTerminalInventory>,
     /// Which pending obligation an attempt is under way for.
     ///
     /// Written before the attempt can emit, so an unwind inside leaves it set
@@ -145,6 +151,14 @@ impl PrivateSettlement {
     /// Returns how many were discharged this time. Work that still cannot be
     /// answered stays pending rather than being counted off, so retrying twice
     /// does not answer anything twice.
+    /// What this instance still owed when it closed, if anything.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn terminal_outstanding(&self) -> usize {
+        self.terminal
+            .as_ref()
+            .map_or(0, PrivateTerminalInventory::outstanding)
+    }
+
     pub fn retry(&mut self) -> usize {
         self.park_interrupted();
         self.settle_pending()
@@ -284,6 +298,14 @@ impl Drop for SettlementTransfer<'_> {
 impl Drop for PrivateSettlement {
     fn drop(&mut self) {
         self.park_interrupted();
+        // Handed on rather than dropped. An inventory is what an instance
+        // could no longer answer for, so a handle that is going must give it
+        // to something that outlives it.
+        if let Some(inventory) = self.terminal.take()
+            && !inventory.is_empty()
+        {
+            self.durable.take_terminal(inventory);
+        }
         // Transferred whether or not anything else is owed. Returning early on
         // an empty pending list destroyed these, which is the abandonment loss
         // this handle exists to prevent, recreated in the state that was added

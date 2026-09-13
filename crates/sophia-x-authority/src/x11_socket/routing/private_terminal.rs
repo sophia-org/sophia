@@ -98,7 +98,7 @@ impl PrivateXServerFrontend {
         // only record of work already taken, whose application is unknown.
         // Nothing resolves such an item yet, so the order stays blocked, which
         // is the same honest state as the park.
-        if self.current.is_some() {
+        if self.terminal.current.is_some() {
             return Err(XServerFrontendRouteError::OrderedItemUnresolved);
         }
         // Anything an earlier turn parked still holds its place. Nothing after
@@ -114,7 +114,7 @@ impl PrivateXServerFrontend {
             return Ok(vec![PrivateOrderedItem::Parked { sequence }]);
         }
         let budget = self.service_budget;
-        while self.turn.len() < budget {
+        while self.terminal.turn.len() < budget {
             let next = match self.admission.take_next() {
                 Ok(next) => next,
                 Err(()) => {
@@ -134,13 +134,13 @@ impl PrivateXServerFrontend {
                 // earlier operation that has neither run nor been cancelled.
                 self.parked = Some((sequence, operation));
                 self.parked_barrier = Some(sequence);
-                self.turn.push(PrivateOrderedItem::Parked { sequence });
+                self.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
                 break;
             };
             let Some(reservation) = envelope.reservation.take() else {
                 self.parked = Some((sequence, PrivateOperation::RoutedInput(envelope)));
                 self.parked_barrier = Some(sequence);
-                self.turn.push(PrivateOrderedItem::Parked { sequence });
+                self.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
                 break;
             };
             // The reservation made for this exact work before it was published
@@ -152,7 +152,7 @@ impl PrivateXServerFrontend {
             // inside execution would otherwise take the custody and the work
             // with the frame. Its phase is the custody's own: never entered,
             // entered and unknown, or settled.
-            self.current = Some(PrivateOrderedItem::Refused {
+            self.terminal.current = Some(PrivateOrderedItem::Refused {
                 sequence,
                 refusal: PrivateExecutionRefusal::NotAttempted,
                 custody,
@@ -164,18 +164,18 @@ impl PrivateXServerFrontend {
                 custody,
                 route,
                 ..
-            }) = self.current.take()
+            }) = self.terminal.current.take()
             else {
                 break;
             };
             match outcome {
-                Ok(run) => self.turn.push(PrivateOrderedItem::Ran {
+                Ok(run) => self.terminal.turn.push(PrivateOrderedItem::Ran {
                     sequence,
                     run,
                     custody,
                     route,
                 }),
-                Err(refusal) => self.turn.push(PrivateOrderedItem::Refused {
+                Err(refusal) => self.terminal.turn.push(PrivateOrderedItem::Refused {
                     sequence,
                     refusal,
                     custody,
@@ -183,7 +183,7 @@ impl PrivateXServerFrontend {
                 }),
             }
         }
-        Ok(std::mem::take(&mut self.turn))
+        Ok(std::mem::take(&mut self.terminal.turn))
     }
 
     /// What an earlier turn parked, if anything.
@@ -222,7 +222,7 @@ impl PrivateXServerFrontend {
     /// terminal owner can still answer for them.
     #[cfg_attr(not(test), allow(dead_code))]
     fn take_interrupted_turn(&mut self) -> Vec<PrivateOrderedItem> {
-        std::mem::take(&mut self.turn)
+        std::mem::take(&mut self.terminal.turn)
     }
 }
 
@@ -316,17 +316,17 @@ impl PrivateXServerFrontend {
         // would destroy the ones behind the current one along with the custody
         // they carry. Appended rather than assigned, so anything a previous
         // interruption left here is still first in line.
-        self.delivering.extend(items);
-        let mut delivered = Vec::with_capacity(self.delivering.len());
+        self.terminal.delivering.extend(items);
+        let mut delivered = Vec::with_capacity(self.terminal.delivering.len());
         // Removed only once its outcome has been decided, so the item being
         // worked on is owned throughout rather than held in a local for the
         // length of the attempt.
-        while !self.delivering.is_empty() {
+        while !self.terminal.delivering.is_empty() {
             // What may happen to the entry at the head depends on how far it
             // already got. Starting a new call is not a disposition, and
             // deciding that from scratch turns an event that may already be
             // queued back into one that looks never attempted.
-            let resuming = self.emission;
+            let resuming = self.terminal.emission;
             match resuming {
                 // Nobody can say whether its event reached the queue. It may
                 // not be sent again and its receipt may not be inferred, and
@@ -338,24 +338,24 @@ impl PrivateXServerFrontend {
                 // A fresh entry, or one whose send returned without the queue
                 // taking it.
                 PrivateEmissionPhase::NotOwed | PrivateEmissionPhase::NotEnqueued => {
-                    self.emission = PrivateEmissionPhase::NotOwed;
+                    self.terminal.emission = PrivateEmissionPhase::NotOwed;
                 }
             }
             // Read from the entry rather than taken out of it. Removing it
             // first put the obligation in a local, so the phase on this
             // instance survived an unwind while the work it described did not.
-            let PrivateOrderedItem::Ran { sequence, run, .. } = &self.delivering[0] else {
-                let item = self.delivering.remove(0);
+            let PrivateOrderedItem::Ran { sequence, run, .. } = &self.terminal.delivering[0] else {
+                let item = self.terminal.delivering.remove(0);
                 // A refusal attempted no emission, so nothing about a client's
                 // queue is owed or unknown for it.
-                self.undelivered.push(PrivateUndelivered {
+                self.terminal.undelivered.push(PrivateUndelivered {
                     item,
                     emission: PrivateEmissionPhase::NotOwed,
                 });
                 continue;
             };
             let (sequence, run) = (*sequence, *run);
-            let delivery = match &self.delivering[0] {
+            let delivery = match &self.terminal.delivering[0] {
                 PrivateOrderedItem::Ran { route, .. } => route.delivery,
                 _ => None,
             };
@@ -367,9 +367,9 @@ impl PrivateXServerFrontend {
                     (Some(event), Some(reached)) => {
                         // Written before the send, because a phase set after it
                         // says nothing about a send that did not return.
-                        self.emission = PrivateEmissionPhase::Indeterminate;
+                        self.terminal.emission = PrivateEmissionPhase::Indeterminate;
                         let sent = self.emit(reached, event, delivery).is_ok();
-                        self.emission = if sent {
+                        self.terminal.emission = if sent {
                             PrivateEmissionPhase::Enqueued
                         } else {
                             PrivateEmissionPhase::NotEnqueued
@@ -382,15 +382,15 @@ impl PrivateXServerFrontend {
             if run.owes_event && !enqueued {
                 // An event was owed and has not reached a queue. The entry is
                 // moved with the phase it reached, not before it was known.
-                let item = self.delivering.remove(0);
-                self.undelivered.push(PrivateUndelivered {
+                let item = self.terminal.delivering.remove(0);
+                self.terminal.undelivered.push(PrivateUndelivered {
                     item,
-                    emission: self.emission,
+                    emission: self.terminal.emission,
                 });
                 // The phase described that entry. With it gone the next one
                 // has not started, and carrying the phase forward would let it
                 // resume a send it never made.
-                self.emission = PrivateEmissionPhase::NotOwed;
+                self.terminal.emission = PrivateEmissionPhase::NotOwed;
                 continue;
             }
             // Owing nobody an event is an outcome, not a failure to emit one.
@@ -403,10 +403,8 @@ impl PrivateXServerFrontend {
             // found nothing waiting: the first leaves the custody owed and the
             // second does not.
             let observed = {
-                let Self {
-                    delivering,
-                    ..
-                } = self;
+                let Self { terminal, .. } = self;
+                let PrivateTerminalInventory { delivering, .. } = terminal;
                 let PrivateOrderedItem::Ran { custody, .. } = &delivering[0] else {
                     unreachable!("checked above")
                 };
@@ -420,19 +418,19 @@ impl PrivateXServerFrontend {
                     // The emission phase travels with it: this event may
                     // already be on the client's queue, and a recovery owner
                     // that resent it would deliver the same transition twice.
-                    let item = self.delivering.remove(0);
-                    self.undelivered.push(PrivateUndelivered {
+                    let item = self.terminal.delivering.remove(0);
+                    self.terminal.undelivered.push(PrivateUndelivered {
                         item,
-                        emission: self.emission,
+                        emission: self.terminal.emission,
                     });
-                    self.emission = PrivateEmissionPhase::NotOwed;
+                    self.terminal.emission = PrivateEmissionPhase::NotOwed;
                     continue;
                 }
             };
             // Disposed, so the entry goes and the phase that described it goes
             // with it.
-            let _resolved = self.delivering.remove(0);
-            self.emission = PrivateEmissionPhase::NotOwed;
+            let _resolved = self.terminal.delivering.remove(0);
+            self.terminal.emission = PrivateEmissionPhase::NotOwed;
             delivered.push(PrivateDelivered {
                 sequence,
                 enqueued,

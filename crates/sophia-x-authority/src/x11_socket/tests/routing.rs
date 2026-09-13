@@ -12748,7 +12748,7 @@ fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing(
     // The record of where the press went is lost. The ledger still ends the
     // hold, so somebody is owed the event that lifts the button -- and saying
     // "nothing to emit" would settle that debt by losing the evidence of it.
-    private.holds.clear();
+    private.terminal.holds.clear();
 
     let released = role.reserve(stamp, 2).expect("a reservation").accepted();
     let refused = private.run_ordered_input(
@@ -13010,7 +13010,7 @@ fn unreserved_work_in_the_order_is_handed_back_rather_than_run() {
     assert_eq!(private.parked(), None);
 
     // Nothing was pressed, so no hold was recorded against it.
-    assert!(private.holds.is_empty());
+    assert!(private.terminal.holds.is_empty());
 }
 
 #[test]
@@ -13068,7 +13068,7 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
         "the turn stops at the earlier operation rather than running past it"
     );
     assert!(
-        private.holds.is_empty(),
+        private.terminal.holds.is_empty(),
         "and no later hold was applied behind it"
     );
 
@@ -13081,7 +13081,7 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
         again.as_slice(),
         [PrivateOrderedItem::Parked { .. }]
     ));
-    assert!(private.holds.is_empty());
+    assert!(private.terminal.holds.is_empty());
 
     // Handing the operation to an owner does not lift the barrier. Taking it
     // moves it; it does not establish what becomes of it, and an owner that
@@ -13098,7 +13098,7 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
         "holding the operation is not having answered for it"
     );
     assert!(
-        private.holds.is_empty(),
+        private.terminal.holds.is_empty(),
         "so no later hold applied behind it"
     );
     assert!(
@@ -13215,7 +13215,7 @@ fn a_turn_that_fails_part_way_keeps_what_it_already_took() {
     // order and recorded, with the turn still in progress. Staged rather than
     // raced, because making the queue fail between two real iterations is not
     // something a test can arrange deterministically.
-    private.turn.push(PrivateOrderedItem::Parked { sequence });
+    private.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
 
     // The order becomes unreadable.
     let ready = std::sync::Arc::clone(&private.admission.ready);
@@ -13349,7 +13349,7 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         "the client received the release"
     );
     assert!(
-        !private.settling.is_empty(),
+        !private.terminal.settling.is_empty(),
         "so the continuation is retained, because the obligation is still open"
     );
 
@@ -13424,14 +13424,14 @@ fn a_refusal_is_retained_by_delivery_rather_than_discarded() {
     // order accepted, so the same request answered stale afterwards instead of
     // saying no outcome had been taken.
     assert_eq!(
-        private.undelivered.len(),
+        private.terminal.undelivered.len(),
         1,
         "the refusal is retained whole, with its custody"
     );
     let [PrivateUndelivered {
         item: PrivateOrderedItem::Refused { custody, .. },
         emission,
-    }] = private.undelivered.as_slice()
+    }] = private.terminal.undelivered.as_slice()
     else {
         panic!("retained as the refusal it was");
     };
@@ -13484,7 +13484,7 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
         panic!("the first item ran");
     };
     let taken = turn.into_iter().next().expect("the item");
-    private.current = Some(taken);
+    private.terminal.current = Some(taken);
 
     // More work arrives, from another producer: the first one's cell is still
     // busy, because the outcome of the item now held was never taken. A turn
@@ -13521,7 +13521,7 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
         "the order refuses rather than overwriting it"
     );
     assert!(
-        private.current.is_some(),
+        private.terminal.current.is_some(),
         "and the earlier item is still owned"
     );
 }
@@ -13596,7 +13596,7 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
         "and its outcome was taken, which is what frees the cell"
     );
     assert!(
-        private.undelivered.is_empty(),
+        private.terminal.undelivered.is_empty(),
         "nothing is owed, so nothing is retained"
     );
 
@@ -13750,7 +13750,7 @@ fn an_enqueued_event_whose_outcome_is_unreadable_is_marked_as_already_sent() {
     // the observation and never resend: sending again would deliver the same
     // transition twice, and the list it sits in does not say which of those
     // two situations it is.
-    let [PrivateUndelivered { emission, .. }] = private.undelivered.as_slice() else {
+    let [PrivateUndelivered { emission, .. }] = private.terminal.undelivered.as_slice() else {
         panic!("retained with its phase");
     };
     assert_eq!(
@@ -13906,8 +13906,8 @@ fn a_new_delivery_call_does_not_reset_an_interrupted_entry() {
     // the phase says nobody can tell whether its event reached the queue.
     // Staged rather than injected, because making a send unwind needs a
     // modified copy of the source.
-    private.delivering.extend(turn);
-    private.emission = PrivateEmissionPhase::Indeterminate;
+    private.terminal.delivering.extend(turn);
+    private.terminal.emission = PrivateEmissionPhase::Indeterminate;
 
     let delivered = private.deliver_turn(Vec::new());
     assert!(
@@ -13915,12 +13915,12 @@ fn a_new_delivery_call_does_not_reset_an_interrupted_entry() {
         "a new call is not a disposition, so it delivers nothing"
     );
     assert_eq!(
-        private.delivering.len(),
+        private.terminal.delivering.len(),
         1,
         "the entry stays owned rather than being started again"
     );
     assert_eq!(
-        private.emission,
+        private.terminal.emission,
         PrivateEmissionPhase::Indeterminate,
         "and keeps what it reached: resetting it would turn an event that may \
          already be queued back into one that looks never attempted"
@@ -13974,8 +13974,8 @@ fn an_enqueued_entry_is_observed_rather_than_sent_again() {
 
     // Staged as an interruption after the send and before the observation
     // leaves it: the entry is owned and its event is already on the queue.
-    private.delivering.extend(turn);
-    private.emission = PrivateEmissionPhase::Enqueued;
+    private.terminal.delivering.extend(turn);
+    private.terminal.emission = PrivateEmissionPhase::Enqueued;
 
     let before = channels.input.try_iter().count();
     assert_eq!(before, 0, "nothing has been sent by this test yet");
@@ -14087,5 +14087,95 @@ fn a_parked_control_whose_registry_is_unreadable_is_kept_whole() {
         durable.reserved().expect("a readable owner"),
         1,
         "and it still holds the credit it was accepted with"
+    );
+}
+
+#[test]
+fn what_an_instance_still_owes_reaches_the_durable_owner() {
+    let client = XServerFrontendClientId(961);
+    let surface = SurfaceId::new(961, 1);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender, _acks) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (authority, issuer, submit) = private_authority();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+    let (_registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200961, 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    // A press that begins a hold. Its plan is recorded, and the hold is an
+    // obligation: a later release answers to what this press reached.
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(961),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    let _delivered = private.deliver_turn(turn);
+    assert_eq!(
+        private.terminal.holds.len(),
+        1,
+        "the hold's plan is owed to whatever releases it"
+    );
+    let owed = private.terminal.outstanding();
+    assert!(owed >= 1);
+
+    // Shutdown. The instance can no longer answer, so what it owes travels to
+    // the handle rather than dying with it.
+    let settlement = private.shutdown();
+    assert_eq!(
+        settlement.terminal_outstanding(),
+        owed,
+        "the handle carries exactly what the instance owed"
+    );
+    assert_eq!(
+        durable.terminal_inventories().expect("a readable owner"),
+        0,
+        "and the durable owner has not been given it while a handle still holds it"
+    );
+
+    // The handle is abandoned too. Now it goes to the owner behind both,
+    // rather than being dropped by the last thing able to pass it on.
+    drop(settlement);
+    assert_eq!(
+        durable.terminal_inventories().expect("a readable owner"),
+        1,
+        "the obligations reached the owner that outlives both"
     );
 }
