@@ -676,9 +676,15 @@ impl PrivateXServerFrontend {
             // nothing about who is admitted, and answering that with "not
             // admitted" tells a caller a decision was made when none was.
             Err(PrivateAdmissionRefusal::Unreachable) => Err(PrivateAuthorityRefusal::Unreachable),
+            // The authority's own refusal is kept as its own, not relabelled
+            // as a question about admission.
+            Err(PrivateAdmissionRefusal::Authority(error)) => {
+                Err(PrivateAuthorityRefusal::Authority(error))
+            }
             Err(PrivateAdmissionRefusal::NotAdmitted)
             | Err(PrivateAdmissionRefusal::DifferentAdmission)
-            | Err(PrivateAdmissionRefusal::AlreadyAdmitted) => {
+            | Err(PrivateAdmissionRefusal::AlreadyAdmitted)
+            | Err(PrivateAdmissionRefusal::GrantRecordsExhausted) => {
                 Err(PrivateAuthorityRefusal::NoCurrentAdmission)
             }
         }

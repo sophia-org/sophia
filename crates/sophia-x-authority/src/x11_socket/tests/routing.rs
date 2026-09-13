@@ -11776,6 +11776,57 @@ fn a_boundary_nobody_can_read_is_not_a_client_nobody_admitted() {
 }
 
 #[test]
+fn a_binding_refuses_a_grant_it_could_not_account_for() {
+    let private = private_for_roles();
+    let client = XServerFrontendClientId(601);
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+
+    // Issued until the binding is full. The bound is the authority's own
+    // supported grant count, not a number chosen here, so this is the point
+    // where the authority itself would stop being able to answer for them.
+    let mut issued = 0usize;
+    loop {
+        match private.reservation_role(client, DeviceId::from_raw(1)) {
+            Ok(role) => {
+                std::mem::forget(role);
+                issued += 1;
+            }
+            Err(refusal) => {
+                assert!(
+                    matches!(refusal, crate::PrivateAdmissionRefusal::GrantRecordsExhausted),
+                    "the binding refuses before issuing, got {refusal:?}"
+                );
+                break;
+            }
+        }
+        assert!(issued <= 64, "the binding must refuse rather than grow");
+    }
+    assert_eq!(
+        issued,
+        sophia_input_authority::Capacity::PLANNED.grants,
+        "the bound is the authority's supported grant count"
+    );
+
+    // Refused before the grant existed, so the binding still accounts for
+    // exactly what it authorised and revocation can retire all of it.
+    let revoked = private
+        .admission_participant()
+        .revoke_admission(client, sophia_protocol::ClientAdmissionId::from_raw(client.raw()))
+        .expect("the boundary to revoke");
+    assert_eq!(
+        revoked.closed, 1,
+        "the binding closed"
+    );
+    assert_eq!(
+        revoked.retired, issued,
+        "every grant it recorded was retired, and it recorded every grant it authorised"
+    );
+}
+
+#[test]
 fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(541));

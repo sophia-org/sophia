@@ -33,9 +33,20 @@ struct PrivateAdmissionBinding {
     closed: bool,
 }
 
-/// How many grants one binding reserves room for without allocating.
+/// How many grant records one binding may hold.
+///
+/// The authority's own supported grant count, taken from the planned capacity
+/// rather than chosen here: a number invented locally would reserve storage
+/// that says nothing about what the authority can issue, and would be a policy
+/// nobody decided.
+///
+/// This bounds *records*, not concurrently live grants. A record leaves only
+/// when its grant is retired, so a long-lived binding that churns grants
+/// reaches this even though few are live at once. That is deliberate -- the
+/// record is what revocation retires against, so a binding that has forgotten
+/// which grants it authorised is the failure this bound prevents.
 #[cfg(unix)]
-const PRIVATE_BINDING_GRANTS: usize = 8;
+const PRIVATE_BINDING_GRANTS: usize = sophia_input_authority::Capacity::PLANNED.grants;
 
 /// What a revocation closed and retired.
 ///
@@ -90,6 +101,12 @@ pub enum PrivateAdmissionRefusal {
     /// Already bound. Re-admitting would silently replace the identity live
     /// grants were issued under.
     AlreadyAdmitted,
+    /// This binding already holds as many grant records as it may. Refused
+    /// before a grant is issued, so nothing exists that the binding could not
+    /// then account for.
+    GrantRecordsExhausted,
+    /// The authority refused, with its own reason kept.
+    Authority(sophia_input_authority::RegistrationError),
     /// The boundary could not be reached.
     Unreachable,
 }
@@ -227,9 +244,16 @@ impl PrivateAdmissionParticipant {
                 connection_generation: bound.generation,
             };
             let admission = bound.admission;
+            // Checked before the grant exists. Refusing afterwards would mean
+            // a grant this binding could not record, and revocation retires
+            // what a binding says it authorised -- so an unrecordable grant is
+            // one nothing could ever retire.
+            if bound.grants.len() >= PRIVATE_BINDING_GRANTS {
+                return Err(PrivateAdmissionRefusal::GrantRecordsExhausted);
+            }
             let (grant, generation) = authority
                 .issue_grant(issuer, connection)
-                .map_err(|_| PrivateAdmissionRefusal::NotAdmitted)?;
+                .map_err(PrivateAdmissionRefusal::Authority)?;
             // Recorded before the next step, which can fail with the grant
             // already issued. Recording afterwards leaves a window where the
             // grant exists and revocation cannot find it, because revocation
@@ -243,7 +267,7 @@ impl PrivateAdmissionParticipant {
                 .push(grant);
             let capability = match authority.allocate_device(issuer, grant, generation, device) {
                 Ok(capability) => capability,
-                Err(_refused) => {
+                Err(refused) => {
                     // Rolled back exactly: the grant this call issued is
                     // retired and its record removed, rather than left behind
                     // for a revocation that has no reason to expect it.
@@ -251,7 +275,7 @@ impl PrivateAdmissionParticipant {
                     if let Some(bound) = bindings.bound.get_mut(&client) {
                         bound.grants.retain(|held| *held != grant);
                     }
-                    return Err(PrivateAdmissionRefusal::NotAdmitted);
+                    return Err(PrivateAdmissionRefusal::Authority(refused));
                 }
             };
             Ok(PrivateReservationRole::new(
