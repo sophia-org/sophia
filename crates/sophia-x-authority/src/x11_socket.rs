@@ -67,6 +67,7 @@ use sophia_protocol::{
 include!("x11_socket/routing/broker.rs");
 include!("x11_socket/routing/private_admission.rs");
 include!("x11_socket/routing/control_transition.rs");
+include!("x11_socket/routing/private_authority.rs");
 include!("x11_socket/routing/private_settlement.rs");
 include!("x11_socket/routing/private_settlement_handle.rs");
 include!("x11_socket/routing/private_settlement_ownership.rs");

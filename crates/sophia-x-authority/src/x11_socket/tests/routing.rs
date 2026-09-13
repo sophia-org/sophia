@@ -1270,6 +1270,38 @@ fn private_authority() -> (
     .expect("planned capacity")
 }
 
+/// Drive a transition against the authority a private frontend holds.
+///
+/// The coordinator is already held by the caller and common is acquired
+/// inside, which is the documented order. Reaching the other way -- taking
+/// common and then asking for the coordinator -- is the inversion.
+trait TransitionThroughPrivate {
+    fn request_through(
+        &mut self,
+        private: &crate::PrivateXServerFrontend,
+        kind: crate::TransitionKind,
+        control_epoch: u64,
+        publication: u64,
+    ) -> Result<crate::TransitionToken, crate::ControlEpochRefusal>;
+}
+
+impl TransitionThroughPrivate for crate::TransitionAccess<'_> {
+    fn request_through(
+        &mut self,
+        private: &crate::PrivateXServerFrontend,
+        kind: crate::TransitionKind,
+        control_epoch: u64,
+        publication: u64,
+    ) -> Result<crate::TransitionToken, crate::ControlEpochRefusal> {
+        private
+            .authority()
+            .execute_reserved(|authority, issuer| {
+                self.request(authority, issuer, kind, control_epoch, publication)
+            })
+            .expect("the authority to be reachable")
+    }
+}
+
 fn motion_to(surface: SurfaceId, delivery: XAuthorityInputDeliveryId) -> XAuthorityRoutedInput {
     XAuthorityRoutedInput {
         request: RoutedInputRequest {
@@ -2971,7 +3003,7 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
 
     // The coordinator exists before the broker does, so there is no interval
     // in which a handle could be taken from an ungated instance.
-    let mut private = crate::PrivateXServerFrontend::new(
+    let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
@@ -3001,13 +3033,7 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
     // would carry on admitting.
     gate.with(|coordinator| {
         coordinator
-            .request(
-                &mut private.authority,
-                &private.issuer,
-                crate::TransitionKind::SecurityControl,
-                1,
-                1,
-            )
+            .request_through(&private, crate::TransitionKind::SecurityControl, 1, 1)
             .expect("the transition to be requested");
     })
     .expect("the gate");
@@ -3144,13 +3170,7 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
     // The revision it was stamped under closes before the ordered pass runs.
     gate.with(|coordinator| {
         coordinator
-            .request(
-                &mut private.authority,
-                &private.issuer,
-                crate::TransitionKind::SecurityControl,
-                1,
-                1,
-            )
+            .request_through(&private, crate::TransitionKind::SecurityControl, 1, 1)
             .expect("the transition to be requested");
     })
     .expect("the gate");
@@ -3240,7 +3260,7 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
-    let mut private = crate::PrivateXServerFrontend::new(
+    let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(2).unwrap(),
             control_acknowledgements: control_ack_sender,
@@ -3289,13 +3309,7 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
     // which the ordinary path reports as Full either way.
     gate.with(|coordinator| {
         coordinator
-            .request(
-                &mut private.authority,
-                &private.issuer,
-                crate::TransitionKind::SecurityControl,
-                1,
-                1,
-            )
+            .request_through(&private, crate::TransitionKind::SecurityControl, 1, 1)
             .expect("the transition to be requested");
     })
     .expect("the gate");
@@ -10965,9 +10979,9 @@ fn a_private_frontend_gates_the_authority_it_actually_owns() {
     );
     assert_eq!(
         private
-            .authority
-            .authority_identity(&private.issuer)
-            .expect("the owned authority to name itself"),
+            .authority()
+            .identity()
+            .expect("the held authority to name itself"),
         owned,
         "and the instance it kept is the one that was read"
     );

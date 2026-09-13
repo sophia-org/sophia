@@ -273,12 +273,16 @@ pub struct PrivateXServerFrontend {
     /// stamped work under a coordinator describing something else first --
     /// so it is kept from the moment the instance exists rather than from the
     /// moment it is first used.
-    #[cfg_attr(not(test), allow(dead_code))]
-    authority: sophia_input_authority::AuthorityInstance,
-    /// Issuer rights: transitions, cleanup, and issuer-owned state paths.
-    #[cfg_attr(not(test), allow(dead_code))]
-    issuer: sophia_input_authority::IssuerHandle,
+    ///
+    /// Behind the controller rather than in hand, because reserving happens at
+    /// a detached producer and needs the same instance this executes against.
+    /// One authoritative instance, several roles over it.
+    controller: PrivateAuthorityController,
     /// Submission rights: reserving a request before it is enqueued.
+    ///
+    /// Kept here so the instance can hand a producer a reservation role bound
+    /// to this authority. Held rather than used directly: the frontend is the
+    /// executor, and executing is not submitting.
     submit: sophia_input_authority::SubmitHandle,
     /// Whether this instance's queue was unreadable when it closed.
     ///
@@ -577,8 +581,7 @@ impl PrivateXServerFrontend {
             settled: false,
             failed: false,
             failure_slot_held: true,
-            authority,
-            issuer,
+            controller: PrivateAuthorityController::new(authority, issuer),
             submit,
         })
     }
@@ -595,9 +598,36 @@ impl PrivateXServerFrontend {
             .expect("a private frontend installs its gate at construction")
     }
 
-    /// Submission rights for reserving a request against this authority.
-    pub fn submit_handle(&self) -> &sophia_input_authority::SubmitHandle {
-        &self.submit
+    /// The one authority this instance executes against.
+    ///
+    /// Role-limited: what a caller can do with it depends on which method it
+    /// reaches for, not on holding the instance.
+    pub fn authority(&self) -> &PrivateAuthorityController {
+        &self.controller
+    }
+
+    /// A reservation role for one admitted connection, bound to this
+    /// instance's authority.
+    ///
+    /// This is what a detached producer gets: the right to reserve its own
+    /// request and to observe its own completion, against a capability issued
+    /// here. Not the authority, not the issuer, and not a closure over either
+    /// -- a producer holding any of those could revoke and reissue the grant
+    /// its own request was validated against.
+    ///
+    /// Issuing the capability is an origin act, so it happens on this side of
+    /// the handover rather than being something the producer asks for.
+    pub fn reservation_role(
+        &self,
+        connection: sophia_input_authority::ConnectionIdentity,
+        device: sophia_protocol::DeviceId,
+    ) -> Result<PrivateReservationRole, PrivateAuthorityRefusal> {
+        let (capability, _generation) = self.controller.issue_capability(connection, device)?;
+        Ok(PrivateReservationRole::new(
+            self.controller.clone(),
+            self.submit,
+            capability,
+        ))
     }
 
     /// Submit work, and be told why if it is not accepted.

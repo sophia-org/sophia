@@ -801,30 +801,49 @@ with that as the production entry:
 ### Where the admission-currency lookup has to sit
 
 The constraint is that establishing who is currently admitted must not become
-a precheck whose answer is stale by the time the transition applies. Two facts
-decide where it can go.
+a precheck whose answer is stale by the time the transition applies.
 
-The authority is owned by the frontend outright rather than shared behind a
-mutex, so `&mut self` for a routing turn *is* the common guard, held for the
-whole turn. An adapter guard taken anywhere in that turn is therefore taken
-after common, not before it, and taking one before calling `execute_reserved`
-is not the rank inversion it would be if common were a lock acquired inside.
+An earlier version of this section argued the authority should stay owned
+outright, on the reasoning that an exclusive borrow held for a routing turn
+*is* the common guard, so an adapter guard taken during that turn follows
+common rather than preceding it. That reasoning was wrong in a way worth
+recording, because it was wrong about what a lock rank is. A rank orders
+acquisitions made *while another guard is held*. It says nothing about which
+component does the acquiring. A producer taking common on its own, holding
+nothing else, does not invert common before X; it is simply a caller of
+common. Reading exclusive ownership as a standing acquisition also quietly
+assumed the thing it was trying to establish.
 
-`execute_reserved` takes `current_connection` by value, before the callback
-runs, and compares it against what the grant was bound to. So the currency
-evidence cannot be gathered inside the callback -- it is needed to enter it.
+The authority is therefore shared behind one mutex, and reached only through
+role-limited methods rather than handed out. Sharing it is what makes the
+existing `&mut AuthorityInstance` API usable from more than one role, which is
+what reserve-before-enqueue needs. Ownership here means one authoritative
+instance and one execution owner for the XKB state, not that no other role may
+ever acquire common.
 
-That leaves one arrangement that is neither stale nor inverted: take the
-registry guard once, look the current admission up under it, and hold that same
-guard across `execute_reserved` and through resolution and application. The
-lookup and the use of its answer are then separated by no window a teardown
-could occupy, and the callback must not re-take that guard. Failing closed on
-absent, `None` or unreadable is part of it: a route carrying a copied
-admission is evidence of what was admitted once, not that it still is.
+The ordering that follows is explicit, and common has to be acquired before
+the admission lookup rather than after it:
 
-No common change is needed for this. The seam would only appear if the
-authority were shared behind a lock, because then the adapter guard would have
-to precede common to answer a question common requires.
+- The stamp is captured through the coordinator, and that guard is released
+  before common is taken. The coordinator is never acquired from under common.
+  A transition landing between the two steps is caught by the reservation's
+  own validation rather than by a check racing it.
+- A producer holds no X, client or route guard when it takes common.
+- The executor takes runnable work out of the ready queue and releases that
+  guard before acquiring common, so the queue never sits beneath it. Common is
+  taken first, then the X guards in rank order, and the current admission
+  evidence is read under those guards and kept through the execution closure.
+  The closure is handed the borrowed guarded state rather than relocking it,
+  and nothing reaches backward for an earlier-ranked guard after taking a
+  later one.
+- The request is reserved before the work is published to the queue, and
+  common is released before the queue admission path is entered, so no queue
+  to common edge is ever created -- including through a prepare or rollback
+  callback. A refusal leaves the queue guard before cleanup runs.
+
+Failing closed on absent, `None` or unreadable is part of the same rule: a
+route carrying a copied admission is evidence of what was admitted once, not
+that it still is.
 
 ### The calls the join is made of
 
