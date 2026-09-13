@@ -358,6 +358,12 @@ pub enum XServerFrontendServiceCommand {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XServerFrontendRouteError {
+    /// An item an earlier turn took is still owned and unresolved, so the
+    /// order does not run.
+    ///
+    /// Its application is unknown, and dequeuing into the same slot would
+    /// overwrite the only record of it.
+    OrderedItemUnresolved,
     /// This instance is being drained by the ordered consumer, so the older
     /// route may not also drain it.
     ///
@@ -463,6 +469,10 @@ impl XPresentFeedbackPhases {
 impl core::fmt::Display for XServerFrontendRouteError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::OrderedItemUnresolved => write!(
+                formatter,
+                "X11 ordered input consumer holds an unresolved item"
+            ),
             Self::OrderedRunnerEngaged => write!(
                 formatter,
                 "X11 ordered input consumer already drains this order"

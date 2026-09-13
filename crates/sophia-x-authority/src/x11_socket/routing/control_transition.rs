@@ -330,6 +330,12 @@ pub struct PrivateXServerFrontend {
     /// A dequeued item held in a local is one the order no longer has and
     /// nothing else does either.
     current: Option<PrivateOrderedItem>,
+    /// Decided work that has not been handed on.
+    ///
+    /// A refusal, or a decision whose event never reached a queue. Both still
+    /// owe something -- an answer, an outcome, or both -- and dropping either
+    /// destroys the custody the order accepted.
+    undelivered: Vec<PrivateOrderedItem>,
     /// Whether the ordered consumer has taken a turn on this instance.
     ///
     /// Set by the first ordered turn and never cleared: an order this
@@ -534,6 +540,7 @@ impl PrivateXServerFrontend {
             parked: None,
             parked_barrier: None,
             current: None,
+            undelivered: Vec::with_capacity(capacity),
             ordered_runner: false,
             turn: Vec::with_capacity(capacity),
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
