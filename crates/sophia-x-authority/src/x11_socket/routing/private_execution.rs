@@ -111,6 +111,21 @@ pub enum PrivateExecutionRefusal {
     /// can currently discharge -- reporting it as nothing to emit would settle
     /// a debt by losing the evidence of it.
     HoldPlanMissing,
+    /// The ledger will not carry this delivery to a recipient.
+    ///
+    /// Either a terminal outcome was already recorded for it -- revoked with
+    /// its epoch, timed out, or disconnected with its client while it waited
+    /// its turn -- or binding it to the recipient found that connection
+    /// already revoked and recorded one now. Both are decisions, and in both
+    /// the work must not be applied: an effect for a delivery whose outcome
+    /// is already reported would be an effect nobody is waiting for.
+    DeliveryEnded,
+    /// The delivery ledger could not be read.
+    ///
+    /// Not the same as ended. Nothing is known about whether this delivery is
+    /// still owed an outcome, and executing on that would create a hold this
+    /// executor cannot prove anyone is waiting for.
+    RecoveryUnavailable,
     /// The item was taken from the order and execution had not been attempted.
     ///
     /// The phase a current item carries while it is owned and before its
@@ -267,9 +282,7 @@ fn resolve_and_apply(
     settling: &mut Vec<PrivateSettlingRelease>,
     route: &XAuthorityRoutedInput,
     grant: sophia_input_authority::GrantId,
-    decided: &mut Option<PrivateOrderedDecision>,
-    plan_missing: &mut bool,
-    records_exhausted: &mut bool,
+    notes: &mut PrivateTransactionNotes,
 ) -> Result<(), sophia_input_authority::RegistrationError> {
     let unavailable = sophia_input_authority::RegistrationError::RoutingUnavailable;
     match route.request.kind {
@@ -296,7 +309,7 @@ fn resolve_and_apply(
                 if settling.len() >= PRIVATE_HOLD_RECORDS {
                     // A release whose output has nowhere to be kept is a
                     // delivery nobody could later prove was owed.
-                    *records_exhausted = true;
+                    notes.records_exhausted = true;
                     return Err(sophia_input_authority::RegistrationError::Capacity(
                         sophia_input_authority::CapacityError::NoCompletionCell,
                     ));
@@ -307,7 +320,7 @@ fn resolve_and_apply(
                     sophia_input_authority::ReleaseOutcome::DeliverTo(hold) => {
                         let Some(index) = holds.iter().position(|(id, _)| *id == hold.hold())
                         else {
-                            *plan_missing = true;
+                            notes.plan_missing = true;
                             // The ledger ended a hold and the record of where
                             // it went is gone. Owing nobody an event and being
                             // unable to say who is owed one are different
@@ -365,20 +378,44 @@ fn resolve_and_apply(
                         // event having been delivered, and reconstructing its
                         // coordinates or its state from later facts would
                         // describe a different moment.
+                        // Bound after the ledger moved, which is the
+                        // opposite of the press above and for the opposite
+                        // reason. The hold has already ended and this button
+                        // has already been lifted; neither can be conditional
+                        // on whether anyone is still there to be told. What
+                        // the binding decides here is only whether an event is
+                        // owed -- and binding it to where the press went,
+                        // rather than to whatever the release's own route
+                        // names, is what makes a later disconnect answer it.
+                        let deliverable = match registry
+                            .input_recovery
+                            .bind(route.delivery, reached.client)
+                        {
+                            Ok(live) => live,
+                            Err(_) => {
+                                // Unknown, so nothing is emitted -- but the
+                                // debt is recorded below first. A release
+                                // whose recipient nobody can look up is still
+                                // a release that happened.
+                                notes.recovery_unavailable = true;
+                                false
+                            }
+                        };
                         let (id, plan) = holds.remove(index);
                         settling.push(PrivateSettlingRelease {
                             hold: id,
                             reached: plan,
                             outcome,
                             event,
+                            deliverable,
                         });
-                        *decided = Some(PrivateOrderedDecision {
-                            owes_event: true,
+                        notes.decided = Some(PrivateOrderedDecision {
+                            owes_event: deliverable,
                             reached: Some(reached),
                             first_press: false,
                             keyboard_applied: false,
                             release: Some(outcome),
-                            event,
+                            event: deliverable.then_some(event).flatten(),
                         });
                     }
                     // Not a delivery and not a failure. The source was not
@@ -388,7 +425,7 @@ fn resolve_and_apply(
                     // holds.
                     sophia_input_authority::ReleaseOutcome::NotHeld
                     | sophia_input_authority::ReleaseOutcome::SurvivorRemains => {
-                        *decided = Some(PrivateOrderedDecision {
+                        notes.decided = Some(PrivateOrderedDecision {
                             owes_event: false,
                             reached: None,
                             first_press: false,
@@ -431,7 +468,7 @@ fn resolve_and_apply(
             // recorded would leave a hold nobody can later answer, and
             // refusing after the effect is refusing too late.
             if holds.len() >= PRIVATE_HOLD_RECORDS {
-                *records_exhausted = true;
+                notes.records_exhausted = true;
                 return Err(sophia_input_authority::RegistrationError::Capacity(
                     sophia_input_authority::CapacityError::NoGrantSlot,
                 ));
@@ -442,6 +479,33 @@ fn resolve_and_apply(
             let Some(recipient) = bindings.recipient(client) else {
                 return Err(sophia_input_authority::RegistrationError::WrongConnection);
             };
+
+            // Bound to the client that will receive this press, which is not
+            // always the one the route named: a grab sends it elsewhere, and
+            // the ledger has to record where the event went rather than where
+            // it pointed. Until this, the delivery has no recipient, so a
+            // disconnect cannot answer it and a timeout answers it to nobody.
+            //
+            // Reached from under the surfaces, pointer and grab guards. The
+            // ledger ranks beneath them, and nothing inverts that: the two
+            // paths that reach the other way -- `disconnect_rejecting` and
+            // `recover` -- release the ledger before taking the authority
+            // guard they share with this registry.
+            match registry.input_recovery.bind(route.delivery, client) {
+                Ok(true) => {}
+                Ok(false) => {
+                    // Refused here rather than after the press. A press that
+                    // cannot be delivered must not leave a hold behind: the
+                    // release answering it would be owed to a client that was
+                    // already gone when the press was applied.
+                    notes.delivery_ended = true;
+                    return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                }
+                Err(_) => {
+                    notes.recovery_unavailable = true;
+                    return Err(unavailable);
+                }
+            }
 
             let applied = permit.press(input, recipient)?;
             let hold = applied.incarnation().hold();
@@ -467,7 +531,7 @@ fn resolve_and_apply(
                 let Some((_, reached)) = holds.iter().find(|(id, _)| *id == hold) else {
                     // The ledger joined a hold whose record is gone, so this
                     // press has an owner nobody can name.
-                    *plan_missing = true;
+                    notes.plan_missing = true;
                     return Err(sophia_input_authority::RegistrationError::StaleRequest);
                 };
                 Some(*reached)
@@ -495,7 +559,7 @@ fn resolve_and_apply(
                 // pointer state is not moved either: it already has this down.
                 None
             };
-            *decided = Some(PrivateOrderedDecision {
+            notes.decided = Some(PrivateOrderedDecision {
                 owes_event: applied.first_press(),
                 reached,
                 first_press: applied.first_press(),
@@ -529,6 +593,14 @@ pub struct PrivateSettlingRelease {
     reached: PrivateReachedResources,
     outcome: sophia_input_authority::ReleaseOutcome,
     event: Option<XAuthorityInputEvent>,
+    /// Whether the ledger will carry this release's event to its recipient.
+    ///
+    /// False when binding the delivery found it already settled, its
+    /// recipient's connection revoked, or the ledger unreadable. The debt is
+    /// recorded either way -- the hold ended, and something was owed for it --
+    /// but nothing will be enqueued, so a settlement must not wait on a
+    /// receipt that cannot arrive.
+    deliverable: bool,
 }
 
 #[cfg(unix)]
@@ -544,6 +616,9 @@ impl PrivateSettlingRelease {
     }
     pub fn event(self) -> Option<XAuthorityInputEvent> {
         self.event
+    }
+    pub fn deliverable(self) -> bool {
+        self.deliverable
     }
 }
 
@@ -588,10 +663,26 @@ fn execute_owned(
             }
         }
 
+        // Consulted before the transaction, because its answer decides
+        // whether there may be an effect at all. Accepted work waits its turn
+        // in the shared order, and a delivery can end during that wait: its
+        // epoch revoked, its deadline passed, or its client gone. Asking
+        // afterwards would ask whether to report an effect that already
+        // happened.
+        match broker
+            .registry
+            .input_recovery
+            .begin_routing_typed(route.delivery)
+        {
+            DeliveryCurrentness::Current => {}
+            DeliveryCurrentness::Ended => return Err(PrivateExecutionRefusal::DeliveryEnded),
+            DeliveryCurrentness::Unavailable => {
+                return Err(PrivateExecutionRefusal::RecoveryUnavailable);
+            }
+        }
+
         let client = custody.client();
-        let mut decided = None;
-        let mut plan_missing = false;
-        let mut records_exhausted = false;
+        let mut notes = PrivateTransactionNotes::default();
         let completion = participant
             .execute_current(custody, client, |permit, bindings| {
                 resolve_and_apply(
@@ -602,9 +693,7 @@ fn execute_owned(
                     settling,
                     route,
                     custody.grant(),
-                    &mut decided,
-                    &mut plan_missing,
-                    &mut records_exhausted,
+                    &mut notes,
                 )
             })
             // Typed through, not collapsed. An unreadable boundary is not a
@@ -618,16 +707,24 @@ fn execute_owned(
             })?
             .map_err(PrivateExecutionRefusal::Authority)?;
 
-        if records_exhausted {
+        // Before the rest: these say the work should not have been applied at
+        // all, rather than that applying it went wrong.
+        if notes.recovery_unavailable {
+            return Err(PrivateExecutionRefusal::RecoveryUnavailable);
+        }
+        if notes.delivery_ended {
+            return Err(PrivateExecutionRefusal::DeliveryEnded);
+        }
+        if notes.records_exhausted {
             return Err(PrivateExecutionRefusal::RecordsExhausted);
         }
-        if plan_missing {
+        if notes.plan_missing {
             // Named for what it is rather than by whatever authority error
             // carried it out of the transaction. A hold ended and its record
             // is gone, which is an obligation nobody can currently discharge.
             return Err(PrivateExecutionRefusal::HoldPlanMissing);
         }
-        let Some(decided) = decided else {
+        let Some(decided) = notes.decided else {
             // The transaction returned without deciding anything, which means
             // the callback refused before recording. Its own cause travelled
             // in the completion rather than being renamed here.
@@ -644,6 +741,27 @@ fn execute_owned(
         })
     }
 
+
+/// What the guarded transition recorded on its way out.
+///
+/// Out-parameters rather than a return value: the transaction's result is the
+/// authority's, and these are facts about what happened inside it that the
+/// authority has no vocabulary for. Collected in one place so that recording
+/// another fact does not mean threading another argument.
+#[cfg(unix)]
+#[derive(Default)]
+struct PrivateTransactionNotes {
+    /// What was decided, if anything was.
+    decided: Option<PrivateOrderedDecision>,
+    /// A hold ended and the record of where its press went is gone.
+    plan_missing: bool,
+    /// This executor already holds as many records as it may.
+    records_exhausted: bool,
+    /// The ledger will not carry this delivery to its recipient.
+    delivery_ended: bool,
+    /// The ledger could not be read.
+    recovery_unavailable: bool,
+}
 
 /// What the guarded transition decided, before anything is emitted.
 #[cfg(unix)]

@@ -14454,3 +14454,662 @@ fn two_instances_owing_the_same_names_each_answer_through_their_own_origin() {
          that never accepted it"
     );
 }
+
+#[test]
+fn an_ordered_press_whose_delivery_ended_does_not_execute() {
+    let client = XServerFrontendClientId(991);
+    let surface = SurfaceId::new(991, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(991);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender, _acks) = sync_channel(8);
+    let (delivery_sender, _deliveries) = channel();
+    let (authority, issuer, submit) = private_authority();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+    let (_registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200991, 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+    assert!(
+        private
+            .broker
+            .registry
+            .input_recovery
+            .ticket(delivery)
+            .is_some(),
+        "submission tracked a real delivery"
+    );
+
+    // It ends before the turn runs: the epoch is revoked while the work is
+    // still sitting in the order.
+    let revoked = private
+        .broker
+        .registry
+        .input_recovery
+        .recover(std::time::Instant::now(), true)
+        .expect("the ledger to be readable");
+    assert_eq!(revoked.len(), 1, "the admitted delivery is the one revoked");
+    assert_eq!(
+        revoked[0].delivery, delivery,
+        "and it is the one this control submitted"
+    );
+
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    let delivered = private.deliver_turn(turn);
+    assert!(
+        delivered.is_empty(),
+        "a delivery that ended is owed no event"
+    );
+    assert!(
+        channels.input.try_recv().is_err(),
+        "and nothing reached the client's queue"
+    );
+    assert!(
+        private.terminal.holds.is_empty(),
+        "the ledger never moved, so there is no hold for a release to answer"
+    );
+    // Refused for what actually happened. Naming it unmappable, or a target
+    // that is gone, would send a reader looking at the route for a cause that
+    // is not in the route at all.
+    assert!(
+        matches!(
+            &private.terminal.undelivered[0].item,
+            PrivateOrderedItem::Refused {
+                refusal: PrivateExecutionRefusal::DeliveryEnded,
+                ..
+            }
+        ),
+        "and the refusal says the delivery ended"
+    );
+    // The request itself is still owed its observation, which is why the
+    // refusal keeps custody rather than dropping it.
+    assert_eq!(private.shutdown().terminal_outstanding(), 1);
+}
+
+/// One admitted client with a real ingress, kept whole.
+///
+/// The receivers are held because a queue with no reader refuses everything,
+/// and a control that could not tell that from a refusal on the merits would
+/// pass for the wrong reason.
+struct OrderedIngressFixture {
+    durable: crate::PrivateSettlementOwner,
+    private: crate::PrivateXServerFrontend,
+    ingress: crate::PrivateIngress,
+    keyboards: crate::PrivateKeyboards,
+    registration: XServerFrontendClientRouteRegistration,
+    channels: XServerFrontendClientRouteChannels,
+    _acks: Receiver<XAuthorityClientControlAck>,
+    deliveries: Receiver<XAuthorityClientInputDelivery>,
+}
+
+fn ordered_ingress_fixture(
+    client: XServerFrontendClientId,
+    surface: SurfaceId,
+) -> OrderedIngressFixture {
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender, acks) = sync_channel(8);
+    let (delivery_sender, deliveries) = channel();
+    let (authority, issuer, submit) = private_authority();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200000 | client.raw(), 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let keyboards = private.keyboards().expect("this instance's state");
+    OrderedIngressFixture {
+        durable,
+        private,
+        ingress,
+        keyboards,
+        registration,
+        channels,
+        _acks: acks,
+        deliveries,
+    }
+}
+
+#[test]
+fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
+    let client = XServerFrontendClientId(992);
+    let surface = SurfaceId::new(992, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(992);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+
+    // Before the turn the ledger tracks the delivery with no recipient: it
+    // knows something was accepted, not who is waiting for it.
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+    assert_eq!(
+        fixture
+            .private
+            .broker
+            .registry
+            .input_recovery
+            .ticket(delivery)
+            .expect("a tracked delivery")
+            .client,
+        None
+    );
+
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    let delivered = fixture.private.deliver_turn(turn);
+    assert!(delivered[0].enqueued, "the press reached the client's queue");
+    assert_eq!(
+        fixture
+            .private
+            .broker
+            .registry
+            .input_recovery
+            .ticket(delivery)
+            .expect("still tracked")
+            .client,
+        Some(client),
+        "and the ledger now records who it went to"
+    );
+
+    // Which is what makes the client going answerable. An unbound delivery is
+    // not one a disconnect can answer: it is answered to nobody, and only a
+    // deadline would ever end it.
+    fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
+        .expect("the ledger to be readable");
+    let receipt = fixture
+        .deliveries
+        .try_recv()
+        .expect("a terminal outcome for the bound delivery");
+    assert_eq!(receipt.delivery, delivery);
+    assert_eq!(receipt.client, client);
+    assert_eq!(
+        receipt.outcome,
+        XAuthorityInputDeliveryOutcome::ClientDisconnected
+    );
+}
+
+#[test]
+fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
+    let client = XServerFrontendClientId(993);
+    let surface = SurfaceId::new(993, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(993);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+
+    // The connection is revoked first, so the delivery is current -- nothing
+    // has ended it -- and only binding it to its recipient can find out.
+    fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
+        .expect("the ledger to be readable");
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+    assert!(
+        fixture
+            .private
+            .broker
+            .registry
+            .input_recovery
+            .ticket(delivery)
+            .is_some(),
+        "the delivery itself has not ended"
+    );
+
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(
+        fixture.private.terminal.holds.is_empty(),
+        "a press that cannot be delivered must not leave a hold: the release \
+         answering it would be owed to a client that was already gone"
+    );
+    assert!(matches!(
+        &fixture.private.terminal.undelivered[0].item,
+        PrivateOrderedItem::Refused {
+            refusal: PrivateExecutionRefusal::DeliveryEnded,
+            ..
+        }
+    ));
+    assert!(fixture.channels.input.try_recv().is_err());
+    // What this cannot show is the authority's own ledger. A press applied
+    // there with no record here is the state that leaves a later release owed
+    // to nobody, and the difference is not observable from this crate: asking
+    // needs a second request from the same source, and this one still holds
+    // its grant's only completion cell because a refusal keeps the custody it
+    // is still owed an observation for.
+    drop(fixture.registration);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_release_to_a_gone_recipient_still_lifts_the_button() {
+    let client = XServerFrontendClientId(994);
+    let surface = SurfaceId::new(994, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let seat = SeatId::from_raw(1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+
+    // A press that lands while the client is there.
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(9941),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+    assert_eq!(projected_buttons(&fixture.private, namespace, seat), 0x100);
+    assert_eq!(fixture.private.terminal.holds.len(), 1);
+
+    // Then it goes, and the release arrives afterwards.
+    fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
+        .expect("the ledger to be readable");
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(9942),
+            272,
+            false,
+        ))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    let delivered = fixture.private.deliver_turn(turn);
+
+    // The hold ended and the button is up. Neither could be conditional on
+    // anyone still being there to be told: a button left down because its
+    // client vanished is held forever, by nobody.
+    assert!(
+        fixture.private.terminal.holds.is_empty(),
+        "the hold ended"
+    );
+    assert_eq!(
+        projected_buttons(&fixture.private, namespace, seat),
+        0,
+        "and the button this seat had down is up"
+    );
+    assert!(
+        !delivered[0].enqueued,
+        "but nothing was enqueued for a client that is gone"
+    );
+    assert_eq!(
+        fixture.private.terminal.settling.len(),
+        1,
+        "the debt is recorded even though nothing will be sent"
+    );
+    assert!(
+        !fixture.private.terminal.settling[0].deliverable,
+        "and it says so, so a settlement does not wait on a receipt that \
+         cannot arrive"
+    );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
+    let client = XServerFrontendClientId(995);
+    let owner = XServerFrontendClientId(996);
+    let surface = SurfaceId::new(995, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let delivery = XAuthorityInputDeliveryId::from_raw(995);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    // The grab owner is a real admitted client of this instance, with its own
+    // live queue: the press is delivered to it, so the boundary has to know
+    // it and something has to be there to receive it.
+    let (owner_registration, owner_channels) = fixture
+        .private
+        .broker
+        .registry
+        .register_client_with_admission(owner, Some(admitted(owner)))
+        .expect("a fresh client to register");
+    fixture
+        .private
+        .admission_participant()
+        .admit(owner, admitted(owner))
+        .expect("the boundary to admit");
+
+    fixture
+        .private
+        .broker
+        .registry
+        .input_authority
+        .lock()
+        .expect("the grab state")
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: owner.raw(),
+                window: XResourceId::new(0x200996, 1),
+                owner_events: false,
+                pointer_mode: 1,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
+            },
+        )
+        .expect("the grab to take");
+
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    let delivered = fixture.private.deliver_turn(turn);
+    assert!(delivered[0].enqueued);
+    assert!(
+        owner_channels.input.try_recv().is_ok(),
+        "the grab owner is the one that received it"
+    );
+    assert!(
+        fixture.channels.input.try_recv().is_err(),
+        "and the surface's own client did not"
+    );
+
+    // The route named this surface, whose client is 995. The grab sent the
+    // press to 996. What the ledger records is where the event went, because
+    // that is who a disconnect has to answer for -- recording the route's
+    // client would answer the wrong client's departure and leave this
+    // delivery owed to nobody.
+    assert_eq!(
+        fixture
+            .private
+            .broker
+            .registry
+            .input_recovery
+            .ticket(delivery)
+            .expect("still tracked")
+            .client,
+        Some(owner)
+    );
+    assert_eq!(
+        fixture.private.terminal.holds[0].1.client(),
+        owner,
+        "and the hold records the same recipient"
+    );
+    drop(owner_registration);
+    drop(owner_channels);
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn an_unreadable_ledger_is_not_a_delivery_that_ended() {
+    let client = XServerFrontendClientId(997);
+    let surface = SurfaceId::new(997, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(997);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+
+    // The ledger becomes unreadable while that delivery is still waiting its
+    // turn.
+    let recovery = fixture.private.broker.registry.input_recovery.clone();
+    let _ = std::thread::spawn(move || {
+        let _guard = recovery.state.lock().expect("the ledger");
+        panic!("poisoning the recovery ledger");
+    })
+    .join();
+
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(
+        fixture.private.terminal.holds.is_empty(),
+        "nothing is applied on the strength of what nobody could read"
+    );
+    // Refused for the absence of an answer, not for an answer. Reporting this
+    // as ended would say the delivery was settled, which nothing established
+    // -- and a caller acting on that would stop waiting for an outcome that
+    // is still owed.
+    assert!(
+        matches!(
+            &fixture.private.terminal.undelivered[0].item,
+            PrivateOrderedItem::Refused {
+                refusal: PrivateExecutionRefusal::RecoveryUnavailable,
+                ..
+            }
+        ),
+        "an unreadable ledger is its own refusal"
+    );
+    assert!(fixture.channels.input.try_recv().is_err());
+    drop(fixture.registration);
+    drop(fixture.durable);
+}
+
+/// A press that ran, leaving a hold and a button down.
+fn held_button(fixture: &mut OrderedIngressFixture, surface: SurfaceId, delivery: u64) {
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(delivery),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+    assert_eq!(fixture.private.terminal.holds.len(), 1);
+}
+
+#[test]
+fn a_release_whose_delivery_ended_does_not_end_its_hold() {
+    let client = XServerFrontendClientId(998);
+    let surface = SurfaceId::new(998, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let seat = SeatId::from_raw(1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    held_button(&mut fixture, surface, 9981);
+
+    // The release is accepted, and then its own delivery ends while it waits
+    // its turn.
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(9982),
+            272,
+            false,
+        ))
+        .expect("the order to accept it");
+    fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .recover(std::time::Instant::now(), true)
+        .expect("the ledger to be readable");
+
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn).is_empty());
+
+    // Refused before the ledger moved. This is the case the gate exists for:
+    // the press path finds out by binding, but a release binds only after its
+    // transition, so without a check beforehand a withdrawn release would end
+    // a hold and lift a button on the strength of a request whose outcome was
+    // already reported.
+    assert!(
+        matches!(
+            &fixture.private.terminal.undelivered[0].item,
+            PrivateOrderedItem::Refused {
+                refusal: PrivateExecutionRefusal::DeliveryEnded,
+                ..
+            }
+        ),
+        "the release is refused for its delivery having ended"
+    );
+    assert_eq!(
+        fixture.private.terminal.holds.len(),
+        1,
+        "and the hold it would have ended is still here"
+    );
+    assert_eq!(
+        projected_buttons(&fixture.private, namespace, seat),
+        0x100,
+        "with the button still down, because nothing lifted it"
+    );
+    // Not lost, either: the obligation is retained rather than discarded, and
+    // whoever takes the inventory is the one that can still answer it.
+    assert!(fixture.private.shutdown().terminal_outstanding() >= 1);
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
+    let client = XServerFrontendClientId(999);
+    let surface = SurfaceId::new(999, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let seat = SeatId::from_raw(1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    held_button(&mut fixture, surface, 9991);
+
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(9992),
+            272,
+            false,
+        ))
+        .expect("the order to accept it");
+    let recovery = fixture.private.broker.registry.input_recovery.clone();
+    let _ = std::thread::spawn(move || {
+        let _guard = recovery.state.lock().expect("the ledger");
+        panic!("poisoning the recovery ledger");
+    })
+    .join();
+
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(
+        matches!(
+            &fixture.private.terminal.undelivered[0].item,
+            PrivateOrderedItem::Refused {
+                refusal: PrivateExecutionRefusal::RecoveryUnavailable,
+                ..
+            }
+        ),
+        "nothing is known, and that is its own answer"
+    );
+    // The distinction is the whole point: this release may still be owed. Had
+    // it run, the hold would be gone and the button up on the strength of
+    // something nobody could read.
+    assert_eq!(fixture.private.terminal.holds.len(), 1);
+    assert_eq!(projected_buttons(&fixture.private, namespace, seat), 0x100);
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}

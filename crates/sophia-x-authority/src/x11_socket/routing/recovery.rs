@@ -59,6 +59,24 @@ pub enum DeliveryState {
     Unavailable,
 }
 
+/// Whether routing may begin for a delivery.
+///
+/// Three answers for the same reason `DeliveryState` has three: a ledger
+/// nobody can read has not said this delivery ended. A caller told only "no"
+/// cannot tell a delivery that was already settled from one it knows nothing
+/// about, and those call for opposite handling -- the first must not be
+/// executed, and the second must not be reported as settled.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeliveryCurrentness {
+    /// Tracked and unfinished, or not tracked at all. Routing may begin.
+    Current,
+    /// A terminal outcome is already recorded for it.
+    Ended,
+    /// The ledger could not be read, so nothing is known about it.
+    Unavailable,
+}
+
 /// Why the recovery ledger would not track a delivery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoveryAdmissionRefusal {
@@ -170,21 +188,36 @@ impl InputRecovery {
     // Cancellation before resolution leaves a bounded tombstone until the
     // frontend consumes the ingress/frozen entry. It cannot resurrect later.
     fn begin_routing(&self, id: Option<XAuthorityInputDeliveryId>) -> bool {
-        let Some(id) = id else { return true };
+        matches!(self.begin_routing_typed(id), DeliveryCurrentness::Current)
+    }
+
+    /// Begin routing, saying which answer this is.
+    ///
+    /// The boolean above answers two questions with one word: this delivery
+    /// already ended, or the ledger could not be read. A caller that has to
+    /// record why it did not run needs them apart, because one is a decision
+    /// and the other is the absence of one.
+    fn begin_routing_typed(
+        &self,
+        id: Option<XAuthorityInputDeliveryId>,
+    ) -> DeliveryCurrentness {
+        let Some(id) = id else {
+            return DeliveryCurrentness::Current;
+        };
         let Ok(mut state) = self.state.lock() else {
-            return false;
+            return DeliveryCurrentness::Unavailable;
         };
         let Some(entry) = state.tickets.get_mut(&id) else {
-            return true;
+            return DeliveryCurrentness::Current;
         };
         if entry.terminal.is_none() {
-            return true;
+            return DeliveryCurrentness::Current;
         }
         entry.routing_finished = true;
         if entry.observed {
             state.tickets.remove(&id);
         }
-        false
+        DeliveryCurrentness::Ended
     }
 
     fn bind(
