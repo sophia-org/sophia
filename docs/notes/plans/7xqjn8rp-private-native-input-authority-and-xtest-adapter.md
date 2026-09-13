@@ -701,3 +701,10 @@ and the desired conservation assertion fails; evidence is
 `.artifacts/private-ready-loss-df1db847/`. The first fixture compile error is
 retained separately and is not counted as bug evidence. This is a headless
 internal integration reproduction, not a live-session failure.
+
+The unchanged reproduction passes both cases at `496bcad8`: capacity 1 runs two
+operations, then delivers transaction 8001 on the next drain; capacity 2 still
+delivers all three in the first pass. Evidence is
+`.artifacts/private-ready-loss-496bcad8/`. This verifies the reachable capacity
+repair only. Unexpected-refusal ownership, actual producer ordering and atomic
+execution remain open, so the staging implementation remains unintegrated.
