@@ -254,9 +254,13 @@ pub struct PrivateIngress {
     role: Option<PrivateReservationRole>,
     /// Which request this is, within this ingress.
     ///
-    /// Per ingress rather than global: the value distinguishes one producer's
-    /// requests from each other, and a counter shared between producers would
-    /// make two unrelated requests collide on it.
+    /// The number distinguishes one of this producer's requests from another
+    /// in the context its execution is validated against. Sharing a counter
+    /// between producers would not have been a correctness problem -- each
+    /// grant holds its own cell, so two producers numbering alike collide on
+    /// nothing -- so this is per ingress for the narrower reason that a
+    /// producer's own numbering should not advance because somebody else sent
+    /// something.
     requests: Arc<std::sync::atomic::AtomicU64>,
 }
 
@@ -356,18 +360,48 @@ impl PrivateIngress {
                 control_epoch: envelope.control_epoch,
                 publication: envelope.publication,
             };
-            let request = self
-                .requests
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // Checked, not wrapping. Wrapping would eventually hand two live
+            // requests the same number, and the number is what distinguishes
+            // one of this producer's requests from another in the context its
+            // execution is validated against.
+            let request = self.requests.fetch_update(
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+                |current| current.checked_add(1),
+            );
+            let Ok(request) = request else {
+                // Exhausted before anything was published, so the delivery
+                // reservation this send took is rolled back first and the work
+                // is handed back whole. Terminal: retrying cannot create a
+                // number that does not exist.
+                self.sender.abort_reservation(envelope.route.delivery);
+                return Err(PrivateSendError::Exhausted(envelope.route));
+            };
             match role.reserve(stamp, request) {
                 Ok(reservation) => envelope.reservation = Some(reservation),
-                Err(_refusal) => {
+                Err(refusal) => {
                     // Nothing was published, so the delivery reservation this
-                    // send already took is rolled back and the work is handed
-                    // straight back. Denied rather than saturated: a refusal
-                    // to reserve is not a queue that is full.
+                    // send already took is rolled back before anything else.
                     self.sender.abort_reservation(envelope.route.delivery);
-                    return Err(PrivateSendError::Denied(envelope.route));
+                    // Each cause keeps its own answer. A grant whose one
+                    // completion cell is still held is busy, and busy is worth
+                    // retrying once the request holding it is observed; an
+                    // authority nobody can read established nothing at all;
+                    // and only a genuine refusal on the terms of the request
+                    // is a denial. Collapsing all three into denial tells a
+                    // caller to stop when it should wait, and tells it a
+                    // decision was made when none was.
+                    return Err(match refusal {
+                        PrivateAuthorityRefusal::Authority(
+                            sophia_input_authority::RegistrationError::Capacity(_),
+                        ) => PrivateSendError::Saturated(envelope.route),
+                        PrivateAuthorityRefusal::Unreachable => {
+                            PrivateSendError::Unavailable(envelope.route)
+                        }
+                        PrivateAuthorityRefusal::Authority(_) => {
+                            PrivateSendError::Denied(envelope.route)
+                        }
+                    });
                 }
             }
         }

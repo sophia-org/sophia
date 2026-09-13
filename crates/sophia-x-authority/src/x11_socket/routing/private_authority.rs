@@ -4,6 +4,15 @@
 // reservation back are three different rights over one instance, and the
 // point of this file is that they are not the same handle.
 
+/// How many disposal debts a controller reserves room for.
+///
+/// A grant holds at most one request cell, so at most one token per grant can
+/// be owed at once. Built above the grants an authority issues, so recording a
+/// debt never allocates -- which matters because a debt is recorded while
+/// common is held, on the path where something already failed.
+#[cfg(unix)]
+const PRIVATE_OWED_DISPOSAL: usize = 64;
+
 /// The single authoritative instance, reachable only through role-limited
 /// methods.
 ///
@@ -27,12 +36,16 @@ pub struct PrivateAuthorityController {
     issuer: Arc<sophia_input_authority::IssuerHandle>,
     /// Cells owed disposal that could not be disposed when they were dropped.
     ///
-    /// Its own lock, beneath nothing and above nothing: it is never held while
-    /// common is taken, and taking it never waits on common. A reservation
-    /// dropped while this thread already holds common cannot take common again
-    /// to dispose itself -- that is a deadlock, not a rank question -- so it
-    /// records the debt here and the next caller that does hold common pays
-    /// it. Disposal is deferred, never skipped.
+    /// Ranked beneath common, not outside the order: it is taken while common
+    /// is held, and never the other way round. A reservation dropped while
+    /// this thread already holds common cannot take common again to dispose
+    /// itself -- that is a deadlock rather than a rank question -- so it
+    /// records the debt here and the next caller holding common pays it.
+    ///
+    /// Its storage is reserved at construction, so recording a debt never
+    /// allocates. The bound is the reason it can be: a grant holds at most one
+    /// request cell, so at most one token per grant can ever be owed at once,
+    /// and this is built above that.
     owed_disposal: Arc<Mutex<Vec<sophia_input_authority::RequestToken>>>,
 }
 
@@ -76,7 +89,7 @@ impl PrivateAuthorityController {
         Ok(Self {
             common: Arc::new(Mutex::new(authority)),
             issuer: Arc::new(issuer),
-            owed_disposal: Arc::new(Mutex::new(Vec::new())),
+            owed_disposal: Arc::new(Mutex::new(Vec::with_capacity(PRIVATE_OWED_DISPOSAL))),
         })
     }
 
@@ -99,10 +112,17 @@ impl PrivateAuthorityController {
     }
 
     /// Dispose everything recorded as owed, while common is already held.
+    ///
+    /// Reaches through poison for the same reason the debt exists at all: a
+    /// skipped payment is a cell nobody can publish, consume or reissue, and a
+    /// poisoned list of tokens is still a readable list of tokens. Declining
+    /// here would make "deferred" mean "dropped" in exactly the case the defer
+    /// was for.
     fn pay_owed_disposal(&self, authority: &mut sophia_input_authority::AuthorityInstance) {
-        let Ok(mut owed) = self.owed_disposal.lock() else {
-            return;
-        };
+        let mut owed = self
+            .owed_disposal
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         while let Some(token) = owed.pop() {
             let _ = authority.abandon_request(&self.issuer, token);
         }
@@ -161,9 +181,14 @@ impl PrivateAuthorityController {
                 let _ = authority.abandon_request(&self.issuer, token);
             }
             Err(std::sync::TryLockError::WouldBlock) => {
-                if let Ok(mut owed) = self.owed_disposal.lock() {
-                    owed.push(token);
-                }
+                // Recorded even if the list itself is poisoned: a poisoned
+                // list of tokens is still a readable list of tokens, and
+                // declining here strands the cell this exists to release.
+                let mut owed = self
+                    .owed_disposal
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                owed.push(token);
             }
         }
     }
@@ -173,21 +198,29 @@ impl PrivateAuthorityController {
     ///
     /// Scoped rather than a general authority callback: the closure receives
     /// the execution permit and nothing that owns a reservation, so nothing it
-    /// drops can try to take common again. The token and the connection come
-    /// from the custody value rather than from the caller, so this cannot be
-    /// pointed at another producer's request.
+    /// drops can try to take common again.
+    ///
+    /// The token comes from the custody value, so this cannot be pointed at
+    /// another producer's request. The connection does not: it is the
+    /// admission evidence the caller read *now*, under the guards it still
+    /// holds. Custody records which connection the request was reserved for,
+    /// which is the right identity to observe an outcome against and the wrong
+    /// one to execute on -- it is old by the time execution runs, and
+    /// comparing it against itself would pass for a client that has since
+    /// gone. Reading it inside the callback would also be too late, because
+    /// validation happens before the callback is entered.
     pub fn execute(
         &self,
         outstanding: &PrivateOutstandingRequest,
+        current: sophia_input_authority::ConnectionIdentity,
         act: impl FnOnce(
             &mut sophia_input_authority::ExecutionPermit<'_>,
         ) -> Result<(), sophia_input_authority::RegistrationError>,
     ) -> Result<sophia_input_authority::RequestCompletion, PrivateAuthorityRefusal> {
         let token = outstanding.token;
-        let connection = outstanding.connection;
         self.under_common(|authority| {
             authority
-                .execute_reserved(&self.issuer, token, connection, act)
+                .execute_reserved(&self.issuer, token, current, act)
                 .map_err(PrivateAuthorityRefusal::Authority)
         })?
     }
@@ -252,6 +285,7 @@ impl PrivateReservation {
             submit: self.submit,
             token,
             connection: self.connection,
+            observed: std::cell::Cell::new(false),
         }
     }
 }
@@ -296,23 +330,60 @@ impl Drop for PrivateReservation {
 #[cfg(unix)]
 pub struct PrivateOutstandingRequest {
     controller: PrivateAuthorityController,
-    #[cfg_attr(not(test), allow(dead_code))]
     submit: sophia_input_authority::SubmitHandle,
     token: sophia_input_authority::RequestToken,
+    /// The connection this request was reserved for.
+    ///
+    /// The right identity to observe an outcome against, and the wrong one to
+    /// execute on: by execution time it is old evidence, and comparing it
+    /// against itself would pass for a client that has since gone.
     connection: sophia_input_authority::ConnectionIdentity,
+    /// Whether the terminal outcome has been taken.
+    ///
+    /// Execution alone does not free the cell -- the completion has to be
+    /// observed -- so custody that ends without observing owes the cell back.
+    observed: std::cell::Cell<bool>,
 }
 
 #[cfg(unix)]
 impl PrivateOutstandingRequest {
     /// Observe the outcome of this request, and only this one.
+    ///
+    /// This is what frees the grant's one cell, so the next request on it can
+    /// be reserved. Executing does not: it produces the outcome, and the
+    /// outcome sits in the cell until somebody takes it.
     pub fn observe(
         &self,
     ) -> Result<Option<sophia_input_authority::RequestCompletion>, PrivateAuthorityRefusal> {
-        self.controller.under_common(|authority| {
+        let taken = self.controller.under_common(|authority| {
             authority
                 .take_completion(&self.submit, self.token, self.connection)
                 .map_err(PrivateAuthorityRefusal::Authority)
-        })?
+        })?;
+        if matches!(taken, Ok(Some(_))) {
+            // Recorded only for an outcome that was actually taken. A call
+            // that found nothing waiting has freed nothing, and treating it as
+            // observation would leave the cell held with nothing left to
+            // release it.
+            self.observed.set(true);
+        }
+        taken
+    }
+}
+
+#[cfg(unix)]
+impl Drop for PrivateOutstandingRequest {
+    fn drop(&mut self) {
+        if self.observed.get() {
+            return;
+        }
+        // Custody ended without the outcome being taken. Whatever happened to
+        // the request, the cell it holds is now unreachable -- nothing else
+        // carries the right to observe it -- so it is given back rather than
+        // left occupying the grant. Disposing an already-settled request is
+        // not a second effect: it removes a record, and the effect it records
+        // has already happened.
+        self.controller.dispose_unpublished(self.token);
     }
 }
 

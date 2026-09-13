@@ -11039,12 +11039,17 @@ fn one_producer_cannot_consume_another_producers_completion() {
     let first_request = first_held.accepted();
     let second_request = second_held.accepted();
 
-    // Both execute, so both have an outcome waiting.
-    for request in [&first_request, &second_request] {
+    // Both execute, so both have an outcome waiting. The connection handed to
+    // execution is the evidence a caller read now, not the one custody
+    // remembers -- here they agree, because nothing has revoked either.
+    for (request, connection) in [
+        (&first_request, role_connection(501)),
+        (&second_request, role_connection(502)),
+    ] {
         assert!(
             private
                 .authority()
-                .execute(request, |permit| permit.begin_external_effect())
+                .execute(request, connection, |permit| permit.begin_external_effect())
                 .is_ok(),
             "each producer's own request executes"
         );
@@ -11118,10 +11123,12 @@ fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
     // Moved in and dropped while this thread holds common. Taking common again
     // to dispose is a deadlock rather than a rank question, so the debt is
     // recorded and paid by the next caller that holds it.
-    let completion = private.authority().execute(&request, move |permit| {
-        drop(stranded);
-        permit.begin_external_effect()
-    });
+    let completion = private
+        .authority()
+        .execute(&request, role_connection(503), move |permit| {
+            drop(stranded);
+            permit.begin_external_effect()
+        });
     assert!(
         completion.is_ok(),
         "the execution returned rather than hanging"
@@ -11185,9 +11192,12 @@ fn two_detached_producers_reserve_against_one_authority() {
         SurfaceId::new(511, 1),
         XAuthorityInputDeliveryId::from_raw(513),
     ));
+    // Saturated, not denied: the grant's one cell is busy until the first
+    // request's outcome is observed, and busy is worth retrying. Denial would
+    // tell a producer to stop when it should wait.
     assert!(
-        matches!(again, Err(PrivateSendError::Denied(_))),
-        "a second request on one grant is refused while the first holds its cell, got {again:?}"
+        matches!(again, Err(PrivateSendError::Saturated(_))),
+        "a second request on one grant is busy while the first holds its cell, got {again:?}"
     );
 
     // And the refusal did not disturb the other producer, which still has its
@@ -11198,7 +11208,7 @@ fn two_detached_producers_reserve_against_one_authority() {
                 SurfaceId::new(512, 1),
                 XAuthorityInputDeliveryId::from_raw(514),
             )),
-            Err(PrivateSendError::Denied(_))
+            Err(PrivateSendError::Saturated(_))
         ),
         "the same bound applies to each producer independently"
     );
@@ -11206,10 +11216,9 @@ fn two_detached_producers_reserve_against_one_authority() {
 
 #[test]
 fn work_refused_by_the_order_takes_its_reservation_back() {
-    let (sender, _receiver) = sync_channel(4);
+    let (sender, _receiver) = sync_channel(64);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
-    // Small on purpose, so the order genuinely fills.
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(1).unwrap(),
@@ -11222,60 +11231,216 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
         &crate::PrivateSettlementOwner::default(),
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
-    let ingress = private
-        .ingress_for(role_connection(513), DeviceId::from_raw(1))
-        .expect("an ingress");
 
-    let mut refused = None;
-    for index in 0..64u32 {
-        let route = motion_to(
-            SurfaceId::new(513, 1),
-            XAuthorityInputDeliveryId::from_raw(u64::from(index) + 600),
-        );
-        match ingress.submit(route) {
-            Ok(_) => continue,
-            Err(error) => {
-                refused = Some(error);
-                break;
-            }
+    // The order is filled from OTHER grants, one request each, so nothing here
+    // is refused for want of a completion cell. Filling it from one producer
+    // could not work: that producer's second request is refused at reservation
+    // long before the order is full, which is a different refusal entirely and
+    // proves nothing about the queue.
+    let mut fillers = Vec::new();
+    for index in 0..32u64 {
+        let filler = private
+            .ingress_for(
+                role_connection(600 + index),
+                DeviceId::from_raw(index + 1),
+            )
+            .expect("a capability per filling producer");
+        let outcome = filler.submit(motion_to(
+            SurfaceId::new(600, 1),
+            XAuthorityInputDeliveryId::from_raw(800 + index),
+        ));
+        match outcome {
+            Ok(_) => fillers.push(filler),
+            Err(PrivateSendError::Saturated(_)) => break,
+            Err(other) => panic!("filling the order should saturate, got {other:?}"),
         }
     }
-    let Some(error) = refused else {
-        panic!("a bounded order must refuse eventually");
-    };
+    assert!(!fillers.is_empty(), "the order accepted work before filling");
 
-    // The payload comes back rather than being consumed by the refusal.
-    let returned = match error {
-        PrivateSendError::Saturated(route)
-        | PrivateSendError::Denied(route)
-        | PrivateSendError::Exhausted(route)
-        | PrivateSendError::Unavailable(route)
-        | PrivateSendError::Disconnected(route)
-        | PrivateSendError::DeliveryAlreadyTracked(route) => route,
+    // A fresh grant, so its own cell is free and the only thing that can
+    // refuse this is the order itself.
+    let fresh = private
+        .ingress_for(role_connection(699), DeviceId::from_raw(60))
+        .expect("a capability for the fresh producer");
+    let refused = fresh.submit(motion_to(
+        SurfaceId::new(699, 1),
+        XAuthorityInputDeliveryId::from_raw(899),
+    ));
+    let Err(PrivateSendError::Saturated(route)) = refused else {
+        panic!("a full order must saturate a fresh grant's submission, got {refused:?}");
     };
     assert_eq!(
-        returned.request.target_surface,
-        SurfaceId::new(513, 1),
+        route.delivery,
+        Some(XAuthorityInputDeliveryId::from_raw(899)),
         "the refused work is handed back intact"
     );
 
-    // And the exact cell it reserved went back with it. If a refused
-    // submission stranded its cell, this producer's grant would hold a request
-    // nothing could publish or consume, and every later reservation on it
-    // would be refused for want of a completion cell -- so draining the order
-    // and submitting again would fail.
-    assert!(
-        !private.route_pending().expect("a readable order").is_empty(),
-        "the order had work to run"
+    // Only that reservation went back. Everything the order accepted before it
+    // filled is still there -- drained across as many turns as the service
+    // budget needs, and counted, so a refusal that quietly consumed an earlier
+    // item would show up as a short count rather than being invisible.
+    let mut drained = 0usize;
+    loop {
+        let ran = private.route_pending().expect("a readable order").len();
+        if ran == 0 {
+            break;
+        }
+        drained += ran;
+    }
+    assert_eq!(
+        drained,
+        fillers.len(),
+        "the order still held exactly the work it had accepted"
     );
+
+    // The same grant and the same delivery id go through once the order has
+    // room. Both halves matter: the cell was released, so the grant can
+    // reserve again, and the delivery reservation was rolled back, so the id
+    // is not still tracked as live. Either one left behind would refuse this.
     assert!(
-        ingress
+        fresh
             .submit(motion_to(
-                SurfaceId::new(513, 1),
-                XAuthorityInputDeliveryId::from_raw(700),
+                SurfaceId::new(699, 1),
+                XAuthorityInputDeliveryId::from_raw(899),
             ))
             .is_ok(),
-        "the refused submission's cell was released, so this one reserves"
+        "the refused submission released both its cell and its delivery id"
+    );
+}
+
+#[test]
+fn a_deferred_disposal_records_and_pays_through_a_poisoned_debt_list() {
+    let private = private_for_roles();
+    let running = private
+        .reservation_role(role_connection(521), DeviceId::from_raw(1))
+        .expect("a capability");
+    let other = private
+        .reservation_role(role_connection(522), DeviceId::from_raw(2))
+        .expect("a second capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let request = running
+        .reserve(stamp, 1)
+        .expect("a reservation to execute")
+        .accepted();
+    let stranded = other.reserve(stamp, 1).expect("an unpublished reservation");
+
+    // Poisoned before the debt is recorded. Declining to record here is the
+    // difference between deferred and dropped, and dropped means a cell
+    // nothing can publish, consume or reissue.
+    let debts = std::sync::Arc::clone(&private.authority().owed_disposal);
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = debts.lock().unwrap();
+            panic!("poisoning the debt list");
+        })
+        .join()
+        .is_err()
+    );
+
+    let completion = private
+        .authority()
+        .execute(&request, role_connection(521), move |permit| {
+            drop(stranded);
+            permit.begin_external_effect()
+        });
+    assert!(completion.is_ok(), "the execution returned");
+
+    // Recorded through the poison, and paid by the next caller holding common.
+    assert!(
+        other.reserve(stamp, 2).is_ok(),
+        "the stranded cell was released despite the poisoned debt list"
+    );
+}
+
+#[test]
+fn a_debt_already_recorded_is_paid_through_a_poisoned_list() {
+    let private = private_for_roles();
+    let running = private
+        .reservation_role(role_connection(523), DeviceId::from_raw(1))
+        .expect("a capability");
+    let other = private
+        .reservation_role(role_connection(524), DeviceId::from_raw(2))
+        .expect("a second capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let request = running
+        .reserve(stamp, 1)
+        .expect("a reservation to execute")
+        .accepted();
+    let stranded = other.reserve(stamp, 1).expect("an unpublished reservation");
+
+    // Recorded first, with the list healthy.
+    let completion = private
+        .authority()
+        .execute(&request, role_connection(523), move |permit| {
+            drop(stranded);
+            permit.begin_external_effect()
+        });
+    assert!(completion.is_ok());
+
+    // Poisoned only now, before anything has paid it. A payment that skips a
+    // poisoned list leaves a debt recorded and never settled, which reads as
+    // deferred and behaves as dropped.
+    let debts = std::sync::Arc::clone(&private.authority().owed_disposal);
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = debts.lock().unwrap();
+            panic!("poisoning the debt list");
+        })
+        .join()
+        .is_err()
+    );
+
+    assert!(
+        other.reserve(stamp, 2).is_ok(),
+        "the recorded debt was paid despite the poisoned list"
+    );
+}
+
+#[test]
+fn recording_a_disposal_debt_does_not_allocate() {
+    let private = private_for_roles();
+    let reserved = private
+        .authority()
+        .owed_disposal
+        .lock()
+        .expect("a fresh debt list")
+        .capacity();
+    assert!(
+        reserved >= 1,
+        "storage for a debt is taken at construction, not when one is owed"
+    );
+
+    let running = private
+        .reservation_role(role_connection(525), DeviceId::from_raw(1))
+        .expect("a capability");
+    let other = private
+        .reservation_role(role_connection(526), DeviceId::from_raw(2))
+        .expect("a second capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let request = running
+        .reserve(stamp, 1)
+        .expect("a reservation")
+        .accepted();
+    let stranded = other.reserve(stamp, 1).expect("an unpublished reservation");
+    let _ = private
+        .authority()
+        .execute(&request, role_connection(525), move |permit| {
+            drop(stranded);
+            permit.begin_external_effect()
+        });
+
+    // A debt is recorded while common is held, on a path where something has
+    // already failed. Growing the list there is an allocation at the worst
+    // available moment.
+    assert_eq!(
+        private
+            .authority()
+            .owed_disposal
+            .lock()
+            .expect("the debt list")
+            .capacity(),
+        reserved,
+        "recording a debt used storage that was already reserved"
     );
 }
 
