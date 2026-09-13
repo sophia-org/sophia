@@ -181,3 +181,63 @@ impl XServerFrontendRouteBroker {
     }
 
 }
+
+/// A frontend built private, and the only way to get one.
+///
+/// Construction order is the safety property. The coordinator exists before
+/// the broker does, so there is no interval in which a handle could be taken
+/// from an ungated instance, and no raw ingress is offered at all. An
+/// ordinary broker can still be asked to become private later, but that path
+/// refuses when a handle already escaped, because a handle cannot be recalled
+/// and a send that returned success cannot be answered afterwards.
+///
+/// The broker is not reachable through this. `input_sender` refuses under a
+/// coordinator regardless, so this is the second of two answers rather than
+/// the only one, but a facade that handed the broker out would make the first
+/// answer the only thing standing between a caller and an unstamped way in.
+///
+/// Raw ingress is not merely undocumented here; it is absent:
+///
+/// ```compile_fail
+/// # use sophia_x_authority::PrivateXServerFrontend;
+/// fn take_unstamped_ingress(private: &PrivateXServerFrontend) {
+///     let _ = private.input_sender();
+/// }
+/// ```
+#[cfg(unix)]
+pub struct PrivateXServerFrontend {
+    broker: XServerFrontendRouteBroker,
+}
+
+#[cfg(unix)]
+impl PrivateXServerFrontend {
+    /// Build a frontend that is private from the moment it exists.
+    ///
+    /// Infallible with respect to activation, and necessarily so: nothing has
+    /// been exposed yet, so there is nothing for activation to refuse.
+    pub fn new(
+        input_capacity: NonZeroUsize,
+        control_acknowledgements: SyncSender<XAuthorityClientControlAck>,
+        input_deliveries: std::sync::mpsc::Sender<XAuthorityClientInputDelivery>,
+        gate: crate::ControlEpochGate,
+    ) -> Self {
+        let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+            input_capacity,
+            control_acknowledgements,
+            input_deliveries,
+        );
+        broker
+            .try_install_control_gate(gate)
+            .expect("a broker built here has exposed nothing to refuse over");
+        Self { broker }
+    }
+
+    /// The stamped ingress. There is no unstamped one.
+    pub fn routed_input_sender(&self) -> XAuthorityRoutedInputSender {
+        self.broker.routed_input_sender()
+    }
+
+    pub fn route_pending(&mut self) -> Result<usize, XServerFrontendRouteError> {
+        self.broker.route_pending()
+    }
+}

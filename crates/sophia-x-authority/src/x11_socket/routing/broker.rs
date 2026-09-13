@@ -29,8 +29,19 @@ pub struct XServerFrontendRouteBroker {
     /// Raw ingress carries no stamp, and a handle already given away cannot be
     /// recalled or answered: a send that returned success has no contract to
     /// refuse through afterwards. So this records the fact, and activation
-    /// refuses rather than pretending the handle can be reasoned with. If none
-    /// was ever taken, nothing can be queued behind one either.
+    /// refuses rather than pretending the handle can be reasoned with.
+    ///
+    /// This stands in for a queue-length check, and the invariant it rests on
+    /// is worth stating because a future change could quietly break it: the
+    /// sender is created here, stored here, and leaves only through the getter
+    /// that sets this flag first. No handle ever taken therefore means no
+    /// external enqueue ever happened. **An internal producer added later that
+    /// enqueues without going through that getter would invalidate this, and
+    /// would need the queue checked directly.**
+    ///
+    /// Sticky on purpose. Dropping every handle does not undo a send that
+    /// already returned, so clearing this on the last drop would let an
+    /// instance become private with unanswerable work behind it.
     raw_ingress_exposed: Arc<AtomicBool>,
     route_lease_release_sender: SyncSender<XAuthorityRouteLeaseRelease>,
     route_lease_release_receiver: Receiver<XAuthorityRouteLeaseRelease>,

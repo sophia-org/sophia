@@ -2913,3 +2913,50 @@ fn raw_ingress_is_refused_under_a_coordinator() {
         Some(crate::ActivationRefused::RawIngressRefusedUnderGate)
     );
 }
+
+#[test]
+fn exposure_outlives_the_handle_that_caused_it() {
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer) = control_gate();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+
+    let raw = broker
+        .input_sender()
+        .expect("an ungated broker to expose raw ingress");
+    // Every handle gone, and nothing queued through it.
+    drop(raw);
+
+    // Still refused. Dropping a handle does not undo a send that already
+    // returned, so forgetting the exposure would let this instance become
+    // private with unanswerable work behind it.
+    assert_eq!(
+        broker.try_install_control_gate(gate),
+        Err(crate::ActivationRefused::RawIngressAlreadyExposed)
+    );
+}
+
+#[test]
+fn a_frontend_built_private_offers_only_stamped_ingress() {
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer) = control_gate();
+
+    // The coordinator exists before the broker does, so there is no interval
+    // in which a handle could be taken from an ungated instance.
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate.clone(),
+    );
+
+    // Stamped ingress is available and stamps from the coordinator.
+    let sender = private.routed_input_sender();
+    let _ = sender;
+    assert!(gate.stamp().is_ok(), "an open coordinator stamps");
+}
