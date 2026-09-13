@@ -949,3 +949,42 @@ After reading 9900 and driving three bounded rounds, only 9901 arrives; 9902
 is absent and the owner reports `owed=0, lost=1`. This is loss after acceptance,
 not an admission refusal. Poison ownership findings above remain source-review
 findings rather than newly reproduced behavior.
+
+Candidate `8dab7e26` reserves shared owner credits before ready admission and
+retains an actual failed admission queue. The shutdown-only capacity repair
+does not yet establish the claimed credit lifetime: `route_pending` releases
+the credit as soon as `run_one` returns, while `route_control` can have merely
+queued a command to its client writer. Queue consumption and writer enqueue
+are not a terminal acknowledgement. Credits must follow pending writer and
+frozen work until a real terminal outcome, with an owned continuation when
+execution returns an error rather than consuming the operation and stranding
+its reservation.
+
+Failed-queue retention introduces a strong-reference cycle:
+`PrivateSettlementOwner.inner` owns `failed`, which owns `Arc<SharedAdmission>`,
+which owns a `durable` clone pointing to that same `inner`. The retained queue
+must instead be an owner-independent storage record without a strong back
+reference. Failed-instance storage also needs its own reservation before
+exposure: the `failed` vector is unbounded independently of operation credits,
+including failures of empty instances, and currently allocates during transfer.
+
+Settlement-owner poison remains explicitly open. Transfer still drops its
+input on a poisoned owner; zero-valued status/drive results hide unavailability;
+and reservation translates that condition into `Saturated`. These require
+preserved ownership and typed failure, not retry-as-capacity or settled/empty
+reporting. These are source-review findings; the runtime candidate remains
+unintegrated.
+
+Independent `.artifacts/private-credit-review-8dab7e26/` records two controls
+PASS and one desired credit-lifetime assertion FAIL (138 filtered; 9.53
+seconds). Capacity 1 now refuses the second owned payload before acceptance;
+the accepted operation receives its exact outcome once. Two instances share
+that limit, and an actual shutdown acknowledgement for the first operation
+releases capacity so the second instance's retained payload can be retried.
+
+The execution-path negative routes control 10201 into the client control
+channel and inspects that exact queued command without executing a writer or
+producing an acknowledgement. The owner already reports `reserved=0` and
+admits 10202 at sequence 2. The desired assertion that 10201 still holds its
+credit fails. Thus the admission/shutdown controls pass, while the production
+consumer still reclaims settlement capacity before the operation is answered.
