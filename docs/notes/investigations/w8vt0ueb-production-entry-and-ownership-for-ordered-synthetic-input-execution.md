@@ -174,28 +174,92 @@ So the change is a facade, not a check at the consumer:
 | Not | A silent drop; a service-fatal `route_pending` error; or a denial dressed as queue saturation or recipient failure |
 | Producer | Fails its own operation immediately, while the authority keeps serving healthy authorised work |
 | Pre-obtained handles | Must observe activation too, or construction must prove none escaped |
-| Already-queued raw work | Drained and refused on activation, with an observable producer outcome |
+| Already-queued raw work | See below. A send that already returned `Ok` cannot be un-answered |
 | Receipts | Raw events have no synthetic request cell. Do not invent one, and do not fabricate a delivery receipt. Work already inside a tracked lifecycle gets its exact negative completion, issued after locks drop |
 
-The pre-obtained handle problem is the same shape as the gate escape already
-fixed on this branch: a sender taken before installation kept its own answer.
-That was solved by putting the decision in a cell the broker and every handle
-already share, set once. The same shape applies here, with the difference that
-this one must also carry a refusal back, which a `SyncSender` cannot.
+A mode-aware facade handles new attempts. It does not, and cannot, handle
+sends that already returned `Ok`: that caller has its success and has moved
+on, and there is no retained per-message contract to answer through. Demanding
+an observable producer outcome for already-queued raw work would require
+inventing one, and a fabricated receipt is worse than an honest refusal to
+start.
+
+So the answer is construction, not compensation:
+
+- **Preferred.** A private instance exposes no raw ingress before its gate
+  exists. There is no window in which a handle can be taken, so there is
+  nothing to reconcile later.
+- **Fail closed otherwise.** If a gate is being installed on an instance that
+  has already exposed raw ingress or has raw work queued, the installer
+  refuses with `ActivationRefused`. The instance stays ordinary and private
+  injection is not enabled. Refusing to become private is always available;
+  un-answering a send is not.
+
+An asynchronous private operation that is genuinely accepted must reserve its
+real completion before it returns accepted. Accepted-then-refused is only
+expressible when something was retained to express it through.
+
+The pre-obtained handle problem is the shape of the gate escape already fixed
+on this branch, where a sender taken before installation kept its own answer,
+solved with a cell every handle shares. That fixes future attempts. It does
+not reach a send that has already returned, which is why construction order
+carries the weight here rather than the cell.
 
 What has to be tested: a sender obtained before install, work queued before
-install, authorised work continuing afterwards, a refusal that leaves XKB and
-query state untouched, and no producer left without an answer.
+install -- proving either construction or activation refusal, not a retroactive
+error -- authorised work continuing afterwards, a refusal that leaves XKB and
+query state untouched, and no producer left waiting on an answer that will
+never come.
+
+## Private construction and the production entry
+
+### Construction
+
+A private instance is built in one order, and the order is the safety
+property.
+
+1. Build the common authority and take an issuer for it.
+2. Derive the coordinator from that authority under that issuer. It reads the
+   published revision and refuses mid-transition, so it cannot start from a
+   revision nobody committed.
+3. Build the gate from the coordinator. It captures the authority identity and
+   the coordinator incarnation here, and both are fixed for its life.
+4. Build the broker **with** the gate, not by installing one afterwards. Every
+   handle the broker hands out is therefore issued by a broker that already
+   has its gate.
+5. Do not expose raw ingress at all. The private constructor offers no
+   equivalent of `input_sender`.
+
+`under_control_gate` remains for the ordinary-to-private path, and that path
+is where `ActivationRefused` lives: it refuses rather than enabling injection
+on an instance whose handles or queue predate the gate.
+
+### Production entry
+
+The entry is `route_pending`, and this is the part a helper cannot substitute
+for. Under a gate it stops being a drain of five independent loops and becomes
+one ordered pass:
+
+- Operations from every class in the tables above become runnable in a single
+  sequence, rather than each loop advancing at its own rate.
+- For each runnable operation: final validation and application happen
+  together under the common guard, with the X guards taken beneath it in the
+  ranked order, and the executor owns the XKB state so no request and reply
+  crosses that boundary.
+- Emission -- routing to client queues, receipts, acknowledgements -- happens
+  after every guard is released.
+- Retained completions are bounded, and anything already accepted into a
+  tracked lifecycle gets its exact completion rather than being dropped.
+
+The ordinary path keeps today's behaviour where no gate is installed. Nothing
+is enabled by the existence of the executor; a private instance has to be
+constructed as one.
 
 ## What still needs stating
 
 Pure getters need coherent snapshots and request ordering. They do not need
 mutation operations invented for them, and inventing some would be a worse
 error than leaving them unlisted.
-
-The concrete private construction and production call path is not in this note
-yet. It is the next thing owed, and it should name the actual entry rather
-than another helper nothing calls.
 
 ## Status
 
