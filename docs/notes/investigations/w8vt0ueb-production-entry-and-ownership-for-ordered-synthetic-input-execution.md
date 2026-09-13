@@ -27,11 +27,13 @@ moved, and nothing in this design can put it back. A speculative clone and
 commit protocol would be a different design and none is established.
 
 One detail shapes the ordering. `map_evdev_key` captures `self.modifier_mask()`
-*before* the update and returns it, so its result is the **pre-event**
-modifiers. The after-state is not returned at all. Preserving pre-event
-modifiers and publishing after-state are therefore two separate obligations,
-and they must be published in execution order rather than whenever a writer
-happens to finish.
+*before* the update and returns it, so its own result is the **pre-event**
+modifiers. The after-state is not missing from the existing reply, though: the
+`XkbWorkerCommand::Key` wrapper at `registry.rs:212-214` reads
+`state.modifier_mask()` again after the mapping and returns
+`(keycode, before, after)`. Both semantics exist today and the private
+executor has to preserve both, published in execution order rather than
+whenever a writer happens to finish.
 
 The direction taken instead: keymap and seat state are compiled and
 initialised outside the execution guards, the private ordered executor **owns**
@@ -98,5 +100,6 @@ watchdog stands outside this.
 Source-confirmed inventory. No implementation is proposed here for live mode
 or any ambient fallback, and nothing here is an approval to enable one.
 
-Related: [[0t8n7mwl]] for the writer-side modifier and target findings this
-ordering has to subsume.
+Related: [[0t8n7mwl]] for the writer-side target finding this ordering has to
+subsume. Its modifier finding is withdrawn: that atomic is per connection, not
+per seat.
