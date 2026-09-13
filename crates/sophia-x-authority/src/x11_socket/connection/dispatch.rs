@@ -352,6 +352,25 @@ impl<'a> X11QueryOwner<'a> {
     }
 }
 
+/// Everything one client connection owns that has to be given up in order.
+///
+/// An aggregate rather than two locals, because the order is the guarantee and
+/// two `let`s only have it by accident: fields are given up in declaration
+/// order, so the workers stop and join before anything they were serving is
+/// taken back. Locals are given up in reverse, which had the query
+/// registration going first while the writers it served were still running.
+#[cfg(unix)]
+struct X11ClientLifetime<'a> {
+    /// Given up first.
+    writers: X11ClientWriters,
+    /// Given up after them.
+    ///
+    /// Never read: it is held for what losing it does, which is take this
+    /// client's query registration back once nothing is still serving it.
+    #[allow(dead_code)]
+    query_owner: X11QueryOwner<'a>,
+}
+
 #[cfg(unix)]
 impl Drop for X11QueryOwner<'_> {
     fn drop(&mut self) {
@@ -560,8 +579,14 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // Declared after the route registration on purpose: locals drop in reverse,
     // so the writers are stopped and joined before the registration they were
     // serving goes.
-    let mut writers = X11ClientWriters::new(&output_stream)?;
-    let _query_owner = X11QueryOwner::register(&state.runtime, namespace, client)?;
+    let writer_transport = X11ClientWriters::take_transport(&output_stream)?;
+    let mut owned = X11ClientLifetime {
+        // Registered only once the handle that can end a stalled write is in
+        // hand, so a refusal registers nothing that would need taking back.
+        query_owner: X11QueryOwner::register(&state.runtime, namespace, client)?,
+        writers: X11ClientWriters::owning(writer_transport),
+    };
+    let writers = &mut owned.writers;
     writers.input = input_receiver
         .map(|receiver| {
             spawn_x11_input_event_writer(

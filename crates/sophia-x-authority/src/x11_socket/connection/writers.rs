@@ -48,9 +48,12 @@ struct X11ClientWriters {
 
 #[cfg(unix)]
 impl X11ClientWriters {
-    /// Take the shutdown's own handle on the output socket, before anything
-    /// is started that would need shutting down.
-    fn new(stream: &Arc<Mutex<UnixStream>>) -> Result<Self, X11SetupSocketError> {
+    /// Take the shutdown's own handle on the output socket.
+    ///
+    /// Separate from owning the writers so that it can happen before this
+    /// client is registered as anything, while the cohort itself is declared
+    /// after those registrations and so gives its workers up before them.
+    fn take_transport(stream: &Arc<Mutex<UnixStream>>) -> Result<UnixStream, X11SetupSocketError> {
         let transport = stream
             .lock()
             .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?
@@ -60,12 +63,18 @@ impl X11ClientWriters {
                     "failed to clone X11 output socket for writer shutdown: {error}"
                 ))
             })?;
-        Ok(Self {
+        Ok(transport)
+    }
+
+    /// Own the writers a connection starts, with the handle that can end a
+    /// write no flag reaches.
+    fn owning(transport: UnixStream) -> Self {
+        Self {
             input: None,
             control: None,
             protocol: None,
             transport,
-        })
+        }
     }
 }
 

@@ -8367,7 +8367,7 @@ fn a_shutdown_handle_that_cannot_be_taken_refuses_before_any_worker_starts() {
     // them. A cohort that took this best-effort would lose the guarantee
     // silently.
     assert!(
-        X11ClientWriters::new(&stream).is_err(),
+        X11ClientWriters::take_transport(&stream).is_err(),
         "no handle, no workers"
     );
 }
@@ -8394,7 +8394,7 @@ fn a_refused_cohort_leaves_no_query_owner_behind() {
         .join()
         .is_err()
     );
-    assert!(X11ClientWriters::new(&stream).is_err());
+    assert!(X11ClientWriters::take_transport(&stream).is_err());
 
     assert!(
         !state
@@ -8429,4 +8429,67 @@ fn a_refused_cohort_leaves_no_query_owner_behind() {
         !active(),
         "and losing the registration takes that owner back, however it was lost"
     );
+}
+
+#[test]
+fn losing_a_connection_gives_up_its_writers_and_then_its_registration() {
+    let namespace = NamespaceId::from_raw(342);
+    let client = XServerFrontendClientId(342);
+    let state = X11CoreSocketServerState::new();
+    let active = |state: &X11CoreSocketServerState| {
+        state
+            .runtime
+            .lock()
+            .unwrap()
+            .shared_input_authority()
+            .lock()
+            .unwrap()
+            .query_namespace_active(namespace)
+    };
+
+    // A writer that reports what it could see of this client's registration at
+    // the moment it stopped. That is the only way to observe which of the two
+    // was given up first, rather than only that both were.
+    let (sampled, samples) = sync_channel(1);
+    let stop = Arc::new(AtomicBool::new(false));
+    let writer_stop = Arc::clone(&stop);
+    let runtime = Arc::clone(&state.runtime);
+    let thread = std::thread::spawn(move || {
+        while !writer_stop.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+        let seen = runtime
+            .lock()
+            .unwrap()
+            .shared_input_authority()
+            .lock()
+            .unwrap()
+            .query_namespace_active(namespace);
+        let _ = sampled.send(seen);
+        Ok(())
+    });
+
+    let owned = X11ClientLifetime {
+        writers: X11ClientWriters {
+            input: None,
+            control: Some(X11ControlWriter { stop, thread }),
+            protocol: None,
+            transport: std::os::unix::net::UnixStream::pair().unwrap().0,
+        },
+        query_owner: X11QueryOwner::register(&state.runtime, namespace, client)
+            .expect("a readable runtime"),
+    };
+    assert!(active(&state));
+
+    // Fields are given up in declaration order, so the writers go first and
+    // are stopped and joined before the registration they were serving is
+    // taken back. Two locals would have had it backwards: they are given up in
+    // reverse, so the registration went while its workers were still running.
+    drop(owned);
+    assert_eq!(
+        samples.recv_timeout(std::time::Duration::from_secs(2)),
+        Ok(true),
+        "the writers stopped while the registration they served was still there"
+    );
+    assert!(!active(&state), "and then it was taken back");
 }

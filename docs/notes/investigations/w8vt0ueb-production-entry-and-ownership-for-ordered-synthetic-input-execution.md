@@ -433,6 +433,12 @@ pin releases only its device bundle, so an early return after registering left
 the namespace reporting an owner that never finished starting. Holding it means
 every path out takes it back, including the ones nobody has thought of yet.
 
+It is held beside the writers in one value rather than as a second local,
+because the order between them is the guarantee and two locals only have it by
+accident: locals are given up in reverse, which had the registration going
+while the workers it served were still running. Fields are given up in
+declaration order, so the writers stop and join first.
+
 The deadline is a grace before the socket goes and nothing more. It does not
 bound the join that follows, and it does not bound a writer waiting on the
 runtime lock or any other condition a closed socket does not touch; an
