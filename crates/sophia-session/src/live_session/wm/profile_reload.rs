@@ -247,12 +247,18 @@ impl LiveWmSession {
                 .as_mut()
                 .ok_or("accepted policy lost its owner")?;
             if public.connection_epoch == configuration.connection_epoch {
+                let session_operation_count = public.session_operations.len();
                 public.actions = configuration.actions.clone();
                 public.accepted_configuration = Some(configuration.clone());
                 public.configured = true;
                 self.chrome = configuration.chrome;
                 self.shortcuts = Some(WmShortcutRouter::new(registry));
                 self.stage_visual_chrome(self.candidate_chrome_style());
+                crate::session_println!(
+                    "sophia_live_wm_configuration schema=2 status=committed catalog_generation={} session_operation_count={}",
+                    configuration.generation,
+                    session_operation_count,
+                );
             }
         }
         if self
@@ -503,14 +509,23 @@ impl LiveWmSession {
             .iter()
             .map(|operation| operation.slot)
             .collect::<BTreeSet<_>>();
-        let slots_valid = configuration.actions.iter().all(|action| {
-            action
-                .session_operation_slot
-                .is_none_or(|slot| admitted_slots.contains(&slot))
-        });
+        let missing_slots = configuration
+            .actions
+            .iter()
+            .filter_map(|action| action.session_operation_slot)
+            .filter(|slot| !admitted_slots.contains(slot))
+            .collect::<BTreeSet<_>>();
+        let slots_valid = missing_slots.is_empty();
         if !slots_valid {
-            crate::session_eprintln!(
-                "sophia_live_wm_configuration schema=1 status=rejected reason=unavailable_session_slot"
+            let missing_slots = missing_slots
+                .iter()
+                .map(u16::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            crate::session_println!(
+                "sophia_live_wm_configuration schema=2 status=rejected reason=unavailable_session_slot catalog_generation={} missing_slot_count={} missing_slots={missing_slots}",
+                configuration.generation,
+                missing_slots.split(',').count(),
             );
         }
         let registry = slots_valid

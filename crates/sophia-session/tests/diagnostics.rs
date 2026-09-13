@@ -285,6 +285,23 @@ fn interaction_records_distinguish_delivery_rejection_and_chrome_without_payload
 }
 
 #[test]
+fn policy_configuration_rejection_retains_bounded_missing_slots() {
+    let record = "sophia_live_wm_configuration schema=2 status=rejected reason=unavailable_session_slot catalog_generation=17 missing_slot_count=2 missing_slots=2,7";
+    assert_eq!(reduced_record(record).as_deref(), Some(record));
+    for invalid in ["", "0", "7,", "-1", "65536", "seven"] {
+        let raw = format!(
+            "sophia_live_wm_configuration schema=2 status=rejected reason=unavailable_session_slot catalog_generation=17 missing_slot_count=2 missing_slots={invalid}"
+        );
+        assert_eq!(
+            reduced_record(&raw).as_deref(),
+            Some(
+                "sophia_live_wm_configuration schema=2 status=rejected reason=unavailable_session_slot catalog_generation=17 missing_slot_count=2"
+            )
+        );
+    }
+}
+
+#[test]
 fn interaction_vocabulary_is_scoped_and_rejects_unbounded_values() {
     for record in [
         "sophia_other status=button_suppressed reason=no_target confirmed=2 prepared=1 frames=2 ust=123 msc=456",

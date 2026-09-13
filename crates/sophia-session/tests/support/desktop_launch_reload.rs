@@ -530,6 +530,84 @@ fn rejected_policy_restores_the_exact_spec_fragments_and_commands() {
 }
 
 #[test]
+fn lom_panel_gate_commits_hagias_complete_catalog_and_rejects_a_missing_slot() {
+    let core = include_str!("../../../../tools/fixtures/lom_panel_core.kdl");
+    let desktop = include_str!("../../../../tools/fixtures/lom_panel_desktop.kdl");
+    let arguments = [
+        "--session-app=browser=/usr/bin/true",
+        "--session-action-app=browser=browser",
+        "--wm-process-default=/usr/bin/true",
+        "--shell-process-default=/usr/bin/true",
+    ];
+    let make_fixture = || {
+        ReloadFixture::from_config_fixture(ConfigFixture::from_documents(
+            core, desktop, &arguments,
+        ))
+    };
+    let policy_configuration = |fixture: &ReloadFixture| {
+        let mut configuration = fixture.configuration();
+        configuration.actions = (1_u16..=7)
+            .map(|slot| sophia_protocol::PolicyActionRegistration {
+                action: WmActionId::from_raw(u64::from(slot)),
+                name: format!("session-slot-{slot}"),
+                session_operation_slot: Some(slot),
+            })
+            .collect();
+        configuration
+    };
+
+    let mut admitted = make_fixture();
+    assert!(admitted.source.config.applications.startup.is_empty());
+    let catalog = admitted.source.config.application_catalog.as_ref().unwrap();
+    assert_eq!(catalog.name, "lom-panel-gate");
+    assert!(catalog.sources.is_empty());
+    assert!(catalog.applications.is_empty());
+    assert!(catalog.terminal.is_none());
+    assert_eq!(
+        admitted
+            .wm
+            .public
+            .as_ref()
+            .unwrap()
+            .session_operations
+            .iter()
+            .map(|operation| operation.slot)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3, 4, 5, 6, 7]
+    );
+    let configuration = policy_configuration(&admitted);
+    assert_eq!(
+        admitted.stage_configuration(&configuration),
+        sophia_protocol::PolicyProjectionOutcome::Committed
+    );
+    admitted.settle(true);
+    assert_eq!(
+        admitted
+            .wm
+            .public
+            .as_ref()
+            .and_then(|public| public.accepted_configuration.as_ref()),
+        Some(&configuration)
+    );
+    assert!(admitted.wm.pending_policy_configuration.is_none());
+
+    let mut missing = make_fixture();
+    missing
+        .wm
+        .public
+        .as_mut()
+        .unwrap()
+        .session_operations
+        .retain(|operation| operation.slot != 7);
+    let configuration = policy_configuration(&missing);
+    assert_eq!(
+        missing.stage_configuration(&configuration),
+        sophia_protocol::PolicyProjectionOutcome::RejectedInvalid
+    );
+    assert!(missing.wm.pending_policy_configuration.is_none());
+}
+
+#[test]
 fn restored_policy_configuration_preserves_a_held_key_until_its_release() {
     let mut fixture = ReloadFixture::new();
     fixture.save("/old/command", None);

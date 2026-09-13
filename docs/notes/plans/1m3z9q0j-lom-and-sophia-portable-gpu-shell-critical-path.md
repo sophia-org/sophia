@@ -158,6 +158,26 @@ device, inode and `rdev` identity into the launcher, which refuses disagreement
 before constructing the domain and checks again before spawn. These checks narrow
 the startup handoff; they do not claim atomic hotplug pinning or hardware success.
 
+The attended `d00f43f6` / Lom `4340aa0` run at
+`.artifacts/lom-panel-native/20260913T214837Z` passed the protected GPU preflight
+and selected the RX 7900 GRE through exact Vulkan DRM `dev_t` identity. The
+operator saw the bar and updating time. The session was not usable: pointer
+motion was observed once but never routed, Hagia's configuration was rejected
+492 times, the WM restarted 492 times, and the shell transport failed 82 times.
+This is GPU-discovery progress, not native-session or input acceptance.
+
+Source inspection tied the policy restart storm to the proof profile. Hagia
+advertises all seven session-operation slots, including the application
+launcher, while the terminal-free gate supplied no application catalog and
+Sophia correctly rejected missing slot 7. The repaired gate selects an empty
+trusted catalog and an explicitly empty startup list. A production-stage test
+loads those exact KDL documents, proves slots 1 through 7 are present, commits
+Hagia's complete configuration, and proves removing slot 7 is rejected. The
+diagnostic now retains the bounded missing slots and catalog generation, and
+the native verifier requires exactly one committed configuration. This does
+not yet attribute the shell transport failures or prove pointer recovery; both
+remain outcomes for the next separately authorized attended run.
+
 ### t098
 
 Carry content target tables through production projection to the exact native

@@ -6,6 +6,7 @@ LOM_SOURCE="${SOPHIA_LOM_SOURCE:-/home/niltempus/dev/lom}"
 LOM_TARGET="${SOPHIA_LOM_TARGET_DIR:-$HOME/.cache/lom-target}"
 LOM_CONFIG="${SOPHIA_LOM_CONFIG:-$LOM_SOURCE/examples/minimal/live-shell.kdl}"
 HAGIA_BIN="${SOPHIA_HAGIA_BIN:-/home/niltempus/dev/hagia/hagia}"
+LOM_CORE_CONFIG="${SOPHIA_LOM_CORE_CONFIG:-$ROOT_DIR/tools/fixtures/lom_panel_core.kdl}"
 EVIDENCE_DIR="${SOPHIA_LOM_NATIVE_EVIDENCE_DIR:-$ROOT_DIR/.artifacts/lom-panel-native/$(date -u +%Y%m%dT%H%M%SZ)}"
 
 [[ "$(tty)" == /dev/tty4 ]] || { echo "Run this from /dev/tty4 after ending the graphical session." >&2; exit 2; }
@@ -49,6 +50,7 @@ SOPHIA_BUILD_SESSION=false \
 SOPHIA_MANAGE_KEYD=true \
 SOPHIA_REQUIRE_LOCAL_VT=true \
 SOPHIA_TTY_PROFILE=hagia \
+SOPHIA_CORE_CONFIG="$LOM_CORE_CONFIG" \
 SOPHIA_DESKTOP_PROFILE="$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl" \
 SOPHIA_SESSION_STARTUP=none \
 SOPHIA_SESSION_WATCHDOG_SECONDS=20 \

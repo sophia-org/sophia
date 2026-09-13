@@ -1,0 +1,10 @@
+/- kdl-version 2
+schema 2
+
+session {
+    // Hagia's configuration catalog always includes the application-launcher
+    // action. The native panel gate admits that action without supplying any
+    // applications or causing one to start.
+    application-catalog "lom-panel-gate" launch-policy="trusted-host" {
+    }
+}

@@ -588,6 +588,21 @@ fn layout_probe_field(key: &str, value: &str) -> bool {
 // Scope the vocabulary to its producer so arbitrary child text cannot become
 // an approved status or an identifier disguised as a numeric measurement.
 fn interaction_field(record: &str, key: &str, value: &str) -> bool {
+    if record == "sophia_live_wm_configuration" {
+        return match key {
+            "reason" => value == "unavailable_session_slot",
+            "missing_slots" => {
+                !value.is_empty()
+                    && value.split(',').count() <= sophia_protocol::POLICY_MAX_BINDINGS
+                    && value.split(',').all(|slot| {
+                        !slot.is_empty()
+                            && slot.bytes().all(|byte| byte.is_ascii_digit())
+                            && slot.parse::<u16>().is_ok_and(|slot| slot != 0)
+                    })
+            }
+            _ => false,
+        };
+    }
     if record == "sophia_live_visual_progress" && visual_progress_field(key, value) {
         return true;
     }

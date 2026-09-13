@@ -51,6 +51,7 @@ done
 
 cat > "$work/native.log" <<'EOF'
 sophia_live_shell_gpu schema=1 status=granted mode=direct peer_pid=42 grant_epoch=1 device_major=226 device_minor=128 pci_bus_id=0000:01:00.0
+sophia_live_wm_configuration schema=2 status=committed catalog_generation=1 session_operation_count=7
 sophia_live_shell_content schema=1 status=outputs facts_generation=1 outputs=1
 sophia_live_shell_content schema=1 status=presented output=1 candidate_generation=1 presentation_epoch=11 staging_bytes=0 resident_bytes=24576 retiring_bytes=0 backing_bytes=24576
 sophia_live_shell_content schema=1 status=presented output=1 candidate_generation=2 presentation_epoch=12 staging_bytes=0 resident_bytes=49152 retiring_bytes=24576 backing_bytes=49152
@@ -87,7 +88,8 @@ fi
 
 for failure in \
     'sophia_live_shell_gpu schema=1 status=revoked grant_epoch=1' \
-    'sophia_live_shell_content schema=1 status=transport_failed'; do
+    'sophia_live_shell_content schema=1 status=transport_failed' \
+    'sophia_live_wm_configuration schema=2 status=rejected reason=unavailable_session_slot catalog_generation=1 missing_slot_count=1 missing_slots=7'; do
     cp "$work/native-events.log" "$work/native-events-lifecycle-failure.log"
     printf '100\t10000\t10000\t%s\n' "$failure" >> "$work/native-events-lifecycle-failure.log"
     if "$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native-events-lifecycle-failure.log" >/dev/null 2>&1; then
@@ -107,10 +109,29 @@ grep -q '^SOPHIA_SESSION_STARTUP=none ' "$runner" || {
     echo "native runner unexpectedly starts an application" >&2
     exit 1
 }
-if grep -Eq '^[[:space:]]*(bind|pointer-bind|session)[[:space:]]' \
+grep -q 'SOPHIA_CORE_CONFIG="$LOM_CORE_CONFIG"' "$runner" || {
+    echo "native runner does not pass its bounded application catalog to Sophia" >&2
+    exit 1
+}
+if grep -Eq '^[[:space:]]*(bind|pointer-bind)[[:space:]]' \
     "$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl"; then
     echo "native panel profile carries an unrelated session action" >&2
     exit 1
 fi
+grep -q '^[[:space:]]*application-catalog "lom-panel-gate"$' \
+    "$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl" || {
+    echo "native panel profile does not select its application catalog" >&2
+    exit 1
+}
+grep -q '^[[:space:]]*startup$' \
+    "$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl" || {
+    echo "native panel profile does not explicitly select an empty startup set" >&2
+    exit 1
+}
+grep -q 'application-catalog "lom-panel-gate" launch-policy="trusted-host"' \
+    "$ROOT_DIR/tools/fixtures/lom_panel_core.kdl" || {
+    echo "native panel core fixture does not define its admitted catalog" >&2
+    exit 1
+}
 
-echo "lom_gpu_content_verifiers schema=1 status=pass mutations=23 structured_events=true pre_takeover_proof=true"
+echo "lom_gpu_content_verifiers schema=1 status=pass mutations=24 structured_events=true pre_takeover_proof=true"

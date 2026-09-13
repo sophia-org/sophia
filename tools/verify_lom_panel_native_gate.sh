@@ -19,6 +19,9 @@ grep -q '^sophia_live_shell_gpu schema=1 status=granted ' "$records" || {
 [[ "$(grep -c '^sophia_live_shell_gpu schema=1 status=granted ' "$records")" -eq 1 ]] || {
     echo "native session restarted or replaced the shell GPU grant" >&2; exit 1;
 }
+[[ "$(grep -c '^sophia_live_wm_configuration schema=2 status=committed ' "$records")" -eq 1 ]] || {
+    echo "native session did not commit exactly one policy configuration" >&2; exit 1;
+}
 facts=$(grep '^sophia_live_shell_content schema=1 status=outputs ' "$records" | tail -n 1)
 [[ "$facts" =~ outputs=([0-9]+) ]] || { echo "native session recorded no output facts" >&2; exit 1; }
 expected_outputs=${BASH_REMATCH[1]}
@@ -32,7 +35,7 @@ for output in "${outputs[@]}"; do
         | sed -n 's/.* candidate_generation=\([0-9][0-9]*\) .*/\1/p' | sort -u | wc -l)
     (( count >= 2 )) || { echo "output $output did not present two panel generations" >&2; exit 1; }
 done
-if grep -Eq 'runtime_fatal|failure_code=|deadline_exceeded|withdrawn|sophia_live_wm_configuration schema=1 status=rejected|sophia_live_metadata_shell schema=1 status=unavailable|sophia_live_shell_gpu schema=1 status=(denied|revoked)|sophia_live_shell_content schema=1 status=(transport_failed|presentation_failed)' "$records"; then
+if grep -Eq 'runtime_fatal|failure_code=|deadline_exceeded|withdrawn|sophia_live_wm_configuration schema=[0-9]+ status=rejected|sophia_live_metadata_shell schema=1 status=unavailable|sophia_live_shell_gpu schema=1 status=(denied|revoked)|sophia_live_shell_content schema=1 status=(transport_failed|presentation_failed)' "$records"; then
     echo "native gate contains a fatal, deadline or withdrawal" >&2
     exit 1
 fi

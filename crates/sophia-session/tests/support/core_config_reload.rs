@@ -36,6 +36,14 @@ struct ConfigFixture {
 
 impl ConfigFixture {
     fn new(extra_args: &[&str]) -> Self {
+        Self::from_documents(
+            CORE,
+            "schema 1\nshell { enabled #false; }\nsession { terminal \"terminal\"; browser \"brave-origin\"; startup \"panel\"; }\n",
+            extra_args,
+        )
+    }
+
+    fn from_documents(core_bytes: &str, desktop_bytes: &str, extra_args: &[&str]) -> Self {
         static SERIAL: AtomicU64 = AtomicU64::new(0);
         let directory = std::env::temp_dir().join(format!(
             "sophia-core-reload-{}-{}",
@@ -45,13 +53,7 @@ impl ConfigFixture {
         std::fs::create_dir(&directory).unwrap();
         let core = directory.join("core.kdl");
         let desktop = directory.join("desktop.kdl");
-        for (path, bytes) in [
-            (&core, CORE),
-            (
-                &desktop,
-                "schema 1\nshell { enabled #false; }\nsession { terminal \"terminal\"; browser \"brave-origin\"; startup \"panel\"; }\n",
-            ),
-        ] {
+        for (path, bytes) in [(&core, core_bytes), (&desktop, desktop_bytes)] {
             std::fs::write(path, bytes).unwrap();
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
         }
