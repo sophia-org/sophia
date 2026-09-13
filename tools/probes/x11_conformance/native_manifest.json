@@ -1087,6 +1087,94 @@
         }
       ],
       "evidence_scope": "Real private setup sockets in both byte orders; verified admission evidence only. Does not establish grant issuance, executor, XTEST effects or live admission."
+    },
+    {
+      "id": "m3_ready_stream_primitive",
+      "description": "Bounded ready-queue FIFO, publication and refusal ownership across operation classes.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "every_class_shares_one_order_rather_than_one_queue_each"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "a_sequence_a_caller_is_told_is_one_the_consumer_can_already_see"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "positions_rise_and_are_never_reused"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "cleanup_keeps_capacity_that_ordinary_work_cannot_take"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "delayed_work_takes_its_position_when_it_becomes_runnable"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "one_producers_order_survives_other_producers_interleaving"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "positions_are_refused_rather_than_reused_when_exhausted"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "a_refused_payload_comes_back_and_can_be_admitted_once_afterwards"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "an_oversized_reserve_is_refused_rather_than_quietly_changing_the_policy"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "a_refusal_destroys_nothing_it_was_handed"
+        }
+      ],
+      "evidence_scope": "Single-thread queue primitive with class-tagged payloads; no real producer, concurrent admission, executor, timer, thaw, cleanup liveness or authorization claim. The in-tree exhaustion test covers arithmetic only."
     }
   ]
 }

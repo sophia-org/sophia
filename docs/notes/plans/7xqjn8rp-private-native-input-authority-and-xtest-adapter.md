@@ -597,3 +597,13 @@ owner cannot retry cleanup or report the rejected operation. Evidence is
 `.artifacts/ready-stream-review-c6e4475e/`. Refusal must return the payload;
 durable cleanup debt must remain represented when even reserved queue space is
 full. These are queue-primitive checks, not execution by the five real producers.
+
+Repairs through `4cdcb253` return the refused payload and validate the configured
+reserve. Nine independent std-only tests pass, including a private test fixture
+that reaches actual admission exhaustion at `u64::MAX` and checks that the payload
+and queue state survive. Evidence is `.artifacts/ready-stream-review-4cdcb253/`.
+The repaired primitive is integrated at `7aefe013`; its ten in-tree tests pass,
+with evidence in `.artifacts/ready-stream-integration-7aefe013/`. The native manifest
+maps these as `m3_ready_stream_primitive`, expressly separate from real concurrent
+producer and executor obligations. Nineteen production obligations still have no
+implementation evidence; this queue result does not close them.
