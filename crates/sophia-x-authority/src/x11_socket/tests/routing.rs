@@ -4766,3 +4766,167 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
         "a resolved failure returns its slot"
     );
 }
+
+#[test]
+fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
+    // The independent negative: a control handed to a client writer is not an
+    // acknowledgement, so its credit must not be freed when the consumer takes
+    // it.
+    let durable = crate::PrivateSettlementOwner::with_capacity(1);
+    let (sender, _receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _authority, _issuer) = control_gate();
+    let surface = SurfaceId::new(251, 1);
+    let client = XServerFrontendClientId(251);
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(2).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner: {refusal:?}"));
+    let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(251),
+            surface,
+            XResourceId::new(0x200251, 1),
+        )
+        .unwrap();
+
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::ConfigureSurface {
+                transaction: TransactionId::from_raw(10201),
+                surface,
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 80,
+                    height: 60,
+                },
+            },
+        })
+        .expect("the shared admission to accept control");
+    assert_eq!(durable.reserved(), 1);
+
+    // The consumer routes it to the client's writer queue. Nothing has
+    // acknowledged it.
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(
+        durable.reserved(),
+        1,
+        "enqueueing to a writer is not an acknowledgement"
+    );
+    assert_eq!(
+        private.reclaim_settled(),
+        0,
+        "nothing has reached a terminal outcome"
+    );
+
+    // And the capacity is genuinely still held: the next admission is refused.
+    let refused = private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::ConfigureSurface {
+                transaction: TransactionId::from_raw(10202),
+                surface,
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 80,
+                    height: 60,
+                },
+            },
+        });
+    assert!(
+        refused.is_err(),
+        "capacity held by unanswered work must not admit more"
+    );
+
+    // The command really did reach the client's queue.
+    assert!(channels.control.try_recv().is_ok());
+}
+
+#[test]
+fn a_credit_is_released_when_its_delivery_actually_ends() {
+    let namespace = NamespaceId::from_raw(63);
+    let client = XServerFrontendClientId(81);
+    let surface = SurfaceId::new(69, 1);
+    let window = XResourceId::new(0x200250, 1);
+    let durable = crate::PrivateSettlementOwner::with_capacity(4);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner: {refusal:?}"));
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    let delivery = XAuthorityInputDeliveryId::from_raw(10300);
+    private
+        .ingress()
+        .submit(motion_to(surface, delivery))
+        .expect("an open coordinator to accept work");
+    assert_eq!(durable.reserved(), 1);
+
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    // Routed to the client, not yet delivered: the ledger still holds a
+    // ticket for it, so the credit stays with the work.
+    assert_eq!(private.reclaim_settled(), 0);
+    assert_eq!(durable.reserved(), 1);
+
+    // The delivery reaches a terminal outcome and that outcome is observed,
+    // which is when the ledger stops tracking it. Both halves matter: a
+    // recorded terminal nobody has seen is not yet an answer.
+    private
+        .broker
+        .registry
+        .send_input_delivery(
+            client,
+            Some(delivery),
+            XAuthorityInputDeliveryOutcome::Flushed,
+        )
+        .expect("the terminal outcome to be recorded");
+    assert_eq!(
+        private.reclaim_settled(),
+        0,
+        "recorded but unobserved is not yet answered"
+    );
+    assert!(
+        private
+            .broker
+            .registry
+            .input_recovery
+            .observe(XAuthorityClientInputDelivery {
+                client,
+                delivery,
+                outcome: XAuthorityInputDeliveryOutcome::Flushed,
+            }),
+        "the outcome is observed"
+    );
+
+    assert_eq!(private.reclaim_settled(), 1, "answered, so reclaimed");
+    assert_eq!(durable.reserved(), 0);
+}

@@ -470,6 +470,13 @@ pub struct PrivateXServerFrontend {
     /// the queue when it does. Holding it past either would leak a slot that
     /// another instance could have used.
     failure_slot_held: bool,
+    /// Work that has been routed but not yet terminally answered.
+    ///
+    /// A credit belongs to its work until the work reaches a real terminal
+    /// outcome. Releasing when the consumer takes an operation frees it while
+    /// a client writer still holds the command, so capacity would be handed to
+    /// new work on the strength of something that has not happened.
+    outstanding: Vec<PrivateIdentity>,
     /// Whether this instance's queue was unreadable when it closed.
     ///
     /// Remembered rather than recomputed. Settlement runs once, so asking a
@@ -643,6 +650,7 @@ impl PrivateXServerFrontend {
             admission: Arc::new(SharedAdmission::new(staged, durable.clone())),
             service_budget: capacity,
             durable: durable.clone(),
+            outstanding: Vec::with_capacity(capacity),
             settled: false,
             failed: false,
             failure_slot_held: true,
@@ -696,6 +704,33 @@ impl PrivateXServerFrontend {
     ///
     /// Raw ingress is not a source. It carries no stamp, and a private
     /// instance will not hand out a handle to one.
+    /// Release credits for work that has reached a terminal outcome.
+    ///
+    /// Returns how many were reclaimed. Input is observable: the recovery
+    /// ledger holds a ticket while a delivery is live and drops it when the
+    /// delivery ends, however it ended, so a credit is released exactly when
+    /// its work is answered rather than when it was handed on.
+    ///
+    /// Control is not observable from here. Its acknowledgement goes to a
+    /// receiver this frontend does not hold, so its credit stays outstanding
+    /// until the instance closes rather than being released on a guess.
+    pub fn reclaim_settled(&mut self) -> usize {
+        let recovery = &self.broker.registry.input_recovery;
+        let before = self.outstanding.len();
+        self.outstanding.retain(|identity| match identity {
+            PrivateIdentity::Delivery(Some(delivery)) => recovery.ticket(*delivery).is_some(),
+            // Nothing to observe: no delivery was tracked, so there is no
+            // terminal outcome to wait for.
+            PrivateIdentity::Delivery(None) => false,
+            PrivateIdentity::Transaction(_) | PrivateIdentity::Lease(_) => true,
+        });
+        let reclaimed = before.saturating_sub(self.outstanding.len());
+        for _ in 0..reclaimed {
+            self.durable.release();
+        }
+        reclaimed
+    }
+
     /// Returns what it ran, in the order it took them.
     ///
     /// The order is a return value rather than a count, because a caller that
@@ -717,9 +752,21 @@ impl PrivateXServerFrontend {
                 break;
             };
             let identity = PrivateIdentity::of(&operation);
-            self.run_one(operation)?;
-            // Answered, so the storage reserved against it is free again.
-            self.durable.release();
+            match self.run_one(operation) {
+                // Routed or enqueued, which is not the same as answered. The
+                // credit stays with the work until its real terminal outcome,
+                // because route_control only hands a command to a client
+                // writer and routed input can sit writer-pending or frozen.
+                Ok(()) => self.outstanding.push(identity),
+                Err(error) => {
+                    // The operation is consumed by now, so its credit has
+                    // nothing left to travel with. Recorded as outstanding
+                    // rather than released, so a failure cannot look like a
+                    // completion and free capacity for new work.
+                    self.outstanding.push(identity);
+                    return Err(error);
+                }
+            }
             // Pushed into capacity taken before the effect, so recording never
             // allocates after something has already happened.
             ran.push(PrivateRun {
