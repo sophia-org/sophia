@@ -1150,3 +1150,55 @@ candidate stays unintegrated. `drive` currently reports only newly settled
 pending operations, so its return can be zero while it reclaims an outstanding
 credit; callers must not confuse those two forms of progress. This reporting
 qualification is separate from the passing credit-lifetime controls.
+
+Source review of `f42e091f` confirms separate `answered` and `reclaimed`
+progress counts, with `made_progress` covering either. No new independent test
+run is claimed for that reporting change; settlement-owner poison still
+returns default progress and remains open.
+
+The control completion mapping needs the following production boundaries.
+All eleven current writer acknowledgements call `X11ControlChannels::send_ack`,
+but the original completion record must be reserved before private ingress
+accepts the command. Routing attaches that existing registration; it cannot
+first create it at the client-queue send. `FocusSurface` and `ClearFocus` branch
+through `route_focus_control` and `route_authority_control`, bypassing the
+proposed ordinary-control construction site, so both routes must carry it.
+
+Acknowledgement publication is conditional: `try_send` success, full output,
+and disconnected receiver are distinct outcomes. Full output retains the exact
+acknowledgement and completion responsibility rather than replaying a command
+whose effect may already have happened. Receiver closure is not proof the X
+client disappeared. The hook must preserve those distinctions instead of
+marking completion on entry to `send_ack` or its current success return, which
+also covers receiver disconnection.
+
+The stale-control helper is reached through the ordinary control-router wrapper;
+the current private `run_one` calls the registry directly and bypasses that
+wrapper. Its actual errors need owned cancellation/continuation. Completion
+must be carried by an opaque server-issued operation registration, not looked
+up solely by public client/transaction fields. Bind grant generation where
+applicable without requiring a live synthetic grant for privileged issuer
+cleanup. Writer stop, queue teardown and failures before acknowledgement also
+need ownership paths; two acknowledgement-producing sites alone do not cover
+the complete lifecycle. No public wire change or additional operator gate is
+needed for this already-authorized internal completion work.
+
+A bounded independent source audit of `f42e091f` confirms further paths that
+do not reach `send_ack`. The control writer's stop check can exit with queued
+commands, and its intentional client-termination branch returns after answering
+only the current command. Errors after dequeue, including runtime/metadata lock
+failures and output write/flush failures, can precede the final acknowledgement;
+some follow state mutation. Preserve the current operation's execution phase
+and separately retain queued operations rather than asserting no effect or
+replaying an entire command. Receiver disconnection alone is not being claimed
+to discard buffered mpsc work, which normally drains before disconnection is
+reported.
+
+Registration Drop currently cleans input recovery and frozen input but has no
+control-completion sweep. Worker cleanup also needs a private lifecycle owner:
+the dispatch join sequence can return on an input-writer error before stopping
+or joining the control writer, and registration can fail after writer creation.
+Every started worker and its accepted controls must retain cleanup ownership
+across those exits. These are source-level lifecycle findings, not reproduced
+timing failures or permission to alter ordinary mode without the planned
+private-path separation.
