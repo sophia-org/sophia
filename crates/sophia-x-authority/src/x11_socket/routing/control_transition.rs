@@ -672,7 +672,15 @@ impl PrivateXServerFrontend {
     ) -> Result<sophia_input_authority::RequestCompletion, PrivateAuthorityRefusal> {
         match self.participant.execute_current(outstanding, client, act) {
             Ok(completion) => completion,
-            Err(_refusal) => Err(PrivateAuthorityRefusal::NoCurrentAdmission),
+            // Unreadable is not absent. A boundary nobody can read established
+            // nothing about who is admitted, and answering that with "not
+            // admitted" tells a caller a decision was made when none was.
+            Err(PrivateAdmissionRefusal::Unreachable) => Err(PrivateAuthorityRefusal::Unreachable),
+            Err(PrivateAdmissionRefusal::NotAdmitted)
+            | Err(PrivateAdmissionRefusal::DifferentAdmission)
+            | Err(PrivateAdmissionRefusal::AlreadyAdmitted) => {
+                Err(PrivateAuthorityRefusal::NoCurrentAdmission)
+            }
         }
     }
 

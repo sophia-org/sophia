@@ -230,15 +230,30 @@ impl PrivateAdmissionParticipant {
             let (grant, generation) = authority
                 .issue_grant(issuer, connection)
                 .map_err(|_| PrivateAdmissionRefusal::NotAdmitted)?;
-            let capability = authority
-                .allocate_device(issuer, grant, generation, device)
-                .map_err(|_| PrivateAdmissionRefusal::NotAdmitted)?;
+            // Recorded before the next step, which can fail with the grant
+            // already issued. Recording afterwards leaves a window where the
+            // grant exists and revocation cannot find it, because revocation
+            // retires what a binding says it authorised. The storage was
+            // reserved when the binding was made, so this does not allocate.
             bindings
                 .bound
                 .get_mut(&client)
                 .expect("just read")
                 .grants
                 .push(grant);
+            let capability = match authority.allocate_device(issuer, grant, generation, device) {
+                Ok(capability) => capability,
+                Err(_refused) => {
+                    // Rolled back exactly: the grant this call issued is
+                    // retired and its record removed, rather than left behind
+                    // for a revocation that has no reason to expect it.
+                    let _debt = authority.revoke_grant(issuer, grant);
+                    if let Some(bound) = bindings.bound.get_mut(&client) {
+                        bound.grants.retain(|held| *held != grant);
+                    }
+                    return Err(PrivateAdmissionRefusal::NotAdmitted);
+                }
+            };
             Ok(PrivateReservationRole::new(
                 self.controller.clone(),
                 submit,
@@ -319,15 +334,34 @@ fn close_and_retire(
     let closed = usize::from(!bound.closed);
     bound.closed = true;
     let mut retired = 0usize;
-    while let Some(grant) = bound.grants.last().copied() {
-        if authority.revoke_grant(issuer, grant).is_ok() {
-            retired = retired.saturating_add(1);
+    // Walked from the end so a grant that is removed does not shift the ones
+    // still to be visited. Read by copy, never taken: a retirement that does
+    // not return leaves its grant exactly where it was.
+    let mut index = bound.grants.len();
+    while index > 0 {
+        index -= 1;
+        let grant = bound.grants[index];
+        match authority.revoke_grant(issuer, grant) {
+            Ok(_debt) => {
+                retired = retired.saturating_add(1);
+                bound.grants.remove(index);
+            }
+            // Already gone: this authority issued it and no longer holds it,
+            // so there is nothing left to retire and nothing owed for it.
+            Err(sophia_input_authority::RegistrationError::StaleGeneration) => {
+                bound.grants.remove(index);
+            }
+            // Anything else is unresolved rather than finished. The grant
+            // stays recorded, so what is still owed can be found and retried;
+            // dropping it here would buy a tidy count by forgetting an
+            // obligation.
+            Err(_unresolved) => {}
         }
-        // Removed only now, with the retirement returned. Copied rather than
-        // popped above, so a retirement that does not return leaves the grant
-        // where it was.
-        bound.grants.pop();
     }
-    bindings.bound.remove(&client);
+    if bound.grants.is_empty() {
+        // Nothing left owed against it, so the record goes. A binding kept
+        // past that point would deny work it no longer has any reason to.
+        bindings.bound.remove(&client);
+    }
     PrivateRevocation { closed, retired }
 }

@@ -11747,6 +11747,35 @@ fn revoking_a_namespace_with_nothing_to_retire_still_closes_it() {
 }
 
 #[test]
+fn a_boundary_nobody_can_read_is_not_a_client_nobody_admitted() {
+    let private = private_for_roles();
+    let _registration = admit_role_client(&private, XServerFrontendClientId(591));
+    let role = private
+        .reservation_role(XServerFrontendClientId(591), DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let request = role.reserve(stamp, 1).expect("a reservation").accepted();
+
+    let bindings = std::sync::Arc::clone(&private.admission_participant().bindings);
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = bindings.lock().unwrap();
+            panic!("poisoning the boundary");
+        })
+        .join()
+        .is_err()
+    );
+
+    let outcome = private.execute_ordered(&request, XServerFrontendClientId(591), |_permit| {
+        panic!("an unreadable boundary must not reach the permit");
+    });
+    assert!(
+        matches!(outcome, Err(crate::PrivateAuthorityRefusal::Unreachable)),
+        "unreadable is not absent: nothing was established about who is admitted, got {outcome:?}"
+    );
+}
+
+#[test]
 fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(541));
