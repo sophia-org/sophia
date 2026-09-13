@@ -111,6 +111,12 @@ pub enum PrivateExecutionRefusal {
     /// can currently discharge -- reporting it as nothing to emit would settle
     /// a debt by losing the evidence of it.
     HoldPlanMissing,
+    /// Another execution holds this delivery.
+    ///
+    /// Its effect may be under way, so this one may not apply a second. Not
+    /// the same as ended: nothing has finished, and the delivery is still owed
+    /// an outcome by whoever holds it.
+    DeliveryClaimedElsewhere,
     /// The ledger will not carry this delivery to a recipient.
     ///
     /// Either a terminal outcome was already recorded for it -- revoked with
@@ -278,7 +284,7 @@ fn resolve_and_apply(
     permit: &mut sophia_input_authority::ExecutionPermit<'_>,
     bindings: &PrivateAdmissionBindings,
     registry: &XServerFrontendRouteRegistry,
-    holds: &mut Vec<(u64, PrivateReachedResources)>,
+    holds: &mut Vec<PrivateHoldRecord>,
     settling: &mut Vec<PrivateSettlingRelease>,
     route: &XAuthorityRoutedInput,
     grant: sophia_input_authority::GrantId,
@@ -315,10 +321,11 @@ fn resolve_and_apply(
                     ));
                 }
                 let mut pointers = registry.pointer_state.lock().map_err(|_| unavailable)?;
+                notes.may_have_applied = true;
                 let outcome = permit.release(input)?;
                 match outcome {
                     sophia_input_authority::ReleaseOutcome::DeliverTo(hold) => {
-                        let Some(index) = holds.iter().position(|(id, _)| *id == hold.hold())
+                        let Some(index) = holds.iter().position(|record| record.hold == hold.hold())
                         else {
                             notes.plan_missing = true;
                             // The ledger ended a hold and the record of where
@@ -328,7 +335,7 @@ fn resolve_and_apply(
                             // settles a debt by losing the evidence of it.
                             return Err(sophia_input_authority::RegistrationError::StaleRequest);
                         };
-                        let reached = holds[index].1;
+                        let reached = holds[index].reached;
                         // The mapper the press moved, keyed by what the press
                         // recorded. A release naming its own seat, or found
                         // from the current route, would clear a different
@@ -387,35 +394,39 @@ fn resolve_and_apply(
                         // owed -- and binding it to where the press went,
                         // rather than to whatever the release's own route
                         // names, is what makes a later disconnect answer it.
-                        let deliverable = match registry
+                        let binding = match registry
                             .input_recovery
                             .bind(route.delivery, reached.client)
                         {
-                            Ok(live) => live,
+                            Ok(true) => PrivateReleaseBinding::Reached,
+                            Ok(false) => PrivateReleaseBinding::Ended,
                             Err(_) => {
-                                // Unknown, so nothing is emitted -- but the
-                                // debt is recorded below first. A release
-                                // whose recipient nobody can look up is still
-                                // a release that happened.
+                                // Nothing is emitted, but the debt is recorded
+                                // below first: a release whose recipient
+                                // nobody could look up is still a release that
+                                // happened. Kept apart from Ended, because
+                                // this establishes nothing about whether a
+                                // receipt can still arrive.
                                 notes.recovery_unavailable = true;
-                                false
+                                PrivateReleaseBinding::Unknown
                             }
                         };
-                        let (id, plan) = holds.remove(index);
+                        let reaches = binding == PrivateReleaseBinding::Reached;
+                        let removed = holds.remove(index);
                         settling.push(PrivateSettlingRelease {
-                            hold: id,
-                            reached: plan,
+                            hold: removed.hold,
+                            reached: removed.reached,
                             outcome,
                             event,
-                            deliverable,
+                            binding,
                         });
                         notes.decided = Some(PrivateOrderedDecision {
-                            owes_event: deliverable,
+                            owes_event: reaches,
                             reached: Some(reached),
                             first_press: false,
                             keyboard_applied: false,
                             release: Some(outcome),
-                            event: deliverable.then_some(event).flatten(),
+                            event: reaches.then_some(event).flatten(),
                         });
                     }
                     // Not a delivery and not a failure. The source was not
@@ -491,7 +502,20 @@ fn resolve_and_apply(
             // paths that reach the other way -- `disconnect_rejecting` and
             // `recover` -- release the ledger before taking the authority
             // guard they share with this registry.
-            match registry.input_recovery.bind(route.delivery, client) {
+            //
+            // Whether this press starts a hold or joins one is decided here,
+            // before the ledger moves and under common, because it decides who
+            // the delivery is bound to. A join reaches nobody new: it adopts
+            // the hold that exists, with the recipient that hold was recorded
+            // with. Binding the target the route resolves to now would name a
+            // client the event never reached -- a grab installed between the
+            // two presses is exactly that case.
+            let joining = holds
+                .iter()
+                .find(|record| record.button == core_button)
+                .copied();
+            let bound_to = joining.map_or(client, |record| record.reached.client);
+            match registry.input_recovery.bind(route.delivery, bound_to) {
                 Ok(true) => {}
                 Ok(false) => {
                     // Refused here rather than after the press. A press that
@@ -507,6 +531,7 @@ fn resolve_and_apply(
                 }
             }
 
+            notes.may_have_applied = true;
             let applied = permit.press(input, recipient)?;
             let hold = applied.incarnation().hold();
             let reached = if applied.first_press() {
@@ -522,19 +547,39 @@ fn resolve_and_apply(
                 // Published into storage reserved before anything was
                 // accepted, so recording where the press went cannot fail
                 // after the ledger has already moved.
-                holds.push((hold, reached));
+                holds.push(PrivateHoldRecord {
+                    hold,
+                    button: core_button,
+                    reached,
+                });
+                if joining.is_some() {
+                    // The ledger began a hold for an input this executor
+                    // already had one for. The record above keeps the new hold
+                    // from being hidden, but the delivery was bound to the
+                    // older hold's recipient on the strength of a reading the
+                    // ledger did not share.
+                    notes.plan_missing = true;
+                    return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                }
                 Some(reached)
             } else {
                 // A join adopts the hold that already exists. What this press
                 // would have resolved is a proposal the ledger did not take,
                 // and reporting it would name a client the hold never went to.
-                let Some((_, reached)) = holds.iter().find(|(id, _)| *id == hold) else {
+                let Some(record) = holds.iter().find(|record| record.hold == hold) else {
                     // The ledger joined a hold whose record is gone, so this
                     // press has an owner nobody can name.
                     notes.plan_missing = true;
                     return Err(sophia_input_authority::RegistrationError::StaleRequest);
                 };
-                Some(*reached)
+                if joining.is_none_or(|predicted| predicted.hold != record.hold) {
+                    // The ledger joined a different hold than the one this
+                    // delivery was bound to, so the binding names a recipient
+                    // this press did not reach.
+                    notes.plan_missing = true;
+                    return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                }
+                Some(record.reached)
             };
             let event = if applied.first_press() {
                 pointer
@@ -593,14 +638,15 @@ pub struct PrivateSettlingRelease {
     reached: PrivateReachedResources,
     outcome: sophia_input_authority::ReleaseOutcome,
     event: Option<XAuthorityInputEvent>,
-    /// Whether the ledger will carry this release's event to its recipient.
+    /// What the ledger will do with this release's event.
     ///
-    /// False when binding the delivery found it already settled, its
-    /// recipient's connection revoked, or the ledger unreadable. The debt is
-    /// recorded either way -- the hold ended, and something was owed for it --
-    /// but nothing will be enqueued, so a settlement must not wait on a
-    /// receipt that cannot arrive.
-    deliverable: bool,
+    /// The debt is recorded whichever it is: the hold ended, and something was
+    /// owed for it. What differs is what may be concluded from it. `Ended`
+    /// establishes that nothing will be carried, so a settlement waiting for a
+    /// receipt would wait for one that cannot come. `Unknown` establishes
+    /// nothing at all -- and neither may ever be read as the recipient having
+    /// settled, which is a fact only a writer's own outcome can supply.
+    binding: PrivateReleaseBinding,
 }
 
 #[cfg(unix)]
@@ -617,9 +663,48 @@ impl PrivateSettlingRelease {
     pub fn event(self) -> Option<XAuthorityInputEvent> {
         self.event
     }
-    pub fn deliverable(self) -> bool {
-        self.deliverable
+    /// Not `pub`, because what it answers with is not. The reason a release
+    /// was or was not carried is this module's vocabulary, and widening the
+    /// type to match an accessor would export a decision nobody outside has
+    /// asked to make.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn binding(self) -> PrivateReleaseBinding {
+        self.binding
     }
+}
+
+/// What the ledger will do with a release's event.
+///
+/// Three answers rather than a flag, because the flag collapsed two facts a
+/// settlement has to keep apart: a recipient that is established to be gone,
+/// and a ledger nobody could read.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateReleaseBinding {
+    /// Bound to the recipient its press reached. An event is owed.
+    Reached,
+    /// The ledger will not carry it: a terminal outcome is already recorded
+    /// for this delivery, or its recipient's connection is revoked.
+    Ended,
+    /// The ledger could not be read. Whether anything can still be carried is
+    /// unknown, which is not the same as nothing being carried.
+    Unknown,
+}
+
+/// One hold this executor began, and what answering it needs.
+///
+/// The input is part of the record because a press has to know whether it is
+/// starting a hold or joining one *before* the ledger moves. A join reaches
+/// nobody new -- it adopts the recipient the hold already has -- so binding
+/// its delivery to whatever the route resolves to now would name a client the
+/// event never reached.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+struct PrivateHoldRecord {
+    hold: u64,
+    /// The core button this hold is for.
+    button: u8,
+    reached: PrivateReachedResources,
 }
 
 /// Execute one admitted input against pieces the caller already owns.
@@ -632,7 +717,7 @@ fn execute_owned(
     controller: &PrivateAuthorityController,
     participant: &PrivateAdmissionParticipant,
     broker: &XServerFrontendRouteBroker,
-    holds: &mut Vec<(u64, PrivateReachedResources)>,
+    holds: &mut Vec<PrivateHoldRecord>,
     settling: &mut Vec<PrivateSettlingRelease>,
     keyboards: &mut PrivateKeyboards,
     route: &XAuthorityRoutedInput,
@@ -663,23 +748,31 @@ fn execute_owned(
             }
         }
 
-        // Consulted before the transaction, because its answer decides
-        // whether there may be an effect at all. Accepted work waits its turn
-        // in the shared order, and a delivery can end during that wait: its
-        // epoch revoked, its deadline passed, or its client gone. Asking
-        // afterwards would ask whether to report an effect that already
-        // happened.
-        match broker
-            .registry
-            .input_recovery
-            .begin_routing_typed(route.delivery)
-        {
-            DeliveryCurrentness::Current => {}
-            DeliveryCurrentness::Ended => return Err(PrivateExecutionRefusal::DeliveryEnded),
-            DeliveryCurrentness::Unavailable => {
+        // Claimed, not consulted. Accepted work waits its turn in the shared
+        // order, and a delivery can end during that wait: its epoch revoked,
+        // its deadline passed, its client gone. Asking whether it is still
+        // current and then applying it leaves a gap between the question and
+        // the effect, and a cancellation landing in that gap publishes an
+        // outcome the effect then contradicts. No guard spans that gap -- the
+        // ledger's own is released before this takes common and the X guards,
+        // which is the rank -- so what spans it is this claim.
+        match broker.registry.input_recovery.claim_execution(route.delivery) {
+            ExecutionClaim::Claimed => {}
+            ExecutionClaim::Ended => return Err(PrivateExecutionRefusal::DeliveryEnded),
+            ExecutionClaim::Contended => {
+                return Err(PrivateExecutionRefusal::DeliveryClaimedElsewhere);
+            }
+            ExecutionClaim::Unavailable => {
                 return Err(PrivateExecutionRefusal::RecoveryUnavailable);
             }
         }
+        // From here every path gives the claim back, including an unwind. A
+        // claim nobody resolves is a delivery nobody can cancel again.
+        let mut claim = PrivateDeliveryClaim {
+            recovery: &broker.registry.input_recovery,
+            delivery: route.delivery,
+            may_have_applied: true,
+        };
 
         let client = custody.client();
         let mut notes = PrivateTransactionNotes::default();
@@ -706,6 +799,12 @@ fn execute_owned(
                 other => PrivateExecutionRefusal::Admission(other),
             })?
             .map_err(PrivateExecutionRefusal::Authority)?;
+
+        // What the claim resolves on, taken from the transaction rather than
+        // assumed: this is the difference between a cancellation that lost to
+        // an effect and one that lost to nothing.
+        claim.may_have_applied = notes.may_have_applied;
+        drop(claim);
 
         // Before the rest: these say the work should not have been applied at
         // all, rather than that applying it went wrong.
@@ -761,6 +860,36 @@ struct PrivateTransactionNotes {
     delivery_ended: bool,
     /// The ledger could not be read.
     recovery_unavailable: bool,
+    /// An effect may have reached the authority's ledger.
+    ///
+    /// Set before each call that can move it, never after. A marker written
+    /// afterwards says nothing about a call that did not return, and the
+    /// reading this feeds -- whether a cancellation had anything to
+    /// contradict -- is one where being wrong in that direction publishes an
+    /// outcome over an effect that happened.
+    may_have_applied: bool,
+}
+
+/// An execution's hold on a delivery, given back however the execution ends.
+///
+/// A guard, because giving it back is the part that must not be skipped. An
+/// unwind between the claim and the end of the transaction would otherwise
+/// leave a delivery nothing can cancel again, and it resolves as
+/// possibly-applied: the direction that cannot publish a cancellation over an
+/// effect that happened.
+#[cfg(unix)]
+struct PrivateDeliveryClaim<'a> {
+    recovery: &'a InputRecovery,
+    delivery: Option<XAuthorityInputDeliveryId>,
+    may_have_applied: bool,
+}
+
+#[cfg(unix)]
+impl Drop for PrivateDeliveryClaim<'_> {
+    fn drop(&mut self) {
+        self.recovery
+            .resolve_claim(self.delivery, self.may_have_applied);
+    }
 }
 
 /// What the guarded transition decided, before anything is emitted.

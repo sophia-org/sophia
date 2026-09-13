@@ -20,6 +20,21 @@ struct TrackedInputDelivery {
     terminal: Option<XAuthorityClientInputDelivery>,
     observed: bool,
     routing_finished: bool,
+    /// An execution holds this delivery and its effect may already be under
+    /// way.
+    ///
+    /// Not a lock: the ledger's own guard is released while this is set, so
+    /// that the execution can take the guards it needs in their own rank. It
+    /// is an arbitration marker. A cancellation arriving while it is set has
+    /// lost the race, and publishing a terminal outcome for it anyway would
+    /// be a claim that the effect then contradicts.
+    claimed: bool,
+    /// What a cancellation wanted to record while this was claimed.
+    ///
+    /// Held rather than dropped, because a cancellation that lost to an
+    /// execution which then applied nothing has not lost at all. The first is
+    /// kept: later ones describe the same delivery already being cancelled.
+    deferred: Option<XAuthorityClientInputDelivery>,
 }
 
 #[cfg(unix)]
@@ -59,20 +74,23 @@ pub enum DeliveryState {
     Unavailable,
 }
 
-/// Whether routing may begin for a delivery.
+/// The answer to an execution asking to hold a delivery while it applies it.
 ///
-/// Three answers for the same reason `DeliveryState` has three: a ledger
-/// nobody can read has not said this delivery ended. A caller told only "no"
-/// cannot tell a delivery that was already settled from one it knows nothing
-/// about, and those call for opposite handling -- the first must not be
-/// executed, and the second must not be reported as settled.
+/// Four answers, because a caller that has to record why it did not run needs
+/// a decision, the absence of one, and a contention apart. A ledger nobody can
+/// read has not said this delivery ended, and something else already executing
+/// it is not the same as it having finished.
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DeliveryCurrentness {
-    /// Tracked and unfinished, or not tracked at all. Routing may begin.
-    Current,
-    /// A terminal outcome is already recorded for it.
+enum ExecutionClaim {
+    /// Held. Cancellation can no longer publish an outcome for it until the
+    /// claim resolves, and the claim must be resolved however this execution
+    /// ends.
+    Claimed,
+    /// A terminal outcome is already recorded for it. Cancellation won.
     Ended,
+    /// Another execution holds it.
+    Contended,
     /// The ledger could not be read, so nothing is known about it.
     Unavailable,
 }
@@ -135,6 +153,8 @@ impl InputRecovery {
         state.tickets.insert(
             delivery,
             TrackedInputDelivery {
+                claimed: false,
+                deferred: None,
                 ticket: XAuthorityInputDeliveryTicket {
                     delivery,
                     surface: route.request.target_surface,
@@ -188,36 +208,85 @@ impl InputRecovery {
     // Cancellation before resolution leaves a bounded tombstone until the
     // frontend consumes the ingress/frozen entry. It cannot resurrect later.
     fn begin_routing(&self, id: Option<XAuthorityInputDeliveryId>) -> bool {
-        matches!(self.begin_routing_typed(id), DeliveryCurrentness::Current)
-    }
-
-    /// Begin routing, saying which answer this is.
-    ///
-    /// The boolean above answers two questions with one word: this delivery
-    /// already ended, or the ledger could not be read. A caller that has to
-    /// record why it did not run needs them apart, because one is a decision
-    /// and the other is the absence of one.
-    fn begin_routing_typed(
-        &self,
-        id: Option<XAuthorityInputDeliveryId>,
-    ) -> DeliveryCurrentness {
-        let Some(id) = id else {
-            return DeliveryCurrentness::Current;
-        };
+        let Some(id) = id else { return true };
         let Ok(mut state) = self.state.lock() else {
-            return DeliveryCurrentness::Unavailable;
+            return false;
         };
         let Some(entry) = state.tickets.get_mut(&id) else {
-            return DeliveryCurrentness::Current;
+            return true;
         };
         if entry.terminal.is_none() {
-            return DeliveryCurrentness::Current;
+            return true;
         }
         entry.routing_finished = true;
         if entry.observed {
             state.tickets.remove(&id);
         }
-        DeliveryCurrentness::Ended
+        false
+    }
+
+    /// Hold this delivery for the duration of an execution.
+    ///
+    /// Arbitration, not a look. Asking whether a delivery is current and then
+    /// applying it leaves a gap in which a cancellation can publish a terminal
+    /// outcome that the effect goes on to contradict, and no guard spans that
+    /// gap: the ledger's own is released before the execution takes the guards
+    /// it needs, in their rank. What spans it is this claim.
+    ///
+    /// Whoever claims must resolve, however the execution ends, or the
+    /// delivery can never be cancelled again.
+    fn claim_execution(&self, id: Option<XAuthorityInputDeliveryId>) -> ExecutionClaim {
+        let Some(id) = id else {
+            return ExecutionClaim::Claimed;
+        };
+        let Ok(mut state) = self.state.lock() else {
+            return ExecutionClaim::Unavailable;
+        };
+        let Some(entry) = state.tickets.get_mut(&id) else {
+            // Untracked, so there is nothing to arbitrate over and nothing to
+            // resolve. Resolving an absent claim is a no-op.
+            return ExecutionClaim::Claimed;
+        };
+        if entry.terminal.is_some() {
+            entry.routing_finished = true;
+            if entry.observed {
+                state.tickets.remove(&id);
+            }
+            return ExecutionClaim::Ended;
+        }
+        if entry.claimed {
+            return ExecutionClaim::Contended;
+        }
+        entry.claimed = true;
+        ExecutionClaim::Claimed
+    }
+
+    /// Give up a claim, saying whether an effect may have happened under it.
+    ///
+    /// `may_have_applied` is what decides a cancellation that arrived while
+    /// the claim was held. If nothing was applied, that cancellation had
+    /// nothing to contradict and it stands. If something may have been, it
+    /// cannot be published as this delivery's outcome -- the delivery stays
+    /// owed one, which its writer result or its deadline answers.
+    ///
+    /// The unknown case is counted as applied. A cancellation published over
+    /// an effect that did happen is the failure this exists to prevent; a
+    /// delivery left owed an outcome is answered by the deadline.
+    fn resolve_claim(&self, id: Option<XAuthorityInputDeliveryId>, may_have_applied: bool) {
+        let Some(id) = id else { return };
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let Some(entry) = state.tickets.get_mut(&id) else {
+            return;
+        };
+        entry.claimed = false;
+        let deferred = entry.deferred.take();
+        let Some(deferred) = deferred else { return };
+        if may_have_applied {
+            return;
+        }
+        self.terminal_locked(&mut state, deferred);
     }
 
     fn bind(
@@ -289,6 +358,15 @@ impl InputRecovery {
                     .client
                     .is_some_and(|client| client != receipt.client)
             {
+                return;
+            }
+            if entry.claimed {
+                // An execution holds this delivery and its effect may already
+                // have happened. Publishing now would tell everyone waiting
+                // that it ended, and the effect would then contradict that.
+                // Held until the claim resolves, which is where it is decided
+                // whether this cancellation had anything to contradict.
+                entry.deferred.get_or_insert(receipt);
                 return;
             }
             entry.terminal = Some(receipt);
@@ -513,6 +591,19 @@ impl InputRecovery {
                 );
             }
         }
+        // Only the ones that actually ended. A delivery an execution holds had
+        // its cancellation deferred rather than applied, and reporting it as
+        // revoked would be exactly the claim an effect could go on to
+        // contradict -- the caller would free what it was holding.
+        let expired: Vec<_> = expired
+            .into_iter()
+            .filter(|ticket| {
+                state
+                    .tickets
+                    .get(&ticket.delivery)
+                    .is_none_or(|entry| entry.terminal.is_some())
+            })
+            .collect();
         drop(state);
         let mut authority = self
             .authority

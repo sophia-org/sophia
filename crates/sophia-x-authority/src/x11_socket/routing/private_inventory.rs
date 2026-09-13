@@ -37,7 +37,7 @@ struct PrivateTerminalInventory {
     ///
     /// A release answers to what its press reached, so this is what makes a
     /// later release answerable at all.
-    holds: Vec<(u64, PrivateReachedResources)>,
+    holds: Vec<PrivateHoldRecord>,
     /// Releases whose delivery was decided and whose debt is still open.
     settling: Vec<PrivateSettlingRelease>,
     /// The item currently being executed.

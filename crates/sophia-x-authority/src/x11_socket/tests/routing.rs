@@ -14747,12 +14747,62 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
         }
     ));
     assert!(fixture.channels.input.try_recv().is_err());
-    // What this cannot show is the authority's own ledger. A press applied
-    // there with no record here is the state that leaves a later release owed
-    // to nobody, and the difference is not observable from this crate: asking
-    // needs a second request from the same source, and this one still holds
-    // its grant's only completion cell because a refusal keeps the custody it
-    // is still owed an observation for.
+
+    // The hold record above is this executor's own bookkeeping. What matters
+    // is the authority's ledger, and it is reachable: this refusal entered the
+    // transaction, so a rejection was recorded in common and the custody it
+    // kept can be observed. Observing frees the grant's completion cell, which
+    // is what lets the same source ask again.
+    let observed = {
+        let PrivateOrderedItem::Refused { custody, .. } = &fixture.private.terminal.undelivered[0].item
+        else {
+            panic!("a refusal")
+        };
+        custody.observe().expect("the authority to be readable")
+    };
+    assert!(
+        observed.is_some(),
+        "a refusal that reached the transaction has an outcome recorded for it"
+    );
+
+    // Now ask the ledger itself. An untouched one reports nothing was held and
+    // the release finishes; one that was pressed would end a hold whose plan
+    // this executor never recorded, and refuse.
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(9931),
+            272,
+            false,
+        ))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    let released = fixture.private.deliver_turn(turn);
+    assert_eq!(
+        released.len(),
+        1,
+        "the release finishes, because the ledger was never pressed"
+    );
+    assert!(!released[0].enqueued, "and it owes nobody an event");
+    assert!(
+        !fixture
+            .private
+            .terminal
+            .undelivered
+            .iter()
+            .any(|entry| matches!(
+                &entry.item,
+                PrivateOrderedItem::Refused {
+                    refusal: PrivateExecutionRefusal::HoldPlanMissing,
+                    ..
+                }
+            )),
+        "nothing ended a hold this executor never recorded"
+    );
     drop(fixture.registration);
     drop(fixture.durable);
 }
@@ -14828,9 +14878,8 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
         "the debt is recorded even though nothing will be sent"
     );
     assert!(
-        !fixture.private.terminal.settling[0].deliverable,
-        "and it says so, so a settlement does not wait on a receipt that \
-         cannot arrive"
+        fixture.private.terminal.settling[0].binding() == PrivateReleaseBinding::Ended,
+        "and it says which: established gone, not merely unlooked-up"
     );
     drop(fixture.registration);
     drop(fixture.channels);
@@ -14919,7 +14968,7 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
         Some(owner)
     );
     assert_eq!(
-        fixture.private.terminal.holds[0].1.client(),
+        fixture.private.terminal.holds[0].reached.client(),
         owner,
         "and the hold records the same recipient"
     );
@@ -15109,6 +15158,327 @@ fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
     // something nobody could read.
     assert_eq!(fixture.private.terminal.holds.len(), 1);
     assert_eq!(projected_buttons(&fixture.private, namespace, seat), 0x100);
+    assert!(
+        fixture.private.terminal.settling.is_empty(),
+        "and no debt was recorded, because no release happened"
+    );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+/// A ledger with one admitted, unbound delivery.
+fn claim_fixture(
+    delivery: XAuthorityInputDeliveryId,
+) -> (
+    InputRecovery,
+    Receiver<XAuthorityClientInputDelivery>,
+) {
+    let (sender, receipts) = channel();
+    let recovery = InputRecovery::new(
+        8,
+        Some(sender),
+        Arc::new(Mutex::new(crate::XInputAuthorityState::default())),
+    );
+    recovery
+        .admit_typed(
+            &button_to(SurfaceId::new(1, 1), delivery, 272, true),
+            1,
+            std::time::Instant::now(),
+        )
+        .expect("a fresh delivery to be tracked");
+    (recovery, receipts)
+}
+
+#[test]
+fn a_cancellation_arriving_under_a_claim_does_not_publish_over_the_effect() {
+    let delivery = XAuthorityInputDeliveryId::from_raw(4001);
+    let (recovery, receipts) = claim_fixture(delivery);
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Claimed
+    );
+
+    // The revocation producer runs in the interval the execution holds. This
+    // is the gap that a precheck leaves open: the ledger's own guard is not
+    // held here, and the effect has not happened yet.
+    let expired = recovery
+        .recover(std::time::Instant::now(), true)
+        .expect("the ledger to be readable");
+    assert!(
+        expired.is_empty(),
+        "a delivery being applied right now is not an abandoned one"
+    );
+    assert!(
+        receipts.try_recv().is_err(),
+        "and nothing was published for it"
+    );
+
+    // The execution applied something, so the cancellation had an effect to
+    // contradict and does not become this delivery's outcome. The delivery is
+    // still owed one, which its writer result or its deadline answers -- not
+    // the same as it having ended.
+    recovery.resolve_claim(Some(delivery), true);
+    assert!(receipts.try_recv().is_err());
+    assert!(
+        recovery.ticket(delivery).is_some(),
+        "still tracked, still owed an outcome"
+    );
+}
+
+#[test]
+fn a_cancellation_that_lost_to_an_execution_applying_nothing_still_stands() {
+    let delivery = XAuthorityInputDeliveryId::from_raw(4002);
+    let (recovery, receipts) = claim_fixture(delivery);
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Claimed
+    );
+    assert!(
+        recovery
+            .recover(std::time::Instant::now(), true)
+            .expect("readable")
+            .is_empty()
+    );
+
+    // Nothing was applied under the claim, so the cancellation had nothing to
+    // contradict. Dropping it here would lose a revocation on the strength of
+    // an execution that did not happen.
+    recovery.resolve_claim(Some(delivery), false);
+    let receipt = receipts
+        .try_recv()
+        .expect("the revocation to be published once the claim gave way");
+    assert_eq!(receipt.delivery, delivery);
+    assert_eq!(
+        receipt.outcome,
+        XAuthorityInputDeliveryOutcome::EpochRevoked
+    );
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Ended,
+        "and a later execution finds it ended"
+    );
+}
+
+#[test]
+fn one_delivery_cannot_be_claimed_by_two_executions() {
+    let delivery = XAuthorityInputDeliveryId::from_raw(4003);
+    let (recovery, _receipts) = claim_fixture(delivery);
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Claimed
+    );
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Contended,
+        "contended is not ended: nothing finished, and the delivery is still \
+         owed an outcome by whoever holds it"
+    );
+    recovery.resolve_claim(Some(delivery), true);
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Claimed,
+        "and the claim is available again once it is given back"
+    );
+}
+
+#[test]
+fn an_ordered_turn_gives_its_claim_back() {
+    let client = XServerFrontendClientId(1001);
+    let surface = SurfaceId::new(1001, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(1001);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+
+    // Given back, so the delivery can still be cancelled. A claim nobody
+    // resolves is not a delivery that is safe: it is one nothing can ever
+    // answer again, because every cancellation after it defers forever.
+    fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
+        .expect("the ledger to be readable");
+    let receipt = fixture
+        .deliveries
+        .try_recv()
+        .expect("the delivery to still be answerable");
+    assert_eq!(receipt.delivery, delivery);
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_release_whose_delivery_another_execution_holds_applies_nothing() {
+    let client = XServerFrontendClientId(1002);
+    let surface = SurfaceId::new(1002, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let seat = SeatId::from_raw(1);
+    let release = XAuthorityInputDeliveryId::from_raw(10022);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    held_button(&mut fixture, surface, 10021);
+
+    fixture
+        .ingress
+        .submit(button_to(surface, release, 272, false))
+        .expect("the order to accept it");
+    // Something else holds this delivery. Its effect may be under way, and a
+    // second one applied here would be a second effect for one request.
+    assert_eq!(
+        fixture
+            .private
+            .broker
+            .registry
+            .input_recovery
+            .claim_execution(Some(release)),
+        ExecutionClaim::Claimed
+    );
+
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(
+        matches!(
+            &fixture.private.terminal.undelivered[0].item,
+            PrivateOrderedItem::Refused {
+                refusal: PrivateExecutionRefusal::DeliveryClaimedElsewhere,
+                ..
+            }
+        ),
+        "refused for contention, which is not the delivery having ended"
+    );
+    assert_eq!(
+        fixture.private.terminal.holds.len(),
+        1,
+        "and nothing was applied: the hold is untouched"
+    );
+    assert_eq!(
+        projected_buttons(&fixture.private, namespace, seat),
+        0x100,
+        "with the button still down"
+    );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
+    let client = XServerFrontendClientId(1003);
+    let owner = XServerFrontendClientId(1004);
+    let surface = SurfaceId::new(1003, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let first = XAuthorityInputDeliveryId::from_raw(10031);
+    let second = XAuthorityInputDeliveryId::from_raw(10032);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+
+    // A press that reaches this client and starts a hold.
+    held_button(&mut fixture, surface, 10031);
+    assert_eq!(
+        fixture
+            .private
+            .broker
+            .registry
+            .input_recovery
+            .ticket(first)
+            .expect("tracked")
+            .client,
+        Some(client)
+    );
+
+    // A grab is installed afterwards, so the same button now resolves
+    // somewhere else entirely.
+    let (owner_registration, owner_channels) = fixture
+        .private
+        .broker
+        .registry
+        .register_client_with_admission(owner, Some(admitted(owner)))
+        .expect("a fresh client to register");
+    fixture
+        .private
+        .admission_participant()
+        .admit(owner, admitted(owner))
+        .expect("the boundary to admit");
+    fixture
+        .private
+        .broker
+        .registry
+        .input_authority
+        .lock()
+        .expect("the grab state")
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: owner.raw(),
+                window: XResourceId::new(0x201004, 1),
+                owner_events: false,
+                pointer_mode: 1,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
+            },
+        )
+        .expect("the grab to take");
+
+    // The same button again. The ledger joins the hold that exists: no new
+    // hold, no new event, and the recipient is the one the hold already has.
+    fixture
+        .ingress
+        .submit(button_to(surface, second, 272, true))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    let delivered = fixture.private.deliver_turn(turn);
+    assert_eq!(delivered.len(), 1);
+    assert!(
+        !delivered[0].enqueued,
+        "a join owes nobody an event: the button is already down"
+    );
+    assert_eq!(
+        fixture.private.terminal.holds.len(),
+        1,
+        "and it joined rather than starting a second hold"
+    );
+
+    // The binding follows what the press reached, not what the route would
+    // resolve to now. Binding the grab owner would put this delivery's
+    // outcome on a client it never reached: the owner's disconnect would
+    // answer it, and the client that is actually holding the button would
+    // not.
+    assert_eq!(
+        fixture
+            .private
+            .broker
+            .registry
+            .input_recovery
+            .ticket(second)
+            .expect("tracked")
+            .client,
+        Some(client),
+        "the join inherits the recipient its hold reached"
+    );
+    assert!(
+        owner_channels.input.try_recv().is_err(),
+        "and the grab owner received nothing"
+    );
+    drop(owner_registration);
+    drop(owner_channels);
     drop(fixture.registration);
     drop(fixture.channels);
     drop(fixture.durable);
