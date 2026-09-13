@@ -4140,3 +4140,151 @@ fn an_unreadable_queue_is_owned_by_something_that_outlives_it() {
     // something that has gone.
     assert_eq!(durable.unreadable_queues(), 1);
 }
+
+/// One private instance that accepts a control and immediately shuts down,
+/// leaving the acknowledgement owed. Ported from the independent review.
+fn review_settlement_queue(
+    sender: SyncSender<XAuthorityClientControlAck>,
+    durable: &crate::PrivateSettlementOwner,
+    transaction: u64,
+) -> (
+    crate::PrivateSettlement,
+    XServerFrontendClientRouteRegistration,
+    XServerFrontendClientRouteChannels,
+) {
+    let surface = SurfaceId::new(251, 1);
+    let client = XServerFrontendClientId(251);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _authority, _issuer) = control_gate();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(1).unwrap(),
+        sender,
+        delivery_sender,
+        gate,
+        durable,
+    );
+    let (registration, channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(251),
+            surface,
+            XResourceId::new(0x200251, 1),
+        )
+        .unwrap();
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::ConfigureSurface {
+                transaction: TransactionId::from_raw(transaction),
+                surface,
+                geometry: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 80,
+                    height: 60,
+                },
+            },
+        })
+        .unwrap();
+    (private.shutdown(), registration, channels)
+}
+
+fn review_settlement_expected(transaction: u64) -> XAuthorityClientControlAck {
+    XAuthorityClientControlAck {
+        client: XServerFrontendClientId(251),
+        acknowledgement: XAuthorityControlAck {
+            kind: XAuthorityControlKind::ConfigureSurface,
+            transaction: TransactionId::from_raw(transaction),
+            surface: SurfaceId::new(251, 1),
+            outcome: XAuthorityControlOutcome::AuthorityRejected,
+        },
+    }
+}
+
+#[test]
+fn review_settlement_two_pending_origins_reverse_retry_cannot_cross() {
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender_a, receiver_a) = sync_channel(1);
+    let (sender_b, receiver_b) = sync_channel(1);
+    let (prefill_a, _r0a, _c0a) = review_settlement_queue(sender_a.clone(), &durable, 9500);
+    let (prefill_b, _r0b, _c0b) = review_settlement_queue(sender_b.clone(), &durable, 9600);
+    assert!(prefill_a.is_settled() && prefill_b.is_settled());
+    let (mut a, _ra, _ca) = review_settlement_queue(sender_a.clone(), &durable, 9501);
+    let (mut b, _rb, _cb) = review_settlement_queue(sender_b.clone(), &durable, 9601);
+    assert_eq!((a.owed(), b.owed()), (1, 1));
+
+    // Both retained, with identical numeric client and surface identities.
+    // Free and retry B first; A's queue stays occupied throughout.
+    assert_eq!(
+        receiver_b
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .unwrap(),
+        review_settlement_expected(9600)
+    );
+    assert_eq!(b.retry(), 1);
+    assert_eq!(a.retry(), 0);
+    assert_eq!(a.owed(), 1);
+    assert_eq!(
+        receiver_b
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .unwrap(),
+        review_settlement_expected(9601)
+    );
+    assert_eq!(
+        receiver_a
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .unwrap(),
+        review_settlement_expected(9500)
+    );
+    assert_eq!(a.retry(), 1);
+    assert_eq!(
+        receiver_a
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .unwrap(),
+        review_settlement_expected(9501)
+    );
+    assert!(a.is_settled() && b.is_settled());
+    assert_eq!((a.retry(), b.retry()), (0, 0));
+    assert!(receiver_a.try_recv().is_err());
+    assert!(receiver_b.try_recv().is_err());
+}
+
+#[test]
+fn review_settlement_dropped_pending_handle_preserves_accepted_outcome() {
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender, receiver) = sync_channel(1);
+    let (prefill, _r0, _c0) = review_settlement_queue(sender.clone(), &durable, 9700);
+    assert!(prefill.is_settled());
+    let (pending, _r1, _c1) = review_settlement_queue(sender.clone(), &durable, 9701);
+    assert_eq!(pending.owed(), 1);
+    assert!(!pending.is_settled());
+
+    // The only unsettled handle is abandoned while the channel is still full.
+    drop(pending);
+
+    // The original is intact.
+    assert_eq!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .unwrap(),
+        review_settlement_expected(9700)
+    );
+
+    // Adapted as instructed: responsibility for the accepted work did not end
+    // with the handle, so the durable owner still holds it and can discharge
+    // it now that there is room.
+    assert_eq!(durable.owed(), 1);
+    assert_eq!(durable.drive(), 1);
+    assert_eq!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .expect("dropping the only unsettled handle must preserve responsibility for 9701"),
+        review_settlement_expected(9701)
+    );
+    assert_eq!(durable.drive(), 0);
+    assert!(receiver.try_recv().is_err());
+}
