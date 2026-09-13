@@ -4151,7 +4151,7 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
     let first = control_ack_receiver.recv().expect("the prefilled ack");
     assert_eq!(first.acknowledgement.transaction, TransactionId::from_raw(1));
 
-    assert_eq!(durable.drive(), 1, "the durable owner answers it");
+    assert_eq!(durable.drive().answered, 1, "the durable owner answers it");
     assert_eq!(durable.owed(), 0);
 
     let owed = control_ack_receiver
@@ -4167,7 +4167,7 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
     );
 
     // Driving again answers nothing twice, and no other instance was involved.
-    assert_eq!(durable.drive(), 0);
+    assert_eq!(durable.drive().answered, 0);
     assert!(
         control_ack_receiver
             .recv_timeout(std::time::Duration::from_millis(200))
@@ -4347,14 +4347,14 @@ fn review_settlement_dropped_pending_handle_preserves_accepted_outcome() {
     // with the handle, so the durable owner still holds it and can discharge
     // it now that there is room.
     assert_eq!(durable.owed(), 1);
-    assert_eq!(durable.drive(), 1);
+    assert_eq!(durable.drive().answered, 1);
     assert_eq!(
         receiver
             .recv_timeout(std::time::Duration::from_millis(500))
             .expect("dropping the only unsettled handle must preserve responsibility for 9701"),
         review_settlement_expected(9701)
     );
-    assert_eq!(durable.drive(), 0);
+    assert_eq!(durable.drive().answered, 0);
     assert!(receiver.try_recv().is_err());
 }
 
@@ -4420,7 +4420,7 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
             .unwrap(),
         review_settlement_expected(9800)
     );
-    assert_eq!(durable.drive(), 1);
+    assert_eq!(durable.drive().answered, 1);
     assert_eq!(
         receiver
             .recv_timeout(std::time::Duration::from_millis(500))
@@ -4545,7 +4545,7 @@ fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
     );
     let mut settled = Vec::new();
     for _ in 0..4 {
-        durable.drive();
+        let _ = durable.drive();
         while let Ok(ack) = receiver.recv_timeout(std::time::Duration::from_millis(100)) {
             settled.push(ack.acknowledgement.transaction.raw());
         }
@@ -5097,7 +5097,7 @@ fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamat
 
     // Driving before it finishes releases nothing: the work is still live, and
     // a drive is not a terminal outcome.
-    durable.drive();
+    assert!(!durable.drive().made_progress());
     assert_eq!(durable.outstanding(), 1, "still waiting on a real outcome");
     assert_eq!(durable.reserved(), 1);
 
@@ -5115,9 +5115,15 @@ fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamat
         outcome: XAuthorityInputDeliveryOutcome::Flushed,
     }));
 
-    durable.drive();
+    // Reclaiming is progress even though nothing was acknowledged. A single
+    // count would report this drive as having achieved nothing.
+    let progress = durable.drive();
+    assert_eq!(progress.answered, 0, "nothing was owed an acknowledgement");
+    assert_eq!(progress.reclaimed, 1, "but a credit was released");
+    assert!(progress.made_progress());
     assert_eq!(durable.outstanding(), 0);
     assert_eq!(durable.reserved(), 0, "released once, on a real outcome");
-    durable.drive();
-    assert_eq!(durable.reserved(), 0, "and not a second time");
+    let again = durable.drive();
+    assert!(!again.made_progress(), "and not a second time");
+    assert_eq!(durable.reserved(), 0);
 }

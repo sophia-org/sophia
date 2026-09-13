@@ -243,13 +243,19 @@ impl PrivateSettlementOwner {
         }
     }
 
-    /// Try to discharge everything waiting, returning how many were answered.
+    /// Try to discharge everything waiting.
     ///
     /// Each obligation is retried against the registry that accepted it, never
     /// against another instance's. What still cannot be answered stays here.
-    pub fn drive(&self) -> usize {
+    ///
+    /// Two kinds of progress, reported separately because they are different
+    /// facts. Answering an obligation emits a receipt or an acknowledgement;
+    /// reclaiming one only notices that work someone else finished is done.
+    /// A single number would let a caller read a drive that reclaimed several
+    /// credits as having achieved nothing.
+    pub fn drive(&self) -> DriveProgress {
         let Ok(mut held) = self.inner.lock() else {
-            return 0;
+            return DriveProgress::default();
         };
         let taken = std::mem::take(&mut held.held);
         let before = taken.len();
@@ -265,6 +271,7 @@ impl PrivateSettlementOwner {
         // Routed work that has since finished releases its credit here, once
         // and only on a genuine terminal outcome.
         let carried: Vec<_> = held.outstanding.drain(..).collect();
+        let mut reclaimed = 0usize;
         for (origin, identity) in carried {
             let ended = match identity {
                 PrivateIdentity::Delivery(Some(delivery)) => {
@@ -280,11 +287,15 @@ impl PrivateSettlementOwner {
             };
             if ended {
                 held.reserved = held.reserved.saturating_sub(1);
+                reclaimed = reclaimed.saturating_add(1);
             } else {
                 held.outstanding.push((origin, identity));
             }
         }
-        before.saturating_sub(held.held.len())
+        DriveProgress {
+            answered: before.saturating_sub(held.held.len()),
+            reclaimed,
+        }
     }
 
     /// Take responsibility for abandoned work.
@@ -302,6 +313,28 @@ impl PrivateSettlementOwner {
         for operation in pending {
             held.held.push((origin.clone(), operation));
         }
+    }
+}
+
+/// What one drive of a settlement owner achieved.
+///
+/// Answered and reclaimed are different things. The first emitted a receipt or
+/// an acknowledgement to someone waiting for one; the second only observed
+/// that work already finished elsewhere is finished, and freed what it held.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DriveProgress {
+    /// Obligations discharged by this drive.
+    pub answered: usize,
+    /// Credits released because their work reached a terminal outcome.
+    pub reclaimed: usize,
+}
+
+#[cfg(unix)]
+impl DriveProgress {
+    /// Whether this drive changed anything at all.
+    pub fn made_progress(self) -> bool {
+        self.answered > 0 || self.reclaimed > 0
     }
 }
 
