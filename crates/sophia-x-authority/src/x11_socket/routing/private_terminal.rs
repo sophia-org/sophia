@@ -322,14 +322,25 @@ impl PrivateXServerFrontend {
         // worked on is owned throughout rather than held in a local for the
         // length of the attempt.
         while !self.delivering.is_empty() {
-            // An entry an earlier call left part-way through keeps whatever it
-            // reached. Starting a new call is not a disposition, and resetting
-            // its phase here would turn an event that may already be queued
-            // back into one that looks never attempted.
-            if self.emission == PrivateEmissionPhase::Indeterminate {
-                break;
+            // What may happen to the entry at the head depends on how far it
+            // already got. Starting a new call is not a disposition, and
+            // deciding that from scratch turns an event that may already be
+            // queued back into one that looks never attempted.
+            let resuming = self.emission;
+            match resuming {
+                // Nobody can say whether its event reached the queue. It may
+                // not be sent again and its receipt may not be inferred, and
+                // nothing here can establish either, so the order stops.
+                PrivateEmissionPhase::Indeterminate => break,
+                // Already on the client's queue. Only the observation is
+                // owed; sending again would deliver the same transition twice.
+                PrivateEmissionPhase::Enqueued => {}
+                // A fresh entry, or one whose send returned without the queue
+                // taking it.
+                PrivateEmissionPhase::NotOwed | PrivateEmissionPhase::NotEnqueued => {
+                    self.emission = PrivateEmissionPhase::NotOwed;
+                }
             }
-            self.emission = PrivateEmissionPhase::NotOwed;
             // Read from the entry rather than taken out of it. Removing it
             // first put the obligation in a local, so the phase on this
             // instance survived an unwind while the work it described did not.
@@ -348,20 +359,25 @@ impl PrivateXServerFrontend {
                 PrivateOrderedItem::Ran { route, .. } => route.delivery,
                 _ => None,
             };
-            let enqueued = match (run.event, run.reached) {
-                (Some(event), Some(reached)) => {
-                    // Written before the send, because a phase set after it
-                    // says nothing about a send that did not return.
-                    self.emission = PrivateEmissionPhase::Indeterminate;
-                    let sent = self.emit(reached, event, delivery).is_ok();
-                    self.emission = if sent {
-                        PrivateEmissionPhase::Enqueued
-                    } else {
-                        PrivateEmissionPhase::NotEnqueued
-                    };
-                    sent
+            let enqueued = if resuming == PrivateEmissionPhase::Enqueued {
+                // Resumed after its send. Not sent again.
+                true
+            } else {
+                match (run.event, run.reached) {
+                    (Some(event), Some(reached)) => {
+                        // Written before the send, because a phase set after it
+                        // says nothing about a send that did not return.
+                        self.emission = PrivateEmissionPhase::Indeterminate;
+                        let sent = self.emit(reached, event, delivery).is_ok();
+                        self.emission = if sent {
+                            PrivateEmissionPhase::Enqueued
+                        } else {
+                            PrivateEmissionPhase::NotEnqueued
+                        };
+                        sent
+                    }
+                    _ => false,
                 }
-                _ => false,
             };
             if run.owes_event && !enqueued {
                 // An event was owed and has not reached a queue. The entry is
@@ -371,6 +387,10 @@ impl PrivateXServerFrontend {
                     item,
                     emission: self.emission,
                 });
+                // The phase described that entry. With it gone the next one
+                // has not started, and carrying the phase forward would let it
+                // resume a send it never made.
+                self.emission = PrivateEmissionPhase::NotOwed;
                 continue;
             }
             // Owing nobody an event is an outcome, not a failure to emit one.
@@ -405,11 +425,14 @@ impl PrivateXServerFrontend {
                         item,
                         emission: self.emission,
                     });
+                    self.emission = PrivateEmissionPhase::NotOwed;
                     continue;
                 }
             };
-            // Disposed, so the entry goes.
+            // Disposed, so the entry goes and the phase that described it goes
+            // with it.
             let _resolved = self.delivering.remove(0);
+            self.emission = PrivateEmissionPhase::NotOwed;
             delivered.push(PrivateDelivered {
                 sequence,
                 enqueued,

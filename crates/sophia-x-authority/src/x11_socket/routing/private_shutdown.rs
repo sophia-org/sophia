@@ -54,22 +54,37 @@ impl PrivateXServerFrontend {
             // begun applying and is owed no receipt. A record that refuses is
             // one somebody else can still publish for, so the command is not
             // carried on as replayable work either.
-            let carried = match parked {
-                PrivateOperation::Control(command, Some(token)) => {
-                    if self.completion.discard(token) {
-                        Some(PrivateOperation::Control(command, None))
-                    } else {
-                        // Its outcome belongs to whoever holds the record.
-                        // Handing the command on as well would give one
-                        // operation two owners, which is the defect this
-                        // arm exists to avoid.
-                        None
-                    }
+            // Asked through the typed gate rather than by a boolean. A discard
+            // that returns false covers an unreadable registry, a foreign
+            // token, an absent record and several live phases at once, and
+            // treating them alike loses the command and its credit whenever
+            // the registry simply could not be read.
+            match ownership_of(&origin, &parked) {
+                // No live record can publish for it, so the command travels
+                // and this owner answers it.
+                SettlementOwnership::Ours => {
+                    let carried = match parked {
+                        PrivateOperation::Control(command, Some(_)) => {
+                            PrivateOperation::Control(command, None)
+                        }
+                        other => other,
+                    };
+                    self.durable.take_one(&origin, carried);
                 }
-                other => Some(other),
-            };
-            if let Some(carried) = carried {
-                self.durable.take_one(&origin, carried);
+                // An established record owns the outcome. The command is not
+                // carried on as replayable work, but its identity and the
+                // credit it holds are, so the credit is freed when that record
+                // retires rather than stranded.
+                SettlementOwnership::Elsewhere => {
+                    self.durable
+                        .take_one_outstanding(&origin, PrivateIdentity::of(&parked));
+                }
+                // Nobody could say who owns it. Kept whole, credit and all:
+                // an unreadable registry is not permission to publish, and it
+                // is not evidence that something else will.
+                SettlementOwnership::Unprovable => {
+                    self.durable.take_one(&origin, parked);
+                }
             }
         }
         self.parked_barrier = None;

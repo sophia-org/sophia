@@ -13819,10 +13819,16 @@ fn a_parked_control_is_answered_exactly_once_after_shutdown() {
         [PrivateOrderedItem::Parked { .. }]
     ));
 
-    // A second held credit, so a duplicated answer cannot hide behind a count
-    // that saturates at zero.
+    // The credit this operation holds, read before shutdown. This does not
+    // reserve a second one -- an earlier version of this comment said it did,
+    // which was false -- so the assertion below is that exactly one credit is
+    // returned from a known starting count, not that a duplicate release
+    // could not saturate at zero.
     let reserved_before = durable.reserved().expect("a readable owner");
-    assert!(reserved_before >= 1);
+    assert_eq!(
+        reserved_before, 1,
+        "one accepted operation, one credit held"
+    );
 
     drop(private.shutdown());
 
@@ -13922,5 +13928,164 @@ fn a_new_delivery_call_does_not_reset_an_interrupted_entry() {
     assert!(
         channels.input.try_recv().is_err(),
         "nothing was sent a second time"
+    );
+}
+
+#[test]
+fn an_enqueued_entry_is_observed_rather_than_sent_again() {
+    let client = XServerFrontendClientId(941);
+    let surface = SurfaceId::new(941, 1);
+    let mut private = private_for_roles();
+    let (_registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200941, 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(941),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+
+    // Staged as an interruption after the send and before the observation
+    // leaves it: the entry is owned and its event is already on the queue.
+    private.delivering.extend(turn);
+    private.emission = PrivateEmissionPhase::Enqueued;
+
+    let before = channels.input.try_iter().count();
+    assert_eq!(before, 0, "nothing has been sent by this test yet");
+
+    let delivered = private.deliver_turn(Vec::new());
+
+    // Resumed by observing, not by sending. An entry already on the queue owes
+    // only its outcome; sending it again delivers the same transition twice,
+    // and nothing downstream could tell the difference.
+    assert_eq!(
+        channels.input.try_iter().count(),
+        0,
+        "the event was not queued a second time"
+    );
+    assert_eq!(delivered.len(), 1, "and its outcome was taken");
+    assert!(delivered[0].enqueued);
+    assert!(
+        matches!(
+            delivered[0].completion,
+            Some(sophia_input_authority::RequestCompletion::Processed)
+        ),
+        "which is what frees the grant's cell"
+    );
+}
+
+#[test]
+fn a_parked_control_whose_registry_is_unreadable_is_kept_whole() {
+    let client = XServerFrontendClientId(951);
+    let surface = SurfaceId::new(951, 1);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender, _acks) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (authority, issuer, submit) = private_authority();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+    let (_registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200951, 1),
+        )
+        .expect("the surface to register");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(9510),
+                surface,
+            },
+        })
+        .expect("the order to accept the control");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    assert!(matches!(
+        turn.as_slice(),
+        [PrivateOrderedItem::Parked { .. }]
+    ));
+    assert_eq!(durable.reserved().expect("a readable owner"), 1);
+
+    // The completion registry becomes unreadable before shutdown.
+    let completion = private.completion.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = completion.inner.lock().unwrap();
+            panic!("poisoning the completion registry");
+        })
+        .join()
+        .is_err()
+    );
+
+    drop(private.shutdown());
+
+    // An unreadable registry is not evidence that something else will answer
+    // for this command. Asking by a boolean lost it: the same false covers
+    // unreadable, foreign, absent and several live phases, and dropping on all
+    // of them discarded an accepted command and the credit it held.
+    assert_eq!(
+        durable.owed().expect("a readable owner"),
+        1,
+        "the command is kept whole rather than dropped on an unreadable answer"
+    );
+    assert_eq!(
+        durable.reserved().expect("a readable owner"),
+        1,
+        "and it still holds the credit it was accepted with"
     );
 }
