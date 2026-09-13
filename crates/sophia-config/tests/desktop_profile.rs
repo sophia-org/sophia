@@ -8,13 +8,15 @@ use sophia_config::{
     DesktopMirrorFit, DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform,
     DesktopOutputVrrMode, DesktopPointerAccelProfile, DesktopProfileActivationKey,
     DesktopProfileError, DesktopSessionShortcut, DesktopShortcutBindingKind,
-    DesktopShortcutModifiers, DesktopShortcutTarget, SHELL_PANEL_MAX_THICKNESS_PX,
-    desktop_profile_shell_enabled, desktop_profile_shell_panel_thickness,
-    discover_desktop_profile_source, load_desktop_authority_fragment, load_desktop_profile,
-    load_prepared_desktop_profile, prepare_desktop_input_candidate,
-    prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
-    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, restage_desktop_profile,
-    stage_desktop_profile, validate_desktop_profile_fragments,
+    DesktopShortcutModifiers, DesktopShortcutTarget, SHELL_GPU_MEMORY_BYTES,
+    SHELL_PANEL_MAX_THICKNESS_PX, desktop_profile_shell_content_enabled,
+    desktop_profile_shell_enabled, desktop_profile_shell_gpu_memory_bytes,
+    desktop_profile_shell_panel_thickness, discover_desktop_profile_source,
+    load_desktop_authority_fragment, load_desktop_profile, load_prepared_desktop_profile,
+    prepare_desktop_input_candidate, prepare_desktop_output_candidate,
+    prepare_desktop_profile_candidates, prepare_desktop_session_candidate,
+    prepare_desktop_shortcut_candidate, restage_desktop_profile, stage_desktop_profile,
+    validate_desktop_profile_fragments,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -974,6 +976,59 @@ fn a_panel_that_is_not_one_integer_is_refused() {
         assert!(
             load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err(),
             "accepted a malformed panel: {source}"
+        );
+    }
+}
+
+#[test]
+fn shell_content_is_explicit_and_carries_the_admitted_gpu_limit() {
+    let root = temporary_directory("shell-content-profile");
+    let path = root.join("config.kdl");
+    write_profile(
+        &path,
+        "schema 1\nshell { enabled #true; content #true; panel 32; gpu-memory-bytes 268435456; }\n",
+    );
+    let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+
+    assert!(desktop_profile_shell_content_enabled(&profile));
+    assert_eq!(
+        desktop_profile_shell_gpu_memory_bytes(&profile),
+        Some(SHELL_GPU_MEMORY_BYTES)
+    );
+}
+
+#[test]
+fn old_and_descriptor_only_profiles_do_not_gain_content_permission() {
+    for source in [
+        "schema 1\nshell { enabled #true; }\n",
+        "schema 1\nshell { enabled #true; panel 32; }\n",
+        "schema 1\nshell { enabled #true; content #false; }\n",
+    ] {
+        let root = temporary_directory("shell-content-denied");
+        let path = root.join("config.kdl");
+        write_profile(&path, source);
+        let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+        assert!(!desktop_profile_shell_content_enabled(&profile));
+        assert_eq!(desktop_profile_shell_gpu_memory_bytes(&profile), None);
+    }
+}
+
+#[test]
+fn shell_content_profile_fields_are_exact() {
+    for source in [
+        "schema 1\nshell { content; }\n",
+        "schema 1\nshell { content 1; }\n",
+        "schema 1\nshell { content #true #false; }\n",
+        "schema 1\nshell { gpu-memory-bytes 0; }\n",
+        "schema 1\nshell { gpu-memory-bytes 268435455; }\n",
+        "schema 1\nshell { gpu-memory-bytes \"268435456\"; }\n",
+    ] {
+        let root = temporary_directory("shell-content-shape");
+        let path = root.join("config.kdl");
+        write_profile(&path, source);
+        assert!(
+            load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err(),
+            "accepted malformed shell content authority: {source}"
         );
     }
 }

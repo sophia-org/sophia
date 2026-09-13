@@ -1,9 +1,10 @@
 use crate::prelude::*;
 use crate::{
-    CompositorBorder, CompositorDisplayCommand, CompositorDisplayList, CompositorIndicatorStrip,
-    CompositorNodeId, CompositorRect, CompositorRgb8, CompositorSolidRect, CompositorText,
-    HeadRenderTarget, HeadlessOutput, IndicatorChromeStrip, OutputFrameDamageSnapshot,
-    OutputFrameSurfaceState, RenderHeadId, compositor_display_list_structure_is_valid,
+    CompositorBorder, CompositorContentImage, CompositorDisplayCommand, CompositorDisplayList,
+    CompositorIndicatorStrip, CompositorNodeId, CompositorRect, CompositorRgb8,
+    CompositorSolidRect, CompositorText, HeadRenderTarget, HeadlessOutput, IndicatorChromeStrip,
+    OutputFrameDamageSnapshot, OutputFrameSurfaceState, RenderHeadId,
+    compositor_display_list_structure_is_valid,
 };
 
 pub const MAX_HEAD_COMPOSITION_LAYERS: usize = 1_024;
@@ -159,6 +160,13 @@ pub struct HeadCompositorText {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HeadCompositorContentImage {
+    pub image: CompositorContentImage,
+    pub geometry: Rect,
+    pub clip: Rect,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HeadCompositorCommand {
     Background(CompositorSolidRect),
     Surface { surface: SurfaceId },
@@ -166,6 +174,7 @@ pub enum HeadCompositorCommand {
     Rect(HeadCompositorRect),
     Text(HeadCompositorText),
     IndicatorStrip(HeadCompositorIndicatorStrip),
+    ContentImage(HeadCompositorContentImage),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -341,6 +350,7 @@ fn command_requires_composition(command: &HeadCompositorCommand) -> Option<&'sta
         HeadCompositorCommand::Rect(_) => Some("rect"),
         HeadCompositorCommand::Text(_) => Some("text"),
         HeadCompositorCommand::IndicatorStrip(_) => Some("indicator_strip"),
+        HeadCompositorCommand::ContentImage(_) => Some("shell_content"),
     }
 }
 
@@ -521,7 +531,8 @@ pub fn output_scene_snapshot_from_committed_in_view(
             CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
-            | CompositorDisplayCommand::IndicatorStrip(_) => None,
+            | CompositorDisplayCommand::IndicatorStrip(_)
+            | CompositorDisplayCommand::ContentImage(_) => None,
         })
         .collect::<BTreeSet<_>>();
     let mut logical_damage = Region::empty();
@@ -567,6 +578,10 @@ pub fn output_scene_snapshot_from_committed_in_view(
         CompositorDisplayCommand::IndicatorStrip(strip) => {
             !intersect_rect(strip.strip.geometry, logical_viewport).is_empty()
         }
+        // Content geometry is output-local physical, so it is clipped when a
+        // head plan knows the exact target rather than against this logical
+        // viewport.
+        CompositorDisplayCommand::ContentImage(_) => true,
     });
     let cursor =
         cursor.filter(|cursor| !intersect_rect(cursor.geometry, logical_viewport).is_empty());
@@ -719,6 +734,18 @@ pub fn build_head_composition_plan(
                     painted,
                 ))
             }
+            CompositorDisplayCommand::ContentImage(image) => {
+                let physical = HeadLogicalTransform {
+                    source: image.output_size_px,
+                    projected_scene,
+                };
+                let geometry = physical.project_local_rect(image.geometry_px);
+                HeadCompositorCommand::ContentImage(HeadCompositorContentImage {
+                    image: image.clone(),
+                    geometry,
+                    clip: intersect_rect(geometry, painted),
+                })
+            }
         });
     }
 
@@ -845,6 +872,14 @@ pub fn head_output_damage_snapshot(plan: &HeadCompositionPlan) -> OutputFrameDam
                         },
                     ));
             }
+            HeadCompositorCommand::ContentImage(content) => {
+                let mut image = content.image.clone();
+                image.output_size_px = plan.native_size;
+                image.geometry_px = content.geometry;
+                display_list
+                    .commands
+                    .push(CompositorDisplayCommand::ContentImage(image));
+            }
         }
     }
     OutputFrameDamageSnapshot {
@@ -895,7 +930,8 @@ fn validate_snapshot(snapshot: &OutputSceneSnapshot) -> Result<(), HeadCompositi
             CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
-            | CompositorDisplayCommand::IndicatorStrip(_) => {}
+            | CompositorDisplayCommand::IndicatorStrip(_)
+            | CompositorDisplayCommand::ContentImage(_) => {}
         }
     }
     Ok(())
@@ -1008,6 +1044,20 @@ fn logical_scene_checksum(
                 ] {
                     mix(value as u32 as u64);
                 }
+            }
+            CompositorDisplayCommand::ContentImage(image) => {
+                mix(7);
+                mix(image.generation);
+                for value in [
+                    image.geometry_px.x,
+                    image.geometry_px.y,
+                    image.geometry_px.width,
+                    image.geometry_px.height,
+                ] {
+                    mix(value as u32 as u64);
+                }
+                mix(u64::from(image.stride));
+                mix(u64::from(image.format));
             }
         }
     }

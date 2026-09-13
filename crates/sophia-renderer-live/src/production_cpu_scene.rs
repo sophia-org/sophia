@@ -304,7 +304,8 @@ impl LiveProductionCpuScene {
                 CompositorDisplayCommand::Surface { .. }
                 | CompositorDisplayCommand::Border(_)
                 | CompositorDisplayCommand::Rect(_)
-                | CompositorDisplayCommand::Text(_) => None,
+                | CompositorDisplayCommand::Text(_)
+                | CompositorDisplayCommand::ContentImage(_) => None,
             })
             .map(|strip| {
                 self.indicator_strip_cache.raster_for(
@@ -324,7 +325,8 @@ impl LiveProductionCpuScene {
                 CompositorDisplayCommand::Surface { .. }
                 | CompositorDisplayCommand::Border(_)
                 | CompositorDisplayCommand::Rect(_)
-                | CompositorDisplayCommand::IndicatorStrip(_) => None,
+                | CompositorDisplayCommand::IndicatorStrip(_)
+                | CompositorDisplayCommand::ContentImage(_) => None,
             })
             .map(|text| {
                 self.text_cache
@@ -424,6 +426,24 @@ impl LiveProductionCpuScene {
                                 format: buffer.format,
                                 generation: buffer.generation,
                                 bytes: buffer.bytes.as_slice(),
+                            },
+                        },
+                    ));
+                }
+                CompositorDisplayCommand::ContentImage(content) => {
+                    if content.output_size_px != output.size {
+                        return Err("shell content targets a stale output size".into());
+                    }
+                    elements.push(LiveCpuCompositionElementRef::Layer(
+                        LiveCpuCompositionLayerRef {
+                            geometry: content.geometry_px,
+                            buffer: LiveCpuBufferSourceRef {
+                                handle: content.resource.description().resource.id,
+                                size: content.size_px,
+                                stride: content.stride,
+                                format: content.format,
+                                generation: content.generation,
+                                bytes: content.resource.bytes(),
                             },
                         },
                     ));

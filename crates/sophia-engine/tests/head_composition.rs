@@ -1,5 +1,61 @@
 use sophia_engine::*;
 use sophia_protocol::*;
+use sophia_runtime::ContentResourceStore;
+
+fn content_resource() -> sophia_runtime::ContentResourceLease {
+    let grant = ContentGrant {
+        connection_epoch: 7,
+        content_grant_epoch: 9,
+    };
+    let resource = ContentResourceId {
+        id: 11,
+        generation: 1,
+    };
+    let mut store = ContentResourceStore::new(ContentLimits::prototype(grant)).unwrap();
+    store
+        .begin(
+            TransactionId::from_raw(1),
+            ContentResourceBegin {
+                grant,
+                resource,
+                width_px: 4,
+                height_px: 2,
+                rendered_scale_numerator: 1,
+                rendered_scale_denominator: 1,
+                pixel_format: 1,
+                chunk_count: 1,
+                total_bytes: 32,
+            },
+            0,
+        )
+        .unwrap();
+    store
+        .chunk(
+            TransactionId::from_raw(2),
+            &ContentResourceChunk {
+                grant,
+                resource,
+                ordinal: 0,
+                offset: 0,
+                bytes: vec![0x7f; 32],
+            },
+            0,
+        )
+        .unwrap();
+    store
+        .end(
+            TransactionId::from_raw(3),
+            &ContentResourceEnd {
+                grant,
+                resource,
+                total_bytes: 32,
+                chunk_count: 1,
+            },
+            0,
+        )
+        .unwrap();
+    store.lease(grant, resource).unwrap()
+}
 
 fn variant(variant: u32, density: u32, source: u64) -> SurfaceContentVariant {
     let size = Size {
@@ -872,4 +928,64 @@ fn an_empty_head_scans_out_nothing() {
         direct_scanout_plan(&scene).direct_scanout,
         DirectScanoutVerdict::LayerCount(0)
     );
+}
+
+#[test]
+fn shell_content_keeps_physical_geometry_and_forces_composition() {
+    let mut scene = direct_scanout_scene();
+    scene
+        .display_list
+        .commands
+        .push(CompositorDisplayCommand::ContentImage(
+            CompositorContentImage {
+                node: CompositorNodeId::ShellContent {
+                    output: scene.output,
+                    candidate: 17,
+                    surface: 0,
+                    placement: 0,
+                },
+                generation: 1,
+                output_size_px: Size {
+                    width: 2_560,
+                    height: 1_440,
+                },
+                geometry_px: Rect {
+                    x: 15,
+                    y: 9,
+                    width: 4,
+                    height: 2,
+                },
+                size_px: Size {
+                    width: 4,
+                    height: 2,
+                },
+                stride: 16,
+                format: u32::from_le_bytes(*b"AR24"),
+                resource: content_resource(),
+            },
+        ));
+
+    let plan = direct_scanout_plan(&scene);
+    assert_eq!(
+        plan.direct_scanout,
+        DirectScanoutVerdict::CompositionRequired("shell_content")
+    );
+    let content = plan
+        .compositor
+        .iter()
+        .find_map(|command| match command {
+            HeadCompositorCommand::ContentImage(content) => Some(content),
+            _ => None,
+        })
+        .expect("shell content was projected into the head plan");
+    assert_eq!(
+        content.geometry,
+        Rect {
+            x: 15,
+            y: 9,
+            width: 4,
+            height: 2,
+        }
+    );
+    assert_eq!(content.clip, content.geometry);
 }

@@ -169,6 +169,27 @@ fn a_panel_cannot_authorize_more_reservation_than_its_thickness() {
 }
 
 #[test]
+fn scaled_output_bounds_and_reservation_use_resolved_physical_pixels() {
+    let mut store = ContentAllocationStore::new(ContentLimits::prototype(grant())).unwrap();
+    let mut scaled_facts = facts(100);
+    scaled_facts.scale_numerator = 2;
+    store.publish_outputs(tx(1), 1, vec![scaled_facts]).unwrap();
+    store.take_event().unwrap();
+    let request = panel_request(1, 1, ContentAllocationId::default());
+    store.request(tx(2), request, &[], 0).unwrap();
+    let mut scaled = panel(ContentAllocationId {
+        id: 1,
+        generation: 1,
+    });
+    scaled.scale_numerator = 2;
+    scaled.pixel.width = 400;
+    scaled.pixel.height = 40;
+    scaled.allowed_reservation_extent = 40;
+    store.grant(1, scaled.clone(), &[]).unwrap();
+    assert_eq!(store.snapshots(), vec![scaled]);
+}
+
+#[test]
 fn replace_advances_the_exact_allocation_generation_and_release_is_terminal() {
     let mut store = store();
     let first = ContentAllocationId {
@@ -295,6 +316,97 @@ fn a_popout_requires_the_exact_presented_parent_epoch() {
         store.request(tx(5), panel_request(4, 3, parent), &[], 2),
         Err(ContentAllocationError::Stale)
     );
+}
+
+#[test]
+fn a_popout_origin_is_exact_physical_even_when_logical_coordinates_cannot_name_it() {
+    let mut store = ContentAllocationStore::new(ContentLimits::prototype(grant())).unwrap();
+    store
+        .publish_outputs(
+            tx(1),
+            1,
+            vec![ContentOutputFactsEntry {
+                output: output(),
+                local_width: 250,
+                local_height: 125,
+                scale_numerator: 5,
+                scale_denominator: 4,
+                scale_generation: 1,
+            }],
+        )
+        .unwrap();
+    store.take_event();
+    let parent = ContentAllocationId {
+        id: 1,
+        generation: 1,
+    };
+    let mut panel_request = panel_request(1, 1, ContentAllocationId::default());
+    panel_request.desired_width = 200;
+    panel_request.desired_height = 20;
+    store.request(tx(2), panel_request, &[], 0).unwrap();
+    let mut panel = panel(parent);
+    panel.logical.width = 200;
+    panel.logical.height = 20;
+    panel.pixel.width = 250;
+    panel.pixel.height = 25;
+    panel.scale_numerator = 5;
+    panel.scale_denominator = 4;
+    store.grant(1, panel, &[]).unwrap();
+    store.take_event();
+
+    let request = ContentAllocationRequest {
+        grant: grant(),
+        output: output(),
+        allocation_request_id: 2,
+        operation: 1,
+        role: 2,
+        edge: 1,
+        prior: ContentAllocationId::default(),
+        parent,
+        parent_presentation_epoch: 7,
+        anchor_parent_rect: ContentPixelRect {
+            x: 1,
+            y: 0,
+            width: 1,
+            height: 1,
+        },
+        desired_width: 40,
+        desired_height: 24,
+        margins: ContentMargins::default(),
+    };
+    store
+        .request(tx(3), request.clone(), &[(parent, 7)], 1)
+        .unwrap();
+    let popout = ContentAllocationSnapshot {
+        output: output(),
+        allocation: ContentAllocationId {
+            id: 2,
+            generation: 1,
+        },
+        scale_generation: 1,
+        scale_numerator: 5,
+        scale_denominator: 4,
+        role: 2,
+        edge: 1,
+        margins: ContentMargins::default(),
+        // No integer logical x quantizes to physical x=1 at this scale.
+        logical: ContentLogicalRect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 24,
+        },
+        pixel: ContentPixelRect {
+            x: 1,
+            y: 1,
+            width: 50,
+            height: 30,
+        },
+        parent,
+        anchor_parent_rect: request.anchor_parent_rect,
+        allowed_reservation_extent: 0,
+    };
+    store.grant(2, popout, &[(parent, 7)]).unwrap();
 }
 
 #[test]

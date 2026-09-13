@@ -11,9 +11,12 @@ use std::time::Duration;
 
 use sophia_protocol::{
     ContentAdmissionRefused, IpcCodecError, IpcMessageKind, SOPHIA_IPC_HEADER_LEN,
-    SOPHIA_IPC_MAX_PAYLOAD_LEN, ShellContentRecord, ShellV1ClientHello, ShellV1ServerWelcome,
-    TransactionId, decode_frame, decode_shell_content_frame, decode_shell_v1_server_welcome_frame,
-    encode_shell_content_frame, encode_shell_v1_client_hello_frame,
+    SOPHIA_IPC_MAX_PAYLOAD_LEN, ShellContentRecord, ShellIndicatorActivation,
+    ShellIndicatorActivationOutcome, ShellIndicatorSnapshot, ShellV1ClientHello,
+    ShellV1ServerWelcome, TransactionId, decode_frame, decode_shell_content_frame,
+    decode_shell_indicator_activation_outcome, decode_shell_indicator_snapshot,
+    decode_shell_v1_server_welcome_frame, encode_shell_content_frame,
+    encode_shell_indicator_activation, encode_shell_v1_client_hello_frame,
 };
 
 const MAX_QUEUED_BYTES: usize = 2 * 1024 * 1024;
@@ -168,6 +171,93 @@ impl ShellConnection {
             return Err(ShellClientError::WrongDirection);
         }
         Ok(Some((transaction, record)))
+    }
+
+    /// Take one complete revision-6 indicator publication. Frames belonging
+    /// to other shell workflows remain queued in their original order.
+    pub fn poll_indicators(
+        &mut self,
+    ) -> Result<Option<(TransactionId, ShellIndicatorSnapshot)>, ShellClientError> {
+        self.poll_io()?;
+        let Some(begin) = self.inbox.iter().position(|frame| {
+            decode_frame(frame).is_ok_and(|(header, _)| {
+                header.message_kind == IpcMessageKind::ShellIndicatorsBegin
+            })
+        }) else {
+            return if self.peer_closed {
+                Err(ShellClientError::PeerClosed)
+            } else {
+                Ok(None)
+            };
+        };
+        let (header, _) = decode_frame(&self.inbox[begin])?;
+        let transaction = header.transaction;
+        let end = self
+            .inbox
+            .iter()
+            .enumerate()
+            .skip(begin)
+            .find_map(|(index, frame)| {
+                decode_frame(frame).ok().and_then(|(header, _)| {
+                    (header.transaction == transaction
+                        && header.message_kind == IpcMessageKind::ShellIndicatorsEnd)
+                        .then_some(index)
+                })
+            });
+        let Some(end) = end else {
+            return Ok(None);
+        };
+        let mut frames = Vec::new();
+        let mut retained = VecDeque::with_capacity(self.inbox.len());
+        for (index, frame) in self.inbox.drain(..).enumerate() {
+            if (begin..=end).contains(&index)
+                && decode_frame(&frame).is_ok_and(|(header, _)| header.transaction == transaction)
+            {
+                frames.push(frame);
+            } else {
+                retained.push_back(frame);
+            }
+        }
+        self.inbox = retained;
+        decode_shell_indicator_snapshot(&frames)
+            .map(Some)
+            .map_err(Into::into)
+    }
+
+    /// Queue one activation naming an exact published indicator generation.
+    pub fn send_indicator_activation(
+        &mut self,
+        transaction: TransactionId,
+        activation: &ShellIndicatorActivation,
+    ) -> Result<(), ShellClientError> {
+        let frame = encode_shell_indicator_activation(transaction, activation)?;
+        if self.output.len().saturating_add(frame.len()) > MAX_QUEUED_BYTES {
+            return Err(ShellClientError::QueueSaturated);
+        }
+        self.output.extend(frame);
+        self.poll_io()
+    }
+
+    /// Take one exact indicator activation result.
+    pub fn poll_indicator_activation_outcome(
+        &mut self,
+    ) -> Result<Option<(TransactionId, ShellIndicatorActivationOutcome)>, ShellClientError> {
+        self.poll_io()?;
+        let at = self.inbox.iter().position(|frame| {
+            decode_frame(frame).is_ok_and(|(header, _)| {
+                header.message_kind == IpcMessageKind::ShellIndicatorActivateOutcome
+            })
+        });
+        let Some(frame) = at.and_then(|index| self.inbox.remove(index)) else {
+            return if self.peer_closed {
+                Err(ShellClientError::PeerClosed)
+            } else {
+                Ok(None)
+            };
+        };
+        decode_shell_indicator_activation_outcome(&frame)
+            .map(Some)
+            .map_err(Into::into)
     }
 
     /// Bounded nonblocking progress. A queue limit is a protocol failure, not

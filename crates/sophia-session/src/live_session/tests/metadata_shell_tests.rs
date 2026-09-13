@@ -138,6 +138,22 @@ fn switcher_admits_only_presented_policy_managed_surfaces() {
     );
 }
 
+#[test]
+fn descriptor_reservations_cannot_exceed_or_invent_the_profile_allowance() {
+    let claim = |thickness_px| {
+        Some(sophia_protocol::ShellV1WorkAreaReservation {
+            edge: sophia_protocol::ShellV1ReservationEdge::Bottom,
+            thickness_px,
+        })
+    };
+
+    assert!(reservation_within_profile(None, None));
+    assert!(reservation_within_profile(None, Some(32)));
+    assert!(!reservation_within_profile(claim(1), None));
+    assert!(reservation_within_profile(claim(32), Some(32)));
+    assert!(!reservation_within_profile(claim(33), Some(32)));
+}
+
 mod indicator_activation {
     use crate::live_session::metadata_shell::indicators::classify_indicator_activation;
     use sophia_protocol::{

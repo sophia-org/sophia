@@ -40,7 +40,7 @@ struct Transfer {
 
 struct Pixels {
     description: ContentResourceBegin,
-    bytes: Vec<u8>,
+    bytes: Arc<Vec<u8>>,
 }
 
 struct Accepted {
@@ -60,6 +60,13 @@ impl ContentResourceLease {
     }
     pub fn description(&self) -> &ContentResourceBegin {
         &self.0.description
+    }
+
+    /// Shares the immutable accepted allocation with a renderer frame.
+    /// This is a refcount bump: no second pixel allocation escapes the
+    /// connection's resident-resource accounting.
+    pub fn shared_bytes(&self) -> Arc<Vec<u8>> {
+        Arc::clone(&self.0.bytes)
     }
 }
 
@@ -297,7 +304,7 @@ impl ContentResourceStore {
             Accepted {
                 pixels: Arc::new(Pixels {
                     description: transfer.description,
-                    bytes: transfer.bytes,
+                    bytes: Arc::new(transfer.bytes),
                 }),
                 retiring: false,
                 transaction,

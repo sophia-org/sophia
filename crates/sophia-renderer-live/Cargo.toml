@@ -17,6 +17,9 @@ sophia-xshmfence = { path = "../sophia-xshmfence" }
 vello_cpu = { version = "=0.2.0", default-features = false, features = ["std", "text", "u8_pipeline"] }
 xcursor.workspace = true
 
+[dev-dependencies]
+sophia-runtime = { path = "../sophia-runtime" }
+
 [features]
 default = []
 gbm-probe = ["dep:gbm", "dep:sophia-renderer-native-egl", "sophia-renderer-native-egl/gbm-platform"]
