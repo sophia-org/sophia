@@ -6,15 +6,24 @@
 
 /// How many holds and settling releases one executor may record.
 ///
-/// The authority's own input slots, which is what actually bounds them: a hold
-/// exists per input aggregate, so at most this many can be held at once and at
-/// most this many can be awaiting settlement behind them. The ready queue's
-/// capacity does not bound either -- it bounds what is admitted in one turn,
+/// A policy chosen here, set to the planned authority's input slots because a
+/// hold exists per input aggregate and that is the shape the approved plan
+/// fixes. **Not** a reading of the authority actually supplied to this
+/// instance -- the same distinction as the per-binding grant records. An
+/// authority built larger still gets this many records here; one built smaller
+/// refuses on its own capacity first.
+///
+/// What it does do is keep the records within this policy, enforced before the
+/// effect rather than reserved after it, because reserved storage says a push
+/// will not allocate and says nothing about how many pushes there can be. What
+/// it does **not** do is prove that every supplied authority or carried
+/// generation fits without admission backpressure, and it does not retire
+/// anything: a continuation still held after its debt is settled needs an
+/// owner that retires it, which a count cannot be.
+///
+/// The ready queue's capacity bounds neither: it bounds what one turn admits,
 /// and a hold outlives the turn that began it across any number of drains and
 /// refills.
-///
-/// Enforced before the effect, not merely reserved. Reserved storage says a
-/// push will not allocate; it says nothing about how many pushes there can be.
 #[cfg(unix)]
 const PRIVATE_HOLD_RECORDS: usize = sophia_input_authority::Capacity::PLANNED.input_slots();
 
@@ -561,4 +570,125 @@ struct PrivateOrderedDecision {
     keyboard_applied: bool,
     release: Option<sophia_input_authority::ReleaseOutcome>,
     event: Option<XAuthorityInputEvent>,
+}
+
+/// One ordered turn's result for a single queued operation.
+///
+/// No `Debug`: the variants own custody and stamped work, and formatting one
+/// would put a request's identity and a client's input into any log that
+/// prints a turn.
+///
+/// Not public, because one variant carries an operation and that carries the
+/// stamped envelope shape. Publishing this to hand an owner a report would
+/// export the wire form for the sake of describing a turn, which is the trade
+/// the private operation type was kept out of the public surface to avoid. It
+/// becomes public when there is an owner outside this crate to give it to, and
+/// what that owner needs decides what it says rather than what is convenient
+/// to expose now.
+///
+/// Its only callers are the turn below and the controls for it; the owner that
+/// will consume a turn does not exist yet, which is why nothing in production
+/// reads it.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+enum PrivateOrderedItem {
+    /// The work ran and decided.
+    Ran {
+        sequence: crate::ReadySequence,
+        run: PrivateOrderedRun,
+        /// The request it ran against, still owed its terminal observation.
+        ///
+        /// Returned rather than dropped here: execution produced an outcome
+        /// and the cell holding it is freed by observing, which the terminal
+        /// owner does. Dropping it here would end the only right to take that
+        /// outcome.
+        custody: PrivateOutstandingRequest,
+    },
+    /// The consumer refused, and the work it was accepted for comes back.
+    ///
+    /// Custody travels with the refusal. An accepted request that the consumer
+    /// declines is still a request the order took, and dropping it here would
+    /// erase it on the strength of a decision not to run it.
+    Refused {
+        sequence: crate::ReadySequence,
+        refusal: PrivateExecutionRefusal,
+        custody: PrivateOutstandingRequest,
+        route: XAuthorityRoutedInput,
+    },
+    /// The operation carried no reservation, so it is not ordered work.
+    ///
+    /// Handed back whole rather than run or discarded: this path executes what
+    /// was reserved before it was published, and something else accepted this.
+    Unreserved {
+        sequence: crate::ReadySequence,
+        operation: PrivateOperation,
+    },
+}
+
+#[cfg(unix)]
+impl PrivateXServerFrontend {
+    /// Run one turn of the shared order through the ordered path.
+    ///
+    /// Work is taken from the order and the queue guard is released before
+    /// common is acquired, so no path from the queue to common exists. Each
+    /// item carries the reservation made for it before it was published, and
+    /// that reservation becomes the custody the transaction runs against --
+    /// which is what ties the thing executed to the thing the order accepted,
+    /// rather than to a payload supplied alongside it.
+    ///
+    /// Bounded by what the queue can hold rather than by when producers stop,
+    /// for the same reason the ordinary turn is: draining until empty lets a
+    /// producer that keeps replenishing hold the turn open.
+    ///
+    /// Nothing is emitted here and nothing is settled here. What comes back is
+    /// owned: a decision with its custody, a refusal with the custody and the
+    /// work it was for, or an operation this path does not run.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn route_pending_ordered(
+        &mut self,
+        keyboards: &mut PrivateKeyboards,
+    ) -> Result<Vec<PrivateOrderedItem>, XServerFrontendRouteError> {
+        let budget = self.service_budget;
+        let mut ran = Vec::with_capacity(budget);
+        while ran.len() < budget {
+            let next = self
+                .admission
+                .take_next()
+                .map_err(|()| XServerFrontendRouteError::RegistryPoisoned)?;
+            let Some((sequence, _class, operation)) = next else {
+                break;
+            };
+            let PrivateOperation::RoutedInput(mut envelope) = operation else {
+                ran.push(PrivateOrderedItem::Unreserved {
+                    sequence,
+                    operation,
+                });
+                continue;
+            };
+            let Some(reservation) = envelope.reservation.take() else {
+                ran.push(PrivateOrderedItem::Unreserved {
+                    sequence,
+                    operation: PrivateOperation::RoutedInput(envelope),
+                });
+                continue;
+            };
+            // The reservation made for this exact work before it was
+            // published becomes the custody it runs against.
+            let custody = reservation.accepted();
+            match self.run_ordered_input(keyboards, &envelope.route, &custody) {
+                Ok(run) => ran.push(PrivateOrderedItem::Ran {
+                    sequence,
+                    run,
+                    custody,
+                }),
+                Err(refusal) => ran.push(PrivateOrderedItem::Refused {
+                    sequence,
+                    refusal,
+                    custody,
+                    route: envelope.route,
+                }),
+            }
+        }
+        Ok(ran)
+    }
 }

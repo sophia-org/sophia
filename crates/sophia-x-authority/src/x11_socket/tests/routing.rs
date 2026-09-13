@@ -12800,3 +12800,193 @@ fn a_release_refuses_when_its_seats_projection_is_gone() {
         "retained state that has become unavailable is not a fresh clear history, got {refused:?}"
     );
 }
+
+#[test]
+fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
+    let client = XServerFrontendClientId(801);
+    let surface = SurfaceId::new(801, 1);
+    let window = XResourceId::new(0x200801, 1);
+    let private = private_for_roles();
+    let _registration = admit_role_client(&private, client);
+    private
+        .broker
+        .registry
+        .register_surface(client, NamespaceId::from_raw(client.raw()), surface, window)
+        .expect("the surface to register");
+    // The producer handle, with the reservation role bound to this client.
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut private = private;
+
+    // Sent through the producer. Nothing here builds custody by hand: the
+    // reservation is made at submission, travels on the envelope, and is what
+    // the consumer runs against.
+    let sequence = ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(801),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+
+    let mut turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    assert_eq!(turn.len(), 1, "the order held exactly what was sent");
+    let item = turn.remove(0);
+    let PrivateOrderedItem::Ran {
+        sequence: ran_sequence,
+        run,
+        custody,
+    } = item
+    else {
+        panic!("the queued work ran");
+    };
+    assert_eq!(
+        ran_sequence, sequence,
+        "and it is the same place in the order the producer was given"
+    );
+    let reached = run.reached.expect("a press decides where it went");
+    assert_eq!(reached.client(), client);
+    assert_eq!(reached.window(), window);
+    assert!(run.first_press);
+    assert!(run.event.is_some(), "a first press owes an event");
+
+    // The custody came back rather than being dropped inside the turn, so the
+    // outcome is still there to take.
+    assert!(matches!(
+        custody.observe(),
+        Ok(Some(sophia_input_authority::RequestCompletion::Processed))
+    ));
+
+    // The order is empty now: the turn consumed it rather than copying it.
+    assert!(
+        private
+            .route_pending_ordered(&mut keyboards)
+            .expect("a readable order")
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_consumer_refusal_hands_back_the_custody_it_was_accepted_with() {
+    let client = XServerFrontendClientId(811);
+    let surface = SurfaceId::new(811, 1);
+    let private = private_for_roles();
+    let _registration = admit_role_client(&private, client);
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200811, 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut private = private;
+
+    // A key: accepted by the order, refused by the consumer because no applied
+    // focus can name where it would go.
+    let mut key = motion_to(surface, XAuthorityInputDeliveryId::from_raw(811));
+    key.request.kind = InputEventKind::Key {
+        keycode: 30,
+        pressed: true,
+    };
+    ingress.submit(key).expect("the order to accept it");
+
+    let mut turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    assert_eq!(turn.len(), 1);
+    let PrivateOrderedItem::Refused {
+        sequence,
+        refusal,
+        custody,
+        route,
+    } = turn.remove(0)
+    else {
+        panic!("the consumer refused this one");
+    };
+    assert!(
+        sequence.raw() > 0,
+        "the refusal names the place in the order the work held"
+    );
+    assert!(matches!(
+        refusal,
+        crate::PrivateExecutionRefusal::FocusNotApplied
+    ));
+    assert_eq!(
+        route.request.target_surface, surface,
+        "the work it was accepted for comes back whole"
+    );
+
+    // And so does the request the order took. A consumer declining to run
+    // something is not the order never having accepted it, so the custody is
+    // still here to be settled rather than erased by the decision.
+    assert!(
+        matches!(custody.observe(), Ok(None)),
+        "nothing ran, so there is no outcome yet -- but the right to take one survived"
+    );
+}
+
+#[test]
+fn unreserved_work_in_the_order_is_handed_back_rather_than_run() {
+    let client = XServerFrontendClientId(821);
+    let surface = SurfaceId::new(821, 1);
+    let private = private_for_roles();
+    let _registration = admit_role_client(&private, client);
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200821, 1),
+        )
+        .expect("the surface to register");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    // The plain ingress reserves nothing, so this reaches the order without a
+    // request behind it. The ordered path runs what was reserved before it was
+    // published; something else accepted this, and running it would execute
+    // against a request that does not exist.
+    private
+        .ingress()
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(821),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+
+    let mut private = private;
+    let mut turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    assert_eq!(turn.len(), 1);
+    let PrivateOrderedItem::Unreserved {
+        sequence,
+        operation,
+    } = turn.remove(0)
+    else {
+        panic!("unreserved work is not run by this path");
+    };
+    assert!(sequence.raw() > 0);
+    assert!(
+        matches!(operation, PrivateOperation::RoutedInput(_)),
+        "and it comes back whole rather than being discarded"
+    );
+
+    // Nothing was pressed, so no hold was recorded against it.
+    assert!(private.holds.is_empty());
+}
