@@ -1202,3 +1202,49 @@ Every started worker and its accepted controls must retain cleanup ownership
 across those exits. These are source-level lifecycle findings, not reproduced
 timing failures or permission to alter ordinary mode without the planned
 private-path separation.
+
+Candidate `aa4898ca` adds production control-writer hooks, per-operation
+registrations, retained acknowledgements and writer-exit sealing. The preceding
+`f2144b51` adapts two CLI smoke callsites to refusable raw ingress; that is a
+source-reviewed compile fix, not a smoke execution. The reported one-off
+cross-client observation-order failure remains unresolved evidence, not an
+independently established regression or an unconditional suite PASS.
+
+The two named credit/acknowledgement tests construct `X11ControlChannels` and
+manually call `begin_applying` and `send_ack_for` with a supplied outcome. They
+test those helpers and the registry, not a real writer applying an effect.
+Production writer calls do exist in this candidate; independent writer tests
+are needed to establish their behavior and distinguish it from helper evidence.
+
+Source review finds these cancellation blockers:
+
+- Shutdown removes Accepted records even for commands already in a client
+  writer's queue. `begin_applying` returns no success/refusal and silently does
+  nothing for missing or poisoned state, so a writer can subsequently execute
+  a command that shutdown has already handed out for cancellation.
+- That handoff leaves an outstanding token classified Retired and a pending
+  cancellation command owning the same credit. Reclamation can therefore run
+  before cancellation acknowledgement publication and settlement can release
+  again. Transfer needs one owner, not two terminal-looking copies.
+- Focus routing can enqueue FocusOut and mutate the routed focus before the
+  writer marks Applying. Cancellation must not classify those already-effectful
+  controls as unexecuted. Execution claiming must precede the first effect and
+  be atomic with cancellation, with an explicit writer continuation phase.
+
+Independent registry evidence in
+`.artifacts/private-completion-registry-aa4898ca/` records two controls PASS
+and four desired safety assertions FAIL. A mismatched acknowledgement can
+retire another command's token; a contradictory duplicate can overwrite a
+retained outcome. Test-only counter-boundary fixtures also produce equal live
+tokens and let an old retired token retire a newer command. The global origin
+counter wraps by source inspection only. No practical counter exhaustion or
+direct X11-client access to these server APIs is claimed.
+
+The positive controls cover foreign-token rejection, phase preservation against
+discard and ignored late publication after retirement. A capacity-1 registry
+also retains 128 sealed client IDs with zero operations, demonstrating that
+seal history is not covered by record capacity. The initial fixture compile
+correction is retained separately. Mutation APIs returning unit/zero/default
+on poison and the producer collapsing unavailable/sealed refusal into saturation
+remain source-review findings. These are unfinished invariant checks and
+lifecycle requirements; the candidate remains unintegrated.
