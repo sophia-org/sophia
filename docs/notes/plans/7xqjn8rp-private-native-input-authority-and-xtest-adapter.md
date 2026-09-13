@@ -1047,3 +1047,12 @@ and both sender handles. Preserve those caller-owned inputs in a returned
 configuration or borrow and clone them after reservation, so a refusal permits
 retry with the same inputs rather than requiring the caller to reconstruct
 capabilities it already supplied.
+
+Source review of `844f57a7` confirms the constructor-input repair:
+`PrivateFrontendParts` is returned unchanged with the refusal before it is
+destructured, so the caller retains its original gate and both sender handles.
+This narrowly closes the reviewed ownership issue. No new independent runtime
+test result is claimed for this small API change; the earlier slot-lifetime
+evidence remains pinned to `d04359fa`. Terminal-credit integration and owner
+poison remain the next runtime work, and the combined candidate remains
+unintegrated.
