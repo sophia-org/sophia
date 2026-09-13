@@ -708,3 +708,19 @@ delivers all three in the first pass. Evidence is
 `.artifacts/private-ready-loss-496bcad8/`. This verifies the reachable capacity
 repair only. Unexpected-refusal ownership, actual producer ordering and atomic
 execution remain open, so the staging implementation remains unintegrated.
+
+At `c9b3a674`, source review confirms an actual frontend-owned retained slot and
+a private ingress wrapper with no ordinary `try_send` method. This repairs the
+local-drop structure and facade escape; it does not establish exhaustion
+coverage, progress or complete private error classification. No further staging
+polish is required before replacing the staging pass with shared producer
+admission. The candidate remains unintegrated.
+
+Sequence exhaustion is permanent for a stream. Direct admission must return an
+owned exhaustion refusal before acceptance rather than retrying forever or
+reusing sequence identities. Previously accepted work must keep its genuine
+completion and cleanup obligations through explicit failure and settlement;
+retaining a payload alone does not settle it. The native manifest now makes
+production ingress refusal classification and exact reservation rollback an
+explicit mandatory obligation, separate from the passing queue primitive and
+common completion-cell tests.

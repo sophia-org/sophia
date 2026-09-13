@@ -267,6 +267,12 @@
       "implementation": null
     },
     {
+      "id": "native_ingress_admission",
+      "description": "Private producer admission distinguishes authorization denial, duplicate delivery identity, capacity, sequence exhaustion and unavailable/disconnected authority; every refusal returns owned work, rolls back only its own reserved credit, and preserves accepted work. Exhaustion never resets identities or silently retries forever.",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
       "id": "native_executor_order",
       "description": "Actual key, pointer, repeat, control, connection-mutation, thaw and cleanup producers share one runnable-admission order; controlled concurrency preserves completed-send precedence and exact identities, and saturation retains payloads and genuine completions",
       "mandatory": true,
