@@ -189,6 +189,10 @@ pub enum AdmissionRefusal {
     Unavailable,
     /// The consumer is gone. Nothing accepted now could ever run.
     ConsumerGone,
+    /// The authority could not say what it has published, so no coordinator
+    /// can be derived from it. Not a capacity answer: nothing is exhausted,
+    /// and nothing was exposed.
+    AuthorityUnreadable,
 }
 
 /// Why a private producer's work was not accepted.
@@ -326,6 +330,15 @@ impl PrivateIngress {
                     AdmissionRefusal::Exhausted => PrivateSendError::Exhausted(route),
                     AdmissionRefusal::Unavailable => PrivateSendError::Unavailable(route),
                     AdmissionRefusal::ConsumerGone => PrivateSendError::Disconnected(route),
+                    // Construction-only: an instance whose authority could not
+                    // be read is never built, so nothing reaches a send
+                    // through one. Answered rather than declared unreachable,
+                    // because the work is in hand either way and the nearest
+                    // true thing to say about it is that what would accept it
+                    // cannot be reached.
+                    AdmissionRefusal::AuthorityUnreadable => {
+                        PrivateSendError::Unavailable(route)
+                    }
                 }
             })
     }

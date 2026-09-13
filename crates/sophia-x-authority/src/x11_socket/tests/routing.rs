@@ -1248,6 +1248,28 @@ fn control_gate_with_submit() -> (
     )
 }
 
+/// The authority a private frontend owns, with both of its roles.
+///
+/// No gate: the frontend derives its own from this instance, so a test that
+/// built one here and handed it over would be pairing a coordinator with an
+/// authority it does not describe.
+fn private_authority() -> (
+    sophia_input_authority::AuthorityInstance,
+    sophia_input_authority::IssuerHandle,
+    sophia_input_authority::SubmitHandle,
+) {
+    let binding = sophia_input_authority::SeatBinding::new(
+        sophia_input_authority::InstanceId::new(1),
+        sophia_protocol::SeatId::from_raw(1),
+    );
+    sophia_input_authority::AuthorityInstance::new(
+        binding,
+        sophia_input_authority::Capacity::PLANNED,
+        9,
+    )
+    .expect("planned capacity")
+}
+
 fn motion_to(surface: SurfaceId, delivery: XAuthorityInputDeliveryId) -> XAuthorityRoutedInput {
     XAuthorityRoutedInput {
         request: RoutedInputRequest {
@@ -1433,7 +1455,7 @@ fn a_sender_taken_before_the_gate_was_installed_is_still_gated() {
 fn the_lockless_epoch_advance_is_refused_under_a_gate() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer) = control_gate();
+    let (gate, _authority, _issuer) = control_gate();
     let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
@@ -1915,7 +1937,7 @@ fn another_coordinators_transition_cannot_clear_this_brokers_populations() {
     let client = XServerFrontendClientId(27);
     let surface = SurfaceId::new(41, 1);
     let window = XResourceId::new(0x2000b0, 1);
-    let (gate, _instance, _issuer) = control_gate();
+    let (gate, _authority, _issuer) = control_gate();
     let (other_gate, mut other_instance, other_issuer) = control_gate();
     let (broker, _deliveries, _lease) =
         gated_broker_with_grab(&gate, namespace, client, surface, window);
@@ -2840,7 +2862,7 @@ fn an_ordinary_broker_that_exposed_raw_ingress_stays_ordinary() {
     let window = XResourceId::new(0x200120, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer) = control_gate();
+    let (gate, _authority, _issuer) = control_gate();
     let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
@@ -2896,7 +2918,7 @@ fn an_ordinary_broker_that_exposed_raw_ingress_stays_ordinary() {
 fn raw_ingress_is_refused_under_a_coordinator() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer) = control_gate();
+    let (gate, _authority, _issuer) = control_gate();
     let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
@@ -2918,7 +2940,7 @@ fn raw_ingress_is_refused_under_a_coordinator() {
 fn exposure_outlives_the_handle_that_caused_it() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer) = control_gate();
+    let (gate, _authority, _issuer) = control_gate();
     let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
@@ -2945,20 +2967,26 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
     let surface = SurfaceId::new(49, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, mut instance, issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
 
     // The coordinator exists before the broker does, so there is no interval
     // in which a handle could be taken from an ungated instance.
-    let private = crate::PrivateXServerFrontend::new(
+    let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate: gate.clone(),
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
+    // The gate this instance derived from the authority it owns, not a
+    // separately built one: a coordinator paired with a different
+    // authority would be driving an identity this frontend never had.
+    let gate = private.control_gate().clone();
     // No client or surface registered: enqueue is an admission decision, and
     // admission does not depend on there being somewhere to route to yet.
     //
@@ -2974,8 +3002,8 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
     gate.with(|coordinator| {
         coordinator
             .request(
-                &mut instance,
-                &issuer,
+                &mut private.authority,
+                &private.issuer,
                 crate::TransitionKind::SecurityControl,
                 1,
                 1,
@@ -3000,13 +3028,15 @@ fn the_private_host_delivers_each_admitted_input_exactly_once() {
     let window = XResourceId::new(0x200140, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3046,13 +3076,15 @@ fn the_private_host_delivers_each_admitted_input_exactly_once() {
 fn the_private_host_never_drains_raw_ingress() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3079,17 +3111,23 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
     let window = XResourceId::new(0x200150, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, delivery_receiver) = channel();
-    let (gate, mut instance, issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate: gate.clone(),
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
+    // The gate this instance derived from the authority it owns, not a
+    // separately built one: a coordinator paired with a different
+    // authority would be driving an identity this frontend never had.
+    let gate = private.control_gate().clone();
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3107,8 +3145,8 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
     gate.with(|coordinator| {
         coordinator
             .request(
-                &mut instance,
-                &issuer,
+                &mut private.authority,
+                &private.issuer,
                 crate::TransitionKind::SecurityControl,
                 1,
                 1,
@@ -3142,7 +3180,7 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
     let window = XResourceId::new(0x200160, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     // Ingress capacity larger than the ready stream's ordinary share, so more
     // can be sent than one pass can admit.
     let mut private = crate::PrivateXServerFrontend::new(
@@ -3150,7 +3188,9 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
             input_capacity: NonZeroUsize::new(16).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3199,17 +3239,23 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
     let window = XResourceId::new(0x200170, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, mut instance, issuer, _submit) = control_gate_with_submit();
-    let private = crate::PrivateXServerFrontend::new(
+    let (authority, issuer, submit) = private_authority();
+    let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(2).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate: gate.clone(),
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
+    // The gate this instance derived from the authority it owns, not a
+    // separately built one: a coordinator paired with a different
+    // authority would be driving an identity this frontend never had.
+    let gate = private.control_gate().clone();
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3244,8 +3290,8 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
     gate.with(|coordinator| {
         coordinator
             .request(
-                &mut instance,
-                &issuer,
+                &mut private.authority,
+                &private.issuer,
                 crate::TransitionKind::SecurityControl,
                 1,
                 1,
@@ -3268,7 +3314,7 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
     let window = XResourceId::new(0x200180, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     // The production constructor at its smallest: ready capacity six, of
     // which four are held for cleanup, so ordinary work has room for two.
     let mut private = crate::PrivateXServerFrontend::new(
@@ -3276,7 +3322,9 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3327,13 +3375,15 @@ fn two_producer_classes_share_one_order() {
     let window = XResourceId::new(0x200190, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(16).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3443,13 +3493,15 @@ fn a_send_that_returned_is_never_overtaken_by_one_that_started_later() {
     let window = XResourceId::new(0x2001a0, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(16).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3501,14 +3553,16 @@ fn a_refused_control_comes_back_to_its_producer() {
     let surface = SurfaceId::new(57, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     // Ordinary share of two at the smallest production size.
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3547,13 +3601,15 @@ fn producers_are_refused_once_their_consumer_is_gone() {
     let window = XResourceId::new(0x2001b0, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3596,13 +3652,15 @@ fn an_unreachable_queue_is_not_reported_as_a_finished_one() {
     let window = XResourceId::new(0x2001c0, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3648,13 +3706,15 @@ fn accepted_work_is_answered_when_its_consumer_goes_away() {
     let window = XResourceId::new(0x2001d0, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3699,13 +3759,15 @@ fn one_turn_of_service_is_bounded_while_a_producer_keeps_refilling() {
     const PRIVATE_CLEANUP_RESERVE_FOR_TESTS: usize = 4;
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4096);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3756,13 +3818,15 @@ fn accepted_control_is_acknowledged_when_its_consumer_goes_away() {
     let window = XResourceId::new(0x2001f0, 1);
     let (control_ack_sender, control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3807,13 +3871,15 @@ fn every_control_run_names_its_own_transaction() {
     let surface = SurfaceId::new(63, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3861,13 +3927,15 @@ fn a_full_acknowledgement_channel_retains_the_obligation() {
     // One slot, filled before shutdown, so the terminal ack cannot be sent.
     let (control_ack_sender, control_ack_receiver) = sync_channel(1);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender.clone(),
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3923,13 +3991,15 @@ fn a_full_acknowledgement_channel_retains_the_obligation() {
 fn an_unresolved_target_is_handed_back_rather_than_attributed() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -3961,13 +4031,15 @@ fn a_retained_handle_settles_once_the_channel_drains() {
     let window = XResourceId::new(0x200220, 1);
     let (control_ack_sender, control_ack_receiver) = sync_channel(1);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender.clone(),
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -4042,16 +4114,25 @@ fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
     let (second_ack, second_ack_receiver) = sync_channel(8);
     let (first_delivery, _first_delivery_receiver) = channel();
     let (second_delivery, _second_delivery_receiver) = channel();
-    let (first_gate, _i1, _s1, _u1) = control_gate_with_submit();
-    let (second_gate, _i2, _s2, _u2) = control_gate_with_submit();
+    // Two authorities, so the two instances are genuinely separate: each
+    // derives its own coordinator from the one it owns.
+    let first_parts = private_authority();
+    let second_parts = private_authority();
 
-    let build = |ack, delivery, gate| {
+    let build = |ack, delivery, parts: (
+        sophia_input_authority::AuthorityInstance,
+        sophia_input_authority::IssuerHandle,
+        sophia_input_authority::SubmitHandle,
+    )| {
+        let (authority, issuer, submit) = parts;
         let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: ack,
             input_deliveries: delivery,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &crate::PrivateSettlementOwner::default(),
     )
@@ -4064,8 +4145,8 @@ fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
             .unwrap();
         (private, registration, channels)
     };
-    let (first, _r1, _c1) = build(first_ack, first_delivery, first_gate);
-    let (second, _r2, _c2) = build(second_ack, second_delivery, second_gate);
+    let (first, _r1, _c1) = build(first_ack, first_delivery, first_parts);
+    let (second, _r2, _c2) = build(second_ack, second_delivery, second_parts);
 
     // The same client id in both, which is ordinary: ids are unique per
     // frontend, not across frontends.
@@ -4116,14 +4197,16 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
     let window = XResourceId::new(0x200240, 1);
     let (control_ack_sender, control_ack_receiver) = sync_channel(1);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let durable = crate::PrivateSettlementOwner::default();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender.clone(),
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -4202,14 +4285,16 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
 fn an_unreadable_queue_is_owned_by_something_that_outlives_it() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let durable = crate::PrivateSettlementOwner::default();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -4243,13 +4328,15 @@ fn review_settlement_queue(
     let surface = SurfaceId::new(251, 1);
     let client = XServerFrontendClientId(251);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _authority, _issuer) = control_gate();
+    let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         durable,
     )
@@ -4401,14 +4488,16 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
     // A third cannot even be accepted: the storage that would have to hold its
     // work if abandoned is spoken for. Refusing here costs a producer only
     // work it was never told had been taken.
-    let (gate, _authority, _issuer) = control_gate();
+    let (authority, issuer, submit) = private_authority();
     let (delivery_sender, _delivery_receiver) = channel();
     let third = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -4456,14 +4545,16 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
 fn a_failed_instance_hands_over_its_queue_not_a_tally() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let durable = crate::PrivateSettlementOwner::default();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -4494,14 +4585,16 @@ fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
     let (sender, receiver) = sync_channel(1);
     let surface = SurfaceId::new(251, 1);
     let client = XServerFrontendClientId(251);
-    let (gate, _authority, _issuer) = control_gate();
+    let (authority, issuer, submit) = private_authority();
     let (delivery_sender, _delivery_receiver) = channel();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(2).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -4592,14 +4685,16 @@ fn a_failed_instances_queue_can_still_be_answered() {
     let (sender, receiver) = sync_channel(4);
     let surface = SurfaceId::new(251, 1);
     let client = XServerFrontendClientId(251);
-    let (gate, _authority, _issuer) = control_gate();
+    let (authority, issuer, submit) = private_authority();
     let (delivery_sender, _delivery_receiver) = channel();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -4664,14 +4759,16 @@ fn recovering_a_failed_queue_takes_the_completion_record_before_it_answers() {
     let (sender, receiver) = sync_channel(4);
     let surface = SurfaceId::new(253, 1);
     let client = XServerFrontendClientId(253);
-    let (gate, _authority, _issuer) = control_gate();
+    let (authority, issuer, submit) = private_authority();
     let (delivery_sender, _delivery_receiver) = channel();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -4745,14 +4842,16 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     let durable = crate::PrivateSettlementOwner::with_capacity(1);
     let (sender, _receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _authority, _issuer) = control_gate();
+    let (authority, issuer, submit) = private_authority();
 
     let first = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -4763,14 +4862,16 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     // had; refusing the transfer afterwards would drop responsibility for one
     // that existed and accepted work.
     let (second_delivery, _second_delivery_receiver) = channel();
-    let (second_gate, _a2, _i2) = control_gate();
+    let (second_authority, second_issuer, second_submit) = private_authority();
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: second_delivery,
-            gate: second_gate,
+            authority: second_authority,
+            issuer: second_issuer,
+            submit: second_submit,
         },
         &durable,
     )
@@ -4782,14 +4883,16 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     // be built.
     drop(first);
     let (third_delivery, _third_delivery_receiver) = channel();
-    let (third_gate, _a3, _i3) = control_gate();
+    let (third_authority, third_issuer, third_submit) = private_authority();
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: third_delivery,
-            gate: third_gate,
+            authority: third_authority,
+            issuer: third_issuer,
+            submit: third_submit,
         },
         &durable,
     )
@@ -4806,7 +4909,7 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     let durable = crate::PrivateSettlementOwner::with_capacity(1);
     let (sender, _receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _authority, _issuer) = control_gate();
+    let (authority, issuer, submit) = private_authority();
 
     // A is built, accepts nothing, and fails. Its slot is spent on a failure
     // that carries no credit, which is why failure slots are counted apart
@@ -4816,7 +4919,9 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -4835,14 +4940,16 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     // evicted. This is the whole difference: a refusal here costs a caller an
     // instance it never had.
     let (b_delivery, _b_delivery_receiver) = channel();
-    let (b_gate, _ba, _bi) = control_gate();
+    let (b_authority, b_issuer, b_submit) = private_authority();
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: b_delivery,
-            gate: b_gate,
+            authority: b_authority,
+            issuer: b_issuer,
+            submit: b_submit,
         },
         &durable,
     )
@@ -4854,14 +4961,16 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     assert_eq!(durable.recover_failed().expect("a readable owner"), 0, "A had accepted nothing");
     assert_eq!(durable.failed_instances().expect("a readable owner"), 0);
     let (c_delivery, _c_delivery_receiver) = channel();
-    let (c_gate, _ca, _ci) = control_gate();
+    let (c_authority, c_issuer, c_submit) = private_authority();
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: c_delivery,
-            gate: c_gate,
+            authority: c_authority,
+            issuer: c_issuer,
+            submit: c_submit,
         },
         &durable,
     )
@@ -4878,7 +4987,7 @@ fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
     let durable = crate::PrivateSettlementOwner::with_capacity(1);
     let (sender, _receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _authority, _issuer) = control_gate();
+    let (authority, issuer, submit) = private_authority();
     let surface = SurfaceId::new(251, 1);
     let client = XServerFrontendClientId(251);
     let mut private = crate::PrivateXServerFrontend::new(
@@ -4886,7 +4995,9 @@ fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
             input_capacity: NonZeroUsize::new(2).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -4969,13 +5080,15 @@ fn review_terminal_recorded_then_observed_reclaims_exactly_once() {
     let durable = crate::PrivateSettlementOwner::with_capacity(4);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -5043,13 +5156,15 @@ fn review_terminal_unreadable_recovery_cannot_prove_live_delivery_settled() {
     let durable = crate::PrivateSettlementOwner::with_capacity(4);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -5095,13 +5210,15 @@ fn independent_terminal_kept_shutdown_handle_reclaims_late_completion_once() {
     let durable = crate::PrivateSettlementOwner::with_capacity(4);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -5159,13 +5276,15 @@ fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamat
     let durable = crate::PrivateSettlementOwner::with_capacity(4);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
@@ -5482,13 +5601,15 @@ fn private_with_client(
     Receiver<XAuthorityClientInputDelivery>,
 ) {
     let (delivery_sender, delivery_receiver) = channel();
-    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: acknowledgements,
             input_deliveries: delivery_sender,
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         durable,
     )
@@ -10736,7 +10857,7 @@ fn a_transfer_guard_pays_out_when_the_attempt_unwinds() {
 fn an_emptied_failed_record_cannot_release_a_second_instances_slot() {
     let durable = crate::PrivateSettlementOwner::with_capacity(4);
     let (sender, _receiver) = sync_channel(4);
-    let (gate, _authority, _issuer) = control_gate();
+    let (authority, issuer, submit) = private_authority();
     let (delivery_sender, _delivery_receiver) = channel();
     // Kept alive for the whole test. Its failure slot was reserved before it
     // was exposed and it holds it for its life.
@@ -10745,19 +10866,23 @@ fn an_emptied_failed_record_cannot_release_a_second_instances_slot() {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: delivery_sender.clone(),
-            gate,
+            authority,
+            issuer,
+            submit,
         },
         &durable,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
 
-    let (gate, _authority2, _issuer2) = control_gate();
+    let (failing_authority, failing_issuer, failing_submit) = private_authority();
     let failing = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
-            gate,
+            authority: failing_authority,
+            issuer: failing_issuer,
+            submit: failing_submit,
         },
         &durable,
     )
@@ -10804,6 +10929,59 @@ fn an_emptied_failed_record_cannot_release_a_second_instances_slot() {
         "the live instance still holds the slot it reserved"
     );
     drop(live);
+}
+
+#[test]
+fn a_private_frontend_gates_the_authority_it_actually_owns() {
+    let (sender, _receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (authority, issuer, submit) = private_authority();
+    // Read before the parts are handed over; the instance is moved in.
+    let owned = authority
+        .authority_identity(&issuer)
+        .expect("an authority to name itself");
+    let private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &crate::PrivateSettlementOwner::default(),
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+
+    // The property, not a spelling of the constructor: whatever the frontend
+    // stamps and admits under is the same identity it executes against. A gate
+    // built elsewhere and handed in could name another authority, and every
+    // stamp this instance issued would then describe a coordinator driving
+    // something else.
+    assert_eq!(
+        private.control_gate().authority(),
+        owned,
+        "the derived gate serves the authority this instance owns"
+    );
+    assert_eq!(
+        private
+            .authority
+            .authority_identity(&private.issuer)
+            .expect("the owned authority to name itself"),
+        owned,
+        "and the instance it kept is the one that was read"
+    );
+
+    // A separately built authority is a different identity, which is exactly
+    // what pairing one with this gate would have hidden.
+    let (other, other_issuer, _other_submit) = private_authority();
+    assert_ne!(
+        other
+            .authority_identity(&other_issuer)
+            .expect("a second authority to name itself"),
+        owned,
+        "two authorities are never one identity"
+    );
 }
 
 #[test]

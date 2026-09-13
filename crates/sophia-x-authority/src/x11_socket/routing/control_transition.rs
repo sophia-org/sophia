@@ -197,7 +197,22 @@ pub struct PrivateFrontendParts {
     pub input_capacity: NonZeroUsize,
     pub control_acknowledgements: SyncSender<XAuthorityClientControlAck>,
     pub input_deliveries: std::sync::mpsc::Sender<XAuthorityClientInputDelivery>,
-    pub gate: crate::ControlEpochGate,
+    /// The authority this frontend executes against, owned rather than named.
+    ///
+    /// Taken rather than a gate, because a gate is derived from an authority
+    /// and pairing one with a different authority makes the two disagree about
+    /// which identity is being driven. The gate this frontend installs is
+    /// built here from this instance, so the identity it serves and the
+    /// identity that executes are the same by construction rather than by
+    /// a check somebody has to remember to write.
+    pub authority: sophia_input_authority::AuthorityInstance,
+    /// Issuer rights over that authority: transitions, cleanup and the
+    /// issuer-owned state paths. Distinct from submission.
+    pub issuer: sophia_input_authority::IssuerHandle,
+    /// Submission rights: reserving a request before it is enqueued. A
+    /// reservation is not an issuer act, and cleanup is not a submission, so
+    /// the two are carried separately rather than inferred from each other.
+    pub submit: sophia_input_authority::SubmitHandle,
 }
 
 /// A frontend built private, and the only way to get one.
@@ -247,6 +262,24 @@ pub struct PrivateXServerFrontend {
     /// a client writer still holds the command, so capacity would be handed to
     /// new work on the strength of something that has not happened.
     outstanding: Vec<PrivateIdentity>,
+    /// The authority this frontend executes against.
+    ///
+    /// Owned, not borrowed from a caller. Execution needs `&mut` to it and the
+    /// gate was derived from it, so the instance that stamps and the instance
+    /// that applies cannot drift apart.
+    ///
+    /// Held before the execution path reads it. Construction is what has to
+    /// own this -- a frontend that acquired an authority later could have
+    /// stamped work under a coordinator describing something else first --
+    /// so it is kept from the moment the instance exists rather than from the
+    /// moment it is first used.
+    #[cfg_attr(not(test), allow(dead_code))]
+    authority: sophia_input_authority::AuthorityInstance,
+    /// Issuer rights: transitions, cleanup, and issuer-owned state paths.
+    #[cfg_attr(not(test), allow(dead_code))]
+    issuer: sophia_input_authority::IssuerHandle,
+    /// Submission rights: reserving a request before it is enqueued.
+    submit: sophia_input_authority::SubmitHandle,
     /// Whether this instance's queue was unreadable when it closed.
     ///
     /// Remembered rather than recomputed. Settlement runs once, so asking a
@@ -456,6 +489,12 @@ impl PrivateXServerFrontend {
     /// only handles, so consuming them would mean a caller could not retry the
     /// same construction -- refusing would then cost more than the instance it
     /// declined to build.
+    // The refusal carries the parts back, and the parts now include an
+    // authority, so the error is large. Boxing it would mean a caller that was
+    // refused has to unwrap an allocation to get its own handles back, and the
+    // allocation would happen on the path where something already went wrong.
+    // The size is the cost of handing the caller everything it gave us.
+    #[allow(clippy::result_large_err)]
     pub fn new(
         parts: PrivateFrontendParts,
         durable: &PrivateSettlementOwner,
@@ -487,11 +526,27 @@ impl PrivateXServerFrontend {
             durable.release_failure_slot();
             return Err((AdmissionRefusal::Exhausted, parts));
         };
+        // Derived from the authority this frontend owns, before the parts are
+        // taken apart so a refusal can hand them all back. An authority that
+        // cannot report its published revision cannot be driven, and building
+        // a coordinator around a guess would leave the gate naming a state the
+        // authority never published.
+        let coordinator =
+            match crate::ControlEpochCoordinator::derive(&parts.authority, &parts.issuer) {
+                Ok(coordinator) => coordinator,
+                Err(_) => {
+                    durable.release_failure_slot();
+                    return Err((AdmissionRefusal::AuthorityUnreadable, parts));
+                }
+            };
+        let gate = crate::ControlEpochGate::new(coordinator);
         let PrivateFrontendParts {
             input_capacity,
             control_acknowledgements,
             input_deliveries,
-            gate,
+            authority,
+            issuer,
+            submit,
         } = parts;
         let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
             input_capacity,
@@ -522,7 +577,27 @@ impl PrivateXServerFrontend {
             settled: false,
             failed: false,
             failure_slot_held: true,
+            authority,
+            issuer,
+            submit,
         })
+    }
+
+    /// The gate this frontend derived from the authority it owns.
+    ///
+    /// Handed out rather than taken in. A caller that needs to stamp or drive
+    /// a transition uses the one this instance is actually running under; a
+    /// caller that built its own would be naming a different coordinator.
+    pub fn control_gate(&self) -> &crate::ControlEpochGate {
+        self.broker
+            .control_gate
+            .get()
+            .expect("a private frontend installs its gate at construction")
+    }
+
+    /// Submission rights for reserving a request against this authority.
+    pub fn submit_handle(&self) -> &sophia_input_authority::SubmitHandle {
+        &self.submit
     }
 
     /// Submit work, and be told why if it is not accepted.
