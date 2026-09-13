@@ -485,6 +485,56 @@ impl XServerFrontendRouteRegistry {
         self.control_completion.get().cloned()
     }
 
+    /// Record that this client's control writer has stopped.
+    ///
+    /// However it stopped: a stop flag, a disconnected queue, a failure
+    /// partway, a full acknowledgement channel, or an unwind. A registration
+    /// can outlive its writer -- returning on a full channel is exactly that
+    /// -- so this is a fact about the writer, not about the registration.
+    fn mark_control_writer_gone(&self, client: XServerFrontendClientId) {
+        if let Ok(clients) = self.clients.lock()
+            && let Some(senders) = clients.get(&client)
+        {
+            senders.control_writer_gone.store(true, Ordering::Release);
+        }
+    }
+
+    /// Whether this client has a control writer that could still execute work.
+    ///
+    /// Positive: the client is registered here and its writer has not stopped.
+    /// An unreadable registry answers no, because accepting work on a
+    /// question nobody could answer is how work is accepted for a writer that
+    /// has gone.
+    fn control_writer_present(&self, client: XServerFrontendClientId) -> bool {
+        self.clients
+            .lock()
+            .ok()
+            .and_then(|clients| {
+                clients
+                    .get(&client)
+                    .map(|senders| !senders.control_writer_gone.load(Ordering::Acquire))
+            })
+            .unwrap_or(false)
+    }
+
+    /// Claim execution of a control before anything authoritative happens.
+    ///
+    /// A command with no registration is ungoverned and routes as it always
+    /// did. A registration with no registry to answer to is refused: nothing
+    /// here could establish who owns the outcome.
+    fn claim_control_execution(
+        &self,
+        completion: Option<ControlCompletionToken>,
+    ) -> ControlExecutionClaim {
+        match (self.control_completion.get(), completion) {
+            (Some(registry), Some(token)) => registry.claim_execution(token),
+            (_, None) => ControlExecutionClaim::Ungoverned,
+            (None, Some(_)) => {
+                ControlExecutionClaim::Refused(ControlClaimRefusal::Unavailable)
+            }
+        }
+    }
+
     /// Route a control, carrying a completion registration when the private
     /// path made one.
     ///
@@ -499,6 +549,16 @@ impl XServerFrontendRouteRegistry {
     ) -> Result<(), XServerFrontendRouteError> {
         if !self.input_recovery.active(None, route.client) {
             return Err(XServerFrontendRouteError::UnknownClient { client: route.client });
+        }
+        // Before the first authoritative effect, which is not the writer.
+        // Focus routing sends FocusOut to the previously focused client and
+        // moves the focused surface before any writer runs, so a claim taken
+        // at the writer would leave those effects behind a record still
+        // reporting the operation unexecuted.
+        if !self.claim_control_execution(completion).permits_effects() {
+            return Err(XServerFrontendRouteError::ControlNotClaimable {
+                client: route.client,
+            });
         }
         if let Some(result) = self.route_focus_control(route, completion) {
             return result;

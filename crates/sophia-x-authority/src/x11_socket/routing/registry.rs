@@ -116,6 +116,14 @@ struct XServerFrontendClientRouteSenders {
     control: SyncSender<X11RoutedControl>,
     protocol: SyncSender<XClientEvent>,
     admission: Option<ClientAdmissionContext>,
+    /// Set when this client's control writer stops, however it stopped.
+    ///
+    /// Lives with the route senders rather than in a ledger of its own, so it
+    /// is bounded by the clients that exist and goes when the registration
+    /// goes. A separate ledger grew with every client an instance ever served
+    /// and had to evict, and an evicted entry silently stopped protecting a
+    /// client whose writer was gone.
+    control_writer_gone: Arc<AtomicBool>,
 }
 
 #[cfg(unix)]
@@ -305,6 +313,7 @@ impl XServerFrontendRouteRegistry {
                 control: control_sender,
                 protocol: protocol_sender,
                 admission,
+                control_writer_gone: Arc::new(AtomicBool::new(false)),
             },
         );
         Ok((

@@ -382,6 +382,14 @@ pub enum XServerFrontendRouteError {
     /// A keyboard translation that never returns would stall the whole routing
     /// thread, so the wait is bounded and this is what a timeout becomes.
     XkbWorkerUnavailable,
+    /// A control could not claim execution, so none of its effects happened.
+    ///
+    /// Its outcome and cleanup belong to whatever refused the claim -- the
+    /// completion record that still holds it, or whoever the record was
+    /// handed to. Nothing is owed from here, and nothing may be applied.
+    ControlNotClaimable {
+        client: XServerFrontendClientId,
+    },
 }
 
 /// Tracks the two independently ordered lifecycle phases of one X Present.
@@ -458,6 +466,11 @@ impl core::fmt::Display for XServerFrontendRouteError {
             Self::ClientQueueDisconnected { client } => write!(
                 formatter,
                 "X11 route queue disconnected for client {}",
+                client.raw()
+            ),
+            Self::ControlNotClaimable { client } => write!(
+                formatter,
+                "X11 control for client {} could not claim execution",
                 client.raw()
             ),
             Self::MetadataQueueFull => formatter.write_str("X11 reduced metadata queue is full"),

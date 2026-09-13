@@ -1,264 +1,13 @@
-/// The one place a private instance's runnable work is accepted.
-///
-/// Producers admit here directly rather than into their own channels for a
-/// consumer to collect later. Position is assigned and the entry published
-/// inside one hold on this lock, so two producers cannot interleave between
-/// the two, and a send that has returned cannot be overtaken by one that
-/// started afterwards.
-#[cfg(unix)]
-pub struct SharedAdmission {
-    /// Credits for the storage that would hold this work if it were ever
-    /// abandoned, taken before acceptance so that transfer cannot be refused.
-    durable: PrivateSettlementOwner,
-    ready: Arc<Mutex<SharedQueue>>,
-    /// Set once the stream can no longer name an entry.
-    ///
-    /// Terminal, unlike a full queue. Retrying cannot produce an identity that
-    /// does not exist, so further acceptance stops rather than looping. What
-    /// was already accepted keeps its completion and its debt; this refuses
-    /// new work instead of pretending the instance is healthy.
-    exhausted: AtomicBool,
-}
-
-#[cfg(unix)]
-impl SharedAdmission {
-    fn new(ready: crate::ReadyStream<PrivateOperation>, durable: PrivateSettlementOwner) -> Self {
-        Self {
-            durable,
-            ready: Arc::new(Mutex::new(SharedQueue {
-                ready,
-                closed: false,
-            })),
-            exhausted: AtomicBool::new(false),
-        }
-    }
-
-    /// Stop accepting, and take what was accepted and never run.
-    ///
-    /// Closing happens under the same lock acceptance takes, so a producer is
-    /// either accepted before the close or refused after it, never accepted
-    /// into a queue nobody will drain. What was already accepted comes back
-    /// here: those entries were promised a consumer and are owed an outcome,
-    /// so they are handed to whoever closes rather than dropped with the
-    /// queue.
-    fn close(&self) -> Result<Vec<PrivateOperation>, ()> {
-        // A queue that cannot be opened cannot be closed or drained either.
-        // Returning an empty list here would say there was nothing owed.
-        let mut queue = self.ready.lock().map_err(|_| ())?;
-        queue.closed = true;
-        let mut stranded = Vec::new();
-        while let Some((_, _, operation)) = queue.ready.take_next() {
-            stranded.push(operation);
-        }
-        Ok(stranded)
-    }
-
-    /// Accept runnable work, assigning its position as it is published.
-    ///
-    /// A refusal returns the operation itself rather than some part of it.
-    /// Control and cleanup are not routes, so a refusal that handed back only
-    /// a route would destroy exactly the work that has no other owner.
-    fn accept(
-        &self,
-        class: crate::ReadyClass,
-        operation: PrivateOperation,
-    ) -> Result<crate::ReadySequence, (AdmissionRefusal, PrivateOperation)> {
-        // Checked before acceptance, so an exhausted stream never takes work
-        // it cannot name.
-        if self.exhausted.load(Ordering::Acquire) {
-            return Err((AdmissionRefusal::Exhausted, operation));
-        }
-        // Reserved before acceptance. A producer refused here keeps work it
-        // was never told had been taken; a bound applied later would have to
-        // refuse work already accepted, with nowhere to put it.
-        if let Err(refusal) = self.durable.reserve() {
-            return Err((refusal, operation));
-        }
-        let Ok(mut queue) = self.ready.lock() else {
-            self.durable.release();
-            return Err((AdmissionRefusal::Unavailable, operation));
-        };
-        // Checked inside the same hold as admission, so a close cannot land
-        // between deciding this is acceptable and accepting it.
-        if queue.closed {
-            self.durable.release();
-            return Err((AdmissionRefusal::ConsumerGone, operation));
-        }
-        match queue.ready.admit(class, operation) {
-            Ok(sequence) => Ok(sequence),
-            Err(refused) => match refused.refusal {
-                crate::ReadyRefusal::AtCapacity => {
-                    self.durable.release();
-                    Err((AdmissionRefusal::Saturated, refused.payload))
-                }
-                crate::ReadyRefusal::SequencesExhausted => {
-                    self.durable.release();
-                    // Latched here rather than rediscovered on every later
-                    // send, and never reset: reusing a position would answer
-                    // one request with another's identity.
-                    self.exhausted.store(true, Ordering::Release);
-                    Err((AdmissionRefusal::Exhausted, refused.payload))
-                }
-            },
-        }
-    }
-
-    /// Take the next entry, distinguishing an empty queue from an unusable one.
-    ///
-    /// Mapping a poisoned lock to `None` made an unreachable queue look drained
-    /// and a run of it look like progress, while accepted work sat in it
-    /// unanswered.
-    fn take_next(
-        &self,
-    ) -> Result<Option<(crate::ReadySequence, crate::ReadyClass, PrivateOperation)>, ()> {
-        let mut queue = self.ready.lock().map_err(|_| ())?;
-        Ok(queue.ready.take_next())
-    }
-}
-
-/// The shared queue and whether it is still being drained.
-#[cfg(unix)]
-struct SharedQueue {
-    ready: crate::ReadyStream<PrivateOperation>,
-    closed: bool,
-}
-
-/// Why the shared admission would not accept work.
-#[cfg(unix)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AdmissionRefusal {
-    /// No room now. Retrying later is sensible.
-    Saturated,
-    /// Positions are exhausted. Terminal: retrying cannot create an identity
-    /// that does not exist.
-    Exhausted,
-    /// The shared queue cannot be reached.
-    Unavailable,
-    /// The consumer is gone. Nothing accepted now could ever run.
-    ConsumerGone,
-}
-
-/// Why a private producer's work was not accepted.
-///
-/// Denial and saturation are different answers and a caller acts on them
-/// differently: saturation says try again, denial says this will not be
-/// accepted until something changes. The ordinary backend reports a stamp
-/// refusal as `TrySendError::Full`, which tells a caller to retry work that is
-/// being refused on policy. A private producer is told which it is.
-#[cfg(unix)]
-#[derive(Debug)]
-pub enum PrivateSendError {
-    /// No stamp: a transition is in flight, or routing is otherwise closed.
-    /// The work is handed back, unaccepted.
-    Denied(XAuthorityRoutedInput),
-    /// The ingress is full. The work is handed back, and retrying is sensible.
-    Saturated(XAuthorityRoutedInput),
-    /// The consumer is gone.
-    Disconnected(XAuthorityRoutedInput),
-    /// This delivery id is already live. Retrying cannot help, and cancelling
-    /// the live one would answer a different request.
-    DeliveryAlreadyTracked(XAuthorityRoutedInput),
-    /// The recovery ledger or the shared queue cannot be reached.
-    Unavailable(XAuthorityRoutedInput),
-    /// Positions are exhausted. Terminal for this instance: what was already
-    /// accepted keeps its completion, and nothing further is taken.
-    Exhausted(XAuthorityRoutedInput),
-}
-
-/// A producer's handle to a private frontend.
-///
-/// Offers one way in, and answers with a typed refusal. The ordinary sender is
-/// deliberately not reachable through this: its `try_send` calls a policy
-/// denial `Full`, which tells a caller to retry something that is being
-/// refused.
-#[cfg(unix)]
-pub struct PrivateIngress {
-    sender: XAuthorityRoutedInputSender,
-    admission: Arc<SharedAdmission>,
-}
-
-/// A producer of control work, bound to one instance's shared admission.
-#[cfg(unix)]
-pub struct PrivateControlProducer {
-    admission: Arc<SharedAdmission>,
-    completion: ControlCompletionRegistry,
-}
-
-#[cfg(unix)]
-impl PrivateControlProducer {
-    /// Accept control into the shared order.
-    pub fn submit(
-        &self,
-        control: XAuthorityClientControlCommand,
-    ) -> Result<crate::ReadySequence, (AdmissionRefusal, XAuthorityClientControlCommand)> {
-        // Registered before acceptance, and at the producer rather than at
-        // either routing site: focus commands bypass one of those, and this is
-        // the only point bound to the admission that accepted the work.
-        let token = match self.completion.register(control) {
-            Ok(token) => token,
-            Err((_, returned)) => return Err((AdmissionRefusal::Saturated, returned)),
-        };
-        self.admission
-            .accept(
-                crate::ReadyClass::Control,
-                PrivateOperation::Control(control, Some(token)),
-            )
-            .map_err(|(refusal, returned)| match returned {
-                PrivateOperation::Control(control, _) => {
-                    // Refused, so the command goes back to the producer that
-                    // still owns it. The registration is rolled back with it:
-                    // a record left behind would answer at the next
-                    // cancellation edge for a command this caller was told was
-                    // never taken, and answer it twice if the caller retried.
-                    self.completion.discard(token);
-                    (refusal, control)
-                }
-                _ => unreachable!("control is returned as control"),
-            })
-    }
-}
-
-#[cfg(unix)]
-impl PrivateIngress {
-    /// Accept work into the shared order, stamping it first.
-    ///
-    /// Position is assigned as the entry is published, inside the shared
-    /// admission's own hold, so a send that has returned cannot be overtaken
-    /// by one that started afterwards.
-    pub fn submit(&self, route: XAuthorityRoutedInput) -> Result<crate::ReadySequence, PrivateSendError> {
-        let envelope = self.sender.stamp_and_reserve(route)?;
-        self.admission
-            .accept(
-                crate::ReadyClass::RoutedInput,
-                PrivateOperation::RoutedInput(envelope),
-            )
-            .map_err(|(refusal, returned)| {
-                let route = match returned {
-                    PrivateOperation::RoutedInput(envelope) => envelope.route,
-                    _ => unreachable!("routed input is returned as routed input"),
-                };
-                // The reservation this send made is rolled back, and only
-                // this one: another request's live delivery is untouched.
-                self.sender.abort_reservation(route.delivery);
-                match refusal {
-                    AdmissionRefusal::Saturated => PrivateSendError::Saturated(route),
-                    AdmissionRefusal::Exhausted => PrivateSendError::Exhausted(route),
-                    AdmissionRefusal::Unavailable => PrivateSendError::Unavailable(route),
-                    AdmissionRefusal::ConsumerGone => PrivateSendError::Disconnected(route),
-                }
-            })
-    }
-}
+// The control-transition surface a broker under a coordinator exposes.
+//
+// Split from the broker so no file has to grow past what the layout gate
+// allows; the split is by subject, so what a control transition produces and
+// how it is applied and reported stay together. Producer-side admission is
+// next door, in private_admission.rs.
 
 /// How much of a private host's ready capacity is kept for cleanup.
 #[cfg(unix)]
 const PRIVATE_CLEANUP_RESERVE: usize = 4;
-
-// The control-transition surface a broker under a coordinator exposes.
-//
-// Split from the broker so neither file has to grow past what the layout gate
-// allows; the split is by subject, so what a control transition produces and
-// how it is applied and reported stay together.
 
 /// Why a broker refused to come under a coordinator.
 #[cfg(unix)]
@@ -571,7 +320,7 @@ impl PrivateXServerFrontend {
         // Reclaim what has genuinely finished first, so work already answered
         // is not carried as though it were owed.
         self.reclaim_settled();
-        let outstanding = std::mem::take(&mut self.outstanding);
+        let mut outstanding = std::mem::take(&mut self.outstanding);
         // Everything still in the queue is about to be answered or handed
         // back by the settlement below, so it already has an owner. Its
         // records are given up first, or the cancellation pass further down
@@ -596,11 +345,27 @@ impl PrivateXServerFrontend {
         // caught mid-application are not here: those stay in the registry,
         // which the returned settlement still reaches through its origin.
         let cancellation = self.completion.cancel_unfinished();
+        // Ownership moves; it does not terminate. The identity leaves
+        // `outstanding` in the same step that the command enters `pending`, so
+        // exactly one owner holds the operation and exactly one credit is
+        // released for it. Leaving the identity behind would let a watcher
+        // read the record's absence as completion and release the credit here,
+        // and settling `pending` would release it again.
+        outstanding.retain(|identity| match identity {
+            PrivateIdentity::Control {
+                completion: Some(token),
+                ..
+            } => !cancellation
+                .cancellable
+                .iter()
+                .any(|(cancelled, _)| cancelled == token),
+            _ => true,
+        });
         pending.extend(
             cancellation
                 .cancellable
                 .into_iter()
-                .map(|command| PrivateOperation::Control(command, None)),
+                .map(|(_, command)| PrivateOperation::Control(command, None)),
         );
         PrivateSettlement {
             origin,
@@ -672,6 +437,29 @@ impl PrivateXServerFrontend {
         if let Err(refusal) = durable.reserve_failure_slot() {
             return Err((refusal, parts));
         }
+        // Room for a full ingress round plus the classes that arrive beside
+        // it, with a share kept back so cleanup is never the thing that cannot
+        // be admitted.
+        //
+        // Sized above what the bounded channels can hold at once, which is why
+        // the refusal path below is not reachable from a single source today.
+        // It is kept correct rather than removed, because producer-side
+        // admission will make it reachable: a producer refused at send has to
+        // be handed its payload back, and nothing may be taken from a channel
+        // that cannot then be placed.
+        let capacity = parts
+            .input_capacity
+            .get()
+            .saturating_mul(2)
+            .saturating_add(PRIVATE_CLEANUP_RESERVE);
+        // Also before the parts are taken apart. A registry that could not
+        // take an unused origin would issue identities another live instance
+        // already answers to, and refusing after the senders were consumed
+        // would cost the caller the handles it would need to retry.
+        let Some(completion) = ControlCompletionRegistry::with_capacity(capacity) else {
+            durable.release_failure_slot();
+            return Err((AdmissionRefusal::Exhausted, parts));
+        };
         let PrivateFrontendParts {
             input_capacity,
             control_acknowledgements,
@@ -686,26 +474,11 @@ impl PrivateXServerFrontend {
         broker
             .try_install_control_gate(gate)
             .expect("a broker built here has exposed nothing to refuse over");
-        // Room for a full ingress round plus the classes that arrive beside
-        // it, with a share kept back so cleanup is never the thing that cannot
-        // be admitted.
-        //
-        // Sized above what the bounded channels can hold at once, which is why
-        // the refusal path below is not reachable from a single source today.
-        // It is kept correct rather than removed, because producer-side
-        // admission will make it reachable: a producer refused at send has to
-        // be handed its payload back, and nothing may be taken from a channel
-        // that cannot then be placed.
-        let capacity = input_capacity
-            .get()
-            .saturating_mul(2)
-            .saturating_add(PRIVATE_CLEANUP_RESERVE);
         let staged = crate::ReadyStream::new(
             NonZeroUsize::new(capacity).expect("a doubled non-zero capacity is non-zero"),
             PRIVATE_CLEANUP_RESERVE,
         )
         .expect("a reserve smaller than the capacity it was added to");
-        let completion = ControlCompletionRegistry::with_capacity(capacity);
         // Installed before the instance exists, so no client can register a
         // writer that would report its outcomes nowhere.
         assert!(
@@ -760,6 +533,7 @@ impl PrivateXServerFrontend {
         PrivateControlProducer {
             admission: Arc::clone(&self.admission),
             completion: self.completion.clone(),
+            routing: self.broker.registry.clone(),
         }
     }
 

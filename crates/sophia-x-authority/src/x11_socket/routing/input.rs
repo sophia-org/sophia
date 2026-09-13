@@ -367,26 +367,19 @@ impl X11ControlChannels {
         }
     }
 
-    /// Try to publish, and say which of the three things happened.
+    /// Send, and say which of the three things happened.
     ///
     /// Delivered, retained because the channel is full, or not published at
     /// all because the receiver is gone. The last two are different facts and
     /// neither is a delivery.
-    fn publish_ack(
-        &self,
-        client: XServerFrontendClientId,
-        acknowledgement: XAuthorityControlAck,
-    ) -> ControlPublication {
+    fn emit_ack(&self, acknowledgement: XAuthorityClientControlAck) -> ControlPublication {
         match self {
             Self::Routed {
                 acknowledgements, ..
             }
             | Self::ClientBound {
                 acknowledgements, ..
-            } => match acknowledgements.try_send(XAuthorityClientControlAck {
-                client,
-                acknowledgement,
-            }) {
+            } => match acknowledgements.try_send(acknowledgement) {
                 Ok(()) => ControlPublication::Delivered,
                 Err(TrySendError::Disconnected(_)) => ControlPublication::ReceiverGone,
                 Err(TrySendError::Full(_)) => ControlPublication::Retained,
@@ -394,35 +387,37 @@ impl X11ControlChannels {
         }
     }
 
-    /// Mark that execution of a registered control has begun.
+    /// Ask whether this writer may go on to apply a control.
     ///
-    /// Everything after this point can leave the runtime changed with no
+    /// A writer is a continuation, not a beginning: routing the command into
+    /// this queue was already an authoritative effect, and the claim was taken
+    /// there. Everything after this can leave the runtime changed with no
     /// acknowledgement sent, which is exactly the state that must not later be
-    /// reported as unexecuted.
-    fn begin_applying(&self, token: Option<ControlCompletionToken>) {
-        if let (Some(registry), Some(token)) = (self.completion(), token) {
-            registry.begin_applying(token);
+    /// reported as unexecuted -- so the answer is checked, not announced.
+    fn resume_execution(
+        &self,
+        token: Option<ControlCompletionToken>,
+    ) -> ControlExecutionClaim {
+        match (self.completion(), token) {
+            (Some(registry), Some(token)) => registry.resume_execution(token),
+            // No registration was made for this operation, so no record
+            // governs it. The ordinary path works exactly as before.
+            (_, None) => ControlExecutionClaim::Ungoverned,
+            // A registration with no registry to answer to. Nothing here can
+            // establish who owns the outcome, so nothing here may produce one.
+            (None, Some(_)) => {
+                ControlExecutionClaim::Refused(ControlClaimRefusal::Unavailable)
+            }
         }
     }
 
-    /// Record that no further acknowledgement will come from this writer.
+    /// Publish an acknowledgement against a private completion registration.
     ///
-    /// Scoped to the client this writer serves. The registry belongs to the
-    /// private instance and every client writer reports to it, so sealing all
-    /// of it here would refuse work the other clients' writers are still able
-    /// to execute.
-    ///
-    /// Returns how many of that client's registrations were still outstanding.
-    /// Settling them is the owner's business, not the writer's: the writer
-    /// does not own the queue those commands came from.
-    fn seal_completions(&self, client: XServerFrontendClientId) -> usize {
-        self.completion()
-            .map(|registry| registry.seal_client(client))
-            .unwrap_or(0)
-    }
-
-    /// Publish an acknowledgement and record its outcome against a private
-    /// completion registration.
+    /// The registration authorises the send and the send happens under the
+    /// same hold, so an acknowledgement the record refuses is refused before
+    /// anyone outside can see it. Sending first and reporting afterwards
+    /// refused nothing: a contradicting or duplicate acknowledgement was
+    /// already at the receiver, and no later verdict could recall it.
     ///
     /// The command is never replayed from here. Whatever its effect was, it
     /// has already happened; only the acknowledgement is retained.
@@ -432,17 +427,36 @@ impl X11ControlChannels {
         acknowledgement: XAuthorityControlAck,
         token: Option<ControlCompletionToken>,
     ) -> Result<(), X11SetupSocketError> {
-        let publication = self.publish_ack(client, acknowledgement);
-        if let (Some(registry), Some(token)) = (self.completion(), token) {
-            registry.publish(
-                token,
-                XAuthorityClientControlAck {
-                    client,
-                    acknowledgement,
-                },
-                publication,
-            );
-        }
+        let owned = XAuthorityClientControlAck {
+            client,
+            acknowledgement,
+        };
+        let publication = match (self.completion(), token) {
+            (Some(registry), Some(token)) => {
+                match registry.publish_with(token, owned, |owned| self.emit_ack(*owned)) {
+                    Ok(publication) => publication,
+                    // Nothing was sent. Another owner holds this operation's
+                    // outcome, so there is nothing here to deliver and nothing
+                    // to retain.
+                    Err(refusal) => {
+                        return Err(X11SetupSocketError::new(format!(
+                            "X11 control acknowledgement refused by its completion record: \
+                             {refusal:?}"
+                        )));
+                    }
+                }
+            }
+            // No registration governs it, exactly as the ordinary path has
+            // always been.
+            (_, None) => self.emit_ack(owned),
+            // A registration whose registry cannot be reached. Nothing here
+            // can establish whether this acknowledgement may be published.
+            (None, Some(_)) => {
+                return Err(X11SetupSocketError::new(
+                    "X11 control acknowledgement has a registration with no registry",
+                ));
+            }
+        };
         match publication {
             // A gone receiver has always been tolerated here, and that stays
             // the ordinary behaviour: the writer is not failed because nobody

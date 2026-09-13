@@ -350,10 +350,12 @@ of that instance reports outcomes to it. The public path has none.
 
 | Edge | What answers it now |
 | --- | --- |
-| Producer accepts | `PrivateControlProducer::submit` registers before acceptance and discards the registration when admission refuses, so a refused command has exactly one owner: the caller it was handed back to |
-| Writer begins execution | `begin_applying` is called before the arms that mutate the runtime, so a failure after it is not later reported as unexecuted |
-| Writer publishes | The three publication outcomes are distinguished. Delivered retires the record; a full channel retains the exact acknowledgement and never the command; a gone receiver publishes nothing and so closes nothing, though the writer is still not failed for it |
-| Writer stops, however | A guard seals that client's registrations on every exit including an unwind, so no further work is accepted for a client whose writer has gone. It seals only that client: the registry serves the whole instance |
+| Producer reserves | `PrivateControlProducer::submit` refuses outright for a client whose control writer has stopped, then reserves a record. A reservation is not acceptance: it is still the producer's, nothing may answer for it, and no cancellation edge may take it |
+| The instance accepts | The queue entry and the phase handoff are one transaction, prepared inside the admitting hold. Published together or rolled back together, so a refused command has exactly one owner: the caller it was handed back to |
+| Routing, which is the first authoritative effect | Execution is claimed there, not at the writer. Focus routing sends FocusOut to the previously focused client and moves the focused surface before any writer runs, so a claim taken at the writer leaves those effects behind a record still calling the operation unexecuted. The claim is fallible and atomic: it and cancellation contend for one lock, so an operation is either claimed and never reported unexecuted, or cancelled and never applied |
+| Writer continues execution | The writer resumes a claim it did not make, and a refusal stops it before anything that answers for the operation -- including the unknown-surface acknowledgement, because an acknowledgement is an outcome. A refused claim leaves the owner that refused it holding the operation, so nothing is dropped by declining |
+| Writer publishes | The record authorises the acknowledgement and the send happens under the same hold, so one the record refuses never reaches the receiver. Delivered retires the record; a full channel retains the exact acknowledgement and never the command; a gone receiver publishes nothing and so closes nothing, though the writer is still not failed for it |
+| Writer stops, however | A guard records it on every exit including an unwind, against the client's own route state. A registration outlives its writer -- returning on a full acknowledgement channel is exactly that -- so the state lives with the route senders, bounded by the clients that exist and gone when the registration goes |
 | Instance closes | Commands still in the queue are answered or handed back by the existing settlement, giving up their records as they go. Commands a writer took and never ran are carried out in `pending` with their records given up. Commands caught mid-application stay in the registry, which the returned settlement still reaches through its origin |
 | Retry | `publish_owed_with` republishes in place. Nothing is handed out that a caller could drop, and a failed retry keeps the outcome |
 
@@ -362,9 +364,23 @@ released exactly when its record retires, and an unreadable registry releases
 nothing. That closes the earlier note on `reclaim_settled` that control was not
 observable from the frontend.
 
-Not done here: the registration `Drop`, worker join and `register_client`
-rows above are still unowned, and the durable owner observes carried control
-only through the origin it kept.
+Ownership transfer is kept distinct from termination throughout. When a command
+that never claimed execution is handed to another owner at close, its identity
+leaves the outstanding ledger in the same step, so one owner holds it and one
+credit is released for it.
+
+Every registration is also bound to the operation it was made for. An
+acknowledgement must name what was registered, the first established outcome
+is not replaced by a later contradiction, repeating it changes nothing, and
+neither part of an identity is ever reused: an exhausted counter refuses to
+register rather than issue a value twice, and a registry that cannot take an
+unused origin is not built. Not done here: the registration `Drop`, worker join and `register_client`
+rows above are still unowned; the durable owner observes carried control only
+through the origin it kept; records retained as applying are counted and
+reachable but not yet reconciled, so sealing is not completion; and the
+process-global origin counter's exhaustion refusal is unreachable from any
+test that does not add a setter to production source, so it is argued rather
+than demonstrated.
 
 ## Status
 

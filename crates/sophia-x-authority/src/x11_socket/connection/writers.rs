@@ -196,27 +196,35 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
     }
 }
 
-/// Seals a client's control registrations when its writer stops.
+/// Records that a client's control writer has stopped.
 ///
 /// Every way out of the loop below is a cancellation edge: a stop flag, a
 /// disconnected route queue, a terminated client, a failure partway through an
-/// operation, or an unwind. A guard rather than a call at the end, because the
-/// last of those reaches no call at the end, and a client whose writer has
-/// gone must stop having work accepted for it however it went.
+/// operation, a full acknowledgement channel, or an unwind. A guard rather
+/// than a call at the end, because the last of those reaches no call at the
+/// end, and a client whose writer has gone must stop having work accepted for
+/// it however it went.
 ///
-/// The registrations themselves stay where they are. This writer does not own
-/// the queue those commands came from and cannot decide their fate without
+/// The state lives with the client's route senders, because a registration
+/// outlives its writer -- returning on a full channel is exactly that -- so
+/// the registration being alive is not evidence that anything is left to
+/// execute.
+///
+/// Registrations themselves stay where they are. This writer does not own the
+/// queue those commands came from and cannot decide their fate without
 /// discarding them.
 #[cfg(unix)]
 struct X11ControlWriterSeal<'a> {
-    channels: &'a X11ControlChannels,
+    routing: Option<&'a XServerFrontendRouteRegistry>,
     client: XServerFrontendClientId,
 }
 
 #[cfg(unix)]
 impl Drop for X11ControlWriterSeal<'_> {
     fn drop(&mut self) {
-        self.channels.seal_completions(self.client);
+        if let Some(routing) = self.routing {
+            routing.mark_control_writer_gone(self.client);
+        }
     }
 }
 
@@ -273,7 +281,7 @@ fn spawn_x11_control_writer(
     }
     let thread = std::thread::spawn(move || {
         let _seal = X11ControlWriterSeal {
-            channels: &channels,
+            routing: protocol_routing.as_ref(),
             client,
         };
         let run = || -> Result<(), X11SetupSocketError> {
@@ -326,6 +334,16 @@ fn spawn_x11_control_writer(
                     continue;
                 }
             };
+            // Before anything that answers for this operation, including the
+            // refusals below: an acknowledgement is an outcome, and producing
+            // one for work whose outcome belongs to another owner is the same
+            // error as applying it. A refusal here leaves that owner holding
+            // it -- the record if it is still held, whoever took it if it is
+            // not -- so nothing is dropped by declining.
+            if !channels.resume_execution(completion).permits_effects() {
+                continue;
+            }
+
             let transaction = command.transaction();
             let surface = command.surface();
             let kind = command.kind();
@@ -347,12 +365,6 @@ fn spawn_x11_control_writer(
                 )?;
                 continue;
             };
-
-            // Past this point the arms mutate the runtime, so a failure can
-            // leave the effect partly applied with no acknowledgement sent.
-            // Such an operation is not unexecuted and must never later be
-            // cancelled as though it were.
-            channels.begin_applying(completion);
 
             let event_sequence = sequence.load(Ordering::Acquire);
             let records = match command {

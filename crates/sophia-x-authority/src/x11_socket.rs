@@ -37,14 +37,14 @@ use crate::{
     XAuthorityBackpressureTelemetry, XAuthorityBackpressureTelemetryKind,
     XAuthorityClientControlAck, XAuthorityClientControlCommand, XAuthorityClientInputDelivery,
     XAuthorityClientInputEvent, XAuthorityClientMetadataCandidate, XAuthorityControlAck,
-    XAuthorityControlCommand, XAuthorityControlOutcome, XAuthorityDri3FenceImport,
-    XAuthorityDri3PixmapImport, XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome,
-    XAuthorityInputEvent, XAuthorityKeyEvent, XAuthorityObservedTransactionBatch,
-    XAuthorityPointerEvent, XAuthorityPointerEventKind, XAuthorityPresentSubmission,
-    XAuthorityResponsePacket, XAuthorityRouteLeaseRelease, XAuthorityRouteLeaseUpdate,
-    XAuthorityRouteLeaseUpdateKind, XAuthorityRoutedInput, XAuthorityRoutedInputMode,
-    XAuthorityRuntime, XAuthoritySurfaceRouteObservation, XByteOrder, XClientEvent,
-    XDispatchContext, XDispatchResult, XPresentCompletionMode, XPropertyTable,
+    XAuthorityControlCommand, XAuthorityControlKind, XAuthorityControlOutcome,
+    XAuthorityDri3FenceImport, XAuthorityDri3PixmapImport, XAuthorityInputDeliveryId,
+    XAuthorityInputDeliveryOutcome, XAuthorityInputEvent, XAuthorityKeyEvent,
+    XAuthorityObservedTransactionBatch, XAuthorityPointerEvent, XAuthorityPointerEventKind,
+    XAuthorityPresentSubmission, XAuthorityResponsePacket, XAuthorityRouteLeaseRelease,
+    XAuthorityRouteLeaseUpdate, XAuthorityRouteLeaseUpdateKind, XAuthorityRoutedInput,
+    XAuthorityRoutedInputMode, XAuthorityRuntime, XAuthoritySurfaceRouteObservation, XByteOrder,
+    XClientEvent, XDispatchContext, XDispatchResult, XPresentCompletionMode, XPropertyTable,
     XRasterFallbackCause, XResourceId, XServerFrontendAdmissionError,
     XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest, XServerFrontendClientId,
     XServerFrontendConfig, XServerFrontendPeerCredentials, XServerFrontendPixmapAllocator,
@@ -65,6 +65,7 @@ use sophia_protocol::{
 };
 
 include!("x11_socket/routing/broker.rs");
+include!("x11_socket/routing/private_admission.rs");
 include!("x11_socket/routing/control_transition.rs");
 include!("x11_socket/routing/private_settlement.rs");
 include!("x11_socket/routing/control_completion.rs");
