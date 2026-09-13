@@ -13759,3 +13759,168 @@ fn an_enqueued_event_whose_outcome_is_unreadable_is_marked_as_already_sent() {
         "the phase distinguishes an event already sent from one that never was"
     );
 }
+
+#[test]
+fn a_parked_control_is_answered_exactly_once_after_shutdown() {
+    let client = XServerFrontendClientId(921);
+    let surface = SurfaceId::new(921, 1);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender, acks) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (authority, issuer, submit) = private_authority();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+    let (_registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200921, 1),
+        )
+        .expect("the surface to register");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(9210),
+                surface,
+            },
+        })
+        .expect("the order to accept the control");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    assert!(matches!(
+        turn.as_slice(),
+        [PrivateOrderedItem::Parked { .. }]
+    ));
+
+    // A second held credit, so a duplicated answer cannot hide behind a count
+    // that saturates at zero.
+    let reserved_before = durable.reserved().expect("a readable owner");
+    assert!(reserved_before >= 1);
+
+    drop(private.shutdown());
+
+    // Exactly one acknowledgement for transaction 9210, whichever path
+    // produced it.
+    let mut answers = Vec::new();
+    while let Ok(ack) = acks.try_recv() {
+        answers.push(ack.acknowledgement.transaction);
+    }
+    let _drive = durable.drive();
+    while let Ok(ack) = acks.try_recv() {
+        answers.push(ack.acknowledgement.transaction);
+    }
+    let mine: Vec<_> = answers
+        .iter()
+        .filter(|transaction| **transaction == TransactionId::from_raw(9210))
+        .collect();
+    assert_eq!(
+        mine.len(),
+        1,
+        "one operation, one answer -- handing the command on while its record \
+         stayed available gave two owners able to publish for it, got {answers:?}"
+    );
+
+    // And the credit it held was released once, not twice.
+    assert_eq!(
+        durable.reserved().expect("a readable owner"),
+        reserved_before - 1,
+        "exactly one credit returned"
+    );
+}
+
+#[test]
+fn a_new_delivery_call_does_not_reset_an_interrupted_entry() {
+    let client = XServerFrontendClientId(931);
+    let surface = SurfaceId::new(931, 1);
+    let mut private = private_for_roles();
+    let (_registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200931, 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(931),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+
+    // Staged as an unwind inside the send leaves it: the entry is owned, and
+    // the phase says nobody can tell whether its event reached the queue.
+    // Staged rather than injected, because making a send unwind needs a
+    // modified copy of the source.
+    private.delivering.extend(turn);
+    private.emission = PrivateEmissionPhase::Indeterminate;
+
+    let delivered = private.deliver_turn(Vec::new());
+    assert!(
+        delivered.is_empty(),
+        "a new call is not a disposition, so it delivers nothing"
+    );
+    assert_eq!(
+        private.delivering.len(),
+        1,
+        "the entry stays owned rather than being started again"
+    );
+    assert_eq!(
+        private.emission,
+        PrivateEmissionPhase::Indeterminate,
+        "and keeps what it reached: resetting it would turn an event that may \
+         already be queued back into one that looks never attempted"
+    );
+    assert!(
+        channels.input.try_recv().is_err(),
+        "nothing was sent a second time"
+    );
+}

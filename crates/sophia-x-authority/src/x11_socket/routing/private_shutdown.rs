@@ -43,7 +43,34 @@ impl PrivateXServerFrontend {
         // over before the queue is closed, so it is not lost to an instance
         // that is going.
         if let Some((_, parked)) = self.parked.take() {
-            self.durable.take_one(&origin, parked);
+            // The completion record goes with the command, not beside it.
+            // Handing the operation over while its record stayed Accepted left
+            // two owners able to answer for one transaction: the cancellation
+            // sweep below minted a second command from the record, and the
+            // durable owner answered the first -- the same acknowledgement
+            // twice for work that happened once.
+            //
+            // Taken by discard, which succeeds only for a record that has not
+            // begun applying and is owed no receipt. A record that refuses is
+            // one somebody else can still publish for, so the command is not
+            // carried on as replayable work either.
+            let carried = match parked {
+                PrivateOperation::Control(command, Some(token)) => {
+                    if self.completion.discard(token) {
+                        Some(PrivateOperation::Control(command, None))
+                    } else {
+                        // Its outcome belongs to whoever holds the record.
+                        // Handing the command on as well would give one
+                        // operation two owners, which is the defect this
+                        // arm exists to avoid.
+                        None
+                    }
+                }
+                other => Some(other),
+            };
+            if let Some(carried) = carried {
+                self.durable.take_one(&origin, carried);
+            }
         }
         self.parked_barrier = None;
         let stranded = match self.admission.close() {
