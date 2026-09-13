@@ -175,7 +175,7 @@ So the change is a facade, not a check at the consumer:
 | Producer | Fails its own operation immediately, while the authority keeps serving healthy authorised work |
 | Pre-obtained handles | Must observe activation too, or construction must prove none escaped |
 | Already-queued raw work | See below. A send that already returned `Ok` cannot be un-answered |
-| Receipts | Raw events have no synthetic request cell. Do not invent one, and do not fabricate a delivery receipt. Work already inside a tracked lifecycle gets its exact negative completion, issued after locks drop |
+| Receipts | Raw ingress does not *guarantee* a completion contract, but it does not preclude one: `XAuthorityClientInputEvent` carries `delivery: Option<XAuthorityInputDeliveryId>` (`routing_types.rs:76`), and `route_pending` already answers a real `Some(id)` with `RouteRejected`. Preserve a genuine previously admitted receipt; never invent one for `None`, and never treat a caller-supplied id as authority |
 
 A mode-aware facade handles new attempts. It does not, and cannot, handle
 sends that already returned `Ok`: that caller has its success and has moved

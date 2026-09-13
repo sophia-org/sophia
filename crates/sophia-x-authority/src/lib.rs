@@ -31,6 +31,7 @@ mod observation;
 mod packet;
 mod pointer;
 mod property;
+mod ready_stream;
 mod resource;
 mod routing_types;
 mod runtime;
@@ -62,6 +63,7 @@ pub use explicit_pointer_grab::*;
 pub use font::*;
 pub use frontend_config::*;
 pub use frontend_types::*;
+pub use ready_stream::*;
 pub use synthetic_executor::*;
 
 /// Whether the operator asked to watch protocol traffic.
