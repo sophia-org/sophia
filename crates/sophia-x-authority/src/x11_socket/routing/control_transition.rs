@@ -628,6 +628,22 @@ impl PrivateXServerFrontend {
             .expect("a private frontend installs its gate at construction")
     }
 
+    /// The keyboard state for this instance's executing thread.
+    ///
+    /// Built here so it carries this instance's identity, and built once per
+    /// executing runner rather than per turn: the state is the seat's history,
+    /// and a second one would start that history again with whatever keys are
+    /// currently held belonging to neither.
+    ///
+    /// `None` when the keymap will not compile at all. An instance that cannot
+    /// apply a key says so rather than discovering it inside a transaction.
+    pub fn keyboards(&self) -> Option<PrivateKeyboards> {
+        PrivateKeyboards::for_instance(
+            self.controller.identity().ok()?,
+            crate::XkbRmlvoConfig::default(),
+        )
+    }
+
     /// Where admission and revocation reach this boundary.
     ///
     /// Handed to whoever performs revocation. Taking it is not a right over

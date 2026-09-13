@@ -11909,8 +11909,8 @@ fn cleanup_left_unresolved_is_resumed_rather_than_revisited_by_revocation() {
 
 #[test]
 fn keyboard_state_is_applied_on_this_thread_with_both_modifier_facts() {
-    let mut keyboards = crate::PrivateKeyboards::new(crate::XkbRmlvoConfig::default())
-        .expect("a keymap that compiles");
+    let private = private_for_roles();
+    let mut keyboards = private.keyboards().expect("a keymap that compiles");
     let seat = SeatId::from_raw(1);
 
     // Applying before preparing does not build anything. Building compiles a
@@ -11963,6 +11963,43 @@ fn keyboard_state_is_applied_on_this_thread_with_both_modifier_facts() {
         keyboards.modifiers(seat),
         Some(0),
         "seats do not share state"
+    );
+}
+
+#[test]
+fn keyboard_state_answers_for_one_instance_only() {
+    let first = private_for_roles();
+    let second = private_for_roles();
+    let mut keyboards = first.keyboards().expect("a keymap that compiles");
+
+    let first_identity = first.authority().identity().expect("an identity");
+    let second_identity = second.authority().identity().expect("an identity");
+    assert_ne!(
+        first_identity, second_identity,
+        "two instances are two identities"
+    );
+
+    // Being owned by this thread says nothing about whose state it is. Without
+    // the binding, one instance's turn could be driven with the other's
+    // keyboard history and every modifier would be read from the wrong past.
+    assert!(keyboards.answers_for(first_identity));
+    assert!(
+        !keyboards.answers_for(second_identity),
+        "another instance's state cannot be substituted for this one's"
+    );
+
+    // And the state it holds is this instance's, not a fresh one: a seat
+    // already prepared keeps what it is holding rather than starting again.
+    let seat = SeatId::from_raw(1);
+    assert!(keyboards.prepare(seat));
+    keyboards.apply(seat, 42, true).expect("left shift to map");
+    let held = keyboards.modifiers(seat).expect("the seat");
+    assert_ne!(held, 0, "a modifier is held");
+    assert!(keyboards.prepare(seat), "preparing again is not rebuilding");
+    assert_eq!(
+        keyboards.modifiers(seat),
+        Some(held),
+        "so a key held across it is still held by the same state"
     );
 }
 

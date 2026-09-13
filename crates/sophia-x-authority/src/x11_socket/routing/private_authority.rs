@@ -222,6 +222,13 @@ impl PrivateAuthorityController {
 /// execution guards, so an ordered execution cannot use it.
 #[cfg(unix)]
 pub struct PrivateKeyboards {
+    /// Which private instance this state answers for.
+    ///
+    /// Being owned by the executing thread says nothing about *whose* state it
+    /// is. Without this, one instance's turn could be driven with another
+    /// instance's keyboard state and every modifier would be read from the
+    /// wrong history.
+    authority: sophia_input_authority::AuthorityIdentity,
     /// The keymap every seat here is built from, so a seat met later is built
     /// the same way as one met first.
     config: crate::XkbRmlvoConfig,
@@ -230,24 +237,44 @@ pub struct PrivateKeyboards {
 
 #[cfg(unix)]
 impl PrivateKeyboards {
-    /// Build the state for one executing thread, proving the keymap compiles.
+    /// Build the state one instance's executing thread will own.
     ///
-    /// Fallible here rather than at first use: a keymap that does not compile
-    /// would otherwise fail inside a transaction, after the point where
-    /// refusing is still free.
-    pub fn new(config: crate::XkbRmlvoConfig) -> Option<Self> {
+    /// The probe here compiles a keymap and discards it. That is worth doing
+    /// -- a keymap that cannot compile at all is better found now than inside
+    /// a transaction -- but it is worth exactly that and no more: it does not
+    /// retain the compiled keymap, and it does not establish that a seat
+    /// prepared later will compile successfully. Each seat compiles its own,
+    /// and each can fail, which is why preparing is fallible and happens
+    /// before anything depending on it is accepted.
+    fn for_instance(
+        authority: sophia_input_authority::AuthorityIdentity,
+        config: crate::XkbRmlvoConfig,
+    ) -> Option<Self> {
         crate::XkbKeyboardState::new(&config).ok()?;
         Some(Self {
+            authority,
             config,
             seats: BTreeMap::new(),
         })
+    }
+
+    /// Whether this state answers for that instance.
+    ///
+    /// Asked before a turn uses it, so one instance cannot be driven with
+    /// another's keyboard history.
+    pub fn answers_for(&self, authority: sophia_input_authority::AuthorityIdentity) -> bool {
+        self.authority == authority
     }
 
     /// Make sure this seat has state, before any transaction is entered.
     ///
     /// Separate from applying, because building compiles a keymap and that is
     /// neither free nor infallible. Doing it inside the guards would put a
-    /// fallible allocation where a refusal is no longer free.
+    /// fallible compilation where a refusal is no longer free.
+    ///
+    /// A seat already prepared is left exactly as it is. Rebuilding one would
+    /// discard the modifiers it is holding, so a key held across the rebuild
+    /// would be released by nobody and held by nothing.
     pub fn prepare(&mut self, seat: SeatId) -> bool {
         if self.seats.contains_key(&seat) {
             return true;
