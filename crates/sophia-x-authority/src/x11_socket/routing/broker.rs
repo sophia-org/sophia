@@ -113,17 +113,17 @@ impl XAuthorityRoutedInputSender {
         })
     }
 
-    /// Submit work, distinguishing denial from saturation.
+    /// Stamp work and reserve its place in the recovery ledger.
     ///
-    /// The ordinary `try_send` reports a stamp refusal as `Full`, which tells
-    /// a caller to retry something that is being refused on policy. This says
-    /// which it is. Reservation still happens before acceptance, and is rolled
-    /// back only for this envelope's own delivery, only when this envelope was
-    /// the one that could not be placed.
-    pub(crate) fn try_send_private(
+    /// Reservation before acceptance, so a caller that is later refused has
+    /// something exact to roll back rather than a guess. Every refusal here is
+    /// typed at its source: the ledger being full, this delivery already being
+    /// live, and the ledger being unreadable are three different answers, and
+    /// only the first is worth retrying.
+    fn stamp_and_reserve(
         &self,
         route: XAuthorityRoutedInput,
-    ) -> Result<(), PrivateSendError> {
+    ) -> Result<XAuthorityEpochRoutedInput, PrivateSendError> {
         let stamp = match self.stamp() {
             Ok(stamp) => stamp,
             Err(()) => return Err(PrivateSendError::Denied(route)),
@@ -133,22 +133,29 @@ impl XAuthorityRoutedInputSender {
             publication: stamp.publication,
             route,
         };
-        if !self
+        match self
             .recovery
-            .admit(&envelope.route, envelope.control_epoch, Instant::now())
+            .admit_typed(&envelope.route, envelope.control_epoch, Instant::now())
         {
-            return Err(PrivateSendError::Saturated(envelope.route));
+            Ok(()) => Ok(envelope),
+            Err(RecoveryAdmissionRefusal::LedgerFull) => {
+                Err(PrivateSendError::Saturated(envelope.route))
+            }
+            Err(RecoveryAdmissionRefusal::DeliveryAlreadyTracked(_)) => {
+                Err(PrivateSendError::DeliveryAlreadyTracked(envelope.route))
+            }
+            Err(RecoveryAdmissionRefusal::LedgerUnavailable) => {
+                Err(PrivateSendError::Unavailable(envelope.route))
+            }
         }
-        self.sender.try_send(envelope).map_err(|error| match error {
-            TrySendError::Full(envelope) => {
-                self.recovery.abort_enqueue(envelope.route.delivery);
-                PrivateSendError::Saturated(envelope.route)
-            }
-            TrySendError::Disconnected(envelope) => {
-                self.recovery.abort_enqueue(envelope.route.delivery);
-                PrivateSendError::Disconnected(envelope.route)
-            }
-        })
+    }
+
+    /// Release exactly one reservation, by its own delivery.
+    ///
+    /// Never another request's: a refusal rolls back what it reserved and
+    /// leaves every live delivery alone.
+    fn abort_reservation(&self, delivery: Option<XAuthorityInputDeliveryId>) {
+        self.recovery.abort_enqueue(delivery);
     }
 
     pub fn try_send(

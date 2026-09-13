@@ -3205,7 +3205,7 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
             surface,
             XAuthorityInputDeliveryId::from_raw(delivery),
         )) {
-            Ok(()) => {}
+            Ok(_) => {}
             Err(crate::PrivateSendError::Saturated(_)) => {
                 saturated = true;
                 break;
@@ -3260,27 +3260,25 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
         .register_surface(client, namespace, surface, window)
         .unwrap();
 
-    // One routed input and one control. The input plus any cleanup fills the
-    // ordinary share, and the control is what used to be taken and destroyed.
+    // One routed input and one control, both accepted by producers into the
+    // shared order rather than left in channels for a later pass to collect.
     private
         .ingress()
         .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(9001)))
         .expect("an open coordinator to accept work");
     private
-        .broker
-        .control_sender()
-        .send(XAuthorityClientControlCommand {
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(7),
                 surface,
             },
         })
-        .expect("the control channel to accept");
+        .expect("the shared admission to accept control");
 
-    // However many passes it takes, both arrive. Conservation is the property:
-    // work accepted from a producer is not allowed to disappear because a pass
-    // had no room for it.
+    // Both arrive. Conservation is the property: work a producer was told was
+    // accepted is not allowed to disappear.
     let mut ran = 0usize;
     for _ in 0..6 {
         ran += private.route_pending().expect("an ordered pass");
@@ -3290,5 +3288,111 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
     assert!(
         channels.control.try_recv().is_ok(),
         "the control reached its client rather than being destroyed"
+    );
+}
+
+#[test]
+fn two_producer_classes_share_one_order() {
+    let namespace = NamespaceId::from_raw(51);
+    let client = XServerFrontendClientId(68);
+    let surface = SurfaceId::new(55, 1);
+    let window = XResourceId::new(0x200190, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(16).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    let input = private.ingress();
+    let control = private.control_producer();
+
+    // Alternating, from two genuinely different producer facades. Consumer
+    // staging would have grouped these by source no matter how they arrived.
+    let mut expected = Vec::new();
+    for step in 0..4u64 {
+        let at = input
+            .submit(motion_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(400 + step),
+            ))
+            .expect("an open coordinator to accept input");
+        expected.push(at.raw());
+        let at = control
+            .submit(XAuthorityClientControlCommand {
+                client,
+                command: XAuthorityControlCommand::FocusSurface {
+                    transaction: TransactionId::from_raw(step + 1),
+                    surface,
+                },
+            })
+            .expect("the shared admission to accept control");
+        expected.push(at.raw());
+    }
+
+    // Positions rise in acceptance order across both producers, not grouped.
+    assert!(
+        expected.windows(2).all(|pair| pair[0] < pair[1]),
+        "positions must rise in acceptance order across producers: {expected:?}"
+    );
+    assert_eq!(private.route_pending().expect("the shared order to run"), 8);
+}
+
+#[test]
+fn a_send_that_returned_is_never_overtaken_by_one_that_started_later() {
+    let namespace = NamespaceId::from_raw(52);
+    let client = XServerFrontendClientId(69);
+    let surface = SurfaceId::new(56, 1);
+    let window = XResourceId::new(0x2001a0, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(16).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    let first = private.ingress();
+    let second = private.control_producer();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+
+    // A's send completes before B's begins, enforced rather than hoped for.
+    let a_at = first
+        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(500)))
+        .expect("an open coordinator to accept input");
+    let gate_for_b = std::sync::Arc::clone(&barrier);
+    let b = std::thread::spawn(move || {
+        gate_for_b.wait();
+        second.submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(9),
+                surface,
+            },
+        })
+    });
+    barrier.wait();
+    let b_at = b.join().expect("the second producer").expect("accepted");
+
+    assert!(
+        a_at.raw() < b_at.raw(),
+        "a completed send cannot be overtaken by one that started afterwards"
     );
 }

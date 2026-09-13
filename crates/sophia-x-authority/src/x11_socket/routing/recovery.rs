@@ -47,6 +47,18 @@ struct InputRecovery {
 }
 
 #[cfg(unix)]
+/// Why the recovery ledger would not track a delivery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryAdmissionRefusal {
+    /// The ledger has no room. Retrying later is sensible.
+    LedgerFull,
+    /// This delivery id is already live. Retrying cannot help, and cancelling
+    /// the live one would answer a different request.
+    DeliveryAlreadyTracked(XAuthorityInputDeliveryId),
+    /// The ledger cannot be read. Nothing can be tracked until that is over.
+    LedgerUnavailable,
+}
+
 impl InputRecovery {
     fn new(
         capacity: usize,
@@ -62,14 +74,33 @@ impl InputRecovery {
     }
 
     fn admit(&self, route: &XAuthorityRoutedInput, epoch: u64, now: Instant) -> bool {
+        self.admit_typed(route, epoch, now).is_ok()
+    }
+
+    /// Admit, saying which refusal this is.
+    ///
+    /// The boolean above answers three different questions with one word: the
+    /// ledger is full, this delivery id is already live, or the ledger cannot
+    /// be read at all. A caller told only `false` reports all three as
+    /// saturation, which invites a retry that will never succeed for two of
+    /// them.
+    fn admit_typed(
+        &self,
+        route: &XAuthorityRoutedInput,
+        epoch: u64,
+        now: Instant,
+    ) -> Result<(), RecoveryAdmissionRefusal> {
         let Some(delivery) = route.delivery else {
-            return true;
+            return Ok(());
         };
         let Ok(mut state) = self.state.lock() else {
-            return false;
+            return Err(RecoveryAdmissionRefusal::LedgerUnavailable);
         };
-        if state.tickets.len() >= self.capacity || state.tickets.contains_key(&delivery) {
-            return false;
+        if state.tickets.contains_key(&delivery) {
+            return Err(RecoveryAdmissionRefusal::DeliveryAlreadyTracked(delivery));
+        }
+        if state.tickets.len() >= self.capacity {
+            return Err(RecoveryAdmissionRefusal::LedgerFull);
         }
         state.tickets.insert(
             delivery,
@@ -87,7 +118,7 @@ impl InputRecovery {
                 routing_finished: false,
             },
         );
-        true
+        Ok(())
     }
 
     fn abort_enqueue(&self, delivery: Option<XAuthorityInputDeliveryId>) {

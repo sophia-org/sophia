@@ -1,3 +1,84 @@
+/// The one place a private instance's runnable work is accepted.
+///
+/// Producers admit here directly rather than into their own channels for a
+/// consumer to collect later. Position is assigned and the entry published
+/// inside one hold on this lock, so two producers cannot interleave between
+/// the two, and a send that has returned cannot be overtaken by one that
+/// started afterwards.
+#[cfg(unix)]
+pub struct SharedAdmission {
+    ready: Mutex<crate::ReadyStream<PrivateOperation>>,
+    /// Set once the stream can no longer name an entry.
+    ///
+    /// Terminal, unlike a full queue. Retrying cannot produce an identity that
+    /// does not exist, so further acceptance stops rather than looping. What
+    /// was already accepted keeps its completion and its debt; this refuses
+    /// new work instead of pretending the instance is healthy.
+    exhausted: AtomicBool,
+}
+
+#[cfg(unix)]
+impl SharedAdmission {
+    fn new(ready: crate::ReadyStream<PrivateOperation>) -> Self {
+        Self {
+            ready: Mutex::new(ready),
+            exhausted: AtomicBool::new(false),
+        }
+    }
+
+    /// Accept runnable work, assigning its position as it is published.
+    ///
+    /// A refusal returns the operation itself rather than some part of it.
+    /// Control and cleanup are not routes, so a refusal that handed back only
+    /// a route would destroy exactly the work that has no other owner.
+    fn accept(
+        &self,
+        class: crate::ReadyClass,
+        operation: PrivateOperation,
+    ) -> Result<crate::ReadySequence, (AdmissionRefusal, PrivateOperation)> {
+        // Checked before acceptance, so an exhausted stream never takes work
+        // it cannot name.
+        if self.exhausted.load(Ordering::Acquire) {
+            return Err((AdmissionRefusal::Exhausted, operation));
+        }
+        let Ok(mut ready) = self.ready.lock() else {
+            return Err((AdmissionRefusal::Unavailable, operation));
+        };
+        match ready.admit(class, operation) {
+            Ok(sequence) => Ok(sequence),
+            Err(refused) => match refused.refusal {
+                crate::ReadyRefusal::AtCapacity => {
+                    Err((AdmissionRefusal::Saturated, refused.payload))
+                }
+                crate::ReadyRefusal::SequencesExhausted => {
+                    // Latched here rather than rediscovered on every later
+                    // send, and never reset: reusing a position would answer
+                    // one request with another's identity.
+                    self.exhausted.store(true, Ordering::Release);
+                    Err((AdmissionRefusal::Exhausted, refused.payload))
+                }
+            },
+        }
+    }
+
+    fn take_next(&self) -> Option<(crate::ReadySequence, crate::ReadyClass, PrivateOperation)> {
+        self.ready.lock().ok()?.take_next()
+    }
+}
+
+/// Why the shared admission would not accept work.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdmissionRefusal {
+    /// No room now. Retrying later is sensible.
+    Saturated,
+    /// Positions are exhausted. Terminal: retrying cannot create an identity
+    /// that does not exist.
+    Exhausted,
+    /// The shared queue cannot be reached.
+    Unavailable,
+}
+
 /// Why a private producer's work was not accepted.
 ///
 /// Denial and saturation are different answers and a caller acts on them
@@ -15,6 +96,14 @@ pub enum PrivateSendError {
     Saturated(XAuthorityRoutedInput),
     /// The consumer is gone.
     Disconnected(XAuthorityRoutedInput),
+    /// This delivery id is already live. Retrying cannot help, and cancelling
+    /// the live one would answer a different request.
+    DeliveryAlreadyTracked(XAuthorityRoutedInput),
+    /// The recovery ledger or the shared queue cannot be reached.
+    Unavailable(XAuthorityRoutedInput),
+    /// Positions are exhausted. Terminal for this instance: what was already
+    /// accepted keeps its completion, and nothing further is taken.
+    Exhausted(XAuthorityRoutedInput),
 }
 
 /// A producer's handle to a private frontend.
@@ -26,13 +115,56 @@ pub enum PrivateSendError {
 #[cfg(unix)]
 pub struct PrivateIngress {
     sender: XAuthorityRoutedInputSender,
+    admission: Arc<SharedAdmission>,
+}
+
+/// A producer of control work, bound to one instance's shared admission.
+#[cfg(unix)]
+pub struct PrivateControlProducer {
+    admission: Arc<SharedAdmission>,
+}
+
+#[cfg(unix)]
+impl PrivateControlProducer {
+    /// Accept control into the shared order.
+    pub fn submit(
+        &self,
+        control: XAuthorityClientControlCommand,
+    ) -> Result<crate::ReadySequence, AdmissionRefusal> {
+        self.admission
+            .accept(crate::ReadyClass::Control, PrivateOperation::Control(control))
+            .map_err(|(refusal, _returned)| refusal)
+    }
 }
 
 #[cfg(unix)]
 impl PrivateIngress {
-    /// Submit work, and be told why if it is not accepted.
-    pub fn submit(&self, route: XAuthorityRoutedInput) -> Result<(), PrivateSendError> {
-        self.sender.try_send_private(route)
+    /// Accept work into the shared order, stamping it first.
+    ///
+    /// Position is assigned as the entry is published, inside the shared
+    /// admission's own hold, so a send that has returned cannot be overtaken
+    /// by one that started afterwards.
+    pub fn submit(&self, route: XAuthorityRoutedInput) -> Result<crate::ReadySequence, PrivateSendError> {
+        let envelope = self.sender.stamp_and_reserve(route)?;
+        self.admission
+            .accept(
+                crate::ReadyClass::RoutedInput,
+                PrivateOperation::RoutedInput(envelope),
+            )
+            .map_err(|(refusal, returned)| {
+                let route = match returned {
+                    PrivateOperation::RoutedInput(envelope) => envelope.route,
+                    _ => unreachable!("routed input is returned as routed input"),
+                };
+                // The reservation this send made is rolled back, and only
+                // this one: another request's live delivery is untouched.
+                self.sender.abort_reservation(route.delivery);
+                match refusal {
+                    AdmissionRefusal::Saturated => PrivateSendError::Saturated(route),
+                    AdmissionRefusal::Exhausted => PrivateSendError::Exhausted(route),
+                    AdmissionRefusal::Unavailable => PrivateSendError::Unavailable(route),
+                }
+            })
     }
 }
 
@@ -249,23 +381,24 @@ impl XServerFrontendRouteBroker {
 #[cfg(unix)]
 pub struct PrivateXServerFrontend {
     broker: XServerFrontendRouteBroker,
-    ready: crate::ReadyStream<PrivateOperation>,
-    /// Work that left its channel and could not be placed.
-    ///
-    /// Explicit storage rather than a comment claiming the payload went back
-    /// to a caller. Once an item is out of its channel this is the only thing
-    /// holding it, so it is kept here and offered first on the next pass. A
-    /// binding that goes out of scope is a destroyed payload however it is
-    /// named.
-    retained: Option<(crate::ReadyClass, PrivateOperation)>,
+    /// The one place runnable work is accepted, shared with every producer
+    /// handle this frontend hands out.
+    admission: Arc<SharedAdmission>,
 }
 
 /// One thing the private host has to run, in the order it was admitted.
+#[cfg(unix)]
 #[cfg(unix)]
 enum PrivateOperation {
     /// Input admitted through the stamped envelope.
     RoutedInput(XAuthorityEpochRoutedInput),
     /// A route lease being retired. Privileged cleanup.
+    ///
+    /// No producer facade admits these yet. The class and its reserve exist
+    /// because cleanup must never be the thing that cannot be admitted, and
+    /// building that in later would mean reworking capacity policy under a
+    /// live order.
+    #[allow(dead_code)]
     LeaseRelease(XAuthorityRouteLeaseRelease),
     /// Control whose application belongs in this order.
     Control(XAuthorityClientControlCommand),
@@ -305,15 +438,14 @@ impl PrivateXServerFrontend {
             .get()
             .saturating_mul(2)
             .saturating_add(PRIVATE_CLEANUP_RESERVE);
-        let ready = crate::ReadyStream::new(
+        let staged = crate::ReadyStream::new(
             NonZeroUsize::new(capacity).expect("a doubled non-zero capacity is non-zero"),
             PRIVATE_CLEANUP_RESERVE,
         )
         .expect("a reserve smaller than the capacity it was added to");
         Self {
             broker,
-            ready,
-            retained: None,
+            admission: Arc::new(SharedAdmission::new(staged)),
         }
     }
 
@@ -323,7 +455,10 @@ impl PrivateXServerFrontend {
     /// acceptance fails, so a refusal leaves no reservation behind and no
     /// other request's delivery is disturbed: only this envelope's own id is
     /// aborted, and only when this envelope was the one that failed.
-    pub fn submit(&self, route: XAuthorityRoutedInput) -> Result<(), PrivateSendError> {
+    pub fn submit(
+        &self,
+        route: XAuthorityRoutedInput,
+    ) -> Result<crate::ReadySequence, PrivateSendError> {
         self.ingress().submit(route)
     }
 
@@ -336,102 +471,42 @@ impl PrivateXServerFrontend {
     pub fn ingress(&self) -> PrivateIngress {
         PrivateIngress {
             sender: self.broker.routed_input_sender(),
+            admission: Arc::clone(&self.admission),
         }
     }
 
-    /// Admit everything runnable into one order, then run it in that order.
+    /// A producer handle for control, bound to this instance's admission.
     ///
-    /// Two passes rather than five loops. The first takes what is available
-    /// from each source and gives each item its position as it is admitted, so
-    /// the interleaving is decided once. The second runs them in that order,
-    /// and nothing jumps.
+    /// A second real producer class, so the shared order is something two
+    /// producers actually contend for rather than one producer's queue with a
+    /// new name.
+    pub fn control_producer(&self) -> PrivateControlProducer {
+        PrivateControlProducer {
+            admission: Arc::clone(&self.admission),
+        }
+    }
+
+    /// Run what producers have accepted, in the order they accepted it.
     ///
-    /// Raw ingress is not among the sources. It carries no stamp, and a
-    /// private instance refuses to expose a handle to it in the first place.
+    /// There is no collection pass. Producers admit into the shared order as
+    /// their work becomes runnable, so position is already decided by the time
+    /// this runs; a pass that gathered from per-source channels would decide
+    /// the interleaving here instead, and would decide it by which source it
+    /// visited first.
+    ///
+    /// Raw ingress is not a source. It carries no stamp, and a private
+    /// instance will not hand out a handle to one.
     pub fn route_pending(&mut self) -> Result<usize, XServerFrontendRouteError> {
-        self.admit_runnable()?;
-        self.run_admitted()
-    }
-
-    /// Take what each source has ready, in one pass.
-    ///
-    /// Capacity is checked BEFORE anything is taken from a channel. A receive
-    /// that cannot be admitted has nowhere to go: the payload has already left
-    /// the channel, the stream will not hold it, and there is no pending slot
-    /// here to keep it in. Discarding it would lose a terminal receipt for
-    /// accepted input, or lose a lease release or a control outright, which is
-    /// the same lost-owned-payload defect the stream itself was repaired for.
-    ///
-    /// This is a consumer-side staging pass and it is not what the ordering
-    /// requirement asks for. Position has to be assigned when a producer's
-    /// work is accepted, not when a later pass happens to collect it. Until
-    /// that lands, work left in a channel waits there rather than being
-    /// destroyed here.
-    fn admit_runnable(&mut self) -> Result<usize, XServerFrontendRouteError> {
-        let mut admitted = 0usize;
-        // Anything held from a previous pass goes first, or it would be
-        // overtaken by work that arrived after it.
-        if let Some((class, operation)) = self.retained.take() {
-            match self.ready.admit(class, operation) {
-                Ok(_) => admitted = admitted.saturating_add(1),
-                Err(refused) => {
-                    self.retained = Some((class, refused.payload));
-                    return Ok(admitted);
-                }
-            }
-        }
-        while self.ready.remaining_for(crate::ReadyClass::Cleanup) > 0 {
-            let Ok(release) = self.broker.route_lease_release_receiver.try_recv() else {
-                break;
-            };
-            if !self.admit_or_retain(crate::ReadyClass::Cleanup, PrivateOperation::LeaseRelease(release)) {
-                return Ok(admitted);
-            }
-            admitted = admitted.saturating_add(1);
-        }
-        while self.ready.remaining_for(crate::ReadyClass::RoutedInput) > 0 {
-            let Ok(route) = self.broker.routed_input_receiver.try_recv() else {
-                break;
-            };
-            if !self.admit_or_retain(crate::ReadyClass::RoutedInput, PrivateOperation::RoutedInput(route)) {
-                return Ok(admitted);
-            }
-            admitted = admitted.saturating_add(1);
-        }
-        while self.ready.remaining_for(crate::ReadyClass::Control) > 0 {
-            let Ok(control) = self.broker.control_receiver.try_recv() else {
-                break;
-            };
-            if !self.admit_or_retain(crate::ReadyClass::Control, PrivateOperation::Control(control)) {
-                return Ok(admitted);
-            }
-            admitted = admitted.saturating_add(1);
-        }
-        Ok(admitted)
-    }
-
-    /// Admit work that has already left its channel, or keep it.
-    ///
-    /// The capacity check above usually makes this succeed, but not always:
-    /// exhausted sequence numbers refuse regardless of room, and no precheck
-    /// covers that. Either way the payload is out of its channel and this is
-    /// the only thing holding it, so a refusal stores it rather than naming it
-    /// and letting it fall out of scope. It is not relabelled as a poisoned
-    /// registry either; nothing is wrong with the registry.
-    fn admit_or_retain(&mut self, class: crate::ReadyClass, operation: PrivateOperation) -> bool {
-        match self.ready.admit(class, operation) {
-            Ok(_) => true,
-            Err(refused) => {
-                self.retained = Some((class, refused.payload));
-                false
-            }
-        }
-    }
-
-    /// Run what was admitted, in the order it was admitted.
-    fn run_admitted(&mut self) -> Result<usize, XServerFrontendRouteError> {
         let mut ran = 0usize;
-        while let Some((_, _, operation)) = self.ready.take_next() {
+        while let Some((_, _, operation)) = self.admission.take_next() {
+            self.run_one(operation)?;
+            ran = ran.saturating_add(1);
+        }
+        Ok(ran)
+    }
+
+    /// Run one operation, whichever order it came from.
+    fn run_one(&mut self, operation: PrivateOperation) -> Result<(), XServerFrontendRouteError> {
             match operation {
                 PrivateOperation::LeaseRelease(release) => {
                     self.broker.registry.release_route_lease(release)?;
@@ -461,8 +536,6 @@ impl PrivateXServerFrontend {
                     self.broker.registry.route_control(control)?;
                 }
             }
-            ran = ran.saturating_add(1);
-        }
-        Ok(ran)
+        Ok(())
     }
 }
