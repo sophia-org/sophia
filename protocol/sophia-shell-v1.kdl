@@ -463,6 +463,8 @@ protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=
     }
     message "ContentCandidateBegin" kind=172 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
         record-ref "grant" record="ContentGrant"
+        // Grant-wide and strictly increasing. Chunk and End omit output, so
+        // two outputs cannot reuse one candidate generation.
         field "candidate_generation" type="u64"
         record-ref "output" record="ContentOutputId"
         field "facts_generation" type="u64"

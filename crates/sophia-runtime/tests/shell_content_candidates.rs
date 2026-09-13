@@ -19,6 +19,13 @@ fn output() -> ContentOutputId {
     }
 }
 
+fn second_output() -> ContentOutputId {
+    ContentOutputId {
+        id: 3,
+        generation: 4,
+    }
+}
+
 fn allocation_id(id: u64) -> ContentAllocationId {
     ContentAllocationId { id, generation: 1 }
 }
@@ -112,6 +119,36 @@ fn begin(generation: u64) -> ContentCandidateBegin {
         placement_count: 1,
         target_count: 1,
     }
+}
+
+#[test]
+fn candidate_generations_are_grant_scoped_across_outputs() {
+    let (mut candidates, _) = stores();
+    candidates.grant_permit(tx(10), output(), 1, 1, 0).unwrap();
+    candidates.begin(tx(11), begin(1), 1).unwrap();
+
+    candidates
+        .grant_permit(tx(12), second_output(), 2, 2, 2)
+        .unwrap();
+    let mut repeated = begin(1);
+    repeated.output = second_output();
+    repeated.pacing_permit = 2;
+    assert_eq!(
+        candidates.begin(tx(13), repeated, 3),
+        Err(ContentCandidateError::Stale)
+    );
+    assert!(
+        std::iter::from_fn(|| candidates.take_event()).any(|event| matches!(
+            event.record,
+            ShellContentRecord::CandidateOutcome(ContentCandidateOutcome {
+                candidate_generation: 1,
+                output,
+                kind: 3,
+                reason,
+                ..
+            }) if output == second_output() && reason == ContentReason::Stale as u16
+        ))
+    );
 }
 
 fn chunk(generation: u64, resource: ContentResourceId) -> ContentCandidateChunk {

@@ -235,6 +235,22 @@ no reuse before final release, and bounded retained bytes/metadata. Account for
 terminal feedback undeliverable after peer loss. Preserve unrelated input and
 indicator behavior; a synthetic host-only encoder is insufficient evidence.
 
+The attended `20260913T221559Z` run on Sophia `826cff1b` and Lom `4340aa0`
+committed the WM configuration once, and the operator observed a moving cursor
+and workspace pills. The panel appeared on output 1 only. Each fresh content
+grant prepared and presented candidate generation 1 on output 1, then the shell
+exited before output 2 and reconnected; 99 transport failures accompanied about
+100 shell epochs. Lom had incorrectly allocated candidate generations per
+panel, while r5 uses one grant-wide namespace because CandidateChunk and
+CandidateEnd omit output. Output 2 therefore repeated generation 1 after output
+1 advanced the grant watermark and was rejected stale. The client repair uses
+one service-wide counter and a two-output real-socket regression. Native
+multi-output stability remains unaccepted until a later attended run shows both
+outputs without reconnects. The same run's `motion_observed` record agrees with
+the operator's moving cursor. `motion_routed` specifically records delivery to
+a client surface; no application target or admitted discrete panel input was
+present, so its absence is expected and does not identify a diagnostics gap.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,
