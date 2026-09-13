@@ -248,6 +248,13 @@ impl PrivateXServerFrontend {
         // Room for a full ingress round plus the classes that arrive beside
         // it, with a share kept back so cleanup is never the thing that cannot
         // be admitted.
+        //
+        // Sized above what the bounded channels can hold at once, which is why
+        // the refusal path below is not reachable from a single source today.
+        // It is kept correct rather than removed, because producer-side
+        // admission will make it reachable: a producer refused at send has to
+        // be handed its payload back, and nothing may be taken from a channel
+        // that cannot then be placed.
         let capacity = input_capacity
             .get()
             .saturating_mul(2)
@@ -275,44 +282,77 @@ impl PrivateXServerFrontend {
     /// Raw ingress is not among the sources. It carries no stamp, and a
     /// private instance refuses to expose a handle to it in the first place.
     pub fn route_pending(&mut self) -> Result<usize, XServerFrontendRouteError> {
-        self.admit_runnable();
+        self.admit_runnable()?;
         self.run_admitted()
     }
 
     /// Take what each source has ready, in one pass.
     ///
-    /// A source that cannot be admitted keeps its item rather than losing it:
-    /// the stream hands a refused payload back, and it is offered again on the
-    /// next pass instead of being dropped here.
-    fn admit_runnable(&mut self) {
-        while let Ok(release) = self.broker.route_lease_release_receiver.try_recv() {
-            if self
-                .ready
-                .admit(crate::ReadyClass::Cleanup, PrivateOperation::LeaseRelease(release))
-                .is_err()
-            {
+    /// Capacity is checked BEFORE anything is taken from a channel. A receive
+    /// that cannot be admitted has nowhere to go: the payload has already left
+    /// the channel, the stream will not hold it, and there is no pending slot
+    /// here to keep it in. Discarding it would lose a terminal receipt for
+    /// accepted input, or lose a lease release or a control outright, which is
+    /// the same lost-owned-payload defect the stream itself was repaired for.
+    ///
+    /// This is a consumer-side staging pass and it is not what the ordering
+    /// requirement asks for. Position has to be assigned when a producer's
+    /// work is accepted, not when a later pass happens to collect it. Until
+    /// that lands, work left in a channel waits there rather than being
+    /// destroyed here.
+    fn admit_runnable(&mut self) -> Result<usize, XServerFrontendRouteError> {
+        let mut admitted = 0usize;
+        while self.ready.remaining_for(crate::ReadyClass::Cleanup) > 0 {
+            let Ok(release) = self.broker.route_lease_release_receiver.try_recv() else {
                 break;
-            }
+            };
+            self.admit_or_fail(
+                crate::ReadyClass::Cleanup,
+                PrivateOperation::LeaseRelease(release),
+            )?;
+            admitted = admitted.saturating_add(1);
         }
-        while let Ok(route) = self.broker.routed_input_receiver.try_recv() {
-            if self
-                .ready
-                .admit(
-                    crate::ReadyClass::RoutedInput,
-                    PrivateOperation::RoutedInput(route),
-                )
-                .is_err()
-            {
+        while self.ready.remaining_for(crate::ReadyClass::RoutedInput) > 0 {
+            let Ok(route) = self.broker.routed_input_receiver.try_recv() else {
                 break;
-            }
+            };
+            self.admit_or_fail(
+                crate::ReadyClass::RoutedInput,
+                PrivateOperation::RoutedInput(route),
+            )?;
+            admitted = admitted.saturating_add(1);
         }
-        while let Ok(control) = self.broker.control_receiver.try_recv() {
-            if self
-                .ready
-                .admit(crate::ReadyClass::Control, PrivateOperation::Control(control))
-                .is_err()
-            {
+        while self.ready.remaining_for(crate::ReadyClass::Control) > 0 {
+            let Ok(control) = self.broker.control_receiver.try_recv() else {
                 break;
+            };
+            self.admit_or_fail(
+                crate::ReadyClass::Control,
+                PrivateOperation::Control(control),
+            )?;
+            admitted = admitted.saturating_add(1);
+        }
+        Ok(admitted)
+    }
+
+    /// Admit work that has already left its channel.
+    ///
+    /// The capacity check above is what makes this succeed, and it is a
+    /// single-threaded pass, so nothing takes the room between the two. If
+    /// that ever stops being true the payload is still not dropped: it goes
+    /// back out as a failure for the caller to answer, because by this point
+    /// it is out of the channel and this is the only place that still holds
+    /// it.
+    fn admit_or_fail(
+        &mut self,
+        class: crate::ReadyClass,
+        operation: PrivateOperation,
+    ) -> Result<(), XServerFrontendRouteError> {
+        match self.ready.admit(class, operation) {
+            Ok(_) => Ok(()),
+            Err(refused) => {
+                let _retained = refused.payload;
+                Err(XServerFrontendRouteError::RegistryPoisoned)
             }
         }
     }

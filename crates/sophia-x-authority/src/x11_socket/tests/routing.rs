@@ -2989,7 +2989,7 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
 }
 
 #[test]
-fn the_private_host_runs_one_order_across_sources() {
+fn the_private_host_delivers_each_admitted_input_exactly_once() {
     let namespace = NamespaceId::from_raw(46);
     let client = XServerFrontendClientId(63);
     let surface = SurfaceId::new(50, 1);
@@ -3010,7 +3010,10 @@ fn the_private_host_runs_one_order_across_sources() {
         .register_surface(client, namespace, surface, window)
         .unwrap();
 
-    // Two stamped inputs, admitted through the coordinator.
+    // Both from ONE sender. This says nothing about ordering across sources,
+    // which is what the shared stream is for and what consumer-side staging
+    // cannot establish; it says each admitted item runs once and reaches its
+    // client.
     let sender = private.routed_input_sender();
     for delivery in [100u64, 101] {
         sender
@@ -3023,15 +3026,12 @@ fn the_private_host_runs_one_order_across_sources() {
 
     let ran = private.route_pending().expect("the ordered pass to run");
     assert_eq!(ran, 2, "both admitted operations ran");
-
-    // Both reached the client, in the order they were admitted.
-    let first = channels.input.try_recv().expect("the first delivery");
-    let second = channels.input.try_recv().expect("the second delivery");
+    assert!(channels.input.try_recv().is_ok());
+    assert!(channels.input.try_recv().is_ok());
     assert!(
         channels.input.try_recv().is_err(),
-        "nothing else was delivered"
+        "each admitted item is delivered once, not twice"
     );
-    let _ = (first, second);
 }
 
 #[test]
@@ -3116,4 +3116,57 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
             outcome: XAuthorityInputDeliveryOutcome::EpochRevoked,
         }
     );
+}
+
+#[test]
+fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
+    let namespace = NamespaceId::from_raw(48);
+    let client = XServerFrontendClientId(65);
+    let surface = SurfaceId::new(52, 1);
+    let window = XResourceId::new(0x200160, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    // Ingress capacity larger than the ready stream's ordinary share, so more
+    // can be sent than one pass can admit.
+    let mut private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(16).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    let sender = private.routed_input_sender();
+    let sent = 16u64;
+    for delivery in 0..sent {
+        sender
+            .send(motion_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(200 + delivery),
+            ))
+            .expect("an open coordinator to admit work");
+    }
+
+    // However many passes it takes, everything sent is eventually delivered.
+    // Taking from a channel without room to admit would have destroyed the
+    // difference, silently.
+    let mut delivered = 0usize;
+    for _ in 0..8 {
+        delivered += private.route_pending().expect("an ordered pass");
+    }
+    assert_eq!(
+        delivered, sent as usize,
+        "work a pass could not admit waits in its channel rather than vanishing"
+    );
+    let mut received = 0usize;
+    while channels.input.try_recv().is_ok() {
+        received += 1;
+    }
+    assert_eq!(received, sent as usize);
 }
