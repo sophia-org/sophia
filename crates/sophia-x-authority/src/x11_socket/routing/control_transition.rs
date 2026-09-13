@@ -232,6 +232,42 @@ impl PrivateXServerFrontend {
         Self { broker }
     }
 
+    /// Register a client, so this frontend has somewhere to route to.
+    ///
+    /// Delegated rather than reimplemented: a private host differs in what it
+    /// admits and how it orders, not in what a client is.
+    ///
+    /// Module-visible because the registration it returns is, and because a
+    /// private host's client admission should eventually arrive through the
+    /// admission path rather than as a passthrough. Publishing this shape now
+    /// would be publishing scaffolding.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn register_client(
+        &self,
+        client: XServerFrontendClientId,
+    ) -> Result<
+        (
+            XServerFrontendClientRouteRegistration,
+            XServerFrontendClientRouteChannels,
+        ),
+        XServerFrontendRouteError,
+    > {
+        self.broker.registry.register_client(client)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn register_surface(
+        &self,
+        client: XServerFrontendClientId,
+        namespace: NamespaceId,
+        surface: SurfaceId,
+        window: XResourceId,
+    ) -> Result<(), XServerFrontendRouteError> {
+        self.broker
+            .registry
+            .register_surface(client, namespace, surface, window)
+    }
+
     /// The stamped ingress. There is no unstamped one.
     pub fn routed_input_sender(&self) -> XAuthorityRoutedInputSender {
         self.broker.routed_input_sender()

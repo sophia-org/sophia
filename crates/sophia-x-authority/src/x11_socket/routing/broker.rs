@@ -27,9 +27,11 @@ pub struct XServerFrontendRouteBroker {
     /// Whether a raw ingress handle has ever been handed out.
     ///
     /// Raw ingress carries no stamp, and a handle already given away cannot be
-    /// recalled or answered: a send that returned success has no contract to
-    /// refuse through afterwards. So this records the fact, and activation
-    /// refuses rather than pretending the handle can be reasoned with.
+    /// recalled. Some raw events do carry a real delivery id and are answered
+    /// through it; what cannot be done is turning a `send` that already
+    /// returned success into an error afterwards. So this records that a
+    /// handle escaped, and activation refuses rather than pretending the
+    /// handle can be reasoned with.
     ///
     /// This stands in for a queue-length check, and the invariant it rests on
     /// is worth stating because a future change could quietly break it: the

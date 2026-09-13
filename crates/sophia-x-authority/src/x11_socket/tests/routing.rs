@@ -2941,10 +2941,14 @@ fn exposure_outlives_the_handle_that_caused_it() {
 }
 
 #[test]
-fn a_frontend_built_private_offers_only_stamped_ingress() {
+fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
+    let namespace = NamespaceId::from_raw(45);
+    let client = XServerFrontendClientId(62);
+    let surface = SurfaceId::new(49, 1);
+    let window = XResourceId::new(0x200130, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
-    let (gate, _instance, _issuer) = control_gate();
+    let (gate, mut instance, issuer, _submit) = control_gate_with_submit();
 
     // The coordinator exists before the broker does, so there is no interval
     // in which a handle could be taken from an ungated instance.
@@ -2954,9 +2958,37 @@ fn a_frontend_built_private_offers_only_stamped_ingress() {
         delivery_sender,
         gate.clone(),
     );
+    let (_registration, _channels) = private.register_client(client).unwrap();
+    private
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
 
-    // Stamped ingress is available and stamps from the coordinator.
+    // Actually send, rather than asking the gate a question the sender was
+    // never involved in. Open: admitted.
     let sender = private.routed_input_sender();
-    let _ = sender;
-    assert!(gate.stamp().is_ok(), "an open coordinator stamps");
+    sender
+        .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(95)))
+        .expect("an open coordinator to admit work");
+
+    // Close THIS gate. If the sender were stamping from anything else, it
+    // would carry on admitting.
+    gate.with(|coordinator| {
+        coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("the transition to be requested");
+    })
+    .expect("the gate");
+
+    assert!(
+        sender
+            .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(96)))
+            .is_err(),
+        "the sender must stamp from the coordinator this frontend was built with"
+    );
 }
