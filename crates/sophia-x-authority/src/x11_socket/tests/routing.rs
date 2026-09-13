@@ -13152,3 +13152,81 @@ fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
         "the refused drain took nothing away from the order"
     );
 }
+
+#[test]
+fn a_turn_that_fails_part_way_keeps_what_it_already_took() {
+    let client = XServerFrontendClientId(851);
+    let surface = SurfaceId::new(851, 1);
+    let private = private_for_roles();
+    let _registration = admit_role_client(&private, client);
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200851, 1),
+        )
+        .expect("the surface to register");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut private = private;
+
+    // A real sequence from a real submission, so nothing here invents an
+    // identity the order never issued.
+    private
+        .ingress()
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(851),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    let parked = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    let [PrivateOrderedItem::Parked { sequence }] = parked.as_slice() else {
+        panic!("unreserved work parks");
+    };
+    let sequence = *sequence;
+    let _ = private.take_parked();
+
+    // Staged as an earlier iteration leaves it: work already taken out of the
+    // order and recorded, with the turn still in progress. Staged rather than
+    // raced, because making the queue fail between two real iterations is not
+    // something a test can arrange deterministically.
+    private.turn.push(PrivateOrderedItem::Parked { sequence });
+
+    // The order becomes unreadable.
+    let ready = std::sync::Arc::clone(&private.admission.ready);
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = ready.lock().unwrap();
+            panic!("poisoning the order");
+        })
+        .join()
+        .is_err()
+    );
+
+    let failed = private.route_pending_ordered(&mut keyboards);
+    assert!(failed.is_err(), "the turn could not read the order");
+
+    // What it had already taken is still owned. Returning results only on
+    // success would drop every earlier iteration's work on a later one's
+    // failure, and that work has left the order -- nothing else holds it.
+    let recovered = private.take_interrupted_turn();
+    assert_eq!(
+        recovered.len(),
+        1,
+        "the interrupted turn's items survived the failure"
+    );
+    assert!(matches!(
+        recovered.as_slice(),
+        [PrivateOrderedItem::Parked { .. }]
+    ));
+    assert!(
+        private.take_interrupted_turn().is_empty(),
+        "and recovering them twice yields nothing the second time"
+    );
+}
