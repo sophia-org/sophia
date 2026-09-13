@@ -52,6 +52,9 @@ A task looks like this:
   ordering, then CP-15.1 and CP-15.2, and their linked exit conditions.
 - The Markdown link points to the task's full criteria and evidence. It is
   ordinary task-description text to todo.txt and a traversable link to `zk`.
+- `depends:tNNN,tMMM` names local prerequisites. `peer:lom/tNNN,tMMM` names
+  paired work in Lom; identities remain repository-local. Shared evidence may
+  satisfy distinct exits, but completing a peer never closes a local task.
 
 The repository's `id:` and `order:` conventions use todo.txt's permitted
 `key:value` metadata. Upstream clients preserve them but do not enforce Sophia's

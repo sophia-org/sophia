@@ -1,11 +1,18 @@
 # Sophia Shell Interface Direction
 
 **Role:** direction and experimental-contract note for `sophia_shell_v1`.
-**Status:** revision 4 adds the [native application launcher](application-launcher.md).
-Revision 3 reference sheets, revision 2 persistent tabs, and revision 1 switcher
-and reservation clients remain supported. These are descriptor capabilities;
-the [content-shell behavioral proposal](content-shell.md) is unimplemented and
-assigns no wire types. The interface is not stable.
+**Status:** revision 6 carries indicators and the revision-5 CPU content
+vocabulary alongside older descriptor capabilities. The
+[content implementation](lom-content-implementation.md) reaches production
+composition/retirement boundaries, but production launch admission, discrete
+input and native acceptance remain open. The interface is not stable.
+
+The accepted [presentation/execution decision](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
+keeps renderer-neutral images on the shell wire and explicit direct GPU access
+as separate startup permission. No custom kernel, mandatory GPU bridge or
+Vello dependency is required by Sophia. The
+[paired Lom/Sophia plan](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md)
+owns remaining integration. The surveys below retain historical design evidence.
 
 The experimental role schema is `protocol/sophia-shell-v1.kdl`. This note
 records how broader shell vocabulary will be derived, the external evidence
@@ -25,10 +32,10 @@ transport, library requirement, or alternate Engine entry point.
 ### Descriptor And Content Shells
 
 Maintain both architectural models. Narthex remains the independent descriptor
-reference; a separately admitted content capability will let a shell rasterize
-its own widgets. The [content-shell proposal](content-shell.md) collects that
-model's behavioral requirements, beginning with a panel and anchored popout.
-It owns the proposed content behavior; this direction note retains research
+reference; a separately granted content capability lets a shell rasterize its
+own widgets. [Content shells](content-shell.md) collects that model's behavioral
+requirements, beginning with a panel and anchored popout.
+It owns the content behavior; this direction note retains research
 provenance and feasibility questions. The existing normative contracts still
 take precedence over both.
 
@@ -57,17 +64,16 @@ and confirmed WM restart; generic shell commands remain unimplemented.
 ### Vocabulary Development
 
 Derive capabilities from retained shell workflows and prove them with
-independent clients. Quickshell is the first downstream content-adapter
-reference; its Qt/QML implementation supplies workload evidence, never protocol
-authority. Noctalia's native scene-graph and service survey below remains a
-second source of requirements. Narthex remains the maintained, independent
-descriptor client.
+independent clients. Lom is now the driving downstream content adapter. Its
+Xilem/Masonry/Vello stack supplies workload evidence, never protocol authority.
+The earlier Quickshell audit and Noctalia survey remain sources of requirements.
+Narthex remains the maintained, independent descriptor client.
 
 Sophia's normative architecture, common protocol contract, role semantics, and
 schema own the interface. No reference client's object model, dependencies, or
-private APIs may become requirements for another implementation. A future
-content capability must be exercised by both Quickshell and an independently
-written non-Qt client using the same published contract.
+private APIs may become requirements for another implementation. The complete
+content workflow must be exercised by Lom and an independent C client using
+the same published contract without Lom or Sophia libraries in the C client.
 
 ### Frontend And Toolkit Independence
 
@@ -97,8 +103,8 @@ capture. Content authorization grants neither foreign pixels nor WM authority.
 The [reference-client audit](shell-reference-client-audit.md) bounds the first
 panel-and-popout workflow. Preparation establishes that workflow and the
 downstream build; the [content-shell proposal](content-shell.md) now specifies
-its behavior. Neither adds content messages, capability assignments, Qt
-dependencies, or runtime defaults to Sophia.
+its behavior. The subsequent content ADR and schema own the actual bytes;
+neither reference toolkit supplies protocol authority or implicit runtime grants.
 
 ## The First Experimental Slice
 
@@ -107,7 +113,8 @@ shell is now Narthex (`narthex --serve`). Its revision-2 tab extension is specif
 in [tabbed layouts](tabbed-layouts.md): Hagia proposes opaque group facts, Sophia
 supplies recipient-local descriptors, and Narthex confirms complete candidates.
 Sophia owns GPU composition, presentation, hit testing, and action validation.
-Rich content remains a future capability under the direction described here.
+The CPU content implementation described above is later work; this slice is
+retained as descriptor history, not its current implementation status.
 
 Revision 1 carries one complete, bounded descriptor snapshot from Sophia to a
 separately protected shell. Each row contains an opaque slot, sanitized label,

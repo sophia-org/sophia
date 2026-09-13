@@ -2,10 +2,17 @@
 id: odjw4jav
 date: 2026-09-13
 kind: adr
-status: accepted
+status: superseded
 tags: [adr, shell, gpu, cgroup, dmem, lom]
 ---
 # Confine the Lom GPU domain with cgroup dmem
+
+Superseded on 2026-09-13 by
+[Separate shell presentation from GPU execution permission](mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md).
+The original decision and host observations below are retained as history. A
+custom kernel and hard GPU-memory quota are no longer production prerequisites;
+the successor explicitly accepts direct GPU execution risk without claiming
+that a device bind enforces this record's quota.
 
 ## Context
 

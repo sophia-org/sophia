@@ -151,9 +151,16 @@ not be retried.
 
 ## Production admission remains closed
 
-GPU permission is an explicit startup protection-domain grant, not a negotiation
-bit or an implication of content permission. Selected device visibility and
-enforceable allocation accounting must exist before enabling production content.
+The accepted target changed on 2026-09-13:
+[Separate shell presentation from GPU execution permission](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
+supersedes the mandatory cgroup GPU-quota design. The runtime at `22c01aa1`
+still has the old fail-closed admission placeholder; the new decision does not
+enable it. GPU permission remains a separate explicit launch grant, independent
+of content negotiation. Implemented device/child identity, protection-domain
+evidence and compositor-owned backing accounting are still prerequisites.
+
+The following observations explain the former blocker; they are not current
+kernel requirements or claims of portable GPU isolation:
 
 The existing DRI3 256 MiB limit is per import; it is not an aggregate budget and
 does not cover Vello's internal GPU buffers and caches. Pinned Vello 0.8.0 and
@@ -163,10 +170,13 @@ host has no `dmem` cgroup controller and `/boot/config-6.18.50_1` states
 `CONFIG_CGROUP_DMEM` is not set. This is neither a kernel-change recommendation
 nor evidence that that option alone would satisfy the policy.
 
-An allocator/device admission design with an enforceable owner remains required.
-No render-node bind, GPU permission, installed profile or shell replacement was
-added. The CPU pool does not claim to count renderer/upload copies that are not
-yet integrated with it.
+The accepted replacement permits direct rendering on supported stock Linux
+installations without a custom kernel or `dmem`. It explicitly does not promise
+a hard aggregate GPU-memory limit. No render-node grant, installed-profile
+change or shell replacement follows from that acceptance. The CPU pool still
+does not count renderer/upload copies that have not been integrated with it;
+the [launch and backing-accounting task](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t097)
+must close the compositor-owned gap without claiming to meter driver VRAM.
 
 Lom `b77e4eb` now owns a bounded persistent connection, allocation, Vello
 readback, resource transfer, pacing, complete-candidate presentation and safe
@@ -179,3 +189,9 @@ validates the exact prototype GPU-memory number. The first live configuration is
 workspaces, clock and calendar. Other Minimal modules remain fixtures until
 authorized live sources exist. Acceptance must prove retirement, activation,
 anchoring, consumed outside dismissal, restart and output changes.
+
+The prototype quota key above describes current code, not the successor's
+target configuration. The [paired critical path](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md)
+tracks its explicit migration, presented actions, combined descriptor workflows,
+recovery, packaging and native acceptance. Historical artifacts in this record
+remain unchanged and do not validate the new launch policy.

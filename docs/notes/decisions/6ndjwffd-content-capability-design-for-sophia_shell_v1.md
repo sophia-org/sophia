@@ -7,6 +7,14 @@ tags: [adr, shell, protocol, content, graphics]
 ---
 # Content capability design for sophia_shell_v1
 
+Execution amendment, accepted 2026-09-13:
+[Separate shell presentation from GPU execution permission](mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
+removes the mandatory hard GPU-quota/kernel prerequisite. It retains this CPU
+wire, complete-candidate lifecycle and finite content budgets. It grants no
+implicit device access and changes no record layouts. The context below records
+the original proposal; the [implementation record](../../lom-content-implementation.md)
+is the source for current coverage and remaining gates.
+
 ## Context
 
 [The content shell proposal](../../content-shell.md) describes a shell that owns

@@ -18,9 +18,15 @@ the operator guide and its original implementation evidence.
 ## Shell direction
 
 The historical [descriptor/content-shell discussion](../sources/2026-09/legacy-active-0634-2026-09-06--descriptor-and-content-shells-have-distinct-trust-contracts.md)
-explains the distinction between today's descriptor capabilities and proposed
-shell-owned content. The [current content-shell proposal](../../content-shell.md)
-owns the scope and remaining design gates.
+explains the distinction between descriptor capabilities and shell-owned
+content. [Content shells](../../content-shell.md) owns the behavior, while the
+[implementation record](../../lom-content-implementation.md) separates existing
+CPU transport/lifecycle work from production admission and input gaps.
+The [accepted execution decision](../decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
+permits explicitly granted direct GPU rendering on stock Linux without making
+Vello or a GPU bridge part of the shell wire. The
+[paired Lom/Sophia plan](../plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md)
+owns the integration sequence and native-acceptance exits.
 
 Add connections here when they help someone find an investigation. Search the
 whole collection with `zk list docs/notes --match "terms"`; this page is a curated

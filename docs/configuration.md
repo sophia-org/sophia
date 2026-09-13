@@ -298,14 +298,22 @@ panel deeper than the configured allowance, including every nonzero panel when
 the allowance is absent or zero. [The admission investigation](notes/investigations/gl2ooa99-shell-reservation-admission-ignores-the-configured-panel-depth.md)
 records the repaired boundary.
 
-`shell { content #true; gpu-memory-bytes 268435456; }` opts the selected shell
-into the content workflow and names the admitted prototype GPU-domain ceiling.
-Content defaults to denied. The first implementation accepts exactly 256 MiB;
-a different value needs a separately measured admission decision. These settings
-are necessary policy evidence, but do not themselves grant a render node. The
-production grant remains unavailable until startup can place the stopped shell
-child in a verified cgroup whose device-memory, process-memory, and process-count
-limits match the accepted GPU-domain design.
+The current parser accepts
+`shell { content #true; gpu-memory-bytes 268435456; }`, the earlier prototype
+quota request. Content defaults to denied and the production GPU-domain gate
+still fails closed. These parsed values alone do not grant a render node or
+establish any GPU quota.
+
+The accepted [replacement design](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
+uses independent `content #true` and `gpu "direct"` choices, with GPU access
+defaulting to `gpu "denied"`. This is **target syntax, not currently accepted
+parser syntax**. It requires no custom kernel or `dmem` controller. Direct
+permission accepts GPU execution/availability risk without a hard aggregate
+VRAM guarantee. Its implementation must reject the retired `gpu-memory-bytes`
+form with a migration diagnostic rather than silently weakening the requested
+quota. Existing installed profiles are unchanged by the design decision.
+The [launch task](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t097)
+owns that migration, device identity and actual startup evidence.
 
 The claim rides on the shell's candidate rather than a request of its own:
 Engine admits it against the realized output topology, and it reduces the work

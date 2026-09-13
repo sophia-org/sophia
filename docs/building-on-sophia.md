@@ -82,18 +82,46 @@ authority boundaries while the shell keeps speaking the same role protocol.
 Implementing another application frontend remains separate product work; X11
 is today's application path and development priority.
 
-Quickshell is a downstream reference for developing richer shell capabilities.
-Qt/QML types, toolkit plugins, rendering integration, and shell configuration
-belong in that downstream implementation. They are not Sophia dependencies or
-public wire types. Other native toolkits and languages must be able to build
-the same shell behavior from the published protocol. Narthex remains the
-independent descriptor reference; Noctalia remains another source of workflow
-evidence.
+Lom is the driving content client, using a downstream Xilem/Masonry/Vello
+adapter. Toolkit types, rendering integration and private configuration stay
+downstream; they are not Sophia dependencies or public wire types. Other native
+toolkits and languages must be able to build the same behavior from the
+published protocol. Narthex remains the independent descriptor reference;
+Quickshell and Noctalia remain sources of workflow and feasibility evidence.
 
 The [reference-client audit](shell-reference-client-audit.md) starts with one
-panel and one interactive popout. This is preparation for a future content
-capability, not implemented content support. An ordinary X11 Quickshell panel
+panel and one interactive popout. The [CPU content implementation](lom-content-implementation.md)
+now exists; production GPU admission, content input and native acceptance remain
+open. An ordinary X11 Quickshell panel
 exercises the application frontend and does not acquire the native shell role.
+
+### Rendering Your Own Shell
+
+Implement the shell presentation lifecycle once: negotiate permitted features,
+obtain exact allocation dimensions, render your own pixels, submit immutable
+resources with matching targets, and handle pacing, outcomes and release.
+Engine enables input only from the exact native-presented candidate. Your
+toolkit objects, shader programs and widget state do not enter the public wire.
+The optional Rust client library can help with this lifecycle; an independent
+implementation needs no Sophia libraries.
+
+Execution permission is separate. A CPU-rendered client needs no GPU grant;
+Lom's chosen GPU path requests an explicit default-denied render-node permission
+and reads its result back into the existing CPU-byte transport. The accepted
+[execution decision](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
+targets stock Linux without a custom kernel, hard aggregate VRAM guarantee,
+mandatory GPU bridge or Vello dependency in Sophia. Direct GPU access accepts
+driver/resource-availability risk and grants no foreign pixels, application
+display, general input or KMS authority. Its launch path is still to be
+implemented; [configuration](configuration.md) distinguishes current parser
+behavior from target syntax.
+
+Measure the first image path before introducing another transport or GPU
+execution service. A display-dependent toolkit may need a downstream adapter;
+the shell contract does not supply a private X11/Wayland server. The
+[paired plan](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md)
+names the server and client tasks, so a developer can implement an adapter
+without taking ownership of compositor policy or the entire desktop.
 
 ## The Components
 
@@ -103,7 +131,7 @@ replaceable:
 | Component | Protocol | Reference | May draw? | Sees |
 | --- | --- | --- | --- | --- |
 | Window manager | `sophia_wm_v1` (r3, frozen) | [Hagia](https://github.com/sophia-org/hagia) | no | geometry, window facts |
-| Shell | `sophia_shell_v1` (r4, experimental; r1–3 supported) | [Narthex](https://github.com/sophia-org/narthex) | current descriptors: no; proposed content capability: own content only | authorized presentation facts |
+| Shell | `sophia_shell_v1` (r6, experimental; older negotiated capabilities supported) | [Narthex](https://github.com/sophia-org/narthex), [Lom](https://github.com/sophia-org/lom) | descriptors: Engine pixels; content: own images, production admission still closed | authorized presentation facts |
 | Broker | `sophia_broker_v1` | in-tree | no | redacted descriptors |
 
 The window manager never learns titles, application identities, or pixel
@@ -256,8 +284,9 @@ is already the interface, and it belongs outside this repository the same way
 a shell backend does.
 
 So the honest distance from the WM rung to a full desktop is a short list, in
-rough dependency order: a future content capability in `sophia_shell_v1` (the
-gating item), a bounded status feed so rich panels have something to show,
+rough dependency order: production content admission and input in
+`sophia_shell_v1` (the wire and CPU lifecycle already exist), authorized status
+feeds beyond the current workspace indicators,
 application-session restore in the session authority, and a live
 reload path for the full profile, which needs a profile-file watcher plus a
 re-handoff of the Policy authority to the running window manager over the wire.
@@ -359,20 +388,22 @@ to implement. The spanning mechanism is capability negotiation inside a
 single family, and it's proven: `sophia_wm_v1` carries a trivial tiler and
 Hagia's full policy surface on the same frozen wire through optional capabilities.
 
-The [content-shell proposal](content-shell.md) makes the session's operator
+The [content-shell contract](content-shell.md) makes the session's operator
 policy the gate for content capability. Selecting a shell does not grant every
-capability it requests. The proposed grant is explicit, established at startup,
-and recorded in the effective profile and its evidence identity. Content remains
-unimplemented; there is no configuration key that enables it today.
+capability it requests. The grant is explicit, established at startup, and
+recorded in effective-profile and launch evidence. The current `content` setting
+expresses policy, but the production GPU gate still fails closed. Accepting a
+new execution design does not enable an installed profile.
 
 ## Two Kinds of Shell, Named Honestly
 
 Sophia has two architectural models for native shells. Descriptor mode is
-implemented; content mode is a proposed capability in the same protocol family.
+implemented; the CPU content lifecycle is implemented in the same family while
+production admission and discrete input remain incomplete.
 Narthex remains the maintained descriptor reference, including its native
 application launcher. Neither model is a requirement to use a particular toolkit.
 
-| Developer choice | Descriptor shell today | Proposed content shell |
+| Developer choice | Descriptor shell today | Content shell contract |
 | --- | --- | --- |
 | Visual design | Supported ordering, selection, visibility, and appearance settings | Own widgets, typography, artwork, and internal layout |
 | Drawing | Engine renders fixed feature vocabulary | Shell rasterizes its content; Engine validates and composites it |
@@ -399,8 +430,8 @@ Content permission still grants no foreign pixels, WM authority, or process
 execution. A custom launcher therefore needs explicit identity and activation
 semantics beyond the first panel/popout workflow.
 
-One admitted native shell may combine both capabilities once content exists, for
-example a custom panel with a descriptor launcher. This proposal does not add
+One admitted native shell may combine both capabilities, for example a custom
+panel with a descriptor launcher. This contract does not add
 multiple native shell clients. See [Content Shells](content-shell.md) for the
 behavioral contract and [desktop composition](desktop-composition.md) for the
 user's component choices.
@@ -427,15 +458,15 @@ anybody:
 | You want to build | Read next | Copy from |
 | --- | --- | --- |
 | A window manager | `docs/sophia-wm-api.md`, `protocol/archive/sophia-wm-v1-r3/README.md` | the archived `client.c`, then Hagia |
-| A shell | `docs/sophia-shell-v1-direction.md`, `protocol/sophia-shell-v1.kdl` | Narthex |
+| A shell | `docs/sophia-shell-v1-direction.md`, `protocol/sophia-shell-v1.kdl`, [paired plan](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md) | Narthex for descriptors; Lom for the developing content adapter |
 | A full desktop | this document, then both of the above | Hagia and Narthex, as the split to imitate |
 | Portal-using apps | `docs/namespaces-and-portals.md` | — |
 
-The shell interface is the moving part. Revision 1 provides a switcher and
-bounded reservations; revision 2 adds persistent WM tab descriptors. Broader
-content support is still being derived from independent shell workflows,
-including Quickshell and the retained Noctalia survey. If you're building in
-this space now, you're early enough to shape that capability.
+The shell interface remains experimental. Revision 1 provides a switcher and
+bounded reservations; revision 2 adds tabs, 3 reference sheets, 4 the launcher,
+5 content vocabulary and 6 indicators. Available vocabulary is not a granted
+workflow. The [implementation record](lom-content-implementation.md) names
+existing boundaries and the production/acceptance gaps still open for content.
 
 ### Tabbed WM layouts
 

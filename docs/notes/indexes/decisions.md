@@ -10,6 +10,8 @@ Current contracts are identified in the [documentation map](../../README.md).
 
 | [Separate grab ownership from presentation evidence](../decisions/mbvdvhk5-separate-grab-ownership-from-presentation-evidence.md) | Accepted 2026-09-07 | Application grab ordering, readiness, and scope evidence; physical acceptance remains separate |
 | [Content capability design for sophia_shell_v1](../decisions/6ndjwffd-content-capability-design-for-sophia_shell_v1.md) | Proposed 2026-09-12 | Content shell transport, budgets, pixel semantics, wire records, invariants, and conformance corpus |
+| [Separate shell presentation from GPU execution permission](../decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md) | Accepted 2026-09-13 | Renderer-neutral presentation, explicit portable direct GPU permission and optional mediation; implementation and native acceptance remain open |
+| [Confine the Lom GPU domain with cgroup dmem](../decisions/odjw4jav-confine-the-lom-gpu-domain-with-cgroup-dmem.md) | Superseded 2026-09-13 | Historical hard-quota/kernel prerequisite, replaced by the explicit execution trust choice above |
 
 Use `zk adr --title "The proposed choice"` to start a record. It begins as
 `proposed`. Add it here with its status and keep this table consistent when a

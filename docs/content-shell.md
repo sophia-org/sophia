@@ -1,16 +1,20 @@
 # Content Shells
 
-**Role:** proposed behavioral contract for a content capability within
+**Role:** behavioral contract for a content capability within
 `sophia_shell_v1`.
-**Status:** not implemented. This document assigns no capability bits, revision,
-wire records, configuration keys, or content transport. It defines requirements
-for a later, separately admitted implementation.
+**Status:** the CPU-byte wire and lifecycle now have an
+[implementation](lom-content-implementation.md); production launch admission,
+discrete content input and native acceptance remain incomplete. The
+[content ADR](notes/decisions/6ndjwffd-content-capability-design-for-sophia_shell_v1.md)
+owns the wire and numeric budgets. The
+[execution ADR](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
+owns the accepted GPU permission model; it does not enable the runtime gate.
 
 The [architecture](architecture.md), [native protocol family](sophia-policy-ipc.md),
 [compositor graphics](compositor-graphics.md), and
 [target-resolved input](target-resolved-input.md) contracts remain authoritative.
 The [reference-client audit](shell-reference-client-audit.md) supplies the first
-workflow and its feasibility evidence. This proposal does not stabilize the
+workflow and its feasibility evidence. This contract does not stabilize the
 experimental shell interface or change the frozen WM interface.
 
 ## Two Shell Models
@@ -47,9 +51,17 @@ Selecting a shell executable and granting it content capability are separate
 decisions. The operator's session policy must explicitly permit content before
 negotiation can select it. The default is no content permission. The session
 establishes the grant, limits, and protection domain at startup; a client request
-cannot enlarge them. Future configuration must record these choices in the
-effective profile and its evidence identity. No syntax for that grant is
-available today.
+cannot enlarge them. [Configuration](configuration.md) records the implemented
+policy syntax and the separately identified target syntax. Effective-profile
+and launch evidence must distinguish requested policy from actual admission.
+
+GPU execution is a separate, default-denied launch permission. The accepted
+first Lom path explicitly exposes one render node within its protection domain,
+with no application display or input endpoint. It requires no custom kernel or
+particular device-memory controller and promises no hard aggregate VRAM quota.
+Content clients may instead CPU-rasterize without a GPU grant. Neither execution
+choice changes content ownership, disclosure, pacing or exact presented input.
+An optional GPU bridge is not a required SDK or part of this wire contract.
 
 Negotiation selects only the intersection of implementation support, client
 requests, and operator permission. A client requiring unavailable content must
@@ -247,9 +259,10 @@ distinct from shell confinement and does not sandbox launched applications.
 
 ## Acceptance And Remaining Design Work
 
-The later prototype needs both the Quickshell adapter and an independent C
-client implementing the same published contract, without Qt or Sophia libraries
-in the C client. Both must present the panel, reserve space, open the popout,
+The driving content client is now Lom, replacing the earlier Quickshell/ironbar
+adapter proposals. It and an independent C client must implement the same
+published contract, without Lom or Sophia libraries in the C client. Both must
+present the panel, reserve space, open the popout,
 change local state, and dismiss it. Existing descriptor revisions and corpora
 must continue to pass.
 
@@ -271,9 +284,10 @@ The implementation gate must cover:
   panel/popout check in the normal X11 Sophia session. Headless and X11-panel
   results cannot stand in for native physical input and presentation evidence.
 
-Before implementation, a separately admitted design must select transport,
-numeric budgets, pixel semantics, capability assignments, wire records, release
-and pacing messages, and a conformance corpus. The lifecycle and authority
-invariants must be modeled and checked under the project's evidence policy.
-The reference-client feasibility blockers and CP-15 coherence prerequisites
-remain in [todo](../todo.md); writing this proposal does not close them.
+The content ADR selects transport, numeric budgets, pixel semantics, capability
+assignments, wire records, release/pacing messages and the required corpus.
+Lifecycle models and implemented evidence are recorded separately; new authority
+transitions must still be modeled and checked under the evidence policy.
+The [paired plan](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md)
+and [todo](../todo.md) retain production and acceptance gates. A design amendment
+does not close those tasks or establish native behavior.

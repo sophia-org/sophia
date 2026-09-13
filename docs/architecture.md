@@ -83,6 +83,31 @@ development-only and cannot enter the installed dependency graph. The complete
 repository-tooling direction is defined in
 [Development Tooling](development-tooling.md).
 
+## Shell Rendering And Execution Permission
+
+The shell presentation contract is renderer-neutral: a content client proposes
+immutable images and their matching interaction snapshot; Engine validates,
+composites and retires the complete candidate. Vello, Xilem, GTK and other
+toolkits are downstream choices, not Sophia dependencies or public wire types.
+The shell's own pixels are distinct from foreign scene pixels, which remain
+accessible only through the existing Engine/portal authorities.
+
+GPU execution is an independent, default-denied startup permission. The accepted
+first Lom path grants one selected render node explicitly, keeps the existing
+immutable CPU-byte handoff after GPU readback, and requires no custom Linux
+kernel or `dmem` controller. That permission accepts GPU-driver and availability
+risk; it does not promise a portable hard aggregate VRAM quota. Sophia must
+enforce its own bounded content queues, backing charges and retirement leases.
+No display connection, KMS, general input or additional shell authority follows
+from device access.
+
+The [presentation/execution decision](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
+supersedes the earlier mandatory GPU-quota design. A GPU bridge is optional
+future execution work, and a different image transport needs measurements and
+its own admission. The current production gate still fails closed; the
+[paired Lom/Sophia critical path](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md)
+names the launch, input, recovery and acceptance work remaining.
+
 ## Current And Target State
 
 ### Implemented

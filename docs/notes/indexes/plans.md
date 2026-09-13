@@ -8,6 +8,7 @@ order live in the todo.txt-format files above. Start with the first open task in
 Candidates and deferred tasks require explicit promotion before implementation.
 
 - [Application commands in the desktop profile](../plans/1agxbuuf-application-commands-in-the-desktop-profile.md)
+- [Lom and Sophia portable GPU shell critical path](../plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md)
 - [Critical Path](../plans/queue-01-critical-path.md)
 - [Parallel Production Readiness](../plans/queue-11-parallel-production-readiness.md)
 - [Candidate Queue](../plans/queue-12-candidate-queue.md)

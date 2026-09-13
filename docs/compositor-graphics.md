@@ -17,6 +17,17 @@ around them.
 
 ## Design Direction
 
+Shell rendering and compositor rendering have separate owners. A GPU-capable
+shell may rasterize its own interface under an explicit launch permission and
+submit renderer-neutral images through the content protocol. That does not
+expose the compositor scene or make Vello/wgpu a Sophia dependency. The
+[execution decision](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
+keeps GPU readback plus immutable CPU-byte transfer as the first Lom path.
+Engine-owned upload/backing charges remain bounded through retirement, while
+direct client GPU access carries no hard aggregate VRAM guarantee. A future
+GPU job broker is separate from the trusted compositor-effect provider below;
+neither is a new public shader-upload interface by implication.
+
 Sophia uses a small, renderer-neutral display list for compositor-owned
 content. The native renderer lowers that list into specialized EGL/OpenGL
 primitives and cached textures. It does not expose graphics-API objects to
