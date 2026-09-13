@@ -529,7 +529,7 @@ impl XServerFrontendRouteRegistry {
     ) -> Option<ControlExecutorLease> {
         match (self.control_completion.get(), completion) {
             (Some(registry), Some(_)) => registry.enter_routing(client),
-            (_, None) => Some(ControlExecutorLease::Ungoverned),
+            (_, None) => Some(ControlExecutorLease::ungoverned()),
             (None, Some(_)) => None,
         }
     }
@@ -724,12 +724,13 @@ impl Drop for XServerFrontendClientRouteRegistration {
         // it is owed the cleanup it named, and saying so here is what keeps
         // that responsibility from ending with the registration.
         if let Some(completion) = self.control_completion.get() {
-            // Whether anything is still executing for this client is read
-            // inside the registry, under the lock that abandons. Establishing
-            // it here and passing it in was a gap: a router or a writer can
-            // start or finish between the two, and a sweep that lands in that
-            // gap either abandons a live operation or misses a dead one.
-            let _reconciled = completion.reconcile_client(self.client);
+            // A writer expected for this client is not coming now. If a writer
+            // did start, this changes nothing and its own exit is the edge;
+            // if startup failed before one ever existed, this is what stops an
+            // expectation nothing will meet from keeping the client executing
+            // forever. Either way the registry decides what that leaves,
+            // under the lock that abandons.
+            completion.cancel_expected_writer(self.client);
         }
         let _ = self.input_recovery.disconnect(self.client, XAuthorityInputDeliveryOutcome::ClientDisconnected);
         if let Ok(mut clients) = self.clients.lock() {

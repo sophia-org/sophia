@@ -422,7 +422,18 @@ impl ControlCompletionRegistry {
         }
         // Under the same lock that abandons, so a claim and a sweep cannot
         // both decide they were first.
-        if !Self::executing(&inner, inner.records[position].phase.client()) {
+        //
+        // Starting asks a stricter question than continuing. An owner already
+        // inside an operation keeps that operation answerable, and is not
+        // permission to begin another: borrowing its in-flight existence would
+        // start work for a client whose writer has gone.
+        let client = inner.records[position].phase.client();
+        let executing = if starting {
+            Self::admits(&inner, client)
+        } else {
+            Self::executing(&inner, client)
+        };
+        if !executing {
             return ControlExecutionClaim::Refused(ControlClaimRefusal::NoExecutor);
         }
         let record = &mut inner.records[position];
@@ -598,6 +609,22 @@ impl ControlCompletionRegistry {
         }
     }
 
+    /// Move one client's applying operations to abandoned.
+    ///
+    /// Called where nothing is left that could establish an outcome for them.
+    /// Nothing is published and nothing is replayed: what each names now is
+    /// the cleanup it is owed.
+    fn abandon_unexecutable(inner: &mut ControlCompletions, client: XServerFrontendClientId) {
+        for held in inner.records.iter_mut() {
+            if held.phase.client() != client {
+                continue;
+            }
+            if let ControlPhase::Applying(command) = held.phase {
+                held.phase = ControlPhase::Abandoned(command);
+            }
+        }
+    }
+
     /// Reconcile one client's records when its registration goes.
     ///
     /// Three different things, kept apart, because collapsing them is how a
@@ -653,6 +680,7 @@ impl ControlCompletionRegistry {
                     } else {
                         reconciled.applying = reconciled.applying.saturating_add(1);
                     }
+                    let _ = command;
                 }
                 ControlPhase::Abandoned(_) => {
                     reconciled.abandoned = reconciled.abandoned.saturating_add(1);

@@ -47,7 +47,6 @@ impl Drop for X11ControlWriterSeal<'_> {
             // still in flight keeps this client executing and nothing of its
             // is abandoned.
             completion.writer_stopped(self.client);
-            let _reconciled = completion.reconcile_client(self.client);
         }
     }
 }
@@ -104,6 +103,12 @@ fn spawn_x11_control_writer(
         }};
     }
     let thread = std::thread::spawn(move || {
+        if let Some(completion) = protocol_routing
+            .as_ref()
+            .and_then(XServerFrontendRouteRegistry::control_completion)
+        {
+            completion.writer_started(client);
+        }
         let _seal = X11ControlWriterSeal {
             routing: protocol_routing.as_ref(),
             client,

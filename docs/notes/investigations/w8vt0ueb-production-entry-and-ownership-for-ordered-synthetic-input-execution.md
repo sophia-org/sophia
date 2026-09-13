@@ -382,10 +382,27 @@ rest running, never told to stop, against a closing stream. A writer is not the 
 before any writer runs -- focus routing sends FocusOut to whoever held focus
 and moves the focused surface -- which is why the claim lives there, and why a
 routing call in flight is an executor too. So a client is executing while it
-has a writer, or is registered and about to, or has any routing call inside
-it, and that is read under the lock that abandons rather than asserted by a
-caller. Taking a routing lease is itself the check, because a separate
-precheck can be true and then false before the claim. An established outcome is untouched, a
+has a running writer, or is registered and about to have one, or has any
+routing call inside it, and that is read under the lock that abandons rather
+than asserted by a caller. Taking a routing lease is itself the check, because
+a separate precheck can be true and then false before the claim.
+
+Two questions, not one. Whether anything could still establish what happened to
+work already in flight is not whether anything could begin work that has not
+started. An owner already inside an operation keeps that operation answerable
+and is not permission to start another: borrowing its in-flight existence would
+begin work for a client whose writer has gone. Admission closes while the
+owners already inside drain.
+
+The last owner to leave makes the transition itself, wherever it leaves from --
+a route returning is that edge as much as a writer exiting is. An edge that
+only moves an operation to its cleanup when something else calls a sweep is not
+an edge, and nothing in production calls one. A writer expected but never
+spawned is cancelled by the registration that expected it, because there is no
+writer to cancel it and an expectation nobody cancels keeps its client
+executing for as long as the registry lives. Counted leases cannot be
+constructed: one a caller could build and drop would decrement a real holder's
+count and end an operation's protection on nothing at all. An established outcome is untouched, a
 command that never started stays truthfully unexecuted, and one caught
 mid-application becomes abandoned. Losing a client's route registration
 reconciles too, but only where it can establish that nothing is still serving

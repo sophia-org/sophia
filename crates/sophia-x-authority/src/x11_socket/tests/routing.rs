@@ -5964,8 +5964,10 @@ fn accepted(
     registry: &crate::ControlCompletionRegistry,
     command: XAuthorityClientControlCommand,
 ) -> ControlCompletionToken {
-    // A client being served is what a test means by an accepted operation.
-    registry.expect_writer(command.client);
+    // A client with a running writer is what a test means by an accepted
+    // operation. Registered-and-awaiting-a-spawn is a different state and the
+    // tests that mean it say so.
+    registry.writer_started(command.client);
     let token = registry
         .register(command)
         .expect("a fresh registry to have room");
@@ -7472,10 +7474,11 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
         .expect("the shared admission to accept control");
     assert_eq!(durable.reserved(), 2);
 
-    // The registration goes while a writer is still serving this client. A
-    // registration ending is not proof that its writer stopped: it may have
-    // claimed this operation and still be inside it, about to establish an
-    // outcome that abandoning it here would then refuse.
+    // A writer is running for this client. The registration going is not
+    // proof that it stopped: it may have claimed this operation and still be
+    // inside it, about to establish an outcome that abandoning it here would
+    // then refuse.
+    registry.writer_started(client);
     drop(registration);
     assert!(
         registry
@@ -7484,7 +7487,7 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
             .is_empty(),
         "nothing is owed a cleanup while something could still answer"
     );
-    registry.expect_writer(client);
+    registry.writer_started(client);
     let reconciled = registry.reconcile_client(client);
     assert!(reconciled.readable);
     assert_eq!(reconciled.abandoned, 0);
@@ -7499,9 +7502,14 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
     assert_eq!(reconciled.owed, 0, "nothing was answered");
     assert_eq!(reconciled.reserved, 0);
 
-    // The executor going is the edge that establishes it, and the registry
-    // reads that for itself rather than being told.
+    // The writer going is the last-owner edge, and it makes the transition
+    // itself rather than leaving it for whoever asks next.
     registry.writer_stopped(client);
+    assert_eq!(
+        registry.cleanups_owed().expect("a readable registry").len(),
+        1,
+        "the last owner leaving is what owes the cleanup"
+    );
     let reconciled = registry.reconcile_client(client);
     assert_eq!(reconciled.abandoned, 1);
     assert_eq!(reconciled.applying, 0);
@@ -7811,6 +7819,9 @@ fn a_command_cannot_claim_execution_after_its_client_is_swept() {
     // separate moments, and this is between them.
     private.broker.registry.mark_control_writer_gone(client);
     registry.writer_stopped(client);
+    // No writer is expected either: this client's registration is what would
+    // have carried one, and nothing is coming.
+    registry.cancel_expected_writer(client);
     assert_eq!(registry.reconcile_client(client).unexecuted, 1);
 
     // Routing must not claim it now. A record left claimable after its sweep
@@ -8047,4 +8058,229 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
         !outcomes.contains(&XAuthorityInputDeliveryOutcome::ClientDisconnected),
         "and it is not the recipient's doing: {outcomes:?}"
     );
+}
+
+#[test]
+fn the_last_owner_leaving_is_what_owes_the_cleanup() {
+    let client = XServerFrontendClientId(335);
+    let surface = SurfaceId::new(335, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let token = accepted(&registry, configure(client, surface, 41001));
+    let routing = registry
+        .enter_routing(client)
+        .expect("a client with a writer admits routing");
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+
+    // The writer goes while the router is still inside it.
+    registry.writer_stopped(client);
+    assert!(
+        registry
+            .cleanups_owed()
+            .expect("a readable registry")
+            .is_empty(),
+        "a router still inside it can establish what happened"
+    );
+
+    // The router returning is the last-owner edge. It has to make the
+    // transition itself: an edge that only moves an operation to its cleanup
+    // when something else calls a sweep is not an edge, and nothing in
+    // production calls one here.
+    drop(routing);
+    assert_eq!(
+        registry.cleanups_owed().expect("a readable registry").len(),
+        1,
+        "the last owner leaving owes the cleanup, with no sweep asked for"
+    );
+    assert_eq!(
+        registry.resume_execution(token),
+        crate::ControlExecutionClaim::Refused(crate::ControlClaimRefusal::Abandoned)
+    );
+}
+
+#[test]
+fn an_old_router_is_not_permission_to_start_new_work() {
+    let client = XServerFrontendClientId(336);
+    let surface = SurfaceId::new(336, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let started = accepted(&registry, configure(client, surface, 42001));
+    let routing = registry.enter_routing(client).expect("a running writer");
+    assert_eq!(
+        registry.claim_execution(started),
+        crate::ControlExecutionClaim::Claimed
+    );
+    let fresh = accepted(&registry, configure(client, surface, 42002));
+
+    // Admission closes while the owners already inside drain. Retaining an
+    // effect-capable owner is not permission to begin something else: that
+    // borrows one operation's in-flight existence as authority for another.
+    registry.writer_stopped(client);
+    assert!(
+        registry.enter_routing(client).is_none(),
+        "nothing can start new work for a client whose writer has gone"
+    );
+    assert_eq!(
+        registry.claim_execution(fresh),
+        crate::ControlExecutionClaim::Refused(crate::ControlClaimRefusal::NoExecutor),
+    );
+    // And the one already inside is still protected by its own owner.
+    assert!(
+        registry
+            .cleanups_owed()
+            .expect("a readable registry")
+            .is_empty()
+    );
+    drop(routing);
+}
+
+#[test]
+fn a_registration_dropped_before_its_writer_spawns_cancels_the_expectation() {
+    let client = XServerFrontendClientId(337);
+    let surface = SurfaceId::new(337, 1);
+    let (acknowledgements, _acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+
+    // Registered, and its writer has not spawned. Control accepted in that
+    // window is not control with nowhere to go.
+    assert!(
+        registry.enter_routing(client).is_some(),
+        "a registration is a writer about to exist"
+    );
+
+    // Startup fails before any worker exists. The expectation has to be
+    // cancelled by something other than the writer, because there is no
+    // writer to cancel it, and an expectation nobody cancels keeps this client
+    // executing for as long as the registry lives.
+    drop(registration);
+    assert!(
+        registry.enter_routing(client).is_none(),
+        "nothing is coming, so nothing may start"
+    );
+    assert!(!private.broker.registry.control_writer_present(client));
+}
+
+#[test]
+fn a_running_writer_outlives_the_registration_that_expected_it() {
+    let client = XServerFrontendClientId(338);
+    let surface = SurfaceId::new(338, 1);
+    let state = writer_runtime(surface);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(2).unwrap());
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    assert!(broker.registry.install_control_completion(registry.clone()));
+    let (registration, _channels) = broker.registry.register_client(client).unwrap();
+    let routing = broker.registry.clone();
+
+    let (acknowledgements, _acks) = sync_channel(4);
+    // The writer reads its own queue rather than the registration's, so that
+    // losing the registration is not the same event as losing the writer.
+    let (_routes, control) = sync_channel(4);
+    let (writer, _peer) = writer_start(
+        Some(&routing),
+        &state,
+        control,
+        Some(registry.clone()),
+        acknowledgements,
+        client,
+        writer_windows(surface),
+        Arc::new(AtomicUsize::new(0)),
+    );
+    // The writer records itself running, so the registration's expectation is
+    // no longer what is keeping this client executing.
+    let started = std::time::Instant::now() + std::time::Duration::from_millis(200);
+    while std::time::Instant::now() < started {
+        std::thread::yield_now();
+    }
+
+    drop(registration);
+    assert!(
+        registry.enter_routing(client).is_some(),
+        "a running writer is what is executing now, not the registration"
+    );
+
+    assert!(writer_join(writer));
+    assert!(
+        registry.enter_routing(client).is_none(),
+        "and when it stops, nothing is"
+    );
+}
+
+#[test]
+fn a_parked_router_keeps_its_operation_answerable_while_its_writer_exits() {
+    let client = XServerFrontendClientId(339);
+    let surface = SurfaceId::new(339, 1);
+    let (acknowledgements, _acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, channels, _registration, _deliveries) =
+        private_with_client(acknowledgements.clone(), &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    let state = writer_runtime(surface);
+    let (writer, _peer) = writer_start(
+        Some(&private.broker.registry),
+        &state,
+        channels.control,
+        Some(registry.clone()),
+        acknowledgements,
+        client,
+        writer_windows(surface),
+        Arc::new(AtomicUsize::new(0)),
+    );
+
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(43001),
+                surface,
+            },
+        })
+        .expect("the shared admission to accept control");
+
+    // Park the router where focus routing produces its first authoritative
+    // effect, holding the lease it took before claiming.
+    let focus_lock = Arc::clone(&private.broker.registry.focused_surface);
+    let focused = focus_lock.lock().unwrap();
+    let routed = std::thread::spawn(move || {
+        let outcome = private.route_pending();
+        (private, outcome)
+    });
+    let parked = std::time::Instant::now() + std::time::Duration::from_millis(200);
+    while std::time::Instant::now() < parked {
+        std::thread::yield_now();
+    }
+
+    // The writer stops and joins while the router is inside the operation it
+    // claimed. Its exit is not the last-owner edge: the router still is.
+    assert!(writer_join(writer));
+    assert!(
+        registry
+            .cleanups_owed()
+            .expect("a readable registry")
+            .is_empty(),
+        "a router still inside it keeps it answerable"
+    );
+
+    drop(focused);
+    let (private, _outcome) = routed.join().expect("the routing thread");
+    // The router returning is the last owner leaving, and it makes the
+    // transition itself: nothing here asked for a sweep.
+    assert_eq!(
+        registry.cleanups_owed().expect("a readable registry").len(),
+        1,
+        "and when it returns, the operation is owed its cleanup"
+    );
+    drop(private);
 }
