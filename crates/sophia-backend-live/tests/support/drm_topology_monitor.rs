@@ -147,6 +147,7 @@ fn monitor_fixture() -> (
 
 fn identity(inode: u64, device_number: u64, physical: &str) -> LiveRenderDeviceIdentitySnapshot {
     LiveRenderDeviceIdentitySnapshot {
+        node: format!("/dev/dri/renderD{inode}").into(),
         device: 1,
         inode,
         device_number,

@@ -76,7 +76,7 @@ fn panel_allowance_is_enforced_against_resolved_physical_thickness() {
         desired_height: 16,
         margins: ContentMargins::default(),
     };
-    let mut session = LiveContentSession::new(true, true, Some(32));
+    let mut session = LiveContentSession::new(true, Some(32));
     let resolved = session
         .resolve_allocation(&request, &[output], &[])
         .unwrap();
@@ -325,7 +325,7 @@ fn a_scaled_popout_keeps_the_exact_physical_anchor_origin() {
         desired_height: 10,
         margins: ContentMargins::default(),
     };
-    let mut session = LiveContentSession::new(true, true, Some(32));
+    let mut session = LiveContentSession::new(true, Some(32));
     let resolved = session
         .resolve_allocation(&request, &[output], &[parent])
         .unwrap();

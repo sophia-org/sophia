@@ -128,6 +128,24 @@ impl ProcessSupervisor {
         &self.spec
     }
 
+    /// Replace the next launch specification while no child exists.
+    ///
+    /// Restarting a protected role may require fresh capability epochs and
+    /// revalidated resource bindings. A running child keeps the exact spec it
+    /// was launched with.
+    pub fn replace_launch_spec(
+        &mut self,
+        spec: ProcessLaunchSpec,
+    ) -> Result<(), ProcessSupervisorError> {
+        if self.child.is_some() {
+            return Err(ProcessSupervisorError::AlreadyRunning {
+                process: self.process,
+            });
+        }
+        self.spec = spec;
+        Ok(())
+    }
+
     pub fn child_id(&self) -> Option<u32> {
         self.child.as_ref().map(|child| child.child.id())
     }

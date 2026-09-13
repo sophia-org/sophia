@@ -1,5 +1,6 @@
 use super::*;
 mod content;
+mod gpu;
 pub(crate) mod indicators;
 
 mod launcher;
@@ -77,6 +78,8 @@ pub(super) struct LiveMetadataShell {
     reference: LiveReferenceSession,
     launcher: LiveLauncherSession,
     supervisor: ProcessSupervisor,
+    base_launch_spec: ProcessLaunchSpec,
+    gpu: gpu::ShellGpuLaunchPolicy,
     transport: sophia_runtime::ShellSessionTransport,
     slots: BTreeMap<SurfaceId, u16>,
     next_slot: u16,
@@ -101,7 +104,8 @@ impl LiveMetadataShell {
         executable: &str,
         panel_thickness: Option<u16>,
         content_requested: bool,
-        gpu_memory_bytes: Option<u64>,
+        gpu_mode: sophia_config::ShellGpuMode,
+        gpu_device: Option<sophia_backend_live::LiveRenderDeviceIdentitySnapshot>,
         selected_config: Option<&std::path::Path>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let directory = std::env::temp_dir().join(format!(
@@ -143,24 +147,17 @@ impl LiveMetadataShell {
         if let Some(path) = private_config {
             spec = spec.env("SOPHIA_SHELL_CONFIG", path);
         }
-        let supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
+        let gpu = gpu::ShellGpuLaunchPolicy::new(gpu_mode, gpu_device)?;
+        let supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec.clone());
         let mut shell = Self {
-            // Production keeps GPU admission false until the startup owner has
-            // moved the stopped child into a verified dmem cgroup. An opted-in
-            // client receives an explicit unavailable refusal in that state.
-            content: content::LiveContentSession::new(
-                content_requested,
-                // A matching profile number is necessary evidence, never the
-                // cgroup/device admission itself. That owner is not present
-                // yet, so the effective grant remains unavailable.
-                content::production_gpu_domain_admitted(gpu_memory_bytes),
-                panel_thickness,
-            ),
+            content: content::LiveContentSession::new(content_requested, panel_thickness),
             tabs: LiveTabSession::default(),
             indicators: indicators::LiveIndicatorState::default(),
             reference: LiveReferenceSession::default(),
             launcher: LiveLauncherSession::default(),
             supervisor,
+            base_launch_spec: spec,
+            gpu,
             transport,
             slots: BTreeMap::new(),
             next_slot: 1,
@@ -211,6 +208,25 @@ impl LiveMetadataShell {
         self.supervisor.terminate()?;
         self.connected = false;
         self.reconnect_or_defer(reason)
+    }
+
+    /// Revokes the process before a replacement render-node identity can enter
+    /// its protection domain. The ordinary poll path then negotiates a fresh
+    /// connection/grant epoch or remains unavailable while no device exists.
+    pub(super) fn observe_gpu_device(
+        &mut self,
+        device: Option<sophia_backend_live::LiveRenderDeviceIdentitySnapshot>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if !self.gpu.replace_device(device) {
+            return Ok(false);
+        }
+        self.supervisor.terminate()?;
+        self.connected = false;
+        self.reconnect_at = None;
+        crate::session_eprintln!(
+            "sophia_live_shell_gpu schema=1 status=revoked reason=device_identity_changed"
+        );
+        Ok(true)
     }
 
     pub(super) fn observe_outputs(
@@ -685,6 +701,9 @@ impl LiveMetadataShell {
     }
 
     fn launch_and_negotiate(&mut self) -> Result<(u32, u16, u64), Box<dyn std::error::Error>> {
+        let connection_epoch = self.next_connection_epoch;
+        let (launch_spec, gpu) = self.gpu.prepare(&self.base_launch_spec, connection_epoch)?;
+        self.supervisor.replace_launch_spec(launch_spec)?;
         self.supervisor
             .apply(sophia_runtime::SupervisorCommand::StartProcess {
                 process: SupervisedProcessKind::Shell,
@@ -696,7 +715,6 @@ impl LiveMetadataShell {
             .ok_or("metadata shell supervisor omitted its protection domain")?
             .clone();
         self.transport.authorize_protected_peer(&evidence)?;
-        let connection_epoch = self.next_connection_epoch;
         let welcome = match self.transport.accept_and_negotiate_with_content_policy(
             connection_epoch,
             Duration::from_secs(5),
@@ -714,6 +732,20 @@ impl LiveMetadataShell {
             .checked_add(1)
             .ok_or("metadata shell connection epoch exhausted")?;
         crate::diagnostics::capture_process_identity("shell", evidence.peer_pid, connection_epoch);
+        match gpu {
+            Some(gpu) => crate::session_println!(
+                "sophia_live_shell_gpu schema=1 status=granted mode=direct peer_pid={} grant_epoch={} device_major={} device_minor={} pci_bus_id={}",
+                evidence.peer_pid,
+                gpu.epoch,
+                gpu.major,
+                gpu.minor,
+                gpu.pci_bus_id.as_deref().unwrap_or("none"),
+            ),
+            None => crate::session_println!(
+                "sophia_live_shell_gpu schema=1 status=denied mode=denied peer_pid={} grant_epoch=0",
+                evidence.peer_pid,
+            ),
+        }
         Ok((
             evidence.peer_pid,
             welcome.selected_revision,

@@ -84,7 +84,7 @@ struct PersistentXtermSessionConfig {
     shell_config: Option<std::path::PathBuf>,
     shell_panel_thickness: Option<u16>,
     shell_content_enabled: bool,
-    shell_gpu_memory_bytes: Option<u64>,
+    shell_gpu_mode: sophia_config::ShellGpuMode,
     shell_proof_restart_after_visible: Option<u32>,
     wm_interface: sophia_config::ExternalWmInterface,
     wm_public_fault_after: Option<PublicPolicyFaultPoint>,
@@ -832,8 +832,7 @@ impl PersistentXtermSessionConfig {
         }
         let shell_content_enabled =
             sophia_config::desktop_profile_shell_content_enabled(&desktop_profile);
-        let shell_gpu_memory_bytes =
-            sophia_config::desktop_profile_shell_gpu_memory_bytes(&desktop_profile);
+        let shell_gpu_mode = sophia_config::desktop_profile_shell_gpu_mode(&desktop_profile);
         if shell_content_enabled {
             if shell_process.is_none() {
                 return Err("shell { content #true; } requires an enabled shell".into());
@@ -841,14 +840,9 @@ impl PersistentXtermSessionConfig {
             if shell_panel_thickness.is_none() {
                 return Err("shell content requires a positive shell { panel } allowance".into());
             }
-            if shell_gpu_memory_bytes != Some(sophia_config::SHELL_GPU_MEMORY_BYTES) {
-                return Err(
-                    "shell content requires gpu-memory-bytes 268435456 in the effective profile"
-                        .into(),
-                );
-            }
-        } else if shell_gpu_memory_bytes.is_some() {
-            return Err("shell gpu-memory-bytes requires shell { content #true; }".into());
+        }
+        if shell_gpu_mode == sophia_config::ShellGpuMode::Direct && shell_process.is_none() {
+            return Err("shell { gpu \"direct\"; } requires an enabled shell".into());
         }
         let shell_proof_restart_after_visible = arg_value(
             args,
@@ -1076,7 +1070,7 @@ impl PersistentXtermSessionConfig {
             shell_config,
             shell_panel_thickness,
             shell_content_enabled,
-            shell_gpu_memory_bytes,
+            shell_gpu_mode,
             shell_proof_restart_after_visible,
             wm_interface,
             wm_public_fault_after,

@@ -617,6 +617,10 @@ impl ShellSessionTransport {
         self.content_epochs.reserved_bytes()
     }
 
+    pub fn content_backing_reserved_bytes(&self) -> u64 {
+        self.content_epochs.reserved_backing_bytes()
+    }
+
     pub fn content_usage(&self) -> Option<crate::ContentMemoryUsage> {
         self.content_epochs.active().map(|store| store.usage())
     }

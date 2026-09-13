@@ -1,6 +1,6 @@
 use sophia_runtime::{
-    ProtectionDomainRole, ProtectionDomainSpec, ProtectionDomainSpecError, ProtectionNetworkAccess,
-    ProtectionPath,
+    ProtectionDevice, ProtectionDomainRole, ProtectionDomainSpec, ProtectionDomainSpecError,
+    ProtectionNetworkAccess, ProtectionPath,
 };
 
 #[test]
@@ -19,6 +19,47 @@ fn wm_cannot_share_a_domain_with_metadata_roles() {
             })
         );
     }
+}
+
+#[test]
+fn device_grants_are_character_devices_beneath_private_dev() {
+    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
+        .unwrap()
+        .device(ProtectionDevice::required_at(
+            "/dev/null",
+            "/dev/dri/renderD128",
+        ))
+        .unwrap();
+    assert_eq!(domain.devices().len(), 1);
+    assert_eq!(
+        domain.devices()[0].source,
+        std::path::Path::new("/dev/null")
+    );
+
+    assert_eq!(
+        ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
+            .unwrap()
+            .device(ProtectionDevice::required_at("/dev/null", "/run/device")),
+        Err(ProtectionDomainSpecError::InvalidDeviceDestination(
+            "/run/device".into()
+        ))
+    );
+    assert!(matches!(
+        ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
+            .unwrap()
+            .device(ProtectionDevice::required_at(
+                "/etc/ld.so.cache",
+                "/dev/dri/renderD128"
+            )),
+        Err(ProtectionDomainSpecError::InvalidDeviceSource(_))
+    ));
+}
+
+#[test]
+fn bubblewrap_uses_device_bind_for_protection_devices() {
+    const BACKEND: &str = include_str!("../src/supervisor/protection.rs");
+    assert!(BACKEND.contains("for device in &domain.devices"));
+    assert!(BACKEND.contains("\"--dev-bind\".into()"));
 }
 
 #[test]

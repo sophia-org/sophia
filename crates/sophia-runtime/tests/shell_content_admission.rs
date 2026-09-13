@@ -149,6 +149,7 @@ fn granted_content_gets_limits_and_a_fresh_epoch_on_replacement() {
             .unwrap();
         assert!(session.supports_content());
         assert_eq!(session.content_reserved_bytes(), 40 * 1024 * 1024);
+        assert_eq!(session.content_backing_reserved_bytes(), 32 * 1024 * 1024);
         let (client_welcome, limits) = client.join().unwrap();
         assert_eq!(client_welcome, welcome);
         assert_eq!(limits.grant.connection_epoch, connection_epoch);
@@ -158,6 +159,7 @@ fn granted_content_gets_limits_and_a_fresh_epoch_on_replacement() {
         session.disconnect().unwrap();
         assert!(!session.supports_content());
         assert_eq!(session.content_reserved_bytes(), 0);
+        assert_eq!(session.content_backing_reserved_bytes(), 0);
         if connection_epoch == 1 {
             session.authorize_protected_peer(&evidence()).unwrap();
         }

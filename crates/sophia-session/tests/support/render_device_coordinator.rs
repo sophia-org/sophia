@@ -24,6 +24,7 @@ fn bundle(generation: u64) -> Arc<Bundle> {
 }
 fn identity(id: u64) -> Identity {
     Identity {
+        node: format!("/dev/dri/renderD{id}").into(),
         device: 1,
         inode: id,
         device_number: id,

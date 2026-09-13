@@ -17,6 +17,7 @@ pub struct LiveRenderDevice {
 /// Identity observed when the render node was opened, not a liveness guarantee.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveRenderDeviceIdentitySnapshot {
+    pub node: PathBuf,
     pub device: u64,
     pub inode: u64,
     pub device_number: u64,
@@ -134,6 +135,7 @@ pub fn snapshot_seat_render_inventory(
                 return Err(E::IdentityChanged);
             }
             Ok(LiveRenderDeviceIdentitySnapshot {
+                node: path,
                 device: metadata.dev(),
                 inode: metadata.ino(),
                 device_number,
@@ -175,6 +177,7 @@ fn open_candidate(
     Ok(LiveRenderDevice {
         file,
         identity: LiveRenderDeviceIdentitySnapshot {
+            node: path,
             device: opened.st_dev,
             inode: opened.st_ino,
             device_number: opened.st_rdev,

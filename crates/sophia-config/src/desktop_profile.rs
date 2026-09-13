@@ -28,9 +28,13 @@ pub const DESKTOP_PROFILE_MAX_DEPTH: usize = 10;
 /// `SOPHIA_SHELL_MAX_RESERVATION_THICKNESS_PX`, and a test in `sophia-cli` --
 /// which sees both crates -- fails if they ever drift apart.
 pub const SHELL_PANEL_MAX_THICKNESS_PX: u16 = 512;
-/// First admitted Lom GPU-domain ceiling. A different value needs a new
-/// measured GPU admission decision rather than an implicit local default.
-pub const SHELL_GPU_MEMORY_BYTES: u64 = 256 * 1024 * 1024;
+/// Explicit shell GPU execution policy. Content permission is independent.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ShellGpuMode {
+    #[default]
+    Denied,
+    Direct,
+}
 
 pub const DESKTOP_PROFILE_MAX_FILES: usize = 64;
 pub const DESKTOP_PROFILE_MAX_BYTES: usize = 1024 * 1024;
@@ -722,7 +726,7 @@ fn validate_setting(
         // are admitted by the selected WM before profile activation.
         DesktopAuthority::Policy => true,
         DesktopAuthority::Shell => {
-            ["enabled", "panel", "content", "gpu-memory-bytes"].contains(&name)
+            ["enabled", "panel", "content", "gpu", "gpu-memory-bytes"].contains(&name)
         }
         DesktopAuthority::Shortcut => ["profile", "bind", "pointer-bind"].contains(&name),
         DesktopAuthority::Session => [
@@ -774,12 +778,19 @@ fn validate_setting(
         }
     }
     if authority == DesktopAuthority::Shell && name == "gpu-memory-bytes" {
-        let value = exact_integer_argument(node, "shell gpu-memory-bytes")?;
-        if value != i128::from(SHELL_GPU_MEMORY_BYTES) {
-            return Err(DesktopProfileError::Schema(format!(
-                "shell gpu-memory-bytes must be the admitted prototype limit {}",
-                SHELL_GPU_MEMORY_BYTES
-            )));
+        return Err(DesktopProfileError::Schema(
+            "shell gpu-memory-bytes was removed; use gpu \"direct\" to grant direct GPU access or gpu \"denied\" to deny it"
+                .to_owned(),
+        ));
+    }
+    if authority == DesktopAuthority::Shell && name == "gpu" {
+        match exact_string_argument(node, "shell gpu")? {
+            "denied" | "direct" => {}
+            _ => {
+                return Err(DesktopProfileError::Schema(
+                    "shell gpu must be \"denied\" or \"direct\"".to_owned(),
+                ));
+            }
         }
     }
     if authority == DesktopAuthority::Broker
@@ -837,8 +848,8 @@ pub fn desktop_profile_shell_content_enabled(profile: &DesktopProfileGeneration)
         .unwrap_or(false)
 }
 
-/// Returns the exact configured GPU limit. It has no implicit default.
-pub fn desktop_profile_shell_gpu_memory_bytes(profile: &DesktopProfileGeneration) -> Option<u64> {
+/// Returns the explicit shell GPU execution policy. Absence is denial.
+pub fn desktop_profile_shell_gpu_mode(profile: &DesktopProfileGeneration) -> ShellGpuMode {
     profile
         .candidates
         .get(&DesktopAuthority::Shell)
@@ -846,7 +857,7 @@ pub fn desktop_profile_shell_gpu_memory_bytes(profile: &DesktopProfileGeneration
             candidate
                 .values
                 .iter()
-                .find(|value| value.key == "shell.gpu-memory-bytes")
+                .find(|value| value.key == "shell.gpu")
         })
         .and_then(|value| KdlDocument::parse_v2(&value.encoded).ok())
         .and_then(|document| {
@@ -854,11 +865,16 @@ pub fn desktop_profile_shell_gpu_memory_bytes(profile: &DesktopProfileGeneration
                 .then(|| {
                     document.nodes()[0]
                         .get(0)
-                        .and_then(|value| value.as_integer())
+                        .and_then(|value| value.as_string())
+                        .and_then(|mode| match mode {
+                            "denied" => Some(ShellGpuMode::Denied),
+                            "direct" => Some(ShellGpuMode::Direct),
+                            _ => None,
+                        })
                 })
                 .flatten()
         })
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .unwrap_or_default()
 }
 
 /// Returns the prepared shell panel thickness in pixels, if the profile asks

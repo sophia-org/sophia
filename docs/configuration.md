@@ -298,20 +298,20 @@ panel deeper than the configured allowance, including every nonzero panel when
 the allowance is absent or zero. [The admission investigation](notes/investigations/gl2ooa99-shell-reservation-admission-ignores-the-configured-panel-depth.md)
 records the repaired boundary.
 
-The current parser accepts
-`shell { content #true; gpu-memory-bytes 268435456; }`, the earlier prototype
-quota request. Content defaults to denied and the production GPU-domain gate
-still fails closed. These parsed values alone do not grant a render node or
-establish any GPU quota.
-
 The accepted [replacement design](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
 uses independent `content #true` and `gpu "direct"` choices, with GPU access
-defaulting to `gpu "denied"`. This is **target syntax, not currently accepted
-parser syntax**. It requires no custom kernel or `dmem` controller. Direct
-permission accepts GPU execution/availability risk without a hard aggregate
-VRAM guarantee. Its implementation must reject the retired `gpu-memory-bytes`
-form with a migration diagnostic rather than silently weakening the requested
-quota. Existing installed profiles are unchanged by the design decision.
+defaulting to `gpu "denied"`. The parser accepts those values and rejects the
+retired `gpu-memory-bytes` form with an actionable migration diagnostic rather
+than silently weakening a requested quota. Content may remain CPU-rendered with
+`gpu "denied"`; direct GPU permission also requires an enabled shell process.
+
+Direct mode exposes exactly the selected render node at the private
+`/dev/dri/renderD128` path and binds its kernel identity to the shell connection
+epoch. It requires no custom kernel or `dmem` controller. It accepts GPU
+execution/availability risk without a hard aggregate VRAM guarantee. The
+content ledger bounds known immutable resource and compositor-backing credit;
+it does not measure every driver allocation. Native GPU acceptance remains a
+separately authorized hardware test.
 The [launch task](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t097)
 owns that migration, device identity and actual startup evidence.
 

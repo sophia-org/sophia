@@ -17,7 +17,8 @@ No custom kernel, mandatory GPU bridge, Waybridge, Vello dependency in Sophia,
 or second native shell is on this path.
 
 The CPU content implementation and Lom's persistent client are the starting
-point. Production GPU admission and content input remain closed/incomplete;
+point. Production GPU admission is implemented behind a default-denied profile,
+while content input and native acceptance remain closed/incomplete;
 writing this plan is not evidence of an admitted desktop. Preserve previous
 model, fixture and incident evidence under its exact source identity.
 
@@ -88,6 +89,13 @@ Retain a capability/prerequisite record for an unmodified distribution kernel;
 report untested driver combinations. A fake cgroup/controller fixture or a bool
 set to true cannot satisfy the gate. No main compositor startup is needed for
 the isolated proof. Modelled recovery cannot promise a stalled kernel returns.
+
+Implementation checkpoint: the profile migration, exact typed render-node bind,
+connection-epoch grant, device-replacement revocation, and conservative
+content-backing credit are implemented with deterministic tests and the
+`ShellGpuLaunchAdmission` model. This does not close t097: the isolated hardware
+proof, other-device exclusion, Lom adapter match, and native retirement evidence
+remain separately authorized and unrun.
 
 ### t098
 

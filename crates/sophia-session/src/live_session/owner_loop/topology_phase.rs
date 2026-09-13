@@ -15,6 +15,13 @@
             }
         }
         devices.poll(now, frontend_service_sender)?;
+        if let Some(shell) = metadata_shell.as_mut() {
+            // Only the coordinator's fully admitted active identity may replace
+            // the shell grant. An unavailable identity revokes immediately;
+            // replacement waits for the existing frontend acknowledgement.
+            let admitted = devices.shell_gpu_device().ok();
+            let _ = shell.observe_gpu_device(admitted)?;
+        }
         if now >= render_inventory_service_at {
             render_inventory_service_at = now + Duration::from_millis(250);
             if let (Some(native), Some((generation, inventory))) =

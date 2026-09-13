@@ -58,16 +58,16 @@ shell {
 }
 ```
 
-`gpu "denied"` is the default. This is **target syntax, not implemented syntax**
-at the time of this decision. The existing `gpu-memory-bytes` setting must be
-retired with an actionable migration refusal when this path lands. It must
-never be silently reinterpreted as advisory accounting or consent to direct
-access. No installed profile changes as a consequence of accepting this ADR.
+`gpu "denied"` is the default. The implementation accepts this syntax and
+rejects the former `gpu-memory-bytes` setting with an actionable migration
+refusal. It is never silently reinterpreted as advisory accounting or consent
+to direct access. No installed profile changes merely because the implementation
+exists.
 
 The operator grants the selected executable permission to execute GPU work.
 That grant is distinct from content negotiation: GPU permission grants no
 content capability, and content permission grants no GPU. Implementation,
-client request and operator permission must all agree for content admission;
+client request and operator permission must all agree for GPU admission;
 the required launch resources must also be established before client code runs.
 
 Session constructs a typed launch grant, bound to the child/domain and a fresh

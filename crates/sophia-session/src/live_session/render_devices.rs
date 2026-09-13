@@ -73,6 +73,23 @@ pub(super) struct LiveRenderDeviceCoordinator {
 }
 
 impl LiveRenderDeviceCoordinator {
+    pub(super) fn shell_gpu_device(&self) -> Result<Identity, String> {
+        if !self.active_available {
+            return Err("the active render device is unavailable".into());
+        }
+        let mut matching = self
+            .admitted
+            .iter()
+            .filter(|device| device.identity == self.active_identity);
+        let identity = matching
+            .next()
+            .ok_or("the active render device is absent from the admitted inventory")?;
+        if matching.next().is_some() {
+            return Err("the admitted inventory contains an ambiguous active render device".into());
+        }
+        Ok(identity.identity.clone())
+    }
+
     fn with_preparer(
         seat: String,
         initial: Arc<Bundle>,

@@ -12,6 +12,8 @@ pub struct ContentEpochPool {
     last_grant: ContentGrant,
     reserved_live: u64,
     max_retiring_bytes: u64,
+    reserved_live_backing: u64,
+    max_backing_bytes: u64,
 }
 
 struct ContentEpoch {
@@ -58,6 +60,8 @@ impl ContentEpochPool {
             last_grant: ContentGrant::default(),
             reserved_live: 0,
             max_retiring_bytes,
+            reserved_live_backing: 0,
+            max_backing_bytes: 64 * 1024 * 1024,
         })
     }
 
@@ -73,6 +77,15 @@ impl ContentEpochPool {
 
     pub fn reserved_bytes(&self) -> u64 {
         self.reserved_live + self.retired_bytes()
+    }
+    pub fn retired_backing_bytes(&self) -> u64 {
+        self.retired
+            .iter()
+            .map(|epoch| epoch.resources.usage().backing)
+            .sum()
+    }
+    pub fn reserved_backing_bytes(&self) -> u64 {
+        self.reserved_live_backing + self.retired_backing_bytes()
     }
     pub fn active_mut(&mut self) -> Option<&mut ContentResourceStore> {
         self.active.as_mut().map(|epoch| &mut epoch.resources)
@@ -130,14 +143,17 @@ impl ContentEpochPool {
             .map_err(|_| ContentStoreError::Malformed)?;
         let reserve =
             limits.max_staging_bytes + limits.max_resident_bytes + limits.max_retiring_bytes;
+        let backing_reserve = limits.max_resident_bytes + limits.max_retiring_bytes;
         if limits.max_session_retiring_bytes != self.max_retiring_bytes
             || self.retired.len() >= Self::MAX_RETIRED_EPOCHS
             || self.retired_bytes() + reserve > self.max_retiring_bytes
+            || self.retired_backing_bytes() + backing_reserve > self.max_backing_bytes
         {
             return Err(ContentStoreError::Budget);
         }
         self.last_grant = limits.grant;
         self.reserved_live = reserve;
+        self.reserved_live_backing = backing_reserve;
         self.active = Some(ContentEpoch::new(limits)?);
         Ok(())
     }
@@ -155,6 +171,7 @@ impl ContentEpochPool {
             }
         }
         self.reserved_live = 0;
+        self.reserved_live_backing = 0;
         self.collect();
     }
 

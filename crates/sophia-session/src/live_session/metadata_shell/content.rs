@@ -8,15 +8,6 @@ use sophia_runtime::{ShellSessionTransport, ShellTransportError};
 
 const DRM_FORMAT_ARGB8888: u32 = u32::from_le_bytes(*b"AR24");
 
-/// Production stays closed until the stopped-child cgroup admission owner can
-/// supply verified dmem evidence. Keeping this decision at the launch seam
-/// prevents a matching profile integer from becoming ambient GPU permission.
-pub(super) fn production_gpu_domain_admitted(gpu_memory_bytes: Option<u64>) -> bool {
-    let profile_matches = gpu_memory_bytes == Some(sophia_config::SHELL_GPU_MEMORY_BYTES);
-    let stopped_child_cgroup_evidence = false;
-    profile_matches && stopped_child_cgroup_evidence
-}
-
 #[derive(Clone)]
 struct PendingPresentation {
     grant: sophia_protocol::ContentGrant,
@@ -28,7 +19,6 @@ struct PendingPresentation {
 
 pub(super) struct LiveContentSession {
     requested: bool,
-    gpu_admitted: bool,
     panel_limit: Option<u16>,
     facts_generation: u64,
     published_facts: Vec<sophia_protocol::ContentOutputFactsEntry>,
@@ -41,10 +31,9 @@ pub(super) struct LiveContentSession {
 }
 
 impl LiveContentSession {
-    pub(super) fn new(requested: bool, gpu_admitted: bool, panel_limit: Option<u16>) -> Self {
+    pub(super) fn new(requested: bool, panel_limit: Option<u16>) -> Self {
         Self {
             requested,
-            gpu_admitted,
             panel_limit,
             facts_generation: 0,
             published_facts: Vec::new(),
@@ -58,10 +47,9 @@ impl LiveContentSession {
     }
 
     pub(super) fn admission_policy(&self) -> sophia_runtime::ShellContentAdmissionPolicy {
-        match (self.requested, self.gpu_admitted) {
-            (false, _) => sophia_runtime::ShellContentAdmissionPolicy::Denied,
-            (true, false) => sophia_runtime::ShellContentAdmissionPolicy::Unavailable,
-            (true, true) => sophia_runtime::ShellContentAdmissionPolicy::Granted {
+        match self.requested {
+            false => sophia_runtime::ShellContentAdmissionPolicy::Denied,
+            true => sophia_runtime::ShellContentAdmissionPolicy::Granted {
                 discrete_input: false,
             },
         }
@@ -78,7 +66,7 @@ impl LiveContentSession {
     }
 
     pub(super) const fn owns_work_area(&self) -> bool {
-        self.requested && self.gpu_admitted
+        self.requested
     }
 
     #[allow(clippy::too_many_arguments)]

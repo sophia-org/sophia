@@ -2,6 +2,7 @@ use super::*;
 
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
+use std::os::unix::fs::FileTypeExt as _;
 use std::os::unix::process::CommandExt as _;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -36,6 +37,22 @@ pub struct ProtectionPath {
     pub source: PathBuf,
     pub destination: PathBuf,
     pub access: ProtectionPathAccess,
+}
+
+/// One required character device exposed at a fixed path in a private `/dev`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtectionDevice {
+    pub source: PathBuf,
+    pub destination: PathBuf,
+}
+
+impl ProtectionDevice {
+    pub fn required_at(source: impl Into<PathBuf>, destination: impl Into<PathBuf>) -> Self {
+        Self {
+            source: source.into(),
+            destination: destination.into(),
+        }
+    }
 }
 
 impl ProtectionPath {
@@ -80,6 +97,8 @@ pub enum ProtectionDomainSpecError {
         existing: PathBuf,
         requested: PathBuf,
     },
+    InvalidDeviceSource(PathBuf),
+    InvalidDeviceDestination(PathBuf),
     UnsupportedInheritedFd(i32),
 }
 
@@ -95,6 +114,7 @@ impl std::error::Error for ProtectionDomainSpecError {}
 pub struct ProtectionDomainSpec {
     roles: BTreeSet<ProtectionDomainRole>,
     paths: Vec<ProtectionPath>,
+    devices: Vec<ProtectionDevice>,
     inherited_fds: BTreeSet<i32>,
     network: ProtectionNetworkAccess,
     bubblewrap: PathBuf,
@@ -109,6 +129,7 @@ impl ProtectionDomainSpec {
         Ok(Self {
             roles,
             paths: Vec::new(),
+            devices: Vec::new(),
             inherited_fds: [0, 1, 2].into_iter().collect(),
             network: ProtectionNetworkAccess::Denied,
             bubblewrap: PathBuf::from(DEFAULT_BUBBLEWRAP_PATH),
@@ -129,6 +150,38 @@ impl ProtectionDomainSpec {
             });
         }
         self.paths.push(path);
+        Ok(self)
+    }
+
+    pub fn device(mut self, device: ProtectionDevice) -> Result<Self, ProtectionDomainSpecError> {
+        validate_binding_path(&device.source)?;
+        validate_binding_path(&device.destination)?;
+        if !device.destination.starts_with("/dev/") || device.destination == Path::new("/dev") {
+            return Err(ProtectionDomainSpecError::InvalidDeviceDestination(
+                device.destination,
+            ));
+        }
+        if !std::fs::metadata(&device.source)
+            .map(|metadata| metadata.file_type().is_char_device())
+            .unwrap_or(false)
+        {
+            return Err(ProtectionDomainSpecError::InvalidDeviceSource(
+                device.source,
+            ));
+        }
+        if let Some(existing) = self
+            .paths
+            .iter()
+            .map(|path| &path.destination)
+            .chain(self.devices.iter().map(|device| &device.destination))
+            .find(|existing| paths_overlap(existing, &device.destination))
+        {
+            return Err(ProtectionDomainSpecError::OverlappingDestination {
+                existing: existing.clone(),
+                requested: device.destination,
+            });
+        }
+        self.devices.push(device);
         Ok(self)
     }
 
@@ -155,6 +208,10 @@ impl ProtectionDomainSpec {
 
     pub fn paths(&self) -> &[ProtectionPath] {
         &self.paths
+    }
+
+    pub fn devices(&self) -> &[ProtectionDevice] {
+        &self.devices
     }
 
     pub const fn network(&self) -> ProtectionNetworkAccess {
@@ -272,6 +329,13 @@ pub(crate) fn spawn_bubblewrap(
         if !binding.source.exists() {
             return Err(ProtectionDomainLaunchError::InvalidBinding(
                 binding.source.clone(),
+            ));
+        }
+    }
+    for device in &domain.devices {
+        if !device.source.exists() {
+            return Err(ProtectionDomainLaunchError::InvalidBinding(
+                device.source.clone(),
             ));
         }
     }
@@ -431,6 +495,14 @@ fn bubblewrap_arguments(
             option.into(),
             binding.source.as_os_str().to_owned(),
             binding.destination.as_os_str().to_owned(),
+        ]);
+    }
+    for device in &domain.devices {
+        append_parent_directories(&mut args, &mut created, &device.destination, true)?;
+        args.extend([
+            "--dev-bind".into(),
+            device.source.as_os_str().to_owned(),
+            device.destination.as_os_str().to_owned(),
         ]);
     }
     for (key, value) in &launch.environment {

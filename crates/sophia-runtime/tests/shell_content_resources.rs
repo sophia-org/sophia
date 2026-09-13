@@ -62,7 +62,8 @@ fn incomplete_pixels_never_acquire_a_lease_and_end_moves_credit_once() {
             staging: 8,
             resident: 0,
             retiring: 0,
-            reserved_resident: 8
+            reserved_resident: 8,
+            backing: 8,
         }
     );
     assert!(store.lease(grant(), begin(1).resource).is_err());
@@ -75,7 +76,8 @@ fn incomplete_pixels_never_acquire_a_lease_and_end_moves_credit_once() {
             staging: 0,
             resident: 8,
             retiring: 0,
-            reserved_resident: 0
+            reserved_resident: 0,
+            backing: 8,
         }
     );
     assert_eq!(
@@ -100,6 +102,7 @@ fn retirement_waits_for_every_consumer_and_emits_one_release() {
     store.retire(tx(), &retire).unwrap();
     assert_eq!(store.usage().resident, 0);
     assert_eq!(store.usage().retiring, 8);
+    assert_eq!(store.usage().backing, 8);
     assert!(store.lease(grant(), retire.resource).is_err());
     assert!(drain(&mut store).is_empty());
     drop(lease);
@@ -109,6 +112,7 @@ fn retirement_waits_for_every_consumer_and_emits_one_release() {
     drop(renderer);
     store.collect();
     assert!(store.quiescent());
+    assert_eq!(store.usage().backing, 0);
     let events = drain(&mut store);
     assert!(matches!(
         events.as_slice(),
@@ -266,11 +270,13 @@ fn reconnect_reserves_global_credit_and_keeps_old_pixels_alive() {
     let mut pool = ContentEpochPool::new(64 * 1024 * 1024).unwrap();
     pool.admit(ContentLimits::prototype(grant())).unwrap();
     assert_eq!(pool.reserved_bytes(), 40 * 1024 * 1024);
+    assert_eq!(pool.reserved_backing_bytes(), 32 * 1024 * 1024);
     let store = pool.active_mut().unwrap();
     upload(store, 1);
     let old = store.lease(grant(), begin(1).resource).unwrap();
     pool.disconnect();
     assert_eq!(pool.retired_bytes(), 8);
+    assert_eq!(pool.retired_backing_bytes(), 8);
     assert_eq!(
         pool.admit(ContentLimits::prototype(grant())),
         Err(ContentStoreError::Stale)
@@ -281,12 +287,15 @@ fn reconnect_reserves_global_credit_and_keeps_old_pixels_alive() {
     };
     pool.admit(ContentLimits::prototype(next)).unwrap();
     assert_eq!(pool.reserved_bytes(), 40 * 1024 * 1024 + 8);
+    assert_eq!(pool.reserved_backing_bytes(), 32 * 1024 * 1024 + 8);
     assert_eq!(old.bytes(), chunk(1).bytes);
     drop(old);
     pool.collect();
     assert_eq!(pool.retired_bytes(), 0);
+    assert_eq!(pool.reserved_backing_bytes(), 32 * 1024 * 1024);
     pool.disconnect();
     assert_eq!(pool.reserved_bytes(), 0);
+    assert_eq!(pool.reserved_backing_bytes(), 0);
 }
 
 #[test]

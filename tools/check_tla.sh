@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership PresentMixedOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration PointerGrabAdmission FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation ShellContentLifecycle ShellContentBundleComposition InputDeliveryRecovery XAuthorityShutdown; do
+for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership PresentMixedOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration PointerGrabAdmission FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation ShellContentLifecycle ShellContentBundleComposition ShellGpuLaunchAdmission InputDeliveryRecovery XAuthorityShutdown; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (
@@ -51,6 +51,23 @@ for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPr
             -config "$model.cfg" \
             "$model.tla"
     )
+done
+
+for control in ShellGpuLaunchAdmissionKeepsLostGrant ShellGpuLaunchAdmissionReusesEpoch; do
+    control_dir="$TEMP_DIR/$control"
+    mkdir "$control_dir"
+    cp "$MODEL_DIR/ShellGpuLaunchAdmission.tla" "$MODEL_DIR/$control.cfg" "$control_dir/"
+    log="$control_dir/control.log"
+    if (cd "$control_dir" && timeout 60 java -XX:+UseParallelGC -jar "$JAR_PATH" \
+        -deadlock -workers 1 -fp 0 -config "$control.cfg" ShellGpuLaunchAdmission.tla) >"$log" 2>&1; then
+        echo "TLA+ shell GPU admission negative control unexpectedly passed: $control" >&2
+        exit 1
+    fi
+    case "$control" in
+        ShellGpuLaunchAdmissionKeepsLostGrant) invariant=ActiveGrantNamesCurrentAuthority ;;
+        ShellGpuLaunchAdmissionReusesEpoch) invariant=FreshGrantEpoch ;;
+    esac
+    grep -Fq "Invariant $invariant is violated." "$log" || { cat "$log"; exit 1; }
 done
 
 control=PageFlipPresentationTrackerMixedClock

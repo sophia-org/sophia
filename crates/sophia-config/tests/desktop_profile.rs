@@ -8,15 +8,14 @@ use sophia_config::{
     DesktopMirrorFit, DesktopOutputMode, DesktopOutputScale, DesktopOutputTransform,
     DesktopOutputVrrMode, DesktopPointerAccelProfile, DesktopProfileActivationKey,
     DesktopProfileError, DesktopSessionShortcut, DesktopShortcutBindingKind,
-    DesktopShortcutModifiers, DesktopShortcutTarget, SHELL_GPU_MEMORY_BYTES,
-    SHELL_PANEL_MAX_THICKNESS_PX, desktop_profile_shell_content_enabled,
-    desktop_profile_shell_enabled, desktop_profile_shell_gpu_memory_bytes,
-    desktop_profile_shell_panel_thickness, discover_desktop_profile_source,
-    load_desktop_authority_fragment, load_desktop_profile, load_prepared_desktop_profile,
-    prepare_desktop_input_candidate, prepare_desktop_output_candidate,
-    prepare_desktop_profile_candidates, prepare_desktop_session_candidate,
-    prepare_desktop_shortcut_candidate, restage_desktop_profile, stage_desktop_profile,
-    validate_desktop_profile_fragments,
+    DesktopShortcutModifiers, DesktopShortcutTarget, SHELL_PANEL_MAX_THICKNESS_PX, ShellGpuMode,
+    desktop_profile_shell_content_enabled, desktop_profile_shell_enabled,
+    desktop_profile_shell_gpu_mode, desktop_profile_shell_panel_thickness,
+    discover_desktop_profile_source, load_desktop_authority_fragment, load_desktop_profile,
+    load_prepared_desktop_profile, prepare_desktop_input_candidate,
+    prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
+    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, restage_desktop_profile,
+    stage_desktop_profile, validate_desktop_profile_fragments,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -981,19 +980,19 @@ fn a_panel_that_is_not_one_integer_is_refused() {
 }
 
 #[test]
-fn shell_content_is_explicit_and_carries_the_admitted_gpu_limit() {
+fn shell_content_and_direct_gpu_permission_are_explicit_and_independent() {
     let root = temporary_directory("shell-content-profile");
     let path = root.join("config.kdl");
     write_profile(
         &path,
-        "schema 1\nshell { enabled #true; content #true; panel 32; gpu-memory-bytes 268435456; }\n",
+        "schema 1\nshell { enabled #true; content #true; panel 32; gpu \"direct\"; }\n",
     );
     let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
 
     assert!(desktop_profile_shell_content_enabled(&profile));
     assert_eq!(
-        desktop_profile_shell_gpu_memory_bytes(&profile),
-        Some(SHELL_GPU_MEMORY_BYTES)
+        desktop_profile_shell_gpu_mode(&profile),
+        ShellGpuMode::Direct
     );
 }
 
@@ -1009,7 +1008,10 @@ fn old_and_descriptor_only_profiles_do_not_gain_content_permission() {
         write_profile(&path, source);
         let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
         assert!(!desktop_profile_shell_content_enabled(&profile));
-        assert_eq!(desktop_profile_shell_gpu_memory_bytes(&profile), None);
+        assert_eq!(
+            desktop_profile_shell_gpu_mode(&profile),
+            ShellGpuMode::Denied
+        );
     }
 }
 
@@ -1019,9 +1021,10 @@ fn shell_content_profile_fields_are_exact() {
         "schema 1\nshell { content; }\n",
         "schema 1\nshell { content 1; }\n",
         "schema 1\nshell { content #true #false; }\n",
-        "schema 1\nshell { gpu-memory-bytes 0; }\n",
-        "schema 1\nshell { gpu-memory-bytes 268435455; }\n",
-        "schema 1\nshell { gpu-memory-bytes \"268435456\"; }\n",
+        "schema 1\nshell { gpu; }\n",
+        "schema 1\nshell { gpu 1; }\n",
+        "schema 1\nshell { gpu \"direct\" \"denied\"; }\n",
+        "schema 1\nshell { gpu \"automatic\"; }\n",
     ] {
         let root = temporary_directory("shell-content-shape");
         let path = root.join("config.kdl");
@@ -1031,6 +1034,31 @@ fn shell_content_profile_fields_are_exact() {
             "accepted malformed shell content authority: {source}"
         );
     }
+}
+
+#[test]
+fn retired_gpu_memory_limit_has_an_actionable_migration_error() {
+    let root = temporary_directory("shell-retired-gpu-limit");
+    let path = root.join("config.kdl");
+    write_profile(&path, "schema 1\nshell { gpu-memory-bytes 268435456; }\n");
+    let error = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap_err();
+    assert!(error.to_string().contains("use gpu \"direct\""));
+}
+
+#[test]
+fn direct_gpu_permission_does_not_imply_content_permission() {
+    let root = temporary_directory("shell-gpu-independent");
+    let path = root.join("config.kdl");
+    write_profile(
+        &path,
+        "schema 1\nshell { enabled #true; content #false; gpu \"direct\"; }\n",
+    );
+    let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+    assert!(!desktop_profile_shell_content_enabled(&profile));
+    assert_eq!(
+        desktop_profile_shell_gpu_mode(&profile),
+        ShellGpuMode::Direct
+    );
 }
 
 #[test]

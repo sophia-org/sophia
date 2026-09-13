@@ -712,11 +712,21 @@ pub(crate) fn run_persistent_xterm_session(
         .shell_process
         .as_deref()
         .map(|process| {
+            let gpu_device = match config.shell_gpu_mode {
+                sophia_config::ShellGpuMode::Denied => None,
+                sophia_config::ShellGpuMode::Direct => Some(
+                    client_render_devices
+                        .as_ref()
+                        .ok_or("direct shell GPU access requires native client rendering")?
+                        .shell_gpu_device()?,
+                ),
+            };
             LiveMetadataShell::start(
                 process,
                 config.shell_panel_thickness,
                 config.shell_content_enabled,
-                config.shell_gpu_memory_bytes,
+                config.shell_gpu_mode,
+                gpu_device,
                 config.shell_config.as_deref(),
             )
         })

@@ -260,6 +260,32 @@ fn process_supervisor_rejects_start_while_child_is_running() {
 }
 
 #[test]
+fn process_supervisor_replaces_only_an_inactive_launch_spec() {
+    let mut supervisor = ProcessSupervisor::new(
+        SupervisedProcessKind::WindowManager,
+        ProcessLaunchSpec::new("/usr/bin/true"),
+    );
+    supervisor
+        .replace_launch_spec(ProcessLaunchSpec::new("/usr/bin/sleep").arg("1"))
+        .unwrap();
+    assert_eq!(supervisor.launch_spec().program, "/usr/bin/sleep");
+
+    supervisor
+        .apply(SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::WindowManager,
+            delay: Duration::ZERO,
+        })
+        .unwrap();
+    assert!(matches!(
+        supervisor.replace_launch_spec(ProcessLaunchSpec::new("/usr/bin/true")),
+        Err(ProcessSupervisorError::AlreadyRunning {
+            process: SupervisedProcessKind::WindowManager
+        })
+    ));
+    supervisor.terminate().unwrap();
+}
+
+#[test]
 fn bubblewrap_supervisor_reports_the_actual_role_peer() {
     if std::env::var_os("SOPHIA_RUN_PROTECTION_DOMAIN_SMOKE").is_none() {
         return;

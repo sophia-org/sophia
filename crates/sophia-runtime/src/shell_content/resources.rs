@@ -20,6 +20,9 @@ pub struct ContentMemoryUsage {
     pub resident: u64,
     pub retiring: u64,
     pub reserved_resident: u64,
+    /// Conservative compositor upload/backing credit retained with this
+    /// resource generation. It is known storage capacity, not driver VRAM.
+    pub backing: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -199,6 +202,8 @@ impl ContentResourceStore {
             || self.usage.staging + bytes > self.limits.max_staging_bytes
             || self.usage.resident + self.usage.reserved_resident + bytes
                 > self.limits.max_resident_bytes
+            || self.usage.backing + bytes
+                > self.limits.max_resident_bytes + self.limits.max_retiring_bytes
             || self.events.len() + self.response_credits + 3
                 > self.limits.max_control_records as usize
         {
@@ -216,6 +221,7 @@ impl ContentResourceStore {
             .map_err(|_| ContentStoreError::Budget)?;
         self.usage.staging += bytes;
         self.usage.reserved_resident += bytes;
+        self.usage.backing += bytes;
         self.response_credits += 2;
         self.transfers.insert(
             key,
@@ -336,6 +342,7 @@ impl ContentResourceStore {
         if let Some(transfer) = self.transfers.remove(&key) {
             self.usage.staging -= transfer.layout.total_bytes;
             self.usage.reserved_resident -= transfer.layout.total_bytes;
+            self.usage.backing -= transfer.layout.total_bytes;
             self.response_credits -= 2;
             self.status(
                 request.unwrap_or(transfer.transaction),
@@ -427,6 +434,7 @@ impl ContentResourceStore {
             } else {
                 self.usage.resident -= value.pixels.description.total_bytes;
             }
+            self.usage.backing -= value.pixels.description.total_bytes;
             self.response_credits -= 1;
             self.events.push_back(ContentResourceEvent {
                 transaction: value.transaction,

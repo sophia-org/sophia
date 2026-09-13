@@ -371,6 +371,14 @@ demand its next frame only after an outcome, and must violate
 `Invariant NoAcceptedObligationLost`. `tools/check_tla.sh` verifies both exact
 failures.
 
+`ShellGpuLaunchAdmission.tla` models the startup-scoped render-device grant for
+an admitted content shell. It checks that operator policy, an explicit request,
+device availability, connection epoch, and exact device generation remain one
+authority decision; device loss or policy withdrawal cannot leave an ambient
+grant, and every replacement process receives a fresh grant epoch. Its negative
+controls retain a grant across device loss and reuse an epoch so the two
+security properties remain executable rather than prose-only.
+
 `ShellContentBundleComposition.tla` models the seam between the two shell
 models rather than merging them. The work-area model carries `candidateReady`
 as an opaque boolean and proves a presented bundle was ready, coherent and
