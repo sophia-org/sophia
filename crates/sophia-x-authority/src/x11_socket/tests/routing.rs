@@ -4984,7 +4984,7 @@ fn review_terminal_unreadable_recovery_cannot_prove_live_delivery_settled() {
 }
 
 #[test]
-fn routed_work_survives_the_instance_that_routed_it() {
+fn independent_terminal_kept_shutdown_handle_reclaims_late_completion_once() {
     let namespace = NamespaceId::from_raw(65);
     let client = XServerFrontendClientId(83);
     let surface = SurfaceId::new(71, 1);
@@ -5048,7 +5048,7 @@ fn routed_work_survives_the_instance_that_routed_it() {
 }
 
 #[test]
-fn routed_work_survives_an_abandoned_handle_too() {
+fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamation() {
     let namespace = NamespaceId::from_raw(66);
     let client = XServerFrontendClientId(84);
     let surface = SurfaceId::new(72, 1);
