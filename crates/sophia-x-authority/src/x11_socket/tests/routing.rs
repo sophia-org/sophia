@@ -13515,3 +13515,85 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
         "and the earlier item is still owned"
     );
 }
+
+#[test]
+fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() {
+    let client = XServerFrontendClientId(891);
+    let surface = SurfaceId::new(891, 1);
+    let mut private = private_for_roles();
+    let (_registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200891, 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    let run_one_submission = |private: &mut crate::PrivateXServerFrontend,
+                                  keyboards: &mut crate::PrivateKeyboards,
+                                  delivery: u64,
+                                  pressed: bool| {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                272,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards)
+            .expect("a readable order");
+        private.deliver_turn(turn)
+    };
+
+    // A press that begins the hold: an event is owed and delivered.
+    let delivered = run_one_submission(&mut private, &mut keyboards, 891, true);
+    assert_eq!(delivered.len(), 1);
+    assert!(delivered[0].enqueued);
+
+    // The same input pressed again joins the hold. It owes nobody an event,
+    // which is an outcome rather than a failure to emit one -- so its
+    // completion is taken and the grant's cell is freed.
+    let delivered = run_one_submission(&mut private, &mut keyboards, 892, true);
+    assert_eq!(
+        delivered.len(),
+        1,
+        "a join is reported as what happened, not retained for want of an event"
+    );
+    assert!(!delivered[0].enqueued, "nobody was owed one");
+    assert!(
+        matches!(
+            delivered[0].completion,
+            Some(sophia_input_authority::RequestCompletion::Processed)
+        ),
+        "and its outcome was taken, which is what frees the cell"
+    );
+    assert!(
+        private.undelivered.is_empty(),
+        "nothing is owed, so nothing is retained"
+    );
+
+    // Which means the hold this grant still owns can be released. Retaining
+    // the join would have left the grant unable to reserve, holding a button
+    // it could never let go of.
+    let delivered = run_one_submission(&mut private, &mut keyboards, 893, false);
+    assert_eq!(delivered.len(), 1, "the release reserved and ran");
+    assert!(delivered[0].enqueued, "and it owed an event, which was queued");
+}

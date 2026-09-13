@@ -260,6 +260,11 @@ impl PrivateXServerFrontend {
     /// only ever be called with a receipt nobody has would be machinery
     /// describing a decision nothing makes.
     ///
+    /// The native half is not established here either. What the guarded code
+    /// demonstrates is that the aggregate transition and the projection it
+    /// moves happen in one interval; what else native reconciliation requires
+    /// is not shown by that, and was previously asserted rather than proved.
+    ///
     /// Emission happens here, with no guard held: the decision was made under
     /// the guards and is immutable, and sending on a client's queue is exactly
     /// the kind of work that must not happen beneath them.
@@ -301,12 +306,12 @@ impl PrivateXServerFrontend {
                 // anybody. That is not a receipt either.
                 _ => false,
             };
-            if !enqueued {
-                // The event has not reached a queue, so the work still owes a
-                // delivery and the custody still owes an outcome. Retained
-                // with both rather than reported as a delivery that failed and
-                // then discarded -- and not re-applied, because what applied
-                // has applied.
+            if run.owes_event && !enqueued {
+                // An event was owed and has not reached a queue, so the work
+                // still owes a delivery and the custody still owes an outcome.
+                // Retained with both rather than reported as a delivery that
+                // failed and then discarded -- and not re-applied, because what
+                // applied has applied.
                 self.undelivered.push(PrivateOrderedItem::Ran {
                     sequence,
                     run,
@@ -315,8 +320,30 @@ impl PrivateXServerFrontend {
                 });
                 continue;
             }
-            // Taken exactly once, which is what frees the grant's cell.
-            let completion = custody.observe().ok().flatten();
+            // Owing nobody an event is an outcome, not a failure to emit one.
+            // A press that joined a hold, and a release that found nothing
+            // held, both finished: their completion is taken here so the grant
+            // can reserve again. Retaining them for want of an event nobody
+            // was owed strands the grant holding a hold it can never release.
+            //
+            // Taken exactly once, which is what frees the grant's cell. An
+            // observation that could not be made is kept apart from one that
+            // found nothing waiting: the first leaves the custody owed and the
+            // second does not.
+            let completion = match custody.observe() {
+                Ok(completion) => completion,
+                Err(_unreadable) => {
+                    // Nothing was established about the outcome, so the only
+                    // handle able to take it is retained rather than dropped.
+                    self.undelivered.push(PrivateOrderedItem::Ran {
+                        sequence,
+                        run,
+                        custody,
+                        route,
+                    });
+                    continue;
+                }
+            };
             // No debt is closed here. Closing one needs the recipient half,
             // and the recipient half is the writer's outcome rather than the
             // queue's acceptance -- so until the delivery is bound to a writer

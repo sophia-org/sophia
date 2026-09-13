@@ -154,6 +154,15 @@ pub struct PrivateOrderedRun {
     pub release: Option<sophia_input_authority::ReleaseOutcome>,
     /// The completion the authority recorded.
     pub completion: sophia_input_authority::RequestCompletion,
+    /// Whether this outcome owes a client an event at all.
+    ///
+    /// Decided under the guards, where the ledger said what happened, and not
+    /// inferred later from an absent event. A press that joined a hold and a
+    /// release that found nothing held both legitimately owe nobody anything;
+    /// an event that was owed and never built is a debt. Both look like no
+    /// event afterwards, and treating them alike either strands finished work
+    /// or discards an obligation.
+    pub owes_event: bool,
     /// The event this owes a client, decided under the guards.
     ///
     /// `None` where nothing is owed one: a press that joined a hold moved the
@@ -358,6 +367,7 @@ fn resolve_and_apply(
                             event,
                         });
                         *decided = Some(PrivateOrderedDecision {
+                            owes_event: true,
                             reached: Some(reached),
                             first_press: false,
                             keyboard_applied: false,
@@ -373,6 +383,7 @@ fn resolve_and_apply(
                     sophia_input_authority::ReleaseOutcome::NotHeld
                     | sophia_input_authority::ReleaseOutcome::SurvivorRemains => {
                         *decided = Some(PrivateOrderedDecision {
+                            owes_event: false,
                             reached: None,
                             first_press: false,
                             keyboard_applied: false,
@@ -479,6 +490,7 @@ fn resolve_and_apply(
                 None
             };
             *decided = Some(PrivateOrderedDecision {
+                owes_event: applied.first_press(),
                 reached,
                 first_press: applied.first_press(),
                 keyboard_applied: false,
@@ -616,6 +628,7 @@ fn execute_owned(
             return Err(PrivateExecutionRefusal::NotDecided(completion));
         };
         Ok(PrivateOrderedRun {
+            owes_event: decided.owes_event,
             reached: decided.reached,
             first_press: decided.first_press,
             keyboard_applied: decided.keyboard_applied,
@@ -630,6 +643,7 @@ fn execute_owned(
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy)]
 struct PrivateOrderedDecision {
+    owes_event: bool,
     reached: Option<PrivateReachedResources>,
     first_press: bool,
     keyboard_applied: bool,
