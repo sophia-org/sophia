@@ -226,6 +226,38 @@ impl PrivateXServerFrontend {
     }
 }
 
+/// How far an event got toward its client.
+///
+/// Recorded before the send it describes, so an interruption inside the send
+/// leaves the phase saying the outcome is unknown rather than leaving it to be
+/// inferred afterwards from which list an item is in. What a recovery owner
+/// may do depends entirely on this: an event that never reached a queue may be
+/// sent, one that reached a queue owes only its observation and must never be
+/// sent again, and one whose send did not return may be neither.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateEmissionPhase {
+    /// Nothing was owed a client, so nothing was attempted.
+    NotOwed,
+    /// The send was entered and did not return. Whether the event reached the
+    /// queue is exactly what was lost, so it is neither resent nor assumed
+    /// delivered.
+    Indeterminate,
+    /// The send returned and the queue did not take it.
+    NotEnqueued,
+    /// The queue took it. Only the observation is still owed; resending would
+    /// deliver the same transition twice.
+    Enqueued,
+}
+
+/// Decided work that has not been handed on, with how far it got.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct PrivateUndelivered {
+    item: PrivateOrderedItem,
+    emission: PrivateEmissionPhase,
+}
+
 /// What delivering one decided item established.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
@@ -278,8 +310,24 @@ impl PrivateXServerFrontend {
     /// something that did not happen.
     #[cfg_attr(not(test), allow(dead_code))]
     fn deliver_turn(&mut self, items: Vec<PrivateOrderedItem>) -> Vec<PrivateDelivered> {
-        let mut delivered = Vec::with_capacity(items.len());
-        for item in items {
+        // Taken into storage this instance owns before anything is delivered.
+        // Iterating a parameter leaves every item not yet reached in a local,
+        // and those have already left the order -- an interruption part-way
+        // would destroy the ones behind the current one along with the custody
+        // they carry. Appended rather than assigned, so anything a previous
+        // interruption left here is still first in line.
+        self.delivering.extend(items);
+        let mut delivered = Vec::with_capacity(self.delivering.len());
+        // Removed only once its outcome has been decided, so the item being
+        // worked on is owned throughout rather than held in a local for the
+        // length of the attempt.
+        while !self.delivering.is_empty() {
+            // The phase is recorded on the instance, beside the item that is
+            // still in the owned list, because a phase in a local goes with
+            // the frame exactly when it is needed: an unwind inside the send
+            // is the case it exists to describe.
+            self.emission = PrivateEmissionPhase::NotOwed;
+            let item = self.delivering.remove(0);
             let PrivateOrderedItem::Ran {
                 sequence,
                 run,
@@ -291,16 +339,30 @@ impl PrivateXServerFrontend {
                 // here destroyed the custody the order accepted, so the same
                 // request answered stale afterwards rather than saying no
                 // outcome had been taken. Retained whole instead.
-                self.undelivered.push(item);
+                // A refusal attempted no emission, so nothing about a client's
+                // queue is owed or unknown for it.
+                self.undelivered.push(PrivateUndelivered {
+                    item,
+                    emission: PrivateEmissionPhase::NotOwed,
+                });
                 continue;
             };
             let enqueued = match (run.event, run.reached) {
                 (Some(event), Some(reached)) => {
+                    // Written before the send, because a phase set after it
+                    // says nothing about a send that did not return.
+                    self.emission = PrivateEmissionPhase::Indeterminate;
                     // The delivery identity the work was accepted with, which
                     // is why a successful run keeps its route: the client
                     // answers against that identity, and a completion token is
                     // not it.
-                    self.emit(reached, event, route.delivery).is_ok()
+                    let sent = self.emit(reached, event, route.delivery).is_ok();
+                    self.emission = if sent {
+                        PrivateEmissionPhase::Enqueued
+                    } else {
+                        PrivateEmissionPhase::NotEnqueued
+                    };
+                    sent
                 }
                 // Nothing was owed an event, so nothing failed to reach
                 // anybody. That is not a receipt either.
@@ -312,11 +374,14 @@ impl PrivateXServerFrontend {
                 // Retained with both rather than reported as a delivery that
                 // failed and then discarded -- and not re-applied, because what
                 // applied has applied.
-                self.undelivered.push(PrivateOrderedItem::Ran {
-                    sequence,
-                    run,
-                    custody,
-                    route,
+                self.undelivered.push(PrivateUndelivered {
+                    item: PrivateOrderedItem::Ran {
+                        sequence,
+                        run,
+                        custody,
+                        route,
+                    },
+                    emission: self.emission,
                 });
                 continue;
             }
@@ -335,11 +400,18 @@ impl PrivateXServerFrontend {
                 Err(_unreadable) => {
                     // Nothing was established about the outcome, so the only
                     // handle able to take it is retained rather than dropped.
-                    self.undelivered.push(PrivateOrderedItem::Ran {
-                        sequence,
-                        run,
-                        custody,
-                        route,
+                    // The emission phase travels with it: this event may
+                    // already be on the client's queue, and a recovery owner
+                    // that resent it would deliver the same transition twice.
+                    // Only the observation is owed.
+                    self.undelivered.push(PrivateUndelivered {
+                        item: PrivateOrderedItem::Ran {
+                            sequence,
+                            run,
+                            custody,
+                            route,
+                        },
+                        emission: self.emission,
                     });
                     continue;
                 }

@@ -13317,9 +13317,10 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
     );
     assert_eq!(event.target_window, Some(window));
 
-    // Release, run, deliver. Delivery establishes the recipient half; the
-    // native half was reconciled under the guard when the aggregate and the
-    // projection moved together.
+    // Release, run, deliver. Queuing establishes neither half: the recipient
+    // half is the writer's outcome, and what the guarded code shows is that
+    // the aggregate transition and the projection it moves happen in one
+    // interval -- which is not the whole of native reconciliation.
     ingress
         .submit(button_to(
             surface,
@@ -13427,9 +13428,18 @@ fn a_refusal_is_retained_by_delivery_rather_than_discarded() {
         1,
         "the refusal is retained whole, with its custody"
     );
-    let [PrivateOrderedItem::Refused { custody, .. }] = private.undelivered.as_slice() else {
+    let [PrivateUndelivered {
+        item: PrivateOrderedItem::Refused { custody, .. },
+        emission,
+    }] = private.undelivered.as_slice()
+    else {
         panic!("retained as the refusal it was");
     };
+    assert_eq!(
+        *emission,
+        PrivateEmissionPhase::NotOwed,
+        "a refusal attempted no emission, so nothing about a queue is unknown for it"
+    );
     assert!(
         matches!(custody.observe(), Ok(None)),
         "no outcome was taken, which is a different answer from a stale request"
@@ -13596,4 +13606,156 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
     let delivered = run_one_submission(&mut private, &mut keyboards, 893, false);
     assert_eq!(delivered.len(), 1, "the release reserved and ran");
     assert!(delivered[0].enqueued, "and it owed an event, which was queued");
+}
+
+#[test]
+fn a_parked_operation_is_handed_to_the_durable_owner_at_shutdown() {
+    let client = XServerFrontendClientId(901);
+    let surface = SurfaceId::new(901, 1);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender, _receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (authority, issuer, submit) = private_authority();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+    let (_registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200901, 1),
+        )
+        .expect("the surface to register");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    // A control the ordered path does not execute, which parks the order.
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(9010),
+                surface,
+            },
+        })
+        .expect("the order to accept the control");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    assert!(matches!(
+        turn.as_slice(),
+        [PrivateOrderedItem::Parked { .. }]
+    ));
+    assert!(private.parked().is_some());
+
+    let owed_before = durable.owed().expect("a readable owner");
+
+    // Shutdown. The parked operation never ran and carries no custody, so an
+    // instance that is going must hand it on rather than take it along: it is
+    // work this instance accepted and could not answer, which is exactly what
+    // the durable owner holds.
+    drop(private.shutdown());
+    assert!(
+        durable.owed().expect("a readable owner") > owed_before,
+        "the parked operation reached the owner rather than dying with the instance"
+    );
+}
+
+#[test]
+fn an_enqueued_event_whose_outcome_is_unreadable_is_marked_as_already_sent() {
+    let client = XServerFrontendClientId(911);
+    let surface = SurfaceId::new(911, 1);
+    let mut private = private_for_roles();
+    let (_registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200911, 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(911),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+
+    // The authority becomes unreadable between the send and the observation.
+    let poisoner = private.authority().clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.common.lock().unwrap();
+            panic!("poisoning the authority");
+        })
+        .join()
+        .is_err()
+    );
+
+    let delivered = private.deliver_turn(turn);
+    assert!(
+        delivered.is_empty(),
+        "nothing could be reported: the outcome was never established"
+    );
+
+    // The event really is on the client's queue.
+    assert!(
+        channels.input.try_recv().is_ok(),
+        "the send happened before the observation failed"
+    );
+
+    // So the retained item says so. A recovery owner reading this must retry
+    // the observation and never resend: sending again would deliver the same
+    // transition twice, and the list it sits in does not say which of those
+    // two situations it is.
+    let [PrivateUndelivered { emission, .. }] = private.undelivered.as_slice() else {
+        panic!("retained with its phase");
+    };
+    assert_eq!(
+        *emission,
+        PrivateEmissionPhase::Enqueued,
+        "the phase distinguishes an event already sent from one that never was"
+    );
 }

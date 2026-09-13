@@ -37,6 +37,15 @@ impl PrivateXServerFrontend {
             };
         }
         self.settled = true;
+        // The parked operation never ran and carries no custody, so the
+        // durable owner is exactly its home: it is work this instance accepted
+        // and could not answer, which is what that owner exists for. Handed
+        // over before the queue is closed, so it is not lost to an instance
+        // that is going.
+        if let Some((_, parked)) = self.parked.take() {
+            self.durable.take_one(&origin, parked);
+        }
+        self.parked_barrier = None;
         let stranded = match self.admission.close() {
             Ok(stranded) => stranded,
             Err(()) => {

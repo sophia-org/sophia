@@ -335,7 +335,18 @@ pub struct PrivateXServerFrontend {
     /// A refusal, or a decision whose event never reached a queue. Both still
     /// owe something -- an answer, an outcome, or both -- and dropping either
     /// destroys the custody the order accepted.
-    undelivered: Vec<PrivateOrderedItem>,
+    undelivered: Vec<PrivateUndelivered>,
+    /// Decided work being handed on right now.
+    ///
+    /// Owned for the same reason the turn is: an item that has left the order
+    /// and is waiting its turn to be delivered is one nothing else holds.
+    delivering: Vec<PrivateOrderedItem>,
+    /// How far the item at the head of `delivering` got toward its client.
+    ///
+    /// Beside the item rather than inside a local, because the case it
+    /// describes is an unwind inside the send -- which takes any local with
+    /// it, leaving exactly the question this answers unanswerable.
+    emission: PrivateEmissionPhase,
     /// Whether the ordered consumer has taken a turn on this instance.
     ///
     /// Set by the first ordered turn and never cleared: an order this
@@ -541,6 +552,8 @@ impl PrivateXServerFrontend {
             parked_barrier: None,
             current: None,
             undelivered: Vec::with_capacity(capacity),
+            delivering: Vec::with_capacity(capacity),
+            emission: PrivateEmissionPhase::NotOwed,
             ordered_runner: false,
             turn: Vec::with_capacity(capacity),
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
