@@ -5046,3 +5046,78 @@ fn routed_work_survives_the_instance_that_routed_it() {
     assert_eq!(durable.reserved(), 0);
     assert!(settlement.is_settled());
 }
+
+#[test]
+fn routed_work_survives_an_abandoned_handle_too() {
+    let namespace = NamespaceId::from_raw(66);
+    let client = XServerFrontendClientId(84);
+    let surface = SurfaceId::new(72, 1);
+    let window = XResourceId::new(0x200280, 1);
+    let durable = crate::PrivateSettlementOwner::with_capacity(4);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner: {refusal:?}"));
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    let delivery = XAuthorityInputDeliveryId::from_raw(10600);
+    private
+        .ingress()
+        .submit(motion_to(surface, delivery))
+        .expect("an open coordinator to accept work");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+
+    let origin = private.broker.registry.clone();
+    // Nothing is owed -- the admission queue was empty -- so the handle's own
+    // Drop used to return before it reached the routed work and destroy it.
+    let settlement = private.shutdown();
+    assert_eq!(settlement.owed(), 0);
+    assert_eq!(settlement.outstanding(), 1);
+    drop(settlement);
+
+    assert_eq!(
+        durable.outstanding(),
+        1,
+        "routed work outlives an abandoned handle, however little else is owed"
+    );
+    assert_eq!(durable.reserved(), 1, "and keeps the credit it already had");
+
+    // Driving before it finishes releases nothing: the work is still live, and
+    // a drive is not a terminal outcome.
+    durable.drive();
+    assert_eq!(durable.outstanding(), 1, "still waiting on a real outcome");
+    assert_eq!(durable.reserved(), 1);
+
+    // It finishes for real, and driving the owner reclaims it once.
+    origin
+        .send_input_delivery(
+            client,
+            Some(delivery),
+            XAuthorityInputDeliveryOutcome::Flushed,
+        )
+        .expect("the terminal outcome to be recorded");
+    assert!(origin.input_recovery.observe(XAuthorityClientInputDelivery {
+        client,
+        delivery,
+        outcome: XAuthorityInputDeliveryOutcome::Flushed,
+    }));
+
+    durable.drive();
+    assert_eq!(durable.outstanding(), 0);
+    assert_eq!(durable.reserved(), 0, "released once, on a real outcome");
+    durable.drive();
+    assert_eq!(durable.reserved(), 0, "and not a second time");
+}

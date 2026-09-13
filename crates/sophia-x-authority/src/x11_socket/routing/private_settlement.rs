@@ -25,6 +25,12 @@ pub struct PrivateSettlementOwner {
 #[cfg(unix)]
 struct AbandonedSettlements {
     held: Vec<(XServerFrontendRouteRegistry, PrivateOperation)>,
+    /// Routed work whose handle was abandoned before it finished.
+    ///
+    /// Carries the registry that can observe its terminal outcome, so the
+    /// credit it already holds is released exactly when the work is genuinely
+    /// answered. No fresh credit is taken at transfer: these already have one.
+    outstanding: Vec<(XServerFrontendRouteRegistry, PrivateIdentity)>,
     /// Instances whose queue could not be read when they closed.
     ///
     /// The queue itself is kept, not a tally of how many there were: a counter
@@ -73,6 +79,7 @@ impl PrivateSettlementOwner {
         Self {
             inner: Arc::new(Mutex::new(AbandonedSettlements {
                 held: Vec::with_capacity(capacity),
+                outstanding: Vec::with_capacity(capacity),
                 failed: Vec::with_capacity(capacity),
                 failed_capacity: capacity,
                 failure_slots: 0,
@@ -85,6 +92,29 @@ impl PrivateSettlementOwner {
     /// How many obligations are waiting for someone to drive them.
     pub fn owed(&self) -> usize {
         self.inner.lock().map(|held| held.held.len()).unwrap_or(0)
+    }
+
+    /// How many abandoned operations are still waiting on a terminal outcome.
+    pub fn outstanding(&self) -> usize {
+        self.inner
+            .lock()
+            .map(|held| held.outstanding.len())
+            .unwrap_or(0)
+    }
+
+    fn take_outstanding(
+        &self,
+        origin: &XServerFrontendRouteRegistry,
+        outstanding: Vec<PrivateIdentity>,
+    ) {
+        // Cannot refuse, for the same reason abandoned obligations cannot:
+        // every one of these already holds a credit taken before its work was
+        // accepted, so this is a move into space already its own.
+        if let Ok(mut held) = self.inner.lock() {
+            for identity in outstanding {
+                held.outstanding.push((origin.clone(), identity));
+            }
+        }
     }
 
     /// How many instances closed holding a queue nobody could read.
@@ -232,6 +262,28 @@ impl PrivateSettlementOwner {
                 held.reserved = held.reserved.saturating_sub(1);
             }
         }
+        // Routed work that has since finished releases its credit here, once
+        // and only on a genuine terminal outcome.
+        let carried: Vec<_> = held.outstanding.drain(..).collect();
+        for (origin, identity) in carried {
+            let ended = match identity {
+                PrivateIdentity::Delivery(Some(delivery)) => {
+                    matches!(
+                        origin.input_recovery.delivery_state(delivery),
+                        DeliveryState::Ended
+                    )
+                }
+                // Nothing observable yet, so nothing to conclude.
+                PrivateIdentity::Delivery(None)
+                | PrivateIdentity::Transaction(_)
+                | PrivateIdentity::Lease(_) => false,
+            };
+            if ended {
+                held.reserved = held.reserved.saturating_sub(1);
+            } else {
+                held.outstanding.push((origin, identity));
+            }
+        }
         before.saturating_sub(held.held.len())
     }
 
@@ -365,6 +417,14 @@ impl PrivateSettlement {
 #[cfg(unix)]
 impl Drop for PrivateSettlement {
     fn drop(&mut self) {
+        if !self.outstanding.is_empty() {
+            // Transferred whether or not anything else is owed. Returning
+            // early on an empty pending list destroyed these, which is the
+            // abandonment loss this handle exists to prevent, recreated in the
+            // state that was added to prevent it.
+            let outstanding = std::mem::take(&mut self.outstanding);
+            self.durable.take_outstanding(&self.origin, outstanding);
+        }
         if self.queue_unreadable {
             // Owned by something that outlives this rather than surviving as a
             // boolean on a handle that is going away.
