@@ -34,7 +34,24 @@ struct TrackedInputDelivery {
     /// Held rather than dropped, because a cancellation that lost to an
     /// execution which then applied nothing has not lost at all. The first is
     /// kept: later ones describe the same delivery already being cancelled.
-    deferred: Option<XAuthorityClientInputDelivery>,
+    deferred: Option<DeferredCancellation>,
+}
+
+/// A cancellation that lost to a claim, with the identity it was recorded
+/// under.
+///
+/// The identity is kept beside the receipt because binding can happen between
+/// the two: a delivery with no recipient yet is cancelled naming none, and by
+/// the time the claim is given back it may have one. Publishing the original
+/// receipt then fails the ledger's own identity check and the cancellation is
+/// lost, which is the silent loss deferring it was meant to prevent.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+struct DeferredCancellation {
+    receipt: XAuthorityClientInputDelivery,
+    /// What the ticket was bound to when this was deferred. `None` means the
+    /// delivery had no recipient, so the receipt names none either.
+    bound: Option<XServerFrontendClientId>,
 }
 
 #[cfg(unix)]
@@ -274,19 +291,50 @@ impl InputRecovery {
     /// delivery left owed an outcome is answered by the deadline.
     fn resolve_claim(&self, id: Option<XAuthorityInputDeliveryId>, may_have_applied: bool) {
         let Some(id) = id else { return };
-        let Ok(mut state) = self.state.lock() else {
-            return;
-        };
+        // Reached through poison. This gives back something only this caller
+        // holds, and declining leaves a delivery permanently claimed: nothing
+        // could ever cancel it again, and no owner would know it was owed.
+        // What it does here is bounded -- clear a flag this caller set, and
+        // resolve a cancellation already decided elsewhere -- and neither
+        // reading depends on the rest of the ledger being consistent.
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let Some(entry) = state.tickets.get_mut(&id) else {
             return;
         };
         entry.claimed = false;
-        let deferred = entry.deferred.take();
-        let Some(deferred) = deferred else { return };
         if may_have_applied {
+            // An effect may have happened, so the cancellation cannot become
+            // this delivery's outcome. Kept rather than taken: whether it
+            // still applies is not this resolution's to decide, and a later
+            // cancellation of a delivery still owed an outcome will find it.
             return;
         }
-        self.terminal_locked(&mut state, deferred);
+        let Some(deferred) = entry.deferred.take() else {
+            return;
+        };
+        let receipt = match (deferred.bound, entry.ticket.client) {
+            // Unchanged, so the receipt still names what the ledger does.
+            (was, now) if was == now => deferred.receipt,
+            // The delivery had no recipient when it was cancelled and has one
+            // now. Resolving an identity the cancellation left open is not
+            // inventing one: the outcome was always this delivery's.
+            (None, Some(client)) => XAuthorityClientInputDelivery {
+                client,
+                ..deferred.receipt
+            },
+            // Bound to one recipient when cancelled and to another now.
+            // Nothing here can say which the cancellation meant, so the
+            // obligation goes back rather than being published against a
+            // client it never named or dropped for not fitting.
+            _ => {
+                entry.deferred = Some(deferred);
+                return;
+            }
+        };
+        self.terminal_locked(&mut state, receipt);
     }
 
     fn bind(
@@ -366,7 +414,10 @@ impl InputRecovery {
                 // that it ended, and the effect would then contradict that.
                 // Held until the claim resolves, which is where it is decided
                 // whether this cancellation had anything to contradict.
-                entry.deferred.get_or_insert(receipt);
+                let bound = entry.ticket.client;
+                entry
+                    .deferred
+                    .get_or_insert(DeferredCancellation { receipt, bound });
                 return;
             }
             entry.terminal = Some(receipt);

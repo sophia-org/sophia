@@ -15483,3 +15483,223 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     drop(fixture.channels);
     drop(fixture.durable);
 }
+
+/// A cancellation deferred by an earlier claim that may have applied, so it is
+/// retained and left for the next execution to resolve.
+fn retained_cancellation(fixture: &OrderedIngressFixture, delivery: XAuthorityInputDeliveryId) {
+    let recovery = &fixture.private.broker.registry.input_recovery;
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Claimed
+    );
+    recovery
+        .recover(std::time::Instant::now(), true)
+        .expect("the ledger to be readable");
+    // Resolved as possibly-applied, so the cancellation is kept rather than
+    // published or discarded: whether it still applies is not that
+    // resolution's to decide.
+    recovery.resolve_claim(Some(delivery), true);
+    assert!(
+        fixture.deliveries.try_recv().is_err(),
+        "nothing published yet"
+    );
+}
+
+#[test]
+fn a_refusal_before_the_effect_lets_a_deferred_cancellation_stand() {
+    let client = XServerFrontendClientId(1101);
+    let surface = SurfaceId::new(1101, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(1101);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+    retained_cancellation(&fixture, delivery);
+
+    // The admission goes, so the real boundary refuses this request before the
+    // effect callback is ever invoked. That refusal leaves the execution by a
+    // returned error, not by deciding anything.
+    fixture
+        .private
+        .admission_participant()
+        .revoke_admission(
+            client,
+            sophia_protocol::ClientAdmissionId::from_raw(client.raw()),
+        )
+        .expect("the boundary to revoke");
+
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(
+        fixture.private.terminal.holds.is_empty(),
+        "nothing was applied"
+    );
+
+    // So the cancellation had nothing to contradict, and stands. An execution
+    // that returned an error before reaching an effect is not one that may
+    // have applied something -- and the guard has to see that on the returned
+    // error, not only on an unwind.
+    let receipt = fixture
+        .deliveries
+        .try_recv()
+        .expect("the cancellation to stand once nothing applied");
+    assert_eq!(receipt.delivery, delivery);
+    assert_eq!(
+        receipt.outcome,
+        XAuthorityInputDeliveryOutcome::EpochRevoked
+    );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_deferred_cancellation_keeps_its_delivery_when_binding_names_its_recipient() {
+    let client = XServerFrontendClientId(1102);
+    let surface = SurfaceId::new(1102, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(1102);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    // The recipient is already gone, so binding will refuse -- before any
+    // effect, which is the point.
+    fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
+        .expect("the ledger to be readable");
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+    assert_eq!(
+        fixture
+            .private
+            .broker
+            .registry
+            .input_recovery
+            .ticket(delivery)
+            .expect("tracked")
+            .client,
+        None,
+        "cancelled while it still had no recipient"
+    );
+    retained_cancellation(&fixture, delivery);
+
+    // The execution binds -- which gives the delivery a recipient -- and then
+    // refuses, having applied nothing.
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(fixture.private.terminal.holds.is_empty());
+
+    // The cancellation was recorded naming no recipient and the delivery has
+    // one now. Publishing the original receipt would fail the ledger's own
+    // identity check and the cancellation would be lost -- which is the
+    // silent loss deferring it exists to prevent.
+    let receipt = fixture
+        .deliveries
+        .try_recv()
+        .expect("the cancellation to survive the binding that named its client");
+    assert_eq!(receipt.delivery, delivery);
+    assert_eq!(
+        receipt.outcome,
+        XAuthorityInputDeliveryOutcome::EpochRevoked
+    );
+    assert_eq!(
+        receipt.client, client,
+        "resolved to the recipient the ledger now names, not invented and not \
+         left as the placeholder it was cancelled under"
+    );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_claim_is_given_back_even_when_the_ledger_cannot_be_read() {
+    let delivery = XAuthorityInputDeliveryId::from_raw(4004);
+    let (recovery, receipts) = claim_fixture(delivery);
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Claimed
+    );
+    recovery
+        .recover(std::time::Instant::now(), true)
+        .expect("the ledger to be readable");
+
+    let poisoner = recovery.clone();
+    let _ = std::thread::spawn(move || {
+        let _guard = poisoner.state.lock().expect("the ledger");
+        panic!("poisoning the recovery ledger");
+    })
+    .join();
+
+    // Giving back a claim is the one thing that cannot decline. Only this
+    // caller holds it, and a claim nobody gives back is a delivery nothing can
+    // ever cancel again and no owner knows is owed.
+    recovery.resolve_claim(Some(delivery), false);
+    let held = recovery
+        .state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    assert!(
+        !held
+            .tickets
+            .get(&delivery)
+            .expect("still tracked")
+            .claimed,
+        "an unreadable ledger must not leave a permanent claim nobody owns"
+    );
+    drop(held);
+    // And the cancellation it was holding is resolved rather than stranded
+    // with it.
+    let receipt = receipts
+        .try_recv()
+        .expect("the deferred cancellation to be resolved too");
+    assert_eq!(receipt.delivery, delivery);
+    assert_eq!(
+        receipt.outcome,
+        XAuthorityInputDeliveryOutcome::EpochRevoked
+    );
+}
+
+#[test]
+fn a_cancellation_kept_by_one_claim_is_still_there_for_the_next() {
+    let delivery = XAuthorityInputDeliveryId::from_raw(4005);
+    let (recovery, receipts) = claim_fixture(delivery);
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Claimed
+    );
+    recovery
+        .recover(std::time::Instant::now(), true)
+        .expect("the ledger to be readable");
+
+    // Resolved as possibly-applied. The cancellation cannot become this
+    // delivery's outcome, but whether it still applies is not this
+    // resolution's to decide -- taking it and dropping it would answer that
+    // question by losing it.
+    recovery.resolve_claim(Some(delivery), true);
+    assert!(receipts.try_recv().is_err());
+
+    // The next execution applies nothing, and finds it.
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Claimed
+    );
+    recovery.resolve_claim(Some(delivery), false);
+    assert_eq!(
+        receipts
+            .try_recv()
+            .expect("the kept cancellation")
+            .outcome,
+        XAuthorityInputDeliveryOutcome::EpochRevoked
+    );
+}

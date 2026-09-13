@@ -288,7 +288,7 @@ fn resolve_and_apply(
     settling: &mut Vec<PrivateSettlingRelease>,
     route: &XAuthorityRoutedInput,
     grant: sophia_input_authority::GrantId,
-    notes: &mut PrivateTransactionNotes,
+    notes: &mut PrivateTransactionNotes<'_>,
 ) -> Result<(), sophia_input_authority::RegistrationError> {
     let unavailable = sophia_input_authority::RegistrationError::RoutingUnavailable;
     match route.request.kind {
@@ -321,7 +321,7 @@ fn resolve_and_apply(
                     ));
                 }
                 let mut pointers = registry.pointer_state.lock().map_err(|_| unavailable)?;
-                notes.may_have_applied = true;
+                notes.may_have_applied.set(true);
                 let outcome = permit.release(input)?;
                 match outcome {
                     sophia_input_authority::ReleaseOutcome::DeliverTo(hold) => {
@@ -531,7 +531,7 @@ fn resolve_and_apply(
                 }
             }
 
-            notes.may_have_applied = true;
+            notes.may_have_applied.set(true);
             let applied = permit.press(input, recipient)?;
             let hold = applied.incarnation().hold();
             let reached = if applied.first_press() {
@@ -768,14 +768,20 @@ fn execute_owned(
         }
         // From here every path gives the claim back, including an unwind. A
         // claim nobody resolves is a delivery nobody can cancel again.
-        let mut claim = PrivateDeliveryClaim {
+        // Written where the progress happens and read where the claim is given
+        // back, rather than copied between the two. Everything after a
+        // fallible call is skipped when that call returns an error, and this
+        // marker matters most exactly then: a refusal that never reached an
+        // effect is what makes a deferred cancellation stand.
+        let applied = std::cell::Cell::new(false);
+        let _claim = PrivateDeliveryClaim {
             recovery: &broker.registry.input_recovery,
             delivery: route.delivery,
-            may_have_applied: true,
+            applied: &applied,
         };
 
         let client = custody.client();
-        let mut notes = PrivateTransactionNotes::default();
+        let mut notes = PrivateTransactionNotes::new(&applied);
         let completion = participant
             .execute_current(custody, client, |permit, bindings| {
                 resolve_and_apply(
@@ -799,12 +805,6 @@ fn execute_owned(
                 other => PrivateExecutionRefusal::Admission(other),
             })?
             .map_err(PrivateExecutionRefusal::Authority)?;
-
-        // What the claim resolves on, taken from the transaction rather than
-        // assumed: this is the difference between a cancellation that lost to
-        // an effect and one that lost to nothing.
-        claim.may_have_applied = notes.may_have_applied;
-        drop(claim);
 
         // Before the rest: these say the work should not have been applied at
         // all, rather than that applying it went wrong.
@@ -848,8 +848,7 @@ fn execute_owned(
 /// authority has no vocabulary for. Collected in one place so that recording
 /// another fact does not mean threading another argument.
 #[cfg(unix)]
-#[derive(Default)]
-struct PrivateTransactionNotes {
+struct PrivateTransactionNotes<'a> {
     /// What was decided, if anything was.
     decided: Option<PrivateOrderedDecision>,
     /// A hold ended and the record of where its press went is gone.
@@ -860,14 +859,27 @@ struct PrivateTransactionNotes {
     delivery_ended: bool,
     /// The ledger could not be read.
     recovery_unavailable: bool,
-    /// An effect may have reached the authority's ledger.
+    /// Whether an effect may have reached the authority's ledger.
     ///
-    /// Set before each call that can move it, never after. A marker written
-    /// afterwards says nothing about a call that did not return, and the
-    /// reading this feeds -- whether a cancellation had anything to
-    /// contradict -- is one where being wrong in that direction publishes an
-    /// outcome over an effect that happened.
-    may_have_applied: bool,
+    /// Set before each call that can move it, never after: a marker written
+    /// afterwards says nothing about a call that did not return. Shared with
+    /// the claim guard rather than copied to it, so an error returned out of
+    /// the transaction carries the same answer an unwind does.
+    may_have_applied: &'a std::cell::Cell<bool>,
+}
+
+#[cfg(unix)]
+impl<'a> PrivateTransactionNotes<'a> {
+    fn new(may_have_applied: &'a std::cell::Cell<bool>) -> Self {
+        Self {
+            decided: None,
+            plan_missing: false,
+            records_exhausted: false,
+            delivery_ended: false,
+            recovery_unavailable: false,
+            may_have_applied,
+        }
+    }
 }
 
 /// An execution's hold on a delivery, given back however the execution ends.
@@ -881,14 +893,17 @@ struct PrivateTransactionNotes {
 struct PrivateDeliveryClaim<'a> {
     recovery: &'a InputRecovery,
     delivery: Option<XAuthorityInputDeliveryId>,
-    may_have_applied: bool,
+    /// Read at drop, not at construction. The transaction writes through this
+    /// as it goes, so every way out of the execution -- a decision, an error
+    /// returned from a fallible call, an unwind -- gives the claim back with
+    /// what had actually happened by then.
+    applied: &'a std::cell::Cell<bool>,
 }
 
 #[cfg(unix)]
 impl Drop for PrivateDeliveryClaim<'_> {
     fn drop(&mut self) {
-        self.recovery
-            .resolve_claim(self.delivery, self.may_have_applied);
+        self.recovery.resolve_claim(self.delivery, self.applied.get());
     }
 }
 
