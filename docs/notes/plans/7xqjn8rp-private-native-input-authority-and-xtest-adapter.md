@@ -648,3 +648,56 @@ integrated at `18621044`; its facade currently provides only construction,
 stamped ingress and the existing `route_pending`. Client registration, service
 attachment and ordered production execution are not established by this slice.
 The preceding `a71fde82` package results do not include this later constructor.
+
+Consumer candidate `df1db847` is not integrated. Its admission pass drains
+separate lease, input and control queues in a fixed order, so it does not
+establish cross-producer ordering. The test named for ordering across sources
+submits two items through one sender and does not check their identities. The
+runtime owner reports that replacing the pass with the original broker drain
+leaves the tests passing.
+
+Source review also finds ownership loss at all three `admit_runnable` refusal
+sites: `try_recv` removes an accepted item, then `.is_err()` drops the
+`ReadyAdmissionError` together with its returned payload. There is no retry
+storage despite the method comment. Queue refusal must return unaccepted work
+to its producer; previously accepted work must retain its genuine completion or
+cleanup obligation. The candidate's closed-before-run test covers one stale
+stamp check, not atomic execution: `gate.admits` still releases its guard before
+routing mutates state.
+
+The next implementation boundary is shared admission by the actual producers.
+Position assignment and publication must be one action when work is runnable.
+Concurrent admissions may take either order, but an accepted operation must not
+be overtaken by one whose admission starts later. Delayed and frozen work takes
+its position when it becomes runnable. Tests must exercise alternating real
+producer facades, controlled concurrency, exact identities and refusal ownership;
+class-tagged entries submitted by a consumer cannot establish those properties.
+These blockers remain within highest-priority t093, with discovery disabled.
+
+The private producer facade must also separate policy refusal from queue
+saturation: the current `XAuthorityRoutedInputSender::try_send` reports a failed
+stamp as `Full`. Its existing recovery admission precedes queue acceptance and
+is rolled back if enqueue fails. Shared-stream integration must preserve exact
+reservation ownership and rollback on refusal, with no accepted-but-unretained
+operation and no cancellation of another request's completion.
+
+Follow-up `496bcad8` checks capacity before receiving, but its unexpected-refusal
+branch still drops the payload: `_retained` is a local binding destroyed before
+`RegistryPoisoned` returns. Sequence exhaustion is independent of the capacity
+check. Follow-up `b72c39e7` distinguishes missing-stamp denial from channel
+saturation, but still maps every recovery-admission failure to `Saturated`:
+that boolean also covers duplicate delivery identifiers and a poisoned recovery
+lock. The facade also continues to expose the ordinary sender with its old
+error mapping. Neither follow-up is accepted as the completed private producer
+boundary. Rollback tests must establish exact reservation ownership, including
+successful retry of the refused operation without disturbing accepted work.
+
+Independent execution confirms the reachable `df1db847` loss without changing
+queue configuration. With constructor capacity 1, a lease release, routed input
+and ConfigureSurface control are all accepted; input delivery 9001 reaches its
+channel, but control transaction 8001 disappears and the next drain runs no
+work. The same fixture at capacity 2 delivers the control. One positive passes
+and the desired conservation assertion fails; evidence is
+`.artifacts/private-ready-loss-df1db847/`. The first fixture compile error is
+retained separately and is not counted as bug evidence. This is a headless
+internal integration reproduction, not a live-session failure.

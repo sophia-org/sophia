@@ -268,7 +268,7 @@
     },
     {
       "id": "native_executor_order",
-      "description": "Key, pointer, repeat and cleanup share instance execution order",
+      "description": "Actual key, pointer, repeat, control, connection-mutation, thaw and cleanup producers share one runnable-admission order; controlled concurrency preserves completed-send precedence and exact identities, and saturation retains payloads and genuine completions",
       "mandatory": true,
       "implementation": null
     },
