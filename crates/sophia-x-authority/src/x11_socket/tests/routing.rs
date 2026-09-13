@@ -4659,6 +4659,87 @@ fn a_failed_instances_queue_can_still_be_answered() {
 }
 
 #[test]
+fn recovering_a_failed_queue_takes_the_completion_record_before_it_answers() {
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender, receiver) = sync_channel(4);
+    let surface = SurfaceId::new(253, 1);
+    let client = XServerFrontendClientId(253);
+    let (gate, _authority, _issuer) = control_gate();
+    let (delivery_sender, _delivery_receiver) = channel();
+    let private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(253),
+            surface,
+            XResourceId::new(0x200253, 1),
+        )
+        .unwrap();
+    // Kept past the frontend, which shutdown consumes. The registry is what
+    // knows whether an operation still has an owner able to publish for it.
+    let completion = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a registry that issues completion records");
+    private
+        .control_producer()
+        .submit(configure(client, surface, 9970))
+        .expect("the shared admission to accept control");
+    assert_eq!(
+        completion.outstanding(),
+        Some(1),
+        "accepted, so a record answers for it"
+    );
+
+    let admission = std::sync::Arc::clone(&private.admission);
+    let _ = std::thread::spawn(move || {
+        let _guard = admission.ready.lock().expect("the queue");
+        panic!("poisoning the shared queue");
+    })
+    .join();
+    drop(private.shutdown());
+    assert_eq!(durable.failed_instances().expect("a readable owner"), 1);
+    assert_eq!(
+        completion.outstanding(),
+        Some(1),
+        "the poisoned early return hands nothing over, so the record is still live"
+    );
+
+    assert_eq!(durable.recover_failed().expect("a readable owner"), 1);
+    assert_eq!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .expect("the work the failed instance had accepted"),
+        completion_ack(
+            configure(client, surface, 9970),
+            XAuthorityControlOutcome::AuthorityRejected
+        )
+    );
+    // The point of the test. Emitting an outcome while a record that can also
+    // publish one is still held gives the operation two owners, and the first
+    // acknowledgement has already gone by the time anyone looks.
+    assert_eq!(
+        completion.outstanding(),
+        Some(0),
+        "recovery took the record before it published"
+    );
+    assert_eq!(durable.reserved().expect("a readable owner"), 0);
+}
+
+#[test]
 fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     // Room for one failed instance across the whole owner.
     let durable = crate::PrivateSettlementOwner::with_capacity(1);
@@ -10161,7 +10242,7 @@ fn a_sweep_that_unwinds_leaves_its_work_owned_and_returnable() {
 
     // Returning it answers nothing. An obligation found in flight is not
     // evidence of what happened to it, only that a sweep did not finish.
-    assert_eq!(durable.restore_interrupted(), Some(1));
+    assert_eq!(durable.restore_interrupted(), 1);
     assert_eq!(durable.owed(), Some(1), "returned, not answered");
     assert_eq!(durable.reserved(), Some(1));
     assert!(
@@ -10171,7 +10252,7 @@ fn a_sweep_that_unwinds_leaves_its_work_owned_and_returnable() {
     assert!(acks.try_recv().is_err(), "and nothing was published");
 
     // Twice does nothing the second time.
-    assert_eq!(durable.restore_interrupted(), Some(0));
+    assert_eq!(durable.restore_interrupted(), 0);
     assert_eq!(durable.owed(), Some(1));
 
     // And now it can be driven, answering exactly the original obligation
@@ -10190,10 +10271,37 @@ fn a_sweep_that_unwinds_leaves_its_work_owned_and_returnable() {
 }
 
 #[test]
-fn restoring_an_unreadable_owner_says_so_rather_than_nothing_to_return() {
+fn restoring_reaches_through_the_poison_the_interruption_caused() {
+    let client = XServerFrontendClientId(378);
+    let surface = SurfaceId::new(378, 1);
+    let (acknowledgements, acks) = sync_channel(1);
+    acknowledgements
+        .try_send(completion_ack(
+            configure(client, surface, 1),
+            XAuthorityControlOutcome::Delivered,
+        ))
+        .expect("the empty slot");
     let durable = crate::PrivateSettlementOwner::with_capacity(2);
-    assert_eq!(durable.restore_interrupted(), Some(0));
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    private
+        .control_producer()
+        .submit(configure(client, surface, 75001))
+        .expect("the shared admission to accept control");
+    drop(private.shutdown());
 
+    // Staged as an interrupted sweep leaves it, then poisoned the way the
+    // interruption itself poisons it: a sweep unwinds while holding this lock,
+    // so the stranded work and the poison are one event.
+    {
+        let mut held = durable.records_even_if_poisoned();
+        let AbandonedSettlements {
+            held: settling,
+            in_flight,
+            ..
+        } = &mut *held;
+        in_flight.append(settling);
+    }
     let poisoner = durable.clone();
     assert!(
         std::thread::spawn(move || {
@@ -10203,11 +10311,218 @@ fn restoring_an_unreadable_owner_says_so_rather_than_nothing_to_return() {
         .join()
         .is_err()
     );
+    assert_eq!(durable.owed(), None, "an ordinary read still refuses");
+
+    // A restore that declined here would decline in every case it exists for
+    // and succeed only when there was nothing to do.
     assert_eq!(
         durable.restore_interrupted(),
-        None,
-        "nothing to return and no way to look are different answers"
+        1,
+        "the obligation comes back despite the poison that stranded it"
     );
+    {
+        let held = durable.records_even_if_poisoned();
+        assert_eq!(held.held.len(), 1, "returned to the list a drive settles");
+        assert!(held.in_flight.is_empty());
+        assert_eq!(held.reserved, 1, "still holding its credit");
+        assert!(held.indeterminate.is_empty(), "it never reached an attempt");
+    }
+    assert_eq!(durable.restore_interrupted(), 0, "and only once");
+    assert!(acks.try_recv().is_ok(), "the slot is untouched");
+    assert!(acks.try_recv().is_err(), "restoring published nothing");
+}
+
+#[test]
+fn an_unreadable_completion_registry_is_not_permission_to_answer() {
+    let client = XServerFrontendClientId(379);
+    let surface = SurfaceId::new(379, 1);
+    let (acknowledgements, acks) = sync_channel(1);
+    acknowledgements
+        .try_send(completion_ack(
+            configure(client, surface, 1),
+            XAuthorityControlOutcome::Delivered,
+        ))
+        .expect("the empty slot");
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let completion = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a registry that issues completion records");
+    private
+        .control_producer()
+        .submit(configure(client, surface, 76001))
+        .expect("the shared admission to accept control");
+    drop(private.shutdown());
+    assert_eq!(durable.owed(), Some(1));
+
+    // Freed, so the channel is not what stops the next drive. The only thing
+    // standing between this obligation and an acknowledgement is whether
+    // anyone can show it is owed exactly one.
+    assert!(acks.try_recv().is_ok());
+    let _ = std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let _guard = completion.inner.lock().expect("the registry");
+                panic!("poisoning the completion registry");
+            })
+            .join()
+    });
+
+    let progress = durable.drive();
+    assert!(progress.readable, "the settlement owner is still readable");
+    assert_eq!(
+        progress.answered, 0,
+        "a registry nobody can read cannot say this has one owner"
+    );
+    assert!(
+        acks.try_recv().is_err(),
+        "so nothing was published on the strength of an unreadable record"
+    );
+    assert_eq!(durable.owed(), Some(1), "kept whole");
+    assert_eq!(durable.reserved(), Some(1), "and still holding its credit");
+    assert_eq!(
+        durable.indeterminate(),
+        Some(0),
+        "never attempted, so not unproved -- just unresolved"
+    );
+}
+
+#[test]
+fn an_attempt_interrupted_while_emitting_is_not_returned_as_retryable() {
+    let client = XServerFrontendClientId(380);
+    let surface = SurfaceId::new(380, 1);
+    let (acknowledgements, acks) = sync_channel(1);
+    acknowledgements
+        .try_send(completion_ack(
+            configure(client, surface, 1),
+            XAuthorityControlOutcome::Delivered,
+        ))
+        .expect("the empty slot");
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    private
+        .control_producer()
+        .submit(configure(client, surface, 77001))
+        .expect("the shared admission to accept control");
+    drop(private.shutdown());
+
+    // Staged as an unwind inside the emitting call leaves it: moved out of the
+    // list a drive settles from, and marked as having reached the attempt.
+    {
+        let mut held = durable.records_even_if_poisoned();
+        let AbandonedSettlements {
+            held: settling,
+            in_flight,
+            ..
+        } = &mut *held;
+        in_flight.append(settling);
+        held.settling = true;
+    }
+
+    assert_eq!(durable.restore_interrupted(), 1);
+    assert_eq!(
+        durable.indeterminate(),
+        Some(1),
+        "whether its acknowledgement went out is what the unwind destroyed"
+    );
+    assert_eq!(
+        durable.owed(),
+        Some(0),
+        "so it is not put back where a drive would send it again"
+    );
+    assert_eq!(
+        durable.reserved(),
+        Some(1),
+        "and its credit is not released, because nobody observed an outcome"
+    );
+
+    // Driving now must find nothing to do with it.
+    let progress = durable.drive();
+    assert_eq!(progress.answered, 0);
+    assert!(acks.try_recv().is_ok(), "the slot still holds what was there");
+    assert!(
+        acks.try_recv().is_err(),
+        "an unproved outcome is never published a second time"
+    );
+    assert_eq!(durable.indeterminate(), Some(1), "it stays what it is");
+}
+
+#[test]
+fn an_obligation_a_live_record_still_answers_for_is_not_published_here() {
+    let client = XServerFrontendClientId(381);
+    let surface = SurfaceId::new(381, 1);
+    let (acknowledgements, acks) = sync_channel(4);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let completion = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a registry that issues completion records");
+
+    // A record that has begun applying cannot be handed over: a writer is
+    // inside the command and will publish for it.
+    let command = configure(client, surface, 78001);
+    let token = accepted(&completion, command);
+    assert_eq!(
+        completion.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+    assert!(
+        !completion.discard(token),
+        "an applying record is not free to take"
+    );
+
+    // Staged carrying that token, which is the state this gate exists for: the
+    // obligation is here, and so is someone else who can answer it.
+    {
+        let mut held = durable.records_even_if_poisoned();
+        held.held.push((
+            private.broker.registry.clone(),
+            PrivateOperation::Control(command, Some(token)),
+        ));
+        held.reserved = held.reserved.saturating_add(1);
+    }
+
+    let progress = durable.drive();
+    assert!(progress.readable);
+    assert_eq!(progress.answered, 0, "not ours to answer");
+    assert!(
+        acks.try_recv().is_err(),
+        "publishing here would be the second outcome for one operation"
+    );
+    assert_eq!(
+        durable.owed(),
+        Some(0),
+        "and it is not kept as a command that could be sent again"
+    );
+    assert_eq!(
+        durable.outstanding(),
+        Some(1),
+        "carried as an identity, so the credit is tracked without the payload"
+    );
+    assert_eq!(durable.reserved(), Some(1), "nothing observed an outcome yet");
+
+    // Once the record's real owner answers, the credit is free -- released by
+    // observing the registry rather than by anything here sending a receipt.
+    assert_eq!(
+        completion.publish_with(
+            token,
+            completion_ack(command, XAuthorityControlOutcome::Delivered),
+            |_| ControlPublication::Delivered,
+        ),
+        Ok(ControlPublication::Delivered)
+    );
+    let progress = durable.drive();
+    assert_eq!(progress.reclaimed, 1, "its record retired");
+    assert_eq!(progress.answered, 0, "reclaiming is not answering");
+    assert_eq!(durable.reserved(), Some(0));
+    assert!(acks.try_recv().is_err(), "and still nothing published here");
 }
 
 #[test]

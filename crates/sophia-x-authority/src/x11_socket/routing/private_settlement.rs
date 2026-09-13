@@ -41,6 +41,23 @@ struct AbandonedSettlements {
     outstanding_in_flight: Vec<(XServerFrontendRouteRegistry, PrivateIdentity)>,
     /// The same, for failed instances a recovery is part-way through.
     failed_in_flight: Vec<FailedInstance>,
+    /// Whether a sweep is inside the call that answers an obligation.
+    ///
+    /// Written before that call can emit anything, so an unwind inside leaves
+    /// it set. The entry it refers to is the last of `in_flight`, because a
+    /// sweep always settles from the end.
+    settling: bool,
+    /// Obligations whose settlement was interrupted after it could have
+    /// emitted.
+    ///
+    /// Separate from `in_flight` because the two are different facts. Work
+    /// interrupted before its attempt is unsettled and can be driven again.
+    /// Work interrupted during its attempt may already have had its outcome
+    /// go out, and nothing here can tell which. Driving it again would answer
+    /// twice; discarding it would repair a count by dropping an obligation;
+    /// releasing its credit would be a receipt nobody issued. So it is kept,
+    /// keeps its credit, and is reported as what it is.
+    indeterminate: Vec<(XServerFrontendRouteRegistry, PrivateOperation)>,
     /// Routed work whose handle was abandoned before it finished.
     ///
     /// Carries the registry that can observe its terminal outcome, so the
@@ -83,6 +100,75 @@ struct AbandonedSettlements {
 }
 
 #[cfg(unix)]
+impl AbandonedSettlements {
+    /// Settle everything in flight, returning how many were answered.
+    ///
+    /// The obligation stays in this owner's list for the whole attempt. It is
+    /// removed once the attempt has returned and said what happened, so there
+    /// is no moment where it exists only as a local: a fault before the
+    /// attempt leaves it in flight and replayable, and a fault during the
+    /// attempt leaves it in flight and marked, which is the difference between
+    /// work that can be driven again and work whose outcome nobody can prove.
+    fn sweep_in_flight(&mut self) -> usize {
+        let mut answered = 0usize;
+        while !self.in_flight.is_empty() {
+            // Established before anything is emitted. A settlement that could
+            // not show it was the only owner has no business publishing, and
+            // what it does instead depends on why.
+            let ownership = {
+                let (origin, operation) = self.in_flight.last().expect("not empty");
+                ownership_of(origin, operation)
+            };
+            match ownership {
+                SettlementOwnership::Elsewhere => {
+                    // Someone else will publish for it. The command is not
+                    // carried on as replayable work -- that is the duplicate
+                    // this check exists to prevent -- but the credit it holds
+                    // is not released either, because nothing here observed an
+                    // outcome. Its identity moves to the routed list, where a
+                    // credit is freed exactly when the registry retires it.
+                    let (origin, operation) = self.in_flight.pop().expect("not empty");
+                    let identity = PrivateIdentity::of(&operation);
+                    self.outstanding.push((origin, identity));
+                    continue;
+                }
+                SettlementOwnership::Unprovable => {
+                    // Kept whole, credit and all. A retained obligation costs
+                    // capacity until someone can read the registry again; the
+                    // alternatives cost a client either a duplicate outcome or
+                    // none at all.
+                    let carried = self.in_flight.pop().expect("not empty");
+                    self.held.push(carried);
+                    continue;
+                }
+                SettlementOwnership::Ours => {}
+            }
+            // Marked before the attempt rather than after it. The attempt is
+            // where the outcome is emitted, so an unwind inside leaves an
+            // obligation nobody can classify by looking at it: it is still
+            // here, and whether its acknowledgement went out is exactly what
+            // was lost. That a settlement was under way can only be captured
+            // before the effect it describes can happen.
+            self.settling = true;
+            let settled = {
+                let (origin, operation) = self.in_flight.last().expect("not empty");
+                settle_one(origin, operation)
+            };
+            self.settling = false;
+            let carried = self.in_flight.pop().expect("not empty");
+            if settled {
+                // Answered, so its credit is free for new work.
+                self.reserved = self.reserved.saturating_sub(1);
+                answered = answered.saturating_add(1);
+            } else {
+                self.held.push(carried);
+            }
+        }
+        answered
+    }
+}
+
+#[cfg(unix)]
 impl Default for PrivateSettlementOwner {
     fn default() -> Self {
         Self::with_capacity(PRIVATE_ABANDONED_CAPACITY)
@@ -98,6 +184,8 @@ impl PrivateSettlementOwner {
                 in_flight: Vec::with_capacity(capacity),
                 outstanding_in_flight: Vec::with_capacity(capacity),
                 failed_in_flight: Vec::with_capacity(capacity),
+                settling: false,
+                indeterminate: Vec::with_capacity(capacity),
                 outstanding: Vec::with_capacity(capacity),
                 failed: Vec::with_capacity(capacity),
                 failed_capacity: capacity,
@@ -155,18 +243,32 @@ impl PrivateSettlementOwner {
         self.inner.lock().ok().map(|held| held.outstanding.len())
     }
 
-    fn take_outstanding(
-        &self,
-        origin: &XServerFrontendRouteRegistry,
-        outstanding: Vec<PrivateIdentity>,
-    ) {
+    /// One at a time, so a caller hands over from a list it still owns rather
+    /// than emptying itself into an argument first.
+    fn take_one_outstanding(&self, origin: &XServerFrontendRouteRegistry, identity: PrivateIdentity) {
         // Cannot refuse, for the same reason abandoned obligations cannot:
         // every one of these already holds a credit taken before its work was
         // accepted, so this is a move into space already its own.
         let mut held = self.records_even_if_poisoned();
-        for identity in outstanding {
-            held.outstanding.push((origin.clone(), identity));
-        }
+        held.outstanding.push((origin.clone(), identity));
+    }
+
+    /// Take an obligation whose settlement was interrupted while it was
+    /// emitting.
+    ///
+    /// Cannot refuse, and does not answer. This is not a place work goes to be
+    /// discharged: it is where an obligation goes when nobody can say whether
+    /// it was. It keeps the credit it already holds, because releasing one
+    /// here would be a receipt for an outcome nobody observed, and it is kept
+    /// out of the lists a sweep drives so that it cannot be answered a second
+    /// time.
+    fn take_indeterminate(
+        &self,
+        origin: &XServerFrontendRouteRegistry,
+        operation: PrivateOperation,
+    ) {
+        let mut held = self.records_even_if_poisoned();
+        held.indeterminate.push((origin.clone(), operation));
     }
 
     /// How many instances closed holding a queue nobody could read.
@@ -225,30 +327,39 @@ impl PrivateSettlementOwner {
             failed_in_flight.append(failed);
         }
         let mut recovered = 0usize;
-        while let Some(instance) = held.failed_in_flight.pop() {
-            let mut queue = match instance.queue.lock() {
-                Ok(queue) => queue,
-                // The guard is recoverable even though the lock is not: the
-                // work is still there and is still owed an answer.
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            let mut pending = Vec::new();
-            while let Some((_, _, operation)) = queue.ready.take_next() {
-                pending.push(operation);
+        while !held.failed_in_flight.is_empty() {
+            {
+                // Out of the failed queue and into this owner's in-flight list
+                // directly. Collecting them into a local first is the widest
+                // window of the three sweeps: the queue no longer has them and
+                // nothing else does either, so an unwind loses a whole
+                // instance's worth of accepted work at once. Each operation
+                // keeps the origin it was accepted against, so what answers it
+                // is still the registry that took it.
+                let AbandonedSettlements {
+                    failed_in_flight,
+                    in_flight,
+                    ..
+                } = &mut *held;
+                let instance = failed_in_flight.last().expect("not empty");
+                let mut queue = match instance.queue.lock() {
+                    Ok(queue) => queue,
+                    // The guard is recoverable even though the lock is not: the
+                    // work is still there and is still owed an answer.
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                while let Some((_, _, operation)) = queue.ready.take_next() {
+                    in_flight.push((instance.origin.clone(), operation));
+                }
             }
-            drop(queue);
-            let before = pending.len();
-            let survivors = settle_against(&instance.origin, pending);
-            for _ in 0..before.saturating_sub(survivors.len()) {
-                held.reserved = held.reserved.saturating_sub(1);
-            }
-            recovered = recovered.saturating_add(before.saturating_sub(survivors.len()));
-            // The failure is resolved, so its slot is free for another
-            // instance.
+            // Drained, so this instance's failure is resolved and its slot is
+            // free for another. Released before the record is removed: an
+            // unwind in between leaves an emptied instance to be recovered
+            // again, which transfers no work twice, where removing it first
+            // would drop the record and leak the slot for this owner's life.
             held.failure_slots = held.failure_slots.saturating_sub(1);
-            for operation in survivors {
-                held.held.push((instance.origin.clone(), operation));
-            }
+            let _emptied = held.failed_in_flight.pop().expect("not empty");
+            recovered = recovered.saturating_add(held.sweep_in_flight());
         }
         Some(recovered)
     }
@@ -322,22 +433,72 @@ impl PrivateSettlementOwner {
     /// resume execution, and an obligation found here is not evidence of what
     /// happened to it -- only that a sweep did not finish with it.
     ///
-    /// Returns how many were returned, or `None` if this owner cannot be read
-    /// at all: nothing to return and no way to look are different answers.
-    /// Doing it twice returns nothing the second time.
-    pub fn restore_interrupted(&self) -> Option<usize> {
-        let mut held = self.inner.lock().ok()?;
-        let returned = held.in_flight.len() + held.outstanding_in_flight.len()
-            + held.failed_in_flight.len();
-        // Drained rather than taken, so the buffers reserved at construction
-        // survive and a later recovery does not allocate.
-        let carried: Vec<_> = held.in_flight.drain(..).collect();
-        held.held.extend(carried);
-        let carried: Vec<_> = held.outstanding_in_flight.drain(..).collect();
-        held.outstanding.extend(carried);
-        let carried: Vec<_> = held.failed_in_flight.drain(..).collect();
-        held.failed.extend(carried);
-        Some(returned)
+    /// Reaches through poison, because refusing here refuses in exactly the
+    /// case this exists for. The unwind that strands a sweep happens while the
+    /// sweep holds this lock, so the interruption and the poison are the same
+    /// event: a restore that declines to read a poisoned owner declines every
+    /// time it is needed and succeeds only when there is nothing to do. This
+    /// is also a move between lists this owner already holds, into space the
+    /// work reserved before it was accepted, so there is nothing to refuse
+    /// with and nowhere to put what is refused.
+    ///
+    /// Poison is still not permission to execute. Nothing here runs an
+    /// operation or emits an outcome; it moves obligations back to where a
+    /// later drive can consider them, and parks the one that cannot be
+    /// considered again.
+    ///
+    /// Returns how many were returned. Doing it twice returns nothing the
+    /// second time.
+    pub fn restore_interrupted(&self) -> usize {
+        let mut held = self.records_even_if_poisoned();
+        let returned =
+            held.in_flight.len() + held.outstanding_in_flight.len() + held.failed_in_flight.len();
+        // Interrupted inside the attempt, so its outcome may already have gone
+        // out. It is not returned to be driven again: that would answer it
+        // twice if it was answered, and there is no way here to find out which
+        // happened. Parked instead, keeping its credit, counted as an
+        // obligation whose outcome nobody can prove. Discarding it would
+        // repair the count by dropping it and releasing its credit would be a
+        // receipt nobody issued.
+        if held.settling {
+            let AbandonedSettlements {
+                in_flight,
+                indeterminate,
+                ..
+            } = &mut *held;
+            if let Some(unproved) = in_flight.pop() {
+                indeterminate.push(unproved);
+            }
+            held.settling = false;
+        }
+        // Moved between two owned lists rather than through a local, for the
+        // reason this whole path exists: an interruption part-way leaves the
+        // remainder in the list it has not reached yet, and the buffers
+        // reserved at construction survive so a later recovery does not
+        // allocate.
+        let AbandonedSettlements {
+            held: settling,
+            in_flight,
+            outstanding,
+            outstanding_in_flight,
+            failed,
+            failed_in_flight,
+            ..
+        } = &mut *held;
+        settling.append(in_flight);
+        outstanding.append(outstanding_in_flight);
+        failed.append(failed_in_flight);
+        returned
+    }
+
+    /// Obligations whose settlement was interrupted while it was emitting.
+    ///
+    /// Retained rather than resolved. Each still holds its credit, because an
+    /// obligation nobody can prove was answered has not been shown to be
+    /// discharged, and releasing on a guess is the manufactured receipt this
+    /// owner exists to avoid. `None` where the owner cannot be read.
+    pub fn indeterminate(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.indeterminate.len())
     }
 
     /// Try to discharge everything waiting.
@@ -361,7 +522,6 @@ impl PrivateSettlementOwner {
         // Moved between two owned places rather than into a local, and taken
         // one at a time, so an unwind part-way through leaves the rest here
         // rather than dropping them with the frame.
-        let before = held.held.len();
         {
             // Appended rather than taken into a local and extended from it.
             // A take leaves the work in a temporary for as long as it takes to
@@ -377,15 +537,7 @@ impl PrivateSettlementOwner {
             } = &mut *held;
             in_flight.append(settling);
         }
-        while let Some((origin, operation)) = held.in_flight.pop() {
-            let mut remaining = settle_against(&origin, vec![operation]);
-            if let Some(operation) = remaining.pop() {
-                held.held.push((origin, operation));
-            } else {
-                // Answered, so its credit is free for new work.
-                held.reserved = held.reserved.saturating_sub(1);
-            }
-        }
+        let answered = held.sweep_in_flight();
         // Routed work that has since finished releases its credit here, once
         // and only on a genuine terminal outcome.
         //
@@ -409,8 +561,13 @@ impl PrivateSettlementOwner {
             outstanding_in_flight.append(outstanding);
         }
         let mut reclaimed = 0usize;
-        while let Some((origin, identity)) = held.outstanding_in_flight.pop() {
-            let ended = match identity {
+        while !held.outstanding_in_flight.is_empty() {
+            // Read while it is still in the list. This sweep emits nothing, so
+            // an interruption here is always before an effect, and leaving the
+            // item where it is keeps it replayable rather than lost.
+            let ended = {
+                let (origin, identity) = held.outstanding_in_flight.last().expect("not empty");
+                match *identity {
                 PrivateIdentity::Delivery(Some(delivery)) => {
                     matches!(
                         origin.input_recovery.delivery_state(delivery),
@@ -431,17 +588,19 @@ impl PrivateSettlementOwner {
                 PrivateIdentity::Delivery(None)
                 | PrivateIdentity::Control { completion: None, .. }
                 | PrivateIdentity::Lease(_) => false,
+                }
             };
+            let carried = held.outstanding_in_flight.pop().expect("not empty");
             if ended {
                 held.reserved = held.reserved.saturating_sub(1);
                 reclaimed = reclaimed.saturating_add(1);
             } else {
-                held.outstanding.push((origin, identity));
+                held.outstanding.push(carried);
             }
         }
         DriveProgress {
             readable: true,
-            answered: before.saturating_sub(held.held.len()),
+            answered,
             reclaimed,
         }
     }
@@ -451,15 +610,16 @@ impl PrivateSettlementOwner {
     /// Cannot refuse. Every operation here already holds a credit taken when
     /// it was accepted, so the storage for it is reserved and this is a move
     /// into space that was set aside rather than a request for space.
-    fn take(&self, origin: &XServerFrontendRouteRegistry, pending: Vec<PrivateOperation>) {
+    /// One at a time, so the handle hands over from a list it still owns. A
+    /// caller that emptied itself into an argument first would have nothing
+    /// left to keep if the handover did not return.
+    fn take_one(&self, origin: &XServerFrontendRouteRegistry, operation: PrivateOperation) {
         // The caller here is a drop, which cannot keep what it is handing
         // over or report that it failed to. Declining would be the silent loss
         // this owner exists to prevent, and the space is already this work's
         // own, so this is one of the moves that cannot refuse.
         let mut held = self.records_even_if_poisoned();
-        for operation in pending {
-            held.held.push((origin.clone(), operation));
-        }
+        held.held.push((origin.clone(), operation));
     }
 }
 
@@ -499,267 +659,6 @@ struct FailedInstance {
 #[cfg(unix)]
 const PRIVATE_ABANDONED_CAPACITY: usize = 64;
 
-/// What a shutdown could not settle, and the means to settle it later.
-///
-/// Counting an unsettled obligation and logging it is a diagnostic, not a
-/// transfer. Nor is handing back the work alone: a report holding only
-/// operations would have thrown away the registry that could answer them, so
-/// a caller would be left holding obligations and nothing to discharge them
-/// with. This retains the originating capability along with the work.
-///
-/// The obligations themselves stay private. They carry the stamped envelope
-/// shape, and exporting that so an out-of-crate owner could read a report
-/// would be publishing the wire format to deliver a status. What a caller
-/// needs is not to inspect them but to retry them, which it can.
-#[cfg(unix)]
-#[must_use = "unsettled work is owed an answer; retry or record the failure"]
-pub struct PrivateSettlement {
-    /// The capability that can answer the work, retained from the instance
-    /// that accepted it. Not supplied by a caller: an external authority
-    /// argument would let one instance's obligations be settled against
-    /// another's registry.
-    origin: XServerFrontendRouteRegistry,
-    /// Where anything still owed goes if this handle is abandoned.
-    durable: PrivateSettlementOwner,
-    /// The queue this came from, retained so a failed instance hands over its
-    /// queue rather than a note that one existed. The queue alone, not the
-    /// admission that holds the owner: that would be a cycle.
-    queue: Arc<Mutex<SharedQueue>>,
-    pending: Vec<PrivateOperation>,
-    /// Work that was routed and has not reached a terminal outcome.
-    ///
-    /// Carried from the instance rather than left to die with it. These hold
-    /// credits, and some of them -- input with a tracked delivery -- can still
-    /// finish, so destroying the identities would strand the credits and lose
-    /// the only means of noticing.
-    outstanding: Vec<PrivateIdentity>,
-    queue_unreadable: bool,
-}
-
-#[cfg(unix)]
-impl PrivateSettlement {
-    pub fn is_settled(&self) -> bool {
-        self.pending.is_empty() && self.outstanding.is_empty() && !self.queue_unreadable
-    }
-
-    /// How many obligations remain undischarged.
-    pub fn owed(&self) -> usize {
-        self.pending.len()
-    }
-
-    /// How many routed operations have not reached a terminal outcome.
-    pub fn outstanding(&self) -> usize {
-        self.outstanding.len()
-    }
-
-    /// How many control records the instance's registry still holds.
-    ///
-    /// Operations caught mid-application are the ones that stay: they are
-    /// retained rather than reported as unexecuted, and they are reachable
-    /// rather than counted and forgotten, because the registry holding them
-    /// came with the origin this settlement kept.
-    ///
-    /// `None` where there is no registry to ask, or one that cannot be read.
-    /// An instance with nothing outstanding and one nobody can look at are
-    /// different answers.
-    pub fn outstanding_control(&self) -> Option<usize> {
-        self.origin
-            .control_completion()
-            .map(|owner| owner.outstanding())?
-    }
-
-    /// Republish acknowledgements a client writer could not deliver.
-    ///
-    /// Republishing only: the effects already happened, so nothing here is
-    /// re-run. Returns how many reached the receiver.
-    pub fn republish_owed_acknowledgements(&self) -> usize {
-        let Some(owner) = self.origin.control_completion() else {
-            return 0;
-        };
-        let sender = &self.origin.acknowledgement_sender;
-        owner.publish_owed_with(|acknowledgement| match sender.try_send(*acknowledgement) {
-            Ok(()) => ControlPublication::Delivered,
-            Err(TrySendError::Disconnected(_)) => ControlPublication::ReceiverGone,
-            Err(TrySendError::Full(_)) => ControlPublication::Retained,
-        })
-    }
-
-    /// Release credits for carried work that has since finished.
-    ///
-    /// The same rule as on a live instance: ended releases, live and
-    /// unreadable do not.
-    pub fn reclaim_outstanding(&mut self) -> usize {
-        // Applied here too, not only while the instance was live. A frontend
-        // is consumed by shutting down, and a proof that only it could apply
-        // would stop being applied exactly when the work outlives it.
-        if let Some(owner) = self.origin.control_completion() {
-            let _settled = owner.reconcile_unstarted();
-        }
-        let recovery = &self.origin.input_recovery;
-        let recovery_origin = &self.origin;
-        let before = self.outstanding.len();
-        self.outstanding.retain(|identity| match identity {
-            PrivateIdentity::Delivery(Some(delivery)) => {
-                !matches!(recovery.delivery_state(*delivery), DeliveryState::Ended)
-            }
-            PrivateIdentity::Control {
-                completion: Some(token),
-                ..
-            } => !matches!(
-                recovery_origin
-                    .control_completion()
-                    .map(|owner| owner.state_of(*token)),
-                Some(ControlRecordState::Retired)
-            ),
-            PrivateIdentity::Delivery(None)
-            | PrivateIdentity::Control { completion: None, .. }
-            | PrivateIdentity::Lease(_) => true,
-        });
-        let reclaimed = before.saturating_sub(self.outstanding.len());
-        for _ in 0..reclaimed {
-            self.durable.release();
-        }
-        reclaimed
-    }
-
-    /// Whether the queue could not be read, so its contents were unrecoverable.
-    pub fn queue_unreadable(&self) -> bool {
-        self.queue_unreadable
-    }
-
-    /// Try again to discharge what remains, against the origin that accepted
-    /// it.
-    ///
-    /// Returns how many were discharged this time. Work that still cannot be
-    /// answered stays pending rather than being counted off, so retrying twice
-    /// does not answer anything twice.
-    pub fn retry(&mut self) -> usize {
-        let pending = std::mem::take(&mut self.pending);
-        let before = pending.len();
-        self.pending = settle_against(&self.origin, pending);
-        let answered = before.saturating_sub(self.pending.len());
-        for _ in 0..answered {
-            self.durable.release();
-        }
-        answered
-    }
-}
-
-#[cfg(unix)]
-impl Drop for PrivateSettlement {
-    fn drop(&mut self) {
-        if !self.outstanding.is_empty() {
-            // Transferred whether or not anything else is owed. Returning
-            // early on an empty pending list destroyed these, which is the
-            // abandonment loss this handle exists to prevent, recreated in the
-            // state that was added to prevent it.
-            let outstanding = std::mem::take(&mut self.outstanding);
-            self.durable.take_outstanding(&self.origin, outstanding);
-        }
-        if self.queue_unreadable {
-            // Owned by something that outlives this rather than surviving as a
-            // boolean on a handle that is going away.
-            self.durable
-                .take_failed_instance(&self.origin, &self.queue);
-        }
-        if self.pending.is_empty() {
-            return;
-        }
-        // One attempt, not a loop: a Drop that retried until it succeeded
-        // would block teardown on a congested channel. What that attempt
-        // cannot answer moves to the durable owner rather than being
-        // destroyed here -- a full channel with a live receiver is congestion,
-        // and removing the last owner is not evidence the obligation ended.
-        let pending = std::mem::take(&mut self.pending);
-        let before = pending.len();
-        let survivors = settle_against(&self.origin, pending);
-        for _ in 0..before.saturating_sub(survivors.len()) {
-            self.durable.release();
-        }
-        if !survivors.is_empty() {
-            self.durable.take(&self.origin, survivors);
-        }
-    }
-}
-
-/// Answer what can be answered, returning what still cannot.
-#[cfg(unix)]
-fn settle_against(
-    registry: &XServerFrontendRouteRegistry,
-    pending: Vec<PrivateOperation>,
-) -> Vec<PrivateOperation> {
-    let mut unsettled = Vec::with_capacity(pending.len());
-    for operation in pending {
-        match operation {
-            PrivateOperation::RoutedInput(envelope) => {
-                let client = registry
-                    .surfaces
-                    .lock()
-                    .ok()
-                    .and_then(|surfaces| {
-                        surfaces
-                            .get(&envelope.route.request.target_surface)
-                            .map(|route| route.client)
-                    });
-                let Some(client) = client else {
-                    // Ownership is retained rather than resolved by guessing.
-                    // A receipt goes to the issuer's channel rather than to the
-                    // named client, so the harm is not that another client
-                    // receives it; it is a receipt attributed to a client
-                    // nobody resolved, which correlates with nothing. Choosing
-                    // a recipient here would also choose it at the wrong
-                    // moment: final target resolution belongs at execution.
-                    unsettled.push(PrivateOperation::RoutedInput(envelope));
-                    continue;
-                };
-                if registry
-                    .send_input_delivery(
-                        client,
-                        envelope.route.delivery,
-                        XAuthorityInputDeliveryOutcome::RouteRejected,
-                    )
-                    .is_err()
-                {
-                    unsettled.push(PrivateOperation::RoutedInput(envelope));
-                }
-            }
-            PrivateOperation::Control(control, token) => {
-                let acknowledgement = XAuthorityClientControlAck {
-                    client: control.client,
-                    acknowledgement: XAuthorityControlAck {
-                        kind: control.command.kind(),
-                        transaction: control.command.transaction(),
-                        surface: control.command.surface(),
-                        outcome: XAuthorityControlOutcome::AuthorityRejected,
-                    },
-                };
-                // Nothing here executed the command, so what is retained on
-                // failure is the command, not an outcome: the caller retries
-                // this settlement, and a retry that only sends a rejection
-                // replays nothing.
-                //
-                // No completion record is answered here. A command reaching
-                // this point was handed on by an owner that gave up its record
-                // as it did so, which is the one place that sees all of them
-                // at once; answering again from here would give one operation
-                // two owners able to publish for it.
-                if registry
-                    .acknowledgement_sender
-                    .try_send(acknowledgement)
-                    .is_err()
-                {
-                    unsettled.push(PrivateOperation::Control(control, token));
-                }
-            }
-            PrivateOperation::LeaseRelease(release) => {
-                if registry.release_route_lease(release).is_err() {
-                    unsettled.push(PrivateOperation::LeaseRelease(release));
-                }
-            }
-        }
-    }
-    unsettled
-}
 
 /// One operation the consumer took, and where it sat.
 #[cfg(unix)]

@@ -292,6 +292,7 @@ impl PrivateXServerFrontend {
                 pending: Vec::new(),
                 outstanding: Vec::new(),
                 queue_unreadable: false,
+                settling: None,
             };
         }
         self.settled = true;
@@ -310,17 +311,17 @@ impl PrivateXServerFrontend {
                     pending: Vec::new(),
                     outstanding: std::mem::take(&mut self.outstanding),
                     queue_unreadable: true,
+                    settling: None,
                 };
             }
         };
         // A credit belongs to work until that work is answered, wherever it
         // is answered. Releasing only on the drive path would leave credits
         // held against obligations that no longer exist.
-        let before = stranded.len();
         // Reclaim what has genuinely finished first, so work already answered
         // is not carried as though it were owed.
         self.reclaim_settled();
-        let mut outstanding = std::mem::take(&mut self.outstanding);
+        let outstanding = std::mem::take(&mut self.outstanding);
         // Everything still in the queue is about to be answered or handed
         // back by the settlement below, so it already has an owner. Its
         // records are given up first, or the cancellation pass further down
@@ -330,10 +331,23 @@ impl PrivateXServerFrontend {
                 self.completion.discard(*token);
             }
         }
-        let mut pending = settle_against(&origin, stranded);
-        for _ in 0..before.saturating_sub(pending.len()) {
-            self.durable.release();
-        }
+        // Settled in place, through the same ownership gate every other
+        // settlement path uses. The handover above frees each record, so the
+        // gate passes; where it did not -- an unreadable registry, or a record
+        // that had begun applying -- the gate is what stops this from
+        // publishing an outcome someone else can still publish, and the credit
+        // leaves with an identity rather than with a command that could be
+        // sent again.
+        let mut settlement = PrivateSettlement {
+            origin,
+            durable: self.durable.clone(),
+            queue: Arc::clone(&self.admission.ready),
+            pending: stranded,
+            outstanding,
+            queue_unreadable: false,
+            settling: None,
+        };
+        let _answered = settlement.settle_pending();
         // Records still unexecuted after the queue was answered belong to
         // commands a writer took and never ran: they left the queue, so
         // draining it did not reach them, and the instance is going. They are
@@ -351,7 +365,7 @@ impl PrivateXServerFrontend {
         // released for it. Leaving the identity behind would let a watcher
         // read the record's absence as completion and release the credit here,
         // and settling `pending` would release it again.
-        outstanding.retain(|identity| match identity {
+        settlement.outstanding.retain(|identity| match identity {
             PrivateIdentity::Control {
                 completion: Some(token),
                 ..
@@ -361,20 +375,13 @@ impl PrivateXServerFrontend {
                 .any(|(cancelled, _)| cancelled == token),
             _ => true,
         });
-        pending.extend(
+        settlement.pending.extend(
             cancellation
                 .cancellable
                 .into_iter()
                 .map(|(_, command)| PrivateOperation::Control(command, None)),
         );
-        PrivateSettlement {
-            origin,
-            durable: self.durable.clone(),
-            queue: Arc::clone(&self.admission.ready),
-            pending,
-            outstanding,
-            queue_unreadable: false,
-        }
+        settlement
     }
 }
 

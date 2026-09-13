@@ -676,6 +676,70 @@ process-global origin counter's exhaustion refusal is unreachable from any
 test that does not add a setter to production source, so it is argued rather
 than demonstrated.
 
+## Settling an obligation whose owner went away
+
+Three separate faults, found by independent review of the frozen commits and
+confirmed against source here.
+
+**A restore that refuses when it is needed.** The first version of
+`restore_interrupted` read the owner with `lock().ok()?` and returned `None`
+on poison, on the reasoning that nothing-to-return and no-way-to-look are
+different answers. That reasoning is right for a report and wrong for this:
+the unwind that strands a sweep happens while the sweep holds that very lock,
+so the interruption and the poison are one event. A restore gated on a clean
+lock declines in every case it exists for and succeeds only when there is
+nothing to do. It now reaches through poison, which it can do honestly because
+it is a move between lists the owner already holds, into space the work
+reserved before it was accepted. Poison is still not permission to execute:
+nothing on that path runs an operation or emits an outcome.
+
+**Answering without establishing that you may.** Recovering a failed
+instance's queue emitted a rejection and released the credit while the
+operation's completion record was still live and able to publish for it. Two
+owners, one operation, and the first acknowledgement has already gone by the
+time anyone looks. The normal shutdown path handed records over before
+settling; the failed-queue path never did, and the poisoned-queue early return
+skips the handover entirely.
+
+The repair is not to add a handover to that one path. Ownership is now
+established at the point of publication, which every path shares, and it has
+three answers rather than two:
+
+- The record is retired or was never held, so nothing else can publish: answer
+  it here.
+- The record is still held and cannot be taken -- a writer is inside it, or a
+  receipt is owed. Its outcome belongs to that owner. The command is not
+  carried on as replayable work, because that is the duplicate the check
+  exists to prevent, and the credit is not released, because nothing here
+  observed an outcome. The identity moves to the routed list, where a credit
+  is freed exactly when the registry retires the record.
+- The registry cannot be read at all. Not an outcome and not permission: the
+  obligation is kept whole, credit included. That costs capacity until someone
+  can read the registry again, where the alternatives cost a client either a
+  duplicate outcome or none at all.
+
+**An obligation with no provable outcome.** Preserving work across an unwind
+and being able to use it again are different properties. Work interrupted
+before its attempt is unsettled by construction and can be driven again. Work
+interrupted *during* its attempt may already have had its outcome emitted, and
+nothing left behind can say which. Driving it again answers twice; discarding
+it repairs a count by dropping an obligation; releasing its credit is a
+receipt nobody issued. So it is parked as indeterminate: kept, still holding
+its credit, never driven, and reported as what it is. The attempt is marked
+before it can emit, because that a settlement was under way is a fact only
+capturable ahead of the effect it describes.
+
+The same shape applies on the handle, which is not merely a smaller case:
+`retry` is called on a handle that stays alive, so a list lost to a stack
+frame strands work whose owner is still in use. Both the handle and the owner
+now settle in place, removing an obligation only once its attempt has returned
+and said what happened.
+
+What is not closed: `settle_one` establishes ownership and emits, and an
+unwind between those two is exactly the indeterminate case above -- retained,
+never resolved. Nothing here can resolve one, because resolving it means
+knowing whether a send completed, and that is what the fault destroyed.
+
 ## Status
 
 Source-confirmed inventory, and known to be incomplete: an independent audit
