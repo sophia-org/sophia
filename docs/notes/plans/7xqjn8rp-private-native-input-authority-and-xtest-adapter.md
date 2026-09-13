@@ -799,3 +799,30 @@ consumed payload to its original delivery or transaction identity. Final
 authoritative execution remains separate from this reporting. Exhaustion tests
 stay in the copied-source fixture; no production-source setter or layout debt is
 requested. None of these runtime follow-ups has been integrated into this branch.
+
+At `830c88c5`, an independent eight-case replay passes six controls: healthy
+close now emits a real terminal input receipt, and observing it removes the
+recovery ticket. Two desired assertions still fail. Close reports `TargetGone`
+for delivery 9201 while its original target and registration remain live; a
+truthful authority rejection/cancellation is required instead. Poisoned close
+still emits no receipt within 200 ms and leaves the ticket present. Evidence is
+`.artifacts/private-settlement-review-830c88c5/`. These are distinct findings:
+healthy completion now occurs, its cause is wrong, and poisoned-close ownership
+is still unresolved. The source also falls back to client 0 on failed target
+lookup and discards completion errors; neither is a substitute for retained
+admission and receipt identity.
+
+Control shutdown need not invent an input receipt: existing
+`XAuthorityClientControlAck` carries kind, transaction, surface and outcome, with
+`AuthorityRejected` available for a genuine authority refusal. Its bounded
+capacity and ownership still need to be preserved through close. Every current
+`XAuthorityControlCommand` has `transaction()`; the new report's FocusSurface-only
+match incorrectly labels the other controls untracked. Lease releases also have
+an identity and an owner. Reporting needs to preserve those facts.
+
+The candidate bounds a service call by queue capacity and allocates its report
+before running effects, removing the prior unbounded growth. This does not yet
+implement the chosen per-interval execution/cleanup budgets. Close still grows
+a vector while holding the queue lock, rather than transferring preallocated
+cleanup storage. The runtime candidates remain unintegrated; final guarded
+execution and accepted control/cleanup settlement remain required.
