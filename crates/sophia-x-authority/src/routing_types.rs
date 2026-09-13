@@ -358,6 +358,15 @@ pub enum XServerFrontendServiceCommand {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XServerFrontendRouteError {
+    /// This instance is being drained by the ordered consumer, so the older
+    /// route may not also drain it.
+    ///
+    /// Two consumers on one order is not a slower version of one: the older
+    /// route takes an operation, discards the reservation made for it, and
+    /// applies it without the execution the reservation exists for -- so work
+    /// the ordered path was accepted for would be applied behind its back,
+    /// with its request left unanswerable.
+    OrderedRunnerEngaged,
     RecoveryShutdownFailed {
         client: XServerFrontendClientId,
     },
@@ -454,6 +463,10 @@ impl XPresentFeedbackPhases {
 impl core::fmt::Display for XServerFrontendRouteError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::OrderedRunnerEngaged => write!(
+                formatter,
+                "X11 ordered input consumer already drains this order"
+            ),
             Self::RecoveryShutdownFailed { client } => write!(
                 formatter,
                 "X11 recovery could not shut down client {}",

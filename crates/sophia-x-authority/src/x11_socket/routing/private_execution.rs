@@ -585,10 +585,6 @@ struct PrivateOrderedDecision {
 /// becomes public when there is an owner outside this crate to give it to, and
 /// what that owner needs decides what it says rather than what is convenient
 /// to expose now.
-///
-/// Its only callers are the turn below and the controls for it; the owner that
-/// will consume a turn does not exist yet, which is why nothing in production
-/// reads it.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
 enum PrivateOrderedItem {
@@ -603,6 +599,14 @@ enum PrivateOrderedItem {
         /// owner does. Dropping it here would end the only right to take that
         /// outcome.
         custody: PrivateOutstandingRequest,
+        /// The work as it was accepted.
+        ///
+        /// Kept on success for the same reason a refusal keeps it. The
+        /// delivery identity, the route lease and the rest are what the
+        /// terminal owner answers with, and a completion token does not
+        /// contain them -- a request identity and a delivery identity are
+        /// different things, and one cannot be reconstructed from the other.
+        route: XAuthorityRoutedInput,
     },
     /// The consumer refused, and the work it was accepted for comes back.
     ///
@@ -615,14 +619,22 @@ enum PrivateOrderedItem {
         custody: PrivateOutstandingRequest,
         route: XAuthorityRoutedInput,
     },
-    /// The operation carried no reservation, so it is not ordered work.
+    /// An earlier operation this path does not execute, parked where it sits.
     ///
-    /// Handed back whole rather than run or discarded: this path executes what
-    /// was reserved before it was published, and something else accepted this.
-    Unreserved {
-        sequence: crate::ReadySequence,
-        operation: PrivateOperation,
-    },
+    /// Not "unreserved": a control carries its own accepted completion
+    /// registration, and calling it unreserved describes it by what this path
+    /// happens to lack rather than by what it is.
+    ///
+    /// It keeps its place in the order and nothing after it runs until its
+    /// disposition is established. Handing it out and carrying on would apply
+    /// later input past an earlier operation that has neither executed nor
+    /// been cancelled -- the report would be in order while the effects were
+    /// not, which is the ordering this path exists to hold.
+    ///
+    /// The report names it; it does not hand it over. Seeing that the order is
+    /// parked is not accepting responsibility for what it is parked on, and
+    /// the operation stays owned here until something takes it.
+    Parked { sequence: crate::ReadySequence },
 }
 
 #[cfg(unix)]
@@ -648,47 +660,95 @@ impl PrivateXServerFrontend {
         &mut self,
         keyboards: &mut PrivateKeyboards,
     ) -> Result<Vec<PrivateOrderedItem>, XServerFrontendRouteError> {
+        // Claimed on the first turn. From here the older route refuses this
+        // order rather than draining it alongside.
+        self.ordered_runner = true;
+        // Anything an earlier turn parked still holds its place. Nothing after
+        // it may run until its disposition is established, and that outlives
+        // the turn that met it -- a turn that merely stopped would let the
+        // next one overtake exactly the operation it stopped for.
+        if let Some((sequence, _)) = self.parked.as_ref() {
+            // Still parked, so nothing runs. Said rather than returned empty,
+            // because an empty turn and a blocked one are different facts.
+            return Ok(vec![PrivateOrderedItem::Parked {
+                sequence: *sequence,
+            }]);
+        }
         let budget = self.service_budget;
-        let mut ran = Vec::with_capacity(budget);
-        while ran.len() < budget {
-            let next = self
-                .admission
-                .take_next()
-                .map_err(|()| XServerFrontendRouteError::RegistryPoisoned)?;
+        while self.turn.len() < budget {
+            let next = match self.admission.take_next() {
+                Ok(next) => next,
+                Err(()) => {
+                    // Everything already taken out of the order stays owned
+                    // here rather than going with the frame. Returning results
+                    // only on success would drop the work of every earlier
+                    // iteration on the failure of a later one.
+                    return Err(XServerFrontendRouteError::RegistryPoisoned);
+                }
+            };
             let Some((sequence, _class, operation)) = next else {
                 break;
             };
             let PrivateOperation::RoutedInput(mut envelope) = operation else {
-                ran.push(PrivateOrderedItem::Unreserved {
-                    sequence,
-                    operation,
-                });
-                continue;
+                // An operation this path does not execute. Parked in place,
+                // and the turn ends: later input must not apply past an
+                // earlier operation that has neither run nor been cancelled.
+                self.parked = Some((sequence, operation));
+                self.turn.push(PrivateOrderedItem::Parked { sequence });
+                break;
             };
             let Some(reservation) = envelope.reservation.take() else {
-                ran.push(PrivateOrderedItem::Unreserved {
-                    sequence,
-                    operation: PrivateOperation::RoutedInput(envelope),
-                });
-                continue;
+                self.parked = Some((sequence, PrivateOperation::RoutedInput(envelope)));
+                self.turn.push(PrivateOrderedItem::Parked { sequence });
+                break;
             };
-            // The reservation made for this exact work before it was
-            // published becomes the custody it runs against.
+            // The reservation made for this exact work before it was published
+            // becomes the custody it runs against.
             let custody = reservation.accepted();
-            match self.run_ordered_input(keyboards, &envelope.route, &custody) {
-                Ok(run) => ran.push(PrivateOrderedItem::Ran {
+            let route = envelope.route;
+            match self.run_ordered_input(keyboards, &route, &custody) {
+                Ok(run) => self.turn.push(PrivateOrderedItem::Ran {
                     sequence,
                     run,
                     custody,
+                    route,
                 }),
-                Err(refusal) => ran.push(PrivateOrderedItem::Refused {
+                Err(refusal) => self.turn.push(PrivateOrderedItem::Refused {
                     sequence,
                     refusal,
                     custody,
-                    route: envelope.route,
+                    route,
                 }),
             }
         }
-        Ok(ran)
+        Ok(std::mem::take(&mut self.turn))
+    }
+
+    /// What an earlier turn parked, if anything.
+    ///
+    /// Read rather than taken: seeing it is not disposing of it.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn parked(&self) -> Option<crate::ReadySequence> {
+        self.parked.as_ref().map(|(sequence, _)| *sequence)
+    }
+
+    /// Take the parked operation, accepting responsibility for its
+    /// disposition.
+    ///
+    /// The consumer resumes only once this has been taken, because taking it
+    /// is what moves the obligation somewhere that can execute or cancel it.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn take_parked(&mut self) -> Option<(crate::ReadySequence, PrivateOperation)> {
+        self.parked.take()
+    }
+
+    /// Recover the items of a turn that ended in an error.
+    ///
+    /// Everything taken out of the order before the failure is here. It is not
+    /// re-run: what applied has applied, and these carry their custody so the
+    /// terminal owner can still answer for them.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn take_interrupted_turn(&mut self) -> Vec<PrivateOrderedItem> {
+        std::mem::take(&mut self.turn)
     }
 }

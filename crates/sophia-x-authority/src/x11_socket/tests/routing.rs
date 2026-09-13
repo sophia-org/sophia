@@ -12841,6 +12841,7 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
         sequence: ran_sequence,
         run,
         custody,
+        route,
     } = item
     else {
         panic!("the queued work ran");
@@ -12848,6 +12849,11 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
     assert_eq!(
         ran_sequence, sequence,
         "and it is the same place in the order the producer was given"
+    );
+    assert_eq!(
+        route.delivery,
+        Some(XAuthorityInputDeliveryId::from_raw(801)),
+        "the accepted work comes back with it, delivery identity and all"
     );
     let reached = run.reached.expect("a press decides where it went");
     assert_eq!(reached.client(), client);
@@ -12974,19 +12980,175 @@ fn unreserved_work_in_the_order_is_handed_back_rather_than_run() {
         .route_pending_ordered(&mut keyboards)
         .expect("a readable order");
     assert_eq!(turn.len(), 1);
-    let PrivateOrderedItem::Unreserved {
-        sequence,
-        operation,
-    } = turn.remove(0)
-    else {
-        panic!("unreserved work is not run by this path");
+    let PrivateOrderedItem::Parked { sequence } = turn.remove(0) else {
+        panic!("work this path does not execute is parked, not run");
     };
     assert!(sequence.raw() > 0);
-    assert!(
-        matches!(operation, PrivateOperation::RoutedInput(_)),
-        "and it comes back whole rather than being discarded"
+    assert_eq!(
+        private.parked(),
+        Some(sequence),
+        "the report names it and the operation stays owned until something takes it"
     );
+
+    // Still parked, so a later turn runs nothing rather than overtaking it.
+    let again = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    assert!(
+        matches!(again.as_slice(), [PrivateOrderedItem::Parked { .. }]),
+        "a blocked turn says so rather than looking like an empty one"
+    );
+
+    // Taking it is what accepts responsibility, and it comes back whole.
+    let (taken_sequence, operation) = private.take_parked().expect("the parked operation");
+    assert_eq!(taken_sequence, sequence);
+    assert!(matches!(operation, PrivateOperation::RoutedInput(_)));
+    assert_eq!(private.parked(), None);
 
     // Nothing was pressed, so no hold was recorded against it.
     assert!(private.holds.is_empty());
+}
+
+#[test]
+fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
+    let client = XServerFrontendClientId(831);
+    let surface = SurfaceId::new(831, 1);
+    let private = private_for_roles();
+    let _registration = admit_role_client(&private, client);
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200831, 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    // A control first, then input. The control carries its own accepted
+    // completion registration and this path does not execute it.
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(8310),
+                surface,
+            },
+        })
+        .expect("the order to accept the control");
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(831),
+            272,
+            true,
+        ))
+        .expect("the order to accept the input");
+
+    let mut private = private;
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+
+    // The report being in order is not enough. The effect order is what
+    // matters: the button must not have applied while an earlier operation has
+    // neither executed nor been cancelled.
+    assert!(
+        matches!(turn.as_slice(), [PrivateOrderedItem::Parked { .. }]),
+        "the turn stops at the earlier operation rather than running past it"
+    );
+    assert!(
+        private.holds.is_empty(),
+        "and no later hold was applied behind it"
+    );
+
+    // A second turn does not overtake it either. Stopping for one turn would
+    // only move the problem to the next.
+    let again = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    assert!(matches!(
+        again.as_slice(),
+        [PrivateOrderedItem::Parked { .. }]
+    ));
+    assert!(private.holds.is_empty());
+
+    // Once its disposition is taken on, the input behind it runs.
+    let (_, parked) = private.take_parked().expect("the parked control");
+    assert!(matches!(parked, PrivateOperation::Control(_, _)));
+    let resumed = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    assert!(
+        matches!(resumed.as_slice(), [PrivateOrderedItem::Ran { .. }]),
+        "the input behind it runs once the earlier obligation has an owner"
+    );
+    assert_eq!(private.holds.len(), 1, "and only then is its hold applied");
+}
+
+#[test]
+fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
+    let client = XServerFrontendClientId(841);
+    let surface = SurfaceId::new(841, 1);
+    let private = private_for_roles();
+    let _registration = admit_role_client(&private, client);
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200841, 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut private = private;
+
+    // The ordered consumer takes a turn, which claims this order.
+    assert!(
+        private
+            .route_pending_ordered(&mut keyboards)
+            .expect("a readable order")
+            .is_empty()
+    );
+
+    // Work is accepted with a reservation made for it.
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(841),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+
+    // The older route discards the reservation and applies without the
+    // execution it exists for, so it must not drain this order alongside.
+    let refused = private.route_pending();
+    assert!(
+        matches!(
+            refused,
+            Err(XServerFrontendRouteError::OrderedRunnerEngaged)
+        ),
+        "one permitted consumer per order, got {refused:?}"
+    );
+
+    // And the work is still there for the consumer that may run it.
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    assert!(
+        matches!(turn.as_slice(), [PrivateOrderedItem::Ran { .. }]),
+        "the refused drain took nothing away from the order"
+    );
 }

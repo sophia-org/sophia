@@ -306,6 +306,24 @@ pub struct PrivateXServerFrontend {
     /// the plan moves here rather than being dropped: this is the only record
     /// of who is owed one, and the terminal handoff is what clears it.
     settling: Vec<PrivateSettlingRelease>,
+    /// An earlier operation the ordered path does not execute, held in place.
+    ///
+    /// Nothing after it runs until its disposition is established, and that
+    /// outlives the turn that met it: a turn that merely stopped would let the
+    /// next one overtake the operation it stopped for.
+    parked: Option<(crate::ReadySequence, PrivateOperation)>,
+    /// Whether the ordered consumer has taken a turn on this instance.
+    ///
+    /// Set by the first ordered turn and never cleared: an order this
+    /// consumer has begun draining is one the older route must not also
+    /// drain, and that does not stop being true between turns.
+    ordered_runner: bool,
+    /// The items of the turn in progress.
+    ///
+    /// Owned here rather than accumulated in a local, so a failure part-way
+    /// leaves everything already taken out of the order still owned instead of
+    /// dropping it with the frame.
+    turn: Vec<PrivateOrderedItem>,
     /// Whether this instance has already handed out its keyboard state.
     ///
     /// One history per instance, so the answer is asked and answered once.
@@ -495,6 +513,9 @@ impl PrivateXServerFrontend {
             controller,
             submit,
             keyboards_issued: std::sync::atomic::AtomicBool::new(false),
+            parked: None,
+            ordered_runner: false,
+            turn: Vec::with_capacity(capacity),
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
         })
@@ -790,6 +811,14 @@ impl PrivateXServerFrontend {
     /// can only see how many ran cannot tell an ordered consumer from one that
     /// grouped entries someone else had already numbered.
     pub fn route_pending(&mut self) -> Result<Vec<PrivateRun>, XServerFrontendRouteError> {
+        // One permitted consumer per order. This route discards the
+        // reservation an item was published with and applies the work without
+        // the execution that reservation exists for, so letting it drain an
+        // order the ordered consumer is draining would apply accepted work
+        // behind that consumer's back and leave its request unanswerable.
+        if self.ordered_runner {
+            return Err(XServerFrontendRouteError::OrderedRunnerEngaged);
+        }
         // Bounded by what the queue can hold, not by when producers stop.
         // Draining until empty lets a producer that keeps replenishing hold
         // this turn open and grow the report without limit, which is an
