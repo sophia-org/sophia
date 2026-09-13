@@ -11020,8 +11020,13 @@ fn admitted(client: XServerFrontendClientId) -> sophia_protocol::ClientAdmission
     .unwrap()
 }
 
-/// Register a client so the ordered execution path can find current evidence
-/// for it, and keep the registration alive.
+/// Admit a client the way the production boundary expects.
+///
+/// Both halves, because they are different things: the frontend registers the
+/// client's routes, and the admission participant is where the producer of
+/// admission and revocation binds it. Execution consults the second, so a test
+/// that only did the first would be exercising a path that no longer decides
+/// anything.
 fn admit_role_client(
     private: &crate::PrivateXServerFrontend,
     client: XServerFrontendClientId,
@@ -11031,6 +11036,10 @@ fn admit_role_client(
         .registry
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("a fresh client to be admitted to the boundary");
     registration
 }
 
@@ -11072,10 +11081,10 @@ fn one_producer_cannot_consume_another_producers_completion() {
     let _first_admitted = admit_role_client(&private, XServerFrontendClientId(501));
     let _second_admitted = admit_role_client(&private, XServerFrontendClientId(502));
     let first = private
-        .reservation_role(role_connection(501), DeviceId::from_raw(1))
+        .reservation_role(XServerFrontendClientId(501), DeviceId::from_raw(1))
         .expect("a capability for the first producer");
     let second = private
-        .reservation_role(role_connection(502), DeviceId::from_raw(2))
+        .reservation_role(XServerFrontendClientId(502), DeviceId::from_raw(2))
         .expect("a capability for the second producer");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
 
@@ -11151,8 +11160,9 @@ fn a_controller_refuses_an_authority_paired_with_another_issuer() {
 fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(503));
+    let _other_admitted = admit_role_client(&private, XServerFrontendClientId(504));
     let role = private
-        .reservation_role(role_connection(503), DeviceId::from_raw(3))
+        .reservation_role(XServerFrontendClientId(503), DeviceId::from_raw(3))
         .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
     let running = role.reserve(stamp, 1).expect("a reservation to execute");
@@ -11161,7 +11171,7 @@ fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
     // A second producer's reservation, taken OUTSIDE any execution, and never
     // published. Its own grant, because one grant holds one cell.
     let other = private
-        .reservation_role(role_connection(504), DeviceId::from_raw(4))
+        .reservation_role(XServerFrontendClientId(504), DeviceId::from_raw(4))
         .expect("a capability for the second producer");
     let stranded = other.reserve(stamp, 1).expect("an unpublished reservation");
 
@@ -11195,11 +11205,13 @@ fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
 #[test]
 fn two_detached_producers_reserve_against_one_authority() {
     let private = private_for_roles();
+    let _first_admitted = admit_role_client(&private, XServerFrontendClientId(511));
+    let _second_admitted = admit_role_client(&private, XServerFrontendClientId(512));
     let first = private
-        .ingress_for(role_connection(511), DeviceId::from_raw(1))
+        .ingress_for(XServerFrontendClientId(511), DeviceId::from_raw(1))
         .expect("an ingress for the first producer");
     let second = private
-        .ingress_for(role_connection(512), DeviceId::from_raw(2))
+        .ingress_for(XServerFrontendClientId(512), DeviceId::from_raw(2))
         .expect("an ingress for the second producer");
 
     // Detached is the point: each is handed off and used on its own, and they
@@ -11281,10 +11293,15 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
     // long before the order is full, which is a different refusal entirely and
     // proves nothing about the queue.
     let mut fillers = Vec::new();
+    let mut filler_admissions = Vec::new();
     for index in 0..32u64 {
+        filler_admissions.push(admit_role_client(
+            &private,
+            XServerFrontendClientId(600 + index),
+        ));
         let filler = private
             .ingress_for(
-                role_connection(600 + index),
+                XServerFrontendClientId(600 + index),
                 DeviceId::from_raw(index + 1),
             )
             .expect("a capability per filling producer");
@@ -11302,8 +11319,9 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
 
     // A fresh grant, so its own cell is free and the only thing that can
     // refuse this is the order itself.
+    let _fresh_admitted = admit_role_client(&private, XServerFrontendClientId(699));
     let fresh = private
-        .ingress_for(role_connection(699), DeviceId::from_raw(60))
+        .ingress_for(XServerFrontendClientId(699), DeviceId::from_raw(60))
         .expect("a capability for the fresh producer");
     let refused = fresh.submit(motion_to(
         SurfaceId::new(699, 1),
@@ -11355,11 +11373,12 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
 fn a_deferred_disposal_records_and_pays_through_a_poisoned_debt_list() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(521));
+    let _other_admitted = admit_role_client(&private, XServerFrontendClientId(522));
     let running = private
-        .reservation_role(role_connection(521), DeviceId::from_raw(1))
+        .reservation_role(XServerFrontendClientId(521), DeviceId::from_raw(1))
         .expect("a capability");
     let other = private
-        .reservation_role(role_connection(522), DeviceId::from_raw(2))
+        .reservation_role(XServerFrontendClientId(522), DeviceId::from_raw(2))
         .expect("a second capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
     let request = running
@@ -11398,11 +11417,12 @@ fn a_deferred_disposal_records_and_pays_through_a_poisoned_debt_list() {
 fn a_debt_already_recorded_is_paid_through_a_poisoned_list() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(523));
+    let _other_admitted = admit_role_client(&private, XServerFrontendClientId(524));
     let running = private
-        .reservation_role(role_connection(523), DeviceId::from_raw(1))
+        .reservation_role(XServerFrontendClientId(523), DeviceId::from_raw(1))
         .expect("a capability");
     let other = private
-        .reservation_role(role_connection(524), DeviceId::from_raw(2))
+        .reservation_role(XServerFrontendClientId(524), DeviceId::from_raw(2))
         .expect("a second capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
     let request = running
@@ -11441,6 +11461,7 @@ fn a_debt_already_recorded_is_paid_through_a_poisoned_list() {
 fn recording_a_disposal_debt_does_not_allocate() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(525));
+    let _other_admitted = admit_role_client(&private, XServerFrontendClientId(526));
     let reserved = private
         .authority()
         .owed_disposal
@@ -11453,10 +11474,10 @@ fn recording_a_disposal_debt_does_not_allocate() {
     );
 
     let running = private
-        .reservation_role(role_connection(525), DeviceId::from_raw(1))
+        .reservation_role(XServerFrontendClientId(525), DeviceId::from_raw(1))
         .expect("a capability");
     let other = private
-        .reservation_role(role_connection(526), DeviceId::from_raw(2))
+        .reservation_role(XServerFrontendClientId(526), DeviceId::from_raw(2))
         .expect("a second capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
     let request = running
@@ -11485,35 +11506,123 @@ fn recording_a_disposal_debt_does_not_allocate() {
 }
 
 #[test]
-fn execution_refuses_when_nothing_is_currently_admitted() {
+fn nothing_can_be_issued_for_a_client_the_boundary_never_admitted() {
     let private = private_for_roles();
-    // Deliberately not admitted. The role still issues, because a capability
-    // is granted for a connection rather than proved against a live client.
-    let role = private
-        .reservation_role(role_connection(531), DeviceId::from_raw(1))
-        .expect("a capability");
-    let stamp = private.control_gate().stamp().expect("an open coordinator");
-    let request = role.reserve(stamp, 1).expect("a reservation").accepted();
+    // Registered with the frontend, deliberately not admitted to the boundary.
+    // The old check would have found this client and called it current.
+    let (_registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(
+            XServerFrontendClientId(531),
+            Some(admitted(XServerFrontendClientId(531))),
+        )
+        .expect("a fresh client to register");
 
-    let outcome = private.execute_ordered(&request, XServerFrontendClientId(531), |_permit| {
-        panic!("the permit must not be reached when nothing is admitted");
-    });
+    let refused = private.reservation_role(XServerFrontendClientId(531), DeviceId::from_raw(1));
     assert!(
-        matches!(outcome, Err(crate::PrivateAuthorityRefusal::NoCurrentAdmission)),
-        "execution refuses before any effect when nothing answers for the work, got {outcome:?}"
+        matches!(refused, Err(crate::PrivateAdmissionRefusal::NotAdmitted)),
+        "a capability issued here would be a grant revocation could never find"
     );
 
-    // Refused, not failed-after-application: nothing ran, so the request is
-    // still reservable evidence rather than a record of an effect.
-    let admitted = admit_role_client(&private, XServerFrontendClientId(531));
+    // Admitted through the producer hook, and now it issues.
+    private
+        .admission_participant()
+        .admit(
+            XServerFrontendClientId(531),
+            admitted(XServerFrontendClientId(531)),
+        )
+        .expect("the boundary to admit");
     assert!(
         private
-            .execute_ordered(&request, XServerFrontendClientId(531), |permit| permit
+            .reservation_role(XServerFrontendClientId(531), DeviceId::from_raw(1))
+            .is_ok(),
+        "and once admitted the role issues"
+    );
+}
+
+#[test]
+fn a_revoked_admission_stops_a_later_execution() {
+    let private = private_for_roles();
+    let _registration = admit_role_client(&private, XServerFrontendClientId(561));
+    let role = private
+        .reservation_role(XServerFrontendClientId(561), DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+
+    // Execute-wins: reserved and executed before anything revokes.
+    let first = role.reserve(stamp, 1).expect("a reservation").accepted();
+    assert!(
+        private
+            .execute_ordered(&first, XServerFrontendClientId(561), |permit| permit
                 .begin_external_effect())
             .is_ok(),
-        "and once the client is admitted the same request runs"
+        "work that reaches execution before revocation applies"
     );
-    drop(admitted);
+    assert!(matches!(
+        first.observe(),
+        Ok(Some(sophia_input_authority::RequestCompletion::Processed))
+    ));
+
+    // A second request, reserved while still admitted.
+    let second = role.reserve(stamp, 2).expect("a second reservation").accepted();
+
+    // Revoke-wins: once the producer has revoked, a later attempt cannot
+    // apply, even though the request was reserved while the client was live.
+    let retired = private
+        .admission_participant()
+        .revoke_admission(
+            XServerFrontendClientId(561),
+            sophia_protocol::ClientAdmissionId::from_raw(561),
+        )
+        .expect("the boundary to revoke");
+    assert_eq!(retired, 1, "the grant this admission authorised was retired");
+
+    let refused = private.execute_ordered(&second, XServerFrontendClientId(561), |_permit| {
+        panic!("a revoked admission must not reach the permit");
+    });
+    assert!(
+        matches!(
+            refused,
+            Err(crate::PrivateAuthorityRefusal::NoCurrentAdmission)
+        ),
+        "a revoked client cannot execute, got {refused:?}"
+    );
+
+    // Readmitting does not revive it. A replacement admission is a different
+    // admission, whatever the generation says.
+    private
+        .admission_participant()
+        .admit(
+            XServerFrontendClientId(561),
+            sophia_protocol::ClientAdmissionContext::new(
+                sophia_protocol::ClientAdmissionId::from_raw(9561),
+                sophia_protocol::NamespaceContext::new(
+                    NamespaceId::from_raw(561),
+                    sophia_protocol::NamespaceProfile::Confined,
+                    sophia_protocol::NamespaceCapabilities::NONE,
+                )
+                .unwrap(),
+                sophia_protocol::ClientAuthProvenance::new(
+                    sophia_protocol::ClientAuthenticationMethod::PeerCredentials,
+                    ROLE_SESSION_GENERATION,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        )
+        .expect("a replacement admission");
+    let still_refused =
+        private.execute_ordered(&second, XServerFrontendClientId(561), |_permit| {
+            panic!("an old grant must not become current under a new admission");
+        });
+    assert!(
+        matches!(
+            still_refused,
+            Err(crate::PrivateAuthorityRefusal::NoCurrentAdmission)
+        ),
+        "a replacement admission does not make an old grant current, got {still_refused:?}"
+    );
 }
 
 #[test]
@@ -11521,7 +11630,7 @@ fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(541));
     let role = private
-        .reservation_role(role_connection(541), DeviceId::from_raw(1))
+        .reservation_role(XServerFrontendClientId(541), DeviceId::from_raw(1))
         .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
     let request = role.reserve(stamp, 1).expect("a reservation").accepted();
@@ -11564,7 +11673,7 @@ fn an_interrupted_execution_is_not_mistaken_for_one_that_never_ran() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(551));
     let role = private
-        .reservation_role(role_connection(551), DeviceId::from_raw(1))
+        .reservation_role(XServerFrontendClientId(551), DeviceId::from_raw(1))
         .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
     let request = role.reserve(stamp, 1).expect("a reservation").accepted();

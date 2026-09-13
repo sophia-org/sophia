@@ -149,29 +149,6 @@ impl PrivateAuthorityController {
         })?
     }
 
-    /// Issue a capability for one admitted connection. Origin-only.
-    fn issue_capability(
-        &self,
-        connection: sophia_input_authority::ConnectionIdentity,
-        device: sophia_protocol::DeviceId,
-    ) -> Result<
-        (
-            sophia_input_authority::DeviceCapability,
-            sophia_input_authority::GrantGeneration,
-        ),
-        PrivateAuthorityRefusal,
-    > {
-        self.under_common(|authority| {
-            let (grant, generation) = authority
-                .issue_grant(&self.issuer, connection)
-                .map_err(PrivateAuthorityRefusal::Authority)?;
-            let capability = authority
-                .allocate_device(&self.issuer, grant, generation, device)
-                .map_err(PrivateAuthorityRefusal::Authority)?;
-            Ok((capability, generation))
-        })?
-    }
-
     /// Take back a reservation that was never published.
     ///
     /// Issuer-owned and exact: this disposes the one cell named, never a
@@ -249,6 +226,7 @@ pub struct PrivateReservation {
     connection: sophia_input_authority::ConnectionIdentity,
     capability: sophia_input_authority::DeviceCapability,
     submit: sophia_input_authority::SubmitHandle,
+    admission: sophia_protocol::ClientAdmissionId,
 }
 
 #[cfg(unix)]
@@ -273,6 +251,7 @@ impl PrivateReservation {
             submit: self.submit,
             token,
             connection: self.connection,
+            admission: self.admission,
             observed: std::cell::Cell::new(false),
             phase: std::cell::Cell::new(PrivateRequestPhase::Unused),
         }
@@ -327,6 +306,8 @@ pub struct PrivateOutstandingRequest {
     /// execute on: by execution time it is old evidence, and comparing it
     /// against itself would pass for a client that has since gone.
     connection: sophia_input_authority::ConnectionIdentity,
+    /// The admission this request's grant was issued under.
+    admission: sophia_protocol::ClientAdmissionId,
     /// Whether the terminal outcome has been taken.
     ///
     /// Execution alone does not free the cell -- the completion has to be
@@ -362,6 +343,11 @@ impl PrivateOutstandingRequest {
     /// a right, holding this value is.
     fn token(&self) -> sophia_input_authority::RequestToken {
         self.token
+    }
+
+    /// The admission this request's grant answers to.
+    fn admission(&self) -> sophia_protocol::ClientAdmissionId {
+        self.admission
     }
 
     /// Mark that execution is being entered, before anything inside it can
@@ -451,6 +437,13 @@ pub struct PrivateReservationRole {
     /// they exist are this role and another role's.
     generation: sophia_input_authority::GrantGeneration,
     connection: sophia_input_authority::ConnectionIdentity,
+    /// The admission this role was issued under.
+    ///
+    /// Carried so execution can tell a replacement admission from the one its
+    /// grant answers to. A generation alone cannot: a client readmitted under
+    /// the same session generation is a different admission, and matching on
+    /// the number would make an old grant current again.
+    admission: sophia_protocol::ClientAdmissionId,
 }
 
 #[cfg(unix)]
@@ -461,6 +454,7 @@ impl PrivateReservationRole {
         capability: sophia_input_authority::DeviceCapability,
         generation: sophia_input_authority::GrantGeneration,
         connection: sophia_input_authority::ConnectionIdentity,
+        admission: sophia_protocol::ClientAdmissionId,
     ) -> Self {
         Self {
             controller,
@@ -468,6 +462,7 @@ impl PrivateReservationRole {
             capability,
             generation,
             connection,
+            admission,
         }
     }
 
@@ -509,6 +504,7 @@ impl PrivateReservationRole {
             connection: self.connection,
             capability: self.capability,
             submit: self.submit,
+            admission: self.admission,
         })
     }
 }

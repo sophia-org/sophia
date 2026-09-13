@@ -1,0 +1,279 @@
+// Where admission and revocation cross into the private boundary.
+//
+// Split by subject from the authority itself: the controller answers who may
+// act on the instance, and this answers whether the client a request names is
+// still admitted at the moment it would apply.
+
+/// What the private boundary knows about one admitted client.
+///
+/// The admission identity is kept, not just the generation. A replacement
+/// admission for the same client under the same session generation is a
+/// different admission, and a grant issued under the old one must not become
+/// current again because the numbers around it happen to match.
+#[cfg(unix)]
+#[derive(Debug, Clone)]
+struct PrivateAdmissionBinding {
+    admission: sophia_protocol::ClientAdmissionId,
+    namespace: NamespaceId,
+    generation: u64,
+    /// Grants issued while this binding was current.
+    ///
+    /// Held so revocation can retire exactly what this admission authorised,
+    /// rather than sweeping whatever the authority happens to hold.
+    grants: Vec<sophia_input_authority::GrantId>,
+}
+
+#[cfg(unix)]
+#[derive(Default)]
+struct PrivateAdmissionBindings {
+    bound: BTreeMap<XServerFrontendClientId, PrivateAdmissionBinding>,
+}
+
+/// The one way admission and revocation reach the private boundary.
+///
+/// Every path here takes common first and the bindings beneath it. That
+/// ordering is the mechanism, not decoration: an execution already holding
+/// common finishes before a revocation can cross, and once a revocation has
+/// returned, no later execution can find the binding it removed. Nothing here
+/// asks a caller to assert currency, and nothing caches an answer to be
+/// checked later.
+///
+/// A caller must reach this before taking its own registry or launch-origin
+/// locks. Calling in while holding those would put this boundary beneath them,
+/// which is the edge the whole arrangement exists to avoid.
+#[cfg(unix)]
+#[derive(Clone)]
+pub struct PrivateAdmissionParticipant {
+    controller: PrivateAuthorityController,
+    bindings: Arc<Mutex<PrivateAdmissionBindings>>,
+}
+
+/// Why the participant refused.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivateAdmissionRefusal {
+    /// Nothing is bound for this client here. Not a lookup that failed: a
+    /// client the private boundary never admitted, or one whose admission has
+    /// been revoked.
+    NotAdmitted,
+    /// Bound, but to a different admission than the one being named. A new
+    /// admission does not make an old grant current.
+    DifferentAdmission,
+    /// Already bound. Re-admitting would silently replace the identity live
+    /// grants were issued under.
+    AlreadyAdmitted,
+    /// The boundary could not be reached.
+    Unreachable,
+}
+
+#[cfg(unix)]
+impl PrivateAdmissionParticipant {
+    fn new(controller: PrivateAuthorityController) -> Self {
+        Self {
+            controller,
+            bindings: Arc::new(Mutex::new(PrivateAdmissionBindings::default())),
+        }
+    }
+
+    /// Take common, then the bindings beneath it.
+    fn under_boundary<R>(
+        &self,
+        act: impl FnOnce(
+            &mut sophia_input_authority::AuthorityInstance,
+            &sophia_input_authority::IssuerHandle,
+            &mut PrivateAdmissionBindings,
+        ) -> R,
+    ) -> Result<R, PrivateAdmissionRefusal> {
+        self.controller
+            .under_common_as_origin(|authority, issuer| {
+                let mut bindings = self
+                    .bindings
+                    .lock()
+                    .map_err(|_| PrivateAdmissionRefusal::Unreachable)?;
+                Ok(act(authority, issuer, &mut bindings))
+            })
+            .map_err(|_| PrivateAdmissionRefusal::Unreachable)?
+    }
+
+    /// Admit one client to the private boundary.
+    ///
+    /// Called before the client's ingress is exposed, so there is no interval
+    /// in which work could be accepted for a client this boundary has never
+    /// heard of.
+    pub fn admit(
+        &self,
+        client: XServerFrontendClientId,
+        admission: sophia_protocol::ClientAdmissionContext,
+    ) -> Result<(), PrivateAdmissionRefusal> {
+        self.under_boundary(|_authority, _issuer, bindings| {
+            if bindings.bound.contains_key(&client) {
+                // Replacing in place would leave grants issued under the old
+                // identity answering to the new one.
+                return Err(PrivateAdmissionRefusal::AlreadyAdmitted);
+            }
+            bindings.bound.insert(
+                client,
+                PrivateAdmissionBinding {
+                    admission: admission.client_id,
+                    namespace: admission.namespace.id,
+                    generation: admission.auth_provenance.session_generation,
+                    grants: Vec::new(),
+                },
+            );
+            Ok(())
+        })?
+    }
+
+    /// Revoke one exact admission.
+    ///
+    /// The binding goes first, so nothing can be admitted through it while the
+    /// grants behind it are being retired. An interruption after that leaves
+    /// the boundary closed with cleanup still owed, which costs capacity; the
+    /// other order would leave it open with its grants already gone.
+    pub fn revoke_admission(
+        &self,
+        client: XServerFrontendClientId,
+        admission: sophia_protocol::ClientAdmissionId,
+    ) -> Result<usize, PrivateAdmissionRefusal> {
+        self.under_boundary(|authority, issuer, bindings| {
+            let Some(bound) = bindings.bound.get(&client) else {
+                return Err(PrivateAdmissionRefusal::NotAdmitted);
+            };
+            if bound.admission != admission {
+                // A delayed revoke naming an admission that has been replaced
+                // must not close the replacement.
+                return Err(PrivateAdmissionRefusal::DifferentAdmission);
+            }
+            let removed = bindings.bound.remove(&client).expect("just read");
+            Ok(retire_grants(authority, issuer, &removed))
+        })?
+    }
+
+    /// Revoke every admission in one namespace.
+    pub fn revoke_namespace(
+        &self,
+        namespace: NamespaceId,
+    ) -> Result<usize, PrivateAdmissionRefusal> {
+        self.under_boundary(|authority, issuer, bindings| {
+            let closing: Vec<XServerFrontendClientId> = bindings
+                .bound
+                .iter()
+                .filter(|(_, bound)| bound.namespace == namespace)
+                .map(|(client, _)| *client)
+                .collect();
+            let mut retired = 0usize;
+            for client in closing {
+                let removed = bindings.bound.remove(&client).expect("just listed");
+                retired = retired.saturating_add(retire_grants(authority, issuer, &removed));
+            }
+            Ok(retired)
+        })?
+    }
+
+    /// Issue a reservation role for an admitted client.
+    ///
+    /// The grant is issued and recorded on the binding in one pass under
+    /// common, so there is no moment where a grant exists that revocation
+    /// would not find.
+    fn issue_role(
+        &self,
+        submit: sophia_input_authority::SubmitHandle,
+        client: XServerFrontendClientId,
+        device: sophia_protocol::DeviceId,
+    ) -> Result<PrivateReservationRole, PrivateAdmissionRefusal> {
+        self.under_boundary(|authority, issuer, bindings| {
+            let Some(bound) = bindings.bound.get(&client) else {
+                return Err(PrivateAdmissionRefusal::NotAdmitted);
+            };
+            let connection = sophia_input_authority::ConnectionIdentity {
+                recipient: client.raw(),
+                connection_generation: bound.generation,
+            };
+            let admission = bound.admission;
+            let (grant, generation) = authority
+                .issue_grant(issuer, connection)
+                .map_err(|_| PrivateAdmissionRefusal::NotAdmitted)?;
+            let capability = authority
+                .allocate_device(issuer, grant, generation, device)
+                .map_err(|_| PrivateAdmissionRefusal::NotAdmitted)?;
+            bindings
+                .bound
+                .get_mut(&client)
+                .expect("just read")
+                .grants
+                .push(grant);
+            Ok(PrivateReservationRole::new(
+                self.controller.clone(),
+                submit,
+                capability,
+                generation,
+                connection,
+                admission,
+            ))
+        })?
+    }
+
+    /// Execute one reserved request against a binding that is current now.
+    ///
+    /// The binding is read under common and the execution happens before it is
+    /// released, so a revocation cannot cross in between. An execution already
+    /// under way holds common, which is what makes revocation wait for it
+    /// rather than racing it.
+    fn execute_current(
+        &self,
+        outstanding: &PrivateOutstandingRequest,
+        client: XServerFrontendClientId,
+        act: impl FnOnce(
+            &mut sophia_input_authority::ExecutionPermit<'_>,
+        ) -> Result<(), sophia_input_authority::RegistrationError>,
+    ) -> Result<
+        Result<sophia_input_authority::RequestCompletion, PrivateAuthorityRefusal>,
+        PrivateAdmissionRefusal,
+    > {
+        self.under_boundary(|authority, issuer, bindings| {
+            let Some(bound) = bindings.bound.get(&client) else {
+                // Revoked, or never admitted here. Refused before any effect.
+                return Err(PrivateAdmissionRefusal::NotAdmitted);
+            };
+            if bound.admission != outstanding.admission() {
+                // Readmitted since this grant was issued. A replacement
+                // admission does not make an old grant current, whatever the
+                // generation says.
+                return Err(PrivateAdmissionRefusal::DifferentAdmission);
+            }
+            let current = sophia_input_authority::ConnectionIdentity {
+                recipient: client.raw(),
+                connection_generation: bound.generation,
+            };
+            Ok(authority
+                .execute_reserved(issuer, outstanding.token(), current, |permit| {
+                    // Written before the caller's work can take effect or
+                    // unwind.
+                    outstanding.entering();
+                    act(permit)
+                })
+                .inspect(|_| outstanding.settled())
+                .map_err(PrivateAuthorityRefusal::Authority))
+        })?
+    }
+}
+
+/// Retire every grant an admission authorised.
+///
+/// Debt is retained by the authority rather than discharged here: a revoked
+/// grant's obligations outlive it, which is what makes cleanup possible after
+/// the client is gone.
+#[cfg(unix)]
+fn retire_grants(
+    authority: &mut sophia_input_authority::AuthorityInstance,
+    issuer: &sophia_input_authority::IssuerHandle,
+    bound: &PrivateAdmissionBinding,
+) -> usize {
+    let mut retired = 0usize;
+    for grant in &bound.grants {
+        if authority.revoke_grant(issuer, *grant).is_ok() {
+            retired = retired.saturating_add(1);
+        }
+    }
+    retired
+}

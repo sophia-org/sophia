@@ -278,6 +278,12 @@ pub struct PrivateXServerFrontend {
     /// a detached producer and needs the same instance this executes against.
     /// One authoritative instance, several roles over it.
     controller: PrivateAuthorityController,
+    /// Where admission and revocation cross into this boundary.
+    ///
+    /// Built with the instance, before any ingress exists, so there is no
+    /// interval in which work could be accepted for a client this boundary
+    /// never admitted.
+    participant: PrivateAdmissionParticipant,
     /// Submission rights: reserving a request before it is enqueued.
     ///
     /// Kept here so the instance can hand a producer a reservation role bound
@@ -604,6 +610,7 @@ impl PrivateXServerFrontend {
             settled: false,
             failed: false,
             failure_slot_held: true,
+            participant: PrivateAdmissionParticipant::new(controller.clone()),
             controller,
             submit,
         })
@@ -621,6 +628,15 @@ impl PrivateXServerFrontend {
             .expect("a private frontend installs its gate at construction")
     }
 
+    /// Where admission and revocation reach this boundary.
+    ///
+    /// Handed to whoever performs revocation. Taking it is not a right over
+    /// the authority: it admits and revokes, and the rights over the instance
+    /// itself stay with the origin.
+    pub fn admission_participant(&self) -> &PrivateAdmissionParticipant {
+        &self.participant
+    }
+
     /// The one authority this instance executes against.
     ///
     /// Role-limited: what a caller can do with it depends on which method it
@@ -631,26 +647,20 @@ impl PrivateXServerFrontend {
 
     /// Execute one reserved request in the order the ranks require.
     ///
-    /// Common first, then the ranked registry guard, then the admission read
-    /// under it -- and that guard stays held across the authority's own
-    /// validation and the application inside it. The permit callback uses what
-    /// was already read rather than locking again.
+    /// Common first, then the boundary's own bindings beneath it, and the
+    /// execution happens before either is released. An execution already under
+    /// way therefore holds common, which is what makes a revocation wait for
+    /// it rather than race it, and a revocation that has returned cannot be
+    /// overtaken by a later attempt.
     ///
-    /// What this reads is the client's live registration with this frontend,
-    /// which is necessary and **not sufficient**. The row is a copy of the
-    /// admission context taken when the client registered, and the
-    /// authoritative admission lives elsewhere: the session's admission policy
-    /// and namespace registry revoke independently of this table, so a client
-    /// revoked there can still be registered here. This checks that the client
-    /// is registered now and carries provenance; it does not validate the
-    /// admission id, namespace presence, or current revocation.
+    /// The evidence is the binding the admission producer maintains here, not
+    /// a copy of an admission context taken when the client registered with
+    /// this frontend. That copy said what was admitted once, and a client
+    /// revoked upstream stayed registered behind it.
     ///
-    /// Ordering it against the actual revoke producer is what would make it
-    /// sufficient, and that producer is outside this crate. Until then the gap
-    /// is named rather than papered over -- absent, unreadable, or admitted
-    /// with no provenance all fail closed, and nothing is substituted for
-    /// evidence that was not found, but a client revoked upstream is not yet
-    /// caught here.
+    /// Refuses when nothing is bound, which is the same answer for a client
+    /// this boundary never admitted and one whose admission has been revoked:
+    /// in both cases nothing here answers for the work.
     #[cfg_attr(not(test), allow(dead_code))]
     fn execute_ordered(
         &self,
@@ -660,50 +670,10 @@ impl PrivateXServerFrontend {
             &mut sophia_input_authority::ExecutionPermit<'_>,
         ) -> Result<(), sophia_input_authority::RegistrationError>,
     ) -> Result<sophia_input_authority::RequestCompletion, PrivateAuthorityRefusal> {
-        let token = outstanding.token();
-        self.controller.under_common_as_origin(|authority, issuer| {
-            // Taken after common, never before it. This is the whole reason
-            // the orchestration lives here rather than behind a parameter: a
-            // caller that read this first and then entered common would have
-            // inverted the rank, and one that read it and let go would be
-            // holding an answer that had stopped being true.
-            let clients = self
-                .broker
-                .registry
-                .clients
-                .lock()
-                .map_err(|_| PrivateAuthorityRefusal::Unreachable)?;
-            let Some(senders) = clients.get(&client) else {
-                return Err(PrivateAuthorityRefusal::NoCurrentAdmission);
-            };
-            let Some(admission) = senders.admission else {
-                return Err(PrivateAuthorityRefusal::NoCurrentAdmission);
-            };
-            let current = sophia_input_authority::ConnectionIdentity {
-                recipient: client.raw(),
-                connection_generation: admission.auth_provenance.session_generation,
-            };
-            // Still held. Validation compares against what was read a moment
-            // ago under this guard, and the application happens before it is
-            // released, so nothing can be revoked in between.
-            let completion = authority
-                .execute_reserved(issuer, token, current, |permit| {
-                    // Written before the caller's work can touch anything or
-                    // unwind. Marking after the call returns says nothing
-                    // about a call that did not return, and an interruption
-                    // there would then look like a request that never ran.
-                    outstanding.entering();
-                    act(permit)
-                })
-                .map_err(PrivateAuthorityRefusal::Authority);
-            if completion.is_ok() {
-                // Returned, so the cell holds a terminal outcome and losing
-                // the handle must not erase it.
-                outstanding.settled();
-            }
-            drop(clients);
-            completion
-        })?
+        match self.participant.execute_current(outstanding, client, act) {
+            Ok(completion) => completion,
+            Err(_refusal) => Err(PrivateAuthorityRefusal::NoCurrentAdmission),
+        }
     }
 
     /// A reservation role for one admitted connection, bound to this
@@ -719,17 +689,15 @@ impl PrivateXServerFrontend {
     /// the handover rather than being something the producer asks for.
     pub fn reservation_role(
         &self,
-        connection: sophia_input_authority::ConnectionIdentity,
+        client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
-    ) -> Result<PrivateReservationRole, PrivateAuthorityRefusal> {
-        let (capability, generation) = self.controller.issue_capability(connection, device)?;
-        Ok(PrivateReservationRole::new(
-            self.controller.clone(),
-            self.submit,
-            capability,
-            generation,
-            connection,
-        ))
+    ) -> Result<PrivateReservationRole, PrivateAdmissionRefusal> {
+        // Issued only against a live binding, and recorded on it. A capability
+        // issued for a client this boundary has not admitted would be a grant
+        // nothing could later revoke, because revocation retires what an
+        // admission authorised rather than sweeping the authority.
+        self.participant
+            .issue_role(self.submit, client, device)
     }
 
     /// Submit work, and be told why if it is not accepted.
@@ -769,13 +737,13 @@ impl PrivateXServerFrontend {
     /// and never the issuer.
     pub fn ingress_for(
         &self,
-        connection: sophia_input_authority::ConnectionIdentity,
+        client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
-    ) -> Result<PrivateIngress, PrivateAuthorityRefusal> {
+    ) -> Result<PrivateIngress, PrivateAdmissionRefusal> {
         Ok(PrivateIngress {
             sender: self.broker.routed_input_sender(),
             admission: Arc::clone(&self.admission),
-            role: Some(self.reservation_role(connection, device)?),
+            role: Some(self.reservation_role(client, device)?),
             requests: Arc::new(std::sync::atomic::AtomicU64::new(1)),
         })
     }
