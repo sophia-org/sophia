@@ -318,12 +318,19 @@ the other ways a control ends without one, from a source audit.
 
 Two consequences for the record's shape.
 
-It has to carry an execution **phase**, not just an identity. The runtime may
-already have mutated before the failure -- `AdmitSurface` at `:374` applies
-before later selection handling -- so a command that failed before its
-acknowledgement cannot be blanket-classified as unexecuted, and retrying the
-whole of it can be wrong. A retained acknowledgement is not a replayable
-command.
+It has to carry an execution **phase**, not just an identity, and what is
+retained differs by phase. "Retain the outcome rather than the work" is too
+simple and would lose the case that matters most.
+
+| Phase | What is retained | Why |
+| --- | --- | --- |
+| Accepted, not executed | The owned command and its registration | It can still be executed, or cancelled. There is no outcome to keep yet |
+| Outcome known | That exact acknowledgement, for publication | The effect has happened. Publishing again is right; replaying the effect is not |
+| Partly applied, outcome not established | The original operation identity, its phase, and cleanup responsibility | The runtime may already have mutated -- `AdmitSurface` at `:374` applies before later selection handling -- so it is neither unexecuted nor answered. It stays this way until reconciliation or cancellation establishes the truth |
+
+The third row is the one to be careful about: inventing an outcome to fit the
+type would be fabricating a receipt, which is the thing every other rule here
+exists to prevent. Cleanup for it stays issuer-privileged and outlives grants.
 
 And private construction has to own every worker it started, and their
 accepted controls, across all of these exits, including the ones where another
