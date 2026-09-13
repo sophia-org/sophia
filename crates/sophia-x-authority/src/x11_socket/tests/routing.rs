@@ -8520,7 +8520,7 @@ fn nothing_is_owed_a_cleanup_while_work_it_queued_elsewhere_can_still_run() {
     // Routing a focus change queues a FocusOut on the previously focused
     // client's writer. It outlives this operation, and this operation's own
     // router and writer going quiet says nothing about it.
-    let queued = X11DependentEffect::note(&registry, token).expect("a live record");
+    let queued = registry.track_dependent(token).expect("an applying record");
     assert_eq!(registry.dependents_outstanding(token), Some(1));
 
     registry.writer_stopped(client);
@@ -8531,6 +8531,13 @@ fn nothing_is_owed_a_cleanup_while_work_it_queued_elsewhere_can_still_run() {
             .expect("a readable registry")
             .is_empty(),
         "an operation with work that can still happen is not waiting on a cleanup"
+    );
+    // And the point that retires refuses it too. Hiding a candidate from the
+    // list is not enforcement: the caller that retires has to be the one that
+    // refuses.
+    assert_eq!(
+        registry.record_cleanup(token, true),
+        Err(crate::ControlCleanupRefusal::DependentsOutstanding)
     );
 
     // Ended -- run by that writer, or given up unrun when its queue went. Both
@@ -8553,14 +8560,22 @@ fn a_dependent_effect_reports_its_end_whether_it_ran_or_was_given_up() {
 
     // Given up unrun: the queue it was sitting in went away.
     let dropped = accepted(&registry, configure(client, surface, 45001));
-    let queued = X11DependentEffect::note(&registry, dropped).expect("a live record");
+    assert_eq!(
+        registry.claim_execution(dropped),
+        crate::ControlExecutionClaim::Claimed
+    );
+    let queued = registry.track_dependent(dropped).expect("an applying record");
     assert_eq!(registry.dependents_outstanding(dropped), Some(1));
     drop(queued);
     assert_eq!(registry.dependents_outstanding(dropped), Some(0));
 
     // Run: the writer it was queued on processed it and let it go.
     let ran = accepted(&registry, configure(client, surface, 45002));
-    let effect = X11DependentEffect::note(&registry, ran).expect("a live record");
+    assert_eq!(
+        registry.claim_execution(ran),
+        crate::ControlExecutionClaim::Claimed
+    );
+    let effect = registry.track_dependent(ran).expect("an applying record");
     let routed = X11RoutedControl::FocusOut {
         window: XResourceId::new(0x200252, 1),
         time_msec: 7,
@@ -8577,7 +8592,10 @@ fn a_dependent_effect_reports_its_end_whether_it_ran_or_was_given_up() {
     // An origin with no record left takes no count and hands back nothing to
     // hold, rather than counting against a record that is not there.
     let foreign = crate::ControlCompletionRegistry::with_capacity(2).expect("an unused origin");
-    assert!(X11DependentEffect::note(&foreign, ran).is_none());
+    assert!(matches!(
+        foreign.track_dependent(ran),
+        Err(crate::ControlDependentRefusal::Foreign)
+    ));
     assert_eq!(foreign.dependents_outstanding(ran), None);
 }
 
@@ -8681,4 +8699,390 @@ fn a_record_that_is_gone_has_no_dependent_count_rather_than_zero() {
     // it no longer holds as one with no work left.
     assert!(registry.discard(token));
     assert_eq!(registry.dependents_outstanding(token), None);
+}
+
+#[test]
+fn only_an_operation_being_applied_can_start_work_elsewhere() {
+    let client = XServerFrontendClientId(348);
+    let surface = SurfaceId::new(348, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(8).expect("an unused origin");
+
+    // A reservation is its producer's and an accepted command has not started,
+    // so neither is in a position to be starting anything elsewhere.
+    let reserved = registry
+        .register(configure(client, surface, 48001))
+        .expect("a fresh registry");
+    assert!(matches!(
+        registry.track_dependent(reserved),
+        Err(crate::ControlDependentRefusal::NotApplying)
+    ));
+    registry.writer_started(client);
+    registry
+        .begin_acceptance(reserved)
+        .expect("a fresh reservation")
+        .commit();
+    assert!(matches!(
+        registry.track_dependent(reserved),
+        Err(crate::ControlDependentRefusal::NotApplying)
+    ));
+
+    // Applying is the one that can.
+    assert_eq!(
+        registry.claim_execution(reserved),
+        crate::ControlExecutionClaim::Claimed
+    );
+    let held = registry
+        .track_dependent(reserved)
+        .expect("an applying record");
+    assert_eq!(registry.dependents_outstanding(reserved), Some(1));
+
+    // And once it is answered, it is not starting anything more.
+    let command = configure(client, surface, 48001);
+    assert_eq!(
+        registry.publish_with(
+            reserved,
+            completion_ack(command, XAuthorityControlOutcome::Delivered),
+            |_| ControlPublication::Delivered,
+        ),
+        Ok(ControlPublication::Delivered)
+    );
+    assert!(matches!(
+        registry.track_dependent(reserved),
+        Err(crate::ControlDependentRefusal::NotApplying)
+    ));
+    drop(held);
+
+    // A record that is gone refuses rather than counting against nothing.
+    assert!(matches!(
+        registry.track_dependent(reserved),
+        Err(crate::ControlDependentRefusal::NoLongerHeld)
+    ));
+}
+
+#[test]
+fn an_answered_operation_is_still_held_while_work_it_started_can_run() {
+    let client = XServerFrontendClientId(349);
+    let surface = SurfaceId::new(349, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(8).expect("an unused origin");
+    let command = configure(client, surface, 49001);
+    let token = accepted(&registry, command);
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+    let queued = registry.track_dependent(token).expect("an applying record");
+
+    // The outcome is published once. That answers the operation; it does not
+    // make everything the operation started be over, and freeing its storage
+    // here would free a credit while an effect of it is still queued.
+    assert_eq!(
+        registry.publish_with(
+            token,
+            completion_ack(command, XAuthorityControlOutcome::Delivered),
+            |_| ControlPublication::Delivered,
+        ),
+        Ok(ControlPublication::Delivered)
+    );
+    assert_eq!(
+        registry.state_of(token),
+        crate::ControlRecordState::Outstanding,
+        "answered is not retired while its queued work can still run"
+    );
+    assert_eq!(registry.outstanding(), Some(1));
+
+    // Nor is it a cleanup candidate: an answered operation is not waiting on
+    // one, and the record only survives for the work it started.
+    assert!(
+        registry
+            .cleanups_owed()
+            .expect("a readable registry")
+            .is_empty()
+    );
+    assert_eq!(
+        registry.record_cleanup(token, true),
+        Err(crate::ControlCleanupRefusal::NotAbandoned)
+    );
+
+    // The last dependency ending retires it, and sends nothing: the
+    // acknowledgement went out when the outcome was published.
+    drop(queued);
+    assert_eq!(registry.state_of(token), crate::ControlRecordState::Retired);
+    assert_eq!(registry.outstanding(), Some(0));
+}
+
+#[test]
+fn a_retried_acknowledgement_does_not_end_work_the_operation_started() {
+    let client = XServerFrontendClientId(350);
+    let surface = SurfaceId::new(350, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(8).expect("an unused origin");
+    let command = configure(client, surface, 50001);
+    let token = accepted(&registry, command);
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+    let queued = registry.track_dependent(token).expect("an applying record");
+
+    // Established but unpublished, then published by the retry.
+    assert_eq!(
+        registry.publish_with(
+            token,
+            completion_ack(command, XAuthorityControlOutcome::Delivered),
+            |_| ControlPublication::Retained,
+        ),
+        Ok(ControlPublication::Retained)
+    );
+    assert_eq!(
+        registry.publish_owed_with(|_| ControlPublication::Delivered),
+        1
+    );
+    assert_eq!(
+        registry.state_of(token),
+        crate::ControlRecordState::Outstanding,
+        "the retry answered it and did not end what it started"
+    );
+    assert_eq!(registry.dependents_outstanding(token), Some(1));
+
+    drop(queued);
+    assert_eq!(registry.state_of(token), crate::ControlRecordState::Retired);
+    assert_eq!(
+        registry.publish_owed_with(|_| ControlPublication::Delivered),
+        0,
+        "and nothing is sent a second time when the last one ends"
+    );
+}
+
+#[test]
+fn publishing_an_outcome_does_not_free_a_credit_while_its_focus_out_is_queued() {
+    let focused = XServerFrontendClientId(351);
+    let claimant = XServerFrontendClientId(352);
+    let focused_surface = SurfaceId::new(351, 1);
+    let claimant_surface = SurfaceId::new(352, 1);
+    let (acknowledgements, _acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, held_channels, _registration, _deliveries) =
+        private_with_client(acknowledgements.clone(), &durable, focused, focused_surface);
+    let (claimant_registration, _claimant_channels) = private
+        .broker
+        .registry
+        .register_client(claimant)
+        .expect("a second client");
+    private
+        .broker
+        .registry
+        .register_surface(
+            claimant,
+            NamespaceId::from_raw(252),
+            claimant_surface,
+            XResourceId::new(0x200253, 1),
+        )
+        .expect("a second surface");
+    private
+        .broker
+        .registry
+        .route_control(XAuthorityClientControlCommand {
+            client: focused,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(51001),
+                surface: focused_surface,
+            },
+        })
+        .expect("the first focus");
+    assert!(held_channels.control.try_recv().is_ok());
+
+    let command = XAuthorityClientControlCommand {
+        client: claimant,
+        command: XAuthorityControlCommand::FocusSurface {
+            transaction: TransactionId::from_raw(51002),
+            surface: claimant_surface,
+        },
+    };
+    private
+        .control_producer()
+        .submit(command)
+        .expect("the shared admission to accept control");
+    let ran = private.route_pending().expect("a turn");
+    let Some(crate::PrivateIdentity::Control {
+        completion: Some(token),
+        ..
+    }) = ran.first().map(|run| run.identity)
+    else {
+        panic!("a control that names its registration");
+    };
+    assert_eq!(durable.reserved(), 1);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+
+    // The operation is answered while the FocusOut it queued on the other
+    // client still sits in that client's writer queue.
+    let channels = X11ControlChannels::ClientBound {
+        receiver: channel().1,
+        acknowledgements,
+        completion: Some(registry.clone()),
+    };
+    channels
+        .send_ack_for(
+            claimant,
+            completion_ack(command, XAuthorityControlOutcome::Delivered).acknowledgement,
+            Some(token),
+        )
+        .expect("a free channel");
+
+    // Answering it is not everything it started being over. Freeing the
+    // credit here frees storage for work an effect of this is still queued
+    // against.
+    assert_eq!(
+        private.reclaim_settled(),
+        0,
+        "no credit is released while its queued FocusOut can still run"
+    );
+    assert_eq!(durable.reserved(), 1);
+    assert_eq!(registry.dependents_outstanding(token), Some(1));
+
+    // The other client's writer takes it, or its queue goes. Either way the
+    // effect is over, and only then is the credit free.
+    let queued = held_channels
+        .control
+        .try_recv()
+        .expect("the previously focused client is told");
+    drop(queued);
+    assert_eq!(private.reclaim_settled(), 1);
+    assert_eq!(private.reclaim_settled(), 0);
+    assert_eq!(durable.reserved(), 0);
+    drop(claimant_registration);
+}
+
+#[test]
+fn a_count_that_cannot_advance_refuses_rather_than_saturating() {
+    let client = XServerFrontendClientId(353);
+    let surface = SurfaceId::new(353, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let token = accepted(&registry, configure(client, surface, 52001));
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+    // The counter is placed at its end from the test, not from a setter in
+    // production src.
+    registry.inner.lock().unwrap().records[0].dependents = usize::MAX;
+
+    // Saturating here would take responsibility for an effect and then lose
+    // it the moment the first guard ended, leaving the rest uncounted.
+    assert!(matches!(
+        registry.track_dependent(token),
+        Err(crate::ControlDependentRefusal::Exhausted)
+    ));
+    assert_eq!(registry.dependents_outstanding(token), Some(usize::MAX));
+}
+
+/// Reached the way production reaches it: a genuine submit and route_pending
+/// that claims, parks, and finds the registry unreadable when it comes to
+/// count the effect it is about to queue.
+#[test]
+fn a_governed_focus_out_that_cannot_be_counted_is_not_queued() {
+    let focused = XServerFrontendClientId(354);
+    let claimant = XServerFrontendClientId(355);
+    let focused_surface = SurfaceId::new(354, 1);
+    let claimant_surface = SurfaceId::new(355, 1);
+    let (acknowledgements, _acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, held_channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, focused, focused_surface);
+    let (claimant_registration, claimant_channels) = private
+        .broker
+        .registry
+        .register_client(claimant)
+        .expect("a second client");
+    private
+        .broker
+        .registry
+        .register_surface(
+            claimant,
+            NamespaceId::from_raw(252),
+            claimant_surface,
+            XResourceId::new(0x200253, 1),
+        )
+        .expect("a second surface");
+    private
+        .broker
+        .registry
+        .route_control(XAuthorityClientControlCommand {
+            client: focused,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(53001),
+                surface: focused_surface,
+            },
+        })
+        .expect("the first focus");
+    assert!(held_channels.control.try_recv().is_ok());
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client: claimant,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(53002),
+                surface: claimant_surface,
+            },
+        })
+        .expect("the shared admission to accept control");
+
+    // Park the router after it has claimed and before it produces any effect.
+    let focus_lock = Arc::clone(&private.broker.registry.focused_surface);
+    let focused_guard = focus_lock.lock().unwrap();
+    let routed = std::thread::spawn(move || {
+        let outcome = private.route_pending();
+        (private, outcome)
+    });
+    let parked = std::time::Instant::now() + std::time::Duration::from_millis(200);
+    while std::time::Instant::now() < parked {
+        std::thread::yield_now();
+    }
+
+    // The registry becomes unreadable while it is parked, so the effect it is
+    // about to queue cannot be counted against the operation that causes it.
+    let poisoner = registry.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.inner.lock().unwrap();
+            panic!("poisoning the registry");
+        })
+        .join()
+        .is_err()
+    );
+    drop(focused_guard);
+    let (private, outcome) = routed.join().expect("the routing thread");
+
+    // Refused before either effect. Queueing it untracked would make the work
+    // look ungoverned, which is a real state for ordinary work and a false one
+    // here, and the operation would then be settled while that effect could
+    // still happen.
+    assert!(
+        matches!(
+            outcome,
+            Err(XServerFrontendRouteError::DependentNotTracked {
+                refusal: crate::ControlDependentRefusal::Unavailable,
+                ..
+            })
+        ),
+        "authority unavailability is reported as what it is: {outcome:?}"
+    );
+    assert!(
+        held_channels.control.try_recv().is_err(),
+        "the previously focused client is not told it lost focus"
+    );
+    assert!(
+        claimant_channels.control.try_recv().is_err(),
+        "and the target is not queued either"
+    );
+    drop(claimant_registration);
+    drop(private);
 }

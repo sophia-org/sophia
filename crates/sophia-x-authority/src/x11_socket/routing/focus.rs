@@ -1,56 +1,3 @@
-/// One effect a control operation queued on another client's writer, which
-/// reports its own end.
-///
-/// Held by the queued entry itself, so the report happens whether the entry is
-/// run or given up unrun: a queue that goes takes its entries with it, and a
-/// dependent effect that vanished silently would leave its origin waiting on
-/// something that can no longer happen.
-///
-/// Not a receipt. Which of the two ends it was is not recorded and is not an
-/// outcome: what it establishes is only that this particular effect can no
-/// longer happen.
-#[cfg(unix)]
-struct X11DependentEffect {
-    registry: ControlCompletionRegistry,
-    origin: ControlCompletionToken,
-}
-
-/// Names the origin and nothing else.
-///
-/// Written rather than derived so that a routed control's debug output cannot
-/// grow to include what any client asked for: the registry behind this holds
-/// every accepted command.
-#[cfg(unix)]
-impl core::fmt::Debug for X11DependentEffect {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("X11DependentEffect")
-            .field("origin", &self.origin)
-            .finish_non_exhaustive()
-    }
-}
-
-#[cfg(unix)]
-impl X11DependentEffect {
-    /// Queue one against its origin, if the origin still has a record.
-    fn note(
-        registry: &ControlCompletionRegistry,
-        origin: ControlCompletionToken,
-    ) -> Option<Self> {
-        registry.note_dependent(origin).then(|| Self {
-            registry: registry.clone(),
-            origin,
-        })
-    }
-}
-
-#[cfg(unix)]
-impl Drop for X11DependentEffect {
-    fn drop(&mut self) {
-        self.registry.dependent_ended(self.origin);
-    }
-}
-
 #[cfg(unix)]
 #[derive(Debug)]
 enum X11RoutedControl {
@@ -73,7 +20,7 @@ enum X11RoutedControl {
         /// operation that caused it. Nothing linked the two before, so an
         /// operation's own router and writer could both go quiet while this
         /// still sat in another connection's queue.
-        origin: Option<X11DependentEffect>,
+        origin: Option<ControlDependent>,
     },
 }
 
@@ -218,9 +165,29 @@ impl XServerFrontendRouteRegistry {
         let sender = self.client_senders(previous.client)?.control;
         // Counted against its origin before it is queued, so there is no
         // moment where the effect exists and nothing is waiting for it.
-        let origin = origin.zip(self.control_completion.get()).and_then(
-            |(origin, registry)| X11DependentEffect::note(registry, origin),
-        );
+        //
+        // A governed request whose dependency cannot be counted is refused
+        // rather than queued untracked. Falling through to `None` there made
+        // the work look ungoverned, which is a real state for ordinary work
+        // and a false one for this: the operation would have been settled
+        // while an effect of it was still sitting in another queue.
+        let origin = match (origin, self.control_completion.get()) {
+            (None, _) => None,
+            (Some(origin), Some(registry)) => Some(
+                registry
+                    .track_dependent(origin)
+                    .map_err(|refusal| XServerFrontendRouteError::DependentNotTracked {
+                        client: previous.client,
+                        refusal,
+                    })?,
+            ),
+            (Some(_), None) => {
+                return Err(XServerFrontendRouteError::DependentNotTracked {
+                    client: previous.client,
+                    refusal: ControlDependentRefusal::Unavailable,
+                });
+            }
+        };
         self.route_to_client(
             previous.client,
             sender,

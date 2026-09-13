@@ -504,6 +504,38 @@ takes the `terminate_client` path, which shuts the client's socket down and
 then acknowledges. The second is a real effect on the connection, not a
 message whose fate is only the peer's.
 
+### Intermediate: an operation's queued work now reports its own end
+
+Not native reconciliation, and not a discharge. One of the residual obligations
+above is observable rather than argued.
+
+A queued FocusOut carries a guard naming the operation whose routing queued it,
+counted against that operation before the entry is queued. The guard reports on
+being given up, which is the same event whether the writer it was queued on ran
+it or its queue went with the connection -- both are ends, and which one it was
+is deliberately not recorded, because that would be a receipt for a delivery
+nobody observed.
+
+Answering an operation is not everything it started being over. A published
+outcome goes out exactly once and then the record is held, not removed, while
+any of its queued effects can still run; only the last of them ending retires
+it, and nothing is published again at that point. The same rule binds the retry
+path and the cleanup path, because hiding a record from a list of candidates is
+not enforcement at the point that retires it.
+
+Counting is behind a guard obtained only by a checked acquisition and ended
+only by giving it up, so every count has one holder and no caller can end an
+effect it does not hold. Only an operation being applied can acquire one: a
+reservation is its producer's and an accepted command has not started, so
+neither is in a position to be starting anything elsewhere. A count that cannot
+advance refuses instead of saturating, and a governed effect whose dependency
+cannot be counted -- an unreadable registry after a genuine claim -- refuses
+before anything is queued rather than falling through to work that looks
+ungoverned.
+
+Everything else stays retained. No kind is discharged and the per-kind
+obligations above remain open; this closes exactly one of them.
+
 What survives from the earlier draft is only the shape of the rule, not its
 application: discharging a cleanup means nothing reachable is left disagreeing,
 which is never the same as knowing what the operation did, and retiring on it

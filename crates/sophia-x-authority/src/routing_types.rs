@@ -286,6 +286,23 @@ pub struct XAuthorityClientMetadataCandidate {
     pub candidate: sophia_protocol::ReducedMetadataCandidate,
 }
 
+/// Why an operation could not take responsibility for work queued elsewhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlDependentRefusal {
+    /// This registry did not issue the registration.
+    Foreign,
+    /// No record is held for it, so there is nothing for the work to be
+    /// counted against.
+    NoLongerHeld,
+    /// The operation is not being applied, so it is not in a position to be
+    /// starting anything.
+    NotApplying,
+    /// The count cannot be advanced.
+    Exhausted,
+    /// The registry cannot be reached, so nothing can be established.
+    Unavailable,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XAuthorityControlOutcome {
     Delivered,
@@ -390,6 +407,15 @@ pub enum XServerFrontendRouteError {
     ControlNotClaimable {
         client: XServerFrontendClientId,
     },
+    /// An effect a control was about to queue on another client could not be
+    /// counted against the operation that would have caused it.
+    ///
+    /// Refused rather than queued: work nothing is counting lets its origin be
+    /// settled while that work can still happen.
+    DependentNotTracked {
+        client: XServerFrontendClientId,
+        refusal: ControlDependentRefusal,
+    },
 }
 
 /// Tracks the two independently ordered lifecycle phases of one X Present.
@@ -471,6 +497,11 @@ impl core::fmt::Display for XServerFrontendRouteError {
             Self::ControlNotClaimable { client } => write!(
                 formatter,
                 "X11 control for client {} could not claim execution",
+                client.raw()
+            ),
+            Self::DependentNotTracked { client, refusal } => write!(
+                formatter,
+                "X11 control could not track the effect it would queue on client {}: {refusal:?}",
                 client.raw()
             ),
             Self::MetadataQueueFull => formatter.write_str("X11 reduced metadata queue is full"),

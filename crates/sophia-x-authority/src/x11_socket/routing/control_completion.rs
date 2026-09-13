@@ -98,6 +98,15 @@ enum ControlPhase {
     /// someone, and owed until it is recorded done -- so the credit stays held
     /// and the record stays outstanding.
     Abandoned(XAuthorityClientControlCommand),
+    /// Its outcome has been published, and it is held only because work it
+    /// queued elsewhere can still run.
+    ///
+    /// Nothing further is published for it -- the acknowledgement went out
+    /// once and the last dependency ending is not a reason to send it again.
+    /// What survives is the obligation and the storage reserved for it, so the
+    /// credit is not freed while an effect this operation started is still
+    /// able to happen.
+    Settled(XServerFrontendClientId),
     /// An outcome is established and its acknowledgement has not been
     /// published. The effect has happened, so this is republished, never
     /// replayed, and never replaced: the first established outcome is what
@@ -118,6 +127,7 @@ impl ControlPhase {
             | Self::Accepted(command)
             | Self::Applying(command)
             | Self::Abandoned(command) => command.client,
+            Self::Settled(client) => *client,
             Self::Owed(acknowledgement) => acknowledgement.client,
         }
     }
@@ -462,7 +472,7 @@ impl ControlCompletionRegistry {
                 ControlExecutionClaim::Refused(ControlClaimRefusal::AlreadyApplying)
             }
             (ControlPhase::Applying(_), false) => ControlExecutionClaim::Resumed,
-            (ControlPhase::Owed(_), _) => {
+            (ControlPhase::Owed(_) | ControlPhase::Settled(_), _) => {
                 ControlExecutionClaim::Refused(ControlClaimRefusal::AlreadyAnswered)
             }
             // The executor that was applying it has gone. Picking it up now
@@ -472,72 +482,6 @@ impl ControlCompletionRegistry {
                 ControlExecutionClaim::Refused(ControlClaimRefusal::Abandoned)
             }
         }
-    }
-
-    /// Publish an acknowledgement, under the hold that authorises it.
-    ///
-    /// The emission is passed in rather than done first and reported
-    /// afterwards. A record can refuse an acknowledgement -- for naming
-    /// another operation, for contradicting an established outcome, for no
-    /// longer being held -- and a refusal that arrives after the send has
-    /// already happened refuses nothing: the wrong or duplicate
-    /// acknowledgement is outside and cannot be recalled. Authorising and
-    /// emitting in one step is what makes the refusal mean anything.
-    ///
-    /// A delivered acknowledgement retires the record. A full channel keeps
-    /// the exact acknowledgement to publish later. A gone receiver is neither:
-    /// nothing was published, so the record stays owed rather than closed on
-    /// the strength of a call that returned success.
-    ///
-    /// The first established outcome stands. Repeating it changes nothing;
-    /// contradicting it is refused, because the effect that happened does not
-    /// become a different effect later.
-    pub fn publish_with(
-        &self,
-        token: ControlCompletionToken,
-        acknowledgement: XAuthorityClientControlAck,
-        publish: impl FnOnce(&XAuthorityClientControlAck) -> ControlPublication,
-    ) -> Result<ControlPublication, ControlPublicationRefusal> {
-        if token.origin != self.origin {
-            return Err(ControlPublicationRefusal::Foreign);
-        }
-        let Ok(mut inner) = self.inner.lock() else {
-            return Err(ControlPublicationRefusal::Unavailable);
-        };
-        let Some(position) = inner.records.iter().position(|held| held.token == token) else {
-            return Err(ControlPublicationRefusal::NoLongerHeld);
-        };
-        if !inner.records[position].identity.answers(&acknowledgement) {
-            return Err(ControlPublicationRefusal::NotThisOperation);
-        }
-        // Checked before the emission, not after it. A reservation belongs to
-        // its producer, so there is no outcome of it to publish, and a
-        // verdict reached after the send would refuse nothing.
-        if matches!(inner.records[position].phase, ControlPhase::Reserved(_)) {
-            return Err(ControlPublicationRefusal::NotAccepted);
-        }
-        // Nothing establishes what an abandoned operation did, so nothing may
-        // publish an outcome for it. Cleanup is what it is owed.
-        if matches!(inner.records[position].phase, ControlPhase::Abandoned(_)) {
-            return Err(ControlPublicationRefusal::Abandoned);
-        }
-        if matches!(&inner.records[position].phase, ControlPhase::Owed(established)
-            if *established != acknowledgement)
-        {
-            return Err(ControlPublicationRefusal::OutcomeAlreadyEstablished);
-        }
-        let publication = publish(&acknowledgement);
-        match publication {
-            ControlPublication::Delivered => {
-                inner.records.remove(position);
-            }
-            ControlPublication::Retained | ControlPublication::ReceiverGone => {
-                if !matches!(inner.records[position].phase, ControlPhase::Owed(_)) {
-                    inner.records[position].phase = ControlPhase::Owed(acknowledgement);
-                }
-            }
-        }
-        Ok(publication)
     }
 
     /// How many operations still have an unanswered record, or `None` if the
@@ -580,6 +524,7 @@ impl ControlCompletionRegistry {
             return 0;
         };
         let mut delivered = 0usize;
+        let mut settled = Vec::new();
         inner.records.retain(|held| {
             let ControlPhase::Owed(acknowledgement) = &held.phase else {
                 return true;
@@ -587,11 +532,23 @@ impl ControlCompletionRegistry {
             match publish(acknowledgement) {
                 ControlPublication::Delivered => {
                     delivered = delivered.saturating_add(1);
-                    false
+                    // Same rule as publishing directly: answered is not over.
+                    if held.dependents == 0 {
+                        false
+                    } else {
+                        settled.push(held.token);
+                        true
+                    }
                 }
                 ControlPublication::Retained | ControlPublication::ReceiverGone => true,
             }
         });
+        for token in settled {
+            if let Some(held) = inner.records.iter_mut().find(|held| held.token == token) {
+                let client = held.phase.client();
+                held.phase = ControlPhase::Settled(client);
+            }
+        }
         delivered
     }
 
@@ -694,7 +651,7 @@ impl ControlCompletionRegistry {
                 ControlPhase::Abandoned(_) => {
                     reconciled.abandoned = reconciled.abandoned.saturating_add(1);
                 }
-                ControlPhase::Owed(_) => {
+                ControlPhase::Owed(_) | ControlPhase::Settled(_) => {
                     reconciled.owed = reconciled.owed.saturating_add(1);
                 }
             }
@@ -757,6 +714,9 @@ impl ControlCompletionRegistry {
         }
         if !done {
             return Err(ControlCleanupRefusal::StillOwed);
+        }
+        if inner.records[position].dependents != 0 {
+            return Err(ControlCleanupRefusal::DependentsOutstanding);
         }
         inner.records.remove(position);
         Ok(())
@@ -821,7 +781,7 @@ impl ControlCompletionRegistry {
                 indeterminate = indeterminate.saturating_add(1);
                 true
             }
-            ControlPhase::Owed(_) => true,
+            ControlPhase::Owed(_) | ControlPhase::Settled(_) => true,
         });
         ControlCancellation {
             cancellable,
@@ -910,6 +870,9 @@ pub enum ControlCleanupRefusal {
     /// The cleanup did not happen. The record is kept and the responsibility
     /// is still the caller's.
     StillOwed,
+    /// Work this operation queued elsewhere can still run, so it is not
+    /// waiting on a cleanup yet.
+    DependentsOutstanding,
     /// The registry cannot be reached.
     Unavailable,
 }

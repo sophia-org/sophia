@@ -30,10 +30,10 @@ use std::{
 use crate::connection_wait::{ConnectionNotifier, ConnectionWait, ConnectionWake};
 #[cfg(unix)]
 use crate::{
-    X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL, X_ATOM_NAME_WM_DELETE_WINDOW,
-    X_ATOM_NAME_WM_PROTOCOLS, X_SETUP_CLIENT_PREFIX_LEN, X_SETUP_DEFAULT_RESOURCE_ID_MASK,
-    X_SETUP_DEFAULT_ROOT, X11DispatchObservation, X11ObservedDispatchFailure,
-    X11ObservedRequestStage, XAtomTable, XAuthorityBackpressureFailure,
+    ControlDependentRefusal, X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL,
+    X_ATOM_NAME_WM_DELETE_WINDOW, X_ATOM_NAME_WM_PROTOCOLS, X_SETUP_CLIENT_PREFIX_LEN,
+    X_SETUP_DEFAULT_RESOURCE_ID_MASK, X_SETUP_DEFAULT_ROOT, X11DispatchObservation,
+    X11ObservedDispatchFailure, X11ObservedRequestStage, XAtomTable, XAuthorityBackpressureFailure,
     XAuthorityBackpressureTelemetry, XAuthorityBackpressureTelemetryKind,
     XAuthorityClientControlAck, XAuthorityClientControlCommand, XAuthorityClientInputDelivery,
     XAuthorityClientInputEvent, XAuthorityClientMetadataCandidate, XAuthorityControlAck,
@@ -71,6 +71,7 @@ include!("x11_socket/routing/private_settlement.rs");
 include!("x11_socket/routing/control_completion.rs");
 include!("x11_socket/routing/control_executors.rs");
 include!("x11_socket/routing/control_dependents.rs");
+include!("x11_socket/routing/control_publication.rs");
 include!("x11_socket/routing/recovery.rs");
 include!("x11_socket/routing/focus.rs");
 include!("x11_socket/routing/registry.rs");
