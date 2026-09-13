@@ -76,6 +76,10 @@ snapshot. The reducer owns request freshness, finite pending slots, deadlines,
 role and coverage budgets, endpoint quantization, generation changes and
 correlated grant, rejection and release results. The protected host makes Lom
 request its panel allocation rather than injecting a fixture behind the client.
+Output facts remain logical while containment and coverage are checked against
+their quantized physical extent. The profile's panel allowance and candidate
+reservation are physical pixels, so a scaled panel is admitted and bounded by
+its resolved physical thickness; popouts receive no reservation authority.
 
 The production metadata-shell owner now calls the resource, allocation, demand,
 candidate, preparation and presentation services from its bounded owner loop.

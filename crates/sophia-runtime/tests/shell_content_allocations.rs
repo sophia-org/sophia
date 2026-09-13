@@ -169,6 +169,27 @@ fn a_panel_cannot_authorize_more_reservation_than_its_thickness() {
 }
 
 #[test]
+fn scaled_output_bounds_and_reservation_use_resolved_physical_pixels() {
+    let mut store = ContentAllocationStore::new(ContentLimits::prototype(grant())).unwrap();
+    let mut scaled_facts = facts(100);
+    scaled_facts.scale_numerator = 2;
+    store.publish_outputs(tx(1), 1, vec![scaled_facts]).unwrap();
+    store.take_event().unwrap();
+    let request = panel_request(1, 1, ContentAllocationId::default());
+    store.request(tx(2), request, &[], 0).unwrap();
+    let mut scaled = panel(ContentAllocationId {
+        id: 1,
+        generation: 1,
+    });
+    scaled.scale_numerator = 2;
+    scaled.pixel.width = 400;
+    scaled.pixel.height = 40;
+    scaled.allowed_reservation_extent = 40;
+    store.grant(1, scaled.clone(), &[]).unwrap();
+    assert_eq!(store.snapshots(), vec![scaled]);
+}
+
+#[test]
 fn replace_advances_the_exact_allocation_generation_and_release_is_terminal() {
     let mut store = store();
     let first = ContentAllocationId {

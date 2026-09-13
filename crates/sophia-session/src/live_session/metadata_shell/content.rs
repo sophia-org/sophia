@@ -257,13 +257,6 @@ impl LiveContentSession {
             .find(|output| output.id.raw() == request.output.id)
             .copied()
             .ok_or(sophia_runtime::ContentAllocationError::OutputLost)?;
-        if request.role == 1
-            && self
-                .panel_limit
-                .is_none_or(|limit| panel_thickness(request) > u32::from(limit))
-        {
-            return Err(sophia_runtime::ContentAllocationError::Budget);
-        }
         if !matches!(request.role, 1 | 2) {
             return Err(sophia_runtime::ContentAllocationError::Malformed);
         }
@@ -287,6 +280,18 @@ impl LiveContentSession {
                 .filter(|allocation| allocation.output == request.output && allocation.role == 1)
                 .ok_or(sophia_runtime::ContentAllocationError::AllocationLost)?;
             popout_rect(request, output, parent)?
+        };
+        let allowed_reservation_extent = if request.role == 1 {
+            let thickness = panel_pixel_thickness(pixel, request.edge);
+            if self
+                .panel_limit
+                .is_none_or(|limit| thickness > u32::from(limit))
+            {
+                return Err(sophia_runtime::ContentAllocationError::Budget);
+            }
+            thickness.min(u32::from(self.panel_limit.unwrap_or(0)))
+        } else {
+            0
         };
         let allocation = if request.operation == 1 {
             let id = self.next_allocation_id;
@@ -313,7 +318,7 @@ impl LiveContentSession {
             pixel,
             parent: request.parent,
             anchor_parent_rect: request.anchor_parent_rect,
-            allowed_reservation_extent: u32::from(self.panel_limit.unwrap_or(0)),
+            allowed_reservation_extent,
         })
     }
 }
@@ -525,11 +530,11 @@ fn popout_rect(
     Err(sophia_runtime::ContentAllocationError::Budget)
 }
 
-fn panel_thickness(request: &sophia_protocol::ContentAllocationRequest) -> u32 {
-    if matches!(request.edge, 1 | 3) {
-        request.desired_height
+fn panel_pixel_thickness(pixel: sophia_protocol::ContentPixelRect, edge: u16) -> u32 {
+    if matches!(edge, 1 | 3) {
+        pixel.height
     } else {
-        request.desired_width
+        pixel.width
     }
 }
 

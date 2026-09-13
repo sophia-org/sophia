@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::*;
 use sophia_protocol::*;
 use sophia_runtime::{ContentCandidateContext, ContentCandidateStore, ContentResourceStore};
@@ -46,6 +48,46 @@ fn output_facts_publish_logical_extents_and_refuse_lossy_scale_conversion() {
             scale: 2,
         })
         .is_err()
+    );
+}
+
+#[test]
+fn panel_allowance_is_enforced_against_resolved_physical_thickness() {
+    let output = HeadlessOutput {
+        id: OutputId::from_raw(2),
+        size: Size {
+            width: 200,
+            height: 100,
+        },
+        scale: 2,
+    };
+    let request = ContentAllocationRequest {
+        grant: GRANT,
+        output: OUTPUT,
+        allocation_request_id: 1,
+        operation: 1,
+        role: 1,
+        edge: 1,
+        prior: ContentAllocationId::default(),
+        parent: ContentAllocationId::default(),
+        parent_presentation_epoch: 0,
+        anchor_parent_rect: ContentPixelRect::default(),
+        desired_width: 100,
+        desired_height: 16,
+        margins: ContentMargins::default(),
+    };
+    let mut session = LiveContentSession::new(true, true, Some(32));
+    let resolved = session
+        .resolve_allocation(&request, &[output], &[])
+        .unwrap();
+    assert_eq!(resolved.pixel.height, 32);
+    assert_eq!(resolved.allowed_reservation_extent, 32);
+
+    let mut oversized = request;
+    oversized.desired_height = 17;
+    assert_eq!(
+        session.resolve_allocation(&oversized, &[output], &[]),
+        Err(sophia_runtime::ContentAllocationError::Budget)
     );
 }
 
@@ -293,4 +335,5 @@ fn a_scaled_popout_keeps_the_exact_physical_anchor_origin() {
     assert_eq!(resolved.pixel.width, 40);
     assert_eq!(resolved.pixel.height, 20);
     assert_eq!(resolved.logical.x, 10);
+    assert_eq!(resolved.allowed_reservation_extent, 0);
 }
