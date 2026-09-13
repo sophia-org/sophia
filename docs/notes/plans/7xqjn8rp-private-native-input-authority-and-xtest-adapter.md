@@ -888,3 +888,33 @@ Poison cannot be reduced to a boolean after losing access to the pending queue.
 Preallocated drain storage, bounded cleanup service and truthful completion
 remain required. No public envelope API or additional operator decision is
 needed for this already-authorized implementation. The candidate is unintegrated.
+
+Candidate `deb873c8` retains the originating registry in `PrivateSettlement`
+and exposes bounded retry without an external authority argument. This supplies
+the capability missing from the earlier report while keeping operations opaque.
+Source review still finds abandonment unsafe under continued backpressure:
+`Drop` calls `settle_against(...).len()`, which destroys the returned surviving
+operations immediately. Losing their final owner does not establish that their
+live acknowledgement receiver disappeared or that instance teardown settled
+them. A final best-effort attempt is not a durable ownership transfer.
+
+The repair must transfer abandoned work to a bounded, durable origin-owned
+settlement service, or establish a specified terminal instance outcome through
+proved teardown. It must not block indefinitely in Drop, retain an unreachable
+self-cycle, or treat a log as a completion. That owner must also retain the
+poisoned queue and its failure authority, rather than only the unreadable flag.
+Independent evidence at `.artifacts/private-settlement-review-deb873c8/` records
+two controls PASS and one desired abandonment assertion FAIL (131 filtered;
+10.03 seconds). A real prior shutdown fills the acknowledgement channel;
+freeing capacity and retrying returns the exact `AuthorityRejected` outcome
+once, and a repeated retry answers nothing. Two separate origins both retain
+pending work with colliding client/surface IDs; retrying them in reverse order
+still reaches only their respective receivers.
+
+The negative keeps acknowledgement 9700 in the capacity-1 channel while dropping
+the pending handle for accepted transaction 9701. The original 9700 remains
+intact, but 9701 has no outcome within 200 ms. This bounded observation, together
+with source-confirmed destruction of the surviving operations and absence of a
+post-Drop settlement owner, establishes the remaining ownership blocker. It is
+not evidence of recipient failure. No runtime integration or executor acceptance
+follows from the two positive controls.
