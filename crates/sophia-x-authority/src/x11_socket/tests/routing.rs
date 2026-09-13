@@ -10637,6 +10637,176 @@ fn a_token_from_another_registry_is_not_permission_and_is_not_taken() {
 }
 
 #[test]
+fn a_dying_handle_parks_an_attempt_that_never_returned() {
+    let client = XServerFrontendClientId(384);
+    let surface = SurfaceId::new(384, 1);
+    let (acknowledgements, acks) = sync_channel(4);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    private
+        .control_producer()
+        .submit(configure(client, surface, 81001))
+        .expect("the shared admission to accept control");
+
+    // The channel has room, so shutdown answers it and the handle carries
+    // nothing. Refilled first so the obligation survives into the handle.
+    let mut settlement = private.shutdown();
+    assert_eq!(settlement.pending.len(), 0, "answered on the way out");
+    let _ = acks.try_recv();
+
+    // Staged as an attempt that did not return leaves a handle: the obligation
+    // is still in the list and the marker says one of them reached the call
+    // that emits.
+    settlement.pending.push(PrivateOperation::Control(
+        configure(client, surface, 81002),
+        None,
+    ));
+    settlement.settling = Some(0);
+    drop(settlement);
+
+    assert_eq!(
+        durable.indeterminate(),
+        Some(1),
+        "a dying handle hands over what it cannot account for"
+    );
+    assert_eq!(
+        durable.owed(),
+        Some(0),
+        "and not as work something would send again"
+    );
+}
+
+#[test]
+fn a_transfer_guard_pays_out_when_the_attempt_unwinds() {
+    let client = XServerFrontendClientId(385);
+    let surface = SurfaceId::new(385, 1);
+    let (acknowledgements, acks) = sync_channel(4);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let origin = private.broker.registry.clone();
+    drop(private.shutdown());
+    let _ = acks.try_recv();
+
+    // Two obligations: one the attempt is inside, one it has not reached. A
+    // real unwind crosses the guard, which is the path that matters -- the
+    // handle's fields are destroyed immediately afterwards, so anything not
+    // transferred by then is gone.
+    //
+    // The panic is raised here rather than from inside `settle_one`: nothing
+    // on that path panics of its own accord, so injecting one needs a
+    // modified copy of the source. This exercises the guard's contract, which
+    // is the mechanism that makes the injected case survivable.
+    let mut pending = vec![
+        PrivateOperation::Control(configure(client, surface, 82001), None),
+        PrivateOperation::Control(configure(client, surface, 82002), None),
+    ];
+    let mut settling = None;
+    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let transfer = SettlementTransfer {
+            origin: &origin,
+            durable: &durable,
+            pending: &mut pending,
+            settling: &mut settling,
+        };
+        // As the marker stands when the emitting call is entered.
+        *transfer.settling = Some(1);
+        panic!("interrupting the attempt");
+    }));
+    assert!(unwound.is_err(), "the attempt unwound");
+
+    assert_eq!(
+        durable.indeterminate(),
+        Some(1),
+        "the one it was inside is unproved"
+    );
+    assert_eq!(
+        durable.owed(),
+        Some(1),
+        "and the one it never reached is ordinary owed work"
+    );
+    assert!(
+        acks.try_recv().is_err(),
+        "an unwinding transfer publishes nothing"
+    );
+}
+
+#[test]
+fn an_emptied_failed_record_cannot_release_a_second_instances_slot() {
+    let durable = crate::PrivateSettlementOwner::with_capacity(4);
+    let (sender, _receiver) = sync_channel(4);
+    let (gate, _authority, _issuer) = control_gate();
+    let (delivery_sender, _delivery_receiver) = channel();
+    // Kept alive for the whole test. Its failure slot was reserved before it
+    // was exposed and it holds it for its life.
+    let live = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender.clone(),
+            input_deliveries: delivery_sender.clone(),
+            gate,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+
+    let (gate, _authority2, _issuer2) = control_gate();
+    let failing = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a second slot: {refusal:?}"));
+    let failing_origin = failing.broker.registry.clone();
+    let failing_queue = std::sync::Arc::clone(&failing.admission.ready);
+    assert_eq!(
+        durable.records_even_if_poisoned().failure_slots,
+        2,
+        "one slot each, reserved before either was exposed"
+    );
+
+    let admission = std::sync::Arc::clone(&failing.admission);
+    let _ = std::thread::spawn(move || {
+        let _guard = admission.ready.lock().expect("the queue");
+        panic!("poisoning the shared queue");
+    })
+    .join();
+    drop(failing.shutdown());
+    assert_eq!(durable.failed_instances().expect("readable"), 1);
+
+    assert_eq!(durable.recover_failed().expect("readable"), 0, "it had accepted nothing");
+    assert_eq!(
+        durable.records_even_if_poisoned().failure_slots,
+        1,
+        "the failed instance gave its slot back; the live one keeps its own"
+    );
+
+    // As an interrupted recovery leaves it: the record is back in the
+    // inventory, already marked as having given its slot up. Restoring an
+    // obligation must not restore a release that already happened.
+    {
+        let mut held = durable.records_even_if_poisoned();
+        held.failed.push(FailedInstance {
+            origin: failing_origin,
+            queue: failing_queue,
+            slot: FailureSlot::Released,
+        });
+    }
+    assert_eq!(durable.recover_failed().expect("readable"), 0);
+    assert_eq!(
+        durable.records_even_if_poisoned().failure_slots,
+        1,
+        "the live instance still holds the slot it reserved"
+    );
+    drop(live);
+}
+
+#[test]
 fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
     let client = XServerFrontendClientId(377);
     let surface = SurfaceId::new(377, 1);

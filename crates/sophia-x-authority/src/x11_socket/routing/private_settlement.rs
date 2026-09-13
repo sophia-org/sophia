@@ -293,6 +293,7 @@ impl PrivateSettlementOwner {
             held.failed.push(FailedInstance {
                 origin: origin.clone(),
                 queue: Arc::clone(queue),
+                slot: FailureSlot::Held,
             });
         }
     }
@@ -353,11 +354,19 @@ impl PrivateSettlementOwner {
                 }
             }
             // Drained, so this instance's failure is resolved and its slot is
-            // free for another. Released before the record is removed: an
-            // unwind in between leaves an emptied instance to be recovered
-            // again, which transfers no work twice, where removing it first
-            // would drop the record and leak the slot for this owner's life.
-            held.failure_slots = held.failure_slots.saturating_sub(1);
+            // free for another. Marked on the record before the count moves,
+            // and only if this record still holds it: an emptied record that
+            // is restored and recovered a second time must not hand back a
+            // slot another live instance is holding.
+            let releasing = {
+                let instance = held.failed_in_flight.last_mut().expect("not empty");
+                let releasing = instance.slot == FailureSlot::Held;
+                instance.slot = FailureSlot::Released;
+                releasing
+            };
+            if releasing {
+                held.failure_slots = held.failure_slots.saturating_sub(1);
+            }
             let _emptied = held.failed_in_flight.pop().expect("not empty");
             recovered = recovered.saturating_add(held.sweep_in_flight());
         }
@@ -653,6 +662,31 @@ impl DriveProgress {
 struct FailedInstance {
     origin: XServerFrontendRouteRegistry,
     queue: Arc<Mutex<SharedQueue>>,
+    /// Whether this instance's failure slot has been given back.
+    ///
+    /// Carried on the record rather than inferred from the record being gone.
+    /// A slot is released for one failure, and the only thing that identifies
+    /// that failure is this record, so the fact that its slot was released has
+    /// to live here: recovery can be interrupted after releasing and before
+    /// removing it, and a restored record with no such state is
+    /// indistinguishable from one that never released. Releasing again then
+    /// hands back a slot this failure does not hold, which is another live
+    /// instance's, and the count admits one more instance than the bound
+    /// allows.
+    slot: FailureSlot,
+}
+
+/// Whether a failed instance still holds the slot it reserved.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FailureSlot {
+    /// Reserved before the instance was exposed and not yet given back.
+    Held,
+    /// Given back. Marked before the count is changed, so an interruption in
+    /// between under-releases -- costing this owner one slot for its life --
+    /// rather than releasing twice. One direction loses capacity, the other
+    /// hands out capacity that does not exist.
+    Released,
 }
 
 /// How many abandoned obligations one owner keeps.

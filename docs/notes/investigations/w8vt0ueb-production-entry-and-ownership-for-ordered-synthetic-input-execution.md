@@ -740,6 +740,29 @@ unwind between those two is exactly the indeterminate case above -- retained,
 never resolved. Nothing here can resolve one, because resolving it means
 knowing whether a send completed, and that is what the fault destroyed.
 
+**Borrowing protects a survivor, and a destructor has none.** Settling in
+place keeps an obligation owned for the whole attempt, which is enough for a
+handle that outlives the call. It is not enough in `Drop`: an attempt that
+unwinds there is followed immediately by field destruction, which takes the
+list and the marker with it. Writing a marker onto a dying object protects
+nothing, because nothing will read it. The transfer has to be owed by
+something whose own drop performs it, with the attempt made inside that, so
+that unwinding is the path that pays out rather than the path that loses. The
+same attempt implementation serves the live handle and the dying one; what
+differs is not the attempt but who owns the list afterwards.
+
+**Releasing a slot needs an identity, not an ordering.** Recovery released a
+failed instance's slot and then removed its record. Reversing those two writes
+does not fix it -- two field writes cannot be one, so either order leaves an
+interruption in between, and a restored record carrying no state is
+indistinguishable from one that never released. Releasing again then hands
+back a slot this failure does not hold, which is a live instance's, and the
+count admits one more instance than the bound allows. The record therefore
+carries whether its slot is still held, marked before the count moves. An
+interruption between the two now under-releases -- costing this owner one slot
+for its life -- rather than over-releasing. One direction loses capacity; the
+other hands out capacity that does not exist.
+
 ## Status
 
 Source-confirmed inventory, and known to be incomplete: an independent audit

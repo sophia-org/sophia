@@ -177,35 +177,106 @@ impl PrivateSettlement {
     /// either -- `retry` is called on a live one -- so losing the list to a
     /// stack frame would strand work whose owner is still in use.
     fn settle_pending(&mut self) -> usize {
-        let mut answered = 0usize;
-        let mut index = self.pending.len();
-        while index > 0 {
-            index -= 1;
-            match ownership_of(&self.origin, &self.pending[index]) {
-                SettlementOwnership::Elsewhere => {
-                    // Answered by whoever holds the record. Carried on as an
-                    // identity so its credit is released when that happens,
-                    // never as a command that could be sent again.
-                    let operation = self.pending.remove(index);
-                    self.durable
-                        .take_one_outstanding(&self.origin, PrivateIdentity::of(&operation));
-                    continue;
-                }
-                // Kept, with its credit. Nothing here can show it is owed one
-                // outcome rather than two.
-                SettlementOwnership::Unprovable => continue,
-                SettlementOwnership::Ours => {}
+        attempt_each(
+            &self.origin,
+            &self.durable,
+            &mut self.pending,
+            &mut self.settling,
+        )
+    }
+}
+
+/// One attempt at each obligation in a list, in place.
+///
+/// Nothing is moved out to be settled. An obligation is removed once its
+/// attempt has returned and said what happened, so a fault before the attempt
+/// leaves it in the list and retryable, and a fault during the attempt leaves
+/// it in the list and marked.
+///
+/// Shared by the live handle and the dying one so the two cannot drift. What
+/// differs is not the attempt but who owns the list afterwards, which is the
+/// caller's problem and is exactly where the two differ.
+#[cfg(unix)]
+fn attempt_each(
+    origin: &XServerFrontendRouteRegistry,
+    durable: &PrivateSettlementOwner,
+    pending: &mut Vec<PrivateOperation>,
+    settling: &mut Option<usize>,
+) -> usize {
+    let mut answered = 0usize;
+    let mut index = pending.len();
+    while index > 0 {
+        index -= 1;
+        match ownership_of(origin, &pending[index]) {
+            SettlementOwnership::Elsewhere => {
+                // Answered by whoever holds the record. Carried on as an
+                // identity so its credit is released when that happens, never
+                // as a command that could be sent again.
+                let operation = pending.remove(index);
+                durable.take_one_outstanding(origin, PrivateIdentity::of(&operation));
+                continue;
             }
-            self.settling = Some(index);
-            let settled = settle_one(&self.origin, &self.pending[index]);
-            self.settling = None;
-            if settled {
-                self.pending.remove(index);
-                self.durable.release();
-                answered = answered.saturating_add(1);
-            }
+            // Kept, with its credit. Nothing here can show it is owed one
+            // outcome rather than two.
+            SettlementOwnership::Unprovable => continue,
+            SettlementOwnership::Ours => {}
         }
-        answered
+        *settling = Some(index);
+        let settled = settle_one(origin, &pending[index]);
+        *settling = None;
+        if settled {
+            pending.remove(index);
+            durable.release();
+            answered = answered.saturating_add(1);
+        }
+    }
+    answered
+}
+
+/// Owes a dying handle's obligations a home, and pays on the way out.
+///
+/// Borrowing keeps work alive for an owner that survives the call. A
+/// destructor has no survivor: an attempt that unwinds inside `drop` is
+/// followed by field destruction, which takes the list and the marker with it,
+/// so nothing that examines the handle afterwards can help -- there is no
+/// afterwards. The transfer therefore has to be owed by something whose own
+/// drop performs it, with the attempt made inside that.
+///
+/// Unwinding runs this drop, so the obligations reach the durable owner on the
+/// path where they would otherwise be destroyed.
+#[cfg(unix)]
+struct SettlementTransfer<'a> {
+    origin: &'a XServerFrontendRouteRegistry,
+    durable: &'a PrivateSettlementOwner,
+    pending: &'a mut Vec<PrivateOperation>,
+    settling: &'a mut Option<usize>,
+}
+
+#[cfg(unix)]
+impl SettlementTransfer<'_> {
+    /// One attempt, not a loop: a teardown that retried until it succeeded
+    /// would block on a congested channel.
+    fn attempt(&mut self) {
+        let _answered = attempt_each(self.origin, self.durable, self.pending, self.settling);
+    }
+}
+
+#[cfg(unix)]
+impl Drop for SettlementTransfer<'_> {
+    fn drop(&mut self) {
+        // An attempt that did not return may already have emitted. Parked
+        // rather than transferred as work: transferring it as work is the
+        // replay this exists to prevent.
+        if let Some(index) = self.settling.take().filter(|index| *index < self.pending.len()) {
+            let unproved = self.pending.remove(index);
+            self.durable.take_indeterminate(self.origin, unproved);
+        }
+        // The rest were never attempted, or were attempted and refused by a
+        // full channel, which is a known outcome rather than an unknown one.
+        // Those are still owed an answer and can still be driven.
+        while let Some(operation) = self.pending.pop() {
+            self.durable.take_one(self.origin, operation);
+        }
     }
 }
 
@@ -233,14 +304,21 @@ impl Drop for PrivateSettlement {
         if self.pending.is_empty() {
             return;
         }
-        // One attempt, not a loop: a Drop that retried until it succeeded
-        // would block teardown on a congested channel. What that attempt
-        // cannot answer moves to the durable owner rather than being
-        // destroyed here -- a full channel with a live receiver is congestion,
-        // and removing the last owner is not evidence the obligation ended.
-        let _answered = self.settle_pending();
-        while let Some(operation) = self.pending.pop() {
-            self.durable.take_one(&self.origin, operation);
-        }
+        // What the attempt cannot answer moves to the durable owner rather
+        // than being destroyed here -- a full channel with a live receiver is
+        // congestion, and removing the last owner is not evidence the
+        // obligation ended.
+        //
+        // The attempt is made inside the guard that owes that transfer, so it
+        // happens whether the attempt returns or unwinds. Doing it after the
+        // attempt instead put the transfer on the one path that never runs
+        // when it is needed.
+        let mut transfer = SettlementTransfer {
+            origin: &self.origin,
+            durable: &self.durable,
+            pending: &mut self.pending,
+            settling: &mut self.settling,
+        };
+        transfer.attempt();
     }
 }
