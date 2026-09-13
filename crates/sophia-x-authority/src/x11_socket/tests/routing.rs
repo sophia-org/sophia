@@ -3765,3 +3765,96 @@ fn every_control_run_names_its_own_transaction() {
         "a control that is not FocusSurface still names its transaction"
     );
 }
+
+#[test]
+fn a_full_acknowledgement_channel_retains_the_obligation() {
+    let namespace = NamespaceId::from_raw(59);
+    let client = XServerFrontendClientId(77);
+    let surface = SurfaceId::new(64, 1);
+    let window = XResourceId::new(0x200210, 1);
+    // One slot, filled before shutdown, so the terminal ack cannot be sent.
+    let (control_ack_sender, control_ack_receiver) = sync_channel(1);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender.clone(),
+        delivery_sender,
+        gate,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(777),
+                surface,
+            },
+        })
+        .expect("the shared admission to accept control");
+
+    // Prefill the only slot.
+    control_ack_sender
+        .try_send(XAuthorityClientControlAck {
+            client,
+            acknowledgement: XAuthorityControlAck {
+                kind: XAuthorityControlKind::FocusSurface,
+                transaction: TransactionId::from_raw(1),
+                surface,
+                outcome: XAuthorityControlOutcome::Delivered,
+            },
+        })
+        .expect("the empty slot");
+
+    // The obligation cannot be discharged, so it is handed back rather than
+    // counted and dropped. A caller that is still alive can do something with
+    // it; a count in a log cannot.
+    let report = private.shutdown();
+    assert!(!report.is_settled());
+    assert_eq!(report.owed(), 1, "the control is still owed");
+    assert!(
+        matches!(
+            report.unsettled.first(),
+            Some(PrivateOperation::Control(_))
+        ),
+        "and it is the control itself, not a note about it"
+    );
+    let _ = control_ack_receiver;
+}
+
+#[test]
+fn an_unresolved_target_is_handed_back_rather_than_attributed() {
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+
+    // No surface registered, so nothing resolves this target.
+    private
+        .ingress()
+        .submit(motion_to(
+            SurfaceId::new(65, 1),
+            XAuthorityInputDeliveryId::from_raw(8400),
+        ))
+        .expect("an open coordinator to accept work");
+
+    let report = private.shutdown();
+    assert!(!report.is_settled());
+    assert_eq!(
+        report.owed(),
+        1,
+        "a receipt nobody can attribute is not a settlement"
+    );
+}
