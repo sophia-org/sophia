@@ -11560,6 +11560,46 @@ fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
 }
 
 #[test]
+fn an_interrupted_execution_is_not_mistaken_for_one_that_never_ran() {
+    let private = private_for_roles();
+    let _admitted = admit_role_client(&private, XServerFrontendClientId(551));
+    let role = private
+        .reservation_role(role_connection(551), DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let request = role.reserve(stamp, 1).expect("a reservation").accepted();
+    let token = request.token();
+
+    // Marks an effect, then does not return. Whether that effect happened is
+    // exactly what the interruption destroyed.
+    let interrupted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        private.execute_ordered(&request, XServerFrontendClientId(551), |permit| {
+            permit.begin_external_effect()?;
+            panic!("interrupting execution after its effect was marked");
+        })
+    }));
+    assert!(interrupted.is_err(), "the execution unwound");
+
+    // The handle goes without an outcome ever being recorded. Treating that as
+    // a request that never ran would discard the cell, and discarding it turns
+    // "nobody can say whether this ran" into "this never happened".
+    drop(request);
+
+    // Read through the poison the interruption caused, because that poison and
+    // the interruption are one event.
+    let mut authority = private
+        .authority()
+        .common
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let surviving = authority.take_completion(&private.submit, token, role_connection(551));
+    assert!(
+        matches!(surviving, Ok(None)),
+        "the record survives with no outcome -- unknown, not absent -- got {surviving:?}"
+    );
+}
+
+#[test]
 fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
     let client = XServerFrontendClientId(377);
     let surface = SurfaceId::new(377, 1);

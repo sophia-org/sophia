@@ -274,7 +274,7 @@ impl PrivateReservation {
             token,
             connection: self.connection,
             observed: std::cell::Cell::new(false),
-            executed: std::cell::Cell::new(false),
+            phase: std::cell::Cell::new(PrivateRequestPhase::Unused),
         }
     }
 }
@@ -332,15 +332,28 @@ pub struct PrivateOutstandingRequest {
     /// Execution alone does not free the cell -- the completion has to be
     /// observed -- so custody that ends without observing owes the cell back.
     observed: std::cell::Cell<bool>,
-    /// Whether this request has been executed.
+    /// How far this request got.
     ///
-    /// The difference decides what losing the handle may do. A request that
-    /// never ran holds a cell containing nothing, and taking that back costs
-    /// no one an answer. A request that ran holds a terminal outcome, and
-    /// discarding the record to reclaim the slot erases what happened -- so a
-    /// later observation reports a stale request rather than the outcome that
-    /// really occurred.
-    executed: std::cell::Cell<bool>,
+    /// Three states rather than two, because "did not finish" and "never
+    /// started" are different facts and only one of them is safe to discard.
+    phase: std::cell::Cell<PrivateRequestPhase>,
+}
+
+/// How far a reserved request got.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateRequestPhase {
+    /// Reserved and never entered. Its cell holds nothing, so taking it back
+    /// costs nobody an answer.
+    Unused,
+    /// Execution was entered and did not return. Whether it had an effect is
+    /// exactly what was lost, so this is neither discarded nor replayed nor
+    /// relabelled as an outcome. An absent completion is not proof that
+    /// nothing ran.
+    Entered,
+    /// Execution returned. The cell holds a terminal outcome, and reclaiming
+    /// the slot would erase what happened.
+    Settled,
 }
 
 #[cfg(unix)]
@@ -351,13 +364,25 @@ impl PrivateOutstandingRequest {
         self.token
     }
 
-    /// Record that this request has run, whatever the outcome was.
+    /// Mark that execution is being entered, before anything inside it can
+    /// take effect or unwind.
     ///
-    /// Marked for a refusal as well as a success: a request refused after its
-    /// effect was marked carries a real outcome, and that is exactly the one
-    /// that must not be erased to reclaim a slot.
-    fn ran(&self) {
-        self.executed.set(true);
+    /// Written ahead rather than after, for the same reason every other step
+    /// in this design is: a marker set once the call returns says nothing
+    /// about a call that did not. An interruption after this leaves a request
+    /// whose effect is unknown, which is a state to preserve rather than a
+    /// request that never ran.
+    fn entering(&self) {
+        self.phase.set(PrivateRequestPhase::Entered);
+    }
+
+    /// Record that execution returned, whatever the outcome was.
+    ///
+    /// Recorded for a refusal as well as a success: a request refused after
+    /// its effect was marked carries a real outcome, and that is exactly the
+    /// one that must not be erased to reclaim a slot.
+    fn settled(&self) {
+        self.phase.set(PrivateRequestPhase::Settled);
     }
 
     /// Observe the outcome of this request, and only this one.
@@ -387,20 +412,26 @@ impl PrivateOutstandingRequest {
 #[cfg(unix)]
 impl Drop for PrivateOutstandingRequest {
     fn drop(&mut self) {
-        if self.observed.get() || self.executed.get() {
-            // Nothing owed, or nothing this may do. An observed request has
-            // already released its cell. An executed one holds a terminal
-            // outcome, and abandoning it to reclaim the slot would erase what
-            // happened -- the authority's own cleanup is for a connection that
-            // departed, and losing a handle is not that. Retiring it is a
-            // separate act by whoever can establish the departure or the
-            // settlement; the cell stays held until then, which costs capacity
-            // rather than an answer.
+        if self.observed.get() {
+            // Already released by the observation that took its outcome.
             return;
         }
-        // Reserved and never run. The cell holds nothing, so taking it back
-        // costs nobody an outcome and leaving it costs the grant its only one.
-        self.controller.dispose_unpublished(self.token);
+        match self.phase.get() {
+            // Reserved and never entered. The cell holds nothing, so taking it
+            // back costs nobody an outcome and leaving it costs the grant its
+            // only one.
+            PrivateRequestPhase::Unused => self.controller.dispose_unpublished(self.token),
+            // Entered and never returned, or returned with an outcome. Neither
+            // may be discarded to reclaim a slot: one holds a terminal outcome
+            // that discarding would erase, and the other holds a question
+            // nobody can answer -- and answering it by removing the record
+            // turns "unknown" into "never happened". The authority's cleanup
+            // is for a connection that departed, and losing a handle does not
+            // establish that. Retiring either is a separate act by whoever can
+            // establish the departure or the settlement, and until then the
+            // cell costs capacity rather than an answer.
+            PrivateRequestPhase::Entered | PrivateRequestPhase::Settled => {}
+        }
     }
 }
 

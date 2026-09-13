@@ -636,12 +636,21 @@ impl PrivateXServerFrontend {
     /// validation and the application inside it. The permit callback uses what
     /// was already read rather than locking again.
     ///
-    /// The evidence is the live registration table, not an admission copied
-    /// into a route when the surface was registered. A copy says what was
-    /// admitted once; presence here says what is admitted now, and a client
-    /// that has gone is absent rather than stale. Absent, unreadable, or
-    /// admitted with no provenance all fail closed: nothing is substituted for
-    /// evidence that was not found.
+    /// What this reads is the client's live registration with this frontend,
+    /// which is necessary and **not sufficient**. The row is a copy of the
+    /// admission context taken when the client registered, and the
+    /// authoritative admission lives elsewhere: the session's admission policy
+    /// and namespace registry revoke independently of this table, so a client
+    /// revoked there can still be registered here. This checks that the client
+    /// is registered now and carries provenance; it does not validate the
+    /// admission id, namespace presence, or current revocation.
+    ///
+    /// Ordering it against the actual revoke producer is what would make it
+    /// sufficient, and that producer is outside this crate. Until then the gap
+    /// is named rather than papered over -- absent, unreadable, or admitted
+    /// with no provenance all fail closed, and nothing is substituted for
+    /// evidence that was not found, but a client revoked upstream is not yet
+    /// caught here.
     #[cfg_attr(not(test), allow(dead_code))]
     fn execute_ordered(
         &self,
@@ -678,12 +687,19 @@ impl PrivateXServerFrontend {
             // ago under this guard, and the application happens before it is
             // released, so nothing can be revoked in between.
             let completion = authority
-                .execute_reserved(issuer, token, current, act)
+                .execute_reserved(issuer, token, current, |permit| {
+                    // Written before the caller's work can touch anything or
+                    // unwind. Marking after the call returns says nothing
+                    // about a call that did not return, and an interruption
+                    // there would then look like a request that never ran.
+                    outstanding.entering();
+                    act(permit)
+                })
                 .map_err(PrivateAuthorityRefusal::Authority);
             if completion.is_ok() {
-                // Ran, so the cell now holds a terminal outcome and losing the
-                // handle must not erase it.
-                outstanding.ran();
+                // Returned, so the cell holds a terminal outcome and losing
+                // the handle must not erase it.
+                outstanding.settled();
             }
             drop(clients);
             completion
