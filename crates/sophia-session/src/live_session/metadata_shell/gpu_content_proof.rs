@@ -283,9 +283,13 @@ fn verify_bundle(bundle: &ContentRenderBundle) -> Result<(usize, u64), Box<dyn s
         return Err("Lom GPU pixels do not match the acknowledged allocation".into());
     }
     let bytes = lease.bytes();
+    let mut pixels = bytes.chunks_exact(4);
+    let first = pixels
+        .next()
+        .ok_or("Lom GPU render produced no complete pixel")?;
     if bytes.len() != (OUTPUT_WIDTH * PANEL_HEIGHT * 4) as usize
         || bytes.iter().all(|byte| *byte == 0)
-        || bytes.windows(2).all(|window| window[0] == window[1])
+        || pixels.all(|pixel| pixel == first)
     {
         return Err("Lom GPU render produced empty or uniform panel bytes".into());
     }

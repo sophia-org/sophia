@@ -9,11 +9,17 @@ log=$1
 grep -q '^sophia_live_shell_gpu schema=1 status=granted ' "$log" || {
     echo "native session recorded no shell GPU grant" >&2; exit 1;
 }
+facts=$(grep '^sophia_live_shell_content schema=1 status=outputs ' "$log" | tail -n 1)
+[[ "$facts" =~ outputs=([0-9]+) ]] || { echo "native session recorded no output facts" >&2; exit 1; }
+expected_outputs=${BASH_REMATCH[1]}
 mapfile -t outputs < <(grep '^sophia_live_shell_content schema=1 status=presented ' "$log" \
     | sed -n 's/.* output=\([0-9][0-9]*\) .*/\1/p' | sort -u)
-(( ${#outputs[@]} >= 1 )) || { echo "no shell content reached native presentation" >&2; exit 1; }
+(( expected_outputs > 0 && ${#outputs[@]} == expected_outputs )) || {
+    echo "not every admitted output reached native presentation" >&2; exit 1;
+}
 for output in "${outputs[@]}"; do
-    count=$(grep -c "^sophia_live_shell_content schema=1 status=presented output=$output " "$log" || true)
+    count=$(grep "^sophia_live_shell_content schema=1 status=presented output=$output " "$log" \
+        | sed -n 's/.* candidate_generation=\([0-9][0-9]*\) .*/\1/p' | sort -u | wc -l)
     (( count >= 2 )) || { echo "output $output did not present two panel generations" >&2; exit 1; }
 done
 if grep -Eq 'runtime_fatal|failure_code=|deadline_exceeded|withdrawn' "$log"; then

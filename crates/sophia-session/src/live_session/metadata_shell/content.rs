@@ -251,6 +251,11 @@ impl LiveContentSession {
             self.facts_generation,
             facts.clone(),
         )?;
+        crate::session_println!(
+            "sophia_live_shell_content schema=1 status=outputs facts_generation={} outputs={}",
+            self.facts_generation,
+            facts.len(),
+        );
         self.published_facts = facts;
         Ok(())
     }

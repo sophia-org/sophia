@@ -10,13 +10,14 @@ lom_gpu_admission schema=1 status=ready grant_epoch=1 render_node=/dev/dri/rende
 sophia_shell_gpu_content_hardware_proof schema=1 status=complete protected=true revision=6 capabilities=0x283 grant_epoch=1 render_node=/dev/dri/renderD128 device_major=226 device_minor=128 pci_bus_id=0000:01:00.0 width=256 height=24 bytes=24576 checksum=0123456789abcdef renderer_outcome=10 backing_bytes=0 native_presentation=false
 EOF
 "$ROOT_DIR/tools/verify_lom_gpu_content_hardware_proof.sh" "$work/gpu.log" >/dev/null
-for mutation in extra_drm cpu zero_checksum native; do
+for mutation in extra_drm cpu zero_checksum native identity; do
     cp "$work/gpu.log" "$work/$mutation.log"
     case "$mutation" in
         extra_drm) sed -i 's/visible_dri_entries=renderD128/visible_dri_entries=card0,renderD128/' "$work/$mutation.log" ;;
         cpu) sed -i 's/device_type=DiscreteGpu/device_type=Cpu/' "$work/$mutation.log" ;;
         zero_checksum) sed -i 's/checksum=0123456789abcdef/checksum=0000000000000000/' "$work/$mutation.log" ;;
         native) sed -i 's/native_presentation=false/native_presentation=true/' "$work/$mutation.log" ;;
+        identity) sed -i '/^lom_gpu_admission /s/device_minor=128/device_minor=129/' "$work/$mutation.log" ;;
     esac
     if "$ROOT_DIR/tools/verify_lom_gpu_content_hardware_proof.sh" "$work/$mutation.log" >/dev/null 2>&1; then
         echo "verifier accepted $mutation mutation" >&2
@@ -26,14 +27,22 @@ done
 
 cat > "$work/native.log" <<'EOF'
 sophia_live_shell_gpu schema=1 status=granted mode=direct peer_pid=42 grant_epoch=1 device_major=226 device_minor=128 pci_bus_id=0000:01:00.0
+sophia_live_shell_content schema=1 status=outputs facts_generation=1 outputs=1
 sophia_live_shell_content schema=1 status=presented output=1 candidate_generation=1 presentation_epoch=11 staging_bytes=0 resident_bytes=24576 retiring_bytes=0 backing_bytes=24576
 sophia_live_shell_content schema=1 status=presented output=1 candidate_generation=2 presentation_epoch=12 staging_bytes=0 resident_bytes=49152 retiring_bytes=24576 backing_bytes=49152
 EOF
 "$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native.log" >/dev/null
+cp "$work/native.log" "$work/native-full.log"
 sed -i '/candidate_generation=2/d' "$work/native.log"
 if "$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native.log" >/dev/null 2>&1; then
     echo "native verifier accepted one generation" >&2
     exit 1
 fi
 
-echo "lom_gpu_content_verifiers schema=1 status=pass mutations=5"
+sed 's/outputs=1/outputs=2/' "$work/native-full.log" > "$work/native-missing-output.log"
+if "$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native-missing-output.log" >/dev/null 2>&1; then
+    echo "native verifier accepted a missing output" >&2
+    exit 1
+fi
+
+echo "lom_gpu_content_verifiers schema=1 status=pass mutations=7"
