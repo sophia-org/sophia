@@ -1248,3 +1248,87 @@ correction is retained separately. Mutation APIs returning unit/zero/default
 on poison and the producer collapsing unavailable/sealed refusal into saturation
 remain source-review findings. These are unfinished invariant checks and
 lifecycle requirements; the candidate remains unintegrated.
+
+Independent actual-writer evidence at
+`.artifacts/private-control-writer-aa4898ca/` records two controls PASS and one
+desired safety assertion FAIL (161 filtered). These tests start the production
+control writer with an actual registered runtime window and owned Unix socket
+pair. The normal path changes window geometry, emits `ConfigureNotify` and
+permits credit reclamation. The full-channel path performs the effect once,
+retains the exact acknowledgement, then republishes after the writer exits and
+capacity is freed, without a second effect or release.
+
+The negative holds the surface-window map lock after dequeue and before the
+writer's phase transition. Shutdown and settlement retry publish
+`AuthorityRejected` for transaction 73001 while the window width is still 40.
+Releasing that barrier lets the same writer change width to 80, emit a 32-byte
+`ConfigureNotify` event (type 22), and publish `Delivered` for the same
+transaction. This establishes actual execution after cancellation and a second
+terminal outcome. A successful execution claim must be atomic with cancellation;
+the cancellation-winning path must prevent effects, while the execution-winning
+path retains Applying responsibility until a truthful outcome is established.
+
+Initial sandbox refusal at socket-pair creation and fixture corrections are
+retained separately, not counted as runtime failures. The successful retry used
+only owned sockets, no operator endpoint or hardware. These positives establish
+real writer wiring but do not accept the cancellation/credit lifecycle or the
+combined runtime candidate.
+
+Independent review of the uncommitted repair atop `aa4898ca` used frozen staged
+patches `19bfd3d6ed9bee3137c05ff29e37063ad1fe53be4e64260caa93a56776135b8e`
+and `24c8227aded6792e2166385823ea585e0338d55dec58f36574bb3d2f963a94d5`.
+The X-authority runtime Rust files in those two snapshots compare identical;
+the snapshots and fixture changes retain separate provenance. No signed repair
+commit or combined runtime acceptance is claimed.
+
+The registry review at `.artifacts/private-completion-registry-staged-19bfd3d6ed9b/`
+records four controls PASS and two desired safety assertions FAIL. Checked
+operation-counter exhaustion, acknowledgement identity and retained-outcome
+validation, and cancellation/foreign/duplicate-start claim checks pass. Bounded
+seal eviction nevertheless lets the real producer accept the same dead-client
+command it previously refused, and full seal storage can leave a client unsealed
+with the writer's Drop ignoring `recorded=false`. These establish false
+acceptance, not an untrusted wire exploit or proof that the later route executes.
+
+The producer/shutdown review at
+`.artifacts/private-preadmission-staged-19bfd3d6ed9b/` reproduces one safety failure
+through real producer and shutdown methods. Holding the existing durable-owner
+mutex pauses a producer after registration and before credit reservation or
+acceptance. Shutdown takes that still-producer-owned registration. On resumption
+the producer receives `ConsumerGone` and its original command, yet the settlement
+publishes `AuthorityRejected` for transaction 83001. Reserved completion storage
+must remain distinct from accepted responsibility until the admission handoff;
+rollback after refusal cannot undo a cancellation that already answered it.
+An inherited fixture compile error is retained separately from the successful
+runtime reproduction.
+
+The actual-writer review at `.artifacts/private-control-writer-staged-repair/`
+on staged patch `24c8227a` has four positive controls and two channel-publication
+safety failures. Normal writer effects, exact
+acknowledgement retry under Full, execution winning against shutdown, and
+cancellation winning before routing with another operation's credit preserved
+pass. However `send_ack_for` sends before validating the record and ignores its
+refusal: a contradictory acknowledgement reaches the receiver while the original
+outcome remains owed, and a retired token emits a second acknowledgement. A
+registry rejecting the later bookkeeping cannot retract publication. Validation,
+outcome establishment and publication ownership must precede the external send,
+including retry. These results leave the candidate unintegrated and disabled;
+Applying reconciliation, cancellation edges, budgets and the final guarded input
+executor remain outside acceptance.
+
+The follow-through at `.artifacts/private-dead-writer-staged-24c8227a/`
+uses an actual writer rather than a synthetic seal alone: the writer applies
+configuration and exits on a full acknowledgement channel while its client
+registration stays alive. After the original outcome is republished and
+unrelated seals evict its seal, the real producer accepts transaction 77002
+without a writer to execute it. This rules out client-registration liveness as
+the repair. Moreover, `InputRecovery::active(None, client)` is only a
+not-known-revoked check: an absent client also passes. A private admission needs
+positive ownership of the exact writer lifecycle, with accepted work retained
+through a later exit. No change to ordinary recovery semantics is implied.
+
+Follow-up guidance requires a fallible atomic handoff from a reserved completion
+to an accepted queue entry, and phase validation before publication: a Reserved
+record is still producer-owned and cannot justify an acknowledgement. The
+uncommitted implementation and temporary mutations remain Claude's; review uses
+frozen snapshots and does not treat an in-progress mutant as a candidate.
