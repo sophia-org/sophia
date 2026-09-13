@@ -19,8 +19,36 @@ struct PrivateAdmissionBinding {
     /// Grants issued while this binding was current.
     ///
     /// Held so revocation can retire exactly what this admission authorised,
-    /// rather than sweeping whatever the authority happens to hold.
+    /// rather than sweeping whatever the authority happens to hold. Storage is
+    /// reserved when the binding is made, so recording a grant never allocates
+    /// after the grant exists -- an allocation there could fail with the grant
+    /// already issued and nothing yet recording it.
     grants: Vec<sophia_input_authority::GrantId>,
+    /// Whether this binding has been closed.
+    ///
+    /// Marked before its grants are retired, and the entry stays until they
+    /// are. Moving the binding out to retire from would put the remaining
+    /// inventory in a local, where an unwind part-way through destroys it
+    /// along with the record of what was still owed.
+    closed: bool,
+}
+
+/// How many grants one binding reserves room for without allocating.
+#[cfg(unix)]
+const PRIVATE_BINDING_GRANTS: usize = 8;
+
+/// What a revocation closed and retired.
+///
+/// Two counts, because they answer different questions. Closing a binding
+/// always denies further work; retiring a grant is cleanup behind it. A
+/// binding that never issued a grant, or whose grants were already retired,
+/// closes with nothing to retire -- so a zero here is not evidence that
+/// nothing was closed.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PrivateRevocation {
+    pub closed: usize,
+    pub retired: usize,
 }
 
 #[cfg(unix)]
@@ -117,7 +145,8 @@ impl PrivateAdmissionParticipant {
                     admission: admission.client_id,
                     namespace: admission.namespace.id,
                     generation: admission.auth_provenance.session_generation,
-                    grants: Vec::new(),
+                    grants: Vec::with_capacity(PRIVATE_BINDING_GRANTS),
+                    closed: false,
                 },
             );
             Ok(())
@@ -134,9 +163,9 @@ impl PrivateAdmissionParticipant {
         &self,
         client: XServerFrontendClientId,
         admission: sophia_protocol::ClientAdmissionId,
-    ) -> Result<usize, PrivateAdmissionRefusal> {
+    ) -> Result<PrivateRevocation, PrivateAdmissionRefusal> {
         self.under_boundary(|authority, issuer, bindings| {
-            let Some(bound) = bindings.bound.get(&client) else {
+            let Some(bound) = bindings.bound.get_mut(&client) else {
                 return Err(PrivateAdmissionRefusal::NotAdmitted);
             };
             if bound.admission != admission {
@@ -144,29 +173,37 @@ impl PrivateAdmissionParticipant {
                 // must not close the replacement.
                 return Err(PrivateAdmissionRefusal::DifferentAdmission);
             }
-            let removed = bindings.bound.remove(&client).expect("just read");
-            Ok(retire_grants(authority, issuer, &removed))
+            Ok(close_and_retire(authority, issuer, bindings, client))
         })?
     }
 
     /// Revoke every admission in one namespace.
+    /// Every binding in the namespace closes, whatever it holds.
+    ///
+    /// A binding that issued nothing, and one whose grants are already
+    /// retired, close exactly like any other: closing is what denies further
+    /// work, and having nothing left to clean up is not a reason to leave a
+    /// namespace admitted.
     pub fn revoke_namespace(
         &self,
         namespace: NamespaceId,
-    ) -> Result<usize, PrivateAdmissionRefusal> {
+    ) -> Result<PrivateRevocation, PrivateAdmissionRefusal> {
         self.under_boundary(|authority, issuer, bindings| {
-            let closing: Vec<XServerFrontendClientId> = bindings
+            let mut total = PrivateRevocation::default();
+            // Taken one at a time rather than listed first. Collecting the
+            // matches allocates on a cleanup path, and the list would be a
+            // local holding work the inventory no longer describes.
+            while let Some(client) = bindings
                 .bound
                 .iter()
-                .filter(|(_, bound)| bound.namespace == namespace)
+                .find(|(_, bound)| bound.namespace == namespace && !bound.closed)
                 .map(|(client, _)| *client)
-                .collect();
-            let mut retired = 0usize;
-            for client in closing {
-                let removed = bindings.bound.remove(&client).expect("just listed");
-                retired = retired.saturating_add(retire_grants(authority, issuer, &removed));
+            {
+                let one = close_and_retire(authority, issuer, bindings, client);
+                total.closed = total.closed.saturating_add(one.closed);
+                total.retired = total.retired.saturating_add(one.retired);
             }
-            Ok(retired)
+            Ok(total)
         })?
     }
 
@@ -182,7 +219,7 @@ impl PrivateAdmissionParticipant {
         device: sophia_protocol::DeviceId,
     ) -> Result<PrivateReservationRole, PrivateAdmissionRefusal> {
         self.under_boundary(|authority, issuer, bindings| {
-            let Some(bound) = bindings.bound.get(&client) else {
+            let Some(bound) = bindings.bound.get(&client).filter(|bound| !bound.closed) else {
                 return Err(PrivateAdmissionRefusal::NotAdmitted);
             };
             let connection = sophia_input_authority::ConnectionIdentity {
@@ -231,7 +268,7 @@ impl PrivateAdmissionParticipant {
         PrivateAdmissionRefusal,
     > {
         self.under_boundary(|authority, issuer, bindings| {
-            let Some(bound) = bindings.bound.get(&client) else {
+            let Some(bound) = bindings.bound.get(&client).filter(|bound| !bound.closed) else {
                 // Revoked, or never admitted here. Refused before any effect.
                 return Err(PrivateAdmissionRefusal::NotAdmitted);
             };
@@ -258,22 +295,39 @@ impl PrivateAdmissionParticipant {
     }
 }
 
-/// Retire every grant an admission authorised.
+/// Close one binding and retire what its admission authorised.
+///
+/// Closed first, so nothing can be admitted through it while its grants are
+/// still going. The binding stays in the inventory throughout and each grant
+/// is removed only once its retirement has returned, so an unwind part-way
+/// leaves the remainder recorded and closed rather than destroying it with a
+/// local. The entry goes only when there is nothing left owed against it.
 ///
 /// Debt is retained by the authority rather than discharged here: a revoked
 /// grant's obligations outlive it, which is what makes cleanup possible after
 /// the client is gone.
 #[cfg(unix)]
-fn retire_grants(
+fn close_and_retire(
     authority: &mut sophia_input_authority::AuthorityInstance,
     issuer: &sophia_input_authority::IssuerHandle,
-    bound: &PrivateAdmissionBinding,
-) -> usize {
+    bindings: &mut PrivateAdmissionBindings,
+    client: XServerFrontendClientId,
+) -> PrivateRevocation {
+    let Some(bound) = bindings.bound.get_mut(&client) else {
+        return PrivateRevocation::default();
+    };
+    let closed = usize::from(!bound.closed);
+    bound.closed = true;
     let mut retired = 0usize;
-    for grant in &bound.grants {
-        if authority.revoke_grant(issuer, *grant).is_ok() {
+    while let Some(grant) = bound.grants.last().copied() {
+        if authority.revoke_grant(issuer, grant).is_ok() {
             retired = retired.saturating_add(1);
         }
+        // Removed only now, with the retirement returned. Copied rather than
+        // popped above, so a retirement that does not return leaves the grant
+        // where it was.
+        bound.grants.pop();
     }
-    retired
+    bindings.bound.remove(&client);
+    PrivateRevocation { closed, retired }
 }

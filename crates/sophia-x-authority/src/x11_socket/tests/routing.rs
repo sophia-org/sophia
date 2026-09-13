@@ -11020,6 +11020,28 @@ fn admitted(client: XServerFrontendClientId) -> sophia_protocol::ClientAdmission
     .unwrap()
 }
 
+/// The same admission, in a chosen namespace.
+fn namespaced(
+    client: XServerFrontendClientId,
+    namespace: NamespaceId,
+) -> sophia_protocol::ClientAdmissionContext {
+    sophia_protocol::ClientAdmissionContext::new(
+        sophia_protocol::ClientAdmissionId::from_raw(client.raw()),
+        sophia_protocol::NamespaceContext::new(
+            namespace,
+            sophia_protocol::NamespaceProfile::Confined,
+            sophia_protocol::NamespaceCapabilities::NONE,
+        )
+        .unwrap(),
+        sophia_protocol::ClientAuthProvenance::new(
+            sophia_protocol::ClientAuthenticationMethod::PeerCredentials,
+            ROLE_SESSION_GENERATION,
+        )
+        .unwrap(),
+    )
+    .unwrap()
+}
+
 /// Admit a client the way the production boundary expects.
 ///
 /// Both halves, because they are different things: the frontend registers the
@@ -11576,7 +11598,14 @@ fn a_revoked_admission_stops_a_later_execution() {
             sophia_protocol::ClientAdmissionId::from_raw(561),
         )
         .expect("the boundary to revoke");
-    assert_eq!(retired, 1, "the grant this admission authorised was retired");
+    assert_eq!(
+        retired,
+        crate::PrivateRevocation {
+            closed: 1,
+            retired: 1
+        },
+        "the binding closed and the grant it authorised was retired"
+    );
 
     let refused = private.execute_ordered(&second, XServerFrontendClientId(561), |_permit| {
         panic!("a revoked admission must not reach the permit");
@@ -11623,6 +11652,98 @@ fn a_revoked_admission_stops_a_later_execution() {
         ),
         "a replacement admission does not make an old grant current, got {still_refused:?}"
     );
+}
+
+#[test]
+fn a_namespace_closes_every_binding_in_it_whatever_it_holds() {
+    let private = private_for_roles();
+    let namespace = NamespaceId::from_raw(571);
+
+    // Three shapes in one namespace: one that never issued a grant, one whose
+    // grant is already retired, and one still holding a live grant. Closing is
+    // what denies further work, so having nothing left to clean up is not a
+    // reason to leave a namespace admitted.
+    let bare = XServerFrontendClientId(571);
+    let spent = XServerFrontendClientId(572);
+    let live = XServerFrontendClientId(573);
+    for client in [bare, spent, live] {
+        private
+            .admission_participant()
+            .admit(client, namespaced(client, namespace))
+            .expect("the boundary to admit");
+    }
+    let _spent_role = private
+        .reservation_role(spent, DeviceId::from_raw(1))
+        .expect("a capability");
+    let _live_role = private
+        .reservation_role(live, DeviceId::from_raw(2))
+        .expect("a capability");
+
+    // Retire one admission on its own first, so its binding is gone and the
+    // namespace sweep meets a client with nothing left.
+    let first = private
+        .admission_participant()
+        .revoke_admission(spent, sophia_protocol::ClientAdmissionId::from_raw(spent.raw()))
+        .expect("the boundary to revoke");
+    assert_eq!(
+        first,
+        crate::PrivateRevocation {
+            closed: 1,
+            retired: 1
+        }
+    );
+
+    let swept = private
+        .admission_participant()
+        .revoke_namespace(namespace)
+        .expect("the boundary to revoke the namespace");
+    assert_eq!(
+        swept,
+        crate::PrivateRevocation {
+            closed: 2,
+            retired: 1
+        },
+        "both remaining bindings closed; only the live grant had anything to retire"
+    );
+
+    // A zero retired count is not evidence that nothing closed.
+    for client in [bare, live] {
+        assert!(
+            matches!(
+                private.reservation_role(client, DeviceId::from_raw(9)),
+                Err(crate::PrivateAdmissionRefusal::NotAdmitted)
+            ),
+            "every binding in the namespace is closed"
+        );
+    }
+}
+
+#[test]
+fn revoking_a_namespace_with_nothing_to_retire_still_closes_it() {
+    let private = private_for_roles();
+    let namespace = NamespaceId::from_raw(581);
+    let client = XServerFrontendClientId(581);
+    private
+        .admission_participant()
+        .admit(client, namespaced(client, namespace))
+        .expect("the boundary to admit");
+
+    let swept = private
+        .admission_participant()
+        .revoke_namespace(namespace)
+        .expect("the boundary to revoke the namespace");
+    assert_eq!(
+        swept,
+        crate::PrivateRevocation {
+            closed: 1,
+            retired: 0
+        },
+        "closed with nothing to retire, which is not the same as nothing closed"
+    );
+    assert!(matches!(
+        private.reservation_role(client, DeviceId::from_raw(1)),
+        Err(crate::PrivateAdmissionRefusal::NotAdmitted)
+    ));
 }
 
 #[test]
