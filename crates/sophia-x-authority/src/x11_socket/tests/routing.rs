@@ -1274,12 +1274,14 @@ fn a_transition_in_flight_refuses_to_stamp_new_routed_input() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, mut instance, issuer) = control_gate();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let (_registration, _channels) = broker.registry.register_client(client).unwrap();
     broker
         .registry
@@ -1328,8 +1330,10 @@ fn input_stamped_before_a_transition_is_not_delivered_after_it() {
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let (_registration, channels) = broker.registry.register_client(client).unwrap();
     broker
         .registry
@@ -1397,8 +1401,10 @@ fn a_sender_taken_before_the_gate_was_installed_is_still_gated() {
     let early_sender = broker.routed_input_sender();
 
     let (gate, mut instance, issuer) = control_gate();
-    let broker = broker.under_control_gate(gate.clone());
-    let _ = &broker;
+    let mut broker = broker;
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a broker with no gate to accept one");
     gate.with(|coordinator| {
         coordinator
             .request(
@@ -1436,7 +1442,10 @@ fn the_lockless_epoch_advance_is_refused_under_a_gate() {
     // Ungated, the bare advance is the ordinary mechanism and still works.
     assert!(ungated_sender.advance_control_epoch(2));
 
-    let broker = broker.under_control_gate(gate);
+    let mut broker = broker;
+    broker
+        .try_install_control_gate(gate)
+        .expect("a broker with no gate to accept one");
     let sender = broker.routed_input_sender();
 
     // Gated, a coordinator owns every transition, so this escape is closed
@@ -1458,8 +1467,10 @@ fn the_privileged_apply_clears_every_population_and_reports_them_together() {
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let (_registration, _channels) = broker.registry.register_client(client).unwrap();
     broker
         .registry
@@ -1551,12 +1562,14 @@ fn the_privileged_apply_does_not_stamp_without_the_session_snapshot() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, mut instance, issuer) = control_gate();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
 
     gate.with(|coordinator| {
         let token = coordinator
@@ -1595,8 +1608,10 @@ fn a_publication_transition_preserves_grabs_and_frozen_input() {
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let (_registration, _channels) = broker.registry.register_client(client).unwrap();
     broker
         .registry
@@ -1674,12 +1689,14 @@ fn a_foreign_token_is_refused_before_anything_is_destroyed() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, mut instance, issuer) = control_gate();
     let (other_gate, mut other_instance, other_issuer) = control_gate();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let (_registration, _channels) = broker.registry.register_client(client).unwrap();
     broker
         .registry
@@ -1764,12 +1781,14 @@ fn an_authority_with_no_transition_open_cannot_drive_anothers() {
     let (gate, mut instance, issuer) = control_gate();
     // A second authority, entirely uninvolved, with its own legitimate issuer.
     let (_other_gate, mut other_instance, other_issuer) = control_gate();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let (_registration, _channels) = broker.registry.register_client(client).unwrap();
     broker
         .registry
@@ -1851,12 +1870,14 @@ fn gated_broker_with_grab(
 ) {
     let (control_ack_sender, control_ack_receiver) = sync_channel(4);
     let (delivery_sender, delivery_receiver) = channel();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let registration = broker.registry.register_client(client).unwrap();
     broker
         .registry
@@ -2180,12 +2201,14 @@ fn a_synthetic_press_follows_focus_when_nothing_is_grabbed() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, mut instance, issuer, submit) = control_gate_with_submit();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let connection = sophia_input_authority::ConnectionIdentity {
         recipient: 98,
         connection_generation: 7,
@@ -2219,12 +2242,14 @@ fn a_synthetic_press_with_nobody_entitled_is_refused_without_effect() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, mut instance, issuer, submit) = control_gate_with_submit();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let connection = sophia_input_authority::ConnectionIdentity {
         recipient: 97,
         connection_generation: 3,
@@ -2268,12 +2293,14 @@ fn a_server_grab_does_not_make_its_holder_the_recipient() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, mut instance, issuer, submit) = control_gate_with_submit();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     // Another client holds the server. That schedules requests -- it decides
     // who may proceed while others wait -- and entitles it to nothing.
     broker
@@ -2474,12 +2501,14 @@ fn desired_joined_press_reports_the_incarnation_not_the_proposal() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, mut instance, issuer, submit) = control_gate_with_submit();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let connection = sophia_input_authority::ConnectionIdentity {
         recipient: 93,
         connection_generation: 19,
@@ -2555,12 +2584,14 @@ fn desired_foreign_authority_cannot_execute_through_bound_broker() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _bound_instance, _bound_issuer, _bound_submit) = control_gate_with_submit();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
 
     // A second authority, with its own legitimate issuer, submit handle,
     // grant and reserved request. Everything about it is valid; none of it
@@ -2613,12 +2644,14 @@ fn desired_release_after_focus_changes_reports_original_recipient() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, mut instance, issuer, submit) = control_gate_with_submit();
-    let broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
         NonZeroUsize::new(4).unwrap(),
         control_ack_sender,
         delivery_sender,
-    )
-    .under_control_gate(gate.clone());
+    );
+    broker
+        .try_install_control_gate(gate.clone())
+        .expect("a fresh broker to accept its gate");
     let connection = sophia_input_authority::ConnectionIdentity {
         recipient: 91,
         connection_generation: 29,
@@ -2693,5 +2726,54 @@ fn desired_release_after_focus_changes_reports_original_recipient() {
     assert!(
         released.record.is_none(),
         "a release proposes no recipient of its own"
+    );
+}
+
+#[test]
+fn a_refused_activation_leaves_the_broker_ordinary_and_working() {
+    let namespace = NamespaceId::from_raw(43);
+    let client = XServerFrontendClientId(60);
+    let surface = SurfaceId::new(47, 1);
+    let window = XResourceId::new(0x200110, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (first_gate, _fi, _fs) = control_gate();
+    let (second_gate, _si, _ss) = control_gate();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    let (_registration, channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    broker
+        .try_install_control_gate(first_gate.clone())
+        .expect("a broker with no gate to accept one");
+
+    // A different coordinator is refused, and the refusal is reported rather
+    // than swallowed by the cell that takes only one value.
+    assert_eq!(
+        broker.try_install_control_gate(second_gate),
+        Err(crate::ActivationRefused::DifferentGateInstalled)
+    );
+    // Installing the same one again is not an error; it changes nothing.
+    broker
+        .try_install_control_gate(first_gate.clone())
+        .expect("the installed gate to be idempotent");
+
+    // The broker still exists and still works. A consuming form that refused
+    // would have had to drop it to report, destroying the instance that was
+    // supposed to stay as it was and stranding this client's queue.
+    broker
+        .routed_input_sender()
+        .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(90)))
+        .expect("the installed gate to admit work");
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert!(
+        channels.input.try_recv().is_ok(),
+        "authorised work continues after a refused activation"
     );
 }
