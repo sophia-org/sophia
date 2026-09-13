@@ -1,3 +1,15 @@
+/// Engine-facing ingress and per-client queue registry for a routed X11
+/// session.
+///
+/// Engine code sends client-addressed input through the bounded ingress queues,
+/// then its session loop calls [`Self::route_pending`] to move it into the
+/// registered worker's private queue. Latency-sensitive control can instead use
+/// [`Self::control_router`] to reach the selected client's bounded queue
+/// directly. The broker never broadcasts a route. Routes whose client
+/// disappeared after Engine selection are retired with a negative
+/// acknowledgement. A client that saturates its private input queue is
+/// quarantined without terminating the shared frontend; corruption of shared
+/// registry state remains service-fatal.
 #[cfg(unix)]
 pub struct XServerFrontendRouteBroker {
     registry: XServerFrontendRouteRegistry,
