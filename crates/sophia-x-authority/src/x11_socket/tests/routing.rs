@@ -3025,7 +3025,7 @@ fn the_private_host_delivers_each_admitted_input_exactly_once() {
     }
 
     let ran = private.route_pending().expect("the ordered pass to run");
-    assert_eq!(ran, 2, "both admitted operations ran");
+    assert_eq!(ran.len(), 2, "both accepted operations ran");
     assert!(channels.input.try_recv().is_ok());
     assert!(channels.input.try_recv().is_ok());
     assert!(
@@ -3053,7 +3053,7 @@ fn the_private_host_never_drains_raw_ingress() {
         Some(crate::ActivationRefused::RawIngressRefusedUnderGate)
     );
     assert_eq!(
-        private.route_pending().expect("an empty ordered pass"),
+        private.route_pending().expect("an empty ordered pass").len(),
         0,
         "nothing to run, and no raw source to find any in"
     );
@@ -3158,7 +3158,7 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
     // difference, silently.
     let mut delivered = 0usize;
     for _ in 0..8 {
-        delivered += private.route_pending().expect("an ordered pass");
+        delivered += private.route_pending().expect("an ordered pass").len();
     }
     assert_eq!(
         delivered, sent as usize,
@@ -3281,7 +3281,7 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
     // accepted is not allowed to disappear.
     let mut ran = 0usize;
     for _ in 0..6 {
-        ran += private.route_pending().expect("an ordered pass");
+        ran += private.route_pending().expect("an ordered pass").len();
     }
     assert_eq!(ran, 2, "both accepted operations ran across the passes");
     assert!(channels.input.try_recv().is_ok(), "the input was delivered");
@@ -3344,7 +3344,29 @@ fn two_producer_classes_share_one_order() {
         expected.windows(2).all(|pair| pair[0] < pair[1]),
         "positions must rise in acceptance order across producers: {expected:?}"
     );
-    assert_eq!(private.route_pending().expect("the shared order to run"), 8);
+    let ran = private.route_pending().expect("the shared order to run");
+    assert_eq!(ran.len(), 8);
+
+    // What the CONSUMER took, not what the producers were told. A consumer
+    // that grouped entries someone else had already numbered would satisfy the
+    // assertion above and fail this one.
+    let taken: Vec<_> = ran.iter().map(|run| run.class).collect();
+    assert_eq!(
+        taken,
+        vec![
+            crate::ReadyClass::RoutedInput,
+            crate::ReadyClass::Control,
+            crate::ReadyClass::RoutedInput,
+            crate::ReadyClass::Control,
+            crate::ReadyClass::RoutedInput,
+            crate::ReadyClass::Control,
+            crate::ReadyClass::RoutedInput,
+            crate::ReadyClass::Control,
+        ],
+        "the consumer must see the alternation the producers created"
+    );
+    let positions: Vec<_> = ran.iter().map(|run| run.sequence.raw()).collect();
+    assert_eq!(positions, expected, "and at their own positions");
 }
 
 #[test]
@@ -3395,4 +3417,92 @@ fn a_send_that_returned_is_never_overtaken_by_one_that_started_later() {
         a_at.raw() < b_at.raw(),
         "a completed send cannot be overtaken by one that started afterwards"
     );
+
+    // And the consumer sees that precedence, not just the numbers.
+    let mut private = private;
+    let ran = private.route_pending().expect("the shared order to run");
+    let taken: Vec<_> = ran.iter().map(|run| run.sequence.raw()).collect();
+    assert_eq!(taken, vec![a_at.raw(), b_at.raw()]);
+}
+
+#[test]
+fn a_refused_control_comes_back_to_its_producer() {
+    let client = XServerFrontendClientId(70);
+    let surface = SurfaceId::new(57, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    // Ordinary share of two at the smallest production size.
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(1).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let control = private.control_producer();
+    let command = |transaction| XAuthorityClientControlCommand {
+        client,
+        command: XAuthorityControlCommand::FocusSurface {
+            transaction: TransactionId::from_raw(transaction),
+            surface,
+        },
+    };
+
+    control.submit(command(1)).expect("room for the first");
+    control.submit(command(2)).expect("room for the second");
+
+    // Nothing has drained, so the third has nowhere to go. Controls have no
+    // recovery ticket capping them, so this is reachable by ordinary use.
+    let (refusal, returned) = control
+        .submit(command(3))
+        .expect_err("the ordinary share is full");
+    assert_eq!(refusal, crate::AdmissionRefusal::Saturated);
+    assert_eq!(
+        returned, command(3),
+        "a refused control is handed back, not destroyed"
+    );
+}
+
+#[test]
+fn producers_are_refused_once_their_consumer_is_gone() {
+    let client = XServerFrontendClientId(71);
+    let surface = SurfaceId::new(58, 1);
+    let window = XResourceId::new(0x2001b0, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, NamespaceId::from_raw(53), surface, window)
+        .unwrap();
+
+    // Producers outlive the frontend, which is ordinary: they are handles.
+    let input = private.ingress();
+    let control = private.control_producer();
+    drop(private);
+
+    // Accepting now would tell a producer its work is queued when nothing can
+    // ever run it.
+    match input.submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(600))) {
+        Err(crate::PrivateSendError::Disconnected(_)) => {}
+        other => panic!("a gone consumer is a disconnection, not {other:?}"),
+    }
+    let (refusal, _returned) = control
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(1),
+                surface,
+            },
+        })
+        .expect_err("a gone consumer refuses control too");
+    assert_eq!(refusal, crate::AdmissionRefusal::ConsumerGone);
 }

@@ -7,7 +7,7 @@
 /// started afterwards.
 #[cfg(unix)]
 pub struct SharedAdmission {
-    ready: Mutex<crate::ReadyStream<PrivateOperation>>,
+    ready: Mutex<SharedQueue>,
     /// Set once the stream can no longer name an entry.
     ///
     /// Terminal, unlike a full queue. Retrying cannot produce an identity that
@@ -21,9 +21,32 @@ pub struct SharedAdmission {
 impl SharedAdmission {
     fn new(ready: crate::ReadyStream<PrivateOperation>) -> Self {
         Self {
-            ready: Mutex::new(ready),
+            ready: Mutex::new(SharedQueue {
+                ready,
+                closed: false,
+            }),
             exhausted: AtomicBool::new(false),
         }
+    }
+
+    /// Stop accepting, and take what was accepted and never run.
+    ///
+    /// Closing happens under the same lock acceptance takes, so a producer is
+    /// either accepted before the close or refused after it, never accepted
+    /// into a queue nobody will drain. What was already accepted comes back
+    /// here: those entries were promised a consumer and are owed an outcome,
+    /// so they are handed to whoever closes rather than dropped with the
+    /// queue.
+    fn close(&self) -> Vec<PrivateOperation> {
+        let Ok(mut queue) = self.ready.lock() else {
+            return Vec::new();
+        };
+        queue.closed = true;
+        let mut stranded = Vec::new();
+        while let Some((_, _, operation)) = queue.ready.take_next() {
+            stranded.push(operation);
+        }
+        stranded
     }
 
     /// Accept runnable work, assigning its position as it is published.
@@ -41,10 +64,15 @@ impl SharedAdmission {
         if self.exhausted.load(Ordering::Acquire) {
             return Err((AdmissionRefusal::Exhausted, operation));
         }
-        let Ok(mut ready) = self.ready.lock() else {
+        let Ok(mut queue) = self.ready.lock() else {
             return Err((AdmissionRefusal::Unavailable, operation));
         };
-        match ready.admit(class, operation) {
+        // Checked inside the same hold as admission, so a close cannot land
+        // between deciding this is acceptable and accepting it.
+        if queue.closed {
+            return Err((AdmissionRefusal::ConsumerGone, operation));
+        }
+        match queue.ready.admit(class, operation) {
             Ok(sequence) => Ok(sequence),
             Err(refused) => match refused.refusal {
                 crate::ReadyRefusal::AtCapacity => {
@@ -61,9 +89,32 @@ impl SharedAdmission {
         }
     }
 
-    fn take_next(&self) -> Option<(crate::ReadySequence, crate::ReadyClass, PrivateOperation)> {
-        self.ready.lock().ok()?.take_next()
+    /// Take the next entry, distinguishing an empty queue from an unusable one.
+    ///
+    /// Mapping a poisoned lock to `None` made an unreachable queue look drained
+    /// and a run of it look like progress, while accepted work sat in it
+    /// unanswered.
+    fn take_next(
+        &self,
+    ) -> Result<Option<(crate::ReadySequence, crate::ReadyClass, PrivateOperation)>, ()> {
+        let mut queue = self.ready.lock().map_err(|_| ())?;
+        Ok(queue.ready.take_next())
     }
+}
+
+/// One operation the consumer took, and where it sat.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateRun {
+    pub sequence: crate::ReadySequence,
+    pub class: crate::ReadyClass,
+}
+
+/// The shared queue and whether it is still being drained.
+#[cfg(unix)]
+struct SharedQueue {
+    ready: crate::ReadyStream<PrivateOperation>,
+    closed: bool,
 }
 
 /// Why the shared admission would not accept work.
@@ -77,6 +128,8 @@ pub enum AdmissionRefusal {
     Exhausted,
     /// The shared queue cannot be reached.
     Unavailable,
+    /// The consumer is gone. Nothing accepted now could ever run.
+    ConsumerGone,
 }
 
 /// Why a private producer's work was not accepted.
@@ -130,10 +183,13 @@ impl PrivateControlProducer {
     pub fn submit(
         &self,
         control: XAuthorityClientControlCommand,
-    ) -> Result<crate::ReadySequence, AdmissionRefusal> {
+    ) -> Result<crate::ReadySequence, (AdmissionRefusal, XAuthorityClientControlCommand)> {
         self.admission
             .accept(crate::ReadyClass::Control, PrivateOperation::Control(control))
-            .map_err(|(refusal, _returned)| refusal)
+            .map_err(|(refusal, returned)| match returned {
+                PrivateOperation::Control(control) => (refusal, control),
+                _ => unreachable!("control is returned as control"),
+            })
     }
 }
 
@@ -163,6 +219,7 @@ impl PrivateIngress {
                     AdmissionRefusal::Saturated => PrivateSendError::Saturated(route),
                     AdmissionRefusal::Exhausted => PrivateSendError::Exhausted(route),
                     AdmissionRefusal::Unavailable => PrivateSendError::Unavailable(route),
+                    AdmissionRefusal::ConsumerGone => PrivateSendError::Disconnected(route),
                 }
             })
     }
@@ -386,6 +443,16 @@ pub struct PrivateXServerFrontend {
     admission: Arc<SharedAdmission>,
 }
 
+#[cfg(unix)]
+impl Drop for PrivateXServerFrontend {
+    fn drop(&mut self) {
+        // Producers may outlive this. Closing stops them being told their work
+        // was accepted when nothing will ever run it, and hands back what was
+        // accepted and never run so it is not lost with the queue.
+        let _stranded = self.admission.close();
+    }
+}
+
 /// One thing the private host has to run, in the order it was admitted.
 #[cfg(unix)]
 #[cfg(unix)]
@@ -496,11 +563,23 @@ impl PrivateXServerFrontend {
     ///
     /// Raw ingress is not a source. It carries no stamp, and a private
     /// instance will not hand out a handle to one.
-    pub fn route_pending(&mut self) -> Result<usize, XServerFrontendRouteError> {
-        let mut ran = 0usize;
-        while let Some((_, _, operation)) = self.admission.take_next() {
+    /// Returns what it ran, in the order it took them.
+    ///
+    /// The order is a return value rather than a count, because a caller that
+    /// can only see how many ran cannot tell an ordered consumer from one that
+    /// grouped entries someone else had already numbered.
+    pub fn route_pending(&mut self) -> Result<Vec<PrivateRun>, XServerFrontendRouteError> {
+        let mut ran = Vec::new();
+        loop {
+            let next = self
+                .admission
+                .take_next()
+                .map_err(|()| XServerFrontendRouteError::RegistryPoisoned)?;
+            let Some((sequence, class, operation)) = next else {
+                break;
+            };
             self.run_one(operation)?;
-            ran = ran.saturating_add(1);
+            ran.push(PrivateRun { sequence, class });
         }
         Ok(ran)
     }
