@@ -498,6 +498,7 @@ fn routed_control_discards_another_clients_command_and_labels_its_ack() {
     let channels = X11ControlChannels::Routed {
         receiver: command_receiver,
         acknowledgements: ack_sender,
+        completion: None,
     };
     assert_eq!(channels.recv_timeout(first), Err(RecvTimeoutError::Timeout));
     assert_eq!(
@@ -510,7 +511,7 @@ fn routed_control_discards_another_clients_command_and_labels_its_ack() {
         surface: command.surface(),
         outcome: XAuthorityControlOutcome::Delivered,
     };
-    channels.send_ack(first, acknowledgement).unwrap();
+    channels.send_ack_for(first, acknowledgement, None).unwrap();
     assert_eq!(
         ack_receiver.recv().unwrap(),
         XAuthorityClientControlAck {
@@ -585,8 +586,11 @@ fn route_broker_delivers_to_the_registered_client_only() {
     let channels = X11ControlChannels::ClientBound {
         receiver: channels.control,
         acknowledgements: broker.registry.acknowledgement_sender.clone(),
+        completion: None,
     };
-    channels.send_ack(client, acknowledgement).unwrap();
+    channels
+        .send_ack_for(client, acknowledgement, None)
+        .unwrap();
     assert_eq!(
         broker
             .recv_control_ack_timeout(Duration::from_millis(1))

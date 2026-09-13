@@ -469,10 +469,38 @@ impl XServerFrontendRouteRegistry {
         &self,
         route: XAuthorityClientControlCommand,
     ) -> Result<(), XServerFrontendRouteError> {
+        self.route_control_with_completion(route, None)
+    }
+
+    /// Install the completion registry a private instance owns.
+    ///
+    /// Once only. A second install would leave client writers registered
+    /// before it reporting outcomes to a registry nobody reads.
+    fn install_control_completion(&self, completion: ControlCompletionRegistry) -> bool {
+        self.control_completion.set(completion).is_ok()
+    }
+
+    /// The completion registry a client writer should report outcomes to.
+    fn control_completion(&self) -> Option<ControlCompletionRegistry> {
+        self.control_completion.get().cloned()
+    }
+
+    /// Route a control, carrying a completion registration when the private
+    /// path made one.
+    ///
+    /// Both producer routes take the token. `route_focus_control` returns
+    /// early below for focus commands, so attaching it only at the
+    /// construction further down would cover ordinary control and silently
+    /// miss focus.
+    fn route_control_with_completion(
+        &self,
+        route: XAuthorityClientControlCommand,
+        completion: Option<ControlCompletionToken>,
+    ) -> Result<(), XServerFrontendRouteError> {
         if !self.input_recovery.active(None, route.client) {
             return Err(XServerFrontendRouteError::UnknownClient { client: route.client });
         }
-        if let Some(result) = self.route_focus_control(route) {
+        if let Some(result) = self.route_focus_control(route, completion) {
             return result;
         }
         let sender = self.client_senders(route.client)?.control;
@@ -482,6 +510,7 @@ impl XServerFrontendRouteRegistry {
             X11RoutedControl::Authority {
                 command: route.command,
                 focus: None,
+                completion,
             },
         )
     }

@@ -321,10 +321,14 @@ enum X11ControlChannels {
     Routed {
         receiver: Receiver<XAuthorityClientControlCommand>,
         acknowledgements: SyncSender<XAuthorityClientControlAck>,
+        /// Present only on a private instance, where every accepted control
+        /// has a registration waiting for its outcome.
+        completion: Option<ControlCompletionRegistry>,
     },
     ClientBound {
         receiver: Receiver<X11RoutedControl>,
         acknowledgements: SyncSender<XAuthorityClientControlAck>,
+        completion: Option<ControlCompletionRegistry>,
     },
 }
 
@@ -340,6 +344,10 @@ impl X11ControlChannels {
                     Ok(route) if route.client == client => Ok(X11RoutedControl::Authority {
                         command: route.command,
                         focus: None,
+                        // This path takes a command straight off the shared
+                        // receiver rather than from a private producer, so
+                        // there is no registration to carry.
+                        completion: None,
                     }),
                     // Drop one misaddressed route, then let the writer
                     // loop observe its stop flag before it receives again.
@@ -351,11 +359,24 @@ impl X11ControlChannels {
         }
     }
 
-    fn send_ack(
+    fn completion(&self) -> Option<&ControlCompletionRegistry> {
+        match self {
+            Self::Routed { completion, .. } | Self::ClientBound { completion, .. } => {
+                completion.as_ref()
+            }
+        }
+    }
+
+    /// Try to publish, and say which of the three things happened.
+    ///
+    /// Delivered, retained because the channel is full, or not published at
+    /// all because the receiver is gone. The last two are different facts and
+    /// neither is a delivery.
+    fn publish_ack(
         &self,
         client: XServerFrontendClientId,
         acknowledgement: XAuthorityControlAck,
-    ) -> Result<(), X11SetupSocketError> {
+    ) -> ControlPublication {
         match self {
             Self::Routed {
                 acknowledgements, ..
@@ -366,11 +387,72 @@ impl X11ControlChannels {
                 client,
                 acknowledgement,
             }) {
-                Ok(()) | Err(TrySendError::Disconnected(_)) => Ok(()),
-                Err(TrySendError::Full(_)) => Err(X11SetupSocketError::new(
-                    "X11 control acknowledgement channel is full",
-                )),
+                Ok(()) => ControlPublication::Delivered,
+                Err(TrySendError::Disconnected(_)) => ControlPublication::ReceiverGone,
+                Err(TrySendError::Full(_)) => ControlPublication::Retained,
             },
+        }
+    }
+
+    /// Mark that execution of a registered control has begun.
+    ///
+    /// Everything after this point can leave the runtime changed with no
+    /// acknowledgement sent, which is exactly the state that must not later be
+    /// reported as unexecuted.
+    fn begin_applying(&self, token: Option<ControlCompletionToken>) {
+        if let (Some(registry), Some(token)) = (self.completion(), token) {
+            registry.begin_applying(token);
+        }
+    }
+
+    /// Record that no further acknowledgement will come from this writer.
+    ///
+    /// Scoped to the client this writer serves. The registry belongs to the
+    /// private instance and every client writer reports to it, so sealing all
+    /// of it here would refuse work the other clients' writers are still able
+    /// to execute.
+    ///
+    /// Returns how many of that client's registrations were still outstanding.
+    /// Settling them is the owner's business, not the writer's: the writer
+    /// does not own the queue those commands came from.
+    fn seal_completions(&self, client: XServerFrontendClientId) -> usize {
+        self.completion()
+            .map(|registry| registry.seal_client(client))
+            .unwrap_or(0)
+    }
+
+    /// Publish an acknowledgement and record its outcome against a private
+    /// completion registration.
+    ///
+    /// The command is never replayed from here. Whatever its effect was, it
+    /// has already happened; only the acknowledgement is retained.
+    fn send_ack_for(
+        &self,
+        client: XServerFrontendClientId,
+        acknowledgement: XAuthorityControlAck,
+        token: Option<ControlCompletionToken>,
+    ) -> Result<(), X11SetupSocketError> {
+        let publication = self.publish_ack(client, acknowledgement);
+        if let (Some(registry), Some(token)) = (self.completion(), token) {
+            registry.publish(
+                token,
+                XAuthorityClientControlAck {
+                    client,
+                    acknowledgement,
+                },
+                publication,
+            );
+        }
+        match publication {
+            // A gone receiver has always been tolerated here, and that stays
+            // the ordinary behaviour: the writer is not failed because nobody
+            // is listening. It is reported precisely to the registry above,
+            // because a caller that sees only Ok cannot tell publication from
+            // the receiver having disappeared.
+            ControlPublication::Delivered | ControlPublication::ReceiverGone => Ok(()),
+            ControlPublication::Retained => Err(X11SetupSocketError::new(
+                "X11 control acknowledgement channel is full",
+            )),
         }
     }
 }

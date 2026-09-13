@@ -342,6 +342,30 @@ Pure getters need coherent snapshots and request ordering. They do not need
 mutation operations invented for them, and inventing some would be a worse
 error than leaving them unlisted.
 
+## What landed
+
+The completion record now exists in production, default disabled: a private
+instance builds one, installs it on its route registry, and every client writer
+of that instance reports outcomes to it. The public path has none.
+
+| Edge | What answers it now |
+| --- | --- |
+| Producer accepts | `PrivateControlProducer::submit` registers before acceptance and discards the registration when admission refuses, so a refused command has exactly one owner: the caller it was handed back to |
+| Writer begins execution | `begin_applying` is called before the arms that mutate the runtime, so a failure after it is not later reported as unexecuted |
+| Writer publishes | The three publication outcomes are distinguished. Delivered retires the record; a full channel retains the exact acknowledgement and never the command; a gone receiver publishes nothing and so closes nothing, though the writer is still not failed for it |
+| Writer stops, however | A guard seals that client's registrations on every exit including an unwind, so no further work is accepted for a client whose writer has gone. It seals only that client: the registry serves the whole instance |
+| Instance closes | Commands still in the queue are answered or handed back by the existing settlement, giving up their records as they go. Commands a writer took and never ran are carried out in `pending` with their records given up. Commands caught mid-application stay in the registry, which the returned settlement still reaches through its origin |
+| Retry | `publish_owed_with` republishes in place. Nothing is handed out that a caller could drop, and a failed retry keeps the outcome |
+
+Credit release follows the record rather than the send: a control credit is
+released exactly when its record retires, and an unreadable registry releases
+nothing. That closes the earlier note on `reclaim_settled` that control was not
+observable from the frontend.
+
+Not done here: the registration `Drop`, worker join and `register_client`
+rows above are still unowned, and the durable owner observes carried control
+only through the origin it kept.
+
 ## Status
 
 Source-confirmed inventory, and known to be incomplete: an independent audit

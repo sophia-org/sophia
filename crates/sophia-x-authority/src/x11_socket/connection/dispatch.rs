@@ -488,6 +488,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 Some(X11ControlChannels::ClientBound {
                     receiver: channels.control,
                     acknowledgements: routing.acknowledgement_sender.clone(),
+                    // Present exactly when this registry belongs to a private
+                    // instance. Without it a writer holds a registration token
+                    // and has nowhere to report its outcome.
+                    completion: routing.control_completion(),
                 }),
                 Some(channels.protocol),
             )

@@ -30,6 +30,13 @@ struct XServerFrontendRouteRegistry {
     frozen_input: Arc<Mutex<VecDeque<XDeferredRoutedInput>>>,
     xkb_config: crate::XkbRmlvoConfig,
     xkb_worker: XkbKeyboardWorker,
+    /// The completion registry of the private instance that owns this
+    /// registry, installed once at construction.
+    ///
+    /// Absent on the public path, which has no private instance to answer to.
+    /// A client writer reads it here because this is what both routing sites
+    /// and every client registration already reach.
+    control_completion: Arc<std::sync::OnceLock<ControlCompletionRegistry>>,
     acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
     input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
     metadata_candidate_sender: SyncSender<XAuthorityClientMetadataCandidate>,

@@ -181,6 +181,7 @@ pub struct PrivateIngress {
 #[cfg(unix)]
 pub struct PrivateControlProducer {
     admission: Arc<SharedAdmission>,
+    completion: ControlCompletionRegistry,
 }
 
 #[cfg(unix)]
@@ -190,10 +191,28 @@ impl PrivateControlProducer {
         &self,
         control: XAuthorityClientControlCommand,
     ) -> Result<crate::ReadySequence, (AdmissionRefusal, XAuthorityClientControlCommand)> {
+        // Registered before acceptance, and at the producer rather than at
+        // either routing site: focus commands bypass one of those, and this is
+        // the only point bound to the admission that accepted the work.
+        let token = match self.completion.register(control) {
+            Ok(token) => token,
+            Err((_, returned)) => return Err((AdmissionRefusal::Saturated, returned)),
+        };
         self.admission
-            .accept(crate::ReadyClass::Control, PrivateOperation::Control(control))
+            .accept(
+                crate::ReadyClass::Control,
+                PrivateOperation::Control(control, Some(token)),
+            )
             .map_err(|(refusal, returned)| match returned {
-                PrivateOperation::Control(control) => (refusal, control),
+                PrivateOperation::Control(control, _) => {
+                    // Refused, so the command goes back to the producer that
+                    // still owns it. The registration is rolled back with it:
+                    // a record left behind would answer at the next
+                    // cancellation edge for a command this caller was told was
+                    // never taken, and answer it twice if the caller retried.
+                    self.completion.discard(token);
+                    (refusal, control)
+                }
                 _ => unreachable!("control is returned as control"),
             })
     }
@@ -464,6 +483,8 @@ pub struct PrivateXServerFrontend {
     service_budget: usize,
     /// Where obligations go if a settlement handle is abandoned.
     durable: PrivateSettlementOwner,
+    /// Per-operation completion records for control accepted here.
+    completion: ControlCompletionRegistry,
     /// Whether this instance still holds its failure slot.
     ///
     /// Released when the instance closes without failing, or handed over with
@@ -551,10 +572,36 @@ impl PrivateXServerFrontend {
         // is not carried as though it were owed.
         self.reclaim_settled();
         let outstanding = std::mem::take(&mut self.outstanding);
-        let pending = settle_against(&origin, stranded);
+        // Everything still in the queue is about to be answered or handed
+        // back by the settlement below, so it already has an owner. Its
+        // records are given up first, or the cancellation pass further down
+        // would hand the same commands back a second time.
+        for operation in &stranded {
+            if let PrivateOperation::Control(_, Some(token)) = operation {
+                self.completion.discard(*token);
+            }
+        }
+        let mut pending = settle_against(&origin, stranded);
         for _ in 0..before.saturating_sub(pending.len()) {
             self.durable.release();
         }
+        // Records still unexecuted after the queue was answered belong to
+        // commands a writer took and never ran: they left the queue, so
+        // draining it did not reach them, and the instance is going. They are
+        // carried out with a home rather than left in a registry nobody will
+        // ask again.
+        //
+        // Their record is settled as it is taken, so the carried command has
+        // no second owner that could publish an outcome for it. Commands
+        // caught mid-application are not here: those stay in the registry,
+        // which the returned settlement still reaches through its origin.
+        let cancellation = self.completion.cancel_unfinished();
+        pending.extend(
+            cancellation
+                .cancellable
+                .into_iter()
+                .map(|command| PrivateOperation::Control(command, None)),
+        );
         PrivateSettlement {
             origin,
             durable: self.durable.clone(),
@@ -599,8 +646,9 @@ enum PrivateOperation {
     /// live order.
     #[allow(dead_code)]
     LeaseRelease(XAuthorityRouteLeaseRelease),
-    /// Control whose application belongs in this order.
-    Control(XAuthorityClientControlCommand),
+    /// Control whose application belongs in this order, with the completion
+    /// registration made before it was accepted.
+    Control(XAuthorityClientControlCommand, Option<ControlCompletionToken>),
 }
 
 #[cfg(unix)]
@@ -657,9 +705,17 @@ impl PrivateXServerFrontend {
             PRIVATE_CLEANUP_RESERVE,
         )
         .expect("a reserve smaller than the capacity it was added to");
+        let completion = ControlCompletionRegistry::with_capacity(capacity);
+        // Installed before the instance exists, so no client can register a
+        // writer that would report its outcomes nowhere.
+        assert!(
+            broker.registry.install_control_completion(completion.clone()),
+            "a freshly built broker has no completion registry yet"
+        );
         Ok(Self {
             broker,
             admission: Arc::new(SharedAdmission::new(staged, durable.clone())),
+            completion,
             service_budget: capacity,
             durable: durable.clone(),
             outstanding: Vec::with_capacity(capacity),
@@ -703,7 +759,24 @@ impl PrivateXServerFrontend {
     pub fn control_producer(&self) -> PrivateControlProducer {
         PrivateControlProducer {
             admission: Arc::clone(&self.admission),
+            completion: self.completion.clone(),
         }
+    }
+
+    /// Republish acknowledgements a client writer could not deliver.
+    ///
+    /// Republishing only: those effects already happened, so nothing here is
+    /// re-run. Returns how many reached the receiver. What does not is kept,
+    /// because a retry that consumed the outcome it failed to publish would
+    /// lose the only record of what happened.
+    pub fn republish_owed_acknowledgements(&self) -> usize {
+        let sender = &self.broker.registry.acknowledgement_sender;
+        self.completion
+            .publish_owed_with(|acknowledgement| match sender.try_send(*acknowledgement) {
+                Ok(()) => ControlPublication::Delivered,
+                Err(TrySendError::Disconnected(_)) => ControlPublication::ReceiverGone,
+                Err(TrySendError::Full(_)) => ControlPublication::Retained,
+            })
     }
 
     /// Run what producers have accepted, in the order they accepted it.
@@ -723,9 +796,11 @@ impl PrivateXServerFrontend {
     /// delivery ends, however it ended, so a credit is released exactly when
     /// its work is answered rather than when it was handed on.
     ///
-    /// Control is not observable from here. Its acknowledgement goes to a
-    /// receiver this frontend does not hold, so its credit stays outstanding
-    /// until the instance closes rather than being released on a guess.
+    /// Control is observable through its registration. The acknowledgement
+    /// goes to a receiver this frontend does not hold, so the send itself
+    /// cannot be watched, but the registry it is reported to is this
+    /// instance's: a retired record means an outcome was reached, and only
+    /// then is the credit released. Accepted, applying and owed all keep it.
     pub fn reclaim_settled(&mut self) -> usize {
         let recovery = &self.broker.registry.input_recovery;
         let before = self.outstanding.len();
@@ -744,7 +819,21 @@ impl PrivateXServerFrontend {
             // writer-pending or frozen. Held until an internal completion
             // record can answer for it.
             PrivateIdentity::Delivery(None) => true,
-            PrivateIdentity::Transaction(_) | PrivateIdentity::Lease(_) => true,
+            PrivateIdentity::Control {
+                completion: Some(token),
+                ..
+            } => match self.completion.state_of(*token) {
+                // An outcome was reached and the record retired, so this
+                // credit is released here and cannot be released again: the
+                // identity leaves `outstanding` with it.
+                ControlRecordState::Retired => false,
+                // Still owed an outcome, or a registry that cannot answer.
+                // Neither is a completion.
+                ControlRecordState::Outstanding | ControlRecordState::Unanswerable => true,
+            },
+            // No registration means nothing to observe, which is not the same
+            // as nothing outstanding.
+            PrivateIdentity::Control { completion: None, .. } | PrivateIdentity::Lease(_) => true,
         });
         let reclaimed = before.saturating_sub(self.outstanding.len());
         for _ in 0..reclaimed {
@@ -827,8 +916,10 @@ impl PrivateXServerFrontend {
                         admitted,
                     )?;
                 }
-                PrivateOperation::Control(control) => {
-                    self.broker.registry.route_control(control)?;
+                PrivateOperation::Control(control, completion) => {
+                    self.broker
+                        .registry
+                        .route_control_with_completion(control, completion)?;
                 }
             }
         Ok(())

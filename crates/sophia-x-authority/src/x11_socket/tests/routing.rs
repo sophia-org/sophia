@@ -3402,18 +3402,34 @@ fn two_producer_classes_share_one_order() {
 
     // And carrying the identities that were actually submitted. A right-looking
     // class record can otherwise accompany the wrong payload entirely.
-    let identities: Vec<_> = ran.iter().map(|run| run.identity).collect();
+    let identities: Vec<_> = ran
+        .iter()
+        .map(|run| match run.identity {
+            crate::PrivateIdentity::Delivery(delivery) => (delivery, None),
+            crate::PrivateIdentity::Control {
+                transaction,
+                completion,
+            } => {
+                assert!(
+                    completion.is_some(),
+                    "an admitted control carries the registration that answers for it"
+                );
+                (None, Some(transaction))
+            }
+            crate::PrivateIdentity::Lease(_) => (None, None),
+        })
+        .collect();
     assert_eq!(
         identities,
         vec![
-            crate::PrivateIdentity::Delivery(Some(XAuthorityInputDeliveryId::from_raw(400))),
-            crate::PrivateIdentity::Transaction(TransactionId::from_raw(1)),
-            crate::PrivateIdentity::Delivery(Some(XAuthorityInputDeliveryId::from_raw(401))),
-            crate::PrivateIdentity::Transaction(TransactionId::from_raw(2)),
-            crate::PrivateIdentity::Delivery(Some(XAuthorityInputDeliveryId::from_raw(402))),
-            crate::PrivateIdentity::Transaction(TransactionId::from_raw(3)),
-            crate::PrivateIdentity::Delivery(Some(XAuthorityInputDeliveryId::from_raw(403))),
-            crate::PrivateIdentity::Transaction(TransactionId::from_raw(4)),
+            (Some(XAuthorityInputDeliveryId::from_raw(400)), None),
+            (None, Some(TransactionId::from_raw(1))),
+            (Some(XAuthorityInputDeliveryId::from_raw(401)), None),
+            (None, Some(TransactionId::from_raw(2))),
+            (Some(XAuthorityInputDeliveryId::from_raw(402)), None),
+            (None, Some(TransactionId::from_raw(3))),
+            (Some(XAuthorityInputDeliveryId::from_raw(403)), None),
+            (None, Some(TransactionId::from_raw(4))),
         ],
         "each run must name the operation its producer submitted"
     );
@@ -3821,11 +3837,14 @@ fn every_control_run_names_its_own_transaction() {
         .expect("the shared admission to accept control");
 
     let ran = private.route_pending().expect("a turn");
-    assert_eq!(
-        ran.first().map(|run| run.identity),
-        Some(crate::PrivateIdentity::Transaction(TransactionId::from_raw(
-            5150
-        ))),
+    assert!(
+        matches!(
+            ran.first().map(|run| run.identity),
+            Some(crate::PrivateIdentity::Control {
+                transaction,
+                completion: Some(_),
+            }) if transaction == TransactionId::from_raw(5150)
+        ),
         "a control that is not FocusSurface still names its transaction"
     );
 }
@@ -3890,7 +3909,7 @@ fn a_full_acknowledgement_channel_retains_the_obligation() {
     assert!(
         matches!(
             report.pending.first(),
-            Some(PrivateOperation::Control(_))
+            Some(PrivateOperation::Control(_, _))
         ),
         "and it is the control itself, not a note about it"
     );
@@ -5126,4 +5145,808 @@ fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamat
     let again = durable.drive();
     assert!(!again.made_progress(), "and not a second time");
     assert_eq!(durable.reserved(), 0);
+}
+
+#[test]
+fn a_control_completion_closes_only_on_a_real_acknowledgement() {
+    let surface = SurfaceId::new(251, 1);
+    let client = XServerFrontendClientId(251);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4);
+    let command = XAuthorityClientControlCommand {
+        client,
+        command: XAuthorityControlCommand::ConfigureSurface {
+            transaction: TransactionId::from_raw(11001),
+            surface,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 60,
+            },
+        },
+    };
+    let token = registry.register(command).expect("a fresh registry");
+    assert_eq!(registry.outstanding(), 1);
+
+    // A delivered acknowledgement retires the record.
+    let (delivered, delivered_receiver) = sync_channel(4);
+    let channels = X11ControlChannels::Routed {
+        receiver: channel().1,
+        acknowledgements: delivered,
+        completion: Some(registry.clone()),
+    };
+    let ack = XAuthorityControlAck {
+        kind: XAuthorityControlKind::ConfigureSurface,
+        transaction: TransactionId::from_raw(11001),
+        surface,
+        outcome: XAuthorityControlOutcome::Delivered,
+    };
+    channels
+        .send_ack_for(client, ack, Some(token))
+        .expect("a free channel to publish");
+    assert!(delivered_receiver.try_recv().is_ok());
+    assert_eq!(registry.outstanding(), 0, "a delivered ack retires it");
+}
+
+#[test]
+fn a_full_channel_retains_the_acknowledgement_without_replaying_the_command() {
+    let surface = SurfaceId::new(251, 1);
+    let client = XServerFrontendClientId(251);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4);
+    let command = XAuthorityClientControlCommand {
+        client,
+        command: XAuthorityControlCommand::ConfigureSurface {
+            transaction: TransactionId::from_raw(11002),
+            surface,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 60,
+            },
+        },
+    };
+    let token = registry.register(command).expect("a fresh registry");
+
+    // One slot, already taken.
+    let (full, full_receiver) = sync_channel(1);
+    full.try_send(XAuthorityClientControlAck {
+        client,
+        acknowledgement: XAuthorityControlAck {
+            kind: XAuthorityControlKind::ConfigureSurface,
+            transaction: TransactionId::from_raw(1),
+            surface,
+            outcome: XAuthorityControlOutcome::Delivered,
+        },
+    })
+    .expect("the empty slot");
+    let channels = X11ControlChannels::Routed {
+        receiver: channel().1,
+        acknowledgements: full,
+        completion: Some(registry.clone()),
+    };
+    let ack = XAuthorityControlAck {
+        kind: XAuthorityControlKind::ConfigureSurface,
+        transaction: TransactionId::from_raw(11002),
+        surface,
+        outcome: XAuthorityControlOutcome::Delivered,
+    };
+    assert!(
+        channels.send_ack_for(client, ack, Some(token)).is_err(),
+        "a full channel reports failure to the writer"
+    );
+
+    // The outcome is retained, not the command: the effect already happened,
+    // so this is republished later and never re-run.
+    assert_eq!(registry.owed(), 1);
+    assert_eq!(registry.outstanding(), 1);
+
+    // Draining lets it publish, once.
+    assert!(full_receiver.try_recv().is_ok());
+    let mut republished = Vec::new();
+    let delivered = registry.publish_owed_with(|acknowledgement| {
+        republished.push(*acknowledgement);
+        ControlPublication::Delivered
+    });
+    assert_eq!(delivered, 1);
+    assert_eq!(republished.len(), 1);
+    assert_eq!(
+        republished[0].acknowledgement.transaction,
+        TransactionId::from_raw(11002)
+    );
+    assert_eq!(registry.owed(), 0);
+    assert_eq!(
+        registry.publish_owed_with(|_| ControlPublication::Delivered),
+        0,
+        "and not a second time"
+    );
+
+    // A retry that cannot publish keeps the outcome rather than consuming it.
+    let held = crate::ControlCompletionRegistry::with_capacity(2);
+    let token = held.register(command).expect("a fresh registry");
+    held.publish(
+        token,
+        XAuthorityClientControlAck {
+            client,
+            acknowledgement: ack,
+        },
+        ControlPublication::Retained,
+    );
+    assert_eq!(held.publish_owed_with(|_| ControlPublication::Retained), 0);
+    assert_eq!(held.owed(), 1, "a failed retry does not consume the outcome");
+}
+
+#[test]
+fn a_gone_receiver_is_not_a_published_acknowledgement() {
+    let surface = SurfaceId::new(251, 1);
+    let client = XServerFrontendClientId(251);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4);
+    let command = XAuthorityClientControlCommand {
+        client,
+        command: XAuthorityControlCommand::ConfigureSurface {
+            transaction: TransactionId::from_raw(11003),
+            surface,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 60,
+            },
+        },
+    };
+    let token = registry.register(command).expect("a fresh registry");
+
+    // The receiver is dropped, which send_ack has always reported as Ok.
+    let (gone, gone_receiver) = sync_channel(4);
+    drop(gone_receiver);
+    let channels = X11ControlChannels::Routed {
+        receiver: channel().1,
+        acknowledgements: gone,
+        completion: Some(registry.clone()),
+    };
+    let ack = XAuthorityControlAck {
+        kind: XAuthorityControlKind::ConfigureSurface,
+        transaction: TransactionId::from_raw(11003),
+        surface,
+        outcome: XAuthorityControlOutcome::Delivered,
+    };
+    // Ordinary behaviour is unchanged: the writer is not failed for this.
+    channels
+        .send_ack_for(client, ack, Some(token))
+        .expect("a gone receiver is tolerated by the writer");
+
+    // But nothing was published, so the record is not closed. Treating the Ok
+    // as publication would mark work complete whose acknowledgement nobody
+    // received.
+    assert_eq!(
+        registry.outstanding(),
+        1,
+        "a gone receiver published nothing"
+    );
+    assert_eq!(registry.owed(), 1);
+}
+
+#[test]
+fn a_cancellation_edge_does_not_call_a_partly_applied_command_unexecuted() {
+    let surface = SurfaceId::new(251, 1);
+    let client = XServerFrontendClientId(251);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4);
+    let command = |transaction| XAuthorityClientControlCommand {
+        client,
+        command: XAuthorityControlCommand::ConfigureSurface {
+            transaction: TransactionId::from_raw(transaction),
+            surface,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 60,
+            },
+        },
+    };
+    let queued = registry.register(command(11004)).expect("a fresh registry");
+    let started = registry.register(command(11005)).expect("a fresh registry");
+    let _ = queued;
+    registry.begin_applying(started);
+
+    // Neither has an established outcome, so neither has an acknowledgement to
+    // publish. A retry that produced one would be inventing the receipt these
+    // records exist to avoid inventing.
+    assert_eq!(
+        registry.publish_owed_with(|_| ControlPublication::Delivered),
+        0,
+        "a record with no outcome owes no acknowledgement"
+    );
+    assert_eq!(registry.outstanding(), 2, "and both are still held");
+
+    let cancellation = registry.cancel_unfinished();
+
+    // The one that never started can be cancelled truthfully.
+    assert_eq!(cancellation.cancellable.len(), 1);
+    assert_eq!(
+        cancellation.cancellable[0].command.transaction(),
+        TransactionId::from_raw(11004)
+    );
+    // The one that had begun is not reported as unexecuted, because the
+    // runtime may already have changed. It is retained until something
+    // establishes what happened.
+    assert_eq!(cancellation.indeterminate, 1);
+    assert_eq!(registry.outstanding(), 1);
+}
+
+/// Build a private frontend with a client and one surface registered.
+#[cfg(unix)]
+fn private_with_client(
+    acknowledgements: SyncSender<XAuthorityClientControlAck>,
+    durable: &crate::PrivateSettlementOwner,
+    client: XServerFrontendClientId,
+    surface: SurfaceId,
+) -> (
+    crate::PrivateXServerFrontend,
+    XServerFrontendClientRouteChannels,
+    XServerFrontendClientRouteRegistration,
+    Receiver<XAuthorityClientInputDelivery>,
+) {
+    let (delivery_sender, delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: acknowledgements,
+            input_deliveries: delivery_sender,
+            gate,
+        },
+        durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
+    let (registration, channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(252),
+            surface,
+            XResourceId::new(0x200252, 1),
+        )
+        .unwrap();
+    // The registration and the delivery receiver are returned rather than
+    // leaked: dropping either is a cancellation edge, and a test that hid one
+    // would be proving a different thing from the one it names.
+    (private, channels, registration, delivery_receiver)
+}
+
+#[cfg(unix)]
+fn configure(client: XServerFrontendClientId, surface: SurfaceId, transaction: u64) -> XAuthorityClientControlCommand {
+    XAuthorityClientControlCommand {
+        client,
+        command: XAuthorityControlCommand::ConfigureSurface {
+            transaction: TransactionId::from_raw(transaction),
+            surface,
+            geometry: Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 60,
+            },
+        },
+    }
+}
+
+#[test]
+fn a_control_credit_is_released_exactly_once_when_its_writer_answers() {
+    let client = XServerFrontendClientId(252);
+    let surface = SurfaceId::new(252, 1);
+    let (acknowledgements, ack_receiver) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, channels, _registration, _deliveries) =
+        private_with_client(acknowledgements.clone(), &durable, client, surface);
+
+    private
+        .control_producer()
+        .submit(configure(client, surface, 12001))
+        .expect("the shared admission to accept control");
+    let ran = private.route_pending().expect("a turn");
+    assert_eq!(ran.len(), 1);
+
+    // Routed is not answered: the writer still has it.
+    assert_eq!(
+        private.reclaim_settled(),
+        0,
+        "handing a command to a writer is not an outcome"
+    );
+
+    // The writer's own path, with the registry the route registry installed.
+    let routed = channels
+        .control
+        .recv_timeout(std::time::Duration::from_millis(500))
+        .expect("the routed control");
+    let X11RoutedControl::Authority {
+        command, completion, ..
+    } = routed
+    else {
+        panic!("an authority control");
+    };
+    assert!(completion.is_some(), "the writer is given the registration");
+    let writer = X11ControlChannels::ClientBound {
+        receiver: channel().1,
+        acknowledgements,
+        completion: private.broker.registry.control_completion(),
+    };
+    assert!(
+        writer.completion().is_some(),
+        "a private instance installs its registry where a client writer reads it"
+    );
+    writer.begin_applying(completion);
+    writer
+        .send_ack_for(
+            client,
+            XAuthorityControlAck {
+                kind: command.kind(),
+                transaction: command.transaction(),
+                surface,
+                outcome: XAuthorityControlOutcome::Delivered,
+            },
+            completion,
+        )
+        .expect("a free channel");
+    assert!(ack_receiver.try_recv().is_ok());
+
+    assert_eq!(
+        private.reclaim_settled(),
+        1,
+        "an answered control releases its credit"
+    );
+    assert_eq!(
+        private.reclaim_settled(),
+        0,
+        "and cannot release it a second time"
+    );
+}
+
+#[test]
+fn a_writer_that_stops_seals_only_the_client_it_served() {
+    let gone = XServerFrontendClientId(253);
+    let live = XServerFrontendClientId(254);
+    let surface = SurfaceId::new(253, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(8);
+    let channels = X11ControlChannels::ClientBound {
+        receiver: channel().1,
+        acknowledgements: sync_channel(4).0,
+        completion: Some(registry.clone()),
+    };
+
+    channels.seal_completions(gone);
+    assert!(registry.is_sealed(gone));
+    assert!(
+        !registry.is_sealed(live),
+        "one writer stopping says nothing about another client's writer"
+    );
+
+    assert!(matches!(
+        registry.register(configure(gone, surface, 13001)),
+        Err((crate::ControlCompletionRefusal::Sealed, returned))
+            if returned.command.transaction() == TransactionId::from_raw(13001)
+    ));
+    assert!(
+        registry.register(configure(live, surface, 13002)).is_ok(),
+        "a client whose writer is alive can still have work accepted"
+    );
+}
+
+#[test]
+fn a_refused_control_leaves_no_registration_to_answer_for_it() {
+    let client = XServerFrontendClientId(255);
+    let surface = SurfaceId::new(255, 1);
+    let (acknowledgements, _ack_receiver) = sync_channel(8);
+    // One credit for the whole owner, so the second submit is refused.
+    let durable = crate::PrivateSettlementOwner::with_capacity(1);
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+
+    let producer = private.control_producer();
+    producer
+        .submit(configure(client, surface, 14001))
+        .expect("the first to be accepted");
+    let refused = producer.submit(configure(client, surface, 14002));
+    let Err((_, returned)) = refused else {
+        panic!("the second to be refused once the owner is saturated");
+    };
+    assert_eq!(
+        returned.command.transaction(),
+        TransactionId::from_raw(14002),
+        "the caller keeps the command it was never told had been taken"
+    );
+
+    // The refused command has exactly one owner: the caller. A registration
+    // left behind would answer for it at the next cancellation edge, and
+    // answer twice if the caller retried.
+    let report = private.shutdown();
+    let answered: Vec<_> = report
+        .pending
+        .iter()
+        .filter_map(|operation| match operation {
+            PrivateOperation::Control(control, _) => Some(control.command.transaction().raw()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        !answered.contains(&14002),
+        "a refused command is not carried by the instance that refused it"
+    );
+}
+
+#[test]
+fn a_registration_only_answers_to_the_registry_that_issued_it() {
+    let client = XServerFrontendClientId(256);
+    let surface = SurfaceId::new(256, 1);
+    let issuer = crate::ControlCompletionRegistry::with_capacity(2);
+    let other = crate::ControlCompletionRegistry::with_capacity(2);
+    let token = issuer
+        .register(configure(client, surface, 15001))
+        .expect("a fresh registry");
+
+    assert_eq!(
+        issuer.state_of(token),
+        crate::ControlRecordState::Outstanding
+    );
+    // Absent here too, and absence is not an outcome: answering for it would
+    // release another instance's credit on the strength of a record this
+    // registry never held.
+    assert_eq!(
+        other.state_of(token),
+        crate::ControlRecordState::Unanswerable
+    );
+
+    assert!(issuer.discard(token));
+    assert_eq!(issuer.state_of(token), crate::ControlRecordState::Retired);
+    assert_eq!(
+        other.state_of(token),
+        crate::ControlRecordState::Unanswerable
+    );
+}
+
+#[test]
+fn an_owed_outcome_is_not_given_up_as_though_it_were_unexecuted() {
+    let client = XServerFrontendClientId(257);
+    let surface = SurfaceId::new(257, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(2);
+    let token = registry
+        .register(configure(client, surface, 16001))
+        .expect("a fresh registry");
+    registry.publish(
+        token,
+        XAuthorityClientControlAck {
+            client,
+            acknowledgement: XAuthorityControlAck {
+                kind: XAuthorityControlKind::ConfigureSurface,
+                transaction: TransactionId::from_raw(16001),
+                surface,
+                outcome: XAuthorityControlOutcome::Delivered,
+            },
+        },
+        ControlPublication::Retained,
+    );
+
+    // The effect already happened, so this record holds the only copy of an
+    // outcome. Handing the operation to another owner cannot apply to it.
+    assert!(
+        !registry.discard(token),
+        "an owed outcome is not something that can be handed on"
+    );
+    assert_eq!(registry.owed(), 1);
+    assert_eq!(
+        registry.state_of(token),
+        crate::ControlRecordState::Outstanding
+    );
+}
+
+#[test]
+fn a_poisoned_registry_answers_for_nothing_and_frees_nothing() {
+    let client = XServerFrontendClientId(258);
+    let surface = SurfaceId::new(258, 1);
+    let (acknowledgements, _ack_receiver) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+
+    private
+        .control_producer()
+        .submit(configure(client, surface, 17001))
+        .expect("the shared admission to accept control");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    let token = registry
+        .register(configure(client, surface, 17002))
+        .expect("room for a second");
+
+    // An owed outcome, so the retry below has something to call back into.
+    registry.publish(
+        token,
+        XAuthorityClientControlAck {
+            client,
+            acknowledgement: XAuthorityControlAck {
+                kind: XAuthorityControlKind::ConfigureSurface,
+                transaction: TransactionId::from_raw(17002),
+                surface,
+                outcome: XAuthorityControlOutcome::Delivered,
+            },
+        },
+        ControlPublication::Retained,
+    );
+
+    // Poison it from inside its own lock, which is the only way it happens.
+    let poisoner = registry.clone();
+    assert!(
+        std::thread::spawn(move || {
+            poisoner.publish_owed_with(|_| panic!("poisoning the registry"));
+        })
+        .join()
+        .is_err(),
+        "the panic happened while the lock was held"
+    );
+
+    // Silence is not an answer. Reading it as one would release a credit for
+    // work still outstanding.
+    assert_eq!(
+        registry.state_of(token),
+        crate::ControlRecordState::Unanswerable
+    );
+    assert_eq!(
+        private.reclaim_settled(),
+        0,
+        "an unreadable registry releases no credit"
+    );
+}
+
+#[test]
+fn a_command_a_writer_never_ran_is_carried_out_rather_than_dropped() {
+    let client = XServerFrontendClientId(259);
+    let surface = SurfaceId::new(259, 1);
+    let (acknowledgements, _ack_receiver) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+
+    private
+        .control_producer()
+        .submit(configure(client, surface, 18001))
+        .expect("the shared admission to accept control");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    // It left the queue, so draining the queue at shutdown cannot reach it.
+    assert!(
+        channels
+            .control
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .is_ok(),
+        "the command reached a client writer's queue"
+    );
+
+    let report = private.shutdown();
+    let carried: Vec<_> = report
+        .pending
+        .iter()
+        .filter_map(|operation| match operation {
+            PrivateOperation::Control(control, _) => Some(control.command.transaction().raw()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        carried,
+        vec![18001],
+        "a command whose writer never ran it is handed back, not lost with the instance"
+    );
+    assert_eq!(
+        report.outstanding_control(),
+        0,
+        "and its record goes with it, so nothing answers for it twice"
+    );
+}
+
+#[test]
+fn a_rejected_control_leaves_no_record_behind_to_answer_again() {
+    let client = XServerFrontendClientId(260);
+    let surface = SurfaceId::new(260, 1);
+    let (acknowledgements, ack_receiver) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+
+    // Accepted and never routed, so shutdown answers it from the queue.
+    private
+        .control_producer()
+        .submit(configure(client, surface, 19001))
+        .expect("the shared admission to accept control");
+
+    let report = private.shutdown();
+    assert!(report.pending.is_empty(), "the rejection was delivered");
+    assert_eq!(
+        ack_receiver
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .expect("the rejection")
+            .acknowledgement
+            .outcome,
+        XAuthorityControlOutcome::AuthorityRejected
+    );
+    assert_eq!(
+        report.outstanding_control(),
+        0,
+        "a command handed to settlement gives up its record as it goes"
+    );
+}
+
+#[test]
+fn a_control_writer_seals_its_client_when_it_stops() {
+    let client = XServerFrontendClientId(261);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4);
+    let (routes, route_receiver) = sync_channel(4);
+    let channels = X11ControlChannels::ClientBound {
+        receiver: route_receiver,
+        acknowledgements: sync_channel(4).0,
+        completion: Some(registry.clone()),
+    };
+
+    let state = X11CoreSocketServerState::new();
+    let (writer_stream, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+    let writer = spawn_x11_control_writer(
+        Arc::new(Mutex::new(writer_stream)),
+        Arc::new(AtomicUsize::new(0)),
+        XByteOrder::LittleEndian,
+        Arc::new(AtomicU16::new(1)),
+        Arc::new(AtomicU64::new(0)),
+        Arc::new(Mutex::new(BTreeMap::new())),
+        Arc::new(Mutex::new(BTreeMap::new())),
+        Arc::new(Mutex::new(BTreeMap::new())),
+        Arc::new(Mutex::new(XCoreEventSelectionState::default())),
+        Arc::new(AtomicU16::new(0)),
+        state.atoms.clone(),
+        state.properties.clone(),
+        state.runtime.clone(),
+        state.control_runtime_pending.clone(),
+        crate::XWireClientResourceRange {
+            base: 0x200000,
+            mask: 0x1fffff,
+        },
+        NamespaceId::from_raw(261),
+        client,
+        None,
+        channels,
+    )
+    .expect("a writer");
+
+    assert!(
+        !registry.is_sealed(client),
+        "a serving writer has not sealed anything"
+    );
+
+    // The route queue goes, which is one of the ways a writer leaves.
+    drop(routes);
+    writer.thread.join().expect("the writer thread").unwrap();
+
+    assert!(
+        registry.is_sealed(client),
+        "a stopped writer stops work being accepted for the client it served"
+    );
+}
+
+#[test]
+fn a_writer_that_unwinds_still_seals_the_client_it_served() {
+    let client = XServerFrontendClientId(262);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4);
+    let channels = X11ControlChannels::ClientBound {
+        receiver: channel().1,
+        acknowledgements: sync_channel(4).0,
+        completion: Some(registry.clone()),
+    };
+
+    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _seal = X11ControlWriterSeal {
+            channels: &channels,
+            client,
+        };
+        panic!("a writer leaving the only way a call at the end cannot catch");
+    }));
+    assert!(unwound.is_err());
+    assert!(
+        registry.is_sealed(client),
+        "however a writer leaves, its client stops having work accepted"
+    );
+}
+
+#[test]
+fn an_owed_acknowledgement_is_republished_once_the_channel_drains() {
+    let client = XServerFrontendClientId(263);
+    let surface = SurfaceId::new(263, 1);
+    // One slot, filled, so the writer's acknowledgement cannot be published.
+    let (acknowledgements, ack_receiver) = sync_channel(1);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, channels, _registration, _deliveries) =
+        private_with_client(acknowledgements.clone(), &durable, client, surface);
+
+    private
+        .control_producer()
+        .submit(configure(client, surface, 20001))
+        .expect("the shared admission to accept control");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+
+    let routed = channels
+        .control
+        .recv_timeout(std::time::Duration::from_millis(500))
+        .expect("the routed control");
+    let X11RoutedControl::Authority {
+        command, completion, ..
+    } = routed
+    else {
+        panic!("an authority control");
+    };
+
+    // Prefill the only slot, then let the writer apply and answer.
+    acknowledgements
+        .try_send(XAuthorityClientControlAck {
+            client,
+            acknowledgement: XAuthorityControlAck {
+                kind: XAuthorityControlKind::ConfigureSurface,
+                transaction: TransactionId::from_raw(1),
+                surface,
+                outcome: XAuthorityControlOutcome::Delivered,
+            },
+        })
+        .expect("the empty slot");
+    let writer = X11ControlChannels::ClientBound {
+        receiver: channel().1,
+        acknowledgements,
+        completion: private.broker.registry.control_completion(),
+    };
+    writer.begin_applying(completion);
+    assert!(
+        writer
+            .send_ack_for(
+                client,
+                XAuthorityControlAck {
+                    kind: command.kind(),
+                    transaction: command.transaction(),
+                    surface,
+                    outcome: XAuthorityControlOutcome::Delivered,
+                },
+                completion,
+            )
+            .is_err(),
+        "a full channel is reported to the writer"
+    );
+
+    // The effect happened, so the credit is still held and nothing is re-run.
+    assert_eq!(private.reclaim_settled(), 0);
+    assert_eq!(
+        private.republish_owed_acknowledgements(),
+        0,
+        "a channel that is still full publishes nothing"
+    );
+
+    // Drain the prefill and the outcome goes out, once.
+    assert_eq!(
+        ack_receiver.try_recv().unwrap().acknowledgement.transaction,
+        TransactionId::from_raw(1)
+    );
+    assert_eq!(private.republish_owed_acknowledgements(), 1);
+    assert_eq!(
+        ack_receiver.try_recv().unwrap().acknowledgement.transaction,
+        TransactionId::from_raw(20001),
+        "the outcome, not the command"
+    );
+    assert_eq!(
+        private.republish_owed_acknowledgements(),
+        0,
+        "and not a second time"
+    );
+    assert_eq!(
+        private.reclaim_settled(),
+        1,
+        "published at last, so the credit is released"
+    );
+    assert_eq!(private.reclaim_settled(), 0);
 }

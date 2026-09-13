@@ -196,6 +196,29 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
     }
 }
 
+/// Seals a client's control registrations when its writer stops.
+///
+/// Every way out of the loop below is a cancellation edge: a stop flag, a
+/// disconnected route queue, a terminated client, a failure partway through an
+/// operation, or an unwind. A guard rather than a call at the end, because the
+/// last of those reaches no call at the end, and a client whose writer has
+/// gone must stop having work accepted for it however it went.
+///
+/// The registrations themselves stay where they are. This writer does not own
+/// the queue those commands came from and cannot decide their fate without
+/// discarding them.
+#[cfg(unix)]
+struct X11ControlWriterSeal<'a> {
+    channels: &'a X11ControlChannels,
+    client: XServerFrontendClientId,
+}
+
+#[cfg(unix)]
+impl Drop for X11ControlWriterSeal<'_> {
+    fn drop(&mut self) {
+        self.channels.seal_completions(self.client);
+    }
+}
 
 #[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
@@ -223,7 +246,7 @@ fn spawn_x11_control_writer(
     let stop = Arc::new(AtomicBool::new(false));
     let writer_stop = stop.clone();
     macro_rules! terminate_client {
-        ($kind:expr, $transaction:expr, $surface:expr) => {{
+        ($kind:expr, $transaction:expr, $surface:expr, $completion:expr) => {{
             let stream = stream
                 .lock()
                 .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
@@ -233,7 +256,9 @@ fn spawn_x11_control_writer(
                 ))
             })?;
             drop(stream);
-            channels.send_ack(
+            // The shutdown is the effect, so this acknowledgement is the
+            // operation's real outcome and closes its record.
+            channels.send_ack_for(
                 client,
                 XAuthorityControlAck {
                     kind: $kind,
@@ -241,11 +266,17 @@ fn spawn_x11_control_writer(
                     surface: $surface,
                     outcome: XAuthorityControlOutcome::Delivered,
                 },
+                $completion,
             )?;
             return Ok(());
         }};
     }
     let thread = std::thread::spawn(move || {
+        let _seal = X11ControlWriterSeal {
+            channels: &channels,
+            client,
+        };
+        let run = || -> Result<(), X11SetupSocketError> {
         while !writer_stop.load(Ordering::Acquire) {
             let routed = match channels.recv_timeout(client) {
                 Ok(routed) => routed,
@@ -256,8 +287,15 @@ fn spawn_x11_control_writer(
             // event may repeatedly overtake the write that makes it visible.
             let _output_priority =
                 X11ControlOutputPriority::new(output_control_pending.clone());
-            let (command, focus_transition) = match routed {
-                X11RoutedControl::Authority { command, focus } => (command, focus),
+            // Marked before anything is written, because everything after
+            // this point can leave the runtime changed with no acknowledgement
+            // sent.
+            let (command, focus_transition, completion) = match routed {
+                X11RoutedControl::Authority {
+                    command,
+                    focus,
+                    completion,
+                } => (command, focus, completion),
                 X11RoutedControl::FocusOut { window, time_msec } => {
                     focused_surface_window.store(
                         u64::from(X_SETUP_DEFAULT_ROOT),
@@ -297,7 +335,7 @@ fn spawn_x11_control_writer(
                 .get(&surface)
                 .copied();
             let Some(window) = window else {
-                channels.send_ack(
+                channels.send_ack_for(
                     client,
                     XAuthorityControlAck {
                         kind,
@@ -305,15 +343,22 @@ fn spawn_x11_control_writer(
                         surface,
                         outcome: XAuthorityControlOutcome::UnknownSurface,
                     },
+                    completion,
                 )?;
                 continue;
             };
+
+            // Past this point the arms mutate the runtime, so a failure can
+            // leave the effect partly applied with no acknowledgement sent.
+            // Such an operation is not unexecuted and must never later be
+            // cancelled as though it were.
+            channels.begin_applying(completion);
 
             let event_sequence = sequence.load(Ordering::Acquire);
             let records = match command {
                 XAuthorityControlCommand::PublishMetadataRule { rule, .. } => {
                     if rule.surface != surface {
-                        channels.send_ack(
+                        channels.send_ack_for(
                             client,
                             XAuthorityControlAck {
                                 kind,
@@ -321,6 +366,7 @@ fn spawn_x11_control_writer(
                                 surface,
                                 outcome: XAuthorityControlOutcome::AuthorityRejected,
                             },
+                            completion,
                         )?;
                         continue;
                     }
@@ -375,7 +421,7 @@ fn spawn_x11_control_writer(
                     {
                         Ok(geometry) => geometry,
                         Err(_) => {
-                            channels.send_ack(
+                            channels.send_ack_for(
                                 client,
                                 XAuthorityControlAck {
                                     kind,
@@ -383,6 +429,7 @@ fn spawn_x11_control_writer(
                                     surface,
                                     outcome: XAuthorityControlOutcome::AuthorityRejected,
                                 },
+                                completion,
                             )?;
                             continue;
                         }
@@ -423,7 +470,7 @@ fn spawn_x11_control_writer(
                         || geometry.y < i32::from(i16::MIN)
                         || geometry.y > i32::from(i16::MAX)
                     {
-                        channels.send_ack(
+                        channels.send_ack_for(
                             client,
                             XAuthorityControlAck {
                                 kind,
@@ -431,6 +478,7 @@ fn spawn_x11_control_writer(
                                 surface,
                                 outcome: XAuthorityControlOutcome::InvalidSize,
                             },
+                            completion,
                         )?;
                         continue;
                     }
@@ -444,7 +492,7 @@ fn spawn_x11_control_writer(
                     ) {
                         Ok(geometry) => geometry,
                         Err(_) => {
-                            channels.send_ack(
+                            channels.send_ack_for(
                                 client,
                                 XAuthorityControlAck {
                                     kind,
@@ -452,6 +500,7 @@ fn spawn_x11_control_writer(
                                     surface,
                                     outcome: XAuthorityControlOutcome::AuthorityRejected,
                                 },
+                                completion,
                             )?;
                             continue;
                         }
@@ -501,7 +550,7 @@ fn spawn_x11_control_writer(
                     ) {
                         Ok(changed) => changed,
                         Err(_) => {
-                            channels.send_ack(
+                            channels.send_ack_for(
                                 client,
                                 XAuthorityControlAck {
                                     kind,
@@ -509,6 +558,7 @@ fn spawn_x11_control_writer(
                                     surface,
                                     outcome: XAuthorityControlOutcome::AuthorityRejected,
                                 },
+                                completion,
                             )?;
                             continue;
                         }
@@ -533,10 +583,10 @@ fn spawn_x11_control_writer(
                         .lock()
                         .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?;
                     let Some(protocols) = atoms.atom(X_ATOM_NAME_WM_PROTOCOLS) else {
-                        terminate_client!(kind, transaction, surface);
+                        terminate_client!(kind, transaction, surface, completion);
                     };
                     let Some(delete) = atoms.atom(X_ATOM_NAME_WM_DELETE_WINDOW) else {
-                        terminate_client!(kind, transaction, surface);
+                        terminate_client!(kind, transaction, surface, completion);
                     };
                     drop(atoms);
                     let properties = properties.lock().map_err(|_| {
@@ -569,7 +619,7 @@ fn spawn_x11_control_writer(
                     let decision = crate::select_x_close_target(window, &ancestors, &candidates);
                     if decision.protocol_window_count == 0 {
                         drop(properties);
-                        terminate_client!(kind, transaction, surface);
+                        terminate_client!(kind, transaction, surface, completion);
                     }
                     tracing::debug!(
                         "sophia_x11_close_target schema=1 surface_map_hit=true exact_delete={} fallback_used={} protocol_windows={}",
@@ -600,7 +650,7 @@ fn spawn_x11_control_writer(
                             lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
                         let (previous, _) = runtime.input_focus(namespace);
                         if runtime.set_input_focus(namespace, window, 1).is_err() {
-                            channels.send_ack(
+                            channels.send_ack_for(
                                 client,
                                 XAuthorityControlAck {
                                     kind,
@@ -608,6 +658,7 @@ fn spawn_x11_control_writer(
                                     surface,
                                     outcome: XAuthorityControlOutcome::AuthorityRejected,
                                 },
+                                completion,
                             )?;
                             continue;
                         }
@@ -641,7 +692,7 @@ fn spawn_x11_control_writer(
                         let mut runtime =
                             lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
                         if runtime.set_input_focus(namespace, root, 1).is_err() {
-                            channels.send_ack(
+                            channels.send_ack_for(
                                 client,
                                 XAuthorityControlAck {
                                     kind,
@@ -649,6 +700,7 @@ fn spawn_x11_control_writer(
                                     surface,
                                     outcome: XAuthorityControlOutcome::AuthorityRejected,
                                 },
+                                completion,
                             )?;
                             continue;
                         }
@@ -683,7 +735,7 @@ fn spawn_x11_control_writer(
                     {
                         Ok(surface) => surface.is_some(),
                         Err(_) => {
-                            channels.send_ack(
+                            channels.send_ack_for(
                                 client,
                                 XAuthorityControlAck {
                                     kind,
@@ -691,6 +743,7 @@ fn spawn_x11_control_writer(
                                     surface,
                                     outcome: XAuthorityControlOutcome::AuthorityRejected,
                                 },
+                                completion,
                             )?;
                             continue;
                         }
@@ -717,8 +770,13 @@ fn spawn_x11_control_writer(
                 }
             };
 
+            // The records are written before the acknowledgement, and this
+            // return is one of the audited edges: if it fails the effect has
+            // partly happened and no acknowledgement follows. The completion
+            // record stays in its applying phase rather than being closed as
+            // unexecuted.
             write_x11_control_records(&stream, byte_order, &sequence, records)?;
-            channels.send_ack(
+            channels.send_ack_for(
                 client,
                 XAuthorityControlAck {
                     kind,
@@ -726,9 +784,12 @@ fn spawn_x11_control_writer(
                     surface,
                     outcome: XAuthorityControlOutcome::Delivered,
                 },
+                completion,
             )?;
         }
         Ok(())
+        };
+        run()
     });
     Ok(X11ControlWriter { stop, thread })
 }

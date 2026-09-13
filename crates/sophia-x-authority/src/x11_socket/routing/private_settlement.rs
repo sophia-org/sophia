@@ -280,9 +280,19 @@ impl PrivateSettlementOwner {
                         DeliveryState::Ended
                     )
                 }
+                // Carried control is still observable: this owner holds the
+                // failed instance's route registry, and that is where its
+                // completion registry lives.
+                PrivateIdentity::Control {
+                    completion: Some(token),
+                    ..
+                } => matches!(
+                    origin.control_completion().map(|owner| owner.state_of(token)),
+                    Some(ControlRecordState::Retired)
+                ),
                 // Nothing observable yet, so nothing to conclude.
                 PrivateIdentity::Delivery(None)
-                | PrivateIdentity::Transaction(_)
+                | PrivateIdentity::Control { completion: None, .. }
                 | PrivateIdentity::Lease(_) => false,
             };
             if ended {
@@ -402,19 +412,58 @@ impl PrivateSettlement {
         self.outstanding.len()
     }
 
+    /// How many control records the instance's registry still holds.
+    ///
+    /// Operations caught mid-application are the ones that stay: they are
+    /// retained rather than reported as unexecuted, and they are reachable
+    /// rather than counted and forgotten, because the registry holding them
+    /// came with the origin this settlement kept.
+    pub fn outstanding_control(&self) -> usize {
+        self.origin
+            .control_completion()
+            .map(|owner| owner.outstanding())
+            .unwrap_or(0)
+    }
+
+    /// Republish acknowledgements a client writer could not deliver.
+    ///
+    /// Republishing only: the effects already happened, so nothing here is
+    /// re-run. Returns how many reached the receiver.
+    pub fn republish_owed_acknowledgements(&self) -> usize {
+        let Some(owner) = self.origin.control_completion() else {
+            return 0;
+        };
+        let sender = &self.origin.acknowledgement_sender;
+        owner.publish_owed_with(|acknowledgement| match sender.try_send(*acknowledgement) {
+            Ok(()) => ControlPublication::Delivered,
+            Err(TrySendError::Disconnected(_)) => ControlPublication::ReceiverGone,
+            Err(TrySendError::Full(_)) => ControlPublication::Retained,
+        })
+    }
+
     /// Release credits for carried work that has since finished.
     ///
     /// The same rule as on a live instance: ended releases, live and
     /// unreadable do not.
     pub fn reclaim_outstanding(&mut self) -> usize {
         let recovery = &self.origin.input_recovery;
+        let recovery_origin = &self.origin;
         let before = self.outstanding.len();
         self.outstanding.retain(|identity| match identity {
             PrivateIdentity::Delivery(Some(delivery)) => {
                 !matches!(recovery.delivery_state(*delivery), DeliveryState::Ended)
             }
+            PrivateIdentity::Control {
+                completion: Some(token),
+                ..
+            } => !matches!(
+                recovery_origin
+                    .control_completion()
+                    .map(|owner| owner.state_of(*token)),
+                Some(ControlRecordState::Retired)
+            ),
             PrivateIdentity::Delivery(None)
-            | PrivateIdentity::Transaction(_)
+            | PrivateIdentity::Control { completion: None, .. }
             | PrivateIdentity::Lease(_) => true,
         });
         let reclaimed = before.saturating_sub(self.outstanding.len());
@@ -525,7 +574,7 @@ fn settle_against(
                     unsettled.push(PrivateOperation::RoutedInput(envelope));
                 }
             }
-            PrivateOperation::Control(control) => {
+            PrivateOperation::Control(control, token) => {
                 let acknowledgement = XAuthorityClientControlAck {
                     client: control.client,
                     acknowledgement: XAuthorityControlAck {
@@ -535,12 +584,22 @@ fn settle_against(
                         outcome: XAuthorityControlOutcome::AuthorityRejected,
                     },
                 };
+                // Nothing here executed the command, so what is retained on
+                // failure is the command, not an outcome: the caller retries
+                // this settlement, and a retry that only sends a rejection
+                // replays nothing.
+                //
+                // No completion record is answered here. A command reaching
+                // this point was handed on by an owner that gave up its record
+                // as it did so, which is the one place that sees all of them
+                // at once; answering again from here would give one operation
+                // two owners able to publish for it.
                 if registry
                     .acknowledgement_sender
                     .try_send(acknowledgement)
                     .is_err()
                 {
-                    unsettled.push(PrivateOperation::Control(control));
+                    unsettled.push(PrivateOperation::Control(control, token));
                 }
             }
             PrivateOperation::LeaseRelease(release) => {
@@ -572,8 +631,16 @@ pub struct PrivateRun {
 pub enum PrivateIdentity {
     /// The delivery a routed input carried, when it carried one.
     Delivery(Option<XAuthorityInputDeliveryId>),
-    /// The transaction a control named. Every control names one.
-    Transaction(TransactionId),
+    /// The transaction a control named, with the registration that answers
+    /// for it.
+    ///
+    /// The transaction alone is not an identity: two requests from one client
+    /// can name the same one, so a credit keyed on it could be released by
+    /// another request's outcome. The registration is unique to the operation.
+    Control {
+        transaction: TransactionId,
+        completion: Option<ControlCompletionToken>,
+    },
     /// The lease being retired.
     Lease(sophia_protocol::ApplicationRouteLeaseIdentity),
 }
@@ -586,7 +653,10 @@ impl PrivateIdentity {
             // Every control command carries a transaction, so singling one
             // variant out and calling the rest untracked lost the identity of
             // everything except focus.
-            PrivateOperation::Control(control) => Self::Transaction(control.command.transaction()),
+            PrivateOperation::Control(control, completion) => Self::Control {
+                transaction: control.command.transaction(),
+                completion: *completion,
+            },
             PrivateOperation::LeaseRelease(release) => Self::Lease(release.identity),
         }
     }

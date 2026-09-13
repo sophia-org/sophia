@@ -192,6 +192,7 @@ pub fn run_x11_core_socket_server_once_session_channels(
             control_channels: Some(X11ControlChannels::Routed {
                 receiver: control_receiver,
                 acknowledgements: control_ack_sender,
+                completion: None,
             }),
             client_routing: None,
         },

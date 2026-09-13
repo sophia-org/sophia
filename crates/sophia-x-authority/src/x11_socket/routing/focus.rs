@@ -4,6 +4,12 @@ enum X11RoutedControl {
     Authority {
         command: XAuthorityControlCommand,
         focus: Option<X11FocusTransition>,
+        /// The private path's completion registration, when there is one.
+        ///
+        /// Travels with the command because the writer is where its outcome
+        /// becomes known, and the writer sees only a client and a public
+        /// transaction otherwise -- which alias across requests.
+        completion: Option<ControlCompletionToken>,
     },
     FocusOut {
         window: XResourceId,
@@ -52,12 +58,13 @@ impl XServerFrontendRouteRegistry {
     fn route_focus_control(
         &self,
         route: XAuthorityClientControlCommand,
+        completion: Option<ControlCompletionToken>,
     ) -> Option<Result<(), XServerFrontendRouteError>> {
         match route.command {
             XAuthorityControlCommand::FocusSurface { surface, .. } => {
-                Some(self.route_focus_surface(route, surface))
+                Some(self.route_focus_surface(route, surface, completion))
             }
-            XAuthorityControlCommand::ClearFocus { .. } => Some(self.route_clear_focus(route)),
+            XAuthorityControlCommand::ClearFocus { .. } => Some(self.route_clear_focus(route, completion)),
             _ => None,
         }
     }
@@ -66,6 +73,7 @@ impl XServerFrontendRouteRegistry {
         &self,
         route: XAuthorityClientControlCommand,
         surface: SurfaceId,
+        completion: Option<ControlCompletionToken>,
     ) -> Result<(), XServerFrontendRouteError> {
         let target = self
             .surfaces
@@ -74,7 +82,7 @@ impl XServerFrontendRouteRegistry {
             .get(&surface)
             .copied();
         let Some(target) = target else {
-            return self.route_authority_control(route, None);
+            return self.route_authority_control(route, None, completion);
         };
         if target.client != route.client {
             return Err(XServerFrontendRouteError::UnknownClient {
@@ -104,7 +112,7 @@ impl XServerFrontendRouteRegistry {
                 time_msec,
             },
         };
-        self.route_authority_control(route, Some(transition))?;
+        self.route_authority_control(route, Some(transition), completion)?;
         *focused = Some(target);
         Ok(())
     }
@@ -112,6 +120,7 @@ impl XServerFrontendRouteRegistry {
     fn route_clear_focus(
         &self,
         route: XAuthorityClientControlCommand,
+        completion: Option<ControlCompletionToken>,
     ) -> Result<(), XServerFrontendRouteError> {
         let mut focused = self
             .focused_surface
@@ -135,7 +144,7 @@ impl XServerFrontendRouteRegistry {
                 time_msec,
             },
         };
-        self.route_authority_control(route, Some(transition))?;
+        self.route_authority_control(route, Some(transition), completion)?;
         *focused = None;
         Ok(())
     }
@@ -160,6 +169,7 @@ impl XServerFrontendRouteRegistry {
         &self,
         route: XAuthorityClientControlCommand,
         focus: Option<X11FocusTransition>,
+        completion: Option<ControlCompletionToken>,
     ) -> Result<(), XServerFrontendRouteError> {
         let sender = self.client_senders(route.client)?.control;
         self.route_to_client(
@@ -168,6 +178,7 @@ impl XServerFrontendRouteRegistry {
             X11RoutedControl::Authority {
                 command: route.command,
                 focus,
+                completion,
             },
         )
     }

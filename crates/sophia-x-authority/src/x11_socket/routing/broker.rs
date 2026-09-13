@@ -508,6 +508,7 @@ impl XServerFrontendRouteBroker {
                 frozen_input: Arc::new(Mutex::new(VecDeque::new())),
                 xkb_config: crate::XkbRmlvoConfig::default(),
                 xkb_worker: XkbKeyboardWorker::spawn(crate::XkbRmlvoConfig::default()),
+                control_completion: Arc::new(std::sync::OnceLock::new()),
                 acknowledgement_sender,
                 input_delivery_sender,
                 metadata_candidate_sender,
