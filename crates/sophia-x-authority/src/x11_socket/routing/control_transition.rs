@@ -17,6 +17,25 @@ pub enum PrivateSendError {
     Disconnected(XAuthorityRoutedInput),
 }
 
+/// A producer's handle to a private frontend.
+///
+/// Offers one way in, and answers with a typed refusal. The ordinary sender is
+/// deliberately not reachable through this: its `try_send` calls a policy
+/// denial `Full`, which tells a caller to retry something that is being
+/// refused.
+#[cfg(unix)]
+pub struct PrivateIngress {
+    sender: XAuthorityRoutedInputSender,
+}
+
+#[cfg(unix)]
+impl PrivateIngress {
+    /// Submit work, and be told why if it is not accepted.
+    pub fn submit(&self, route: XAuthorityRoutedInput) -> Result<(), PrivateSendError> {
+        self.sender.try_send_private(route)
+    }
+}
+
 /// How much of a private host's ready capacity is kept for cleanup.
 #[cfg(unix)]
 const PRIVATE_CLEANUP_RESERVE: usize = 4;
@@ -231,6 +250,14 @@ impl XServerFrontendRouteBroker {
 pub struct PrivateXServerFrontend {
     broker: XServerFrontendRouteBroker,
     ready: crate::ReadyStream<PrivateOperation>,
+    /// Work that left its channel and could not be placed.
+    ///
+    /// Explicit storage rather than a comment claiming the payload went back
+    /// to a caller. Once an item is out of its channel this is the only thing
+    /// holding it, so it is kept here and offered first on the next pass. A
+    /// binding that goes out of scope is a destroyed payload however it is
+    /// named.
+    retained: Option<(crate::ReadyClass, PrivateOperation)>,
 }
 
 /// One thing the private host has to run, in the order it was admitted.
@@ -283,7 +310,11 @@ impl PrivateXServerFrontend {
             PRIVATE_CLEANUP_RESERVE,
         )
         .expect("a reserve smaller than the capacity it was added to");
-        Self { broker, ready }
+        Self {
+            broker,
+            ready,
+            retained: None,
+        }
     }
 
     /// Submit work, and be told why if it is not accepted.
@@ -293,16 +324,19 @@ impl PrivateXServerFrontend {
     /// other request's delivery is disturbed: only this envelope's own id is
     /// aborted, and only when this envelope was the one that failed.
     pub fn submit(&self, route: XAuthorityRoutedInput) -> Result<(), PrivateSendError> {
-        let sender = self.broker.routed_input_sender();
-        match sender.try_send_private(route) {
-            Ok(()) => Ok(()),
-            Err(error) => Err(error),
-        }
+        self.ingress().submit(route)
     }
 
-    /// The stamped ingress. There is no unstamped one.
-    pub fn routed_input_sender(&self) -> XAuthorityRoutedInputSender {
-        self.broker.routed_input_sender()
+    /// The stamped ingress, as a private handle.
+    ///
+    /// Not the ordinary sender. Handing that out left `try_send` reachable
+    /// from a private frontend, and it reports a policy denial as `Full`, so
+    /// claiming every private producer error is typed would have been false
+    /// while that escape existed.
+    pub fn ingress(&self) -> PrivateIngress {
+        PrivateIngress {
+            sender: self.broker.routed_input_sender(),
+        }
     }
 
     /// Admit everything runnable into one order, then run it in that order.
@@ -335,57 +369,61 @@ impl PrivateXServerFrontend {
     /// destroyed here.
     fn admit_runnable(&mut self) -> Result<usize, XServerFrontendRouteError> {
         let mut admitted = 0usize;
+        // Anything held from a previous pass goes first, or it would be
+        // overtaken by work that arrived after it.
+        if let Some((class, operation)) = self.retained.take() {
+            match self.ready.admit(class, operation) {
+                Ok(_) => admitted = admitted.saturating_add(1),
+                Err(refused) => {
+                    self.retained = Some((class, refused.payload));
+                    return Ok(admitted);
+                }
+            }
+        }
         while self.ready.remaining_for(crate::ReadyClass::Cleanup) > 0 {
             let Ok(release) = self.broker.route_lease_release_receiver.try_recv() else {
                 break;
             };
-            self.admit_or_fail(
-                crate::ReadyClass::Cleanup,
-                PrivateOperation::LeaseRelease(release),
-            )?;
+            if !self.admit_or_retain(crate::ReadyClass::Cleanup, PrivateOperation::LeaseRelease(release)) {
+                return Ok(admitted);
+            }
             admitted = admitted.saturating_add(1);
         }
         while self.ready.remaining_for(crate::ReadyClass::RoutedInput) > 0 {
             let Ok(route) = self.broker.routed_input_receiver.try_recv() else {
                 break;
             };
-            self.admit_or_fail(
-                crate::ReadyClass::RoutedInput,
-                PrivateOperation::RoutedInput(route),
-            )?;
+            if !self.admit_or_retain(crate::ReadyClass::RoutedInput, PrivateOperation::RoutedInput(route)) {
+                return Ok(admitted);
+            }
             admitted = admitted.saturating_add(1);
         }
         while self.ready.remaining_for(crate::ReadyClass::Control) > 0 {
             let Ok(control) = self.broker.control_receiver.try_recv() else {
                 break;
             };
-            self.admit_or_fail(
-                crate::ReadyClass::Control,
-                PrivateOperation::Control(control),
-            )?;
+            if !self.admit_or_retain(crate::ReadyClass::Control, PrivateOperation::Control(control)) {
+                return Ok(admitted);
+            }
             admitted = admitted.saturating_add(1);
         }
         Ok(admitted)
     }
 
-    /// Admit work that has already left its channel.
+    /// Admit work that has already left its channel, or keep it.
     ///
-    /// The capacity check above is what makes this succeed, and it is a
-    /// single-threaded pass, so nothing takes the room between the two. If
-    /// that ever stops being true the payload is still not dropped: it goes
-    /// back out as a failure for the caller to answer, because by this point
-    /// it is out of the channel and this is the only place that still holds
-    /// it.
-    fn admit_or_fail(
-        &mut self,
-        class: crate::ReadyClass,
-        operation: PrivateOperation,
-    ) -> Result<(), XServerFrontendRouteError> {
+    /// The capacity check above usually makes this succeed, but not always:
+    /// exhausted sequence numbers refuse regardless of room, and no precheck
+    /// covers that. Either way the payload is out of its channel and this is
+    /// the only thing holding it, so a refusal stores it rather than naming it
+    /// and letting it fall out of scope. It is not relabelled as a poisoned
+    /// registry either; nothing is wrong with the registry.
+    fn admit_or_retain(&mut self, class: crate::ReadyClass, operation: PrivateOperation) -> bool {
         match self.ready.admit(class, operation) {
-            Ok(_) => Ok(()),
+            Ok(_) => true,
             Err(refused) => {
-                let _retained = refused.payload;
-                Err(XServerFrontendRouteError::RegistryPoisoned)
+                self.retained = Some((class, refused.payload));
+                false
             }
         }
     }

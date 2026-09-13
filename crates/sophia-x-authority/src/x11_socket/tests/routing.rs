@@ -2960,9 +2960,9 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
     //
     // Actually send, rather than asking the gate a question the sender was
     // never involved in. Open: admitted.
-    let sender = private.routed_input_sender();
+    let sender = private.ingress();
     sender
-        .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(95)))
+        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(95)))
         .expect("an open coordinator to admit work");
 
     // Close THIS gate. If the sender were stamping from anything else, it
@@ -2982,7 +2982,7 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
 
     assert!(
         sender
-            .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(96)))
+            .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(96)))
             .is_err(),
         "the sender must stamp from the coordinator this frontend was built with"
     );
@@ -3014,10 +3014,10 @@ fn the_private_host_delivers_each_admitted_input_exactly_once() {
     // which is what the shared stream is for and what consumer-side staging
     // cannot establish; it says each admitted item runs once and reaches its
     // client.
-    let sender = private.routed_input_sender();
+    let sender = private.ingress();
     for delivery in [100u64, 101] {
         sender
-            .send(motion_to(
+            .submit(motion_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
             ))
@@ -3083,8 +3083,8 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
 
     let delivery = XAuthorityInputDeliveryId::from_raw(110);
     private
-        .routed_input_sender()
-        .send(motion_to(surface, delivery))
+        .ingress()
+        .submit(motion_to(surface, delivery))
         .expect("an open coordinator to admit work");
 
     // The revision it was stamped under closes before the ordered pass runs.
@@ -3142,11 +3142,11 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
         .register_surface(client, namespace, surface, window)
         .unwrap();
 
-    let sender = private.routed_input_sender();
+    let sender = private.ingress();
     let sent = 16u64;
     for delivery in 0..sent {
         sender
-            .send(motion_to(
+            .submit(motion_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(200 + delivery),
             ))
@@ -3234,4 +3234,61 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
         Err(crate::PrivateSendError::Denied(_)) => {}
         other => panic!("a closed revision is a denial, not {other:?}"),
     }
+}
+
+#[test]
+fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
+    let namespace = NamespaceId::from_raw(50);
+    let client = XServerFrontendClientId(67);
+    let surface = SurfaceId::new(54, 1);
+    let window = XResourceId::new(0x200180, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    // The production constructor at its smallest: ready capacity six, of
+    // which four are held for cleanup, so ordinary work has room for two.
+    let mut private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(1).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    // One routed input and one control. The input plus any cleanup fills the
+    // ordinary share, and the control is what used to be taken and destroyed.
+    private
+        .ingress()
+        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(9001)))
+        .expect("an open coordinator to accept work");
+    private
+        .broker
+        .control_sender()
+        .send(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(7),
+                surface,
+            },
+        })
+        .expect("the control channel to accept");
+
+    // However many passes it takes, both arrive. Conservation is the property:
+    // work accepted from a producer is not allowed to disappear because a pass
+    // had no room for it.
+    let mut ran = 0usize;
+    for _ in 0..6 {
+        ran += private.route_pending().expect("an ordered pass");
+    }
+    assert_eq!(ran, 2, "both accepted operations ran across the passes");
+    assert!(channels.input.try_recv().is_ok(), "the input was delivered");
+    assert!(
+        channels.control.try_recv().is_ok(),
+        "the control reached its client rather than being destroyed"
+    );
 }
