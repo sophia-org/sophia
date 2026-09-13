@@ -1295,7 +1295,7 @@ impl TransitionThroughPrivate for crate::TransitionAccess<'_> {
     ) -> Result<crate::TransitionToken, crate::ControlEpochRefusal> {
         private
             .authority()
-            .execute_reserved(|authority, issuer| {
+            .under_transition(|authority, issuer| {
                 self.request(authority, issuer, kind, control_epoch, publication)
             })
             .expect("the authority to be reachable")
@@ -10995,6 +10995,150 @@ fn a_private_frontend_gates_the_authority_it_actually_owns() {
             .expect("a second authority to name itself"),
         owned,
         "two authorities are never one identity"
+    );
+}
+
+fn private_for_roles() -> crate::PrivateXServerFrontend {
+    let (sender, _receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (authority, issuer, submit) = private_authority();
+    crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &crate::PrivateSettlementOwner::default(),
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"))
+}
+
+fn role_connection(recipient: u64) -> sophia_input_authority::ConnectionIdentity {
+    sophia_input_authority::ConnectionIdentity {
+        recipient,
+        connection_generation: 1,
+    }
+}
+
+#[test]
+fn one_producer_cannot_consume_another_producers_completion() {
+    let private = private_for_roles();
+    let first = private
+        .reservation_role(role_connection(501), DeviceId::from_raw(1))
+        .expect("a capability for the first producer");
+    let second = private
+        .reservation_role(role_connection(502), DeviceId::from_raw(2))
+        .expect("a capability for the second producer");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+
+    let first_held = first.reserve(stamp, 1).expect("the first reservation");
+    let second_held = second.reserve(stamp, 1).expect("the second reservation");
+    let first_request = first_held.accepted();
+    let second_request = second_held.accepted();
+
+    // Both execute, so both have an outcome waiting.
+    for request in [&first_request, &second_request] {
+        assert!(
+            private
+                .authority()
+                .execute(request, |permit| permit.begin_external_effect())
+                .is_ok(),
+            "each producer's own request executes"
+        );
+    }
+
+    // The right is carried, not named. There is no call that lets one producer
+    // point at another's request: `observe` takes the token and the connection
+    // from the custody value it is invoked on. A shared submit handle
+    // establishes only which authority is being addressed, and the connection
+    // test compares against whatever the caller passed in -- so an API that
+    // accepted both from the caller let either producer consume the other's
+    // outcome, and the one whose outcome was taken then saw a stale request.
+    assert!(
+        matches!(
+            first_request.observe(),
+            Ok(Some(sophia_input_authority::RequestCompletion::Processed))
+        ),
+        "the first producer observes its own outcome"
+    );
+    assert!(
+        matches!(
+            second_request.observe(),
+            Ok(Some(sophia_input_authority::RequestCompletion::Processed))
+        ),
+        "and the second still has its own to observe"
+    );
+}
+
+#[test]
+fn a_controller_refuses_an_authority_paired_with_another_issuer() {
+    let (authority, _issuer, _submit) = private_authority();
+    let (_other, other_issuer, _other_submit) = private_authority();
+
+    // Accepting this pairing lets a reservation be taken and then never
+    // disposed: disposal is an issuer act, and this issuer answers for a
+    // different instance, so the cell is stranded with nothing able to
+    // publish, consume or reissue it.
+    let refused = crate::PrivateAuthorityController::new(authority, other_issuer);
+    let Err((refusal, authority, issuer)) = refused else {
+        panic!("a mismatched authority and issuer must be refused");
+    };
+    assert!(matches!(
+        refusal,
+        crate::PrivateAuthorityRefusal::Authority(_)
+    ));
+
+    // The parts come back, so a caller can still build the right pairing.
+    assert!(
+        crate::PrivateAuthorityController::new(authority, issuer).is_err(),
+        "the returned parts are the mismatched ones, unchanged"
+    );
+}
+
+#[test]
+fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
+    let private = private_for_roles();
+    let role = private
+        .reservation_role(role_connection(503), DeviceId::from_raw(3))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let running = role.reserve(stamp, 1).expect("a reservation to execute");
+    let request = running.accepted();
+
+    // A second producer's reservation, taken OUTSIDE any execution, and never
+    // published. Its own grant, because one grant holds one cell.
+    let other = private
+        .reservation_role(role_connection(504), DeviceId::from_raw(4))
+        .expect("a capability for the second producer");
+    let stranded = other.reserve(stamp, 1).expect("an unpublished reservation");
+
+    // Moved in and dropped while this thread holds common. Taking common again
+    // to dispose is a deadlock rather than a rank question, so the debt is
+    // recorded and paid by the next caller that holds it.
+    let completion = private.authority().execute(&request, move |permit| {
+        drop(stranded);
+        permit.begin_external_effect()
+    });
+    assert!(
+        completion.is_ok(),
+        "the execution returned rather than hanging"
+    );
+
+    assert!(
+        matches!(
+            request.observe(),
+            Ok(Some(sophia_input_authority::RequestCompletion::Processed))
+        ),
+        "the executed request still answers to its own custody"
+    );
+    // Deferred, not skipped: the stranded cell is free for the next request on
+    // that grant.
+    assert!(
+        other.reserve(stamp, 2).is_ok(),
+        "the dropped reservation's cell was released"
     );
 }
 

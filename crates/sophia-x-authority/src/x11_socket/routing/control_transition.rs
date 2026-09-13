@@ -544,13 +544,30 @@ impl PrivateXServerFrontend {
                 }
             };
         let gate = crate::ControlEpochGate::new(coordinator);
+        // Checked here too, and separately: derive proves the authority can
+        // report a revision, not that this issuer answers for it. A controller
+        // built over a mismatched pair accepts reservations and then cannot
+        // dispose them.
+        let controller = match PrivateAuthorityController::new(parts.authority, parts.issuer) {
+            Ok(controller) => controller,
+            Err((_refusal, authority, issuer)) => {
+                durable.release_failure_slot();
+                return Err((
+                    AdmissionRefusal::AuthorityUnreadable,
+                    PrivateFrontendParts {
+                        authority,
+                        issuer,
+                        ..parts
+                    },
+                ));
+            }
+        };
         let PrivateFrontendParts {
             input_capacity,
             control_acknowledgements,
             input_deliveries,
-            authority,
-            issuer,
             submit,
+            ..
         } = parts;
         let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
             input_capacity,
@@ -581,7 +598,7 @@ impl PrivateXServerFrontend {
             settled: false,
             failed: false,
             failure_slot_held: true,
-            controller: PrivateAuthorityController::new(authority, issuer),
+            controller,
             submit,
         })
     }
@@ -622,11 +639,13 @@ impl PrivateXServerFrontend {
         connection: sophia_input_authority::ConnectionIdentity,
         device: sophia_protocol::DeviceId,
     ) -> Result<PrivateReservationRole, PrivateAuthorityRefusal> {
-        let (capability, _generation) = self.controller.issue_capability(connection, device)?;
+        let (capability, generation) = self.controller.issue_capability(connection, device)?;
         Ok(PrivateReservationRole::new(
             self.controller.clone(),
             self.submit,
             capability,
+            generation,
+            connection,
         ))
     }
 

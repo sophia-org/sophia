@@ -14,17 +14,26 @@
 /// orders acquisitions made while another guard is held, and a producer taking
 /// this mutex holds nothing else when it does.
 ///
-/// What is withheld is not the instance but the rights over it. A producer
-/// reaches its own reservation and its own completion. Issuer rights stay
-/// here, because a caller holding those could revoke and reissue the grant its
-/// own request was validated against, and nothing downstream would see that
-/// the request it is executing answers to a grant that no longer exists.
+/// What is withheld is not the instance but the rights over it. Issuer rights
+/// stay here, because a caller holding those could revoke and reissue the
+/// grant its own request was validated against, and nothing downstream would
+/// see that the request it is executing answers to a grant that no longer
+/// exists.
 #[cfg(unix)]
 #[derive(Clone)]
 pub struct PrivateAuthorityController {
     common: Arc<Mutex<sophia_input_authority::AuthorityInstance>>,
     /// Held, never handed out.
     issuer: Arc<sophia_input_authority::IssuerHandle>,
+    /// Cells owed disposal that could not be disposed when they were dropped.
+    ///
+    /// Its own lock, beneath nothing and above nothing: it is never held while
+    /// common is taken, and taking it never waits on common. A reservation
+    /// dropped while this thread already holds common cannot take common again
+    /// to dispose itself -- that is a deadlock, not a rank question -- so it
+    /// records the debt here and the next caller that does hold common pays
+    /// it. Disposal is deferred, never skipped.
+    owed_disposal: Arc<Mutex<Vec<sophia_input_authority::RequestToken>>>,
 }
 
 /// Why a role-limited authority call could not be made.
@@ -40,17 +49,38 @@ pub enum PrivateAuthorityRefusal {
 
 #[cfg(unix)]
 impl PrivateAuthorityController {
+    /// Build a controller over one authority and the issuer rights for it.
+    ///
+    /// Fallible, and checked rather than assumed. An instance paired with
+    /// another instance's issuer accepts reservations -- the submit handle
+    /// only establishes which authority is being addressed -- and then cannot
+    /// dispose them, because disposal is an issuer act and that issuer answers
+    /// for something else. The cell is stranded with nothing able to publish,
+    /// consume or reissue it. The parts come back intact on refusal, since
+    /// they may be the caller's only handles.
+    #[allow(clippy::result_large_err)]
     pub fn new(
         authority: sophia_input_authority::AuthorityInstance,
         issuer: sophia_input_authority::IssuerHandle,
-    ) -> Self {
-        Self {
+    ) -> Result<
+        Self,
+        (
+            PrivateAuthorityRefusal,
+            sophia_input_authority::AuthorityInstance,
+            sophia_input_authority::IssuerHandle,
+        ),
+    > {
+        if let Err(error) = authority.authority_identity(&issuer) {
+            return Err((PrivateAuthorityRefusal::Authority(error), authority, issuer));
+        }
+        Ok(Self {
             common: Arc::new(Mutex::new(authority)),
             issuer: Arc::new(issuer),
-        }
+            owed_disposal: Arc::new(Mutex::new(Vec::new())),
+        })
     }
 
-    /// Act on the instance under common.
+    /// Act on the instance under common, paying any deferred disposal first.
     ///
     /// The caller takes whatever later-ranked guards it needs inside, which is
     /// the only order that works: common first, then X. Handing back a guard
@@ -64,24 +94,18 @@ impl PrivateAuthorityController {
             .common
             .lock()
             .map_err(|_| PrivateAuthorityRefusal::Unreachable)?;
+        self.pay_owed_disposal(&mut held);
         Ok(act(&mut held))
     }
 
-    /// The same, reaching through poison.
-    ///
-    /// For the paths that cannot refuse: taking a reservation back is a move
-    /// into storage the reservation already holds, and declining it strands a
-    /// cell nobody will ever publish or consume. A poisoned instance is not a
-    /// reason to leak one.
-    fn under_common_even_if_poisoned<R>(
-        &self,
-        act: impl FnOnce(&mut sophia_input_authority::AuthorityInstance) -> R,
-    ) -> R {
-        let mut held = self
-            .common
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        act(&mut held)
+    /// Dispose everything recorded as owed, while common is already held.
+    fn pay_owed_disposal(&self, authority: &mut sophia_input_authority::AuthorityInstance) {
+        let Ok(mut owed) = self.owed_disposal.lock() else {
+            return;
+        };
+        while let Some(token) = owed.pop() {
+            let _ = authority.abandon_request(&self.issuer, token);
+        }
     }
 
     /// Which authority this is. Read-only, so no role is implied by asking.
@@ -96,7 +120,7 @@ impl PrivateAuthorityController {
     }
 
     /// Issue a capability for one admitted connection. Origin-only.
-    pub fn issue_capability(
+    fn issue_capability(
         &self,
         connection: sophia_input_authority::ConnectionIdentity,
         device: sophia_protocol::DeviceId,
@@ -121,20 +145,59 @@ impl PrivateAuthorityController {
     /// Take back a reservation that was never published.
     ///
     /// Issuer-owned and exact: this disposes the one cell named, never a
-    /// sweep. Reaching through poison because the alternative is a cell that
-    /// can never be published, consumed or reissued.
-    fn dispose_unpublished(&self, token: sophia_input_authority::RequestToken) -> bool {
-        self.under_common_even_if_poisoned(|authority| {
-            authority.abandon_request(&self.issuer, token).is_ok()
-        })
+    /// sweep. It never waits for common. If common cannot be taken without
+    /// waiting -- including because this very thread holds it -- the debt is
+    /// recorded and paid by the next caller that holds it, so a drop inside an
+    /// execution callback records rather than deadlocks.
+    fn dispose_unpublished(&self, token: sophia_input_authority::RequestToken) {
+        match self.common.try_lock() {
+            Ok(mut authority) => {
+                self.pay_owed_disposal(&mut authority);
+                let _ = authority.abandon_request(&self.issuer, token);
+            }
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                let mut authority = poisoned.into_inner();
+                self.pay_owed_disposal(&mut authority);
+                let _ = authority.abandon_request(&self.issuer, token);
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                if let Ok(mut owed) = self.owed_disposal.lock() {
+                    owed.push(token);
+                }
+            }
+        }
     }
 
-    /// Run final validation and application for one reserved request.
+    /// Run final validation and application for one request this producer
+    /// holds custody of.
     ///
-    /// Common is acquired here and held for the whole callback, so the caller
-    /// takes its X guards inside and passes the guarded state it read into the
-    /// execution closure rather than locking again.
-    pub fn execute_reserved<R>(
+    /// Scoped rather than a general authority callback: the closure receives
+    /// the execution permit and nothing that owns a reservation, so nothing it
+    /// drops can try to take common again. The token and the connection come
+    /// from the custody value rather than from the caller, so this cannot be
+    /// pointed at another producer's request.
+    pub fn execute(
+        &self,
+        outstanding: &PrivateOutstandingRequest,
+        act: impl FnOnce(
+            &mut sophia_input_authority::ExecutionPermit<'_>,
+        ) -> Result<(), sophia_input_authority::RegistrationError>,
+    ) -> Result<sophia_input_authority::RequestCompletion, PrivateAuthorityRefusal> {
+        let token = outstanding.token;
+        let connection = outstanding.connection;
+        self.under_common(|authority| {
+            authority
+                .execute_reserved(&self.issuer, token, connection, act)
+                .map_err(PrivateAuthorityRefusal::Authority)
+        })?
+    }
+
+    /// Drive a coordinator transition against this authority. Origin-only.
+    ///
+    /// The caller already holds the coordinator and common is taken here,
+    /// which is the documented order. Nothing that owns a reservation may be
+    /// dropped inside, and nothing here hands one in.
+    pub fn under_transition<R>(
         &self,
         act: impl FnOnce(
             &mut sophia_input_authority::AuthorityInstance,
@@ -145,34 +208,51 @@ impl PrivateAuthorityController {
     }
 }
 
-/// A reservation that has not been published to the order yet.
+/// A reservation that has not reached the order yet.
 ///
 /// Held rather than returned as a bare token, because the window between
 /// reserving and publishing has exactly two honest ends: the work is published
-/// and the reservation belongs to it, or it is not and the reservation has to
-/// go back. A bare token makes the second end something a caller has to
-/// remember on every refusal path, including the ones that unwind.
+/// and the reservation belongs to it, or it is not and the reservation goes
+/// back. A bare token makes the second end something a caller has to remember
+/// on every refusal path, including the ones that unwind.
+///
+/// There is deliberately no public way to extract the token. Publication is
+/// internal and happens only where the work is genuinely accepted, so a
+/// producer cannot disable disposal by asserting that it published.
 #[cfg(unix)]
 pub struct PrivateReservation {
     controller: PrivateAuthorityController,
-    /// Taken when the work is published. `None` afterwards, so the drop below
-    /// knows the difference between an unpublished reservation and one that
-    /// has an owner.
+    /// Taken when the work reaches the order. `None` afterwards, so the drop
+    /// below knows an unpublished reservation from one that has an owner.
     token: Option<sophia_input_authority::RequestToken>,
+    connection: sophia_input_authority::ConnectionIdentity,
     capability: sophia_input_authority::DeviceCapability,
+    submit: sophia_input_authority::SubmitHandle,
 }
 
 #[cfg(unix)]
 impl PrivateReservation {
-    /// The work reached the order, so the reservation travels with it.
-    pub fn published(mut self) -> sophia_input_authority::RequestToken {
-        self.token
-            .take()
-            .expect("a reservation is published at most once")
-    }
-
     pub fn capability(&self) -> sophia_input_authority::DeviceCapability {
         self.capability
+    }
+
+    /// The work reached the order, so custody of the request travels with it.
+    ///
+    /// Crate-internal and consuming: the only caller is the point where
+    /// acceptance actually happened, and what comes back is custody rather
+    /// than a bare token.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn accepted(mut self) -> PrivateOutstandingRequest {
+        let token = self
+            .token
+            .take()
+            .expect("a reservation reaches the order at most once");
+        PrivateOutstandingRequest {
+            controller: self.controller.clone(),
+            submit: self.submit,
+            token,
+            connection: self.connection,
+        }
     }
 }
 
@@ -187,7 +267,38 @@ impl Drop for PrivateReservation {
         // which has none, and by exact token rather than by clearing whatever
         // the grant currently holds -- that cell may already belong to the
         // next request.
-        let _disposed = self.controller.dispose_unpublished(token);
+        self.controller.dispose_unpublished(token);
+    }
+}
+
+/// Custody of one request that reached the order.
+///
+/// This is what makes observing an outcome a right rather than a guess. The
+/// token and the connection are carried here, not supplied by whoever calls,
+/// so a producer cannot name another producer's request and consume its
+/// completion -- which the authority alone cannot prevent, because a shared
+/// submit handle establishes only which authority is being addressed and the
+/// connection test compares against what the caller passed in.
+#[cfg(unix)]
+pub struct PrivateOutstandingRequest {
+    controller: PrivateAuthorityController,
+    #[cfg_attr(not(test), allow(dead_code))]
+    submit: sophia_input_authority::SubmitHandle,
+    token: sophia_input_authority::RequestToken,
+    connection: sophia_input_authority::ConnectionIdentity,
+}
+
+#[cfg(unix)]
+impl PrivateOutstandingRequest {
+    /// Observe the outcome of this request, and only this one.
+    pub fn observe(
+        &self,
+    ) -> Result<Option<sophia_input_authority::RequestCompletion>, PrivateAuthorityRefusal> {
+        self.controller.under_common(|authority| {
+            authority
+                .take_completion(&self.submit, self.token, self.connection)
+                .map_err(PrivateAuthorityRefusal::Authority)
+        })?
     }
 }
 
@@ -200,35 +311,60 @@ impl Drop for PrivateReservation {
 #[derive(Clone)]
 pub struct PrivateReservationRole {
     controller: PrivateAuthorityController,
-    submit: Arc<sophia_input_authority::SubmitHandle>,
+    submit: sophia_input_authority::SubmitHandle,
     capability: sophia_input_authority::DeviceCapability,
+    /// Bound at issue, not supplied per call. A producer asked to provide
+    /// these would have to obtain them from somewhere, and the only places
+    /// they exist are this role and another role's.
+    generation: sophia_input_authority::GrantGeneration,
+    connection: sophia_input_authority::ConnectionIdentity,
 }
 
 #[cfg(unix)]
 impl PrivateReservationRole {
-    pub fn new(
+    fn new(
         controller: PrivateAuthorityController,
         submit: sophia_input_authority::SubmitHandle,
         capability: sophia_input_authority::DeviceCapability,
+        generation: sophia_input_authority::GrantGeneration,
+        connection: sophia_input_authority::ConnectionIdentity,
     ) -> Self {
         Self {
             controller,
-            submit: Arc::new(submit),
+            submit,
             capability,
+            generation,
+            connection,
         }
+    }
+
+    pub fn connection(&self) -> sophia_input_authority::ConnectionIdentity {
+        self.connection
     }
 
     /// Reserve one request, before the work is published.
     ///
-    /// The context carries the stamp the caller already captured through the
-    /// coordinator, which it released before calling this. A transition
-    /// landing in between is caught by the authority's own validation rather
-    /// than by a check racing it, and this never reaches back for the
-    /// coordinator from under common.
+    /// The caller supplies the stamp it already captured through the
+    /// coordinator and released, plus which request this is. The grant
+    /// generation and the connection come from this role, so a producer never
+    /// has to obtain an opaque value it has no way to know -- and never has a
+    /// reason to reach for another role's.
+    ///
+    /// A transition landing between the stamp and this call is caught by the
+    /// authority's own validation rather than by a check racing it, and
+    /// nothing here reaches back for the coordinator from under common.
     pub fn reserve(
         &self,
-        context: sophia_input_authority::ExecutionContext,
+        stamp: crate::ControlStamp,
+        request: u64,
     ) -> Result<PrivateReservation, PrivateAuthorityRefusal> {
+        let context = sophia_input_authority::ExecutionContext {
+            generation: self.generation,
+            connection: self.connection,
+            epoch: stamp.control_epoch,
+            publication: stamp.publication,
+            request,
+        };
         let token = self.controller.under_common(|authority| {
             authority
                 .reserve_request(&self.submit, self.capability, context)
@@ -237,20 +373,9 @@ impl PrivateReservationRole {
         Ok(PrivateReservation {
             controller: self.controller.clone(),
             token: Some(token),
+            connection: self.connection,
             capability: self.capability,
+            submit: self.submit,
         })
-    }
-
-    /// Observe this producer's own completion. Not a second effect.
-    pub fn observe(
-        &self,
-        token: sophia_input_authority::RequestToken,
-        connection: sophia_input_authority::ConnectionIdentity,
-    ) -> Result<Option<sophia_input_authority::RequestCompletion>, PrivateAuthorityRefusal> {
-        self.controller.under_common(|authority| {
-            authority
-                .take_completion(&self.submit, token, connection)
-                .map_err(PrivateAuthorityRefusal::Authority)
-        })?
     }
 }
