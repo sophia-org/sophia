@@ -25,9 +25,11 @@ later M3 producer/consumer candidates remain unintegrated. XTEST discovery stays
 disabled. The mandatory native manifest has 40 obligations, including 20 with no
 production implementation evidence.
 
-The next runtime slice is a usable, origin-owned shutdown path: accepted input,
-control acknowledgements and lease cleanup must remain owned through poison,
-missing targets and output backpressure. Counting a failure is not settlement.
+The current runtime focus is terminal completion: control and untracked input
+need real completion signals, and accepted work needs owned error and shutdown
+continuations through poison, missing targets and output backpressure. Narrow
+admission, failure-slot and tracked-input controls are recorded below; they do
+not establish the complete lifecycle. Counting a failure is not settlement.
 The ordered executor still owes final guarded validation, authority/XKB state
 application, remaining producers and the chosen interval/cleanup budgets. These
 are already authorized implementation requirements, not new operator decisions.
@@ -1128,3 +1130,23 @@ overlay name collision is retained separately as a fixture compile failure,
 not a runtime result. Control completion, untracked-input completion, owned
 execution errors, owner poison and reserved outstanding storage remain open;
 the runtime candidate is unintegrated.
+
+Candidate `ae6fc5f2` transfers outstanding identities and their originating
+registry to the durable owner before the pending-empty early return, taking
+no new credit. Independent
+`.artifacts/private-outstanding-review-ae6fc5f2/` records all four controls PASS
+(146 filtered; 10.18 seconds): the recording/observation and recovery-poison
+pair, late completion through a kept handle, and late completion after handle
+abandonment. Driving the owner both before any terminal outcome and after a
+recorded-but-unobserved outcome keeps `reserved=1, outstanding=1`. After the
+produced receipt is observed, driving yields `reserved=0, outstanding=0`;
+another drive does not release again.
+
+This narrowly establishes the reviewed tracked-input abandonment path under a
+healthy settlement owner. It does not establish actual socket-writer effects,
+control or untracked-input completion, owned execution errors, poisoned-owner
+handling, allocation-free cleanup or the production executor. The combined
+candidate stays unintegrated. `drive` currently reports only newly settled
+pending operations, so its return can be zero while it reclaims an outstanding
+credit; callers must not confuse those two forms of progress. This reporting
+qualification is separate from the passing credit-lifetime controls.
