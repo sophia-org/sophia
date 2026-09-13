@@ -76,7 +76,8 @@ pub fn output_frame_damage_snapshot(
             CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
-            | CompositorDisplayCommand::IndicatorStrip(_) => None,
+            | CompositorDisplayCommand::IndicatorStrip(_)
+            | CompositorDisplayCommand::ContentImage(_) => None,
         })
     {
         if !surface.is_valid() {
@@ -198,7 +199,8 @@ fn validate_snapshot(snapshot: &OutputFrameDamageSnapshot) -> Result<(), OutputF
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
-            | CompositorDisplayCommand::IndicatorStrip(_) => None,
+            | CompositorDisplayCommand::IndicatorStrip(_)
+            | CompositorDisplayCommand::ContentImage(_) => None,
         })
         .collect::<Vec<_>>();
     let snapshot_order = snapshot

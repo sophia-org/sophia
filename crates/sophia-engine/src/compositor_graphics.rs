@@ -50,6 +50,12 @@ pub enum CompositorNodeId {
         slot: u16,
         role: DescriptorOverlayNodeRole,
     },
+    ShellContent {
+        output: OutputId,
+        candidate: u64,
+        surface: u16,
+        placement: u16,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -100,6 +106,51 @@ pub struct CompositorIndicatorStrip {
     pub strip: IndicatorChromeStrip,
 }
 
+/// One immutable shell resource placed in output-local physical pixels.
+/// The lease is carried through every native frame clone so resource release
+/// cannot precede the last scanout reference.
+#[derive(Clone)]
+pub struct CompositorContentImage {
+    pub node: CompositorNodeId,
+    pub generation: u64,
+    pub output_size_px: Size,
+    pub geometry_px: Rect,
+    pub size_px: Size,
+    pub stride: u32,
+    pub format: u32,
+    pub resource: sophia_runtime::ContentResourceLease,
+}
+
+impl core::fmt::Debug for CompositorContentImage {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("CompositorContentImage")
+            .field("node", &self.node)
+            .field("generation", &self.generation)
+            .field("output_size_px", &self.output_size_px)
+            .field("geometry_px", &self.geometry_px)
+            .field("size_px", &self.size_px)
+            .field("stride", &self.stride)
+            .field("format", &self.format)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for CompositorContentImage {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node
+            && self.generation == other.generation
+            && self.output_size_px == other.output_size_px
+            && self.geometry_px == other.geometry_px
+            && self.size_px == other.size_px
+            && self.stride == other.stride
+            && self.format == other.format
+            && self.resource.description() == other.resource.description()
+    }
+}
+
+impl Eq for CompositorContentImage {}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompositorDisplayCommand {
     Surface { surface: SurfaceId },
@@ -107,6 +158,7 @@ pub enum CompositorDisplayCommand {
     Rect(CompositorRect),
     Text(CompositorText),
     IndicatorStrip(CompositorIndicatorStrip),
+    ContentImage(CompositorContentImage),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,7 +181,8 @@ impl CompositorDisplayList {
             CompositorDisplayCommand::Surface { .. }
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
-            | CompositorDisplayCommand::IndicatorStrip(_) => None,
+            | CompositorDisplayCommand::IndicatorStrip(_)
+            | CompositorDisplayCommand::ContentImage(_) => None,
         })
     }
 
@@ -139,7 +192,8 @@ impl CompositorDisplayList {
             CompositorDisplayCommand::Surface { .. }
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Text(_)
-            | CompositorDisplayCommand::IndicatorStrip(_) => None,
+            | CompositorDisplayCommand::IndicatorStrip(_)
+            | CompositorDisplayCommand::ContentImage(_) => None,
         })
     }
 
@@ -149,7 +203,8 @@ impl CompositorDisplayList {
             CompositorDisplayCommand::Surface { .. }
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
-            | CompositorDisplayCommand::IndicatorStrip(_) => None,
+            | CompositorDisplayCommand::IndicatorStrip(_)
+            | CompositorDisplayCommand::ContentImage(_) => None,
         })
     }
 
@@ -159,7 +214,15 @@ impl CompositorDisplayList {
             CompositorDisplayCommand::Surface { .. }
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
-            | CompositorDisplayCommand::Text(_) => None,
+            | CompositorDisplayCommand::Text(_)
+            | CompositorDisplayCommand::ContentImage(_) => None,
+        })
+    }
+
+    pub fn content_images(&self) -> impl Iterator<Item = &CompositorContentImage> + '_ {
+        self.commands.iter().filter_map(|command| match command {
+            CompositorDisplayCommand::ContentImage(image) => Some(image),
+            _ => None,
         })
     }
 }
@@ -187,7 +250,37 @@ pub(crate) fn compositor_display_list_structure_is_valid(
                 && nodes.insert(text.node)
         }
         CompositorDisplayCommand::IndicatorStrip(strip) => nodes.insert(strip.node),
+        CompositorDisplayCommand::ContentImage(image) => {
+            image.generation != 0
+                && image.output_size_px.width > 0
+                && image.output_size_px.height > 0
+                && !image.geometry_px.is_empty()
+                && image.size_px.width > 0
+                && image.size_px.height > 0
+                && image.stride
+                    == u32::try_from(image.size_px.width)
+                        .ok()
+                        .and_then(|width| width.checked_mul(4))
+                        .unwrap_or(0)
+                && image.format == sophia_renderer_live_format_argb8888()
+                && image.resource.bytes().len()
+                    == usize::try_from(image.stride)
+                        .ok()
+                        .and_then(|stride| {
+                            usize::try_from(image.size_px.height)
+                                .ok()
+                                .and_then(|height| stride.checked_mul(height))
+                        })
+                        .unwrap_or(usize::MAX)
+                && nodes.insert(image.node)
+        }
     })
+}
+
+const fn sophia_renderer_live_format_argb8888() -> u32 {
+    // DRM_FORMAT_ARGB8888. Kept here to avoid making Engine depend on the
+    // renderer crate merely for a wire-format constant.
+    u32::from_le_bytes(*b"AR24")
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -902,6 +995,31 @@ pub fn compositor_display_list_damage(
             }
             (Some(before), None) => damage.push(before.geometry),
             (None, Some(after)) => damage.push(after.geometry),
+            (None, None) => unreachable!("node came from one display list"),
+        }
+    }
+    let previous_images = previous
+        .content_images()
+        .map(|image| (image.node, image))
+        .collect::<BTreeMap<_, _>>();
+    let current_images = current
+        .content_images()
+        .map(|image| (image.node, image))
+        .collect::<BTreeMap<_, _>>();
+    for node in previous_images
+        .keys()
+        .chain(current_images.keys())
+        .copied()
+        .collect::<BTreeSet<_>>()
+    {
+        match (previous_images.get(&node), current_images.get(&node)) {
+            (Some(before), Some(after)) if before == after => {}
+            (Some(before), Some(after)) => {
+                damage.push(before.geometry_px);
+                damage.push(after.geometry_px);
+            }
+            (Some(before), None) => damage.push(before.geometry_px),
+            (None, Some(after)) => damage.push(after.geometry_px),
             (None, None) => unreachable!("node came from one display list"),
         }
     }

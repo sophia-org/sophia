@@ -1148,6 +1148,25 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 }
                 reference_capture.present(reference_input);
             }
+            if let Some(runtime) = runtime.as_mut() {
+                let output_bounds = wm_output_bounds(&outputs);
+                let root = wm_root_bounds(&output_bounds)
+                    .ok_or("shell content output topology has no root bounds")?;
+                if let Err(error) = shell.service_content(
+                    runtime,
+                    &scene,
+                    native_scanout.as_mut(),
+                    &outputs,
+                    &output_bounds,
+                    root,
+                ) {
+                    crate::session_eprintln!(
+                        "sophia_live_shell_content schema=1 status=transport_failed reason={error}"
+                    );
+                    shell.recover_transport("content_failure")?;
+                    revoke_shell_input = true;
+                }
+            }
             if let Some(runtime) = runtime.as_ref() {
                 match shell.observe_presentation(runtime) {
                     Ok(true) if shell.interaction_presented() => {
@@ -1175,6 +1194,13 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                         shell.recover_transport("presentation_failure")?;
                         revoke_shell_input = true;
                     }
+                }
+                if let Err(error) = shell.observe_content_presentation(runtime) {
+                    crate::session_eprintln!(
+                        "sophia_live_shell_content schema=1 status=presentation_failed reason={error}"
+                    );
+                    shell.recover_transport("content_presentation_failure")?;
+                    revoke_shell_input = true;
                 }
             }
             if revoke_shell_input {

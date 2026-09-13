@@ -167,6 +167,13 @@ impl ContentCandidateStore {
         self.pending.len()
     }
 
+    pub fn next_pending_candidate(&self) -> Option<(ContentOutputId, u64)> {
+        self.pending
+            .iter()
+            .next()
+            .map(|(output, candidate)| (*output, candidate.begin.candidate_generation))
+    }
+
     pub fn submitted_candidate_count(&self) -> usize {
         self.submitted.len()
     }

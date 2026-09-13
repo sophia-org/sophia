@@ -326,6 +326,52 @@ session { terminal "terminal"; browser "browser"; }
 }
 
 #[test]
+fn production_content_requires_the_complete_explicit_shell_authority() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let profile = std::env::temp_dir().join(format!(
+        "sophia-content-profile-{}-{}.kdl",
+        std::process::id(),
+        line!()
+    ));
+    let arguments = |profile: &std::path::Path| {
+        vec![
+            format!("--desktop-profile={}", profile.display()),
+            "--session-mode=normal".to_owned(),
+            "--session-app=terminal=/usr/bin/true".to_owned(),
+            "--session-start=terminal".to_owned(),
+            "--wm-process=/opt/hagia".to_owned(),
+            "--wm-interface=sophia_wm_v1".to_owned(),
+            "--shell-process=/opt/lom".to_owned(),
+        ]
+    };
+    let write = |source: &str| {
+        std::fs::write(&profile, source).unwrap();
+        std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
+    };
+
+    write(
+        "schema 1\nshell { enabled #true; content #true; panel 32; gpu-memory-bytes 268435456; }\n",
+    );
+    let config = PersistentXtermSessionConfig::from_args(&arguments(&profile)).unwrap();
+    assert!(config.shell_content_enabled);
+    assert_eq!(
+        config.shell_gpu_memory_bytes,
+        Some(sophia_config::SHELL_GPU_MEMORY_BYTES)
+    );
+
+    for source in [
+        "schema 1\nshell { enabled #true; content #true; panel 32; }\n",
+        "schema 1\nshell { enabled #true; content #true; gpu-memory-bytes 268435456; }\n",
+        "schema 1\nshell { enabled #true; content #false; panel 32; gpu-memory-bytes 268435456; }\n",
+    ] {
+        write(source);
+        assert!(PersistentXtermSessionConfig::from_args(&arguments(&profile)).is_err());
+    }
+    std::fs::remove_file(profile).unwrap();
+}
+
+#[test]
 fn desktop_profile_is_validated_and_partitioned_during_session_configuration() {
     use std::os::unix::fs::PermissionsExt as _;
     use std::time::{SystemTime, UNIX_EPOCH};
