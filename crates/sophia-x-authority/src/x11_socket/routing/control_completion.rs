@@ -191,6 +191,9 @@ pub enum ControlPublicationRefusal {
     /// An outcome is already established and this one contradicts it. The
     /// first is what happened.
     OutcomeAlreadyEstablished,
+    /// Its outcome has already been published. The record survives only for
+    /// work it queued elsewhere, and nothing further is sent for it.
+    AlreadyPublished,
     /// The registry cannot be reached.
     Unavailable,
     /// The work is still its producer's; it has not been accepted, so no
@@ -524,31 +527,27 @@ impl ControlCompletionRegistry {
             return 0;
         };
         let mut delivered = 0usize;
-        let mut settled = Vec::new();
-        inner.records.retain(|held| {
-            let ControlPhase::Owed(acknowledgement) = &held.phase else {
+        inner.records.retain_mut(|held| {
+            let ControlPhase::Owed(acknowledgement) = held.phase else {
                 return true;
             };
-            match publish(acknowledgement) {
+            match publish(&acknowledgement) {
                 ControlPublication::Delivered => {
                     delivered = delivered.saturating_add(1);
                     // Same rule as publishing directly: answered is not over.
+                    // Settled where it stands, so a recovery path allocates
+                    // nothing after publishing and leaves no phase to fix up
+                    // in a second pass.
                     if held.dependents == 0 {
                         false
                     } else {
-                        settled.push(held.token);
+                        held.phase = ControlPhase::Settled(acknowledgement.client);
                         true
                     }
                 }
                 ControlPublication::Retained | ControlPublication::ReceiverGone => true,
             }
         });
-        for token in settled {
-            if let Some(held) = inner.records.iter_mut().find(|held| held.token == token) {
-                let client = held.phase.client();
-                held.phase = ControlPhase::Settled(client);
-            }
-        }
         delivered
     }
 

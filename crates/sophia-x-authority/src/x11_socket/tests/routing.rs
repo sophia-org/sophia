@@ -9086,3 +9086,111 @@ fn a_governed_focus_out_that_cannot_be_counted_is_not_queued() {
     drop(claimant_registration);
     drop(private);
 }
+
+#[test]
+fn a_published_outcome_is_not_sent_again_while_its_record_survives() {
+    let client = XServerFrontendClientId(356);
+    let surface = SurfaceId::new(356, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(8).expect("an unused origin");
+    let command = configure(client, surface, 54001);
+    let token = accepted(&registry, command);
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+    let queued = registry.track_dependent(token).expect("an applying record");
+    assert_eq!(
+        registry.publish_with(
+            token,
+            completion_ack(command, XAuthorityControlOutcome::Delivered),
+            |_| ControlPublication::Delivered,
+        ),
+        Ok(ControlPublication::Delivered)
+    );
+
+    // The record survives only for the work it queued elsewhere. Its outcome
+    // has gone out, so nothing reaches the emitter again -- not the same
+    // acknowledgement, and not a different one.
+    for outcome in [
+        XAuthorityControlOutcome::Delivered,
+        XAuthorityControlOutcome::AuthorityRejected,
+    ] {
+        for publication in [
+            ControlPublication::Delivered,
+            ControlPublication::Retained,
+            ControlPublication::ReceiverGone,
+        ] {
+            assert_eq!(
+                registry.publish_with(token, completion_ack(command, outcome), |_| {
+                    panic!("a published outcome must not reach the emitter again")
+                }),
+                Err(crate::ControlPublicationRefusal::AlreadyPublished),
+                "{outcome:?} as {publication:?}"
+            );
+        }
+    }
+
+    // And the retry path finds nothing owed: a retained one here would have
+    // turned a published record back into one that still owes publication.
+    assert_eq!(registry.owed(), Some(0));
+    assert_eq!(
+        registry.publish_owed_with(|_| ControlPublication::Delivered),
+        0
+    );
+    assert_eq!(
+        registry.state_of(token),
+        crate::ControlRecordState::Outstanding
+    );
+
+    drop(queued);
+    assert_eq!(registry.state_of(token), crate::ControlRecordState::Retired);
+}
+
+#[test]
+fn a_retry_that_lands_settles_where_it_stands() {
+    let client = XServerFrontendClientId(357);
+    let surface = SurfaceId::new(357, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(8).expect("an unused origin");
+    let command = |transaction| configure(client, surface, transaction);
+    let with_work = accepted(&registry, command(55001));
+    let without = accepted(&registry, command(55002));
+    for token in [with_work, without] {
+        assert_eq!(
+            registry.claim_execution(token),
+            crate::ControlExecutionClaim::Claimed
+        );
+    }
+    let queued = registry
+        .track_dependent(with_work)
+        .expect("an applying record");
+    for (token, transaction) in [(with_work, 55001), (without, 55002)] {
+        assert_eq!(
+            registry.publish_with(
+                token,
+                completion_ack(command(transaction), XAuthorityControlOutcome::Delivered),
+                |_| ControlPublication::Retained,
+            ),
+            Ok(ControlPublication::Retained)
+        );
+    }
+    assert_eq!(registry.owed(), Some(2));
+
+    // One retry pass: the one with nothing outstanding goes, and the one with
+    // queued work is settled in the same pass rather than revisited.
+    assert_eq!(
+        registry.publish_owed_with(|_| ControlPublication::Delivered),
+        2
+    );
+    assert_eq!(registry.owed(), Some(0));
+    assert_eq!(registry.state_of(without), crate::ControlRecordState::Retired);
+    assert_eq!(
+        registry.state_of(with_work),
+        crate::ControlRecordState::Outstanding
+    );
+
+    drop(queued);
+    assert_eq!(
+        registry.state_of(with_work),
+        crate::ControlRecordState::Retired
+    );
+}

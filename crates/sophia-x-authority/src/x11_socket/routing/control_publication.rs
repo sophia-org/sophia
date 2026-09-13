@@ -55,6 +55,14 @@ impl ControlCompletionRegistry {
         if matches!(inner.records[position].phase, ControlPhase::Abandoned(_)) {
             return Err(ControlPublicationRefusal::Abandoned);
         }
+        // Its outcome has already gone out, and the record survives only for
+        // work it queued elsewhere. Refused before the emitter, because
+        // reaching it again is how a second or contradicting acknowledgement
+        // gets to the receiver -- and a retained one here would turn a record
+        // that has been published back into one that still owes publication.
+        if matches!(inner.records[position].phase, ControlPhase::Settled(_)) {
+            return Err(ControlPublicationRefusal::AlreadyPublished);
+        }
         if matches!(&inner.records[position].phase, ControlPhase::Owed(established)
             if *established != acknowledgement)
         {

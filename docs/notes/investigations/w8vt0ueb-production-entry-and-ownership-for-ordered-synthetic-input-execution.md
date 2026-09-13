@@ -517,8 +517,12 @@ is deliberately not recorded, because that would be a receipt for a delivery
 nobody observed.
 
 Answering an operation is not everything it started being over. A published
-outcome goes out exactly once and then the record is held, not removed, while
-any of its queued effects can still run; only the last of them ending retires
+outcome goes out exactly once -- and the record surviving for its queued work
+is not a second chance to publish: every further attempt is refused before the
+emitter is reached, so neither the same acknowledgement nor a different one can
+follow the first out, and a retained one cannot turn a record that has been
+published back into one that still owes publication. The record is held, not
+removed, while any of its queued effects can still run; only the last of them ending retires
 it, and nothing is published again at that point. The same rule binds the retry
 path and the cleanup path, because hiding a record from a list of candidates is
 not enforcement at the point that retires it.
