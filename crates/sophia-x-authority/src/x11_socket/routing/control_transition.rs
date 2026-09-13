@@ -14,6 +14,14 @@ pub enum ActivationRefused {
     /// later ones silently, which would tell a caller its coordinator was in
     /// charge while another one was.
     DifferentGateInstalled,
+    /// A raw ingress handle was handed out before this coordinator arrived.
+    ///
+    /// That handle cannot be recalled, and work already sent through it cannot
+    /// be answered, so the instance stays ordinary rather than becoming a
+    /// private one with an unstamped way in.
+    RawIngressAlreadyExposed,
+    /// Raw ingress was asked for while a coordinator is installed.
+    RawIngressRefusedUnderGate,
 }
 
 /// What a control transition left for its caller to deliver.

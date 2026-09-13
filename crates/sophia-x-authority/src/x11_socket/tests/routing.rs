@@ -218,6 +218,7 @@ fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
     let delivery = XAuthorityInputDeliveryId::from_raw(7);
     broker
         .input_sender()
+        .expect("an ungated broker to expose raw ingress")
         .send(XAuthorityClientInputEvent {
             client,
             event: XAuthorityKeyEvent {
@@ -2829,4 +2830,86 @@ fn reinstalling_the_same_gate_does_not_disturb_a_transition_in_flight() {
 
     // And routing is still closed, so nothing was admitted meanwhile.
     assert!(gate.stamp().is_err());
+}
+
+#[test]
+fn an_ordinary_broker_that_exposed_raw_ingress_stays_ordinary() {
+    let namespace = NamespaceId::from_raw(44);
+    let client = XServerFrontendClientId(61);
+    let surface = SurfaceId::new(48, 1);
+    let window = XResourceId::new(0x200120, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer) = control_gate();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    let (_registration, channels) = broker.registry.register_client(client).unwrap();
+    broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    // A raw handle is taken while the instance is ordinary. It cannot be
+    // recalled, and a send through it that already returned cannot be
+    // answered afterwards.
+    let raw = broker
+        .input_sender()
+        .expect("an ungated broker to expose raw ingress");
+
+    assert_eq!(
+        broker.try_install_control_gate(gate),
+        Err(crate::ActivationRefused::RawIngressAlreadyExposed),
+        "an instance with an unstamped way in must not become private"
+    );
+
+    // It stays ordinary: the raw handle still works and its work still routes.
+    raw.send(XAuthorityClientInputEvent {
+        client,
+        event: XAuthorityKeyEvent {
+            keycode: 24,
+            pressed: true,
+            state: 0,
+            modifiers_after: 0,
+            time_msec: 1,
+        }
+        .into(),
+        target_window: None,
+        xi_event_type: None,
+        xi_event_window: None,
+        xi_emulated_button_type: None,
+        xi_emulated_button_window: None,
+        xi_pointer_crossing_mask: 0,
+        delivery: None,
+    })
+    .expect("the ordinary path to keep taking raw work");
+    assert!(broker.route_pending().is_ok());
+    assert!(
+        channels.input.try_recv().is_ok(),
+        "an ordinary instance keeps serving after a refused activation"
+    );
+}
+
+#[test]
+fn raw_ingress_is_refused_under_a_coordinator() {
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer) = control_gate();
+    let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+    );
+    broker
+        .try_install_control_gate(gate)
+        .expect("a fresh broker to accept its gate");
+
+    // Being absent from what a private constructor returns is not enough:
+    // this is a public method on a public type and has to refuse itself.
+    assert_eq!(
+        broker.input_sender().err(),
+        Some(crate::ActivationRefused::RawIngressRefusedUnderGate)
+    );
 }
