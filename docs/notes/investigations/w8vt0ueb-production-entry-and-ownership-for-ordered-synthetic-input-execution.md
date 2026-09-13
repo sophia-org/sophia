@@ -452,6 +452,34 @@ client with no executor.
 Abandoned is a state, not a completion. Nothing is published for it, nothing is
 replayed, it cannot be resumed, and its credit stays held.
 
+### What an abandoned operation can actually have left behind
+
+Source-confirmed, because the answer decides what a reconciler can honestly
+discharge.
+
+The state a control writer touches is in three places, with three different
+lifetimes. Per-connection state -- `core_event_selections`, `surface_windows`
+and `metadata_rules`, all created in `dispatch.rs` around `:508` -- goes when
+the connection goes, and a writer stopping means its connection is ending, so
+nothing there outlives the operation to disagree with anything. Registry state
+-- `surfaces` and `focused_surface` -- outlives the connection and is cleaned
+by the route registration's drop, except where it names something that never
+happened. The `XAuthorityRuntime` outlives both and is authoritative: each of
+its applications either happened or did not, so it is never itself half
+applied.
+
+That gives the split a reconciler has to respect.
+
+| Kind | What can be established, and what is owed |
+| --- | --- |
+| `AdmitSurface`, `ConfigureSurface`, `WithdrawSurface`, `SetPresentationState`, `RestorePresentationState`, `PublishMetadataRule` | The runtime either applied it or did not, and the derived state that could have disagreed died with the connection. Nothing outlives the operation that anyone could observe as half applied, so the cleanup is discharged. The operation's outcome stays unknown and is never published: what is discharged is the cleanup, not the operation |
+| `FocusSurface`, `ClearFocus` | Routing moves `focused_surface` and can send FocusOut to whoever held focus, before any writer runs. An abandoned one can therefore leave the registry naming a surface that never took focus, while the runtime's input focus says otherwise. That disagreement is establishable from `XServerFrontendSurfaceRoute`, which carries the client, namespace and window, against the runtime's input focus. The cleanup is to give up the unbacked claim, never to move focus: the runtime is not touched, so nothing is replayed |
+| `CloseSurface` | Writes a ClientMessage or shuts the socket down, and mutates no server state. Whether the peer received it is not a question the runtime can answer, so no proof of the outcome exists -- and equally there is nothing half applied to repair |
+
+The rule that falls out: a cleanup is discharged when nothing reachable is left
+disagreeing, which is not the same as knowing what the operation did. Retiring
+on that is saying nothing is owed, and it never becomes a receipt.
+
 What is built for it is bookkeeping and nothing more. `cleanups_owed` and
 `record_cleanup` have no production owner: nothing performs or proves any
 operation's native cleanup, and a record is retired only because a caller said

@@ -8372,6 +8372,12 @@ fn a_shutdown_handle_that_cannot_be_taken_refuses_before_any_worker_starts() {
     );
 }
 
+/// Handle acquisition, at the unit boundary.
+///
+/// Not the end-to-end case: an independent review reaches the same refusal
+/// through actual setup with an allocation failure injected at the clone, and
+/// that is the evidence for the production path. This reaches it through the
+/// other way the same call can fail.
 #[test]
 fn a_refused_cohort_leaves_no_query_owner_behind() {
     let namespace = NamespaceId::from_raw(341);
@@ -8431,6 +8437,12 @@ fn a_refused_cohort_leaves_no_query_owner_behind() {
     );
 }
 
+/// Composed lifetime: the production cohort, the production query guard, and
+/// a writer, given up together.
+///
+/// Distinct from the end-to-end allocation-failure case, which reaches the
+/// same types through actual setup. This one is about the order between the
+/// two on the way out, which that one does not observe.
 #[test]
 fn losing_a_connection_gives_up_its_writers_and_then_its_registration() {
     let namespace = NamespaceId::from_raw(342);
