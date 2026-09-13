@@ -8371,3 +8371,62 @@ fn a_shutdown_handle_that_cannot_be_taken_refuses_before_any_worker_starts() {
         "no handle, no workers"
     );
 }
+
+#[test]
+fn a_refused_cohort_leaves_no_query_owner_behind() {
+    let namespace = NamespaceId::from_raw(341);
+    let client = XServerFrontendClientId(341);
+    let state = X11CoreSocketServerState::new();
+
+    // A standalone client has no route registration whose drop would clean up
+    // a query owner, and the device pin releases only its device bundle. So
+    // the order is the whole guarantee: nothing is registered until the
+    // cohort's handle is in hand.
+    let stream = Arc::new(Mutex::new(
+        std::os::unix::net::UnixStream::pair().unwrap().0,
+    ));
+    let poisoner = Arc::clone(&stream);
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.lock().unwrap();
+            panic!("poisoning the output socket");
+        })
+        .join()
+        .is_err()
+    );
+    assert!(X11ClientWriters::new(&stream).is_err());
+
+    assert!(
+        !state
+            .runtime
+            .lock()
+            .unwrap()
+            .shared_input_authority()
+            .lock()
+            .unwrap()
+            .query_namespace_active(namespace),
+        "a refusal registers no owner, so there is nothing to roll back"
+    );
+
+    // And registering does take effect, so the test is not passing because
+    // nothing ever would -- and giving the registration up takes it back,
+    // which is what every early return after it now does.
+    let active = || {
+        state
+            .runtime
+            .lock()
+            .unwrap()
+            .shared_input_authority()
+            .lock()
+            .unwrap()
+            .query_namespace_active(namespace)
+    };
+    let owner =
+        X11QueryOwner::register(&state.runtime, namespace, client).expect("a readable runtime");
+    assert!(active(), "registering makes the namespace report an owner");
+    drop(owner);
+    assert!(
+        !active(),
+        "and losing the registration takes that owner back, however it was lost"
+    );
+}

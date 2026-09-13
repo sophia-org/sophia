@@ -425,7 +425,13 @@ best-effort and is taken before any worker exists: acquiring it needs a
 descriptor, and the moment one cannot be had is the moment a connection is
 most likely to stall, so a cohort that started workers without it would lose
 the guarantee exactly where it is needed. Failing to acquire it refuses the
-connection and returns the client slot.
+connection, before this client is registered as anything.
+
+Its registration as a query owner is held rather than ordered. A standalone
+client has no route registration whose drop would clean that up, and the device
+pin releases only its device bundle, so an early return after registering left
+the namespace reporting an owner that never finished starting. Holding it means
+every path out takes it back, including the ones nobody has thought of yet.
 
 The deadline is a grace before the socket goes and nothing more. It does not
 bound the join that follows, and it does not bound a writer waiting on the

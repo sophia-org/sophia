@@ -322,6 +322,46 @@ impl X11SurfaceGenerationLedger {
     }
 }
 
+/// This client's registration as a query owner for its namespace.
+///
+/// Owned rather than ordered. A standalone client has no route registration
+/// whose drop would clean this up, and the device pin releases only its device
+/// bundle, so an early return after registering left the namespace reporting an
+/// owner that never finished starting. Holding it means every path out takes it
+/// back, including the ones nobody has thought of yet, rather than only the one
+/// that was noticed.
+#[cfg(unix)]
+struct X11QueryOwner<'a> {
+    runtime: &'a Mutex<XAuthorityRuntime>,
+    client: XServerFrontendClientId,
+}
+
+#[cfg(unix)]
+impl<'a> X11QueryOwner<'a> {
+    fn register(
+        runtime: &'a Mutex<XAuthorityRuntime>,
+        namespace: NamespaceId,
+        client: XServerFrontendClientId,
+    ) -> Result<Self, X11SetupSocketError> {
+        runtime
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
+            .input_authority_mut()
+            .register_query_client(namespace, client.raw());
+        Ok(Self { runtime, client })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for X11QueryOwner<'_> {
+    fn drop(&mut self) {
+        if let Ok(runtime) = self.runtime.lock() {
+            runtime.input_authority_mut().cleanup_owner(self.client.raw());
+        }
+    }
+}
+
+
 #[cfg(unix)]
 fn serve_x11_core_socket_client_with_trace_observer_and_input(
     stream: &mut UnixStream,
@@ -504,25 +544,24 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
             .shared_input_authority())
     } else { None };
-    state.runtime.lock()
-        .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
-        .input_authority_mut().register_query_client(namespace, client.raw());
     // Declared before the first spawn, so every path out from here owns the
     // shutdown of whatever has already started, and its own handle on the
     // socket comes with it -- a writer blocked in a write holds the mutex that
     // anything else would have to take first. Taken before any worker exists,
     // so a descriptor that cannot be had refuses the connection rather than
     // starting workers whose shutdown has no way to reach them.
-    let mut writers = match X11ClientWriters::new(&output_stream) {
-        Ok(writers) => writers,
-        Err(error) => {
-            // Refused before any worker exists, and the client slot goes back
-            // the same way the earlier setup failures return it. A refusal
-            // that kept the slot would cost the connection it declined twice.
-            let _ = state.release_client(client);
-            return Err(error);
-        }
-    };
+    //
+    // And taken before this client is registered as a query owner, so that
+    // refusing leaves nothing registered to roll back. A standalone client has
+    // no route registration whose drop would clean that up, and the device pin
+    // releases only its device bundle, so a refusal after it would leave the
+    // namespace reporting an owner that never finished starting.
+    //
+    // Declared after the route registration on purpose: locals drop in reverse,
+    // so the writers are stopped and joined before the registration they were
+    // serving goes.
+    let mut writers = X11ClientWriters::new(&output_stream)?;
+    let _query_owner = X11QueryOwner::register(&state.runtime, namespace, client)?;
     writers.input = input_receiver
         .map(|receiver| {
             spawn_x11_input_event_writer(
