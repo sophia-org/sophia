@@ -290,6 +290,10 @@ pub struct PrivateXServerFrontend {
     /// to this authority. Held rather than used directly: the frontend is the
     /// executor, and executing is not submitting.
     submit: sophia_input_authority::SubmitHandle,
+    /// Whether this instance has already handed out its keyboard state.
+    ///
+    /// One history per instance, so the answer is asked and answered once.
+    keyboards_issued: std::sync::atomic::AtomicBool,
     /// Whether this instance's queue was unreadable when it closed.
     ///
     /// Remembered rather than recomputed. Settlement runs once, so asking a
@@ -613,6 +617,7 @@ impl PrivateXServerFrontend {
             participant: PrivateAdmissionParticipant::new(controller.clone()),
             controller,
             submit,
+            keyboards_issued: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -630,18 +635,37 @@ impl PrivateXServerFrontend {
 
     /// The keyboard state for this instance's executing thread.
     ///
-    /// Built here so it carries this instance's identity, and built once per
-    /// executing runner rather than per turn: the state is the seat's history,
-    /// and a second one would start that history again with whatever keys are
-    /// currently held belonging to neither.
+    /// Handed out **once**. The state is the seat's history, and a second one
+    /// would carry this instance's identity, pass every check that identity
+    /// answers, and hold none of the keys the first is holding -- so a key
+    /// down in the first would be a key nobody released as far as the second
+    /// could tell. Identity equality cannot tell those two apart, which is why
+    /// uniqueness is established here rather than checked later.
     ///
-    /// `None` when the keymap will not compile at all. An instance that cannot
-    /// apply a key says so rather than discovering it inside a transaction.
-    pub fn keyboards(&self) -> Option<PrivateKeyboards> {
-        PrivateKeyboards::for_instance(
-            self.controller.identity().ok()?,
-            crate::XkbRmlvoConfig::default(),
-        )
+    /// Refuses for three different reasons and says which. An authority that
+    /// cannot be read is not a keymap that will not compile, and reporting
+    /// either as the other would send someone to look in the wrong place.
+    pub fn keyboards(&self) -> Result<PrivateKeyboards, PrivateKeyboardsRefusal> {
+        let authority = self
+            .controller
+            .identity()
+            .map_err(|_| PrivateKeyboardsRefusal::AuthorityUnreadable)?;
+        // Claimed before the state is built, so a build that fails does not
+        // leave the instance thinking it has issued one -- and two callers
+        // racing here cannot both come away with a history.
+        if self.keyboards_issued.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            return Err(PrivateKeyboardsRefusal::AlreadyIssued);
+        }
+        match PrivateKeyboards::for_instance(authority, crate::XkbRmlvoConfig::default()) {
+            Ok(keyboards) => Ok(keyboards),
+            Err(refusal) => {
+                // Nothing was handed out, so the claim is given back. An
+                // instance that failed to build its state has not issued one.
+                self.keyboards_issued
+                    .store(false, std::sync::atomic::Ordering::Release);
+                Err(refusal)
+            }
+        }
     }
 
     /// Where admission and revocation reach this boundary.

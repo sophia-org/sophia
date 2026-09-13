@@ -12004,6 +12004,53 @@ fn keyboard_state_answers_for_one_instance_only() {
 }
 
 #[test]
+fn an_instance_hands_out_its_keyboard_history_once() {
+    let private = private_for_roles();
+    let mut keyboards = private.keyboards().expect("the instance's state");
+    let seat = SeatId::from_raw(1);
+    assert!(keyboards.prepare(seat));
+    keyboards.apply(seat, 42, true).expect("left shift to map");
+    let held = keyboards.modifiers(seat).expect("the seat");
+    assert_ne!(held, 0, "a modifier is held in the state that exists");
+
+    // A second object would carry this instance's identity and pass every
+    // check that identity answers, while holding none of what the first is
+    // holding. The shift down above would be a key nobody released as far as
+    // it could tell, so there is no second one to be given.
+    let second = private.keyboards();
+    assert!(
+        matches!(second, Err(crate::PrivateKeyboardsRefusal::AlreadyIssued)),
+        "one history per instance, got {second:?}"
+    );
+
+    // The one that exists still holds it.
+    assert_eq!(keyboards.modifiers(seat), Some(held));
+}
+
+#[test]
+fn an_unreadable_authority_is_not_reported_as_a_broken_keymap() {
+    let private = private_for_roles();
+    let poisoner = private.authority().clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.common.lock().unwrap();
+            panic!("poisoning the authority");
+        })
+        .join()
+        .is_err()
+    );
+
+    let refused = private.keyboards();
+    assert!(
+        matches!(
+            refused,
+            Err(crate::PrivateKeyboardsRefusal::AuthorityUnreadable)
+        ),
+        "an authority nobody can read is not a keymap that will not compile, got {refused:?}"
+    );
+}
+
+#[test]
 fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(541));

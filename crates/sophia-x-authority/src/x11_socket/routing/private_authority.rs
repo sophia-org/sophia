@@ -206,6 +206,26 @@ impl PrivateAuthorityController {
     }
 }
 
+/// Why an instance would not hand out its keyboard state.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivateKeyboardsRefusal {
+    /// The authority could not be read, so the state could not be bound to the
+    /// instance it would answer for. Not a keymap problem: nothing was
+    /// compiled and nothing was diagnosed about the keymap.
+    AuthorityUnreadable,
+    /// The keymap does not compile at all.
+    KeymapUnavailable,
+    /// This instance has already handed out its keyboard state.
+    ///
+    /// There is one keyboard history per instance and it is the state that has
+    /// been accumulating. A second object would bind to the same authority and
+    /// pass every identity check while holding none of what is currently held,
+    /// so a key down in the first would be a key nobody released as far as the
+    /// second is concerned.
+    AlreadyIssued,
+}
+
 /// The keyboard state one executing thread owns.
 ///
 /// Held by the thread that drives execution rather than by the frontend, and
@@ -220,6 +240,21 @@ impl PrivateAuthorityController {
 /// blocking on a reply with a deadline. That is a wait, and the routing path
 /// takes it while already holding a guard; nothing may wait under the
 /// execution guards, so an ordered execution cannot use it.
+/// Names the instance and the seats, never the keymap state itself.
+///
+/// Hand-written because the states inside are a C library's, and formatting
+/// one would put a keymap's internals into any log that prints a turn.
+#[cfg(unix)]
+impl std::fmt::Debug for PrivateKeyboards {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PrivateKeyboards")
+            .field("authority", &self.authority)
+            .field("seats", &self.seats.len())
+            .finish_non_exhaustive()
+    }
+}
+
 #[cfg(unix)]
 pub struct PrivateKeyboards {
     /// Which private instance this state answers for.
@@ -249,9 +284,10 @@ impl PrivateKeyboards {
     fn for_instance(
         authority: sophia_input_authority::AuthorityIdentity,
         config: crate::XkbRmlvoConfig,
-    ) -> Option<Self> {
-        crate::XkbKeyboardState::new(&config).ok()?;
-        Some(Self {
+    ) -> Result<Self, PrivateKeyboardsRefusal> {
+        crate::XkbKeyboardState::new(&config)
+            .map_err(|_| PrivateKeyboardsRefusal::KeymapUnavailable)?;
+        Ok(Self {
             authority,
             config,
             seats: BTreeMap::new(),
@@ -262,6 +298,11 @@ impl PrivateKeyboards {
     ///
     /// Asked before a turn uses it, so one instance cannot be driven with
     /// another's keyboard history.
+    ///
+    /// Necessary and not sufficient on its own: a second state built for the
+    /// same instance would pass this while holding none of the keys the first
+    /// is holding. What makes it sufficient is that an instance hands its
+    /// state out once, so no second one exists to ask.
     pub fn answers_for(&self, authority: sophia_input_authority::AuthorityIdentity) -> bool {
         self.authority == authority
     }
