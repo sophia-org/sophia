@@ -975,6 +975,7 @@ preserved ownership and typed failure, not retry-as-capacity or settled/empty
 reporting. These are source-review findings; the runtime candidate remains
 unintegrated.
 
+
 Independent `.artifacts/private-credit-review-8dab7e26/` records two controls
 PASS and one desired credit-lifetime assertion FAIL (138 filtered; 9.53
 seconds). Capacity 1 now refuses the second owned payload before acceptance;
@@ -1056,3 +1057,45 @@ test result is claimed for this small API change; the earlier slot-lifetime
 evidence remains pinned to `d04359fa`. Terminal-credit integration and owner
 poison remain the next runtime work, and the combined candidate remains
 unintegrated.
+
+Candidate `14126862` stops releasing a credit immediately after the ready
+consumer routes its operation and introduces explicit reclamation. Source
+review does not accept the terminal path yet: recovery's `ticket` lookup
+returns `None` on a poisoned mutex as well as absence, and reclamation treats
+both as completion. A missing public delivery ID also immediately releases
+the credit even though the operation can still be pending in a writer or
+frozen queue. Completion requires an internal, origin-bound operation record
+with typed unavailable/pending/terminal status; no public receipt should be
+invented for untracked input.
+
+Control credits need an internal completion signal from the real writer
+acknowledgement or terminal cancellation path. This does not require taking
+over the external acknowledgement receiver or adding a public protocol. The
+server-owned completion registration must exist before acceptance and preserve
+the original operation identity through execution and cancellation. Holding
+credits indefinitely is not a substitute for that signal.
+
+Shutdown currently drains queued work only; the new `outstanding` identities
+are not transferred with their completion access and disappear with the
+frontend. Failed execution similarly retains only an identity after consuming
+the work. Both need an owned continuation. In addition, the outstanding vector
+is sized to one ready queue while its maximum occupancy follows the shared
+credit capacity, so repeated consume/refill can allocate when recording work
+after effects. These remain source-review findings alongside the explicitly
+open owner-poison and allocation work. The candidate stays unintegrated.
+
+Independent `.artifacts/private-terminal-review-14126862/` records one positive
+PASS and one desired safety assertion FAIL (143 filtered; 9.58 seconds). The
+positive routes tracked input into the actual client channel, supplies a modeled
+terminal outcome through the production receipt-recording API, and observes
+the receipt it produces. Recording without observation reclaims nothing;
+observation then permits exactly one reclamation. This tests recording and
+observation semantics, not an actual writer failure.
+
+The negative poisons only the recovery ledger after live delivery 13002 is
+routed, with no terminal outcome or receipt. The durable owner and admission
+queue remain healthy. `reclaim_settled` nevertheless returns 1 and the owner's
+reserved count becomes zero. This confirms that an unavailable ticket lookup
+is being mistaken for terminal absence; it is distinct from the separately
+acknowledged settlement-owner poison defect. No broader terminal lifecycle or
+runtime integration is accepted on the positive control.
