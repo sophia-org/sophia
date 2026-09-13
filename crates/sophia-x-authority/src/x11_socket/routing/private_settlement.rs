@@ -1,0 +1,362 @@
+// Settling work a private instance accepted and could not answer.
+//
+// Split from the admission surface by subject: what is owed, who holds the
+// means to answer it, and what happens when the holder goes away.
+
+/// Where obligations go when the handle holding them is abandoned.
+///
+/// A handle that is dropped with work still owed cannot retry forever in its
+/// own `Drop`, and must not destroy what it holds either: a full channel with
+/// a live receiver is congestion, not teardown, and removing the last owner is
+/// the defect rather than proof the obligation ended. So the work moves here,
+/// with the capability that can answer it, and stays until something drives
+/// it.
+///
+/// Bounded. An owner that grew without limit would turn a settlement problem
+/// into an exhaustion one; past the bound, obligations are refused entry and
+/// counted as lost, which is a fact to report rather than a silence.
+#[cfg(unix)]
+#[derive(Clone)]
+pub struct PrivateSettlementOwner {
+    inner: Arc<Mutex<AbandonedSettlements>>,
+}
+
+#[cfg(unix)]
+struct AbandonedSettlements {
+    held: Vec<(XServerFrontendRouteRegistry, PrivateOperation)>,
+    /// Instances whose queue could not be read when they closed.
+    ///
+    /// The queue itself is kept, not a tally of how many there were. Its
+    /// contents were never recoverable at the moment of failure, but the
+    /// authority over them has to belong to something: a counter cannot be
+    /// asked anything later, and cannot be shown to have been resolved.
+    /// Nothing here resumes execution on a poisoned queue.
+    failed: Vec<(XServerFrontendRouteRegistry, Arc<SharedAdmission>)>,
+    /// Credits taken when work was accepted, held until it is discharged.
+    ///
+    /// Reserved before acceptance rather than checked at transfer. A bound
+    /// applied when abandoned work arrives has nowhere to put what it refuses,
+    /// so refusing there destroys something already accepted -- the same
+    /// defect as dropping a payload, wearing a capacity check. Refusing at
+    /// acceptance costs a producer only work it was never told was taken.
+    reserved: usize,
+    capacity: usize,
+}
+
+#[cfg(unix)]
+impl Default for PrivateSettlementOwner {
+    fn default() -> Self {
+        Self::with_capacity(PRIVATE_ABANDONED_CAPACITY)
+    }
+}
+
+#[cfg(unix)]
+impl PrivateSettlementOwner {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(AbandonedSettlements {
+                held: Vec::with_capacity(capacity),
+                failed: Vec::new(),
+                reserved: 0,
+                capacity,
+            })),
+        }
+    }
+
+    /// How many obligations are waiting for someone to drive them.
+    pub fn owed(&self) -> usize {
+        self.inner.lock().map(|held| held.held.len()).unwrap_or(0)
+    }
+
+    /// How many instances closed holding a queue nobody could read.
+    ///
+    /// Each is retained with its queue and its registry, so it can be examined
+    /// rather than merely counted.
+    pub fn failed_instances(&self) -> usize {
+        self.inner.lock().map(|held| held.failed.len()).unwrap_or(0)
+    }
+
+    fn take_failed_instance(
+        &self,
+        origin: &XServerFrontendRouteRegistry,
+        admission: &Arc<SharedAdmission>,
+    ) {
+        if let Ok(mut held) = self.inner.lock() {
+            held.failed.push((origin.clone(), Arc::clone(admission)));
+        }
+    }
+
+    /// How many credits are outstanding, across every instance sharing this.
+    ///
+    /// A credit is taken when work is accepted and released only when that
+    /// work is answered, so it covers pending, in-flight and abandoned alike.
+    pub fn reserved(&self) -> usize {
+        self.inner.lock().map(|held| held.reserved).unwrap_or(0)
+    }
+
+    /// Take a credit for work about to be accepted, if one is free.
+    ///
+    /// Shared across instances on purpose: the storage that will hold
+    /// abandoned work is shared, so the accounting for it has to be.
+    fn reserve(&self) -> bool {
+        let Ok(mut held) = self.inner.lock() else {
+            return false;
+        };
+        if held.reserved >= held.capacity {
+            return false;
+        }
+        held.reserved = held.reserved.saturating_add(1);
+        true
+    }
+
+    /// Release a credit whose work has been answered.
+    fn release(&self) {
+        if let Ok(mut held) = self.inner.lock() {
+            held.reserved = held.reserved.saturating_sub(1);
+        }
+    }
+
+    /// Try to discharge everything waiting, returning how many were answered.
+    ///
+    /// Each obligation is retried against the registry that accepted it, never
+    /// against another instance's. What still cannot be answered stays here.
+    pub fn drive(&self) -> usize {
+        let Ok(mut held) = self.inner.lock() else {
+            return 0;
+        };
+        let taken = std::mem::take(&mut held.held);
+        let before = taken.len();
+        for (origin, operation) in taken {
+            let mut remaining = settle_against(&origin, vec![operation]);
+            if let Some(operation) = remaining.pop() {
+                held.held.push((origin, operation));
+            } else {
+                // Answered, so its credit is free for new work.
+                held.reserved = held.reserved.saturating_sub(1);
+            }
+        }
+        before.saturating_sub(held.held.len())
+    }
+
+    /// Take responsibility for abandoned work.
+    ///
+    /// Cannot refuse. Every operation here already holds a credit taken when
+    /// it was accepted, so the storage for it is reserved and this is a move
+    /// into space that was set aside rather than a request for space.
+    fn take(&self, origin: &XServerFrontendRouteRegistry, pending: Vec<PrivateOperation>) {
+        let Ok(mut held) = self.inner.lock() else {
+            // The owner itself is unreachable. Nothing can be moved into it,
+            // and pretending otherwise would lose the work silently; the
+            // caller keeps it and reports.
+            return;
+        };
+        for operation in pending {
+            held.held.push((origin.clone(), operation));
+        }
+    }
+}
+
+/// How many abandoned obligations one owner keeps.
+#[cfg(unix)]
+const PRIVATE_ABANDONED_CAPACITY: usize = 64;
+
+/// What a shutdown could not settle, and the means to settle it later.
+///
+/// Counting an unsettled obligation and logging it is a diagnostic, not a
+/// transfer. Nor is handing back the work alone: a report holding only
+/// operations would have thrown away the registry that could answer them, so
+/// a caller would be left holding obligations and nothing to discharge them
+/// with. This retains the originating capability along with the work.
+///
+/// The obligations themselves stay private. They carry the stamped envelope
+/// shape, and exporting that so an out-of-crate owner could read a report
+/// would be publishing the wire format to deliver a status. What a caller
+/// needs is not to inspect them but to retry them, which it can.
+#[cfg(unix)]
+#[must_use = "unsettled work is owed an answer; retry or record the failure"]
+pub struct PrivateSettlement {
+    /// The capability that can answer the work, retained from the instance
+    /// that accepted it. Not supplied by a caller: an external authority
+    /// argument would let one instance's obligations be settled against
+    /// another's registry.
+    origin: XServerFrontendRouteRegistry,
+    /// Where anything still owed goes if this handle is abandoned.
+    durable: PrivateSettlementOwner,
+    /// The queue this came from, retained so a failed instance hands over its
+    /// queue rather than a note that one existed.
+    admission: Arc<SharedAdmission>,
+    pending: Vec<PrivateOperation>,
+    queue_unreadable: bool,
+}
+
+#[cfg(unix)]
+impl PrivateSettlement {
+    pub fn is_settled(&self) -> bool {
+        self.pending.is_empty() && !self.queue_unreadable
+    }
+
+    /// How many obligations remain undischarged.
+    pub fn owed(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Whether the queue could not be read, so its contents were unrecoverable.
+    pub fn queue_unreadable(&self) -> bool {
+        self.queue_unreadable
+    }
+
+    /// Try again to discharge what remains, against the origin that accepted
+    /// it.
+    ///
+    /// Returns how many were discharged this time. Work that still cannot be
+    /// answered stays pending rather than being counted off, so retrying twice
+    /// does not answer anything twice.
+    pub fn retry(&mut self) -> usize {
+        let pending = std::mem::take(&mut self.pending);
+        let before = pending.len();
+        self.pending = settle_against(&self.origin, pending);
+        let answered = before.saturating_sub(self.pending.len());
+        for _ in 0..answered {
+            self.durable.release();
+        }
+        answered
+    }
+}
+
+#[cfg(unix)]
+impl Drop for PrivateSettlement {
+    fn drop(&mut self) {
+        if self.queue_unreadable {
+            // Owned by something that outlives this rather than surviving as a
+            // boolean on a handle that is going away.
+            self.durable
+                .take_failed_instance(&self.origin, &self.admission);
+        }
+        if self.pending.is_empty() {
+            return;
+        }
+        // One attempt, not a loop: a Drop that retried until it succeeded
+        // would block teardown on a congested channel. What that attempt
+        // cannot answer moves to the durable owner rather than being
+        // destroyed here -- a full channel with a live receiver is congestion,
+        // and removing the last owner is not evidence the obligation ended.
+        let pending = std::mem::take(&mut self.pending);
+        let before = pending.len();
+        let survivors = settle_against(&self.origin, pending);
+        for _ in 0..before.saturating_sub(survivors.len()) {
+            self.durable.release();
+        }
+        if !survivors.is_empty() {
+            self.durable.take(&self.origin, survivors);
+        }
+    }
+}
+
+/// Answer what can be answered, returning what still cannot.
+#[cfg(unix)]
+fn settle_against(
+    registry: &XServerFrontendRouteRegistry,
+    pending: Vec<PrivateOperation>,
+) -> Vec<PrivateOperation> {
+    let mut unsettled = Vec::with_capacity(pending.len());
+    for operation in pending {
+        match operation {
+            PrivateOperation::RoutedInput(envelope) => {
+                let client = registry
+                    .surfaces
+                    .lock()
+                    .ok()
+                    .and_then(|surfaces| {
+                        surfaces
+                            .get(&envelope.route.request.target_surface)
+                            .map(|route| route.client)
+                    });
+                let Some(client) = client else {
+                    // Ownership is retained rather than resolved by guessing.
+                    // A receipt goes to the issuer's channel rather than to the
+                    // named client, so the harm is not that another client
+                    // receives it; it is a receipt attributed to a client
+                    // nobody resolved, which correlates with nothing. Choosing
+                    // a recipient here would also choose it at the wrong
+                    // moment: final target resolution belongs at execution.
+                    unsettled.push(PrivateOperation::RoutedInput(envelope));
+                    continue;
+                };
+                if registry
+                    .send_input_delivery(
+                        client,
+                        envelope.route.delivery,
+                        XAuthorityInputDeliveryOutcome::RouteRejected,
+                    )
+                    .is_err()
+                {
+                    unsettled.push(PrivateOperation::RoutedInput(envelope));
+                }
+            }
+            PrivateOperation::Control(control) => {
+                let acknowledgement = XAuthorityClientControlAck {
+                    client: control.client,
+                    acknowledgement: XAuthorityControlAck {
+                        kind: control.command.kind(),
+                        transaction: control.command.transaction(),
+                        surface: control.command.surface(),
+                        outcome: XAuthorityControlOutcome::AuthorityRejected,
+                    },
+                };
+                if registry
+                    .acknowledgement_sender
+                    .try_send(acknowledgement)
+                    .is_err()
+                {
+                    unsettled.push(PrivateOperation::Control(control));
+                }
+            }
+            PrivateOperation::LeaseRelease(release) => {
+                if registry.release_route_lease(release).is_err() {
+                    unsettled.push(PrivateOperation::LeaseRelease(release));
+                }
+            }
+        }
+    }
+    unsettled
+}
+
+/// One operation the consumer took, and where it sat.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateRun {
+    pub sequence: crate::ReadySequence,
+    pub class: crate::ReadyClass,
+    /// Which operation this was, not merely what kind.
+    ///
+    /// A class alone says a record was classified, not that it accompanied the
+    /// work a producer actually submitted.
+    pub identity: PrivateIdentity,
+}
+
+/// Which submitted operation a run corresponds to.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivateIdentity {
+    /// The delivery a routed input carried, when it carried one.
+    Delivery(Option<XAuthorityInputDeliveryId>),
+    /// The transaction a control named. Every control names one.
+    Transaction(TransactionId),
+    /// The lease being retired.
+    Lease(sophia_protocol::ApplicationRouteLeaseIdentity),
+}
+
+#[cfg(unix)]
+impl PrivateIdentity {
+    fn of(operation: &PrivateOperation) -> Self {
+        match operation {
+            PrivateOperation::RoutedInput(envelope) => Self::Delivery(envelope.route.delivery),
+            // Every control command carries a transaction, so singling one
+            // variant out and calling the rest untracked lost the identity of
+            // everything except focus.
+            PrivateOperation::Control(control) => Self::Transaction(control.command.transaction()),
+            PrivateOperation::LeaseRelease(release) => Self::Lease(release.identity),
+        }
+    }
+}
+

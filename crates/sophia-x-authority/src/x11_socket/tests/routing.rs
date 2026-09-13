@@ -4110,7 +4110,7 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
             .recv_timeout(std::time::Duration::from_millis(200))
             .is_err()
     );
-    assert_eq!(durable.lost(), 0);
+    assert_eq!(durable.reserved(), 0, "the answered credit is free again");
 }
 
 #[test]
@@ -4138,7 +4138,7 @@ fn an_unreadable_queue_is_owned_by_something_that_outlives_it() {
 
     // The fact outlives the handle rather than going away as a boolean on
     // something that has gone.
-    assert_eq!(durable.unreadable_queues(), 1);
+    assert_eq!(durable.failed_instances(), 1);
 }
 
 /// One private instance that accepts a control and immediately shuts down,
@@ -4287,4 +4287,201 @@ fn review_settlement_dropped_pending_handle_preserves_accepted_outcome() {
     );
     assert_eq!(durable.drive(), 0);
     assert!(receiver.try_recv().is_err());
+}
+
+#[test]
+fn settlement_storage_is_reserved_before_work_is_accepted() {
+    // One credit for the whole owner, shared across every instance below.
+    let durable = crate::PrivateSettlementOwner::with_capacity(1);
+    let (sender, receiver) = sync_channel(1);
+
+    // The first settles straight away, filling the acknowledgement channel and
+    // freeing its credit.
+    let (filled, _r0, _c0) = review_settlement_queue(sender.clone(), &durable, 9800);
+    assert!(filled.is_settled());
+    assert_eq!(durable.reserved(), 0);
+
+    // The second cannot settle, because the channel is now full, so it keeps
+    // the only credit.
+    let (owed, _r1, _c1) = review_settlement_queue(sender.clone(), &durable, 9801);
+    assert_eq!(owed.owed(), 1);
+    assert_eq!(durable.reserved(), 1);
+
+    // A third cannot even be accepted: the storage that would have to hold its
+    // work if abandoned is spoken for. Refusing here costs a producer only
+    // work it was never told had been taken.
+    let (gate, _authority, _issuer) = control_gate();
+    let (delivery_sender, _delivery_receiver) = channel();
+    let third = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(1).unwrap(),
+        sender.clone(),
+        delivery_sender,
+        gate,
+        &durable,
+    );
+    assert!(
+        third
+            .control_producer()
+            .submit(XAuthorityClientControlCommand {
+                client: XServerFrontendClientId(251),
+                command: XAuthorityControlCommand::ConfigureSurface {
+                    transaction: TransactionId::from_raw(9802),
+                    surface: SurfaceId::new(251, 1),
+                    geometry: Rect {
+                        x: 0,
+                        y: 0,
+                        width: 80,
+                        height: 60,
+                    },
+                },
+            })
+            .is_err(),
+        "work must not be accepted without storage to answer it"
+    );
+
+    // The second is still answerable: nothing was destroyed to make room.
+    drop(owed);
+    assert_eq!(durable.owed(), 1);
+    assert_eq!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .unwrap(),
+        review_settlement_expected(9800)
+    );
+    assert_eq!(durable.drive(), 1);
+    assert_eq!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .expect("the accepted work survives"),
+        review_settlement_expected(9801)
+    );
+    assert_eq!(durable.reserved(), 0, "the answered credit is free again");
+}
+
+#[test]
+fn a_failed_instance_hands_over_its_queue_not_a_tally() {
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let durable = crate::PrivateSettlementOwner::default();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+        &durable,
+    );
+
+    let admission = std::sync::Arc::clone(&private.admission);
+    let _ = std::thread::spawn(move || {
+        let _guard = admission.ready.lock().expect("the queue");
+        panic!("poisoning the shared queue");
+    })
+    .join();
+
+    drop(private.shutdown());
+
+    // The queue and its registry are retained under the owner, so the failure
+    // belongs to something that can be asked about it later rather than to a
+    // number that cannot.
+    assert_eq!(durable.failed_instances(), 1);
+}
+
+#[test]
+fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
+    // The independent negative, repaired as instructed: with reservation
+    // before acceptance, either a submission is refused with its payload
+    // before being accepted, or everything accepted settles exactly once.
+    // Counting a loss is not an allowed outcome.
+    let durable = crate::PrivateSettlementOwner::with_capacity(1);
+    let (sender, receiver) = sync_channel(1);
+    let surface = SurfaceId::new(251, 1);
+    let client = XServerFrontendClientId(251);
+    let (gate, _authority, _issuer) = control_gate();
+    let (delivery_sender, _delivery_receiver) = channel();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(2).unwrap(),
+        sender.clone(),
+        delivery_sender,
+        gate,
+        &durable,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(251),
+            surface,
+            XResourceId::new(0x200251, 1),
+        )
+        .unwrap();
+
+    let submit = |transaction: u64| {
+        private
+            .control_producer()
+            .submit(XAuthorityClientControlCommand {
+                client,
+                command: XAuthorityControlCommand::ConfigureSurface {
+                    transaction: TransactionId::from_raw(transaction),
+                    surface,
+                    geometry: Rect {
+                        x: 0,
+                        y: 0,
+                        width: 80,
+                        height: 60,
+                    },
+                },
+            })
+    };
+
+    // Fill the acknowledgement channel with something real first.
+    sender
+        .try_send(review_settlement_expected(9900))
+        .expect("the empty slot");
+
+    let mut accepted = Vec::new();
+    for transaction in [9901u64, 9902] {
+        match submit(transaction) {
+            Ok(_) => accepted.push(transaction),
+            // Refused BEFORE acceptance, carrying its own command back. The
+            // producer keeps work it was never told had been taken.
+            Err((crate::AdmissionRefusal::Saturated, returned)) => {
+                assert_eq!(returned.command.transaction(), TransactionId::from_raw(transaction));
+            }
+            Err(other) => panic!("unexpected refusal: {other:?}"),
+        }
+    }
+    assert!(!accepted.is_empty(), "at least one was accepted");
+
+    drop(private.shutdown());
+    let owed_before = durable.owed();
+
+    // Drain the prefill, then drive.
+    assert_eq!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .unwrap(),
+        review_settlement_expected(9900)
+    );
+    let mut settled = Vec::new();
+    for _ in 0..4 {
+        durable.drive();
+        while let Ok(ack) = receiver.recv_timeout(std::time::Duration::from_millis(100)) {
+            settled.push(ack.acknowledgement.transaction.raw());
+        }
+    }
+
+    // Everything accepted was answered, exactly once each. Nothing was
+    // counted off as lost to make room.
+    let mut expected: Vec<_> = accepted.clone();
+    expected.sort_unstable();
+    settled.sort_unstable();
+    assert_eq!(
+        settled, expected,
+        "every accepted control is answered exactly once"
+    );
+    assert_eq!(durable.owed(), 0);
+    let _ = owed_before;
 }
