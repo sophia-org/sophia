@@ -373,11 +373,14 @@ fn spawn_x11_control_writer(
                     // that outlives the connection and the state derived from
                     // it does not agree yet.
                     drop(runtime);
-                    // Reported after the guard goes, so this never holds the
-                    // runtime and the completion registry at once. Between the
-                    // change and this the step reads as in progress, which is
-                    // the safe reading: it says the effect may have happened,
-                    // and nothing is discharged on it.
+                    // Reported after the guard goes. Not because the pair
+                    // would be a cycle -- every refusal arm here already
+                    // acknowledges with its runtime guard live, and that edge
+                    // runs into the registry like all the others -- but
+                    // because there is no reason to hold the runtime for it.
+                    // Between the change and this the step reads as in
+                    // progress, which is the safe reading: it says the effect
+                    // may have happened, and nothing is discharged on it.
                     let _ = channels.record_progress(completion, ControlProgress::RuntimeApplied);
                     channels
                         .record_progress(completion, ControlProgress::ProjectionBegun)
@@ -394,10 +397,13 @@ fn spawn_x11_control_writer(
                         })?;
                     selections.update_geometry(window, geometry);
                     // Reported while the selections guard is held, because the
-                    // records below need it. Lock rank: a connection's
-                    // selections are taken before the completion registry, and
-                    // the registry takes nothing else while it is held, so
-                    // there is no other direction for this pair.
+                    // records below need it. Lock rank: selections are taken
+                    // before the completion registry, as the runtime and the
+                    // atom and property tables are elsewhere in this file. All
+                    // of those edges point into the registry, and what the
+                    // registry does under its own lock is one thing -- a
+                    // non-blocking enqueue on the acknowledgement channel --
+                    // so none of them runs the other way.
                     let _ =
                         channels.record_progress(completion, ControlProgress::ProjectionApplied);
                     if previous_geometry == Some(geometry) {

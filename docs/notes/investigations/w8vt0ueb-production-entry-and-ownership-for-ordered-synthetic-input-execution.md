@@ -574,10 +574,24 @@ finished steps are history, not a statement about now. Every other state is
 retained with its credit: begun and unfinished, finished the runtime without
 projecting it, and finished both.
 
-Lock rank, since the reporter runs inside the applier: the runtime guard is
-released before its completion is reported, a connection's selections are taken
-before the completion registry, and the registry takes no other lock while it
-is held, so there is no other direction for either pair.
+Lock rank, since the reporter runs inside the applier. An earlier version of
+this paragraph said nothing holds the runtime and the completion registry at
+once. That is false, and not only in the corner it was written for: five
+refusal arms acknowledge while their runtime guard is still live -- admit,
+configure, focus, clear focus and withdraw -- so the edge runtime to registry
+is the norm rather than an exception. Presentation holds the shared atom and
+property tables across the same kind of acknowledgement, and configure holds
+the connection's selections across its projection report.
+
+So the edges are: runtime to registry, atoms and properties to registry,
+selections to registry. All of them point the same way. What matters is what
+the registry does while its own lock is held, and that is exactly one thing in
+production: a non-blocking enqueue on the acknowledgement channel, reached
+through the publication callback and through the retry that republishes owed
+outcomes. It takes none of the locks above, so no edge runs the other way and
+the rank has no cycle. Saying "the registry cannot take another lock" would
+have been a claim about code that is passed in; naming the callback is a claim
+about what is actually there.
 
 Eight of the nine kinds report nothing at all and are retained. An absent report
 is not a report of nothing, which is the same mistake as inferring teardown from
