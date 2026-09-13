@@ -255,6 +255,58 @@ The ordinary path keeps today's behaviour where no gate is installed. Nothing
 is enabled by the existence of the executor; a private instance has to be
 constructed as one.
 
+## Where control completion actually attaches
+
+Written down because the obvious reading of this seam is wrong in four places,
+and each was found by looking rather than by reasoning from the shape.
+
+**There are two producer paths, not one.** `registry/delivery.rs:482` builds
+`X11RoutedControl::Authority` and queues it, but `route_control` returns early
+at `:475` when `route_focus_control` handles the command, so `FocusSurface` and
+`ClearFocus` go through `routing/focus.rs:159 route_authority_control` and
+never reach `:482` at all. A registration attached there would cover some
+control and silently miss focus.
+
+So the record is created before acceptance, at the producer facade, and both
+routes carry the same one. That is also the only point where it can be bound
+to the admission that accepted it.
+
+**A successful `send_ack` does not mean the acknowledgement was published.**
+All eleven writer callsites funnel through `routing/input.rs:354`, which reads
+
+```rust
+Ok(()) | Err(TrySendError::Disconnected(_)) => Ok(())
+```
+
+so a gone receiver returns `Ok`. Treating every `Ok` as publication would mark
+work complete whose acknowledgement nobody received. `Full` is different again:
+it returns an error, and the exact acknowledgement and its completion
+responsibility have to be retained rather than the command replayed, because
+the command's effect has already happened.
+
+Effect application and acknowledgement publication are therefore separate
+events, and a completion hook belongs at the publication, not at function
+entry.
+
+**The stale-control wrapper is not on the private path.** The broker's
+`XServerFrontendControlRouter::route_control` maps `UnknownClient` and
+`Disconnected` to `acknowledge_stale_control`, but the private host calls
+`registry.route_control` directly, so instrumenting that helper would be
+instrumenting something the private path never reaches. The private error and
+cancellation path needs joining with an owned continuation instead.
+
+**Client plus public transaction is not an identity.** `send_ack` sees only
+those two, and mapping on them aliases requests that share a transaction. The
+registration has to be an opaque server-issued token carried with the command,
+bound to origin and admission plus an operation incarnation, and to a grant
+generation where one applies -- without requiring a live synthetic grant, since
+privileged issuer cleanup must outlive grants.
+
+Writer stop, disconnect, an error before any acknowledgement, and queue
+teardown are all terminal edges too. And retrying a whole command can be wrong
+where a focus-out side effect has already partly applied, so a retained
+acknowledgement is not the same as a replayable command.
+
 ## What still needs stating
 
 Pure getters need coherent snapshots and request ordering. They do not need
