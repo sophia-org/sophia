@@ -5,13 +5,13 @@ use sophia_protocol::{
 };
 use sophia_runtime::{
     MAX_SESSION_RUNTIME_OBSERVATION_BATCH, ProcessLaunchSpec, ProcessSupervisor,
-    ProcessSupervisorError, ProtectionDomainRole, ProtectionDomainSpec, RestartPolicy,
-    RuntimeAuthorityHealth, RuntimeAuthoritySupervisor, RuntimeBrokerHealth,
-    RuntimeBrokerSupervisors, RuntimeScanoutState, SessionRuntimeCommand, SessionRuntimeEvent,
-    SessionRuntimeEventBatch, SessionRuntimeLoop, SessionRuntimeObservation,
-    SessionRuntimeObservationError, SessionRuntimePhase, SessionRuntimeState,
-    SupervisedProcessKind, SupervisorCommand, SupervisorEvent, SupervisorState,
-    update_session_runtime, update_supervisor,
+    ProcessSupervisorError, ProtectionDomainRole, ProtectionDomainSpec,
+    ProtectionFilesystemManifest, ProtectionPath, RestartPolicy, RuntimeAuthorityHealth,
+    RuntimeAuthoritySupervisor, RuntimeBrokerHealth, RuntimeBrokerSupervisors, RuntimeScanoutState,
+    SessionRuntimeCommand, SessionRuntimeEvent, SessionRuntimeEventBatch, SessionRuntimeLoop,
+    SessionRuntimeObservation, SessionRuntimeObservationError, SessionRuntimePhase,
+    SessionRuntimeState, SupervisedProcessKind, SupervisorCommand, SupervisorEvent,
+    SupervisorState, update_session_runtime, update_supervisor,
 };
 
 #[path = "supervisor/supervisor_process.rs"]

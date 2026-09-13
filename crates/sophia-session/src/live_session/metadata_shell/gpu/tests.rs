@@ -1,7 +1,10 @@
 #![cfg(test)]
 
 use super::*;
-use sophia_runtime::{ProtectionDomainRole, ProtectionDomainSpec};
+use sophia_runtime::{ProtectionDomainRole, ProtectionDomainSpec, ProtectionFilesystemManifest};
+
+#[path = "tests/sysfs.rs"]
+mod sysfs_projection;
 
 fn identity(path: &Path) -> LiveRenderDeviceIdentitySnapshot {
     let metadata = std::fs::symlink_metadata(path).unwrap();
@@ -20,6 +23,19 @@ fn base() -> ProcessLaunchSpec {
     )
 }
 
+fn revalidated(major: u32, minor: u32) -> RevalidatedGpuDevice {
+    let mut sysfs = ProtectionFilesystemManifest::new();
+    sysfs.directory("devices").unwrap();
+    RevalidatedGpuDevice {
+        major,
+        minor,
+        render_name: format!("renderD{minor}"),
+        pci_bus_id: Some("0000:03:00.0".into()),
+        pci_ids: Some((0x1002, 0x744c)),
+        sysfs,
+    }
+}
+
 #[test]
 fn denied_policy_carries_no_device_or_grant_environment() {
     let policy = ShellGpuLaunchPolicy::new(ShellGpuMode::Denied, None).unwrap();
@@ -33,9 +49,8 @@ fn denied_policy_carries_no_device_or_grant_environment() {
 fn direct_policy_binds_exact_device_and_current_epoch() {
     let source = Path::new("/dev/null");
     let policy = ShellGpuLaunchPolicy::new(ShellGpuMode::Direct, Some(identity(source))).unwrap();
-    let physical = policy.device.as_ref().unwrap().physical_device.clone();
     let (prepared, evidence) = policy
-        .prepare_with_revalidation(&base(), 9, |_| Ok((1, 3, physical)))
+        .prepare_with_revalidation(&base(), 9, |_| Ok(revalidated(1, 3)))
         .unwrap();
     let environment = prepared
         .environment
@@ -44,30 +59,25 @@ fn direct_policy_binds_exact_device_and_current_epoch() {
         .collect::<std::collections::BTreeMap<_, _>>();
     assert_eq!(environment[GPU_MODE_ENV], "direct");
     assert_eq!(environment[GPU_GRANT_EPOCH_ENV], "9");
-    assert_eq!(environment[GPU_RENDER_NODE_ENV], PRIVATE_RENDER_NODE);
+    assert_eq!(environment[GPU_RENDER_NODE_ENV], "/dev/dri/renderD3");
     assert_eq!(environment[GPU_DEVICE_MAJOR_ENV], "1");
     assert_eq!(environment[GPU_DEVICE_MINOR_ENV], "3");
     let protection_domain = prepared.protection_domain.unwrap();
     let device = &protection_domain.devices()[0];
     assert_eq!(device.source, source);
-    assert_eq!(device.destination, Path::new(PRIVATE_RENDER_NODE));
-    assert_eq!(evidence.unwrap().epoch, 9);
+    assert_eq!(device.destination, Path::new("/dev/dri/renderD3"));
+    assert_eq!(protection_domain.paths()[0].destination, Path::new("/sys"));
+    let evidence = evidence.unwrap();
+    assert_eq!(evidence.epoch, 9);
+    assert_eq!(evidence.render_node, Path::new("/dev/dri/renderD3"));
 }
 
 #[test]
-fn pci_identity_carries_vendor_and_device_fallbacks() {
-    let root = std::env::temp_dir().join(format!("sophia-shell-pci-{}", std::process::id()));
-    let directory = root.join("0000:03:00.0");
-    std::fs::create_dir_all(&directory).unwrap();
-    std::fs::write(directory.join("vendor"), "0x1002\n").unwrap();
-    std::fs::write(directory.join("device"), "0x744c\n").unwrap();
-    assert_eq!(pci_bus_id(&directory).as_deref(), Some("0000:03:00.0"));
-    assert_eq!(pci_ids(&directory).unwrap(), (0x1002, 0x744c));
-
+fn pci_identity_is_diagnostic_evidence_from_the_validated_projection() {
     let source = Path::new("/dev/null");
     let policy = ShellGpuLaunchPolicy::new(ShellGpuMode::Direct, Some(identity(source))).unwrap();
     let (prepared, evidence) = policy
-        .prepare_with_revalidation(&base(), 9, |_| Ok((1, 3, directory.clone())))
+        .prepare_with_revalidation(&base(), 9, |_| Ok(revalidated(1, 3)))
         .unwrap();
     let environment = prepared
         .environment
@@ -78,7 +88,6 @@ fn pci_identity_carries_vendor_and_device_fallbacks() {
     assert_eq!(environment[GPU_PCI_VENDOR_ID_ENV], "1002");
     assert_eq!(environment[GPU_PCI_DEVICE_ID_ENV], "744c");
     assert_eq!(evidence.unwrap().pci_vendor_id, Some(0x1002));
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

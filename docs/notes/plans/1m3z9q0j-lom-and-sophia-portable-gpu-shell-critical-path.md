@@ -134,6 +134,18 @@ fallback inside the already-single-render-node domain and records bounded
 adapter counts if selection still fails. Its causal role and the native bar
 remain unproved until a new attended result is retained.
 
+The successor preflight on `bb97c561` at
+`.artifacts/lom-panel-native/20260913T204021Z` enumerated one adapter but zero
+non-CPU Vulkan adapters. Source and binary inspection established that the
+protected domain omitted `/sys`, while RADV's libdrm discovery requires the
+selected render minor's sysfs DRM and PCI identity. Adapter matching therefore
+never ran; carrying PCI fields could not restore an adapter the driver had
+discarded. The repair generates an immutable one-device discovery projection,
+preserves the actual render-minor basename and makes Lom authorize only an exact
+`VK_EXT_physical_device_drm` render-major/minor match. This explains the observed
+enumeration failure; a later driver initialization failure remains possible and
+requires the separately authorized protected hardware proof.
+
 ### t098
 
 Carry content target tables through production projection to the exact native

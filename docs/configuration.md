@@ -305,9 +305,13 @@ retired `gpu-memory-bytes` form with an actionable migration diagnostic rather
 than silently weakening a requested quota. Content may remain CPU-rendered with
 `gpu "denied"`; direct GPU permission also requires an enabled shell process.
 
-Direct mode exposes exactly the selected render node at the private
-`/dev/dri/renderD128` path and binds its kernel identity to the shell connection
-epoch. It requires no custom kernel or `dmem` controller. It accepts GPU
+Direct mode exposes exactly the selected render node under its kernel
+`/dev/dri/renderD<minor>` basename and binds its kernel identity to the shell
+connection epoch. It also supplies a generated read-only sysfs view containing
+only that render minor's bounded Linux PCI discovery facts; it does not mount
+host `/sys` or the whole physical-device directory. Lom matches the selected
+Vulkan adapter back to the granted render `dev_t`. It requires no custom kernel
+or `dmem` controller. It accepts GPU
 execution/availability risk without a hard aggregate VRAM guarantee. The
 content ledger bounds known immutable resource and compositor-backing credit;
 it does not measure every driver allocation. Native GPU acceptance remains a

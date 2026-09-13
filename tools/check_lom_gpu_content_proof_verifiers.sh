@@ -6,11 +6,11 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 cat > "$work/gpu.log" <<'EOF'
-lom_gpu_admission schema=1 status=ready grant_epoch=1 render_node=/dev/dri/renderD128 device_major=226 device_minor=128 pci_bus_id=0000:01:00.0 backend=Vulkan device_type=DiscreteGpu adapter_name="fixture" driver="fixture" visible_dri_entries=renderD128
+lom_gpu_admission schema=2 status=ready grant_epoch=1 render_node=/dev/dri/renderD128 device_major=226 device_minor=128 selection_method=drm_dev_t adapter_render_major=226 adapter_render_minor=128 adapter_has_render=true pci_bus_id=0000:01:00.0 pci_vendor_id=1002 pci_device_id=744c backend=Vulkan device_type=DiscreteGpu adapter_name="fixture" driver="fixture" visible_dri_entries=renderD128
 sophia_shell_gpu_content_hardware_proof schema=1 status=complete protected=true revision=6 capabilities=0x283 grant_epoch=1 render_node=/dev/dri/renderD128 device_major=226 device_minor=128 pci_bus_id=0000:01:00.0 width=256 height=24 bytes=24576 checksum=0123456789abcdef renderer_outcome=10 backing_bytes=0 native_presentation=false
 EOF
 "$ROOT_DIR/tools/verify_lom_gpu_content_hardware_proof.sh" "$work/gpu.log" >/dev/null
-for mutation in extra_drm cpu zero_checksum native identity; do
+for mutation in extra_drm cpu zero_checksum native identity adapter_identity method has_render; do
     cp "$work/gpu.log" "$work/$mutation.log"
     case "$mutation" in
         extra_drm) sed -i 's/visible_dri_entries=renderD128/visible_dri_entries=card0,renderD128/' "$work/$mutation.log" ;;
@@ -18,6 +18,9 @@ for mutation in extra_drm cpu zero_checksum native identity; do
         zero_checksum) sed -i 's/checksum=0123456789abcdef/checksum=0000000000000000/' "$work/$mutation.log" ;;
         native) sed -i 's/native_presentation=false/native_presentation=true/' "$work/$mutation.log" ;;
         identity) sed -i '/^lom_gpu_admission /s/device_minor=128/device_minor=129/' "$work/$mutation.log" ;;
+        adapter_identity) sed -i '/^lom_gpu_admission /s/adapter_render_minor=128/adapter_render_minor=129/' "$work/$mutation.log" ;;
+        method) sed -i '/^lom_gpu_admission /s/selection_method=drm_dev_t/selection_method=pci/' "$work/$mutation.log" ;;
+        has_render) sed -i '/^lom_gpu_admission /s/adapter_has_render=true/adapter_has_render=false/' "$work/$mutation.log" ;;
     esac
     if "$ROOT_DIR/tools/verify_lom_gpu_content_hardware_proof.sh" "$work/$mutation.log" >/dev/null 2>&1; then
         echo "verifier accepted $mutation mutation" >&2
@@ -89,4 +92,4 @@ if grep -Eq '^[[:space:]]*(bind|pointer-bind|session)[[:space:]]' \
     exit 1
 fi
 
-echo "lom_gpu_content_verifiers schema=1 status=pass mutations=11 structured_events=true pre_takeover_proof=true"
+echo "lom_gpu_content_verifiers schema=1 status=pass mutations=14 structured_events=true pre_takeover_proof=true"

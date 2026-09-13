@@ -8,7 +8,8 @@ discrete content input and native acceptance remain incomplete. The
 [content ADR](notes/decisions/6ndjwffd-content-capability-design-for-sophia_shell_v1.md)
 owns the wire and numeric budgets. The
 [execution ADR](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
-owns the accepted GPU permission model; it does not enable the runtime gate.
+owns the accepted GPU permission model. Its launch gate is implemented and
+remains unaccepted on hardware.
 
 The [architecture](architecture.md), [native protocol family](sophia-policy-ipc.md),
 [compositor graphics](compositor-graphics.md), and
@@ -57,7 +58,9 @@ and launch evidence must distinguish requested policy from actual admission.
 
 GPU execution is a separate, default-denied launch permission. The accepted
 first Lom path explicitly exposes one render node within its protection domain,
-with no application display or input endpoint. It requires no custom kernel or
+plus a bounded read-only discovery projection for that same Linux PCI DRM
+device, with no host sysfs tree, application display or input endpoint. It
+requires no custom kernel or
 particular device-memory controller and promises no hard aggregate VRAM quota.
 Content clients may instead CPU-rasterize without a GPU grant. Neither execution
 choice changes content ownership, disclosure, pacing or exact presented input.

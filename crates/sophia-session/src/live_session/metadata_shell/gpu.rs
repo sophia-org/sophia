@@ -2,7 +2,10 @@ use sophia_backend_live::LiveRenderDeviceIdentitySnapshot;
 use sophia_config::ShellGpuMode;
 use sophia_runtime::{ProcessLaunchSpec, ProtectionDevice};
 use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+mod sysfs;
+use sysfs::RevalidatedGpuDevice;
 
 pub(super) const GPU_MODE_ENV: &str = "SOPHIA_SHELL_GPU_MODE";
 pub(super) const GPU_GRANT_EPOCH_ENV: &str = "SOPHIA_SHELL_GPU_GRANT_EPOCH";
@@ -12,7 +15,7 @@ pub(super) const GPU_DEVICE_MINOR_ENV: &str = "SOPHIA_SHELL_GPU_DEVICE_MINOR";
 pub(super) const GPU_PCI_BUS_ID_ENV: &str = "SOPHIA_SHELL_GPU_PCI_BUS_ID";
 pub(super) const GPU_PCI_VENDOR_ID_ENV: &str = "SOPHIA_SHELL_GPU_PCI_VENDOR_ID";
 pub(super) const GPU_PCI_DEVICE_ID_ENV: &str = "SOPHIA_SHELL_GPU_PCI_DEVICE_ID";
-pub(super) const PRIVATE_RENDER_NODE: &str = "/dev/dri/renderD128";
+pub(super) const PRIVATE_DRI_DIRECTORY: &str = "/dev/dri";
 
 #[derive(Clone, Debug)]
 pub(super) struct ShellGpuLaunchPolicy {
@@ -25,6 +28,7 @@ pub(super) struct ShellGpuLaunchEvidence {
     pub epoch: u64,
     pub major: u32,
     pub minor: u32,
+    pub render_node: PathBuf,
     pub pci_bus_id: Option<String>,
     pub pci_vendor_id: Option<u32>,
     pub pci_device_id: Option<u32>,
@@ -62,7 +66,7 @@ impl ShellGpuLaunchPolicy {
         epoch: u64,
         revalidate: impl FnOnce(
             &LiveRenderDeviceIdentitySnapshot,
-        ) -> Result<(u32, u32, std::path::PathBuf), String>,
+        ) -> Result<RevalidatedGpuDevice, String>,
     ) -> Result<(ProcessLaunchSpec, Option<ShellGpuLaunchEvidence>), String> {
         if epoch == 0 {
             return Err("shell GPU grant epoch must be nonzero".into());
@@ -74,18 +78,18 @@ impl ShellGpuLaunchPolicy {
             .device
             .as_ref()
             .ok_or("direct shell GPU access has no admitted render device")?;
-        let (major, minor, physical) = revalidate(identity)?;
-        let pci_bus_id = pci_bus_id(&physical);
-        let pci_ids = pci_bus_id
-            .as_ref()
-            .map(|_| pci_ids(&physical))
-            .transpose()?;
+        let revalidated = revalidate(identity)?;
+        let major = revalidated.major;
+        let minor = revalidated.minor;
+        let pci_bus_id = revalidated.pci_bus_id.clone();
+        let pci_ids = revalidated.pci_ids;
+        let private_render_node = Path::new(PRIVATE_DRI_DIRECTORY).join(&revalidated.render_name);
 
         let mut spec = base
             .clone()
             .env(GPU_MODE_ENV, "direct")
             .env(GPU_GRANT_EPOCH_ENV, epoch.to_string())
-            .env(GPU_RENDER_NODE_ENV, PRIVATE_RENDER_NODE)
+            .env(GPU_RENDER_NODE_ENV, &private_render_node)
             .env(GPU_DEVICE_MAJOR_ENV, major.to_string())
             .env(GPU_DEVICE_MINOR_ENV, minor.to_string());
         if let Some(pci_bus_id) = pci_bus_id.as_ref() {
@@ -100,9 +104,11 @@ impl ShellGpuLaunchPolicy {
             .protection_domain
             .take()
             .ok_or("shell GPU access requires a protection domain")?
+            .read_only_filesystem("/sys", revalidated.sysfs)
+            .map_err(|error| error.to_string())?
             .device(ProtectionDevice::required_at(
                 &identity.node,
-                PRIVATE_RENDER_NODE,
+                &private_render_node,
             ))
             .map_err(|error| error.to_string())?;
         spec.protection_domain = Some(domain);
@@ -112,6 +118,7 @@ impl ShellGpuLaunchPolicy {
                 epoch,
                 major,
                 minor,
+                render_node: private_render_node,
                 pci_bus_id,
                 pci_vendor_id: pci_ids.map(|ids| ids.0),
                 pci_device_id: pci_ids.map(|ids| ids.1),
@@ -130,14 +137,8 @@ impl ShellGpuLaunchPolicy {
 
 fn revalidate_identity(
     identity: &LiveRenderDeviceIdentitySnapshot,
-) -> Result<(u32, u32, std::path::PathBuf), String> {
-    let metadata = std::fs::symlink_metadata(&identity.node)
-        .map_err(|error| format!("shell render node metadata: {error}"))?;
-    if !metadata.file_type().is_char_device()
-        || metadata.dev() != identity.device
-        || metadata.ino() != identity.inode
-        || metadata.rdev() != identity.device_number
-    {
+) -> Result<RevalidatedGpuDevice, String> {
+    if !render_node_identity_matches(identity) {
         return Err("shell render node identity changed before launch".into());
     }
     let major = rustix::fs::major(identity.device_number);
@@ -147,35 +148,23 @@ fn revalidate_identity(
     if physical != identity.physical_device {
         return Err("shell render node physical device changed before launch".into());
     }
-    Ok((major, minor, physical))
+    let planned = sysfs::plan(identity, major, minor, &physical)?;
+    if !render_node_identity_matches(identity)
+        || std::fs::canonicalize(format!("/sys/dev/char/{major}:{minor}/device")).ok()
+            != Some(physical)
+    {
+        return Err("shell render node identity changed during discovery".into());
+    }
+    Ok(planned)
 }
 
-fn pci_bus_id(physical: &Path) -> Option<String> {
-    let value = physical.file_name()?.to_str()?;
-    let bytes = value.as_bytes();
-    (bytes.len() == 12
-        && bytes[4] == b':'
-        && bytes[7] == b':'
-        && bytes[10] == b'.'
-        && bytes
-            .iter()
-            .enumerate()
-            .all(|(index, byte)| matches!(index, 4 | 7 | 10) || byte.is_ascii_hexdigit()))
-    .then(|| value.to_ascii_lowercase())
-}
-
-fn pci_ids(physical: &Path) -> Result<(u32, u32), String> {
-    let read = |name| {
-        let value = std::fs::read_to_string(physical.join(name))
-            .map_err(|error| format!("shell render node PCI {name}: {error}"))?;
-        let value = value.trim().strip_prefix("0x").unwrap_or(value.trim());
-        let value = u32::from_str_radix(value, 16)
-            .map_err(|_| format!("shell render node PCI {name} is malformed"))?;
-        (value <= u16::MAX.into())
-            .then_some(value)
-            .ok_or_else(|| format!("shell render node PCI {name} exceeds sixteen bits"))
-    };
-    Ok((read("vendor")?, read("device")?))
+fn render_node_identity_matches(identity: &LiveRenderDeviceIdentitySnapshot) -> bool {
+    std::fs::symlink_metadata(&identity.node).is_ok_and(|metadata| {
+        metadata.file_type().is_char_device()
+            && metadata.dev() == identity.device
+            && metadata.ino() == identity.inode
+            && metadata.rdev() == identity.device_number
+    })
 }
 
 #[path = "gpu/tests.rs"]

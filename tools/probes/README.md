@@ -4,8 +4,10 @@
 
 `tools/lom_gpu_content_hardware_proof.sh` launches the exact source-built Lom
 `--serve` client through Sophia's production metadata-shell protection policy.
-The private domain receives one render node at `/dev/dri/renderD128`, with no
-card node, input device, display socket or network. Lom renders a 256x24 Vello
+The private domain receives one render node under its real kernel basename and
+a generated read-only sysfs discovery view for that same device, with no card
+node, host sysfs tree, input device, display socket or network. Lom validates
+the enumerated Vulkan adapter's DRM render major/minor before rendering a 256x24 Vello
 panel and sends its real complete content candidate. The host verifies the
 nonempty immutable pixels, returns the real `RendererFailed` outcome, and
 requires resource and backing cleanup. This is a hardware render and protocol

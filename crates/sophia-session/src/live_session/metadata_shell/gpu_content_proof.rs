@@ -197,7 +197,7 @@ pub fn run(
                 welcome.selected_revision,
                 welcome.capabilities,
                 gpu.epoch,
-                super::gpu::PRIVATE_RENDER_NODE,
+                gpu.render_node.display(),
                 gpu.major,
                 gpu.minor,
                 gpu.pci_bus_id.as_deref().unwrap_or("none"),

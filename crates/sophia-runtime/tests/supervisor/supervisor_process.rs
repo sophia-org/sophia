@@ -310,3 +310,52 @@ fn bubblewrap_supervisor_reports_the_actual_role_peer() {
     assert!(std::path::Path::new(&format!("/proc/{peer}/ns/pid")).exists());
     supervisor.terminate().unwrap();
 }
+
+#[test]
+fn bubblewrap_mounts_owned_filesystems_read_only_without_host_tree_disclosure() {
+    if std::env::var_os("SOPHIA_RUN_PROTECTION_DOMAIN_SMOKE").is_none() {
+        return;
+    }
+    let evidence =
+        std::env::temp_dir().join(format!("sophia-protection-evidence-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&evidence);
+    std::fs::create_dir(&evidence).unwrap();
+    let mut filesystem = ProtectionFilesystemManifest::new();
+    filesystem.directory("devices").unwrap();
+    filesystem.directory("devices/gpu").unwrap();
+    filesystem
+        .file("devices/gpu/vendor", b"0x1002\n".to_vec())
+        .unwrap();
+    filesystem.symlink("selected", "devices/gpu").unwrap();
+    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::SpatialPolicy])
+        .unwrap()
+        .read_only_filesystem("/sys", filesystem)
+        .unwrap()
+        .path(ProtectionPath::read_write_at(&evidence, "/evidence"))
+        .unwrap();
+    let script = "set -eu; test \"$(cat /sys/selected/vendor)\" = 0x1002; \
+                  test ! -e /sys/kernel; if touch /sys/new 2>/dev/null; then exit 1; fi; \
+                  printf pass > /evidence/result";
+    let mut supervisor = ProcessSupervisor::new(
+        SupervisedProcessKind::WindowManager,
+        ProcessLaunchSpec::new("/usr/bin/sh")
+            .arg("-c")
+            .arg(script)
+            .protection_domain(domain),
+    );
+    supervisor
+        .apply(SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::WindowManager,
+            delay: Duration::ZERO,
+        })
+        .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while supervisor.poll().unwrap().is_none() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        std::fs::read_to_string(evidence.join("result")).unwrap(),
+        "pass"
+    );
+    std::fs::remove_dir_all(evidence).unwrap();
+}

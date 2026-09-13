@@ -1,7 +1,8 @@
 use sophia_runtime::{
     ProtectionDevice, ProtectionDomainRole, ProtectionDomainSpec, ProtectionDomainSpecError,
-    ProtectionNetworkAccess, ProtectionPath,
+    ProtectionFilesystemManifest, ProtectionNetworkAccess, ProtectionPath,
 };
+use std::os::unix::fs::PermissionsExt as _;
 
 #[test]
 fn wm_cannot_share_a_domain_with_metadata_roles() {
@@ -60,6 +61,85 @@ fn bubblewrap_uses_device_bind_for_protection_devices() {
     const BACKEND: &str = include_str!("../src/supervisor/protection.rs");
     assert!(BACKEND.contains("for device in &domain.devices"));
     assert!(BACKEND.contains("\"--dev-bind\".into()"));
+}
+
+#[test]
+fn owned_filesystem_is_bounded_frozen_and_retained_by_clones() {
+    let mut manifest = ProtectionFilesystemManifest::new();
+    manifest.directory("devices").unwrap();
+    manifest.directory("devices/gpu").unwrap();
+    manifest
+        .file("devices/gpu/vendor", b"0x1002\n".to_vec())
+        .unwrap();
+    manifest.symlink("selected", "devices/gpu").unwrap();
+    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
+        .unwrap()
+        .read_only_filesystem("/sys", manifest)
+        .unwrap();
+    let source = domain.paths()[0].source.clone();
+    assert_eq!(domain.paths()[0].destination, std::path::Path::new("/sys"));
+    assert_eq!(
+        std::fs::metadata(&source).unwrap().permissions().mode() & 0o777,
+        0o500
+    );
+    assert_eq!(
+        std::fs::metadata(source.join("devices/gpu/vendor"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o400
+    );
+    assert_eq!(
+        std::fs::read_link(source.join("selected")).unwrap(),
+        std::path::Path::new("devices/gpu")
+    );
+
+    let retained = domain.clone();
+    drop(domain);
+    assert!(source.exists());
+    drop(retained);
+    assert!(!source.exists());
+}
+
+#[test]
+fn owned_filesystem_refuses_duplicate_escape_and_oversized_content() {
+    let mut duplicate = ProtectionFilesystemManifest::new();
+    duplicate.directory("devices").unwrap();
+    assert!(duplicate.directory("devices").is_err());
+
+    let mut escape = ProtectionFilesystemManifest::new();
+    assert!(escape.symlink("selected", "../host").is_err());
+
+    let mut dangling = ProtectionFilesystemManifest::new();
+    dangling.symlink("selected", "devices/gpu").unwrap();
+    assert!(
+        ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
+            .unwrap()
+            .read_only_filesystem("/sys", dangling)
+            .is_err()
+    );
+
+    let mut oversized = ProtectionFilesystemManifest::new();
+    assert!(oversized.file("blob", vec![0; 4097]).is_err());
+}
+
+#[test]
+fn owned_filesystem_is_cleaned_when_later_domain_validation_fails() {
+    let mut manifest = ProtectionFilesystemManifest::new();
+    manifest.directory("devices").unwrap();
+    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
+        .unwrap()
+        .read_only_filesystem("/sys", manifest)
+        .unwrap();
+    let source = domain.paths()[0].source.clone();
+    assert!(source.exists());
+    assert!(
+        domain
+            .path(ProtectionPath::read_only("/sys/devices"))
+            .is_err()
+    );
+    assert!(!source.exists());
 }
 
 #[test]

@@ -72,18 +72,23 @@ the required launch resources must also be established before client code runs.
 
 Session constructs a typed launch grant, bound to the child/domain and a fresh
 launch epoch. It resolves and verifies exactly one permitted render node, its
-kernel device identity and required read-only driver assets. The protected
-domain exposes that node only; it gains no primary DRM/KMS device, input device,
+kernel device identity and required read-only driver assets. For the Linux PCI
+DRM profile, Session builds a bounded immutable sysfs projection containing the
+selected render minor and only the device, uevent, PCI identity and structural
+links libdrm needs to discover it. Host `/sys`, the whole PCI device directory,
+card nodes, connector data, resource files and control attributes remain absent.
+The protected domain exposes that render node under its real kernel basename; it
+gains no primary DRM/KMS device, input device,
 application X11/Wayland socket, host service bus, cgroupfs, or broad filesystem
 access. Device selection cannot depend on inherited display variables or the
 first adapter returned by an enumeration. Lom must verify that its selected
 GPU matches the admitted device and refuse unsupported or ambiguous selection.
-The private domain exposes exactly one render node. For a PCI device, the grant
-also carries its host-observed bus, vendor and device identities. A Vulkan
-client matches the bus identity when its driver implements the optional PCI bus
-information extension; otherwise it matches vendor and device within that
-single-node domain. Missing fallback fields, multiple matches and conflicting
-bus identities remain refusals.
+The private domain exposes exactly one render node. A Vulkan client must inspect
+`VK_EXT_physical_device_drm` on the same enumerated adapter it later uses and
+match its render major and minor to the held granted node. Missing extension or
+render identity, zero or multiple matches and every identity contradiction are
+refusals. PCI bus, vendor and device fields may remain bounded diagnostics; they
+do not authorize an adapter or rescue a DRM identity mismatch.
 
 Effective-profile and launch evidence distinguish requested policy, actual
 device access, missing implementation and refusal. Replacement needs a fresh

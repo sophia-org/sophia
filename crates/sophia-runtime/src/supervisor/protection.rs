@@ -2,10 +2,15 @@ use super::*;
 
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
-use std::os::unix::fs::FileTypeExt as _;
+use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _};
 use std::os::unix::process::CommandExt as _;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+
+mod owned_filesystem;
+use owned_filesystem::OwnedProtectionFilesystem;
+pub use owned_filesystem::{ProtectionFilesystemEntry, ProtectionFilesystemManifest};
 
 pub const DEFAULT_BUBBLEWRAP_PATH: &str = "/usr/bin/bwrap";
 const BUBBLEWRAP_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -37,6 +42,7 @@ pub struct ProtectionPath {
     pub source: PathBuf,
     pub destination: PathBuf,
     pub access: ProtectionPathAccess,
+    _owner: Option<Arc<OwnedProtectionFilesystem>>,
 }
 
 /// One required character device exposed at a fixed path in a private `/dev`.
@@ -44,6 +50,14 @@ pub struct ProtectionPath {
 pub struct ProtectionDevice {
     pub source: PathBuf,
     pub destination: PathBuf,
+    identity: Option<ProtectionDeviceIdentity>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ProtectionDeviceIdentity {
+    filesystem_device: u64,
+    inode: u64,
+    device_number: u64,
 }
 
 impl ProtectionDevice {
@@ -51,6 +65,7 @@ impl ProtectionDevice {
         Self {
             source: source.into(),
             destination: destination.into(),
+            identity: None,
         }
     }
 }
@@ -62,6 +77,7 @@ impl ProtectionPath {
             source: path.clone(),
             destination: path,
             access: ProtectionPathAccess::ReadOnly,
+            _owner: None,
         }
     }
 
@@ -71,6 +87,16 @@ impl ProtectionPath {
             source: path.clone(),
             destination: path,
             access: ProtectionPathAccess::ReadWrite,
+            _owner: None,
+        }
+    }
+
+    pub fn read_write_at(source: impl Into<PathBuf>, destination: impl Into<PathBuf>) -> Self {
+        Self {
+            source: source.into(),
+            destination: destination.into(),
+            access: ProtectionPathAccess::ReadWrite,
+            _owner: None,
         }
     }
 
@@ -79,6 +105,7 @@ impl ProtectionPath {
             source: source.into(),
             destination: destination.into(),
             access: ProtectionPathAccess::ReadOnly,
+            _owner: None,
         }
     }
 }
@@ -100,6 +127,7 @@ pub enum ProtectionDomainSpecError {
     InvalidDeviceSource(PathBuf),
     InvalidDeviceDestination(PathBuf),
     UnsupportedInheritedFd(i32),
+    FilesystemMaterialization(String),
 }
 
 impl fmt::Display for ProtectionDomainSpecError {
@@ -153,7 +181,30 @@ impl ProtectionDomainSpec {
         Ok(self)
     }
 
-    pub fn device(mut self, device: ProtectionDevice) -> Result<Self, ProtectionDomainSpecError> {
+    /// Materialize and retain a bounded filesystem tree mounted read-only at
+    /// `destination` for the lifetime of this protection-domain specification.
+    pub fn read_only_filesystem(
+        self,
+        destination: impl Into<PathBuf>,
+        manifest: ProtectionFilesystemManifest,
+    ) -> Result<Self, ProtectionDomainSpecError> {
+        let owner = Arc::new(
+            OwnedProtectionFilesystem::materialize(manifest)
+                .map_err(ProtectionDomainSpecError::FilesystemMaterialization)?,
+        );
+        let path = ProtectionPath {
+            source: owner.root().to_path_buf(),
+            destination: destination.into(),
+            access: ProtectionPathAccess::ReadOnly,
+            _owner: Some(owner),
+        };
+        self.path(path)
+    }
+
+    pub fn device(
+        mut self,
+        mut device: ProtectionDevice,
+    ) -> Result<Self, ProtectionDomainSpecError> {
         validate_binding_path(&device.source)?;
         validate_binding_path(&device.destination)?;
         if !device.destination.starts_with("/dev/") || device.destination == Path::new("/dev") {
@@ -161,14 +212,18 @@ impl ProtectionDomainSpec {
                 device.destination,
             ));
         }
-        if !std::fs::metadata(&device.source)
-            .map(|metadata| metadata.file_type().is_char_device())
-            .unwrap_or(false)
-        {
+        let metadata = std::fs::symlink_metadata(&device.source)
+            .map_err(|_| ProtectionDomainSpecError::InvalidDeviceSource(device.source.clone()))?;
+        if !metadata.file_type().is_char_device() {
             return Err(ProtectionDomainSpecError::InvalidDeviceSource(
                 device.source,
             ));
         }
+        device.identity = Some(ProtectionDeviceIdentity {
+            filesystem_device: metadata.dev(),
+            inode: metadata.ino(),
+            device_number: metadata.rdev(),
+        });
         if let Some(existing) = self
             .paths
             .iter()
@@ -333,7 +388,16 @@ pub(crate) fn spawn_bubblewrap(
         }
     }
     for device in &domain.devices {
-        if !device.source.exists() {
+        let current = std::fs::symlink_metadata(&device.source).ok();
+        let unchanged = current.as_ref().is_some_and(|metadata| {
+            metadata.file_type().is_char_device()
+                && device.identity.as_ref().is_some_and(|identity| {
+                    metadata.dev() == identity.filesystem_device
+                        && metadata.ino() == identity.inode
+                        && metadata.rdev() == identity.device_number
+                })
+        });
+        if !unchanged {
             return Err(ProtectionDomainLaunchError::InvalidBinding(
                 device.source.clone(),
             ));
