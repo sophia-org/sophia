@@ -3367,6 +3367,24 @@ fn two_producer_classes_share_one_order() {
     );
     let positions: Vec<_> = ran.iter().map(|run| run.sequence.raw()).collect();
     assert_eq!(positions, expected, "and at their own positions");
+
+    // And carrying the identities that were actually submitted. A right-looking
+    // class record can otherwise accompany the wrong payload entirely.
+    let identities: Vec<_> = ran.iter().map(|run| run.identity).collect();
+    assert_eq!(
+        identities,
+        vec![
+            crate::PrivateIdentity::Delivery(Some(XAuthorityInputDeliveryId::from_raw(400))),
+            crate::PrivateIdentity::Transaction(TransactionId::from_raw(1)),
+            crate::PrivateIdentity::Delivery(Some(XAuthorityInputDeliveryId::from_raw(401))),
+            crate::PrivateIdentity::Transaction(TransactionId::from_raw(2)),
+            crate::PrivateIdentity::Delivery(Some(XAuthorityInputDeliveryId::from_raw(402))),
+            crate::PrivateIdentity::Transaction(TransactionId::from_raw(3)),
+            crate::PrivateIdentity::Delivery(Some(XAuthorityInputDeliveryId::from_raw(403))),
+            crate::PrivateIdentity::Transaction(TransactionId::from_raw(4)),
+        ],
+        "each run must name the operation its producer submitted"
+    );
 }
 
 #[test]
@@ -3553,4 +3571,101 @@ fn an_unreachable_queue_is_not_reported_as_a_finished_one() {
         channels.input.try_recv().is_err(),
         "and nothing was delivered from it"
     );
+}
+
+#[test]
+fn accepted_work_is_answered_when_its_consumer_goes_away() {
+    let namespace = NamespaceId::from_raw(55);
+    let client = XServerFrontendClientId(73);
+    let surface = SurfaceId::new(60, 1);
+    let window = XResourceId::new(0x2001d0, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    let delivery = XAuthorityInputDeliveryId::from_raw(8300);
+    private
+        .ingress()
+        .submit(motion_to(surface, delivery))
+        .expect("an open coordinator to accept work");
+
+    // The consumer goes away with that work still accepted and never run.
+    drop(private);
+
+    // It was promised a consumer, so it is owed an answer. Naming it in a
+    // local and letting that local drop would be the same loss as dropping it
+    // unnamed.
+    // Bounded, so a failure to settle fails this test rather than hanging it.
+    assert_eq!(
+        delivery_receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("accepted work must be settled when its consumer disappears"),
+        XAuthorityClientInputDelivery {
+            client,
+            delivery,
+            outcome: XAuthorityInputDeliveryOutcome::TargetGone,
+        }
+    );
+}
+
+#[test]
+fn one_turn_of_service_is_bounded_while_a_producer_keeps_refilling() {
+    const PRIVATE_CLEANUP_RESERVE_FOR_TESTS: usize = 4;
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4096);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(1).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    // The constructor's own sizing at an ingress capacity of one.
+    let budget = 2 + PRIVATE_CLEANUP_RESERVE_FOR_TESTS;
+
+    // A producer that keeps putting work back as fast as the turn takes it.
+    // Draining until empty would never end here, and the report would grow
+    // without limit.
+    let control = private.control_producer();
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_for_producer = std::sync::Arc::clone(&stop);
+    let refiller = std::thread::spawn(move || {
+        let mut transaction = 1u64;
+        while !stop_for_producer.load(std::sync::atomic::Ordering::Acquire) {
+            let _ = control.submit(XAuthorityClientControlCommand {
+                client: XServerFrontendClientId(999),
+                command: XAuthorityControlCommand::FocusSurface {
+                    transaction: TransactionId::from_raw(transaction),
+                    surface: SurfaceId::new(61, 1),
+                },
+            });
+            transaction = transaction.wrapping_add(1);
+        }
+    });
+
+    let outcome = private.route_pending();
+    stop.store(true, std::sync::atomic::Ordering::Release);
+    refiller.join().expect("the refilling producer");
+
+    // Stopping on a routing failure is bounded too; the unbounded case is a
+    // turn that runs for as long as a producer keeps feeding it.
+    if let Ok(ran) = outcome {
+        assert!(
+            ran.len() <= budget,
+            "a turn must not exceed its budget while work keeps arriving: ran {}",
+            ran.len()
+        );
+    }
 }

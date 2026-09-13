@@ -37,16 +37,16 @@ impl SharedAdmission {
     /// here: those entries were promised a consumer and are owed an outcome,
     /// so they are handed to whoever closes rather than dropped with the
     /// queue.
-    fn close(&self) -> Vec<PrivateOperation> {
-        let Ok(mut queue) = self.ready.lock() else {
-            return Vec::new();
-        };
+    fn close(&self) -> Result<Vec<PrivateOperation>, ()> {
+        // A queue that cannot be opened cannot be closed or drained either.
+        // Returning an empty list here would say there was nothing owed.
+        let mut queue = self.ready.lock().map_err(|_| ())?;
         queue.closed = true;
         let mut stranded = Vec::new();
         while let Some((_, _, operation)) = queue.ready.take_next() {
             stranded.push(operation);
         }
-        stranded
+        Ok(stranded)
     }
 
     /// Accept runnable work, assigning its position as it is published.
@@ -108,6 +108,41 @@ impl SharedAdmission {
 pub struct PrivateRun {
     pub sequence: crate::ReadySequence,
     pub class: crate::ReadyClass,
+    /// Which operation this was, not merely what kind.
+    ///
+    /// A class alone says a record was classified, not that it accompanied the
+    /// work a producer actually submitted.
+    pub identity: PrivateIdentity,
+}
+
+/// Which submitted operation a run corresponds to.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivateIdentity {
+    /// The delivery a routed input carried, when it carried one.
+    Delivery(Option<XAuthorityInputDeliveryId>),
+    /// The transaction a control named.
+    Transaction(TransactionId),
+    /// A lease being retired.
+    Lease,
+    /// Control that names no transaction.
+    Untracked,
+}
+
+#[cfg(unix)]
+impl PrivateIdentity {
+    fn of(operation: &PrivateOperation) -> Self {
+        match operation {
+            PrivateOperation::RoutedInput(envelope) => Self::Delivery(envelope.route.delivery),
+            PrivateOperation::Control(control) => match control.command {
+                XAuthorityControlCommand::FocusSurface { transaction, .. } => {
+                    Self::Transaction(transaction)
+                }
+                _ => Self::Untracked,
+            },
+            PrivateOperation::LeaseRelease(_) => Self::Lease,
+        }
+    }
 }
 
 /// The shared queue and whether it is still being drained.
@@ -441,15 +476,47 @@ pub struct PrivateXServerFrontend {
     /// The one place runnable work is accepted, shared with every producer
     /// handle this frontend hands out.
     admission: Arc<SharedAdmission>,
+    /// The most this will run in one turn.
+    service_budget: usize,
 }
 
 #[cfg(unix)]
 impl Drop for PrivateXServerFrontend {
     fn drop(&mut self) {
         // Producers may outlive this. Closing stops them being told their work
-        // was accepted when nothing will ever run it, and hands back what was
-        // accepted and never run so it is not lost with the queue.
-        let _stranded = self.admission.close();
+        // was accepted when nothing will ever run it.
+        //
+        // What was accepted and never ran is SETTLED here, not handed to a
+        // binding that goes out of scope on the next line. Naming a vector and
+        // letting it drop is the same loss as dropping it unnamed; the work
+        // was promised a consumer and is owed an answer, and this is the last
+        // moment anything can give it one. The registry is still alive at this
+        // point, because fields drop after this runs.
+        let Ok(stranded) = self.admission.close() else {
+            return;
+        };
+        for operation in stranded {
+            let PrivateOperation::RoutedInput(envelope) = operation else {
+                // Control and cleanup have no delivery receipt to issue, and
+                // inventing one would answer a question nobody asked.
+                continue;
+            };
+            let _ = self.broker.registry.send_input_delivery(
+                self.broker
+                    .registry
+                    .surfaces
+                    .lock()
+                    .ok()
+                    .and_then(|surfaces| {
+                        surfaces
+                            .get(&envelope.route.request.target_surface)
+                            .map(|route| route.client)
+                    })
+                    .unwrap_or(XServerFrontendClientId(0)),
+                envelope.route.delivery,
+                XAuthorityInputDeliveryOutcome::TargetGone,
+            );
+        }
     }
 }
 
@@ -513,6 +580,7 @@ impl PrivateXServerFrontend {
         Self {
             broker,
             admission: Arc::new(SharedAdmission::new(staged)),
+            service_budget: capacity,
         }
     }
 
@@ -569,8 +637,13 @@ impl PrivateXServerFrontend {
     /// can only see how many ran cannot tell an ordered consumer from one that
     /// grouped entries someone else had already numbered.
     pub fn route_pending(&mut self) -> Result<Vec<PrivateRun>, XServerFrontendRouteError> {
-        let mut ran = Vec::new();
-        loop {
+        // Bounded by what the queue can hold, not by when producers stop.
+        // Draining until empty lets a producer that keeps replenishing hold
+        // this turn open and grow the report without limit, which is an
+        // unbounded allocation added to production to satisfy a test.
+        let budget = self.service_budget;
+        let mut ran = Vec::with_capacity(budget);
+        while ran.len() < budget {
             let next = self
                 .admission
                 .take_next()
@@ -578,8 +651,15 @@ impl PrivateXServerFrontend {
             let Some((sequence, class, operation)) = next else {
                 break;
             };
+            let identity = PrivateIdentity::of(&operation);
             self.run_one(operation)?;
-            ran.push(PrivateRun { sequence, class });
+            // Pushed into capacity taken before the effect, so recording never
+            // allocates after something has already happened.
+            ran.push(PrivateRun {
+                sequence,
+                class,
+                identity,
+            });
         }
         Ok(ran)
     }
