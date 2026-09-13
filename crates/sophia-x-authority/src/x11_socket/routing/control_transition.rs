@@ -629,6 +629,67 @@ impl PrivateXServerFrontend {
         &self.controller
     }
 
+    /// Execute one reserved request in the order the ranks require.
+    ///
+    /// Common first, then the ranked registry guard, then the admission read
+    /// under it -- and that guard stays held across the authority's own
+    /// validation and the application inside it. The permit callback uses what
+    /// was already read rather than locking again.
+    ///
+    /// The evidence is the live registration table, not an admission copied
+    /// into a route when the surface was registered. A copy says what was
+    /// admitted once; presence here says what is admitted now, and a client
+    /// that has gone is absent rather than stale. Absent, unreadable, or
+    /// admitted with no provenance all fail closed: nothing is substituted for
+    /// evidence that was not found.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn execute_ordered(
+        &self,
+        outstanding: &PrivateOutstandingRequest,
+        client: XServerFrontendClientId,
+        act: impl FnOnce(
+            &mut sophia_input_authority::ExecutionPermit<'_>,
+        ) -> Result<(), sophia_input_authority::RegistrationError>,
+    ) -> Result<sophia_input_authority::RequestCompletion, PrivateAuthorityRefusal> {
+        let token = outstanding.token();
+        self.controller.under_common_as_origin(|authority, issuer| {
+            // Taken after common, never before it. This is the whole reason
+            // the orchestration lives here rather than behind a parameter: a
+            // caller that read this first and then entered common would have
+            // inverted the rank, and one that read it and let go would be
+            // holding an answer that had stopped being true.
+            let clients = self
+                .broker
+                .registry
+                .clients
+                .lock()
+                .map_err(|_| PrivateAuthorityRefusal::Unreachable)?;
+            let Some(senders) = clients.get(&client) else {
+                return Err(PrivateAuthorityRefusal::NoCurrentAdmission);
+            };
+            let Some(admission) = senders.admission else {
+                return Err(PrivateAuthorityRefusal::NoCurrentAdmission);
+            };
+            let current = sophia_input_authority::ConnectionIdentity {
+                recipient: client.raw(),
+                connection_generation: admission.auth_provenance.session_generation,
+            };
+            // Still held. Validation compares against what was read a moment
+            // ago under this guard, and the application happens before it is
+            // released, so nothing can be revoked in between.
+            let completion = authority
+                .execute_reserved(issuer, token, current, act)
+                .map_err(PrivateAuthorityRefusal::Authority);
+            if completion.is_ok() {
+                // Ran, so the cell now holds a terminal outcome and losing the
+                // handle must not erase it.
+                outstanding.ran();
+            }
+            drop(clients);
+            completion
+        })?
+    }
+
     /// A reservation role for one admitted connection, bound to this
     /// instance's authority.
     ///

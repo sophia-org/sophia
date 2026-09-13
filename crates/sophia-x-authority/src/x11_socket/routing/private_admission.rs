@@ -392,13 +392,35 @@ impl PrivateIngress {
                     // caller to stop when it should wait, and tells it a
                     // decision was made when none was.
                     return Err(match refusal {
+                        // Busy, and worth retrying once whatever holds the
+                        // resource lets go.
                         PrivateAuthorityRefusal::Authority(
-                            sophia_input_authority::RegistrationError::Capacity(_),
+                            sophia_input_authority::RegistrationError::Capacity(
+                                sophia_input_authority::CapacityError::NoCompletionCell
+                                | sophia_input_authority::CapacityError::NoGrantSlot,
+                            ),
                         ) => PrivateSendError::Saturated(envelope.route),
+                        // Terminal. An identity counter that reached its end
+                        // does not refill, and the authority stops rather than
+                        // wrapping because a reused identity would let a stale
+                        // capability validate against a fresh grant. Telling a
+                        // caller to retry that is telling it to spin. This is
+                        // the authority's own allocator, which the ingress
+                        // counter's exhaustion check says nothing about.
+                        PrivateAuthorityRefusal::Authority(
+                            sophia_input_authority::RegistrationError::Capacity(
+                                sophia_input_authority::CapacityError::IdentityExhausted,
+                            ),
+                        ) => PrivateSendError::Exhausted(envelope.route),
                         PrivateAuthorityRefusal::Unreachable => {
                             PrivateSendError::Unavailable(envelope.route)
                         }
-                        PrivateAuthorityRefusal::Authority(_) => {
+                        // Reserving asks the authority, not the registry, so
+                        // this cannot arise here. Answered rather than
+                        // declared unreachable, because the work is in hand
+                        // either way and nothing admitted it.
+                        PrivateAuthorityRefusal::NoCurrentAdmission
+                        | PrivateAuthorityRefusal::Authority(_) => {
                             PrivateSendError::Denied(envelope.route)
                         }
                     });

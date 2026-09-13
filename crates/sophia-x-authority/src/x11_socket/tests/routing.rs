@@ -1295,7 +1295,7 @@ impl TransitionThroughPrivate for crate::TransitionAccess<'_> {
     ) -> Result<crate::TransitionToken, crate::ControlEpochRefusal> {
         private
             .authority()
-            .under_transition(|authority, issuer| {
+            .under_common_as_origin(|authority, issuer| {
                 self.request(authority, issuer, kind, control_epoch, publication)
             })
             .expect("the authority to be reachable")
@@ -10998,6 +10998,42 @@ fn a_private_frontend_gates_the_authority_it_actually_owns() {
     );
 }
 
+/// The session generation these tests admit clients under.
+const ROLE_SESSION_GENERATION: u64 = 5;
+
+/// A client admitted the way the production lookup expects to find one.
+fn admitted(client: XServerFrontendClientId) -> sophia_protocol::ClientAdmissionContext {
+    sophia_protocol::ClientAdmissionContext::new(
+        sophia_protocol::ClientAdmissionId::from_raw(client.raw()),
+        sophia_protocol::NamespaceContext::new(
+            NamespaceId::from_raw(client.raw()),
+            sophia_protocol::NamespaceProfile::Confined,
+            sophia_protocol::NamespaceCapabilities::NONE,
+        )
+        .unwrap(),
+        sophia_protocol::ClientAuthProvenance::new(
+            sophia_protocol::ClientAuthenticationMethod::PeerCredentials,
+            ROLE_SESSION_GENERATION,
+        )
+        .unwrap(),
+    )
+    .unwrap()
+}
+
+/// Register a client so the ordered execution path can find current evidence
+/// for it, and keep the registration alive.
+fn admit_role_client(
+    private: &crate::PrivateXServerFrontend,
+    client: XServerFrontendClientId,
+) -> XServerFrontendClientRouteRegistration {
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    registration
+}
+
 fn private_for_roles() -> crate::PrivateXServerFrontend {
     let (sender, _receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
@@ -11016,16 +11052,25 @@ fn private_for_roles() -> crate::PrivateXServerFrontend {
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"))
 }
 
+/// The connection identity the ordered path will read back for this client.
+///
+/// Built the same way on both sides on purpose: the recipient is the client
+/// and the generation is the one Session admitted it under. A test that
+/// invented either would be checking that two of its own constants match.
 fn role_connection(recipient: u64) -> sophia_input_authority::ConnectionIdentity {
     sophia_input_authority::ConnectionIdentity {
         recipient,
-        connection_generation: 1,
+        connection_generation: ROLE_SESSION_GENERATION,
     }
 }
 
 #[test]
 fn one_producer_cannot_consume_another_producers_completion() {
     let private = private_for_roles();
+    // Admitted, because execution reads the live registration table rather
+    // than trusting what the request remembers.
+    let _first_admitted = admit_role_client(&private, XServerFrontendClientId(501));
+    let _second_admitted = admit_role_client(&private, XServerFrontendClientId(502));
     let first = private
         .reservation_role(role_connection(501), DeviceId::from_raw(1))
         .expect("a capability for the first producer");
@@ -11042,14 +11087,13 @@ fn one_producer_cannot_consume_another_producers_completion() {
     // Both execute, so both have an outcome waiting. The connection handed to
     // execution is the evidence a caller read now, not the one custody
     // remembers -- here they agree, because nothing has revoked either.
-    for (request, connection) in [
-        (&first_request, role_connection(501)),
-        (&second_request, role_connection(502)),
+    for (request, client) in [
+        (&first_request, XServerFrontendClientId(501)),
+        (&second_request, XServerFrontendClientId(502)),
     ] {
         assert!(
             private
-                .authority()
-                .execute(request, connection, |permit| permit.begin_external_effect())
+                .execute_ordered(request, client, |permit| permit.begin_external_effect())
                 .is_ok(),
             "each producer's own request executes"
         );
@@ -11106,6 +11150,7 @@ fn a_controller_refuses_an_authority_paired_with_another_issuer() {
 #[test]
 fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
     let private = private_for_roles();
+    let _admitted = admit_role_client(&private, XServerFrontendClientId(503));
     let role = private
         .reservation_role(role_connection(503), DeviceId::from_raw(3))
         .expect("a capability");
@@ -11123,9 +11168,7 @@ fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
     // Moved in and dropped while this thread holds common. Taking common again
     // to dispose is a deadlock rather than a rank question, so the debt is
     // recorded and paid by the next caller that holds it.
-    let completion = private
-        .authority()
-        .execute(&request, role_connection(503), move |permit| {
+    let completion = private.execute_ordered(&request, XServerFrontendClientId(503), move |permit| {
             drop(stranded);
             permit.begin_external_effect()
         });
@@ -11311,6 +11354,7 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
 #[test]
 fn a_deferred_disposal_records_and_pays_through_a_poisoned_debt_list() {
     let private = private_for_roles();
+    let _admitted = admit_role_client(&private, XServerFrontendClientId(521));
     let running = private
         .reservation_role(role_connection(521), DeviceId::from_raw(1))
         .expect("a capability");
@@ -11337,9 +11381,7 @@ fn a_deferred_disposal_records_and_pays_through_a_poisoned_debt_list() {
         .is_err()
     );
 
-    let completion = private
-        .authority()
-        .execute(&request, role_connection(521), move |permit| {
+    let completion = private.execute_ordered(&request, XServerFrontendClientId(521), move |permit| {
             drop(stranded);
             permit.begin_external_effect()
         });
@@ -11355,6 +11397,7 @@ fn a_deferred_disposal_records_and_pays_through_a_poisoned_debt_list() {
 #[test]
 fn a_debt_already_recorded_is_paid_through_a_poisoned_list() {
     let private = private_for_roles();
+    let _admitted = admit_role_client(&private, XServerFrontendClientId(523));
     let running = private
         .reservation_role(role_connection(523), DeviceId::from_raw(1))
         .expect("a capability");
@@ -11369,9 +11412,7 @@ fn a_debt_already_recorded_is_paid_through_a_poisoned_list() {
     let stranded = other.reserve(stamp, 1).expect("an unpublished reservation");
 
     // Recorded first, with the list healthy.
-    let completion = private
-        .authority()
-        .execute(&request, role_connection(523), move |permit| {
+    let completion = private.execute_ordered(&request, XServerFrontendClientId(523), move |permit| {
             drop(stranded);
             permit.begin_external_effect()
         });
@@ -11399,6 +11440,7 @@ fn a_debt_already_recorded_is_paid_through_a_poisoned_list() {
 #[test]
 fn recording_a_disposal_debt_does_not_allocate() {
     let private = private_for_roles();
+    let _admitted = admit_role_client(&private, XServerFrontendClientId(525));
     let reserved = private
         .authority()
         .owed_disposal
@@ -11422,9 +11464,7 @@ fn recording_a_disposal_debt_does_not_allocate() {
         .expect("a reservation")
         .accepted();
     let stranded = other.reserve(stamp, 1).expect("an unpublished reservation");
-    let _ = private
-        .authority()
-        .execute(&request, role_connection(525), move |permit| {
+    let _ = private.execute_ordered(&request, XServerFrontendClientId(525), move |permit| {
             drop(stranded);
             permit.begin_external_effect()
         });
@@ -11441,6 +11481,81 @@ fn recording_a_disposal_debt_does_not_allocate() {
             .capacity(),
         reserved,
         "recording a debt used storage that was already reserved"
+    );
+}
+
+#[test]
+fn execution_refuses_when_nothing_is_currently_admitted() {
+    let private = private_for_roles();
+    // Deliberately not admitted. The role still issues, because a capability
+    // is granted for a connection rather than proved against a live client.
+    let role = private
+        .reservation_role(role_connection(531), DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let request = role.reserve(stamp, 1).expect("a reservation").accepted();
+
+    let outcome = private.execute_ordered(&request, XServerFrontendClientId(531), |_permit| {
+        panic!("the permit must not be reached when nothing is admitted");
+    });
+    assert!(
+        matches!(outcome, Err(crate::PrivateAuthorityRefusal::NoCurrentAdmission)),
+        "execution refuses before any effect when nothing answers for the work, got {outcome:?}"
+    );
+
+    // Refused, not failed-after-application: nothing ran, so the request is
+    // still reservable evidence rather than a record of an effect.
+    let admitted = admit_role_client(&private, XServerFrontendClientId(531));
+    assert!(
+        private
+            .execute_ordered(&request, XServerFrontendClientId(531), |permit| permit
+                .begin_external_effect())
+            .is_ok(),
+        "and once the client is admitted the same request runs"
+    );
+    drop(admitted);
+}
+
+#[test]
+fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
+    let private = private_for_roles();
+    let _admitted = admit_role_client(&private, XServerFrontendClientId(541));
+    let role = private
+        .reservation_role(role_connection(541), DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let request = role.reserve(stamp, 1).expect("a reservation").accepted();
+    let token = request.token();
+
+    assert!(
+        private
+            .execute_ordered(&request, XServerFrontendClientId(541), |permit| permit
+                .begin_external_effect())
+            .is_ok()
+    );
+
+    // The handle goes without the outcome being taken. Reclaiming the cell
+    // here would erase what happened: a later observation would report a stale
+    // request rather than the outcome that really occurred, and capacity would
+    // have been bought by destroying evidence.
+    drop(request);
+
+    let surviving = private
+        .authority()
+        .under_common_as_origin(|authority, _issuer| {
+            // Reached through the private field rather than a production
+            // accessor: taking an outcome without holding its custody is
+            // exactly what production must not offer, so it does not get a
+            // method for the sake of a test.
+            authority.take_completion(&private.submit, token, role_connection(541))
+        })
+        .expect("a readable authority");
+    assert!(
+        matches!(
+            surviving,
+            Ok(Some(sophia_input_authority::RequestCompletion::Processed))
+        ),
+        "the terminal outcome survived the handle, got {surviving:?}"
     );
 }
 
