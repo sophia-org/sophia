@@ -67,8 +67,10 @@ pub struct ReadyAdmissionError<T> {
 /// Why a stream could not be configured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadyConfigurationError {
-    /// The cleanup reserve would leave no room for anything else, or exceeds
-    /// the capacity it is carved from.
+    /// The cleanup reserve exceeds the capacity it is carved from.
+    ///
+    /// A reserve equal to the capacity is legal and means only cleanup is
+    /// admitted, which is a choice someone might mean.
     ReserveExceedsCapacity { capacity: usize, reserve: usize },
 }
 
@@ -159,19 +161,24 @@ impl<T> ReadyStream<T> {
         class: ReadyClass,
         payload: T,
     ) -> Result<ReadySequence, ReadyAdmissionError<T>> {
-        if self.remaining_for(class) == 0 {
-            return Err(ReadyAdmissionError {
-                refusal: ReadyRefusal::AtCapacity,
-                payload,
-            });
-        }
-        let sequence = ReadySequence(self.next_sequence);
-        // Checked before publishing, so a stream that can no longer name its
-        // entries refuses rather than reusing a name an earlier one answers to.
-        let next = match next_ready_sequence(self.next_sequence) {
+        // Every reason to refuse is decided before the payload is touched, and
+        // they leave through one return. Two return sites would let one of
+        // them keep the payload while the other handed it back, and only the
+        // reachable one would ever be tested.
+        //
+        // The sequence is checked here too, so a stream that can no longer
+        // name its entries refuses rather than reusing a name an earlier entry
+        // still answers to.
+        let outcome = if self.remaining_for(class) == 0 {
+            Err(ReadyRefusal::AtCapacity)
+        } else {
+            next_ready_sequence(self.next_sequence)
+        };
+        let next = match outcome {
             Ok(next) => next,
             Err(refusal) => return Err(ReadyAdmissionError { refusal, payload }),
         };
+        let sequence = ReadySequence(self.next_sequence);
         self.next_sequence = next;
         self.entries.push_back((sequence, class, payload));
         Ok(sequence)

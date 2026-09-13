@@ -225,3 +225,42 @@ fn an_oversized_reserve_is_refused_rather_than_quietly_changing_the_policy() {
         .admit(ReadyClass::Cleanup, "teardown")
         .expect("cleanup has its share");
 }
+
+/// Counts its own destruction, so a payload quietly dropped is visible.
+#[derive(Debug, PartialEq, Eq)]
+struct Counted(&'static str, std::rc::Rc<std::cell::Cell<usize>>);
+
+impl Drop for Counted {
+    fn drop(&mut self) {
+        self.1.set(self.1.get() + 1);
+    }
+}
+
+#[test]
+fn a_refusal_destroys_nothing_it_was_handed() {
+    let drops = std::rc::Rc::new(std::cell::Cell::new(0));
+    let mut ready: ReadyStream<Counted> =
+        ReadyStream::new(NonZeroUsize::new(1).expect("a capacity"), 0).expect("valid");
+    ready
+        .admit(ReadyClass::RoutedInput, Counted("queued", drops.clone()))
+        .expect("capacity");
+
+    let refused = ready
+        .admit(ReadyClass::RoutedInput, Counted("refused", drops.clone()))
+        .expect_err("the queue is full");
+
+    // Nothing was destroyed inside admission. In production that Drop would
+    // run while the queue's guard is held, on a payload its owner still needs.
+    assert_eq!(drops.get(), 0, "a refusal must not destroy what it refused");
+    assert_eq!(refused.payload.0, "refused");
+    // And the entry already queued is untouched. Held rather than discarded,
+    // so its own drop does not confuse the count below.
+    let queued = ready.take_next().expect("the queued entry");
+    assert_eq!(queued.2.0, "queued");
+    assert_eq!(drops.get(), 0);
+
+    drop(refused);
+    assert_eq!(drops.get(), 1, "the owner drops it, when the owner chooses");
+    drop(queued);
+    assert_eq!(drops.get(), 2);
+}
