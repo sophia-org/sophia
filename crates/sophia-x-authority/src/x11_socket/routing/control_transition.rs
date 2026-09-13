@@ -451,6 +451,19 @@ pub struct PrivateXServerFrontend {
     service_budget: usize,
     /// Where obligations go if a settlement handle is abandoned.
     durable: PrivateSettlementOwner,
+    /// Whether this instance still holds its failure slot.
+    ///
+    /// Released when the instance closes without failing, or handed over with
+    /// the queue when it does. Holding it past either would leak a slot that
+    /// another instance could have used.
+    failure_slot_held: bool,
+    /// Whether this instance's queue was unreadable when it closed.
+    ///
+    /// Remembered rather than recomputed. Settlement runs once, so asking a
+    /// second time answers about a closed queue rather than about what
+    /// happened, and Drop would conclude the instance never failed and release
+    /// a slot that is still in use.
+    failed: bool,
     /// Whether settlement has already run.
     ///
     /// shutdown consumes the frontend, so Drop still follows it. Without this
@@ -493,6 +506,7 @@ impl PrivateXServerFrontend {
                 // recovered. The handle still carries the capability, so a
                 // caller learns this from something that could have acted
                 // rather than from a log line.
+                self.failed = true;
                 return PrivateSettlement {
                     origin,
                     durable: self.durable.clone(),
@@ -525,9 +539,14 @@ impl Drop for PrivateXServerFrontend {
     fn drop(&mut self) {
         // The fallback for an owner that never called shutdown. The handle
         // this produces is dropped immediately, and its own Drop makes one
-        // final attempt with the capability still in hand before reporting
-        // what nobody is left to own.
-        let _fallback = self.settle_accepted();
+        // final attempt with the capability still in hand.
+        drop(self.settle_accepted());
+        if self.failure_slot_held && !self.failed {
+            // Closed without failing, so the slot belongs to whoever needs it
+            // next rather than to an instance that has gone.
+            self.durable.release_failure_slot();
+            self.failure_slot_held = false;
+        }
     }
 }
 
@@ -564,7 +583,11 @@ impl PrivateXServerFrontend {
         input_deliveries: std::sync::mpsc::Sender<XAuthorityClientInputDelivery>,
         gate: crate::ControlEpochGate,
         durable: &PrivateSettlementOwner,
-    ) -> Self {
+    ) -> Result<Self, AdmissionRefusal> {
+        // Before anything is exposed. An instance that cannot reserve the
+        // space to hand over its queue if it fails is not built at all, which
+        // costs a caller only an instance it never had.
+        durable.reserve_failure_slot()?;
         let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
             input_capacity,
             control_acknowledgements,
@@ -592,13 +615,15 @@ impl PrivateXServerFrontend {
             PRIVATE_CLEANUP_RESERVE,
         )
         .expect("a reserve smaller than the capacity it was added to");
-        Self {
+        Ok(Self {
             broker,
             admission: Arc::new(SharedAdmission::new(staged, durable.clone())),
             service_budget: capacity,
             durable: durable.clone(),
             settled: false,
-        }
+            failed: false,
+            failure_slot_held: true,
+        })
     }
 
     /// Submit work, and be told why if it is not accepted.

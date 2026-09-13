@@ -38,9 +38,16 @@ struct AbandonedSettlements {
     /// The most failed instances this will hold.
     ///
     /// Bounded separately from credits, because a poisoned instance can arrive
-    /// having accepted nothing at all, so credits do not account for it. Space
-    /// is taken at construction rather than grown during cleanup.
+    /// having accepted nothing at all, so credits do not account for it.
     failed_capacity: usize,
+    /// Failure slots taken by live instances.
+    ///
+    /// Reserved before an instance is exposed and held for its whole life, so
+    /// a transfer after failure can never be refused. Checking capacity when
+    /// a failed queue arrives would be refusing after the failure, with
+    /// nowhere to put what is refused -- the same shape as counting an
+    /// overflowing obligation as lost.
+    failure_slots: usize,
     /// Credits taken when work was accepted, held until it is discharged.
     ///
     /// Reserved before acceptance rather than checked at transfer. A bound
@@ -67,6 +74,7 @@ impl PrivateSettlementOwner {
                 held: Vec::with_capacity(capacity),
                 failed: Vec::with_capacity(capacity),
                 failed_capacity: capacity,
+                failure_slots: 0,
                 reserved: 0,
                 capacity,
             })),
@@ -92,12 +100,9 @@ impl PrivateSettlementOwner {
         queue: &Arc<Mutex<SharedQueue>>,
     ) {
         if let Ok(mut held) = self.inner.lock() {
-            if held.failed.len() >= held.failed_capacity {
-                // Space was taken at construction. Past it there is nothing to
-                // record into, and growing here would allocate during the
-                // cleanup that is already going wrong.
-                return;
-            }
+            // No capacity check. This instance reserved its slot before it was
+            // exposed, so the space is already its own; refusing here would be
+            // refusing after the failure, with nowhere to put what is refused.
             held.failed.push(FailedInstance {
                 origin: origin.clone(),
                 queue: Arc::clone(queue),
@@ -117,7 +122,11 @@ impl PrivateSettlementOwner {
         let Ok(mut held) = self.inner.lock() else {
             return 0;
         };
-        let failed = std::mem::take(&mut held.failed);
+        // Drained in place rather than taken: mem::take would swap in a fresh
+        // vector of capacity zero and drop the buffer reserved at
+        // construction, so the next failure would allocate during cleanup --
+        // exactly what reserving it was meant to avoid.
+        let failed: Vec<FailedInstance> = held.failed.drain(..).collect();
         let mut recovered = 0usize;
         for instance in failed {
             let mut queue = match instance.queue.lock() {
@@ -137,6 +146,9 @@ impl PrivateSettlementOwner {
                 held.reserved = held.reserved.saturating_sub(1);
             }
             recovered = recovered.saturating_add(before.saturating_sub(survivors.len()));
+            // The failure is resolved, so its slot is free for another
+            // instance.
+            held.failure_slots = held.failure_slots.saturating_sub(1);
             for operation in survivors {
                 held.held.push((instance.origin.clone(), operation));
             }
@@ -150,6 +162,29 @@ impl PrivateSettlementOwner {
     /// work is answered, so it covers pending, in-flight and abandoned alike.
     pub fn reserved(&self) -> usize {
         self.inner.lock().map(|held| held.reserved).unwrap_or(0)
+    }
+
+    /// Take a failure slot for an instance about to be exposed.
+    ///
+    /// Taken before exposure, so an instance that exists can always hand over
+    /// its queue if it fails. An instance that cannot get one is never built.
+    fn reserve_failure_slot(&self) -> Result<(), AdmissionRefusal> {
+        let Ok(mut held) = self.inner.lock() else {
+            return Err(AdmissionRefusal::Unavailable);
+        };
+        if held.failure_slots >= held.failed_capacity {
+            return Err(AdmissionRefusal::Saturated);
+        }
+        held.failure_slots = held.failure_slots.saturating_add(1);
+        Ok(())
+    }
+
+    /// Release a failure slot whose instance closed without failing, or whose
+    /// failure has been resolved.
+    fn release_failure_slot(&self) {
+        if let Ok(mut held) = self.inner.lock() {
+            held.failure_slots = held.failure_slots.saturating_sub(1);
+        }
     }
 
     /// Take a credit for work about to be accepted, if one is free.
