@@ -545,11 +545,7 @@ impl ContentAllocationStore {
             || snapshot.scale_generation != output.scale_generation
             || snapshot.scale_numerator != output.scale_numerator
             || snapshot.scale_denominator != output.scale_denominator
-            || quantize(
-                snapshot.logical,
-                snapshot.scale_numerator,
-                snapshot.scale_denominator,
-            ) != Some(snapshot.pixel)
+            || !resolved_pixel_geometry_is_valid(snapshot)
             || !inside(snapshot.pixel, output.local_width, output.local_height)
             || snapshot.allowed_reservation_extent > self.limits.max_reservation_extent
             || (snapshot.role == 2 && snapshot.allowed_reservation_extent != 0)
@@ -615,6 +611,25 @@ impl ContentAllocationStore {
             transaction,
             record,
         });
+    }
+}
+
+fn resolved_pixel_geometry_is_valid(snapshot: &ContentAllocationSnapshot) -> bool {
+    let Some(quantized) = quantize(
+        snapshot.logical,
+        snapshot.scale_numerator,
+        snapshot.scale_denominator,
+    ) else {
+        return false;
+    };
+    if snapshot.role == 1 {
+        quantized == snapshot.pixel
+    } else {
+        // A popout origin is selected from its physical parent anchor. At a
+        // fractional scale it may have no integer logical representation; the
+        // exact acknowledged physical origin is authoritative while the
+        // desired logical extent still determines its physical size.
+        quantized.width == snapshot.pixel.width && quantized.height == snapshot.pixel.height
     }
 }
 

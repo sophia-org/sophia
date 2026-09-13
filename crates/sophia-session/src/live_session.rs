@@ -715,6 +715,8 @@ pub(crate) fn run_persistent_xterm_session(
             LiveMetadataShell::start(
                 process,
                 config.shell_panel_thickness,
+                config.shell_content_enabled,
+                config.shell_gpu_memory_bytes,
                 config.shell_config.as_deref(),
             )
         })

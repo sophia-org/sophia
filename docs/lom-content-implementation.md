@@ -77,9 +77,15 @@ role and coverage budgets, endpoint quantization, generation changes and
 correlated grant, rejection and release results. The protected host makes Lom
 request its panel allocation rather than injecting a fixture behind the client.
 
-This service is not yet called by the production owner loop. The production
-topology and placement adapter, actions and native renderer integration remain
-absent.
+The production metadata-shell owner now calls the resource, allocation, demand,
+candidate, preparation and presentation services from its bounded owner loop.
+It publishes current outputs, resolves panel and anchored-popout allocations,
+projects accepted pixels into Engine composition, retains immutable resource
+leases through renderer retirement, and reports Presented only after the exact
+native candidate retires. Panel reservation bands replace the presented work
+area at that same boundary. The content grant remains unreachable in production
+until the separately admitted GPU domain exists. Discrete actions and exact
+presented-target routing remain absent.
 Event creation and output queueing are not proof of client receipt. Cancellation
 echoes its request transaction; timeout correlates to Begin. Peer loss accounts
 for undeliverable events without reporting delivery.
@@ -158,10 +164,11 @@ No render-node bind, GPU permission, installed profile or shell replacement was
 added. The CPU pool does not claim to count renderer/upload copies that are not
 yet integrated with it.
 
-Still required: action lifecycle, production allocation/demand/candidate
-service and work-area integration, native upload/composition/retirement,
-production operator-policy configuration, GPU admission, Lom connection
-and exact presented-target adapter, and attended acceptance. The first live
-configuration is workspaces, clock and calendar. Other Minimal modules remain
-fixtures until authorized live sources exist. Acceptance must prove retirement,
-activation, anchoring, consumed outside dismissal, restart and output changes.
+Still required: action lifecycle, GPU-domain launch admission, Lom's persistent
+connection and exact presented-target adapter, and attended acceptance. The
+operator profile vocabulary now defaults content off, admits an explicit
+content decision, and validates the exact prototype GPU-memory number. The first
+live configuration is workspaces, clock and calendar. Other Minimal modules
+remain fixtures until authorized live sources exist. Acceptance must prove
+retirement, activation, anchoring, consumed outside dismissal, restart and
+output changes.

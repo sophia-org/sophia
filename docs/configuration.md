@@ -292,12 +292,20 @@ existed requests. A depth beyond the
 rather than when the shell first claims, and a panel with no enabled shell is
 refused outright rather than ignored. The compiled profile makes no reservation.
 
-**Known enforcement defect:** Session currently passes this value only through
-`SOPHIA_SHELL_BAR_THICKNESS`; admission does not compare the shell's claim with
-the configured allowance. A shell can exceed it, including requesting a
-reservation when the setting is absent or zero, subject to the wire's 512-pixel
-maximum and output geometry checks. [The admission investigation](notes/investigations/gl2ooa99-shell-reservation-admission-ignores-the-configured-panel-depth.md)
-records the source evidence and tracks repair in `t083`.
+Session also passes this value through `SOPHIA_SHELL_BAR_THICKNESS` as a private
+hint, but treats the profile as authoritative: allocation admission refuses a
+panel deeper than the configured allowance, including every nonzero panel when
+the allowance is absent or zero. [The admission investigation](notes/investigations/gl2ooa99-shell-reservation-admission-ignores-the-configured-panel-depth.md)
+records the repaired boundary.
+
+`shell { content #true; gpu-memory-bytes 268435456; }` opts the selected shell
+into the content workflow and names the admitted prototype GPU-domain ceiling.
+Content defaults to denied. The first implementation accepts exactly 256 MiB;
+a different value needs a separately measured admission decision. These settings
+are necessary policy evidence, but do not themselves grant a render node. The
+production grant remains unavailable until startup can place the stopped shell
+child in a verified cgroup whose device-memory, process-memory, and process-count
+limits match the accepted GPU-domain design.
 
 The claim rides on the shell's candidate rather than a request of its own:
 Engine admits it against the realized output topology, and it reduces the work
@@ -306,10 +314,11 @@ that clear it commit together. Withdrawal is a later candidate that reserves
 nothing, through the same path. Losing the shell connection retains the
 presented claim beside the retained pixels — the work area does not grow while
 nothing can present into the strip — and a reconnected shell re-claims at its
-fresh epoch. Today the claim lives for as long as the switcher is visible. The
-current descriptor reservation path is tied to the switcher lifecycle;
-independent persistent panels are specified by the unimplemented content
-capability within the same admitted native shell, and the delivery gap is
+fresh epoch. The descriptor claim lives for as long as the switcher is visible.
+The content path now owns independent panel allocations, resources, candidates,
+work-area bands, composition and native-retirement outcomes within the same
+admitted native shell. Production admission is still closed by the GPU-domain
+gate, and semantic content input remains pending. The original delivery gap is
 recorded in
 [indicator delivery does not yet provide native panel presentation](notes/investigations/wjctvtsk-indicator-delivery-does-not-yet-provide-native-panel-presentation.md).
 The desktop-profile form of `config check` runs the same typed shortcut,

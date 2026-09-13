@@ -242,6 +242,16 @@ fn replace_displayed_surface(
     displayed_surfaces.insert(surface, LiveDisplayedSurface { layer })
 }
 
+/// One Engine-validated content candidate retained until a successor native
+/// frame retires it. Each image carries the protocol resource lease that owns
+/// its immutable pixels.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveShellContentFrame {
+    pub output: OutputId,
+    pub candidate_generation: u64,
+    pub images: Vec<sophia_engine::CompositorContentImage>,
+}
+
 pub struct LiveProductionVisualRuntime {
     /// A revoked native seat must not acquire headless presentation semantics
     /// while final authority removals are drained.
@@ -282,6 +292,7 @@ pub struct LiveProductionVisualRuntime {
     indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
     descriptor_overlay_interactive: bool,
+    shell_content: BTreeMap<OutputId, LiveShellContentFrame>,
     tab_bars: Vec<sophia_engine::TabBarProjection>,
     tab_frames: BTreeMap<OutputId, CompositorDisplayList>,
     pending_focus_ring_observation: Option<LiveFocusRingObservation>,
@@ -406,6 +417,7 @@ impl LiveProductionVisualRuntime {
             indicator_publication: None,
             descriptor_overlay: None,
             descriptor_overlay_interactive: false,
+            shell_content: BTreeMap::new(),
             tab_bars: Vec::new(),
             tab_frames: BTreeMap::new(),
             pending_focus_ring_observation: None,
