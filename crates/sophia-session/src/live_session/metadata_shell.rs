@@ -1,4 +1,5 @@
 use super::*;
+mod content;
 pub(crate) mod indicators;
 
 mod launcher;
@@ -70,6 +71,7 @@ struct PendingDescriptorActivation {
 /// Engine, and waits for the output-local presentation boundary before enabling
 /// activation.
 pub(super) struct LiveMetadataShell {
+    content: content::LiveContentSession,
     tabs: LiveTabSession,
     indicators: indicators::LiveIndicatorState,
     reference: LiveReferenceSession,
@@ -89,6 +91,7 @@ pub(super) struct LiveMetadataShell {
     presented: Option<PresentedShellCandidate>,
     presented_actions: BTreeMap<sophia_protocol::ToplevelActionCapabilityRef, SurfaceId>,
     reservations: sophia_engine::ShellWorkAreaCoordinator,
+    reservation_limit: Option<u16>,
     connected: bool,
     reconnect_at: Option<Instant>,
 }
@@ -97,6 +100,8 @@ impl LiveMetadataShell {
     pub(super) fn start(
         executable: &str,
         panel_thickness: Option<u16>,
+        content_requested: bool,
+        gpu_memory_bytes: Option<u64>,
         selected_config: Option<&std::path::Path>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let directory = std::env::temp_dir().join(format!(
@@ -140,6 +145,17 @@ impl LiveMetadataShell {
         }
         let supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
         let mut shell = Self {
+            // Production keeps GPU admission false until the startup owner has
+            // moved the stopped child into a verified dmem cgroup. An opted-in
+            // client receives an explicit unavailable refusal in that state.
+            content: content::LiveContentSession::new(
+                content_requested,
+                // A matching profile number is necessary evidence, never the
+                // cgroup/device admission itself. That owner is not present
+                // yet, so the effective grant remains unavailable.
+                content::production_gpu_domain_admitted(gpu_memory_bytes),
+                panel_thickness,
+            ),
             tabs: LiveTabSession::default(),
             indicators: indicators::LiveIndicatorState::default(),
             reference: LiveReferenceSession::default(),
@@ -159,6 +175,7 @@ impl LiveMetadataShell {
             presented: None,
             presented_actions: BTreeMap::new(),
             reservations: sophia_engine::ShellWorkAreaCoordinator::new(),
+            reservation_limit: panel_thickness,
             connected: false,
             reconnect_at: None,
         };
@@ -234,6 +251,43 @@ impl LiveMetadataShell {
             }
         }
         Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn service_content(
+        &mut self,
+        runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
+        scene: &sophia_backend_live::LiveProductionCpuScene,
+        native_scanout: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
+        outputs: &[sophia_engine::HeadlessOutput],
+        output_bounds: &[(sophia_protocol::OutputId, sophia_protocol::Rect)],
+        root: sophia_protocol::Rect,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let next = &mut self.next_transaction;
+        self.content.service(
+            &mut self.transport,
+            runtime,
+            scene,
+            native_scanout,
+            outputs,
+            output_bounds,
+            root,
+            &mut || {
+                let transaction = TransactionId::from_raw(*next);
+                *next = next
+                    .checked_add(1)
+                    .ok_or("metadata shell transaction identity exhausted")?;
+                Ok(transaction)
+            },
+        )
+    }
+
+    pub(super) fn observe_content_presentation(
+        &mut self,
+        runtime: &sophia_backend_live::LiveProductionVisualRuntime,
+    ) -> Result<bool, sophia_runtime::ShellTransportError> {
+        self.content
+            .observe_presentation(&mut self.transport, runtime)
     }
 
     pub(super) fn request_candidate(
@@ -406,6 +460,15 @@ impl LiveMetadataShell {
         // must not reach the shell as a prepared candidate it can expect to
         // present. Admission reduces nothing yet -- only the commit that
         // follows presentation moves the work area.
+        if !reservation_within_profile(candidate.reservation, self.reservation_limit) {
+            crate::session_eprintln!(
+                "sophia_live_metadata_shell schema=1 status=reservation_refused candidate_generation={} output={} reason=profile_limit configured_depth={}",
+                candidate.candidate_generation,
+                output.id.raw(),
+                self.reservation_limit.unwrap_or(0),
+            );
+            return Err("metadata shell reservation refused: profile_limit".into());
+        }
         match self.reservations.admit(
             connection_epoch,
             candidate.connection_epoch,
@@ -518,7 +581,11 @@ impl LiveMetadataShell {
 
     /// The shell's committed work-area claim, as bands the reduction consumes.
     pub(super) fn work_area_bands(&self) -> Vec<sophia_protocol::OutputReservation> {
-        self.reservations.active_bands()
+        if self.content.owns_work_area() {
+            self.content.work_area_bands().to_vec()
+        } else {
+            self.reservations.active_bands()
+        }
     }
 
     pub(super) fn reject_pending(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
@@ -630,10 +697,11 @@ impl LiveMetadataShell {
             .clone();
         self.transport.authorize_protected_peer(&evidence)?;
         let connection_epoch = self.next_connection_epoch;
-        let welcome = match self
-            .transport
-            .accept_and_negotiate(connection_epoch, Duration::from_secs(5))
-        {
+        let welcome = match self.transport.accept_and_negotiate_with_content_policy(
+            connection_epoch,
+            Duration::from_secs(5),
+            self.content.admission_policy(),
+        ) {
             Ok(welcome) => welcome,
             Err(error) => {
                 let _ = self.transport.disconnect();
@@ -670,6 +738,7 @@ impl LiveMetadataShell {
         self.pending = None;
         self.presented = None;
         self.presented_actions.clear();
+        self.content.reset_connection();
         // The in-flight claim dies with the connection. The presented one is
         // deliberately retained beside the inert pixels: growing the work area
         // while no shell can reproject it is the half-new desktop the
@@ -737,6 +806,14 @@ impl LiveMetadataShell {
             .ok_or("metadata shell transaction identity exhausted")?;
         Ok(transaction)
     }
+}
+
+pub(super) fn reservation_within_profile(
+    reservation: Option<sophia_protocol::ShellV1WorkAreaReservation>,
+    configured: Option<u16>,
+) -> bool {
+    reservation
+        .is_none_or(|reservation| configured.is_some_and(|limit| reservation.thickness_px <= limit))
 }
 
 pub(super) fn live_shell_activation_surfaces(

@@ -1,14 +1,16 @@
 #![cfg(feature = "gbm-probe")]
 
-use sophia_engine::DirectScanoutVerdict;
+use sophia_engine::{CompositorContentImage, CompositorNodeId, DirectScanoutVerdict};
 use sophia_engine::{
     HeadBindingOutcome, HeadCompositionPlan, HeadCompositorCommand, HeadLayerBinding,
     HeadLogicalTransform, HeadSamplingClass, OutputSceneCursor, RenderHeadId,
 };
 use sophia_protocol::{
-    BufferSource, CommittedSurfaceState, OutputHeadMapping, OutputId, OutputTransform, Rect,
-    Region, Size, SurfaceContentFidelity, SurfaceContentSet, SurfaceContentVariant, SurfaceId,
-    SurfaceRasterTransform,
+    BufferSource, CommittedSurfaceState, ContentGrant, ContentLimits, ContentResourceBegin,
+    ContentResourceChunk, ContentResourceEnd, ContentResourceId, ContentResourceRetire,
+    OutputHeadMapping, OutputId, OutputTransform, Rect, Region, ShellContentRecord, Size,
+    SurfaceContentFidelity, SurfaceContentSet, SurfaceContentVariant, SurfaceId,
+    SurfaceRasterTransform, TransactionId,
 };
 use sophia_renderer_live::{
     LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888, LiveCpuBufferSource, LiveCpuBufferUpdate,
@@ -19,6 +21,66 @@ use sophia_renderer_live::{
 };
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::Arc;
+
+fn content_resource() -> (
+    sophia_runtime::ContentResourceStore,
+    sophia_runtime::ContentResourceLease,
+) {
+    let grant = ContentGrant {
+        connection_epoch: 7,
+        content_grant_epoch: 9,
+    };
+    let resource = ContentResourceId {
+        id: 11,
+        generation: 1,
+    };
+    let mut store =
+        sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant)).unwrap();
+    store
+        .begin(
+            TransactionId::from_raw(1),
+            ContentResourceBegin {
+                grant,
+                resource,
+                width_px: 4,
+                height_px: 2,
+                rendered_scale_numerator: 1,
+                rendered_scale_denominator: 1,
+                pixel_format: 1,
+                chunk_count: 1,
+                total_bytes: 32,
+            },
+            0,
+        )
+        .unwrap();
+    store
+        .chunk(
+            TransactionId::from_raw(2),
+            &ContentResourceChunk {
+                grant,
+                resource,
+                ordinal: 0,
+                offset: 0,
+                bytes: vec![0x7f; 32],
+            },
+            0,
+        )
+        .unwrap();
+    store
+        .end(
+            TransactionId::from_raw(3),
+            &ContentResourceEnd {
+                grant,
+                resource,
+                total_bytes: 32,
+                chunk_count: 1,
+            },
+            0,
+        )
+        .unwrap();
+    let lease = store.lease(grant, resource).unwrap();
+    (store, lease)
+}
 
 fn plan() -> HeadCompositionPlan {
     let surface = SurfaceId::new(3, 1);
@@ -949,4 +1011,96 @@ fn a_compose_refusal_does_not_claim_the_target_is_invalid() {
         ),
         "ComposeRefused"
     );
+}
+
+#[test]
+fn shell_content_lowers_exact_pixels_and_keeps_the_resource_until_frame_retirement() {
+    let (mut store, lease) = content_resource();
+    let description = lease.description().clone();
+    let mut plan = plan();
+    plan.compositor.push(HeadCompositorCommand::ContentImage(
+        sophia_engine::HeadCompositorContentImage {
+            image: CompositorContentImage {
+                node: CompositorNodeId::ShellContent {
+                    output: plan.output,
+                    candidate: 17,
+                    surface: 0,
+                    placement: 0,
+                },
+                generation: description.resource.generation,
+                output_size_px: plan.native_size,
+                geometry_px: Rect {
+                    x: 15,
+                    y: 9,
+                    width: 4,
+                    height: 2,
+                },
+                size_px: Size {
+                    width: 4,
+                    height: 2,
+                },
+                stride: 16,
+                format: u32::from_le_bytes(*b"AR24"),
+                resource: lease,
+            },
+            geometry: Rect {
+                x: 15,
+                y: 9,
+                width: 4,
+                height: 2,
+            },
+            clip: Rect {
+                x: 15,
+                y: 9,
+                width: 4,
+                height: 2,
+            },
+        },
+    ));
+    let lowered = lower_head_composition_plan(
+        &plan,
+        &[LiveOwnedHeadCompositionSource {
+            surface: SurfaceId::new(3, 1),
+            source: BufferSource::CpuBuffer { handle: 42 },
+            kind: LiveOwnedHeadCompositionSourceKind::Cpu(source(42).buffer.into()),
+        }],
+    )
+    .unwrap();
+    let (buffer, placement) = lowered
+        .layers
+        .iter()
+        .find_map(|layer| match layer {
+            LiveOwnedMixedCompositionLayer::Cpu { buffer, placement }
+                if buffer.handle & (1 << 63) != 0 =>
+            {
+                Some((buffer, placement))
+            }
+            _ => None,
+        })
+        .expect("shell content did not lower to a CPU composition layer");
+    assert_eq!(&buffer.bytes[..], &[0x7f; 32]);
+    assert_eq!(placement.target.x, 15);
+    assert_eq!(placement.clip, Some(placement.target));
+
+    while store.take_event().is_some() {}
+    drop(plan);
+    store
+        .retire(
+            TransactionId::from_raw(4),
+            &ContentResourceRetire {
+                grant: description.grant,
+                resource: description.resource,
+            },
+        )
+        .unwrap();
+    store.collect();
+    assert!(store.take_event().is_none());
+
+    drop(lowered);
+    store.collect();
+    assert!(matches!(
+        store.take_event().map(|event| event.record),
+        Some(ShellContentRecord::ResourceReleased(released))
+            if released.resource == description.resource
+    ));
 }

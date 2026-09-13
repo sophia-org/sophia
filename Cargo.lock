@@ -1036,6 +1036,7 @@ dependencies = [
  "sophia-engine",
  "sophia-protocol",
  "sophia-renderer-native-egl",
+ "sophia-runtime",
  "sophia-xshmfence",
  "vello_cpu",
  "xcursor",

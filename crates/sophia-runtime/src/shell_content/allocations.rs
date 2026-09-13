@@ -545,25 +545,27 @@ impl ContentAllocationStore {
             || snapshot.scale_generation != output.scale_generation
             || snapshot.scale_numerator != output.scale_numerator
             || snapshot.scale_denominator != output.scale_denominator
-            || quantize(
-                snapshot.logical,
-                snapshot.scale_numerator,
-                snapshot.scale_denominator,
-            ) != Some(snapshot.pixel)
-            || !inside(snapshot.pixel, output.local_width, output.local_height)
+            || !resolved_pixel_geometry_is_valid(snapshot)
+            || output_pixel_extent(output)
+                .is_none_or(|(width, height)| !inside(snapshot.pixel, width, height))
             || snapshot.allowed_reservation_extent > self.limits.max_reservation_extent
             || (snapshot.role == 2 && snapshot.allowed_reservation_extent != 0)
         {
             return Err(ContentAllocationError::Malformed);
         }
-        let thickness = if matches!(snapshot.edge, 1 | 3) {
+        let logical_thickness = if matches!(snapshot.edge, 1 | 3) {
             snapshot.logical.height
         } else {
             snapshot.logical.width
         };
+        let pixel_thickness = if matches!(snapshot.edge, 1 | 3) {
+            snapshot.pixel.height
+        } else {
+            snapshot.pixel.width
+        };
         if (snapshot.role == 1
-            && (thickness > self.limits.max_panel_extent
-                || snapshot.allowed_reservation_extent > thickness))
+            && (logical_thickness > self.limits.max_panel_extent
+                || snapshot.allowed_reservation_extent > pixel_thickness))
             || (snapshot.role == 2
                 && (snapshot.pixel.width > self.limits.max_popout_extent_px
                     || snapshot.pixel.height > self.limits.max_popout_extent_px))
@@ -589,7 +591,10 @@ impl ContentAllocationStore {
             .sum();
         let area = retained
             .saturating_add(u64::from(candidate.pixel.width) * u64::from(candidate.pixel.height));
-        let output_area = u64::from(output.local_width) * u64::from(output.local_height);
+        let Some((output_width, output_height)) = output_pixel_extent(output) else {
+            return false;
+        };
+        let output_area = u64::from(output_width) * u64::from(output_height);
         area.saturating_mul(100)
             <= output_area.saturating_mul(u64::from(self.limits.max_content_coverage_percent))
     }
@@ -616,6 +621,34 @@ impl ContentAllocationStore {
             record,
         });
     }
+}
+
+fn resolved_pixel_geometry_is_valid(snapshot: &ContentAllocationSnapshot) -> bool {
+    let Some(quantized) = quantize(
+        snapshot.logical,
+        snapshot.scale_numerator,
+        snapshot.scale_denominator,
+    ) else {
+        return false;
+    };
+    if snapshot.role == 1 {
+        quantized == snapshot.pixel
+    } else {
+        // A popout origin is selected from its physical parent anchor. At a
+        // fractional scale it may have no integer logical representation; the
+        // exact acknowledged physical origin is authoritative while the
+        // desired logical extent still determines its physical size.
+        quantized.width == snapshot.pixel.width && quantized.height == snapshot.pixel.height
+    }
+}
+
+fn output_pixel_extent(output: &ContentOutputFactsEntry) -> Option<(u32, u32)> {
+    let extent = |logical: u32| {
+        let scaled = u128::from(logical).checked_mul(u128::from(output.scale_numerator))?;
+        let denominator = u128::from(output.scale_denominator);
+        u32::try_from(scaled.div_ceil(denominator)).ok()
+    };
+    Some((extent(output.local_width)?, extent(output.local_height)?))
 }
 
 fn valid_outputs(outputs: &[ContentOutputFactsEntry], limits: &ContentLimits) -> bool {

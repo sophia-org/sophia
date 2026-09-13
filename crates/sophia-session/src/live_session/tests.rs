@@ -14,7 +14,7 @@ mod glx_pixmap_export;
 mod live_session_shutdown;
 
 use super::metadata_broker::resolve_live_broker_toplevel_action;
-use super::metadata_shell::live_shell_activation_surfaces;
+use super::metadata_shell::{live_shell_activation_surfaces, reservation_within_profile};
 use super::startup_readiness::startup_required_submission_for_head;
 use super::startup_readiness::{
     StartupHeadRequirement, StartupNativeRecoveryReason, StartupOutputEvidence,

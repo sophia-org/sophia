@@ -278,6 +278,34 @@ pub fn lower_head_composition_plan_with_caches(
                     },
                 });
             }
+            HeadCompositorCommand::ContentImage(content) => {
+                if !content.clip.is_empty() {
+                    let identity = content.image.resource.description().resource;
+                    layers.push(LiveOwnedMixedCompositionLayer::Cpu {
+                        buffer: LiveSharedCpuBufferSource {
+                            handle: shell_content_handle(identity),
+                            size: content.image.size_px,
+                            stride: content.image.stride,
+                            format: content.image.format,
+                            generation: content.image.generation,
+                            bytes: content.image.resource.shared_bytes(),
+                        },
+                        placement: LiveCompositionPlacement {
+                            target: content.geometry,
+                            clip: Some(content.clip),
+                            transform: Transform::IDENTITY,
+                            alpha: 1.0,
+                            sampling: head_sampling_class(
+                                content.image.size_px,
+                                Size {
+                                    width: content.geometry.width,
+                                    height: content.geometry.height,
+                                },
+                            ),
+                        },
+                    });
+                }
+            }
         }
     }
     if let Some(cursor) = plan.cursor {
@@ -334,6 +362,10 @@ pub fn lower_head_composition_plan_with_caches(
         // so the demotion happens here, where the choice is made.
         direct_scanout,
     })
+}
+
+fn shell_content_handle(resource: sophia_protocol::ContentResourceId) -> u64 {
+    resource.id.rotate_left(17) ^ resource.generation ^ (1_u64 << 63)
 }
 
 /// The overlap of two head-native rects, empty when they do not meet.

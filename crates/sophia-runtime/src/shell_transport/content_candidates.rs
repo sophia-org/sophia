@@ -209,6 +209,12 @@ impl ShellSessionTransport {
             .map_err(Into::into)
     }
 
+    pub fn next_content_submission(&self) -> Option<(ContentOutputId, u64)> {
+        self.content_epochs
+            .active_candidates()
+            .and_then(|candidates| candidates.next_pending_candidate())
+    }
+
     pub fn content_prepared(
         &mut self,
         grant: sophia_protocol::ContentGrant,
