@@ -607,3 +607,11 @@ with evidence in `.artifacts/ready-stream-integration-7aefe013/`. The native man
 maps these as `m3_ready_stream_primitive`, expressly separate from real concurrent
 producer and executor obligations. Nineteen production obligations still have no
 implementation evidence; this queue result does not close them.
+
+The non-consuming installer through `0c24e888` passes two independent cases:
+refusing a different gate preserves the original gate, queued work and continued
+delivery; reinstalling the same gate preserves an in-flight transition and its
+eventual completion. Extracted control apply/report bodies are unchanged apart
+from whitespace. Evidence is `.artifacts/control-install-review-0c24e888/`.
+This verifies an already-gated broker's continuity. First activation after raw
+ingress exposure, the private constructor and real producer wiring remain open.
