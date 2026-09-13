@@ -291,18 +291,52 @@ pub struct PrivateSettlement {
     /// admission that holds the owner: that would be a cycle.
     queue: Arc<Mutex<SharedQueue>>,
     pending: Vec<PrivateOperation>,
+    /// Work that was routed and has not reached a terminal outcome.
+    ///
+    /// Carried from the instance rather than left to die with it. These hold
+    /// credits, and some of them -- input with a tracked delivery -- can still
+    /// finish, so destroying the identities would strand the credits and lose
+    /// the only means of noticing.
+    outstanding: Vec<PrivateIdentity>,
     queue_unreadable: bool,
 }
 
 #[cfg(unix)]
 impl PrivateSettlement {
     pub fn is_settled(&self) -> bool {
-        self.pending.is_empty() && !self.queue_unreadable
+        self.pending.is_empty() && self.outstanding.is_empty() && !self.queue_unreadable
     }
 
     /// How many obligations remain undischarged.
     pub fn owed(&self) -> usize {
         self.pending.len()
+    }
+
+    /// How many routed operations have not reached a terminal outcome.
+    pub fn outstanding(&self) -> usize {
+        self.outstanding.len()
+    }
+
+    /// Release credits for carried work that has since finished.
+    ///
+    /// The same rule as on a live instance: ended releases, live and
+    /// unreadable do not.
+    pub fn reclaim_outstanding(&mut self) -> usize {
+        let recovery = &self.origin.input_recovery;
+        let before = self.outstanding.len();
+        self.outstanding.retain(|identity| match identity {
+            PrivateIdentity::Delivery(Some(delivery)) => {
+                !matches!(recovery.delivery_state(*delivery), DeliveryState::Ended)
+            }
+            PrivateIdentity::Delivery(None)
+            | PrivateIdentity::Transaction(_)
+            | PrivateIdentity::Lease(_) => true,
+        });
+        let reclaimed = before.saturating_sub(self.outstanding.len());
+        for _ in 0..reclaimed {
+            self.durable.release();
+        }
+        reclaimed
     }
 
     /// Whether the queue could not be read, so its contents were unrecoverable.

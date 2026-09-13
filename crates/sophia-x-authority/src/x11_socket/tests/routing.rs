@@ -4858,7 +4858,7 @@ fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
 }
 
 #[test]
-fn a_credit_is_released_when_its_delivery_actually_ends() {
+fn review_terminal_recorded_then_observed_reclaims_exactly_once() {
     let namespace = NamespaceId::from_raw(63);
     let client = XServerFrontendClientId(81);
     let surface = SurfaceId::new(69, 1);
@@ -4929,4 +4929,120 @@ fn a_credit_is_released_when_its_delivery_actually_ends() {
 
     assert_eq!(private.reclaim_settled(), 1, "answered, so reclaimed");
     assert_eq!(durable.reserved(), 0);
+}
+
+#[test]
+fn review_terminal_unreadable_recovery_cannot_prove_live_delivery_settled() {
+    let namespace = NamespaceId::from_raw(64);
+    let client = XServerFrontendClientId(82);
+    let surface = SurfaceId::new(70, 1);
+    let window = XResourceId::new(0x200260, 1);
+    let durable = crate::PrivateSettlementOwner::with_capacity(4);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner: {refusal:?}"));
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    private
+        .ingress()
+        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(10400)))
+        .expect("an open coordinator to accept work");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(durable.reserved(), 1);
+
+    // The ledger becomes unreadable while that delivery is still live.
+    let recovery = private.broker.registry.input_recovery.clone();
+    let _ = std::thread::spawn(move || {
+        let _guard = recovery.state.lock().expect("the ledger");
+        panic!("poisoning the recovery ledger");
+    })
+    .join();
+
+    // Silence is not completion. Treating an unreadable ledger as every
+    // delivery having ended is the most dangerous reading available, because
+    // it frees whatever they were holding.
+    assert_eq!(
+        private.reclaim_settled(),
+        0,
+        "an unreadable ledger must not free a live credit"
+    );
+    assert_eq!(durable.reserved(), 1);
+}
+
+#[test]
+fn routed_work_survives_the_instance_that_routed_it() {
+    let namespace = NamespaceId::from_raw(65);
+    let client = XServerFrontendClientId(83);
+    let surface = SurfaceId::new(71, 1);
+    let window = XResourceId::new(0x200270, 1);
+    let durable = crate::PrivateSettlementOwner::with_capacity(4);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner: {refusal:?}"));
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    let delivery = XAuthorityInputDeliveryId::from_raw(10500);
+    private
+        .ingress()
+        .submit(motion_to(surface, delivery))
+        .expect("an open coordinator to accept work");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+
+    // The instance goes away with that work routed and unanswered.
+    let mut settlement = private.shutdown();
+    assert_eq!(
+        settlement.outstanding(),
+        1,
+        "routed work is carried, not destroyed with the instance"
+    );
+    assert!(!settlement.is_settled());
+    assert_eq!(durable.reserved(), 1);
+
+    // It can still finish afterwards, and the handle notices.
+    settlement
+        .origin
+        .send_input_delivery(
+            client,
+            Some(delivery),
+            XAuthorityInputDeliveryOutcome::Flushed,
+        )
+        .expect("the terminal outcome to be recorded");
+    assert!(settlement.origin.input_recovery.observe(
+        XAuthorityClientInputDelivery {
+            client,
+            delivery,
+            outcome: XAuthorityInputDeliveryOutcome::Flushed,
+        }
+    ));
+    assert_eq!(settlement.reclaim_outstanding(), 1);
+    assert_eq!(durable.reserved(), 0);
+    assert!(settlement.is_settled());
 }

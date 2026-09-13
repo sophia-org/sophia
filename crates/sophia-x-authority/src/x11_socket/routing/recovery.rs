@@ -47,6 +47,18 @@ struct InputRecovery {
 }
 
 #[cfg(unix)]
+/// What the recovery ledger knows about a delivery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeliveryState {
+    /// Still tracked, so still owed an outcome.
+    Live,
+    /// Tracked and finished, both recorded and observed.
+    Ended,
+    /// The ledger cannot be read, so nothing about this delivery is known.
+    /// Not the same as ended.
+    Unavailable,
+}
+
 /// Why the recovery ledger would not track a delivery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoveryAdmissionRefusal {
@@ -126,6 +138,23 @@ impl InputRecovery {
             && let Ok(mut state) = self.state.lock()
         {
             state.tickets.remove(&id);
+        }
+    }
+
+    /// Whether a delivery is still live, unreachable, or done.
+    ///
+    /// Three answers, because an unreadable ledger is not an ended delivery.
+    /// A caller told only "absent" would treat a poisoned ledger as every
+    /// delivery having finished, which is the most dangerous reading
+    /// available: it frees whatever those deliveries were holding.
+    fn delivery_state(&self, id: XAuthorityInputDeliveryId) -> DeliveryState {
+        let Ok(state) = self.state.lock() else {
+            return DeliveryState::Unavailable;
+        };
+        if state.tickets.contains_key(&id) {
+            DeliveryState::Live
+        } else {
+            DeliveryState::Ended
         }
     }
 

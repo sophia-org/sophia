@@ -507,14 +507,20 @@ impl PrivateXServerFrontend {
     }
 
     /// Close and answer what was accepted, keeping what is still owed.
+    ///
+    /// Work that was routed and has not reached a terminal outcome is carried
+    /// too. Draining only the admission queue would destroy those identities
+    /// with the frontend, stranding their credits and losing any access to
+    /// their completion -- including input that could still finish.
     fn settle_accepted(&mut self) -> PrivateSettlement {
         let origin = self.broker.registry.clone();
         if self.settled {
             return PrivateSettlement {
                 origin,
                 durable: self.durable.clone(),
-                    queue: Arc::clone(&self.admission.ready),
+                queue: Arc::clone(&self.admission.ready),
                 pending: Vec::new(),
+                outstanding: Vec::new(),
                 queue_unreadable: false,
             };
         }
@@ -532,6 +538,7 @@ impl PrivateXServerFrontend {
                     durable: self.durable.clone(),
                     queue: Arc::clone(&self.admission.ready),
                     pending: Vec::new(),
+                    outstanding: std::mem::take(&mut self.outstanding),
                     queue_unreadable: true,
                 };
             }
@@ -540,6 +547,10 @@ impl PrivateXServerFrontend {
         // is answered. Releasing only on the drive path would leave credits
         // held against obligations that no longer exist.
         let before = stranded.len();
+        // Reclaim what has genuinely finished first, so work already answered
+        // is not carried as though it were owed.
+        self.reclaim_settled();
+        let outstanding = std::mem::take(&mut self.outstanding);
         let pending = settle_against(&origin, stranded);
         for _ in 0..before.saturating_sub(pending.len()) {
             self.durable.release();
@@ -549,6 +560,7 @@ impl PrivateXServerFrontend {
             durable: self.durable.clone(),
             queue: Arc::clone(&self.admission.ready),
             pending,
+            outstanding,
             queue_unreadable: false,
         }
     }
@@ -718,10 +730,20 @@ impl PrivateXServerFrontend {
         let recovery = &self.broker.registry.input_recovery;
         let before = self.outstanding.len();
         self.outstanding.retain(|identity| match identity {
-            PrivateIdentity::Delivery(Some(delivery)) => recovery.ticket(*delivery).is_some(),
-            // Nothing to observe: no delivery was tracked, so there is no
-            // terminal outcome to wait for.
-            PrivateIdentity::Delivery(None) => false,
+            PrivateIdentity::Delivery(Some(delivery)) => {
+                match recovery.delivery_state(*delivery) {
+                    DeliveryState::Ended => false,
+                    // Live, and equally: a ledger that cannot be read tells us
+                    // nothing, and reading silence as completion would free a
+                    // credit for work that is still outstanding.
+                    DeliveryState::Live | DeliveryState::Unavailable => true,
+                }
+            }
+            // No public delivery id means nothing to observe here, which is
+            // not the same as nothing outstanding: the work can still be
+            // writer-pending or frozen. Held until an internal completion
+            // record can answer for it.
+            PrivateIdentity::Delivery(None) => true,
             PrivateIdentity::Transaction(_) | PrivateIdentity::Lease(_) => true,
         });
         let reclaimed = before.saturating_sub(self.outstanding.len());
