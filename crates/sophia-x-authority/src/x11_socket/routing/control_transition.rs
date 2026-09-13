@@ -1,3 +1,7 @@
+/// How much of a private host's ready capacity is kept for cleanup.
+#[cfg(unix)]
+const PRIVATE_CLEANUP_RESERVE: usize = 4;
+
 // The control-transition surface a broker under a coordinator exposes.
 //
 // Split from the broker so neither file has to grow past what the layout gate
@@ -207,6 +211,18 @@ impl XServerFrontendRouteBroker {
 #[cfg(unix)]
 pub struct PrivateXServerFrontend {
     broker: XServerFrontendRouteBroker,
+    ready: crate::ReadyStream<PrivateOperation>,
+}
+
+/// One thing the private host has to run, in the order it was admitted.
+#[cfg(unix)]
+enum PrivateOperation {
+    /// Input admitted through the stamped envelope.
+    RoutedInput(XAuthorityEpochRoutedInput),
+    /// A route lease being retired. Privileged cleanup.
+    LeaseRelease(XAuthorityRouteLeaseRelease),
+    /// Control whose application belongs in this order.
+    Control(XAuthorityClientControlCommand),
 }
 
 #[cfg(unix)]
@@ -229,43 +245,19 @@ impl PrivateXServerFrontend {
         broker
             .try_install_control_gate(gate)
             .expect("a broker built here has exposed nothing to refuse over");
-        Self { broker }
-    }
-
-    /// Register a client, so this frontend has somewhere to route to.
-    ///
-    /// Delegated rather than reimplemented: a private host differs in what it
-    /// admits and how it orders, not in what a client is.
-    ///
-    /// Module-visible because the registration it returns is, and because a
-    /// private host's client admission should eventually arrive through the
-    /// admission path rather than as a passthrough. Publishing this shape now
-    /// would be publishing scaffolding.
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn register_client(
-        &self,
-        client: XServerFrontendClientId,
-    ) -> Result<
-        (
-            XServerFrontendClientRouteRegistration,
-            XServerFrontendClientRouteChannels,
-        ),
-        XServerFrontendRouteError,
-    > {
-        self.broker.registry.register_client(client)
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn register_surface(
-        &self,
-        client: XServerFrontendClientId,
-        namespace: NamespaceId,
-        surface: SurfaceId,
-        window: XResourceId,
-    ) -> Result<(), XServerFrontendRouteError> {
-        self.broker
-            .registry
-            .register_surface(client, namespace, surface, window)
+        // Room for a full ingress round plus the classes that arrive beside
+        // it, with a share kept back so cleanup is never the thing that cannot
+        // be admitted.
+        let capacity = input_capacity
+            .get()
+            .saturating_mul(2)
+            .saturating_add(PRIVATE_CLEANUP_RESERVE);
+        let ready = crate::ReadyStream::new(
+            NonZeroUsize::new(capacity).expect("a doubled non-zero capacity is non-zero"),
+            PRIVATE_CLEANUP_RESERVE,
+        )
+        .expect("a reserve smaller than the capacity it was added to");
+        Self { broker, ready }
     }
 
     /// The stamped ingress. There is no unstamped one.
@@ -273,7 +265,93 @@ impl PrivateXServerFrontend {
         self.broker.routed_input_sender()
     }
 
+    /// Admit everything runnable into one order, then run it in that order.
+    ///
+    /// Two passes rather than five loops. The first takes what is available
+    /// from each source and gives each item its position as it is admitted, so
+    /// the interleaving is decided once. The second runs them in that order,
+    /// and nothing jumps.
+    ///
+    /// Raw ingress is not among the sources. It carries no stamp, and a
+    /// private instance refuses to expose a handle to it in the first place.
     pub fn route_pending(&mut self) -> Result<usize, XServerFrontendRouteError> {
-        self.broker.route_pending()
+        self.admit_runnable();
+        self.run_admitted()
+    }
+
+    /// Take what each source has ready, in one pass.
+    ///
+    /// A source that cannot be admitted keeps its item rather than losing it:
+    /// the stream hands a refused payload back, and it is offered again on the
+    /// next pass instead of being dropped here.
+    fn admit_runnable(&mut self) {
+        while let Ok(release) = self.broker.route_lease_release_receiver.try_recv() {
+            if self
+                .ready
+                .admit(crate::ReadyClass::Cleanup, PrivateOperation::LeaseRelease(release))
+                .is_err()
+            {
+                break;
+            }
+        }
+        while let Ok(route) = self.broker.routed_input_receiver.try_recv() {
+            if self
+                .ready
+                .admit(
+                    crate::ReadyClass::RoutedInput,
+                    PrivateOperation::RoutedInput(route),
+                )
+                .is_err()
+            {
+                break;
+            }
+        }
+        while let Ok(control) = self.broker.control_receiver.try_recv() {
+            if self
+                .ready
+                .admit(crate::ReadyClass::Control, PrivateOperation::Control(control))
+                .is_err()
+            {
+                break;
+            }
+        }
+    }
+
+    /// Run what was admitted, in the order it was admitted.
+    fn run_admitted(&mut self) -> Result<usize, XServerFrontendRouteError> {
+        let mut ran = 0usize;
+        while let Some((_, _, operation)) = self.ready.take_next() {
+            match operation {
+                PrivateOperation::LeaseRelease(release) => {
+                    self.broker.registry.release_route_lease(release)?;
+                }
+                PrivateOperation::RoutedInput(route) => {
+                    let admitted = self
+                        .broker
+                        .control_gate
+                        .get()
+                        .is_some_and(|gate| {
+                            gate.admits(crate::ControlStamp {
+                                control_epoch: route.control_epoch,
+                                publication: route.publication,
+                            })
+                            .is_ok()
+                        });
+                    self.broker.registry.route_engine_input_admitted(
+                        route.route,
+                        crate::ControlStamp {
+                            control_epoch: route.control_epoch,
+                            publication: route.publication,
+                        },
+                        admitted,
+                    )?;
+                }
+                PrivateOperation::Control(control) => {
+                    self.broker.registry.route_control(control)?;
+                }
+            }
+            ran = ran.saturating_add(1);
+        }
+        Ok(ran)
     }
 }

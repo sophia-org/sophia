@@ -2942,10 +2942,7 @@ fn exposure_outlives_the_handle_that_caused_it() {
 
 #[test]
 fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
-    let namespace = NamespaceId::from_raw(45);
-    let client = XServerFrontendClientId(62);
     let surface = SurfaceId::new(49, 1);
-    let window = XResourceId::new(0x200130, 1);
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, mut instance, issuer, _submit) = control_gate_with_submit();
@@ -2958,11 +2955,9 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
         delivery_sender,
         gate.clone(),
     );
-    let (_registration, _channels) = private.register_client(client).unwrap();
-    private
-        .register_surface(client, namespace, surface, window)
-        .unwrap();
-
+    // No client or surface registered: enqueue is an admission decision, and
+    // admission does not depend on there being somewhere to route to yet.
+    //
     // Actually send, rather than asking the gate a question the sender was
     // never involved in. Open: admitted.
     let sender = private.routed_input_sender();
@@ -2990,5 +2985,135 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
             .send(motion_to(surface, XAuthorityInputDeliveryId::from_raw(96)))
             .is_err(),
         "the sender must stamp from the coordinator this frontend was built with"
+    );
+}
+
+#[test]
+fn the_private_host_runs_one_order_across_sources() {
+    let namespace = NamespaceId::from_raw(46);
+    let client = XServerFrontendClientId(63);
+    let surface = SurfaceId::new(50, 1);
+    let window = XResourceId::new(0x200140, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    // Two stamped inputs, admitted through the coordinator.
+    let sender = private.routed_input_sender();
+    for delivery in [100u64, 101] {
+        sender
+            .send(motion_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+            ))
+            .expect("an open coordinator to admit work");
+    }
+
+    let ran = private.route_pending().expect("the ordered pass to run");
+    assert_eq!(ran, 2, "both admitted operations ran");
+
+    // Both reached the client, in the order they were admitted.
+    let first = channels.input.try_recv().expect("the first delivery");
+    let second = channels.input.try_recv().expect("the second delivery");
+    assert!(
+        channels.input.try_recv().is_err(),
+        "nothing else was delivered"
+    );
+    let _ = (first, second);
+}
+
+#[test]
+fn the_private_host_never_drains_raw_ingress() {
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(4).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+
+    // Raw ingress is not one of the sources the ordered pass reads, and a
+    // private instance will not hand out a handle to it either.
+    assert_eq!(
+        private.broker.input_sender().err(),
+        Some(crate::ActivationRefused::RawIngressRefusedUnderGate)
+    );
+    assert_eq!(
+        private.route_pending().expect("an empty ordered pass"),
+        0,
+        "nothing to run, and no raw source to find any in"
+    );
+}
+
+#[test]
+fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
+    let namespace = NamespaceId::from_raw(47);
+    let client = XServerFrontendClientId(64);
+    let surface = SurfaceId::new(51, 1);
+    let window = XResourceId::new(0x200150, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
+    let (delivery_sender, delivery_receiver) = channel();
+    let (gate, mut instance, issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate.clone(),
+    );
+    let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    let delivery = XAuthorityInputDeliveryId::from_raw(110);
+    private
+        .routed_input_sender()
+        .send(motion_to(surface, delivery))
+        .expect("an open coordinator to admit work");
+
+    // The revision it was stamped under closes before the ordered pass runs.
+    gate.with(|coordinator| {
+        coordinator
+            .request(
+                &mut instance,
+                &issuer,
+                crate::TransitionKind::SecurityControl,
+                1,
+                1,
+            )
+            .expect("the transition to be requested");
+    })
+    .expect("the gate");
+
+    private.route_pending().expect("the ordered pass to run");
+
+    // Asking only whether a coordinator exists would have delivered this.
+    assert!(
+        channels.input.try_recv().is_err(),
+        "work stamped under a closed revision must not reach the client"
+    );
+    assert_eq!(
+        delivery_receiver.recv().unwrap(),
+        XAuthorityClientInputDelivery {
+            client,
+            delivery,
+            outcome: XAuthorityInputDeliveryOutcome::EpochRevoked,
+        }
     );
 }
