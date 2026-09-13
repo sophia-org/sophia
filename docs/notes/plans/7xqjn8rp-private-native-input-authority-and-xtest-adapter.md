@@ -724,3 +724,34 @@ retaining a payload alone does not settle it. The native manifest now makes
 production ingress refusal classification and exact reservation rollback an
 explicit mandatory obligation, separate from the passing queue primitive and
 common completion-cell tests.
+
+Candidate `025d59ba` replaces consumer staging with shared admission used directly
+by routed-input and control facades. This establishes the intended structural
+location for sequence assignment and publication; it does not yet establish
+production execution. Source review identifies three remaining boundary defects:
+control submission drops the returned command while mapping an admission error;
+producer-held `Arc`s keep admission alive after the frontend/consumer is dropped,
+with no closed-consumer state; and `take_next` maps a poisoned queue lock to
+`None`, making failure look like an empty queue. These require owned refusal,
+consumer-close ordering and explicit unavailable reporting respectively.
+
+The new ordering tests compare positions returned to producers and, in one case,
+a total number of executed operations. They do not assert the alternating
+operation identities seen by the consumer. Admission order and consumption order
+need separate assertions; a consumer regrouping already-numbered operations
+must fail. Likewise, completed-send precedence and simultaneous producer
+contention are distinct cases. Cleanup remains without a producer facade, and
+final generation/publication validation plus authority/XKB application remain
+unimplemented. The candidate is unintegrated pending these checks and repairs.
+
+Independent `025d59ba` probes pass real-capacity rollback and duplicate-identity
+controls. Constructor capacity 1 accepts two controls and refuses a tracked
+input; that input leaves no recovery ticket and can retry with the same delivery
+identity once those controls are consumed. A duplicate live identity preserves
+the original ticket and work. A desired lifecycle assertion fails: after a
+successful delivery, dropping the frontend still leaves an ingress whose next
+submit returns `Ok(ReadySequence(2))`, accepting work with no consumer. Evidence
+is `.artifacts/private-admission-review-025d59ba/` (two controls PASS, one desired
+assertion FAIL). Fixture compile errors are retained separately and are not
+behavioral evidence. This confirms the consumer-close blocker rather than
+accepting the candidate's complete lifecycle.
