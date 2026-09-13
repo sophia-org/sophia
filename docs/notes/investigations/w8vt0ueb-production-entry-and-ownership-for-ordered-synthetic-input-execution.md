@@ -597,6 +597,19 @@ Eight of the nine kinds report nothing at all and are retained. An absent report
 is not a report of nothing, which is the same mistake as inferring teardown from
 a stopped writer.
 
+**Where it runs.** The rule lives on the registry that issued the work, and
+every owner of that work applies it: `PrivateXServerFrontend::reconcile_abandoned`
+while the instance is live, `PrivateSettlement::reclaim_outstanding` for a
+handle that outlived the instance, and `PrivateSettlementOwner::drive` for work
+that outlived the handle, where each carried origin settles its own before its
+records are read. A rule only the first could apply would stop being applied
+the moment a frontend was consumed, which is exactly when the work it is about
+starts outliving things. It allocates nothing, because two of those paths run
+under a lock that already exists for something else, and it is bound to the
+registry that issued the work rather than to anything handed in -- another
+instance's identical local identity belongs to another origin, and the origin
+is what decides whose records these are.
+
 What survives from the earlier draft is only the shape of the rule, not its
 application: discharging a cleanup means nothing reachable is left disagreeing,
 which is never the same as knowing what the operation did, and retiring on it

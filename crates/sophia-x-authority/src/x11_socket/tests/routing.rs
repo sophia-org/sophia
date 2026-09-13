@@ -6647,12 +6647,13 @@ fn transferring_an_unexecuted_command_moves_its_credit_rather_than_freeing_it() 
         acks.try_recv().unwrap().acknowledgement.transaction,
         TransactionId::from_raw(75002)
     );
-    assert_eq!(report.reclaim_outstanding(), 0);
-    assert_eq!(
-        durable.reserved(),
-        1,
-        "exactly one credit released for it, and the writer-held one stays"
-    );
+    // And the one that reached a writer never began a step of its own, which
+    // its own reports establish, so the settlement that outlived the instance
+    // applies that proof and releases its credit too. Each is released once,
+    // for a different reason: one was handed on and answered, the other is
+    // known to have had no effect.
+    assert_eq!(report.reclaim_outstanding(), 1);
+    assert_eq!(durable.reserved(), 0, "each released exactly once");
     assert!(acks.try_recv().is_err(), "and exactly one outcome");
     let _ = channels;
 }
@@ -7554,7 +7555,7 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
     assert_eq!(private.reclaim_settled(), 0, "so the credit stays too");
 
     // Retiring it is not an outcome, but it is the end of what is owed.
-    assert_eq!(registry.discharge(owed.token), Ok(()));
+    assert_eq!(registry.reconcile_unstarted().discharged, 1);
     assert!(registry.cleanups_owed().expect("a readable registry").is_empty());
     assert_eq!(
         private.reclaim_settled(),
@@ -7563,8 +7564,8 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
     );
     assert_eq!(private.reclaim_settled(), 0);
     assert_eq!(
-        registry.discharge(owed.token),
-        Err(crate::ControlCleanupRefusal::NoLongerHeld),
+        registry.reconcile_unstarted().discharged,
+        0,
         "and not a second time"
     );
     let _ = channels;
@@ -7631,9 +7632,9 @@ fn an_unreadable_registry_reconciles_nothing_and_says_so() {
     let reconciled = registry.reconcile_client(client);
     assert!(!reconciled.readable);
     assert_eq!(reconciled.abandoned, 0);
-    assert_eq!(
-        registry.discharge(token),
-        Err(crate::ControlCleanupRefusal::Unavailable)
+    assert!(
+        !registry.reconcile_unstarted().readable,
+        "and settling nothing because nothing could be read says so"
     );
 }
 
@@ -7652,19 +7653,23 @@ fn only_an_abandoned_operation_with_nothing_queued_can_be_retired() {
     // An operation whose executor is still there, and one that never started,
     // are not waiting on a cleanup. Recording one for either would retire a
     // record that is still owed something else entirely.
+    let report = registry.reconcile_unstarted();
+    assert_eq!(report.discharged, 0);
     for token in [applying, accepted_only] {
         assert_eq!(
-            registry.discharge(token),
-            Err(crate::ControlCleanupRefusal::NotAbandoned)
+            registry.state_of(token),
+            crate::ControlRecordState::Outstanding
         );
     }
     assert_eq!(registry.outstanding().expect("a readable registry"), 2);
 
-    // A foreign registration is not this registry's to clean up either.
+    // And another registry settles only its own: it holds no record for this
+    // one, whatever the local identity happens to be.
     let other = crate::ControlCompletionRegistry::with_capacity(2).expect("an unused origin");
+    assert_eq!(other.reconcile_unstarted().discharged, 0);
     assert_eq!(
-        other.discharge(applying),
-        Err(crate::ControlCleanupRefusal::Foreign)
+        registry.state_of(applying),
+        crate::ControlRecordState::Outstanding
     );
 }
 
@@ -8535,10 +8540,9 @@ fn nothing_is_owed_a_cleanup_while_work_it_queued_elsewhere_can_still_run() {
     // And the point that retires refuses it too. Hiding a candidate from the
     // list is not enforcement: the caller that retires has to be the one that
     // refuses.
-    assert_eq!(
-        registry.discharge(token),
-        Err(crate::ControlCleanupRefusal::DependentsOutstanding)
-    );
+    let report = registry.reconcile_unstarted();
+    assert_eq!(report.discharged, 0);
+    assert_eq!(report.retained_unproved, 1);
 
     // Ended -- run by that writer, or given up unrun when its queue went. Both
     // are ends, and the guard reports either the same way, because which it
@@ -8799,8 +8803,9 @@ fn an_answered_operation_is_still_held_while_work_it_started_can_run() {
             .is_empty()
     );
     assert_eq!(
-        registry.discharge(token),
-        Err(crate::ControlCleanupRefusal::NotAbandoned)
+        registry.reconcile_unstarted().discharged,
+        0,
+        "an answered operation is not one the settlement retires"
     );
 
     // The last dependency ending retires it, and sends nothing: the
@@ -9704,5 +9709,243 @@ fn an_effect_whose_intent_cannot_be_recorded_does_not_happen() {
     assert_eq!(
         orphaned.record_progress(None, crate::ControlProgress::RuntimeBegun),
         Ok(())
+    );
+}
+
+/// A private instance whose accepted Configure never began a step, with its
+/// writer gone: the state the never-started proof is about.
+#[cfg(unix)]
+fn unstarted_after_its_writer_went(
+    durable: &crate::PrivateSettlementOwner,
+    acknowledgements: SyncSender<XAuthorityClientControlAck>,
+    client: XServerFrontendClientId,
+    surface: SurfaceId,
+    transaction: u64,
+) -> (
+    crate::PrivateXServerFrontend,
+    XServerFrontendClientRouteChannels,
+    XServerFrontendClientRouteRegistration,
+    Receiver<XAuthorityClientInputDelivery>,
+) {
+    let (mut private, channels, registration, deliveries) =
+        private_with_client(acknowledgements, durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    private
+        .control_producer()
+        .submit(configure(client, surface, transaction))
+        .expect("the shared admission to accept control");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    registry.writer_started(client);
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+    (private, channels, registration, deliveries)
+}
+
+#[test]
+fn the_never_started_proof_survives_shutdown_and_reaches_the_retained_handle() {
+    let client = XServerFrontendClientId(368);
+    let surface = SurfaceId::new(368, 1);
+    let (acknowledgements, acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, channels, _registration, _deliveries) =
+        unstarted_after_its_writer_went(&durable, acknowledgements, client, surface, 66001);
+
+    // Shut down without reconciling first. The frontend is consumed, so
+    // nothing that only it could do will ever be done.
+    assert_eq!(durable.reserved(), 1);
+    let mut report = private.shutdown();
+    assert_eq!(durable.reserved(), 1, "still owed until something settles it");
+
+    // The retained handle applies the same proof.
+    assert_eq!(report.reclaim_outstanding(), 1);
+    assert_eq!(durable.reserved(), 0);
+    // Driving again finds nothing left, rather than releasing twice.
+    assert_eq!(report.reclaim_outstanding(), 0);
+    assert_eq!(durable.reserved(), 0);
+    assert!(
+        acks.try_recv().is_err(),
+        "and nothing was answered for it"
+    );
+    // The command it was routed with is still in the queue of the writer that
+    // went, which is where it was left. Settling it queued nothing further:
+    // nothing is replayed.
+    assert!(channels.control.try_recv().is_ok());
+    assert!(
+        channels.control.try_recv().is_err(),
+        "and there is only ever the one"
+    );
+}
+
+#[test]
+fn the_never_started_proof_reaches_the_durable_owner_when_the_handle_goes() {
+    let client = XServerFrontendClientId(369);
+    let surface = SurfaceId::new(369, 1);
+    let (acknowledgements, acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        unstarted_after_its_writer_went(&durable, acknowledgements, client, surface, 67001);
+
+    // The only handle goes before anything drives it, so the work is now the
+    // durable owner's and the proof has to reach it there.
+    drop(private.shutdown());
+    assert_eq!(durable.reserved(), 1);
+    assert_eq!(durable.outstanding(), 1);
+
+    assert!(durable.drive().made_progress());
+    assert_eq!(durable.reserved(), 0, "released exactly once");
+    assert_eq!(durable.outstanding(), 0);
+    // Driven twice, and the second finds nothing.
+    assert!(!durable.drive().made_progress());
+    assert_eq!(durable.reserved(), 0);
+    assert!(acks.try_recv().is_err(), "with nothing answered for it");
+}
+
+#[test]
+fn an_interrupted_operation_keeps_its_credit_through_the_same_transfers() {
+    let client = XServerFrontendClientId(370);
+    let surface = SurfaceId::new(370, 1);
+    let (acknowledgements, acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    private
+        .control_producer()
+        .submit(configure(client, surface, 68001))
+        .expect("the shared admission to accept control");
+    let ran = private.route_pending().expect("a turn");
+    let Some(crate::PrivateIdentity::Control {
+        completion: Some(token),
+        ..
+    }) = ran.first().map(|run| run.identity)
+    else {
+        panic!("a control that names its registration");
+    };
+
+    // Begun and never reported finished: the effect may have happened.
+    registry
+        .record_progress(token, crate::ControlProgress::RuntimeBegun)
+        .expect("an applying record");
+    registry.writer_started(client);
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+
+    // Through every transfer the never-started one is released by, this one
+    // keeps its credit, because nothing about it is established.
+    let mut report = private.shutdown();
+    assert_eq!(report.reclaim_outstanding(), 0);
+    assert_eq!(durable.reserved(), 1);
+    drop(report);
+    assert!(!durable.drive().made_progress());
+    assert_eq!(durable.reserved(), 1, "still owed after the durable owner too");
+    assert!(!durable.drive().made_progress());
+    assert_eq!(durable.reserved(), 1);
+    assert!(acks.try_recv().is_err());
+}
+
+#[test]
+fn one_instances_reconciliation_does_not_reach_anothers_identical_identity() {
+    let client = XServerFrontendClientId(371);
+    let surface = SurfaceId::new(371, 1);
+    let (acknowledgements, _acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+
+    // Two instances, each issuing its own registrations from its own counter,
+    // so their local identities collide.
+    let (mine, _channels, _registration, _deliveries) =
+        unstarted_after_its_writer_went(&durable, acknowledgements.clone(), client, surface, 69001);
+    let theirs_client = XServerFrontendClientId(372);
+    let theirs_surface = SurfaceId::new(372, 1);
+    let (mut theirs, _their_channels, _their_registration, _their_deliveries) =
+        private_with_client(acknowledgements, &durable, theirs_client, theirs_surface);
+    let their_registry = theirs
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    theirs
+        .control_producer()
+        .submit(configure(theirs_client, theirs_surface, 69002))
+        .expect("the shared admission to accept control");
+    let ran = theirs.route_pending().expect("a turn");
+    let Some(crate::PrivateIdentity::Control {
+        completion: Some(their_token),
+        ..
+    }) = ran.first().map(|run| run.identity)
+    else {
+        panic!("a control that names its registration");
+    };
+    their_registry
+        .record_progress(their_token, crate::ControlProgress::RuntimeBegun)
+        .expect("an applying record");
+    their_registry.writer_started(theirs_client);
+    their_registry.writer_stopped(theirs_client);
+    assert_eq!(their_registry.reconcile_client(theirs_client).abandoned, 1);
+    assert_eq!(durable.reserved(), 2);
+
+    // Settling mine reaches only mine. The other instance's operation has the
+    // same local identity and a different origin, and it is the origin that
+    // decides whose records these are.
+    let mut report = mine.shutdown();
+    assert_eq!(report.reclaim_outstanding(), 1);
+    assert_eq!(
+        durable.reserved(),
+        1,
+        "the other instance's interrupted operation still owes its credit"
+    );
+    assert_eq!(
+        their_registry.steps_of(their_token).map(|steps| steps.runtime),
+        Some(crate::ControlStepState::InProgress),
+        "and is untouched"
+    );
+    drop(theirs);
+}
+
+#[test]
+fn reconciliation_settles_only_abandoned_operations_with_nothing_still_queued() {
+    let client = XServerFrontendClientId(373);
+    let surface = SurfaceId::new(373, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(8).expect("an unused origin");
+
+    // Applying, with no step begun. Its executor is still there, so it is not
+    // abandoned and nothing about it is being settled yet.
+    let applying = accepted(&registry, configure(client, surface, 70001));
+    assert_eq!(
+        registry.claim_execution(applying),
+        crate::ControlExecutionClaim::Claimed
+    );
+    assert_eq!(registry.reconcile_unstarted().discharged, 0);
+    assert_eq!(
+        registry.state_of(applying),
+        crate::ControlRecordState::Outstanding
+    );
+
+    // Abandoned with no step begun, but holding work it queued elsewhere.
+    // What it left is not established whatever its own steps say.
+    let queued = registry.track_dependent(applying).expect("an applying record");
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+    let report = registry.reconcile_unstarted();
+    assert_eq!(report.discharged, 0);
+    assert_eq!(report.retained_unproved, 1);
+    assert_eq!(
+        registry.state_of(applying),
+        crate::ControlRecordState::Outstanding
+    );
+
+    // Only once nothing it started can still run.
+    drop(queued);
+    assert_eq!(registry.reconcile_unstarted().discharged, 1);
+    assert_eq!(
+        registry.state_of(applying),
+        crate::ControlRecordState::Retired
     );
 }

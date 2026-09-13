@@ -691,32 +691,6 @@ impl ControlCompletionRegistry {
             .collect())
     }
 
-    /// Retire an abandoned operation because nothing is owed for it.
-    ///
-    /// Not a caller saying so. The only caller is the owner that worked that
-    /// out from what the operation reported doing, and it is refused here for
-    /// anything that is not an abandoned record with nothing still queued
-    /// elsewhere -- the point that retires is the one that has to refuse.
-    fn discharge(&self, token: ControlCompletionToken) -> Result<(), ControlCleanupRefusal> {
-        if token.origin != self.origin {
-            return Err(ControlCleanupRefusal::Foreign);
-        }
-        let Ok(mut inner) = self.inner.lock() else {
-            return Err(ControlCleanupRefusal::Unavailable);
-        };
-        let Some(position) = inner.records.iter().position(|held| held.token == token) else {
-            return Err(ControlCleanupRefusal::NoLongerHeld);
-        };
-        if !matches!(inner.records[position].phase, ControlPhase::Abandoned(_)) {
-            return Err(ControlCleanupRefusal::NotAbandoned);
-        }
-        if inner.records[position].dependents != 0 {
-            return Err(ControlCleanupRefusal::DependentsOutstanding);
-        }
-        inner.records.remove(position);
-        Ok(())
-    }
-
     /// Give up this record because the operation now has another owner.
     ///
     /// Only an unexecuted command can be handed on, so only that phase is

@@ -152,4 +152,80 @@ impl ControlCompletionRegistry {
             .find(|held| held.token == token)
             .map(|held| held.steps)
     }
+
+    /// Settle the abandoned operations this registry holds, on what each
+    /// reported doing.
+    ///
+    /// Lives here rather than on one owner because every owner of this work
+    /// needs it: a live instance, a settlement that outlived it, and the
+    /// durable owner that outlived that. A rule that only the first could
+    /// apply would stop being applied the moment a frontend was consumed.
+    ///
+    /// Allocates nothing. It runs under the owner's lock on the paths that
+    /// have one, and a sweep that built a list there would put an allocation
+    /// inside a hold that already exists for something else.
+    pub fn reconcile_unstarted(&self) -> ControlReconcileReport {
+        let Ok(mut inner) = self.inner.lock() else {
+            return ControlReconcileReport {
+                readable: false,
+                ..ControlReconcileReport::default()
+            };
+        };
+        let mut report = ControlReconcileReport {
+            readable: true,
+            ..ControlReconcileReport::default()
+        };
+        inner.records.retain_mut(|held| {
+            let ControlPhase::Abandoned(command) = held.phase else {
+                return true;
+            };
+            if held.dependents != 0 {
+                // Work it started elsewhere can still run, so what it left is
+                // not established whatever its own steps say.
+                report.retained_unproved = report.retained_unproved.saturating_add(1);
+                return true;
+            }
+            // The only thing these reports prove is that an operation whose
+            // first step never began cannot have had any effect, because
+            // beginning is recorded before the effect can happen and the
+            // effect does not happen if it cannot be recorded.
+            //
+            // They do not prove agreement. The runtime guard is released
+            // before the projection is brought into line, neither report
+            // carries a revision, and the operation continues afterwards
+            // through fallible records, presentation and peer routing that
+            // these say nothing about. Two finished steps are history, not a
+            // statement about now.
+            match (held.steps.runtime, held.steps.projection) {
+                (ControlStepState::InProgress, _) | (_, ControlStepState::InProgress) => {
+                    report.retained_in_progress = report.retained_in_progress.saturating_add(1);
+                    true
+                }
+                (ControlStepState::Completed, ControlStepState::Completed) => {
+                    report.retained_unproved = report.retained_unproved.saturating_add(1);
+                    true
+                }
+                (ControlStepState::Completed, ControlStepState::NotStarted) => {
+                    report.retained_half_applied =
+                        report.retained_half_applied.saturating_add(1);
+                    true
+                }
+                (ControlStepState::NotStarted, _) => {
+                    if matches!(
+                        command.command.kind(),
+                        XAuthorityControlKind::ConfigureSurface
+                    ) {
+                        report.discharged = report.discharged.saturating_add(1);
+                        false
+                    } else {
+                        // Nothing reports what the other kinds do, and an
+                        // absent report is not a report of nothing.
+                        report.retained_unproved = report.retained_unproved.saturating_add(1);
+                        true
+                    }
+                }
+            }
+        });
+        report
+    }
 }

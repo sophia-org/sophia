@@ -271,6 +271,14 @@ impl PrivateSettlementOwner {
         // Routed work that has since finished releases its credit here, once
         // and only on a genuine terminal outcome.
         let carried: Vec<_> = held.outstanding.drain(..).collect();
+        // Each origin settles its own before its records are read. Bound to
+        // the registry that issued the work rather than to anything handed in,
+        // and allocating nothing, because this runs under the owner's lock.
+        for (origin, _) in &carried {
+            if let Some(owner) = origin.control_completion() {
+                let _settled = owner.reconcile_unstarted();
+            }
+        }
         let mut reclaimed = 0usize;
         for (origin, identity) in carried {
             let ended = match identity {
@@ -449,6 +457,12 @@ impl PrivateSettlement {
     /// The same rule as on a live instance: ended releases, live and
     /// unreadable do not.
     pub fn reclaim_outstanding(&mut self) -> usize {
+        // Applied here too, not only while the instance was live. A frontend
+        // is consumed by shutting down, and a proof that only it could apply
+        // would stop being applied exactly when the work outlives it.
+        if let Some(owner) = self.origin.control_completion() {
+            let _settled = owner.reconcile_unstarted();
+        }
         let recovery = &self.origin.input_recovery;
         let recovery_origin = &self.origin;
         let before = self.outstanding.len();

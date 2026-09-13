@@ -557,69 +557,14 @@ impl PrivateXServerFrontend {
         }
     }
 
-    /// Settle what each abandoned operation is owed, on what it reported
-    /// doing rather than on anyone asserting it is done.
+    /// Settle what each abandoned operation is owed, while this instance is
+    /// still live.
     ///
-    /// An operation is retired only where its own report establishes that
-    /// nothing reachable is left disagreeing. That is never the same as
-    /// knowing what it did: retiring says nothing is owed, and no outcome is
-    /// published for any of these.
-    ///
-    /// A kind whose steps this server does not yet report is retained, not
-    /// discharged. Reading an absent report as "nothing happened" is exactly
-    /// the inference this exists to avoid, and there is no sound way to tell
-    /// the two apart from outside.
+    /// The same reconciliation the settlement and the durable owner apply, so
+    /// a proof established here does not stop being applied when this frontend
+    /// is consumed.
     pub fn reconcile_abandoned(&mut self) -> ControlReconcileReport {
-        let Ok(owed) = self.completion.cleanups_owed() else {
-            return ControlReconcileReport {
-                readable: false,
-                ..ControlReconcileReport::default()
-            };
-        };
-        let mut report = ControlReconcileReport {
-            readable: true,
-            ..ControlReconcileReport::default()
-        };
-        for cleanup in owed {
-            // The only thing these reports prove is that an operation whose
-            // first step never began cannot have had any effect, because
-            // beginning is recorded before the effect can happen and the
-            // effect does not happen if it cannot be recorded.
-            //
-            // They do not prove agreement. The runtime guard is released
-            // before the projection is brought into line, and neither report
-            // carries a revision, so a projection reported as agreeing can
-            // already have been overtaken by a later change. And an operation
-            // continues through fallible work after its projection -- records,
-            // presentation, peer routing -- that these say nothing about. Two
-            // finished steps are history, not a statement about now.
-            match (cleanup.steps.runtime, cleanup.steps.projection) {
-                (ControlStepState::InProgress, _) | (_, ControlStepState::InProgress) => {
-                    report.retained_in_progress = report.retained_in_progress.saturating_add(1);
-                }
-                (ControlStepState::Completed, ControlStepState::Completed) => {
-                    report.retained_unproved = report.retained_unproved.saturating_add(1);
-                }
-                (ControlStepState::Completed, ControlStepState::NotStarted) => {
-                    report.retained_half_applied =
-                        report.retained_half_applied.saturating_add(1);
-                }
-                (ControlStepState::NotStarted, _) => {
-                    if matches!(
-                        cleanup.command.command.kind(),
-                        XAuthorityControlKind::ConfigureSurface
-                    ) && self.completion.discharge(cleanup.token).is_ok()
-                    {
-                        report.discharged = report.discharged.saturating_add(1);
-                    } else {
-                        // Nothing reports what the other kinds do, and an
-                        // absent report is not a report of nothing.
-                        report.retained_unproved = report.retained_unproved.saturating_add(1);
-                    }
-                }
-            }
-        }
-        report
+        self.completion.reconcile_unstarted()
     }
 
     /// Republish acknowledgements a client writer could not deliver.
