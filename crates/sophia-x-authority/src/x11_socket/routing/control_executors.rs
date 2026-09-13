@@ -56,13 +56,20 @@ impl ControlExecutors {
 /// claim -- a value a caller could construct and drop would decrement a real
 /// holder's count and end an operation's protection on nothing at all.
 ///
+/// The field is private, so the value cannot be built outside this module.
+/// Naming nothing else, so that this fails for that reason and not an
+/// unrelated one:
+///
 /// ```compile_fail
-/// # use sophia_x_authority::{ControlExecutorLease, XServerFrontendClientId};
-/// fn forge(registry: sophia_x_authority::ControlCompletionRegistry) {
-///     let _ = ControlExecutorLease {
-///         held: Some((registry, XServerFrontendClientId(1))),
-///     };
-/// }
+/// # use sophia_x_authority::ControlExecutorLease;
+/// let _ = ControlExecutorLease { held: None };
+/// ```
+///
+/// while the public constructor is reachable:
+///
+/// ```
+/// # use sophia_x_authority::ControlExecutorLease;
+/// let _ = ControlExecutorLease::ungoverned();
 /// ```
 #[cfg(unix)]
 #[must_use = "an executor that is not held is one nothing is waiting for"]

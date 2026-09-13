@@ -30,6 +30,14 @@ struct X11ClientWriters {
     input: Option<X11InputEventWriter>,
     control: Option<X11ControlWriter>,
     protocol: Option<X11ProtocolEventWriter>,
+    /// An independent handle on the same socket the writers share.
+    ///
+    /// A writer blocked in a write observes no flag, and whoever joins it then
+    /// waits on a peer that may never read again. Shutting the socket down is
+    /// what ends that wait, and it is done through a handle of this shutdown's
+    /// own: the blocked writer is holding the output mutex, so anything that
+    /// had to take that mutex first could not reach it.
+    transport: Option<UnixStream>,
 }
 
 #[cfg(unix)]
@@ -48,6 +56,21 @@ impl X11ClientWriters {
     /// Idempotent, so the ordinary path can call it and the drop that follows
     /// finds nothing left to do.
     fn shut_down(&mut self) -> X11WriterShutdown {
+        self.stop_all();
+        // Almost always already true by now: a writer between events notices
+        // its flag immediately, and this returns without waiting. It is a
+        // deadline rather than a delay.
+        if !self.settled_within(X11_WRITER_STOP_GRACE) {
+            // Something is inside a write that no flag reaches. The connection
+            // is ending either way, so the socket goes and the write fails.
+            if let Some(transport) = self.transport.as_ref() {
+                let _ = transport.shutdown(Shutdown::Both);
+            }
+        }
+        self.join_all()
+    }
+
+    fn stop_all(&self) {
         for stop in [
             self.input.as_ref().map(|writer| &writer.stop),
             self.control.as_ref().map(|writer| &writer.stop),
@@ -58,6 +81,31 @@ impl X11ClientWriters {
         {
             stop.store(true, Ordering::Release);
         }
+    }
+
+    /// Whether every writer has finished within the deadline.
+    fn settled_within(&self, deadline: Duration) -> bool {
+        let limit = std::time::Instant::now() + deadline;
+        loop {
+            let running = [
+                self.input.as_ref().map(|writer| &writer.thread),
+                self.control.as_ref().map(|writer| &writer.thread),
+                self.protocol.as_ref().map(|writer| &writer.thread),
+            ]
+            .into_iter()
+            .flatten()
+            .any(|thread| !thread.is_finished());
+            if !running {
+                return true;
+            }
+            if std::time::Instant::now() >= limit {
+                return false;
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    fn join_all(&mut self) -> X11WriterShutdown {
         let joins = [
             self.input.take().map(|writer| (writer.thread, "input event")),
             self.control.take().map(|writer| (writer.thread, "control")),
@@ -84,6 +132,14 @@ impl X11ClientWriters {
         shutdown
     }
 }
+
+/// How long a writer is given to notice its stop flag before the socket it
+/// may be blocked on is taken away.
+///
+/// Long enough that an ordinary teardown never reaches it, short enough that a
+/// blocked one does not hold a connection's teardown open.
+#[cfg(unix)]
+const X11_WRITER_STOP_GRACE: Duration = Duration::from_millis(250);
 
 /// What shutting a client's writers down achieved.
 #[cfg(unix)]

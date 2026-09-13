@@ -414,8 +414,14 @@ Stopping every writer before joining any is necessary and is not sufficient. A
 writer parked on a condition only another thread can clear observes no stop
 flag, and the join waits for it forever. The waits that can be waited on now
 observe it and give up without writing, so a join is bounded by the stop rather
-than by whether anyone happens to rescue it. A stalled socket write is a
-different case and is not claimed here.
+than by whether anyone happens to rescue it. A write that has already begun is a
+different case: no flag reaches it, and whoever joins it waits on a peer that
+may never read again. The writers are owned together with an independent handle
+on the socket they share, and a stop that they have not acted on within a
+deadline takes the socket away, so the write fails and the join returns. The
+handle is the shutdown's own, because the blocked writer holds the output mutex
+that anything else would have to take first. The deadline is a deadline rather
+than a delay: an ordinary teardown never reaches it.
 
 A claim is refused for a client nothing is serving, at the routing site as well
 as at the producer. Those are separate moments, and a record left claimable

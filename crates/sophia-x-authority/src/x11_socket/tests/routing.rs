@@ -7422,6 +7422,7 @@ fn stopping_one_writer_does_not_leave_the_others_running() {
         input: Some(failing),
         control: Some(control_writer),
         protocol: None,
+        transport: None,
     };
 
     let shutdown = writers.shut_down();
@@ -7594,6 +7595,7 @@ fn dropping_the_writers_stops_them_even_if_nobody_shut_them_down() {
         input: None,
         control: Some(control_writer),
         protocol: None,
+        transport: None,
     });
     assert!(
         stop.load(Ordering::Acquire),
@@ -7784,6 +7786,7 @@ fn a_writer_parked_on_control_output_still_stops_when_told() {
         input: None,
         control: None,
         protocol: Some(writer),
+        transport: None,
     };
     let shutdown = writers.shut_down();
     assert_eq!(shutdown.joined, 1, "the join returned without a rescue");
@@ -8030,6 +8033,7 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
         input: Some(writer),
         control: None,
         protocol: None,
+        transport: None,
     };
     let shutdown = writers.shut_down();
     assert_eq!(shutdown.joined, 1, "the join returned without a rescue");
@@ -8283,4 +8287,60 @@ fn a_parked_router_keeps_its_operation_answerable_while_its_writer_exits() {
         "and when it returns, the operation is owed its cleanup"
     );
     drop(private);
+}
+
+#[test]
+fn a_writer_blocked_in_a_write_is_still_joined() {
+    let client = XServerFrontendClientId(340);
+    let (events, receiver) = channel();
+    let (stream, peer) = std::os::unix::net::UnixStream::pair().unwrap();
+    let transport = stream.try_clone().expect("an independent handle");
+    let writer = spawn_x11_protocol_event_writer(
+        Arc::new(Mutex::new(stream)),
+        Arc::new(AtomicUsize::new(0)),
+        XByteOrder::LittleEndian,
+        Arc::new(AtomicU16::new(1)),
+        client,
+        receiver,
+    )
+    .expect("a writer");
+
+    // Nobody reads the peer, so the socket fills and the writer blocks inside
+    // a write. No stop flag reaches it there.
+    for sequence in 0..20_000 {
+        if events
+            .send(XClientEvent::UnmapNotify {
+                sequence,
+                event: XResourceId::new(0x200252, 1),
+                window: XResourceId::new(0x200252, 1),
+                from_configure: false,
+            })
+            .is_err()
+        {
+            break;
+        }
+    }
+    let filling = std::time::Instant::now() + std::time::Duration::from_millis(300);
+    while std::time::Instant::now() < filling {
+        std::thread::yield_now();
+    }
+    assert!(
+        !writer.thread.is_finished(),
+        "the writer is inside a write that cannot complete"
+    );
+
+    let mut writers = X11ClientWriters {
+        input: None,
+        control: None,
+        protocol: Some(writer),
+        transport: Some(transport),
+    };
+    let started = std::time::Instant::now();
+    let shutdown = writers.shut_down();
+    assert_eq!(shutdown.joined, 1, "the join returned");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "and returned bounded, without the peer ever reading"
+    );
+    drop(peer);
 }
