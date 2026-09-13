@@ -638,8 +638,18 @@ reserved, and a drop cannot keep what it is handing over or report that it
 failed to -- so doing nothing on a poisoned lock is not a refusal, it is the
 silent loss this owner exists to prevent. Releasing a credit is the same: a
 release that does not happen is capacity lost for as long as the owner lives.
-Those four go through regardless. Reading through poison is sound for them
-because they are pushes, pops and a counter, with no invariant spanning two.
+Those four go through regardless.
+
+What that preserves is work being handed over now. It does not establish that
+what was already there survived, and an earlier version of this paragraph
+claimed otherwise on the grounds that these are pushes, pops and a counter with
+no invariant spanning two. That is false. The credit count spans held work,
+outstanding work and the instances still live; the failure slots span live and
+retained failed instances; and both sweeps move inventory into a local before
+settling it and re-accounting for it. A panic inside one of those leaves
+obligations in a local vector and the counts describing a state that no longer
+exists. Individual operations being safe says nothing about the inventory as a
+whole.
 
 Everything that can refuse still refuses. Taking a credit or a failure slot on
 an owner nobody can read is declined, because that is a refusal before

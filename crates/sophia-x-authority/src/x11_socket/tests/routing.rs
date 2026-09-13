@@ -10124,3 +10124,144 @@ fn a_poisoned_owner_still_takes_pending_work_from_a_dropping_handle() {
     );
     assert!(acks.try_recv().is_err());
 }
+
+#[test]
+fn a_sweep_that_unwinds_leaves_its_work_owned_and_returnable() {
+    let client = XServerFrontendClientId(376);
+    let surface = SurfaceId::new(376, 1);
+    // One slot, filled, so the obligation is carried rather than answered.
+    let (acknowledgements, acks) = sync_channel(1);
+    acknowledgements
+        .try_send(completion_ack(
+            configure(client, surface, 1),
+            XAuthorityControlOutcome::Delivered,
+        ))
+        .expect("the empty slot");
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    private
+        .control_producer()
+        .submit(configure(client, surface, 73001))
+        .expect("the shared admission to accept control");
+    drop(private.shutdown());
+    assert_eq!(durable.owed(), Some(1));
+    assert_eq!(durable.reserved(), Some(1));
+
+    // A sweep interrupted after moving its work out and before settling it.
+    // The obligation is in the owner's own in-flight list, which is where it
+    // has to be: a local vector goes with the frame.
+    {
+        let mut held = durable.records_even_if_poisoned();
+        let carried = std::mem::take(&mut held.held);
+        held.in_flight.extend(carried);
+    }
+    assert_eq!(durable.owed(), Some(0), "not in the list it settles from");
+    assert_eq!(durable.reserved(), Some(1), "and still holding its credit");
+
+    // Returning it answers nothing. An obligation found in flight is not
+    // evidence of what happened to it, only that a sweep did not finish.
+    assert_eq!(durable.restore_interrupted(), Some(1));
+    assert_eq!(durable.owed(), Some(1), "returned, not answered");
+    assert_eq!(durable.reserved(), Some(1));
+    assert!(
+        acks.try_recv().is_ok(),
+        "the slot still holds what was there before"
+    );
+    assert!(acks.try_recv().is_err(), "and nothing was published");
+
+    // Twice does nothing the second time.
+    assert_eq!(durable.restore_interrupted(), Some(0));
+    assert_eq!(durable.owed(), Some(1));
+
+    // And now it can be driven, answering exactly the original obligation
+    // once, with its credit returned.
+    let progress = durable.drive();
+    assert!(progress.readable);
+    assert_eq!(progress.answered, 1);
+    assert_eq!(
+        acks.try_recv().unwrap().acknowledgement.transaction,
+        TransactionId::from_raw(73001),
+        "the exact obligation that was accepted"
+    );
+    assert!(acks.try_recv().is_err(), "and only once");
+    assert_eq!(durable.reserved(), Some(0), "its credit returned");
+    assert_eq!(durable.owed(), Some(0));
+}
+
+#[test]
+fn restoring_an_unreadable_owner_says_so_rather_than_nothing_to_return() {
+    let durable = crate::PrivateSettlementOwner::with_capacity(2);
+    assert_eq!(durable.restore_interrupted(), Some(0));
+
+    let poisoner = durable.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.inner.lock().unwrap();
+            panic!("poisoning the owner");
+        })
+        .join()
+        .is_err()
+    );
+    assert_eq!(
+        durable.restore_interrupted(),
+        None,
+        "nothing to return and no way to look are different answers"
+    );
+}
+
+#[test]
+fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
+    let client = XServerFrontendClientId(377);
+    let surface = SurfaceId::new(377, 1);
+    // Full, so shutdown carries the obligation here instead of answering it.
+    let (acknowledgements, acks) = sync_channel(1);
+    acknowledgements
+        .try_send(completion_ack(
+            configure(client, surface, 1),
+            XAuthorityControlOutcome::Delivered,
+        ))
+        .expect("the empty slot");
+    let durable = crate::PrivateSettlementOwner::with_capacity(8);
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    private
+        .control_producer()
+        .submit(configure(client, surface, 74001))
+        .expect("the shared admission to accept control");
+    drop(private.shutdown());
+    assert_eq!(durable.owed(), Some(1));
+
+    // Freed, so the sweep can finish and the lists are the ones a completed
+    // sweep left behind rather than ones it never emptied.
+    assert!(acks.try_recv().is_ok());
+    let progress = durable.drive();
+    assert_eq!(progress.answered, 1, "swept and answered");
+    assert_eq!(
+        acks.try_recv().unwrap().acknowledgement.transaction,
+        TransactionId::from_raw(74001)
+    );
+
+    // The buffers were taken at construction so that settling work a failing
+    // instance handed over never has to allocate. A sweep that moves its
+    // inventory out through a local swaps in a fresh vector and drops the
+    // buffer with it, so the next sweep allocates during exactly the teardown
+    // the reservation was for. Moving between two owned lists keeps it.
+    let held = durable.records_even_if_poisoned();
+    assert!(
+        held.held.capacity() >= 8,
+        "the list swept from kept its reserved buffer, had {}",
+        held.held.capacity()
+    );
+    assert!(
+        held.outstanding.capacity() >= 8,
+        "and so did the list of routed work, had {}",
+        held.outstanding.capacity()
+    );
+    assert!(held.in_flight.is_empty(), "a finished sweep carries nothing");
+    assert!(
+        held.in_flight.capacity() >= 8,
+        "and the list it carries in keeps its own buffer too, had {}",
+        held.in_flight.capacity()
+    );
+}

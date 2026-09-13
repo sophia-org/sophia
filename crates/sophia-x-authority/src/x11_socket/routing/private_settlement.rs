@@ -25,6 +25,22 @@ pub struct PrivateSettlementOwner {
 #[cfg(unix)]
 struct AbandonedSettlements {
     held: Vec<(XServerFrontendRouteRegistry, PrivateOperation)>,
+    /// Obligations a sweep is part-way through.
+    ///
+    /// Owned here rather than in a local, so a sweep that unwinds leaves them
+    /// in this owner's inventory instead of dropping them with a stack frame.
+    /// Moving work out to settle it and putting back what could not be settled
+    /// is the whole shape of a sweep, and the window in between is exactly
+    /// where an interruption loses it.
+    ///
+    /// Anything found here belongs to a sweep that did not finish. It is
+    /// unsettled by definition -- a settled obligation is removed as it is
+    /// settled -- so recovering it is returning it, never answering it again.
+    in_flight: Vec<(XServerFrontendRouteRegistry, PrivateOperation)>,
+    /// The same, for the routed work whose credits a sweep is checking.
+    outstanding_in_flight: Vec<(XServerFrontendRouteRegistry, PrivateIdentity)>,
+    /// The same, for failed instances a recovery is part-way through.
+    failed_in_flight: Vec<FailedInstance>,
     /// Routed work whose handle was abandoned before it finished.
     ///
     /// Carries the registry that can observe its terminal outcome, so the
@@ -79,6 +95,9 @@ impl PrivateSettlementOwner {
         Self {
             inner: Arc::new(Mutex::new(AbandonedSettlements {
                 held: Vec::with_capacity(capacity),
+                in_flight: Vec::with_capacity(capacity),
+                outstanding_in_flight: Vec::with_capacity(capacity),
+                failed_in_flight: Vec::with_capacity(capacity),
                 outstanding: Vec::with_capacity(capacity),
                 failed: Vec::with_capacity(capacity),
                 failed_capacity: capacity,
@@ -98,9 +117,20 @@ impl PrivateSettlementOwner {
     /// with the credits it holds. Silently doing nothing on a poisoned lock is
     /// exactly that loss, and it is the shape this owner exists to prevent.
     ///
-    /// Reading through poison is sound here because a panic elsewhere cannot
-    /// have left these mid-update: they are pushes, pops and a counter, with
-    /// no invariant spanning two of them.
+    /// This preserves work being handed over now. It does not establish that
+    /// what was already here survived, and the distinction matters: the credit
+    /// count spans held, outstanding and the instances still live, and the
+    /// failure slots span live and retained failed instances. These are
+    /// coupled, so each operation being individually safe says nothing about
+    /// the inventory as a whole.
+    ///
+    /// The sweeps now move inventory between two places this owner holds
+    /// rather than through a local, so an interruption leaves the untouched
+    /// remainder here to be returned. What that does not cover is the one
+    /// obligation a sweep has already moved into the call that settles it:
+    /// `settle_against` takes it by value, so an unwind inside drops it, and
+    /// that call is also where an acknowledgement is emitted. Retaining that
+    /// one requires the settling call not to own it.
     ///
     /// Everything that can refuse still refuses rather than coming through
     /// here. Taking a credit or a failure slot on an owner nobody can read is
@@ -180,13 +210,22 @@ impl PrivateSettlementOwner {
         let Ok(mut held) = self.inner.lock() else {
             return None;
         };
-        // Drained in place rather than taken: mem::take would swap in a fresh
-        // vector of capacity zero and drop the buffer reserved at
-        // construction, so the next failure would allocate during cleanup --
-        // exactly what reserving it was meant to avoid.
-        let failed: Vec<FailedInstance> = held.failed.drain(..).collect();
+        // Moved into the owner's own in-flight list rather than a local, and
+        // taken one at a time, so an unwind part-way through leaves the rest
+        // here instead of dropping them with the frame. Appended rather than
+        // taken, so the buffer reserved at construction survives and the next
+        // failure does not allocate during cleanup -- exactly what reserving
+        // it was meant to avoid.
+        {
+            let AbandonedSettlements {
+                failed,
+                failed_in_flight,
+                ..
+            } = &mut *held;
+            failed_in_flight.append(failed);
+        }
         let mut recovered = 0usize;
-        for instance in failed {
+        while let Some(instance) = held.failed_in_flight.pop() {
             let mut queue = match instance.queue.lock() {
                 Ok(queue) => queue,
                 // The guard is recoverable even though the lock is not: the
@@ -271,6 +310,36 @@ impl PrivateSettlementOwner {
         held.reserved = held.reserved.saturating_sub(1);
     }
 
+    /// Return whatever an interrupted sweep left part-way through.
+    ///
+    /// A sweep moves obligations out of the inventory it settles from and puts
+    /// back what it could not settle. If it unwinds in between, the work is in
+    /// this owner's in-flight lists: still owned, still holding its credit,
+    /// and by construction unsettled, because a settled obligation is removed
+    /// as it is settled rather than at the end.
+    ///
+    /// So this returns them and answers nothing. Poison is not permission to
+    /// resume execution, and an obligation found here is not evidence of what
+    /// happened to it -- only that a sweep did not finish with it.
+    ///
+    /// Returns how many were returned, or `None` if this owner cannot be read
+    /// at all: nothing to return and no way to look are different answers.
+    /// Doing it twice returns nothing the second time.
+    pub fn restore_interrupted(&self) -> Option<usize> {
+        let mut held = self.inner.lock().ok()?;
+        let returned = held.in_flight.len() + held.outstanding_in_flight.len()
+            + held.failed_in_flight.len();
+        // Drained rather than taken, so the buffers reserved at construction
+        // survive and a later recovery does not allocate.
+        let carried: Vec<_> = held.in_flight.drain(..).collect();
+        held.held.extend(carried);
+        let carried: Vec<_> = held.outstanding_in_flight.drain(..).collect();
+        held.outstanding.extend(carried);
+        let carried: Vec<_> = held.failed_in_flight.drain(..).collect();
+        held.failed.extend(carried);
+        Some(returned)
+    }
+
     /// Try to discharge everything waiting.
     ///
     /// Each obligation is retried against the registry that accepted it, never
@@ -289,9 +358,26 @@ impl PrivateSettlementOwner {
                 ..DriveProgress::default()
             };
         };
-        let taken = std::mem::take(&mut held.held);
-        let before = taken.len();
-        for (origin, operation) in taken {
+        // Moved between two owned places rather than into a local, and taken
+        // one at a time, so an unwind part-way through leaves the rest here
+        // rather than dropping them with the frame.
+        let before = held.held.len();
+        {
+            // Appended rather than taken into a local and extended from it.
+            // A take leaves the work in a temporary for as long as it takes to
+            // put it somewhere owned, however short that is, and swaps in a
+            // vector of capacity zero -- so the buffer reserved at
+            // construction goes too, and the next sweep allocates. This moves
+            // the elements in one step and leaves the emptied list its own
+            // capacity.
+            let AbandonedSettlements {
+                held: settling,
+                in_flight,
+                ..
+            } = &mut *held;
+            in_flight.append(settling);
+        }
+        while let Some((origin, operation)) = held.in_flight.pop() {
             let mut remaining = settle_against(&origin, vec![operation]);
             if let Some(operation) = remaining.pop() {
                 held.held.push((origin, operation));
@@ -302,17 +388,28 @@ impl PrivateSettlementOwner {
         }
         // Routed work that has since finished releases its credit here, once
         // and only on a genuine terminal outcome.
-        let carried: Vec<_> = held.outstanding.drain(..).collect();
+        //
         // Each origin settles its own before its records are read. Bound to
         // the registry that issued the work rather than to anything handed in,
-        // and allocating nothing, because this runs under the owner's lock.
-        for (origin, _) in &carried {
+        // and the scan it calls allocates nothing.
+        for (origin, _) in &held.outstanding {
             if let Some(owner) = origin.control_completion() {
                 let _settled = owner.reconcile_unstarted();
             }
         }
+        // Into the owner's own in-flight list rather than a local, for the
+        // same reason as above: an unwind part-way through leaves the rest
+        // here instead of dropping them with the frame.
+        {
+            let AbandonedSettlements {
+                outstanding,
+                outstanding_in_flight,
+                ..
+            } = &mut *held;
+            outstanding_in_flight.append(outstanding);
+        }
         let mut reclaimed = 0usize;
-        for (origin, identity) in carried {
+        while let Some((origin, identity)) = held.outstanding_in_flight.pop() {
             let ended = match identity {
                 PrivateIdentity::Delivery(Some(delivery)) => {
                     matches!(
