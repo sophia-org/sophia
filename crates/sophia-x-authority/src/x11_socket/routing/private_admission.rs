@@ -207,6 +207,9 @@ pub enum AdmissionRefusal {
     /// can be derived from it. Not a capacity answer: nothing is exhausted,
     /// and nothing was exposed.
     AuthorityUnreadable,
+    /// The keymap this instance would apply keys with does not compile. An
+    /// instance that can never apply a key is refused rather than built.
+    KeymapUnavailable,
 }
 
 /// Why a private producer's work was not accepted.
@@ -451,7 +454,8 @@ impl PrivateIngress {
                     // because the work is in hand either way and the nearest
                     // true thing to say about it is that what would accept it
                     // cannot be reached.
-                    AdmissionRefusal::AuthorityUnreadable => {
+                    AdmissionRefusal::AuthorityUnreadable
+                    | AdmissionRefusal::KeymapUnavailable => {
                         PrivateSendError::Unavailable(route)
                     }
                 }

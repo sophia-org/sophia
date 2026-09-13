@@ -206,6 +206,82 @@ impl PrivateAuthorityController {
     }
 }
 
+/// The keyboard state one executing thread owns.
+///
+/// Held by the thread that drives execution rather than by the frontend, and
+/// deliberately so. The frontend is moved between threads today -- it is sent
+/// into one to run a turn and comes back -- so putting keyboard state inside
+/// it would either make it thread-bound without saying so, or need an unsafe
+/// claim that a C library's state may cross threads. This says instead that
+/// the state belongs to whoever is executing, which is what "on the executing
+/// thread" has to mean to be worth anything.
+///
+/// The shared alternative is a worker thread reached by sending a command and
+/// blocking on a reply with a deadline. That is a wait, and the routing path
+/// takes it while already holding a guard; nothing may wait under the
+/// execution guards, so an ordered execution cannot use it.
+#[cfg(unix)]
+pub struct PrivateKeyboards {
+    /// The keymap every seat here is built from, so a seat met later is built
+    /// the same way as one met first.
+    config: crate::XkbRmlvoConfig,
+    seats: BTreeMap<SeatId, crate::XkbKeyboardState>,
+}
+
+#[cfg(unix)]
+impl PrivateKeyboards {
+    /// Build the state for one executing thread, proving the keymap compiles.
+    ///
+    /// Fallible here rather than at first use: a keymap that does not compile
+    /// would otherwise fail inside a transaction, after the point where
+    /// refusing is still free.
+    pub fn new(config: crate::XkbRmlvoConfig) -> Option<Self> {
+        crate::XkbKeyboardState::new(&config).ok()?;
+        Some(Self {
+            config,
+            seats: BTreeMap::new(),
+        })
+    }
+
+    /// Make sure this seat has state, before any transaction is entered.
+    ///
+    /// Separate from applying, because building compiles a keymap and that is
+    /// neither free nor infallible. Doing it inside the guards would put a
+    /// fallible allocation where a refusal is no longer free.
+    pub fn prepare(&mut self, seat: SeatId) -> bool {
+        if self.seats.contains_key(&seat) {
+            return true;
+        }
+        match crate::XkbKeyboardState::new(&self.config) {
+            Ok(state) => {
+                self.seats.insert(seat, state);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Apply one key to a seat this thread has already prepared.
+    ///
+    /// Returns the X keycode, the modifier state *before* the key, and the
+    /// state after it. Both are needed and they are different facts: X reports
+    /// the pre-event modifiers on the event itself, while what follows has to
+    /// see the state the key produced.
+    ///
+    /// `None` where the seat was never prepared or the key does not map.
+    /// Nothing is built here, so this cannot fail for want of a keymap.
+    pub fn apply(&mut self, seat: SeatId, keycode: u32, pressed: bool) -> Option<(u8, u16, u16)> {
+        let state = self.seats.get_mut(&seat)?;
+        let (mapped, before) = state.map_evdev_key(keycode, pressed)?;
+        Some((mapped, before, state.modifier_mask()))
+    }
+
+    /// What this seat's modifiers are now, without applying anything.
+    pub fn modifiers(&self, seat: SeatId) -> Option<u16> {
+        self.seats.get(&seat).map(crate::XkbKeyboardState::modifier_mask)
+    }
+}
+
 /// A reservation that has not reached the order yet.
 ///
 /// Held rather than returned as a bare token, because the window between

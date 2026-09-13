@@ -11908,6 +11908,65 @@ fn cleanup_left_unresolved_is_resumed_rather_than_revisited_by_revocation() {
 }
 
 #[test]
+fn keyboard_state_is_applied_on_this_thread_with_both_modifier_facts() {
+    let mut keyboards = crate::PrivateKeyboards::new(crate::XkbRmlvoConfig::default())
+        .expect("a keymap that compiles");
+    let seat = SeatId::from_raw(1);
+
+    // Applying before preparing does not build anything. Building compiles a
+    // keymap, which is neither free nor infallible, and doing it inside a
+    // transaction would put that failure where refusing is no longer free.
+    assert!(
+        keyboards.apply(seat, 42, true).is_none(),
+        "an unprepared seat applies nothing"
+    );
+    assert!(keyboards.prepare(seat));
+    assert!(keyboards.prepare(seat), "preparing twice is not an error");
+
+    // Left shift down, then a key while it is held. The event carries the
+    // modifiers from *before* it, while what follows has to see the state it
+    // produced -- two different facts, which is why both are returned.
+    let (_shift_code, before_shift, after_shift) =
+        keyboards.apply(seat, 42, true).expect("left shift to map");
+    assert_eq!(before_shift, 0, "nothing was held before the first key");
+    assert_ne!(
+        after_shift, 0,
+        "and the state the key produced is not the state it was reported with"
+    );
+    assert_eq!(
+        keyboards.modifiers(seat),
+        Some(after_shift),
+        "the seat keeps what the key left"
+    );
+
+    let (_code, before_key, _after_key) =
+        keyboards.apply(seat, 30, true).expect("a letter to map");
+    assert_eq!(
+        before_key, after_shift,
+        "the next event reports the modifiers that were held when it happened"
+    );
+
+    // Released, and the seat follows. No worker, no channel, no deadline: this
+    // is state this thread owns, so nothing here waits.
+    keyboards.apply(seat, 42, false).expect("left shift release");
+    assert_eq!(
+        keyboards.modifiers(seat),
+        Some(0),
+        "releasing the modifier clears it"
+    );
+
+    // A second seat is independent, and is built the same way as the first.
+    let other = SeatId::from_raw(2);
+    assert!(keyboards.prepare(other));
+    assert_eq!(keyboards.modifiers(other), Some(0));
+    assert_eq!(
+        keyboards.modifiers(seat),
+        Some(0),
+        "seats do not share state"
+    );
+}
+
+#[test]
 fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(541));
