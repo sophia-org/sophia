@@ -355,6 +355,7 @@ impl PrivateAdmissionParticipant {
         client: XServerFrontendClientId,
         act: impl FnOnce(
             &mut sophia_input_authority::ExecutionPermit<'_>,
+            &PrivateAdmissionBindings,
         ) -> Result<(), sophia_input_authority::RegistrationError>,
     ) -> Result<
         Result<sophia_input_authority::RequestCompletion, PrivateAuthorityRefusal>,
@@ -375,16 +376,40 @@ impl PrivateAdmissionParticipant {
                 recipient: client.raw(),
                 connection_generation: bound.generation,
             };
+            // The bindings are already held here, so the callback is handed
+            // them rather than reaching for them again -- a recipient's own
+            // admission generation is evidence it must read under this guard,
+            // not evidence the submitter can supply about somebody else.
+            let held: &PrivateAdmissionBindings = bindings;
             Ok(authority
                 .execute_reserved(issuer, outstanding.token(), current, |permit| {
                     // Written before the caller's work can take effect or
                     // unwind.
                     outstanding.entering();
-                    act(permit)
+                    act(permit, held)
                 })
                 .inspect(|_| outstanding.settled())
                 .map_err(PrivateAuthorityRefusal::Authority))
         })?
+    }
+}
+
+#[cfg(unix)]
+impl PrivateAdmissionBindings {
+    /// The connection identity a recipient is currently admitted under.
+    ///
+    /// Read from the binding the admission producer maintains, not from the
+    /// submitting request: a request's own connection says who sent it, and
+    /// says nothing about a different client it may be delivered to.
+    fn recipient(
+        &self,
+        client: XServerFrontendClientId,
+    ) -> Option<sophia_input_authority::Recipient> {
+        let bound = self.bound.get(&client).filter(|bound| !bound.closed)?;
+        Some(sophia_input_authority::Recipient {
+            recipient: client.raw(),
+            connection_generation: bound.generation,
+        })
     }
 }
 

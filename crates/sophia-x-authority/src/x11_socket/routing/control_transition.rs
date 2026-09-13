@@ -290,6 +290,14 @@ pub struct PrivateXServerFrontend {
     /// to this authority. Held rather than used directly: the frontend is the
     /// executor, and executing is not submitting.
     submit: sophia_input_authority::SubmitHandle,
+    /// Where each hold this executor began was delivered.
+    ///
+    /// Recorded when a press begins a hold and read when one ends. A release
+    /// answers to what the press reached, and that is a fact from the moment
+    /// of the press: resolving it again would describe wherever the route
+    /// points now, which is a different client the moment a grab or a surface
+    /// has moved.
+    holds: BTreeMap<u64, PrivateReachedResources>,
     /// Whether this instance has already handed out its keyboard state.
     ///
     /// One history per instance, so the answer is asked and answered once.
@@ -618,6 +626,7 @@ impl PrivateXServerFrontend {
             controller,
             submit,
             keyboards_issued: std::sync::atomic::AtomicBool::new(false),
+            holds: BTreeMap::new(),
         })
     }
 
@@ -708,6 +717,7 @@ impl PrivateXServerFrontend {
         client: XServerFrontendClientId,
         act: impl FnOnce(
             &mut sophia_input_authority::ExecutionPermit<'_>,
+            &PrivateAdmissionBindings,
         ) -> Result<(), sophia_input_authority::RegistrationError>,
     ) -> Result<sophia_input_authority::RequestCompletion, PrivateAuthorityRefusal> {
         match self.participant.execute_current(outstanding, client, act) {

@@ -11147,7 +11147,7 @@ fn one_producer_cannot_consume_another_producers_completion() {
     ] {
         assert!(
             private
-                .execute_ordered(request, client, |permit| permit.begin_external_effect())
+                .execute_ordered(request, client, |permit, _bindings| permit.begin_external_effect())
                 .is_ok(),
             "each producer's own request executes"
         );
@@ -11223,7 +11223,7 @@ fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
     // Moved in and dropped while this thread holds common. Taking common again
     // to dispose is a deadlock rather than a rank question, so the debt is
     // recorded and paid by the next caller that holds it.
-    let completion = private.execute_ordered(&request, XServerFrontendClientId(503), move |permit| {
+    let completion = private.execute_ordered(&request, XServerFrontendClientId(503), move |permit, _bindings| {
             drop(stranded);
             permit.begin_external_effect()
         });
@@ -11445,7 +11445,7 @@ fn a_deferred_disposal_records_and_pays_through_a_poisoned_debt_list() {
         .is_err()
     );
 
-    let completion = private.execute_ordered(&request, XServerFrontendClientId(521), move |permit| {
+    let completion = private.execute_ordered(&request, XServerFrontendClientId(521), move |permit, _bindings| {
             drop(stranded);
             permit.begin_external_effect()
         });
@@ -11477,7 +11477,7 @@ fn a_debt_already_recorded_is_paid_through_a_poisoned_list() {
     let stranded = other.reserve(stamp, 1).expect("an unpublished reservation");
 
     // Recorded first, with the list healthy.
-    let completion = private.execute_ordered(&request, XServerFrontendClientId(523), move |permit| {
+    let completion = private.execute_ordered(&request, XServerFrontendClientId(523), move |permit, _bindings| {
             drop(stranded);
             permit.begin_external_effect()
         });
@@ -11530,7 +11530,7 @@ fn recording_a_disposal_debt_does_not_allocate() {
         .expect("a reservation")
         .accepted();
     let stranded = other.reserve(stamp, 1).expect("an unpublished reservation");
-    let _ = private.execute_ordered(&request, XServerFrontendClientId(525), move |permit| {
+    let _ = private.execute_ordered(&request, XServerFrontendClientId(525), move |permit, _bindings| {
             drop(stranded);
             permit.begin_external_effect()
         });
@@ -11599,7 +11599,7 @@ fn a_revoked_admission_stops_a_later_execution() {
     let first = role.reserve(stamp, 1).expect("a reservation").accepted();
     assert!(
         private
-            .execute_ordered(&first, XServerFrontendClientId(561), |permit| permit
+            .execute_ordered(&first, XServerFrontendClientId(561), |permit, _bindings| permit
                 .begin_external_effect())
             .is_ok(),
         "work that reaches execution before revocation applies"
@@ -11630,7 +11630,7 @@ fn a_revoked_admission_stops_a_later_execution() {
         "the binding closed and the grant it authorised was retired"
     );
 
-    let refused = private.execute_ordered(&second, XServerFrontendClientId(561), |_permit| {
+    let refused = private.execute_ordered(&second, XServerFrontendClientId(561), |_permit, _bindings| {
         panic!("a revoked admission must not reach the permit");
     });
     assert!(
@@ -11665,7 +11665,7 @@ fn a_revoked_admission_stops_a_later_execution() {
         )
         .expect("a replacement admission");
     let still_refused =
-        private.execute_ordered(&second, XServerFrontendClientId(561), |_permit| {
+        private.execute_ordered(&second, XServerFrontendClientId(561), |_permit, _bindings| {
             panic!("an old grant must not become current under a new admission");
         });
     assert!(
@@ -11789,7 +11789,7 @@ fn a_boundary_nobody_can_read_is_not_a_client_nobody_admitted() {
         .is_err()
     );
 
-    let outcome = private.execute_ordered(&request, XServerFrontendClientId(591), |_permit| {
+    let outcome = private.execute_ordered(&request, XServerFrontendClientId(591), |_permit, _bindings| {
         panic!("an unreadable boundary must not reach the permit");
     });
     assert!(
@@ -12086,7 +12086,7 @@ fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
 
     assert!(
         private
-            .execute_ordered(&request, XServerFrontendClientId(541), |permit| permit
+            .execute_ordered(&request, XServerFrontendClientId(541), |permit, _bindings| permit
                 .begin_external_effect())
             .is_ok()
     );
@@ -12130,7 +12130,7 @@ fn an_interrupted_execution_is_not_mistaken_for_one_that_never_ran() {
     // Marks an effect, then does not return. Whether that effect happened is
     // exactly what the interruption destroyed.
     let interrupted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        private.execute_ordered(&request, XServerFrontendClientId(551), |permit| {
+        private.execute_ordered(&request, XServerFrontendClientId(551), |permit, _bindings| {
             permit.begin_external_effect()?;
             panic!("interrupting execution after its effect was marked");
         })
@@ -12243,9 +12243,10 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
             &pressed,
         )
         .expect("the press to run");
-    assert_eq!(run.reached.client(), client, "it reached the route's client");
-    assert_eq!(run.reached.window(), window);
-    assert!(!run.reached.grabbed(), "no grab chose it");
+    let reached = run.reached.expect("a press decides where it went");
+    assert_eq!(reached.client(), client, "it reached the route's client");
+    assert_eq!(reached.window(), window);
+    assert!(!reached.grabbed(), "no grab chose it");
     assert!(run.first_press, "this press began the hold");
     assert!(!run.keyboard_applied, "a button moves no keyboard state");
     assert!(matches!(
@@ -12295,11 +12296,21 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
             &released,
         )
         .expect("the release to run");
+    let released_to = run.reached.expect("a delivering release names its hold");
     assert_eq!(
-        run.reached.client(),
+        released_to.client(),
         client,
         "the release answers to the recipient the press reached"
     );
+    assert_eq!(
+        released_to.window(),
+        window,
+        "and to the window that press recorded, not whatever the route says now"
+    );
+    assert!(matches!(
+        run.release,
+        Some(sophia_input_authority::ReleaseOutcome::DeliverTo(_))
+    ));
     assert!(!run.first_press, "a release begins nothing");
     assert!(matches!(
         released.observe(),
@@ -12385,4 +12396,163 @@ fn another_instances_keyboard_history_cannot_drive_this_one() {
         ),
         "one instance is not driven with another's keyboard history, got {refused:?}"
     );
+}
+
+/// A frontend with one admitted, registered client and a surface, ready to run
+/// ordered input for it.
+fn ordered_fixture(
+    client: XServerFrontendClientId,
+    surface: SurfaceId,
+    window: XResourceId,
+) -> (
+    crate::PrivateXServerFrontend,
+    XServerFrontendClientRouteRegistration,
+    crate::PrivateReservationRole,
+    crate::PrivateKeyboards,
+) {
+    let private = private_for_roles();
+    let registration = admit_role_client(&private, client);
+    private
+        .broker
+        .registry
+        .register_surface(client, NamespaceId::from_raw(client.raw()), surface, window)
+        .expect("the surface to register");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
+    let keyboards = private.keyboards().expect("this instance's state");
+    (private, registration, role, keyboards)
+}
+
+#[test]
+fn a_release_answers_its_hold_after_the_surface_is_gone() {
+    let client = XServerFrontendClientId(731);
+    let surface = SurfaceId::new(731, 1);
+    let window = XResourceId::new(0x200731, 1);
+    let (mut private, _registration, role, mut keyboards) =
+        ordered_fixture(client, surface, window);
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+
+    let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(731), 272, true),
+            &pressed,
+        )
+        .expect("the press to run");
+    assert!(run.first_press);
+    let _ = pressed.observe();
+
+    // The surface goes. A release that consulted the route would now refuse,
+    // which is exactly when a release matters most: the client still holds the
+    // button and is owed the event that ends it.
+    private
+        .broker
+        .registry
+        .surfaces
+        .lock()
+        .expect("the surfaces")
+        .remove(&surface);
+
+    let released = role.reserve(stamp, 2).expect("a reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(732), 272, false),
+            &released,
+        )
+        .expect("the release to run with its target gone");
+    let reached = run.reached.expect("the release names its hold");
+    assert_eq!(reached.client(), client);
+    assert_eq!(
+        reached.window(),
+        window,
+        "it answers to what the press recorded"
+    );
+    assert!(matches!(
+        run.release,
+        Some(sophia_input_authority::ReleaseOutcome::DeliverTo(_))
+    ));
+}
+
+#[test]
+fn a_release_keeps_the_window_its_press_recorded() {
+    let client = XServerFrontendClientId(741);
+    let surface = SurfaceId::new(741, 1);
+    let window = XResourceId::new(0x200741, 1);
+    let (mut private, _registration, role, mut keyboards) =
+        ordered_fixture(client, surface, window);
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+
+    let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(741), 272, true),
+            &pressed,
+        )
+        .expect("the press to run");
+    assert_eq!(run.reached.expect("a press decides").window(), window);
+    let _ = pressed.observe();
+
+    // The surface now maps somewhere else entirely.
+    let moved = XResourceId::new(0x200742, 2);
+    {
+        let mut surfaces = private
+            .broker
+            .registry
+            .surfaces
+            .lock()
+            .expect("the surfaces");
+        let route = surfaces.get_mut(&surface).expect("the route");
+        route.window = moved;
+    }
+
+    let released = role.reserve(stamp, 2).expect("a reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(742), 272, false),
+            &released,
+        )
+        .expect("the release to run");
+    let reached = run.reached.expect("the release names its hold");
+    assert_eq!(
+        reached.window(),
+        window,
+        "the release answers the window its press reached, not where the route points now"
+    );
+    assert_ne!(reached.window(), moved);
+}
+
+#[test]
+fn a_release_of_nothing_held_is_an_outcome_not_a_missing_target() {
+    let client = XServerFrontendClientId(751);
+    let surface = SurfaceId::new(751, 1);
+    let (mut private, _registration, role, mut keyboards) =
+        ordered_fixture(client, surface, XResourceId::new(0x200751, 1));
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+
+    // Nothing was ever pressed. The target is registered and present, so a
+    // refusal blaming the target would be describing a problem that is not
+    // there; the ledger simply owes nobody an event.
+    let released = role.reserve(stamp, 1).expect("a reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(751), 272, false),
+            &released,
+        )
+        .expect("an unheld release is a successful outcome");
+    assert!(
+        matches!(
+            run.release,
+            Some(sophia_input_authority::ReleaseOutcome::NotHeld)
+        ),
+        "the ledger says it was not holding, got {:?}",
+        run.release
+    );
+    assert!(run.reached.is_none(), "so nobody is owed an event");
+    assert!(run.event.is_none());
 }
