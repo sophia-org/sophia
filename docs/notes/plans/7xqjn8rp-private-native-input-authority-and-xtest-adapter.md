@@ -25,7 +25,7 @@ later M3 producer/consumer candidates remain unintegrated. XTEST discovery stays
 disabled. The mandatory native manifest has 40 obligations, including 20 with no
 production implementation evidence.
 
-The next runtime slice is an explicit owned shutdown path: accepted input,
+The next runtime slice is a usable, origin-owned shutdown path: accepted input,
 control acknowledgements and lease cleanup must remain owned through poison,
 missing targets and output backpressure. Counting a failure is not settlement.
 The ordered executor still owes final guarded validation, authority/XKB state
@@ -864,3 +864,27 @@ the issuer's receipt channel, not to the X client named in the receipt. Frontend
 client IDs start at 1 and do not wrap. The former client-0 fallback was unsupported
 attribution/correlation, not demonstrated delivery to an actual client 0. Removing
 it does not by itself supply the missing completion owner.
+
+Candidate `059df74e` adds explicit shutdown and retains failed operations inside
+an opaque report. Source review confirms that local storage but finds no usable
+external settlement path: the report exposes only `owed` and `is_settled`, while
+shutdown consumes the frontend without retaining its originating settlement
+access in the report. Exporting stamped envelopes would not fix that lifetime
+problem and is not requested.
+
+The chosen API direction is an opaque, origin-bound settlement handle with a
+bounded retry/progress operation. It must retain access to the owner capable of
+settling its pending work, or refer to a durable instance-owned settlement
+record. Full acknowledgement channel, shutdown, capacity becoming available,
+retry and exact acknowledgement once is the public-API acceptance case. Retry
+must not route a batch through another frontend with colliding local identities,
+or select an execution recipient early to manufacture completion ownership.
+
+`#[must_use]` is a lint, not a linear ownership guarantee. Dropping the current
+report destroys its obligations, and fallback frontend Drop still logs and
+then drops its report. Abandoned handles need retained origin-owned cleanup or
+an explicit instance failure/teardown path that discharges the obligations.
+Poison cannot be reduced to a boolean after losing access to the pending queue.
+Preallocated drain storage, bounded cleanup service and truthful completion
+remain required. No public envelope API or additional operator decision is
+needed for this already-authorized implementation. The candidate is unintegrated.
