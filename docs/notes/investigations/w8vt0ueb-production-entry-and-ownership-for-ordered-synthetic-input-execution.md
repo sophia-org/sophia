@@ -153,6 +153,40 @@ is not a delivery.
 Retained completions are bounded, and the agreed external private-instance
 watchdog stands outside this.
 
+## Raw ingress: the API change this needs
+
+`route_pending` consumes `input_receiver` and routes it without any stamp. In
+private mode that work is refused. The refusal has to reach the producer, and
+today it cannot.
+
+`XServerFrontendRouteBroker::input_sender` (`broker.rs:505`) hands out a bare
+`SyncSender<XAuthorityClientInputEvent>`. A successful `send` means the queue
+accepted bytes, nothing more; a consumer that later declines has no way back
+to the caller. Treating send success as admission would be inferring
+authorisation from the channel, which is the thing being refused.
+
+So the change is a facade, not a check at the consumer:
+
+| Concern | What it has to do |
+| --- | --- |
+| Refusal point | At `send`, on the producer's thread, before acceptance |
+| Refusal type | Typed and specific -- denied because private, or denied because unstamped -- carrying the rejected payload back |
+| Not | A silent drop; a service-fatal `route_pending` error; or a denial dressed as queue saturation or recipient failure |
+| Producer | Fails its own operation immediately, while the authority keeps serving healthy authorised work |
+| Pre-obtained handles | Must observe activation too, or construction must prove none escaped |
+| Already-queued raw work | Drained and refused on activation, with an observable producer outcome |
+| Receipts | Raw events have no synthetic request cell. Do not invent one, and do not fabricate a delivery receipt. Work already inside a tracked lifecycle gets its exact negative completion, issued after locks drop |
+
+The pre-obtained handle problem is the same shape as the gate escape already
+fixed on this branch: a sender taken before installation kept its own answer.
+That was solved by putting the decision in a cell the broker and every handle
+already share, set once. The same shape applies here, with the difference that
+this one must also carry a refusal back, which a `SyncSender` cannot.
+
+What has to be tested: a sender obtained before install, work queued before
+install, authorised work continuing afterwards, a refusal that leaves XKB and
+query state untouched, and no producer left without an answer.
+
 ## What still needs stating
 
 Pure getters need coherent snapshots and request ordering. They do not need
