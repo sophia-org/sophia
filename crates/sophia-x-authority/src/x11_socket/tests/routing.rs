@@ -3506,3 +3506,51 @@ fn producers_are_refused_once_their_consumer_is_gone() {
         .expect_err("a gone consumer refuses control too");
     assert_eq!(refusal, crate::AdmissionRefusal::ConsumerGone);
 }
+
+#[test]
+fn an_unreachable_queue_is_not_reported_as_a_finished_one() {
+    let namespace = NamespaceId::from_raw(54);
+    let client = XServerFrontendClientId(72);
+    let surface = SurfaceId::new(59, 1);
+    let window = XResourceId::new(0x2001c0, 1);
+    let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let mut private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender,
+        delivery_sender,
+        gate,
+    );
+    let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+
+    // Accepted, and owed a run.
+    private
+        .ingress()
+        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(8201)))
+        .expect("an open coordinator to accept work");
+
+    // The queue becomes unreachable while that work is still in it.
+    let admission = std::sync::Arc::clone(&private.admission);
+    let _ = std::thread::spawn(move || {
+        let _guard = admission.ready.lock().expect("the queue");
+        panic!("poisoning the shared queue");
+    })
+    .join();
+
+    // Reporting an empty run here would say the pass finished while accepted
+    // work sat in a queue nobody can open.
+    assert!(
+        private.route_pending().is_err(),
+        "an unreachable queue is not a drained one"
+    );
+    assert!(
+        channels.input.try_recv().is_err(),
+        "and nothing was delivered from it"
+    );
+}
