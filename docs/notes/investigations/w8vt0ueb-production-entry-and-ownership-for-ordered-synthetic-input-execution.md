@@ -798,6 +798,45 @@ with that as the production entry:
   real `XkbKeyboardState`, so the type the executing thread needs already
   exists; what is missing is ownership of one.
 
+### Where the admission-currency lookup has to sit
+
+The constraint is that establishing who is currently admitted must not become
+a precheck whose answer is stale by the time the transition applies. Two facts
+decide where it can go.
+
+The authority is owned by the frontend outright rather than shared behind a
+mutex, so `&mut self` for a routing turn *is* the common guard, held for the
+whole turn. An adapter guard taken anywhere in that turn is therefore taken
+after common, not before it, and taking one before calling `execute_reserved`
+is not the rank inversion it would be if common were a lock acquired inside.
+
+`execute_reserved` takes `current_connection` by value, before the callback
+runs, and compares it against what the grant was bound to. So the currency
+evidence cannot be gathered inside the callback -- it is needed to enter it.
+
+That leaves one arrangement that is neither stale nor inverted: take the
+registry guard once, look the current admission up under it, and hold that same
+guard across `execute_reserved` and through resolution and application. The
+lookup and the use of its answer are then separated by no window a teardown
+could occupy, and the callback must not re-take that guard. Failing closed on
+absent, `None` or unreadable is part of it: a route carrying a copied
+admission is evidence of what was admitted once, not that it still is.
+
+No common change is needed for this. The seam would only appear if the
+authority were shared behind a lock, because then the adapter guard would have
+to precede common to answer a question common requires.
+
+### The calls the join is made of
+
+All present; none of them is the missing piece. `issue_grant(issuer,
+connection)` yields a grant and generation, `allocate_device(issuer, grant,
+generation, device)` yields the `DeviceCapability`, `reserve_request(submit,
+capability, context)` yields the `RequestToken` before the work is enqueued,
+and `execute_reserved(issuer, token, current_connection, callback)` runs final
+validation and application together. What is missing is that the envelope
+carries no token, so a reservation made at submission has nothing to travel
+on, and the execution site has nothing to present.
+
 One dependency is genuinely external and does not block the private path.
 `connection_generation` is Session's value -- X mints no such thing -- and
 `ConnectionIdentity` names a connection Session admitted. A private
