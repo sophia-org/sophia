@@ -1151,7 +1151,7 @@ fn pending_control_gets_the_next_runtime_lock() {
     let request_runtime = runtime.clone();
     let request_pending = control_runtime_pending.clone();
     let request = std::thread::spawn(move || {
-        wait_for_x11_control_runtime(&request_pending);
+        wait_for_x11_control_runtime(&request_pending, None);
         let _guard = request_runtime.lock().expect("request runtime lock");
         order_sender.send("request").expect("request order");
     });
@@ -1177,7 +1177,7 @@ fn pending_control_gets_the_next_output_lock() {
     let normal_order = order_sender.clone();
     let normal = std::thread::spawn(move || {
         normal_started_sender.send(()).expect("normal started");
-        let _guard = lock_x11_non_control_output(&normal_stream, &normal_pending)
+        let _guard = lock_x11_non_control_output(&normal_stream, &normal_pending, None)
             .expect("normal output lock");
         normal_order.send("normal").expect("normal order");
     });
@@ -7731,4 +7731,104 @@ fn an_unreadable_registry_owes_an_answer_rather_than_an_empty_list() {
     );
     assert_eq!(registry.outstanding(), None);
     assert_eq!(registry.owed(), None);
+}
+
+#[test]
+fn a_writer_parked_on_control_output_still_stops_when_told() {
+    let client = XServerFrontendClientId(331);
+    let (events, receiver) = sync_channel(4);
+    // Control output is registered and nobody is going to clear it. Stopping
+    // every writer before joining any is necessary and is not sufficient: a
+    // stop flag nothing observes leaves the join waiting on a condition only
+    // another thread could ever satisfy.
+    let pending = Arc::new(AtomicUsize::new(1));
+    let (stream, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+    let writer = spawn_x11_protocol_event_writer(
+        Arc::new(Mutex::new(stream)),
+        pending.clone(),
+        XByteOrder::LittleEndian,
+        Arc::new(AtomicU16::new(1)),
+        client,
+        receiver,
+    )
+    .expect("a writer");
+
+    events
+        .try_send(XClientEvent::UnmapNotify {
+            sequence: 1,
+            event: XResourceId::new(0x200252, 1),
+            window: XResourceId::new(0x200252, 1),
+            from_configure: false,
+        })
+        .expect("room");
+    // Give it time to take the event and park on the pending count.
+    let parked = std::time::Instant::now() + std::time::Duration::from_millis(200);
+    while std::time::Instant::now() < parked {
+        std::thread::yield_now();
+    }
+
+    let mut writers = X11ClientWriters {
+        input: None,
+        control: None,
+        protocol: Some(writer),
+    };
+    let shutdown = writers.shut_down();
+    assert_eq!(shutdown.joined, 1, "the join returned without a rescue");
+    assert!(shutdown.outcome.is_ok(), "and stopping is not a failure");
+    assert_eq!(
+        pending.load(Ordering::Acquire),
+        1,
+        "nothing cleared the condition it was waiting for"
+    );
+}
+
+#[test]
+fn a_command_cannot_claim_execution_after_its_client_is_swept() {
+    let client = XServerFrontendClientId(332);
+    let surface = SurfaceId::new(332, 1);
+    let (acknowledgements, acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+
+    // Accepted while the client was being served, and still queued.
+    private
+        .control_producer()
+        .submit(configure(client, surface, 38001))
+        .expect("the shared admission to accept control");
+
+    // The writer goes. The producer's check and the claim at routing are
+    // separate moments, and this is between them.
+    private.broker.registry.mark_control_writer_gone(client);
+    assert_eq!(registry.reconcile_client(client, true).unexecuted, 1);
+
+    // Routing must not claim it now. A record left claimable after its sweep
+    // would start producing effects for a client nothing is serving.
+    assert!(matches!(
+        private.route_pending(),
+        Err(XServerFrontendRouteError::UnknownClient { .. })
+    ));
+    assert!(
+        acks.try_recv().is_err(),
+        "and nothing was answered on the way"
+    );
+
+    // It is still exactly what it was: accepted, unexecuted, and handed on
+    // when the instance closes.
+    let mut report = private.shutdown();
+    let carried: Vec<_> = report
+        .pending
+        .iter()
+        .filter_map(|operation| match operation {
+            PrivateOperation::Control(control, _) => Some(control.command.transaction().raw()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(carried, vec![38001]);
+    assert_eq!(report.retry(), 1);
 }

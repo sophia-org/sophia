@@ -126,28 +126,53 @@ impl Drop for X11ControlOutputPriority {
 }
 
 #[cfg(unix)]
-fn wait_for_x11_control_output(control_pending: &AtomicUsize) {
+/// Wait for control output to finish, or for this writer to be told to stop.
+///
+/// Cancellable, because the alternative is a writer that has been told to stop
+/// and cannot act on it. Whoever joins it then waits for a condition only
+/// another thread can clear, and a stop flag nothing observes makes a join
+/// unbounded however carefully the flags were set first.
+///
+/// Returns false when the wait was cancelled.
+#[cfg(unix)]
+fn wait_for_x11_control_output(control_pending: &AtomicUsize, stop: Option<&AtomicBool>) -> bool {
     while control_pending.load(Ordering::Acquire) != 0 {
+        if stop.is_some_and(|stop| stop.load(Ordering::Acquire)) {
+            return false;
+        }
         std::thread::yield_now();
     }
+    true
 }
 
+#[cfg(unix)]
+/// Take the output socket for a non-control write, or give up because this
+/// writer was told to stop.
+///
+/// `Ok(None)` is the second of those. It is not a failure: nothing was written
+/// and nothing is owed, and the caller's business is to leave.
 #[cfg(unix)]
 fn lock_x11_non_control_output<'a>(
     stream: &'a Arc<Mutex<UnixStream>>,
     control_pending: &AtomicUsize,
-) -> Result<std::sync::MutexGuard<'a, UnixStream>, X11SetupSocketError> {
+    stop: Option<&AtomicBool>,
+) -> Result<Option<std::sync::MutexGuard<'a, UnixStream>>, X11SetupSocketError> {
     loop {
-        wait_for_x11_control_output(control_pending);
+        if !wait_for_x11_control_output(control_pending, stop) {
+            return Ok(None);
+        }
         let stream = stream
             .lock()
             .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
         // Recheck after acquisition: a control may have registered while this
         // writer was waiting on a request, input, or protocol-event write.
         if control_pending.load(Ordering::Acquire) == 0 {
-            return Ok(stream);
+            return Ok(Some(stream));
         }
         drop(stream);
+        // Back to the wait, which is where stop is observed. A second check
+        // here would save one spin and would be one more thing a reader has to
+        // reason about to see that this terminates.
         std::thread::yield_now();
     }
 }
@@ -170,8 +195,13 @@ fn spawn_x11_protocol_event_writer(
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
             };
-            let mut stream =
-                lock_x11_non_control_output(&stream, &output_control_pending)?;
+            let Some(mut stream) =
+                lock_x11_non_control_output(&stream, &output_control_pending, Some(&writer_stop))?
+            else {
+                // Told to stop while waiting for control output. Nothing was
+                // written, so nothing is owed for this event.
+                return Ok(());
+            };
             set_x11_protocol_event_sequence(&mut event, sequence.load(Ordering::Acquire));
             let record = encode_x_client_event(byte_order, event);
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {

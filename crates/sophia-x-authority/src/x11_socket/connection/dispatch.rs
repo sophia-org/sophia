@@ -2362,10 +2362,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let receipt = observer(pending_observation.take().expect("one observation per allocated ticket"))?;
             if let Some(receipt) = receipt { last_published_observation = Some(receipt); }
             {
+                // No stop flag: this is the dispatch thread itself, and it is
+                // the thread that will later stop and join the writers. There
+                // is nothing for it to observe being told by, so the wait
+                // stays uncancellable here and is bounded instead by control
+                // output finishing.
                 let mut output_stream = lock_x11_non_control_output(
                     &output_stream,
                     &output_control_pending,
-                )?;
+                    None,
+                )?
+                .expect("an uncancellable wait yields the socket");
                 if !encoded_outputs.is_empty() || !server_reply_fds.is_empty() {
                     for (index, bytes) in encoded_outputs.into_iter().enumerate() {
                         let fds = if index == 0 {

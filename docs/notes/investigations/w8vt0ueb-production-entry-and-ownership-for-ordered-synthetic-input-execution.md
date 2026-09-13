@@ -388,6 +388,18 @@ that client -- a registration ending is not proof that its writer stopped, and
 abandoning an operation whose writer is still inside it would refuse the real
 outcome that writer is about to establish.
 
+Stopping every writer before joining any is necessary and is not sufficient. A
+writer parked on a condition only another thread can clear observes no stop
+flag, and the join waits for it forever. The waits that can be waited on now
+observe it and give up without writing, so a join is bounded by the stop rather
+than by whether anyone happens to rescue it. A stalled socket write is a
+different case and is not claimed here.
+
+A claim is refused for a client nothing is serving, at the routing site as well
+as at the producer. Those are separate moments, and a record left claimable
+after its client was swept would take a claim and start producing effects for a
+client with no executor.
+
 Abandoned is a state, not a completion. Nothing is published for it, nothing is
 replayed, it cannot be resumed, and its credit stays held.
 

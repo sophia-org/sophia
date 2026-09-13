@@ -458,8 +458,13 @@ fn spawn_x11_input_event_writer(
                 [None, None, None, None]
             };
             let write_result = (|| -> Result<(), X11SetupSocketError> {
-                let mut stream =
-                    lock_x11_non_control_output(&stream, &output_control_pending)?;
+                let Some(mut stream) =
+                    lock_x11_non_control_output(&stream, &output_control_pending, Some(&writer_stop))?
+                else {
+                    // Told to stop while waiting for control output. Nothing
+                    // was written, and the delivery below is not marked sent.
+                    return Ok(());
+                };
                 if !receiver.delivery_active(client, delivery) { return Ok(()); }
                 let sequence = sequence.load(Ordering::Acquire);
                 write_xi_u16(byte_order, &mut record[2..4], sequence);

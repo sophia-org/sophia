@@ -550,6 +550,14 @@ impl XServerFrontendRouteRegistry {
         if !self.input_recovery.active(None, route.client) {
             return Err(XServerFrontendRouteError::UnknownClient { client: route.client });
         }
+        // Positive evidence that something is still there to execute this,
+        // checked here as well as at the producer. The producer's check and
+        // this claim are separate moments: a client can be swept between them,
+        // and a record left claimable after its sweep would take a claim and
+        // start producing effects for a client nothing is serving.
+        if !self.control_writer_present(route.client) {
+            return Err(XServerFrontendRouteError::UnknownClient { client: route.client });
+        }
         // Before the first authoritative effect, which is not the writer.
         // Focus routing sends FocusOut to the previously focused client and
         // moves the focused surface before any writer runs, so a claim taken

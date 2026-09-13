@@ -644,10 +644,20 @@ fn next_x11_metadata_generation(
 }
 
 #[cfg(unix)]
-fn wait_for_x11_control_runtime(control_runtime_pending: &AtomicUsize) {
+/// Wait for control runtime work to finish, or for the waiter to be told to
+/// stop. Returns false when the wait was cancelled.
+#[cfg(unix)]
+fn wait_for_x11_control_runtime(
+    control_runtime_pending: &AtomicUsize,
+    stop: Option<&AtomicBool>,
+) -> bool {
     while control_runtime_pending.load(Ordering::Acquire) != 0 {
+        if stop.is_some_and(|stop| stop.load(Ordering::Acquire)) {
+            return false;
+        }
         std::thread::yield_now();
     }
+    true
 }
 
 #[cfg(unix)]
@@ -656,7 +666,7 @@ fn lock_x11_request_runtime<'a>(
     control_runtime_pending: &AtomicUsize,
 ) -> Result<std::sync::MutexGuard<'a, XAuthorityRuntime>, X11SetupSocketError> {
     loop {
-        wait_for_x11_control_runtime(control_runtime_pending);
+        wait_for_x11_control_runtime(control_runtime_pending, None);
         let runtime = runtime
             .lock()
             .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
