@@ -60,6 +60,22 @@ impl XCorePointerMapper {
         self.vertical_scroll_v120
     }
 
+    /// The core button an evdev code names, without moving anything.
+    ///
+    /// Separated from mapping because an ordered execution has to name the
+    /// input it is validating before any effect, and mapping moves the button
+    /// state. Additive: the ordinary path still maps and moves in one step.
+    pub const fn peek_evdev_button(evdev_button: u32) -> Option<u8> {
+        match evdev_button {
+            272 => Some(1),
+            274 => Some(2),
+            273 => Some(3),
+            275 => Some(8),
+            276 => Some(9),
+            _ => None,
+        }
+    }
+
     pub fn map_evdev_button(&mut self, evdev_button: u32, pressed: bool) -> Option<(u8, u16)> {
         let (button, mask) = match evdev_button {
             272 => (1, 1 << 8),

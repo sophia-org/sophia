@@ -355,6 +355,19 @@ impl PrivateKeyboards {
         Some((mapped, before, state.modifier_mask()))
     }
 
+    /// The X keycode an evdev code maps to, without touching any state.
+    ///
+    /// Separated from applying because the ledger needs the keycode to name
+    /// the input it is validating, and validation has to finish before any
+    /// keyboard effect. Deriving it is arithmetic on the code itself and
+    /// depends on no seat, so asking costs nothing and changes nothing.
+    pub fn x_keycode(evdev_keycode: u32) -> Option<u8> {
+        evdev_keycode
+            .checked_add(8)
+            .and_then(|keycode| u8::try_from(keycode).ok())
+            .filter(|keycode| *keycode >= 8)
+    }
+
     /// What this seat's modifiers are now, without applying anything.
     pub fn modifiers(&self, seat: SeatId) -> Option<u16> {
         self.seats.get(&seat).map(crate::XkbKeyboardState::modifier_mask)
@@ -503,6 +516,15 @@ impl PrivateOutstandingRequest {
     /// The admission this request's grant answers to.
     fn admission(&self) -> sophia_protocol::ClientAdmissionId {
         self.admission
+    }
+
+    /// The client this request was reserved for.
+    ///
+    /// Carried rather than looked up: knowing which client a request belongs
+    /// to must not require a guard, or establishing it would have to happen
+    /// before common and be stale by the time execution used it.
+    fn client(&self) -> XServerFrontendClientId {
+        XServerFrontendClientId::from_raw(self.connection.recipient)
     }
 
     /// Mark that execution is being entered, before anything inside it can

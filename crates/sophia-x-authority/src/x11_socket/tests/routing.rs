@@ -1302,6 +1302,29 @@ impl TransitionThroughPrivate for crate::TransitionAccess<'_> {
     }
 }
 
+fn button_to(
+    surface: SurfaceId,
+    delivery: XAuthorityInputDeliveryId,
+    button: u32,
+    pressed: bool,
+) -> XAuthorityRoutedInput {
+    XAuthorityRoutedInput {
+        request: RoutedInputRequest {
+            serial: 1,
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(2),
+            time_msec: 1,
+            target_surface: surface,
+            global_position: Point::default(),
+            local_position: Point::default(),
+            kind: InputEventKind::PointerButton { button, pressed },
+        },
+        route_lease: None,
+        delivery: Some(delivery),
+        mode: XAuthorityRoutedInputMode::Deliver,
+    }
+}
+
 fn motion_to(surface: SurfaceId, delivery: XAuthorityInputDeliveryId) -> XAuthorityRoutedInput {
     XAuthorityRoutedInput {
         request: RoutedInputRequest {
@@ -12186,5 +12209,180 @@ fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
         held.in_flight.capacity() >= 8,
         "and the list it carries in keeps its own buffer too, had {}",
         held.in_flight.capacity()
+    );
+}
+
+
+#[test]
+fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() {
+    let private = private_for_roles();
+    let client = XServerFrontendClientId(701);
+    let surface = SurfaceId::new(701, 1);
+    let window = XResourceId::new(0x200701, 1);
+    let _registration = admit_role_client(&private, client);
+    private
+        .broker
+        .registry
+        .register_surface(client, NamespaceId::from_raw(client.raw()), surface, window)
+        .expect("the surface to register");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut private = private;
+
+    // Press, through the whole ordered path: custody accepted, common then the
+    // boundary then the X guards, target resolved there rather than earlier,
+    // ledger transition, and an immutable record of where it went.
+    let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(701), 272, true),
+            &pressed,
+        )
+        .expect("the press to run");
+    assert_eq!(run.reached.client(), client, "it reached the route's client");
+    assert_eq!(run.reached.window(), window);
+    assert!(!run.reached.grabbed(), "no grab chose it");
+    assert!(run.first_press, "this press began the hold");
+    assert!(!run.keyboard_applied, "a button moves no keyboard state");
+    assert!(matches!(
+        run.completion,
+        sophia_input_authority::RequestCompletion::Processed
+    ));
+
+    // Observed exactly once, which is what frees the grant's cell.
+    assert!(matches!(
+        pressed.observe(),
+        Ok(Some(sophia_input_authority::RequestCompletion::Processed))
+    ));
+
+    // A second press of the same input joins the hold rather than beginning
+    // one. The ledger says so, not the route: nothing about where this event
+    // would go has changed, and treating a join as a new press would deliver
+    // the same button down twice.
+    let joined = role.reserve(stamp, 2).expect("a second reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(703), 272, true),
+            &joined,
+        )
+        .expect("the joining press to run");
+    assert!(
+        !run.first_press,
+        "a press onto a held input joins rather than begins"
+    );
+    assert!(
+        !run.keyboard_applied,
+        "and a join moves no state, which is the rule keys will need"
+    );
+    assert!(matches!(
+        joined.observe(),
+        Ok(Some(sophia_input_authority::RequestCompletion::Processed))
+    ));
+
+    // Release. The recipient comes from the hold the press recorded, not from
+    // resolving the route again -- so it still answers even though nothing
+    // about the route is consulted for it.
+    let released = role.reserve(stamp, 3).expect("a third reservation").accepted();
+    let run = private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(702), 272, false),
+            &released,
+        )
+        .expect("the release to run");
+    assert_eq!(
+        run.reached.client(),
+        client,
+        "the release answers to the recipient the press reached"
+    );
+    assert!(!run.first_press, "a release begins nothing");
+    assert!(matches!(
+        released.observe(),
+        Ok(Some(sophia_input_authority::RequestCompletion::Processed))
+    ));
+}
+
+#[test]
+fn a_key_press_refuses_rather_than_delivering_on_queued_focus() {
+    let private = private_for_roles();
+    let client = XServerFrontendClientId(711);
+    let surface = SurfaceId::new(711, 1);
+    let _registration = admit_role_client(&private, client);
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200711, 1),
+        )
+        .expect("the surface to register");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut private = private;
+    let custody = role.reserve(stamp, 1).expect("a reservation").accepted();
+
+    let mut key = motion_to(surface, XAuthorityInputDeliveryId::from_raw(711));
+    key.request.kind = InputEventKind::Key {
+        keycode: 30,
+        pressed: true,
+    };
+    let refused = private.run_ordered_input(&mut keyboards, &key, &custody);
+    assert!(refused.is_err(), "a key press has no authoritative target yet");
+
+    // Refused before any keyboard effect: the seat is prepared but nothing
+    // moved it, so no modifier describes a key no admitted request applied.
+    assert_eq!(
+        keyboards.modifiers(SeatId::from_raw(1)),
+        Some(0),
+        "the refusal came before any keyboard transition"
+    );
+}
+
+#[test]
+fn another_instances_keyboard_history_cannot_drive_this_one() {
+    let private = private_for_roles();
+    let other = private_for_roles();
+    let client = XServerFrontendClientId(721);
+    let surface = SurfaceId::new(721, 1);
+    let _registration = admit_role_client(&private, client);
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200721, 1),
+        )
+        .expect("the surface to register");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let mut foreign = other.keyboards().expect("the other instance's state");
+    let mut private = private;
+    let custody = role.reserve(stamp, 1).expect("a reservation").accepted();
+
+    let refused = private.run_ordered_input(
+        &mut foreign,
+        &button_to(surface, XAuthorityInputDeliveryId::from_raw(721), 272, true),
+        &custody,
+    );
+    assert!(
+        matches!(
+            refused,
+            Err(crate::PrivateExecutionRefusal::ForeignKeyboards)
+        ),
+        "one instance is not driven with another's keyboard history, got {refused:?}"
     );
 }
