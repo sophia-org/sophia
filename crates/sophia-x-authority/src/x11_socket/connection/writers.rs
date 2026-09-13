@@ -25,7 +25,6 @@ struct X11ProtocolEventWriter {
 /// Owning them together also means a setup failure after any spawn owns their
 /// shutdown, because dropping this is shutting them down.
 #[cfg(unix)]
-#[derive(Default)]
 struct X11ClientWriters {
     input: Option<X11InputEventWriter>,
     control: Option<X11ControlWriter>,
@@ -37,7 +36,37 @@ struct X11ClientWriters {
     /// what ends that wait, and it is done through a handle of this shutdown's
     /// own: the blocked writer is holding the output mutex, so anything that
     /// had to take that mutex first could not reach it.
-    transport: Option<UnixStream>,
+    ///
+    /// Required, not optional. Taking this handle needs a descriptor, and the
+    /// moment one cannot be had is exactly the moment a connection is most
+    /// likely to stall -- so a cohort that started workers without it would
+    /// lose the guarantee silently, precisely when it is needed. It is
+    /// acquired before any worker exists, and failing to acquire it refuses
+    /// the connection instead.
+    transport: UnixStream,
+}
+
+#[cfg(unix)]
+impl X11ClientWriters {
+    /// Take the shutdown's own handle on the output socket, before anything
+    /// is started that would need shutting down.
+    fn new(stream: &Arc<Mutex<UnixStream>>) -> Result<Self, X11SetupSocketError> {
+        let transport = stream
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?
+            .try_clone()
+            .map_err(|error| {
+                X11SetupSocketError::new(format!(
+                    "failed to clone X11 output socket for writer shutdown: {error}"
+                ))
+            })?;
+        Ok(Self {
+            input: None,
+            control: None,
+            protocol: None,
+            transport,
+        })
+    }
 }
 
 #[cfg(unix)]
@@ -63,9 +92,7 @@ impl X11ClientWriters {
         if !self.settled_within(X11_WRITER_STOP_GRACE) {
             // Something is inside a write that no flag reaches. The connection
             // is ending either way, so the socket goes and the write fails.
-            if let Some(transport) = self.transport.as_ref() {
-                let _ = transport.shutdown(Shutdown::Both);
-            }
+            let _ = self.transport.shutdown(Shutdown::Both);
         }
         self.join_all()
     }
@@ -133,11 +160,16 @@ impl X11ClientWriters {
     }
 }
 
-/// How long a writer is given to notice its stop flag before the socket it
-/// may be blocked on is taken away.
+/// How long a writer is given to notice its stop flag before the socket it may
+/// be blocked on is taken away.
 ///
 /// Long enough that an ordinary teardown never reaches it, short enough that a
 /// blocked one does not hold a connection's teardown open.
+///
+/// A grace before the socket goes, and nothing more. It does not bound the
+/// join that follows, and it does not bound a writer waiting on the runtime
+/// lock or any other condition a closed socket does not touch. Those are
+/// separate waits and this says nothing about them.
 #[cfg(unix)]
 const X11_WRITER_STOP_GRACE: Duration = Duration::from_millis(250);
 

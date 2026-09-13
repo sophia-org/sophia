@@ -508,14 +508,21 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
         .input_authority_mut().register_query_client(namespace, client.raw());
     // Declared before the first spawn, so every path out from here owns the
-    // shutdown of whatever has already started. Its own handle on the socket
-    // comes with it, because a writer blocked in a write is holding the mutex
-    // that anything else would have to take first.
-    let mut writers = X11ClientWriters::default();
-    writers.transport = output_stream
-        .lock()
-        .ok()
-        .and_then(|stream| stream.try_clone().ok());
+    // shutdown of whatever has already started, and its own handle on the
+    // socket comes with it -- a writer blocked in a write holds the mutex that
+    // anything else would have to take first. Taken before any worker exists,
+    // so a descriptor that cannot be had refuses the connection rather than
+    // starting workers whose shutdown has no way to reach them.
+    let mut writers = match X11ClientWriters::new(&output_stream) {
+        Ok(writers) => writers,
+        Err(error) => {
+            // Refused before any worker exists, and the client slot goes back
+            // the same way the earlier setup failures return it. A refusal
+            // that kept the slot would cost the connection it declined twice.
+            let _ = state.release_client(client);
+            return Err(error);
+        }
+    };
     writers.input = input_receiver
         .map(|receiver| {
             spawn_x11_input_event_writer(

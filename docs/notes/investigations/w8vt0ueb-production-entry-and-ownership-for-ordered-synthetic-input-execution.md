@@ -419,9 +419,18 @@ different case: no flag reaches it, and whoever joins it waits on a peer that
 may never read again. The writers are owned together with an independent handle
 on the socket they share, and a stop that they have not acted on within a
 deadline takes the socket away, so the write fails and the join returns. The
-handle is the shutdown's own, because the blocked writer holds the output mutex
-that anything else would have to take first. The deadline is a deadline rather
-than a delay: an ordinary teardown never reaches it.
+handle is the shutdown's own, because the blocked writer holds the output
+mutex that anything else would have to take first. It is required rather than
+best-effort and is taken before any worker exists: acquiring it needs a
+descriptor, and the moment one cannot be had is the moment a connection is
+most likely to stall, so a cohort that started workers without it would lose
+the guarantee exactly where it is needed. Failing to acquire it refuses the
+connection and returns the client slot.
+
+The deadline is a grace before the socket goes and nothing more. It does not
+bound the join that follows, and it does not bound a writer waiting on the
+runtime lock or any other condition a closed socket does not touch; an
+ordinary teardown never reaches it.
 
 A claim is refused for a client nothing is serving, at the routing site as well
 as at the producer. Those are separate moments, and a record left claimable

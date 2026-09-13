@@ -7422,7 +7422,7 @@ fn stopping_one_writer_does_not_leave_the_others_running() {
         input: Some(failing),
         control: Some(control_writer),
         protocol: None,
-        transport: None,
+        transport: std::os::unix::net::UnixStream::pair().unwrap().0,
     };
 
     let shutdown = writers.shut_down();
@@ -7595,7 +7595,7 @@ fn dropping_the_writers_stops_them_even_if_nobody_shut_them_down() {
         input: None,
         control: Some(control_writer),
         protocol: None,
-        transport: None,
+        transport: std::os::unix::net::UnixStream::pair().unwrap().0,
     });
     assert!(
         stop.load(Ordering::Acquire),
@@ -7786,7 +7786,7 @@ fn a_writer_parked_on_control_output_still_stops_when_told() {
         input: None,
         control: None,
         protocol: Some(writer),
-        transport: None,
+        transport: std::os::unix::net::UnixStream::pair().unwrap().0,
     };
     let shutdown = writers.shut_down();
     assert_eq!(shutdown.joined, 1, "the join returned without a rescue");
@@ -8033,7 +8033,7 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
         input: Some(writer),
         control: None,
         protocol: None,
-        transport: None,
+        transport: std::os::unix::net::UnixStream::pair().unwrap().0,
     };
     let shutdown = writers.shut_down();
     assert_eq!(shutdown.joined, 1, "the join returned without a rescue");
@@ -8333,7 +8333,7 @@ fn a_writer_blocked_in_a_write_is_still_joined() {
         input: None,
         control: None,
         protocol: Some(writer),
-        transport: Some(transport),
+        transport,
     };
     let started = std::time::Instant::now();
     let shutdown = writers.shut_down();
@@ -8343,4 +8343,31 @@ fn a_writer_blocked_in_a_write_is_still_joined() {
         "and returned bounded, without the peer ever reading"
     );
     drop(peer);
+}
+
+#[test]
+fn a_shutdown_handle_that_cannot_be_taken_refuses_before_any_worker_starts() {
+    // A poisoned output socket stands in for the descriptor that could not be
+    // had. Either way the handle is unavailable, and the moment it is
+    // unavailable is exactly the moment a connection is most likely to stall.
+    let stream = Arc::new(Mutex::new(
+        std::os::unix::net::UnixStream::pair().unwrap().0,
+    ));
+    let poisoner = Arc::clone(&stream);
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.lock().unwrap();
+            panic!("poisoning the output socket");
+        })
+        .join()
+        .is_err()
+    );
+
+    // Refused, rather than started with a shutdown that has no way to reach
+    // them. A cohort that took this best-effort would lose the guarantee
+    // silently.
+    assert!(
+        X11ClientWriters::new(&stream).is_err(),
+        "no handle, no workers"
+    );
 }
