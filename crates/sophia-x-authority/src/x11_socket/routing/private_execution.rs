@@ -4,6 +4,20 @@
 // is what happens to one admitted input once it is runnable, and the order its
 // steps happen in is the whole of it.
 
+/// How many holds and settling releases one executor may record.
+///
+/// The authority's own input slots, which is what actually bounds them: a hold
+/// exists per input aggregate, so at most this many can be held at once and at
+/// most this many can be awaiting settlement behind them. The ready queue's
+/// capacity does not bound either -- it bounds what is admitted in one turn,
+/// and a hold outlives the turn that began it across any number of drains and
+/// refills.
+///
+/// Enforced before the effect, not merely reserved. Reserved storage says a
+/// push will not allocate; it says nothing about how many pushes there can be.
+#[cfg(unix)]
+const PRIVATE_HOLD_RECORDS: usize = sophia_input_authority::Capacity::PLANNED.input_slots();
+
 /// What one ordered input reached.
 ///
 /// Decided once, under the guards that decide it, and never asked again. The
@@ -67,6 +81,12 @@ pub enum PrivateExecutionRefusal {
     /// focus record available is an intent that was queued rather than one a
     /// writer applied. Refused rather than delivered somewhere plausible.
     FocusNotApplied,
+    /// This executor already holds as many records as it may.
+    ///
+    /// Refused before the effect, so nothing is applied that could not then be
+    /// recorded -- a hold whose plan has nowhere to go is a release nobody can
+    /// answer.
+    RecordsExhausted,
     /// The ledger owes this release a delivery and the plan recording where
     /// its press went is not here.
     ///
@@ -175,6 +195,8 @@ impl PrivateXServerFrontend {
 
         let client = custody.client();
         let mut decided = None;
+        let mut plan_missing = false;
+        let mut records_exhausted = false;
         let Self {
             participant,
             broker,
@@ -192,6 +214,8 @@ impl PrivateXServerFrontend {
                     settling,
                     route,
                     &mut decided,
+                    &mut plan_missing,
+                    &mut records_exhausted,
                 )
             })
             // Typed through, not collapsed. An unreadable boundary is not a
@@ -205,6 +229,15 @@ impl PrivateXServerFrontend {
             })?
             .map_err(PrivateExecutionRefusal::Authority)?;
 
+        if records_exhausted {
+            return Err(PrivateExecutionRefusal::RecordsExhausted);
+        }
+        if plan_missing {
+            // Named for what it is rather than by whatever authority error
+            // carried it out of the transaction. A hold ended and its record
+            // is gone, which is an obligation nobody can currently discharge.
+            return Err(PrivateExecutionRefusal::HoldPlanMissing);
+        }
         let Some(decided) = decided else {
             // The transaction returned without deciding anything, which means
             // the callback refused before recording. Its own cause travelled
@@ -241,9 +274,11 @@ fn resolve_and_apply(
     bindings: &PrivateAdmissionBindings,
     registry: &XServerFrontendRouteRegistry,
     holds: &mut Vec<(u64, PrivateReachedResources)>,
-    settling: &mut Vec<(u64, PrivateReachedResources)>,
+    settling: &mut Vec<PrivateSettlingRelease>,
     route: &XAuthorityRoutedInput,
     decided: &mut Option<PrivateOrderedDecision>,
+    plan_missing: &mut bool,
+    records_exhausted: &mut bool,
 ) -> Result<(), sophia_input_authority::RegistrationError> {
     let unavailable = sophia_input_authority::RegistrationError::RoutingUnavailable;
     match route.request.kind {
@@ -263,11 +298,25 @@ fn resolve_and_apply(
                 // Nothing about the route is consulted. No surfaces lookup, no
                 // grab, no namespace: all of that describes where the route
                 // points now, and a release is owed to where its press went.
+                // Taken before the ledger moves, and held through the mapper
+                // update and the decision. Taking it afterwards left the two
+                // transitions in separate intervals, so a pointer writer could
+                // run between the hold ending and the button being lifted.
+                if settling.len() >= PRIVATE_HOLD_RECORDS {
+                    // A release whose output has nowhere to be kept is a
+                    // delivery nobody could later prove was owed.
+                    *records_exhausted = true;
+                    return Err(sophia_input_authority::RegistrationError::Capacity(
+                        sophia_input_authority::CapacityError::NoCompletionCell,
+                    ));
+                }
+                let mut pointers = registry.pointer_state.lock().map_err(|_| unavailable)?;
                 let outcome = permit.release(input)?;
                 match outcome {
                     sophia_input_authority::ReleaseOutcome::DeliverTo(hold) => {
                         let Some(index) = holds.iter().position(|(id, _)| *id == hold.hold())
                         else {
+                            *plan_missing = true;
                             // The ledger ended a hold and the record of where
                             // it went is gone. Owing nobody an event and being
                             // unable to say who is owed one are different
@@ -280,11 +329,15 @@ fn resolve_and_apply(
                         // recorded. A release naming its own seat, or found
                         // from the current route, would clear a different
                         // seat's buttons and leave this one's held forever.
-                        let mut pointers =
-                            registry.pointer_state.lock().map_err(|_| unavailable)?;
-                        let pointer = pointers
-                            .entry((reached.namespace, reached.seat))
-                            .or_insert_with(crate::XCorePointerMapper::new);
+                        //
+                        // Not created if absent. A press projected this
+                        // button, so a missing mapper is retained state that
+                        // has become unavailable, and a fresh one would be a
+                        // clear history asserting the button was never down.
+                        let Some(pointer) = pointers.get_mut(&(reached.namespace, reached.seat))
+                        else {
+                            return Err(unavailable);
+                        };
                         // Moved only on a final release, and the state it
                         // reports is the one before this event -- which still
                         // has this button down, because this is the event that
@@ -315,12 +368,19 @@ fn resolve_and_apply(
                                 })
                             },
                         );
-                        // Moved to the continuation rather than deleted. An
-                        // event having been built is not an event having been
-                        // delivered, and dropping the plan here would discard
-                        // the only record of who is owed one.
-                        let ended = holds.remove(index);
-                        settling.push(ended);
+                        // Moved to the continuation rather than deleted, and
+                        // with everything the delivery owes rather than the
+                        // plan alone. An event having been built is not an
+                        // event having been delivered, and reconstructing its
+                        // coordinates or its state from later facts would
+                        // describe a different moment.
+                        let (id, plan) = holds.remove(index);
+                        settling.push(PrivateSettlingRelease {
+                            hold: id,
+                            reached: plan,
+                            outcome,
+                            event,
+                        });
                         *decided = Some(PrivateOrderedDecision {
                             reached: Some(reached),
                             first_press: false,
@@ -374,6 +434,15 @@ fn resolve_and_apply(
                 }
                 None => (surface_route.client, surface_route.window, false),
             };
+            // Checked before the ledger moves. A press whose plan could not be
+            // recorded would leave a hold nobody can later answer, and
+            // refusing after the effect is refusing too late.
+            if holds.len() >= PRIVATE_HOLD_RECORDS {
+                *records_exhausted = true;
+                return Err(sophia_input_authority::RegistrationError::Capacity(
+                    sophia_input_authority::CapacityError::NoGrantSlot,
+                ));
+            }
             // The recipient's own admission, read from the binding under the
             // guard already held. The submitting request's generation says who
             // sent this and nothing about a different client receiving it.
@@ -404,6 +473,7 @@ fn resolve_and_apply(
                 let Some((_, reached)) = holds.iter().find(|(id, _)| *id == hold) else {
                     // The ledger joined a hold whose record is gone, so this
                     // press has an owner nobody can name.
+                    *plan_missing = true;
                     return Err(sophia_input_authority::RegistrationError::StaleRequest);
                 };
                 Some(*reached)
@@ -448,6 +518,37 @@ fn resolve_and_apply(
         | InputEventKind::PointerAxis { .. } => {
             Err(sophia_input_authority::RegistrationError::StaleExecution)
         }
+    }
+}
+
+/// A release whose delivery has been decided and not yet handed on.
+///
+/// Everything the delivery owes, kept together and bound to the hold it ends.
+/// The plan alone is not enough: the event carries the coordinates and the
+/// state from the moment it was decided, and rebuilding either from later
+/// facts would describe a different moment.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+pub struct PrivateSettlingRelease {
+    hold: u64,
+    reached: PrivateReachedResources,
+    outcome: sophia_input_authority::ReleaseOutcome,
+    event: Option<XAuthorityInputEvent>,
+}
+
+#[cfg(unix)]
+impl PrivateSettlingRelease {
+    pub fn hold(self) -> u64 {
+        self.hold
+    }
+    pub fn reached(self) -> PrivateReachedResources {
+        self.reached
+    }
+    pub fn outcome(self) -> sophia_input_authority::ReleaseOutcome {
+        self.outcome
+    }
+    pub fn event(self) -> Option<XAuthorityInputEvent> {
+        self.event
     }
 }
 

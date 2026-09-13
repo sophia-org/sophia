@@ -12753,7 +12753,50 @@ fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing(
         &released,
     );
     assert!(
+        matches!(refused, Err(crate::PrivateExecutionRefusal::HoldPlanMissing)),
+        "a hold that ended has a recipient; not knowing who is not the same as owing nobody, got {refused:?}"
+    );
+}
+
+#[test]
+fn a_release_refuses_when_its_seats_projection_is_gone() {
+    let client = XServerFrontendClientId(791);
+    let surface = SurfaceId::new(791, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let seat = SeatId::from_raw(1);
+    let (mut private, _registration, role, mut keyboards) =
+        ordered_fixture(client, surface, XResourceId::new(0x200791, 1));
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+
+    let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
+    private
+        .run_ordered_input(
+            &mut keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(791), 272, true),
+            &pressed,
+        )
+        .expect("the press to run");
+    let _ = pressed.observe();
+
+    // The projection this press moved is gone. Building a fresh mapper here
+    // would assert a clear history -- that the button was never down -- and
+    // report a release against state that never held it.
+    private
+        .broker
+        .registry
+        .pointer_state
+        .lock()
+        .expect("the pointer state")
+        .remove(&(namespace, seat));
+
+    let released = role.reserve(stamp, 2).expect("a reservation").accepted();
+    let refused = private.run_ordered_input(
+        &mut keyboards,
+        &button_to(surface, XAuthorityInputDeliveryId::from_raw(792), 272, false),
+        &released,
+    );
+    assert!(
         refused.is_err(),
-        "a hold that ended has a recipient; not knowing who is not the same as owing nobody"
+        "retained state that has become unavailable is not a fresh clear history, got {refused:?}"
     );
 }

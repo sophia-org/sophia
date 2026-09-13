@@ -305,7 +305,7 @@ pub struct PrivateXServerFrontend {
     /// An event having been built is not an event having been delivered, so
     /// the plan moves here rather than being dropped: this is the only record
     /// of who is owed one, and the terminal handoff is what clears it.
-    settling: Vec<(u64, PrivateReachedResources)>,
+    settling: Vec<PrivateSettlingRelease>,
     /// Whether this instance has already handed out its keyboard state.
     ///
     /// One history per instance, so the answer is asked and answered once.
@@ -495,8 +495,8 @@ impl PrivateXServerFrontend {
             controller,
             submit,
             keyboards_issued: std::sync::atomic::AtomicBool::new(false),
-            holds: Vec::with_capacity(capacity),
-            settling: Vec::with_capacity(capacity),
+            holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
+            settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
         })
     }
 
