@@ -1,8 +1,9 @@
 use sophia_runtime::{
-    ProtectionDevice, ProtectionDomainRole, ProtectionDomainSpec, ProtectionDomainSpecError,
-    ProtectionFilesystemManifest, ProtectionNetworkAccess, ProtectionPath,
+    ProtectionDevice, ProtectionDeviceIdentity, ProtectionDomainRole, ProtectionDomainSpec,
+    ProtectionDomainSpecError, ProtectionFilesystemManifest, ProtectionNetworkAccess,
+    ProtectionPath,
 };
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 
 #[test]
 fn wm_cannot_share_a_domain_with_metadata_roles() {
@@ -53,6 +54,27 @@ fn device_grants_are_character_devices_beneath_private_dev() {
                 "/dev/dri/renderD128"
             )),
         Err(ProtectionDomainSpecError::InvalidDeviceSource(_))
+    ));
+}
+
+#[test]
+fn device_grants_refuse_a_source_that_changed_after_policy_validation() {
+    let previously_validated = std::fs::symlink_metadata("/dev/zero").unwrap();
+    let expected = ProtectionDeviceIdentity::new(
+        previously_validated.dev(),
+        previously_validated.ino(),
+        previously_validated.rdev(),
+    );
+    assert!(matches!(
+        ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
+            .unwrap()
+            .device(ProtectionDevice::required_at_exact(
+                "/dev/null",
+                "/dev/dri/renderD128",
+                expected,
+            )),
+        Err(ProtectionDomainSpecError::InvalidDeviceSource(path))
+            if path == std::path::Path::new("/dev/null")
     ));
 }
 

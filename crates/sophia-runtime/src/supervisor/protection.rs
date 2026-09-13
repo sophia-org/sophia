@@ -54,10 +54,22 @@ pub struct ProtectionDevice {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct ProtectionDeviceIdentity {
+pub struct ProtectionDeviceIdentity {
     filesystem_device: u64,
     inode: u64,
     device_number: u64,
+}
+
+impl ProtectionDeviceIdentity {
+    /// Preserve a previously validated character-device identity across the
+    /// handoff into the generic protection launcher.
+    pub const fn new(filesystem_device: u64, inode: u64, device_number: u64) -> Self {
+        Self {
+            filesystem_device,
+            inode,
+            device_number,
+        }
+    }
 }
 
 impl ProtectionDevice {
@@ -66,6 +78,23 @@ impl ProtectionDevice {
             source: source.into(),
             destination: destination.into(),
             identity: None,
+        }
+    }
+
+    /// Require `source` to retain an identity validated by its policy owner.
+    ///
+    /// The launcher checks it again immediately before spawning Bubblewrap.
+    /// This narrows startup replacement races but does not claim atomic device
+    /// pinning across Bubblewrap's later pathname resolution.
+    pub fn required_at_exact(
+        source: impl Into<PathBuf>,
+        destination: impl Into<PathBuf>,
+        identity: ProtectionDeviceIdentity,
+    ) -> Self {
+        Self {
+            source: source.into(),
+            destination: destination.into(),
+            identity: Some(identity),
         }
     }
 }
@@ -219,11 +248,21 @@ impl ProtectionDomainSpec {
                 device.source,
             ));
         }
-        device.identity = Some(ProtectionDeviceIdentity {
+        let observed = ProtectionDeviceIdentity {
             filesystem_device: metadata.dev(),
             inode: metadata.ino(),
             device_number: metadata.rdev(),
-        });
+        };
+        if device
+            .identity
+            .as_ref()
+            .is_some_and(|expected| expected != &observed)
+        {
+            return Err(ProtectionDomainSpecError::InvalidDeviceSource(
+                device.source,
+            ));
+        }
+        device.identity = Some(observed);
         if let Some(existing) = self
             .paths
             .iter()

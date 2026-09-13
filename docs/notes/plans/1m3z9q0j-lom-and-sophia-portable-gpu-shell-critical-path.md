@@ -146,6 +146,18 @@ preserves the actual render-minor basename and makes Lom authorize only an exact
 enumeration failure; a later driver initialization failure remains possible and
 requires the separately authorized protected hardware proof.
 
+A frozen-source review of that repair found two evidence-boundary defects before
+another hardware attempt. The proof verifier accepted missing DRM identity,
+missing or non-Vulkan backend facts, and a zero grant epoch because absent fields
+compared equal. It now requires every authoritative field exactly once, parses
+bounded canonical device numbers and a nonzero epoch, and positively requires
+Vulkan plus an allowed non-CPU adapter type. The same review found that the
+generic protection builder could snapshot a replacement render node after
+Session validation and bless it as its baseline. Session now passes its validated
+device, inode and `rdev` identity into the launcher, which refuses disagreement
+before constructing the domain and checks again before spawn. These checks narrow
+the startup handoff; they do not claim atomic hotplug pinning or hardware success.
+
 ### t098
 
 Carry content target tables through production projection to the exact native

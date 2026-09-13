@@ -1,6 +1,6 @@
 use sophia_backend_live::LiveRenderDeviceIdentitySnapshot;
 use sophia_config::ShellGpuMode;
-use sophia_runtime::{ProcessLaunchSpec, ProtectionDevice};
+use sophia_runtime::{ProcessLaunchSpec, ProtectionDevice, ProtectionDeviceIdentity};
 use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _};
 use std::path::{Path, PathBuf};
 
@@ -106,9 +106,14 @@ impl ShellGpuLaunchPolicy {
             .ok_or("shell GPU access requires a protection domain")?
             .read_only_filesystem("/sys", revalidated.sysfs)
             .map_err(|error| error.to_string())?
-            .device(ProtectionDevice::required_at(
+            .device(ProtectionDevice::required_at_exact(
                 &identity.node,
                 &private_render_node,
+                ProtectionDeviceIdentity::new(
+                    identity.device,
+                    identity.inode,
+                    identity.device_number,
+                ),
             ))
             .map_err(|error| error.to_string())?;
         spec.protection_domain = Some(domain);
