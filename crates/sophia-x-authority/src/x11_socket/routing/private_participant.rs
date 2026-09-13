@@ -35,16 +35,24 @@ struct PrivateAdmissionBinding {
 
 /// How many grant records one binding may hold.
 ///
-/// The authority's own supported grant count, taken from the planned capacity
-/// rather than chosen here: a number invented locally would reserve storage
-/// that says nothing about what the authority can issue, and would be a policy
-/// nobody decided.
+/// A policy chosen here, set to the planned authority's grant count because
+/// that is the shape the approved plan fixes -- **not** a reading of whatever
+/// capacity the instance in hand was built with. The distinction is
+/// observable: an authority built larger still gets this many records per
+/// binding, and an authority built smaller refuses on its own capacity before
+/// this is reached. Naming a number locally would have been a policy nobody
+/// decided; deriving it from the supplied instance would be a different rule
+/// again, and this is neither.
 ///
-/// This bounds *records*, not concurrently live grants. A record leaves only
+/// It bounds *records*, not concurrently live grants. A record leaves only
 /// when its grant is retired, so a long-lived binding that churns grants
 /// reaches this even though few are live at once. That is deliberate -- the
 /// record is what revocation retires against, so a binding that has forgotten
 /// which grants it authorised is the failure this bound prevents.
+///
+/// It is also per binding rather than per authority: a binding refused here
+/// has not consumed the authority's remaining slots, which stay available to
+/// another binding.
 #[cfg(unix)]
 const PRIVATE_BINDING_GRANTS: usize = sophia_input_authority::Capacity::PLANNED.grants;
 
