@@ -539,6 +539,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
 
     broker
         .input_sender()
+        .expect("an ungated broker to expose raw ingress")
         .send(XAuthorityClientInputEvent {
             client,
             event: input,
@@ -601,6 +602,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
     assert_eq!(broker.registered_client_count(), 0);
     broker
         .input_sender()
+        .expect("an ungated broker to expose raw ingress")
         .send(XAuthorityClientInputEvent {
             client,
             event: input,
@@ -850,6 +852,7 @@ fn client_addressed_input_queue_saturation_does_not_fail_the_broker() {
     for time_msec in [4, 5] {
         broker
             .input_sender()
+            .expect("an ungated broker to expose raw ingress")
             .send(XAuthorityClientInputEvent {
                 client: stalled,
                 event: XAuthorityKeyEvent {
@@ -878,6 +881,7 @@ fn client_addressed_input_queue_saturation_does_not_fail_the_broker() {
     assert_eq!(broker.registered_client_count(), 1);
     broker
         .input_sender()
+        .expect("an ungated broker to expose raw ingress")
         .send(XAuthorityClientInputEvent {
             client: healthy,
             event: XAuthorityKeyEvent {

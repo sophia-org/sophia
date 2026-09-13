@@ -24,6 +24,14 @@ pub struct XServerFrontendRouteBroker {
     control_gate: Arc<std::sync::OnceLock<crate::ControlEpochGate>>,
     /// Distinguishes this broker's receipts from another's.
     registry_identity: Arc<()>,
+    /// Whether a raw ingress handle has ever been handed out.
+    ///
+    /// Raw ingress carries no stamp, and a handle already given away cannot be
+    /// recalled or answered: a send that returned success has no contract to
+    /// refuse through afterwards. So this records the fact, and activation
+    /// refuses rather than pretending the handle can be reasoned with. If none
+    /// was ever taken, nothing can be queued behind one either.
+    raw_ingress_exposed: Arc<AtomicBool>,
     route_lease_release_sender: SyncSender<XAuthorityRouteLeaseRelease>,
     route_lease_release_receiver: Receiver<XAuthorityRouteLeaseRelease>,
     control_sender: SyncSender<XAuthorityClientControlCommand>,
@@ -414,6 +422,7 @@ impl XServerFrontendRouteBroker {
         Self {
             control_gate: Arc::new(std::sync::OnceLock::new()),
             registry_identity: Arc::new(()),
+            raw_ingress_exposed: Arc::new(AtomicBool::new(false)),
             registry: XServerFrontendRouteRegistry {
                 // Ingress + frozen + every possible client's private queue and
                 // active writer. Terminal receipts retain their credit until
@@ -472,8 +481,20 @@ impl XServerFrontendRouteBroker {
         }
     }
 
-    pub fn input_sender(&self) -> SyncSender<XAuthorityClientInputEvent> {
-        self.input_sender.clone()
+    /// A raw, unstamped ingress handle.
+    ///
+    /// Refused under a coordinator. Being absent from what a private
+    /// constructor returns is not enough on its own: this is a public method
+    /// on a public type, so it stays callable by anyone holding the broker and
+    /// has to say no itself.
+    pub fn input_sender(
+        &self,
+    ) -> Result<SyncSender<XAuthorityClientInputEvent>, ActivationRefused> {
+        if self.control_gate.get().is_some() {
+            return Err(ActivationRefused::RawIngressRefusedUnderGate);
+        }
+        self.raw_ingress_exposed.store(true, Ordering::Release);
+        Ok(self.input_sender.clone())
     }
 
     pub fn routed_input_sender(&self) -> XAuthorityRoutedInputSender {
@@ -561,6 +582,11 @@ impl XServerFrontendRouteBroker {
         // A second gate is rejected rather than ignored: OnceLock::set fails
         // silently, so discarding its result would tell a caller its
         // coordinator was installed while a different one stayed in charge.
+        // Checked before anything observable changes. An instance that cannot
+        // become private safely stays exactly as it was.
+        if self.raw_ingress_exposed.load(Ordering::Acquire) {
+            return Err(ActivationRefused::RawIngressAlreadyExposed);
+        }
         match self.control_gate.get() {
             Some(installed) if installed.coordinator_incarnation() == gate.coordinator_incarnation() => {
                 Ok(())
