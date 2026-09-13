@@ -12,9 +12,10 @@
 /// with the capability that can answer it, and stays until something drives
 /// it.
 ///
-/// Bounded. An owner that grew without limit would turn a settlement problem
-/// into an exhaustion one; past the bound, obligations are refused entry and
-/// counted as lost, which is a fact to report rather than a silence.
+/// Bounded, but never by refusing a transfer. Credits for abandoned work and
+/// slots for failed instances are both taken before the work or the instance
+/// exists, so arriving here is always into space already set aside. Refusing
+/// at the moment of transfer would have nowhere to put what it declined.
 #[cfg(unix)]
 #[derive(Clone)]
 pub struct PrivateSettlementOwner {

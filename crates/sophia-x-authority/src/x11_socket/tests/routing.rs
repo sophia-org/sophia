@@ -2950,13 +2950,15 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
     // The coordinator exists before the broker does, so there is no interval
     // in which a handle could be taken from an ungated instance.
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(4).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate.clone(),
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate: gate.clone(),
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     // No client or surface registered: enqueue is an admission decision, and
     // admission does not depend on there being somewhere to route to yet.
     //
@@ -3000,13 +3002,15 @@ fn the_private_host_delivers_each_admitted_input_exactly_once() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let mut private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3044,13 +3048,15 @@ fn the_private_host_never_drains_raw_ingress() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let mut private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(4).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
 
     // Raw ingress is not one of the sources the ordered pass reads, and a
     // private instance will not hand out a handle to it either.
@@ -3075,13 +3081,15 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
     let (delivery_sender, delivery_receiver) = channel();
     let (gate, mut instance, issuer, _submit) = control_gate_with_submit();
     let mut private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate.clone(),
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate: gate.clone(),
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3138,13 +3146,15 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
     // Ingress capacity larger than the ready stream's ordinary share, so more
     // can be sent than one pass can admit.
     let mut private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(16).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(16).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3191,13 +3201,15 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, mut instance, issuer, _submit) = control_gate_with_submit();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(2).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate.clone(),
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(2).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate: gate.clone(),
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3260,13 +3272,15 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
     // The production constructor at its smallest: ready capacity six, of
     // which four are held for cleanup, so ordinary work has room for two.
     let mut private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(1).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3315,13 +3329,15 @@ fn two_producer_classes_share_one_order() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let mut private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(16).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(16).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3413,13 +3429,15 @@ fn a_send_that_returned_is_never_overtaken_by_one_that_started_later() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(16).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(16).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3470,13 +3488,15 @@ fn a_refused_control_comes_back_to_its_producer() {
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     // Ordinary share of two at the smallest production size.
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(1).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let control = private.control_producer();
     let command = |transaction| XAuthorityClientControlCommand {
         client,
@@ -3510,13 +3530,15 @@ fn producers_are_refused_once_their_consumer_is_gone() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3557,13 +3579,15 @@ fn an_unreachable_queue_is_not_reported_as_a_finished_one() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let mut private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3607,13 +3631,15 @@ fn accepted_work_is_answered_when_its_consumer_goes_away() {
     let (delivery_sender, delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3656,13 +3682,15 @@ fn one_turn_of_service_is_bounded_while_a_producer_keeps_refilling() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let mut private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(1).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     // The constructor's own sizing at an ingress capacity of one.
     let budget = 2 + PRIVATE_CLEANUP_RESERVE_FOR_TESTS;
 
@@ -3711,13 +3739,15 @@ fn accepted_control_is_acknowledged_when_its_consumer_goes_away() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3760,13 +3790,15 @@ fn every_control_run_names_its_own_transaction() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let mut private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3809,13 +3841,15 @@ fn a_full_acknowledgement_channel_retains_the_obligation() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender.clone(),
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender.clone(),
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3869,13 +3903,15 @@ fn an_unresolved_target_is_handed_back_rather_than_attributed() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
 
     // No surface registered, so nothing resolves this target.
     private
@@ -3905,13 +3941,15 @@ fn a_retained_handle_settles_once_the_channel_drains() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender.clone(),
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender.clone(),
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &crate::PrivateSettlementOwner::default(),
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -3987,13 +4025,15 @@ fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
 
     let build = |ack, delivery, gate| {
         let private = crate::PrivateXServerFrontend::new(
-            NonZeroUsize::new(8).unwrap(),
-            ack,
-            delivery,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: ack,
+            input_deliveries: delivery,
             gate,
+        },
         &crate::PrivateSettlementOwner::default(),
-        )
-    .expect("a fresh owner to have a failure slot");
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
         let (registration, channels) = private.broker.registry.register_client(client).unwrap();
         private
             .broker
@@ -4057,13 +4097,15 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let durable = crate::PrivateSettlementOwner::default();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender.clone(),
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender.clone(),
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &durable,
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -4141,13 +4183,15 @@ fn an_unreadable_queue_is_owned_by_something_that_outlives_it() {
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let durable = crate::PrivateSettlementOwner::default();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &durable,
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
 
     let admission = std::sync::Arc::clone(&private.admission);
     let _ = std::thread::spawn(move || {
@@ -4179,13 +4223,15 @@ fn review_settlement_queue(
     let (delivery_sender, _delivery_receiver) = channel();
     let (gate, _authority, _issuer) = control_gate();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(1).unwrap(),
-        sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         durable,
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (registration, channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -4336,13 +4382,15 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
     let (gate, _authority, _issuer) = control_gate();
     let (delivery_sender, _delivery_receiver) = channel();
     let third = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(1).unwrap(),
-        sender.clone(),
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: sender.clone(),
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &durable,
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     assert!(
         third
             .control_producer()
@@ -4389,13 +4437,15 @@ fn a_failed_instance_hands_over_its_queue_not_a_tally() {
     let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
     let durable = crate::PrivateSettlementOwner::default();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(8).unwrap(),
-        control_ack_sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(8).unwrap(),
+            control_acknowledgements: control_ack_sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &durable,
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
 
     let admission = std::sync::Arc::clone(&private.admission);
     let _ = std::thread::spawn(move || {
@@ -4425,13 +4475,15 @@ fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
     let (gate, _authority, _issuer) = control_gate();
     let (delivery_sender, _delivery_receiver) = channel();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(2).unwrap(),
-        sender.clone(),
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(2).unwrap(),
+            control_acknowledgements: sender.clone(),
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &durable,
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -4521,13 +4573,15 @@ fn a_failed_instances_queue_can_still_be_answered() {
     let (gate, _authority, _issuer) = control_gate();
     let (delivery_sender, _delivery_receiver) = channel();
     let private = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(4).unwrap(),
-        sender,
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &durable,
     )
-    .expect("a fresh owner to have a failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
     private
         .broker
@@ -4591,13 +4645,15 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     let (gate, _authority, _issuer) = control_gate();
 
     let first = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(1).unwrap(),
-        sender.clone(),
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: sender.clone(),
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &durable,
     )
-    .expect("the only failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("the only failure slot: {refusal:?}"));
 
     // A second cannot be built: if it failed, there would be nowhere to hand
     // its queue. Refusing construction costs a caller an instance it never
@@ -4607,12 +4663,14 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     let (second_gate, _a2, _i2) = control_gate();
     assert!(
         crate::PrivateXServerFrontend::new(
-            NonZeroUsize::new(1).unwrap(),
-            sender.clone(),
-            second_delivery,
-            second_gate,
-            &durable,
-        )
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: sender.clone(),
+            input_deliveries: second_delivery,
+            gate: second_gate,
+        },
+        &durable,
+    )
         .is_err(),
         "an instance without a failure slot must not be exposed"
     );
@@ -4624,12 +4682,14 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     let (third_gate, _a3, _i3) = control_gate();
     assert!(
         crate::PrivateXServerFrontend::new(
-            NonZeroUsize::new(1).unwrap(),
-            sender,
-            third_delivery,
-            third_gate,
-            &durable,
-        )
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: third_delivery,
+            gate: third_gate,
+        },
+        &durable,
+    )
         .is_ok(),
         "a slot returns when its instance closes without failing"
     );
@@ -4649,13 +4709,15 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     // that carries no credit, which is why failure slots are counted apart
     // from credits.
     let empty = crate::PrivateXServerFrontend::new(
-        NonZeroUsize::new(1).unwrap(),
-        sender.clone(),
-        delivery_sender,
-        gate,
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: sender.clone(),
+            input_deliveries: delivery_sender,
+            gate,
+        },
         &durable,
     )
-    .expect("the only failure slot");
+    .unwrap_or_else(|(refusal, _parts)| panic!("the only failure slot: {refusal:?}"));
     let admission = std::sync::Arc::clone(&empty.admission);
     let _ = std::thread::spawn(move || {
         let _guard = admission.ready.lock().expect("the queue");
@@ -4673,12 +4735,14 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     let (b_gate, _ba, _bi) = control_gate();
     assert!(
         crate::PrivateXServerFrontend::new(
-            NonZeroUsize::new(1).unwrap(),
-            sender.clone(),
-            b_delivery,
-            b_gate,
-            &durable,
-        )
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: sender.clone(),
+            input_deliveries: b_delivery,
+            gate: b_gate,
+        },
+        &durable,
+    )
         .is_err(),
         "B must not be exposed without room to hand over its queue"
     );
@@ -4690,12 +4754,14 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     let (c_gate, _ca, _ci) = control_gate();
     assert!(
         crate::PrivateXServerFrontend::new(
-            NonZeroUsize::new(1).unwrap(),
-            sender,
-            c_delivery,
-            c_gate,
-            &durable,
-        )
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(1).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: c_delivery,
+            gate: c_gate,
+        },
+        &durable,
+    )
         .is_ok(),
         "a resolved failure returns its slot"
     );

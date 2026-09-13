@@ -419,6 +419,19 @@ impl XServerFrontendRouteBroker {
 
 }
 
+/// What a private frontend is built from.
+///
+/// A bundle rather than loose arguments, so a refusal can hand them back
+/// intact. A constructor that consumed them on the way to declining would
+/// leave a caller unable to try again with what it already had.
+#[cfg(unix)]
+pub struct PrivateFrontendParts {
+    pub input_capacity: NonZeroUsize,
+    pub control_acknowledgements: SyncSender<XAuthorityClientControlAck>,
+    pub input_deliveries: std::sync::mpsc::Sender<XAuthorityClientInputDelivery>,
+    pub gate: crate::ControlEpochGate,
+}
+
 /// A frontend built private, and the only way to get one.
 ///
 /// Construction order is the safety property. The coordinator exists before
@@ -575,19 +588,29 @@ enum PrivateOperation {
 impl PrivateXServerFrontend {
     /// Build a frontend that is private from the moment it exists.
     ///
-    /// Infallible with respect to activation, and necessarily so: nothing has
-    /// been exposed yet, so there is nothing for activation to refuse.
+    /// Fallible: a failure slot is reserved before anything is exposed, so an
+    /// instance that could not hand over its queue if it failed is never
+    /// built. Activation itself cannot refuse here, because nothing has been
+    /// exposed for it to refuse over.
+    ///
+    /// A refusal returns the inputs it was given. They may be the caller's
+    /// only handles, so consuming them would mean a caller could not retry the
+    /// same construction -- refusing would then cost more than the instance it
+    /// declined to build.
     pub fn new(
-        input_capacity: NonZeroUsize,
-        control_acknowledgements: SyncSender<XAuthorityClientControlAck>,
-        input_deliveries: std::sync::mpsc::Sender<XAuthorityClientInputDelivery>,
-        gate: crate::ControlEpochGate,
+        parts: PrivateFrontendParts,
         durable: &PrivateSettlementOwner,
-    ) -> Result<Self, AdmissionRefusal> {
-        // Before anything is exposed. An instance that cannot reserve the
-        // space to hand over its queue if it fails is not built at all, which
-        // costs a caller only an instance it never had.
-        durable.reserve_failure_slot()?;
+    ) -> Result<Self, (AdmissionRefusal, PrivateFrontendParts)> {
+        // Before anything is exposed, and before the parts are taken apart.
+        if let Err(refusal) = durable.reserve_failure_slot() {
+            return Err((refusal, parts));
+        }
+        let PrivateFrontendParts {
+            input_capacity,
+            control_acknowledgements,
+            input_deliveries,
+            gate,
+        } = parts;
         let mut broker = XServerFrontendRouteBroker::with_control_and_input_delivery_senders(
             input_capacity,
             control_acknowledgements,
