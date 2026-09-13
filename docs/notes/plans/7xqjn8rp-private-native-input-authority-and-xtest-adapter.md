@@ -1099,3 +1099,32 @@ reserved count becomes zero. This confirms that an unavailable ticket lookup
 is being mistaken for terminal absence; it is distinct from the separately
 acknowledged settlement-owner poison defect. No broader terminal lifecycle or
 runtime integration is accepted on the positive control.
+
+Candidate `1ab787ba` separates unavailable recovery lookup from ended delivery,
+holds untracked input credits, and carries outstanding identities into the
+explicit shutdown handle. Source review confirms these changes but finds that
+the new state is not transferred on abandonment: `PrivateSettlement::drop`
+handles only the failed queue and pending operations. Its empty-pending early
+return destroys outstanding identities, and the nonempty-pending path never
+transfers them either. The origin-owned completion records and their already
+reserved credits must survive handle Drop and remain actionable through the
+durable owner's progress operation. Carrying them into one more temporary
+owner does not establish the complete lifetime.
+
+Independent `.artifacts/private-outstanding-review-1ab787ba/` records three
+controls PASS and one desired abandonment assertion FAIL (145 filtered; 8.93
+seconds). Both prior recording/observation and recovery-poison controls pass;
+the unreadable ledger now retains credit. A kept shutdown handle also waits
+for a late modeled terminal outcome recorded through the production receipt
+API, then reclaims once after the emitted receipt is observed.
+
+In the negative, the handle is dropped before delivery 14002 ends. The same
+origin subsequently records its terminal outcome, the emitted receipt is
+observed, and the recovery ticket is gone. The durable owner nevertheless
+reports `drive=0`, `recover_failed=0`, `owed=0` and `reserved=1`: the completion
+identity was destroyed with the handle and its credit is stranded. No socket
+writer effect is claimed by these modeled terminal controls. The initial test
+overlay name collision is retained separately as a fixture compile failure,
+not a runtime result. Control completion, untracked-input completion, owned
+execution errors, owner poison and reserved outstanding storage remain open;
+the runtime candidate is unintegrated.
