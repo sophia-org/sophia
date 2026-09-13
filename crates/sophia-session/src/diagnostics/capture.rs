@@ -591,6 +591,9 @@ fn interaction_field(record: &str, key: &str, value: &str) -> bool {
     if record == "sophia_live_visual_progress" && visual_progress_field(key, value) {
         return true;
     }
+    if shell_content_gate_field(record, key, value) {
+        return true;
+    }
     let measurement = match record {
         "sophia_live_input_lease" => {
             matches!(key, "confirmed" | "rejected" | "released" | "stale")
@@ -673,6 +676,27 @@ fn interaction_field(record: &str, key: &str, value: &str) -> bool {
             matches!(value, "Copy" | "Flip" | "Skip" | "SuboptimalCopy")
         }
         ("sophia_live_session_present", "status") => value == "retired",
+        _ => false,
+    }
+}
+
+// Native shell acceptance reads the bounded lifecycle vocabulary from the
+// structured recorder. These values describe compositor-owned outcomes; no
+// client text, coordinates or resource identifiers enter through this seam.
+fn shell_content_gate_field(record: &str, key: &str, value: &str) -> bool {
+    match (record, key) {
+        ("sophia_live_shell_gpu", "status") => {
+            matches!(value, "granted" | "denied" | "revoked")
+        }
+        ("sophia_live_shell_content", "status") => matches!(
+            value,
+            "outputs" | "prepared" | "presented" | "transport_failed" | "presentation_failed"
+        ),
+        ("sophia_live_shell_content", "outputs") => {
+            !value.is_empty()
+                && value.bytes().all(|byte| byte.is_ascii_digit())
+                && value.parse::<u64>().is_ok()
+        }
         _ => false,
     }
 }

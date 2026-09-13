@@ -106,6 +106,24 @@ workspaces-and-seconds configuration and requires two presented generations per
 output. These are runnable gates, not results: neither has been executed on
 hardware, and t097 remains active until their retained evidence passes.
 
+The first attended native attempt on `adc25c43` at
+`.artifacts/lom-panel-native/20260913T200334Z` failed before any content output
+facts or presentation. The protected shell negotiated repeatedly but exited
+after each grant (704 grant epochs in 20 seconds). The proof profile carried an
+unnecessary terminal binding while Hagia rejected and restarted its
+configuration 389 times; the reduced record did not retain the rejection reason,
+so the binding's causal role is unproved. The watchdog restored the TTY, keyboard
+mode and keyd. This is failed hardware evidence, not native acceptance and not
+proof of Lom's process-exit cause because the diagnostic-mode runner
+intentionally discarded role stderr.
+
+The successor gate removes the unrelated application and binding, requires the
+bounded protected GPU/content proof to pass before graphics takeover, and reads
+native verdicts from the structured event file rather than the wrapper log. A
+failed GPU or content prerequisite now reports the client's boundary error and
+stops before Sophia acquires the display. No successor hardware result has
+been recorded yet; t097 remains active.
+
 ### t098
 
 Carry content target tables through production projection to the exact native

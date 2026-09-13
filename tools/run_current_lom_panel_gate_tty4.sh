@@ -30,7 +30,17 @@ SOPHIA_BIN="$ROOT_DIR/target/release/sophia"
 } > "$EVIDENCE_DIR/identity.manifest"
 
 echo "Evidence: $EVIDENCE_DIR"
+echo "Checking Lom's protected GPU and content path before graphics takeover."
+SOPHIA_LOM_GPU_PROOF_ARM=1 \
+SOPHIA_LOM_GPU_EVIDENCE_DIR="$EVIDENCE_DIR/gpu-content" \
+SOPHIA_LOM_SOURCE="$LOM_SOURCE" \
+SOPHIA_LOM_TARGET_DIR="$LOM_TARGET" \
+SOPHIA_LOM_CONFIG="$LOM_CONFIG" \
+SOPHIA_LOM_GPU_RENDER_NODE="${SOPHIA_LOM_GPU_RENDER_NODE:-/dev/dri/renderD128}" \
+    "$ROOT_DIR/tools/lom_gpu_content_hardware_proof.sh"
+
 echo "The gate runs for 20 seconds. Confirm a Minimal bar on every output, workspace pills on the left, and a seconds clock on the right."
+set +e
 SOPHIA_BIN="$SOPHIA_BIN" \
 SOPHIA_HAGIA_BIN="$HAGIA_BIN" \
 SOPHIA_HAGIA_SHELL_BIN="$LOM_BIN" \
@@ -40,10 +50,23 @@ SOPHIA_MANAGE_KEYD=true \
 SOPHIA_REQUIRE_LOCAL_VT=true \
 SOPHIA_TTY_PROFILE=hagia \
 SOPHIA_DESKTOP_PROFILE="$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl" \
-SOPHIA_SESSION_STARTUP=terminal \
+SOPHIA_SESSION_STARTUP=none \
 SOPHIA_SESSION_WATCHDOG_SECONDS=20 \
 SOPHIA_DIAGNOSTIC_DIR="$EVIDENCE_DIR/session" \
     "$ROOT_DIR/tools/run_sophia_session.sh"
+native_status=$?
+set -e
+if [[ "$native_status" -ne 124 ]]; then
+    echo "Native panel session ended unexpectedly with status $native_status" >&2
+    exit 1
+fi
+grep -q '^sophia_tty_recovery schema=3 .*termios_restored=true ' \
+    "$EVIDENCE_DIR/session/recovery.log" \
+    && grep -q '^sophia_tty_recovery_verification schema=1 .*keyd_restored=true$' \
+        "$EVIDENCE_DIR/session/recovery.log" || {
+    echo "Native panel session did not prove complete TTY and keyd recovery" >&2
+    exit 1
+}
 
-"$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$EVIDENCE_DIR/session/session.log" \
+"$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$EVIDENCE_DIR/session/events.0.log" \
     | tee "$EVIDENCE_DIR/verification.log"

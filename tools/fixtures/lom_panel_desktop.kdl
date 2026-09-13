@@ -8,11 +8,10 @@ shell {
     gpu "direct"
 }
 shortcut {
+    // This gate starts no application. An actionable session binding would
+    // require an unrelated command slot and can make Hagia reject its whole
+    // configuration before the panel protocol is exercised.
     profile "lom-panel-gate"
-    bind "Super+Return" "session:spawn-terminal"
-}
-session {
-    terminal "terminal"
 }
 input { inherit-sophia #true; }
 output { inherit-sophia #true; }

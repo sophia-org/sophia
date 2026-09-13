@@ -19,8 +19,11 @@ SOPHIA_LOM_GPU_PROOF_ARM=1 tools/lom_gpu_content_hardware_proof.sh
 The separate `tools/run_current_lom_panel_gate_tty4.sh` is the native acceptance
 candidate. Run it only from tty4 after ending the graphical session, with
 `SOPHIA_LOM_NATIVE_GATE_ARM=1`. It builds from clean signed Sophia and Lom tips,
-runs for twenty seconds, restores the TTY through the existing session harness,
-and retains exact identities and session diagnostics. A machine-independent
+first runs the protected GPU/content proof while Sophia does not own the display,
+then runs native presentation for twenty seconds. A failed prerequisite therefore
+stops before graphics takeover and retains the client's boundary error. The native
+stage restores the TTY through the existing session harness and retains exact
+identities and structured session diagnostics. A machine-independent
 gate or isolated proof cannot establish that the bar was visible; the attended
 run still requires the operator to confirm its placement and appearance.
 

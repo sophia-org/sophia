@@ -32,6 +32,9 @@ sophia_live_shell_content schema=1 status=presented output=1 candidate_generatio
 sophia_live_shell_content schema=1 status=presented output=1 candidate_generation=2 presentation_epoch=12 staging_bytes=0 resident_bytes=49152 retiring_bytes=24576 backing_bytes=49152
 EOF
 "$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native.log" >/dev/null
+awk '{ printf "%d\t%d\t%d\t%s\n", NR, 1000 + NR, 2000 + NR, $0 }' \
+    "$work/native.log" > "$work/native-events.log"
+"$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native-events.log" >/dev/null
 cp "$work/native.log" "$work/native-full.log"
 sed -i '/candidate_generation=2/d' "$work/native.log"
 if "$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native.log" >/dev/null 2>&1; then
@@ -45,4 +48,45 @@ if "$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native-missing-outpu
     exit 1
 fi
 
-echo "lom_gpu_content_verifiers schema=1 status=pass mutations=7"
+cp "$work/native-events.log" "$work/native-events-fatal.log"
+printf '99\t9999\t9999\truntime_fatal phase=owner_loop\n' >> "$work/native-events-fatal.log"
+if "$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native-events-fatal.log" >/dev/null 2>&1; then
+    echo "native verifier accepted a fatal structured event" >&2
+    exit 1
+fi
+
+cat "$work/native-events.log" "$work/native-events.log" > "$work/native-events-restarted.log"
+if "$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native-events-restarted.log" >/dev/null 2>&1; then
+    echo "native verifier accepted a restarted shell grant" >&2
+    exit 1
+fi
+
+for failure in \
+    'sophia_live_shell_gpu schema=1 status=revoked grant_epoch=1' \
+    'sophia_live_shell_content schema=1 status=transport_failed'; do
+    cp "$work/native-events.log" "$work/native-events-lifecycle-failure.log"
+    printf '100\t10000\t10000\t%s\n' "$failure" >> "$work/native-events-lifecycle-failure.log"
+    if "$ROOT_DIR/tools/verify_lom_panel_native_gate.sh" "$work/native-events-lifecycle-failure.log" >/dev/null 2>&1; then
+        echo "native verifier accepted a shell lifecycle failure" >&2
+        exit 1
+    fi
+done
+
+runner="$ROOT_DIR/tools/run_current_lom_panel_gate_tty4.sh"
+preflight_line=$(grep -n 'lom_gpu_content_hardware_proof.sh' "$runner" | cut -d: -f1)
+takeover_line=$(grep -n 'run_sophia_session.sh' "$runner" | cut -d: -f1)
+[[ -n "$preflight_line" && -n "$takeover_line" && "$preflight_line" -lt "$takeover_line" ]] || {
+    echo "native runner does not prove GPU/content before graphics takeover" >&2
+    exit 1
+}
+grep -q '^SOPHIA_SESSION_STARTUP=none ' "$runner" || {
+    echo "native runner unexpectedly starts an application" >&2
+    exit 1
+}
+if grep -Eq '^[[:space:]]*(bind|pointer-bind|session)[[:space:]]' \
+    "$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl"; then
+    echo "native panel profile carries an unrelated session action" >&2
+    exit 1
+fi
+
+echo "lom_gpu_content_verifiers schema=1 status=pass mutations=11 structured_events=true pre_takeover_proof=true"

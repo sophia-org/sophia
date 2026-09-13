@@ -301,6 +301,35 @@ fn interaction_vocabulary_is_scoped_and_rejects_unbounded_values() {
 }
 
 #[test]
+fn native_shell_gate_outcomes_survive_sanitization_without_client_payloads() {
+    for record in [
+        "sophia_live_shell_gpu schema=1 status=granted grant_epoch=7",
+        "sophia_live_shell_gpu schema=1 status=revoked grant_epoch=7",
+        "sophia_live_shell_content schema=1 status=outputs facts_generation=3 outputs=2",
+        "sophia_live_shell_content schema=1 status=presented output=2 candidate_generation=9 presentation_epoch=11 resident_bytes=24576 backing_bytes=24576",
+        "sophia_live_shell_content schema=1 status=transport_failed",
+    ] {
+        assert_eq!(
+            reduced_record(&format!(
+                "{record} title=secret xid=42 payload=private device_path=/dev/dri/renderD128"
+            ))
+            .as_deref(),
+            Some(record)
+        );
+    }
+    for record in [
+        "sophia_other status=granted outputs=2",
+        "sophia_live_shell_gpu status=private",
+        "sophia_live_shell_content status=private outputs=secret",
+    ] {
+        assert_eq!(
+            reduced_record(record).as_deref(),
+            record.split_whitespace().next()
+        );
+    }
+}
+
+#[test]
 fn actual_atomic_test_outcomes_survive_sanitization_without_payloads() {
     for (status, errno) in [
         ("Submitted", "none"),
