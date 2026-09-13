@@ -10,6 +10,8 @@ pub(super) const GPU_RENDER_NODE_ENV: &str = "SOPHIA_SHELL_GPU_RENDER_NODE";
 pub(super) const GPU_DEVICE_MAJOR_ENV: &str = "SOPHIA_SHELL_GPU_DEVICE_MAJOR";
 pub(super) const GPU_DEVICE_MINOR_ENV: &str = "SOPHIA_SHELL_GPU_DEVICE_MINOR";
 pub(super) const GPU_PCI_BUS_ID_ENV: &str = "SOPHIA_SHELL_GPU_PCI_BUS_ID";
+pub(super) const GPU_PCI_VENDOR_ID_ENV: &str = "SOPHIA_SHELL_GPU_PCI_VENDOR_ID";
+pub(super) const GPU_PCI_DEVICE_ID_ENV: &str = "SOPHIA_SHELL_GPU_PCI_DEVICE_ID";
 pub(super) const PRIVATE_RENDER_NODE: &str = "/dev/dri/renderD128";
 
 #[derive(Clone, Debug)]
@@ -24,6 +26,8 @@ pub(super) struct ShellGpuLaunchEvidence {
     pub major: u32,
     pub minor: u32,
     pub pci_bus_id: Option<String>,
+    pub pci_vendor_id: Option<u32>,
+    pub pci_device_id: Option<u32>,
 }
 
 impl ShellGpuLaunchPolicy {
@@ -72,6 +76,10 @@ impl ShellGpuLaunchPolicy {
             .ok_or("direct shell GPU access has no admitted render device")?;
         let (major, minor, physical) = revalidate(identity)?;
         let pci_bus_id = pci_bus_id(&physical);
+        let pci_ids = pci_bus_id
+            .as_ref()
+            .map(|_| pci_ids(&physical))
+            .transpose()?;
 
         let mut spec = base
             .clone()
@@ -82,6 +90,11 @@ impl ShellGpuLaunchPolicy {
             .env(GPU_DEVICE_MINOR_ENV, minor.to_string());
         if let Some(pci_bus_id) = pci_bus_id.as_ref() {
             spec = spec.env(GPU_PCI_BUS_ID_ENV, pci_bus_id);
+        }
+        if let Some((vendor, device)) = pci_ids {
+            spec = spec
+                .env(GPU_PCI_VENDOR_ID_ENV, format!("{vendor:04x}"))
+                .env(GPU_PCI_DEVICE_ID_ENV, format!("{device:04x}"));
         }
         let domain = spec
             .protection_domain
@@ -100,6 +113,8 @@ impl ShellGpuLaunchPolicy {
                 major,
                 minor,
                 pci_bus_id,
+                pci_vendor_id: pci_ids.map(|ids| ids.0),
+                pci_device_id: pci_ids.map(|ids| ids.1),
             }),
         ))
     }
@@ -147,6 +162,20 @@ fn pci_bus_id(physical: &Path) -> Option<String> {
             .enumerate()
             .all(|(index, byte)| matches!(index, 4 | 7 | 10) || byte.is_ascii_hexdigit()))
     .then(|| value.to_ascii_lowercase())
+}
+
+fn pci_ids(physical: &Path) -> Result<(u32, u32), String> {
+    let read = |name| {
+        let value = std::fs::read_to_string(physical.join(name))
+            .map_err(|error| format!("shell render node PCI {name}: {error}"))?;
+        let value = value.trim().strip_prefix("0x").unwrap_or(value.trim());
+        let value = u32::from_str_radix(value, 16)
+            .map_err(|_| format!("shell render node PCI {name} is malformed"))?;
+        (value <= u16::MAX.into())
+            .then_some(value)
+            .ok_or_else(|| format!("shell render node PCI {name} exceeds sixteen bits"))
+    };
+    Ok((read("vendor")?, read("device")?))
 }
 
 #[path = "gpu/tests.rs"]

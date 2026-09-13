@@ -78,6 +78,12 @@ application X11/Wayland socket, host service bus, cgroupfs, or broad filesystem
 access. Device selection cannot depend on inherited display variables or the
 first adapter returned by an enumeration. Lom must verify that its selected
 GPU matches the admitted device and refuse unsupported or ambiguous selection.
+The private domain exposes exactly one render node. For a PCI device, the grant
+also carries its host-observed bus, vendor and device identities. A Vulkan
+client matches the bus identity when its driver implements the optional PCI bus
+information extension; otherwise it matches vendor and device within that
+single-node domain. Missing fallback fields, multiple matches and conflicting
+bus identities remain refusals.
 
 Effective-profile and launch evidence distinguish requested policy, actual
 device access, missing implementation and refusal. Replacement needs a fresh

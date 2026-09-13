@@ -124,6 +124,16 @@ failed GPU or content prerequisite now reports the client's boundary error and
 stops before Sophia acquires the display. No successor hardware result has
 been recorded yet; t097 remains active.
 
+The protected preflight on `61c37741` at
+`.artifacts/lom-panel-native/20260913T202120Z` stopped before graphics takeover
+because no enumerated Vulkan adapter passed Lom's grant selector. This confirms
+the fail-closed boundary and does not distinguish an empty adapter inventory
+from a missing or mismatched optional Vulkan PCI-bus identity. The successor
+candidate carries host-observed PCI vendor/device identifiers as a bounded
+fallback inside the already-single-render-node domain and records bounded
+adapter counts if selection still fails. Its causal role and the native bar
+remain unproved until a new attended result is retained.
+
 ### t098
 
 Carry content target tables through production projection to the exact native

@@ -55,6 +55,33 @@ fn direct_policy_binds_exact_device_and_current_epoch() {
 }
 
 #[test]
+fn pci_identity_carries_vendor_and_device_fallbacks() {
+    let root = std::env::temp_dir().join(format!("sophia-shell-pci-{}", std::process::id()));
+    let directory = root.join("0000:03:00.0");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("vendor"), "0x1002\n").unwrap();
+    std::fs::write(directory.join("device"), "0x744c\n").unwrap();
+    assert_eq!(pci_bus_id(&directory).as_deref(), Some("0000:03:00.0"));
+    assert_eq!(pci_ids(&directory).unwrap(), (0x1002, 0x744c));
+
+    let source = Path::new("/dev/null");
+    let policy = ShellGpuLaunchPolicy::new(ShellGpuMode::Direct, Some(identity(source))).unwrap();
+    let (prepared, evidence) = policy
+        .prepare_with_revalidation(&base(), 9, |_| Ok((1, 3, directory.clone())))
+        .unwrap();
+    let environment = prepared
+        .environment
+        .iter()
+        .map(|(key, value)| (key.to_str().unwrap(), value.to_str().unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(environment[GPU_PCI_BUS_ID_ENV], "0000:03:00.0");
+    assert_eq!(environment[GPU_PCI_VENDOR_ID_ENV], "1002");
+    assert_eq!(environment[GPU_PCI_DEVICE_ID_ENV], "744c");
+    assert_eq!(evidence.unwrap().pci_vendor_id, Some(0x1002));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn direct_policy_refuses_zero_epoch_and_changed_identity() {
     let source = Path::new("/dev/null");
     let mut changed = identity(source);
