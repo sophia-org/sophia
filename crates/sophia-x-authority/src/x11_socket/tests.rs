@@ -500,7 +500,10 @@ fn routed_control_discards_another_clients_command_and_labels_its_ack() {
         acknowledgements: ack_sender,
         completion: None,
     };
-    assert_eq!(channels.recv_timeout(first), Err(RecvTimeoutError::Timeout));
+    assert!(matches!(
+        channels.recv_timeout(first),
+        Err(RecvTimeoutError::Timeout)
+    ));
     assert_eq!(
         channels.recv_timeout(first).unwrap().authority_command(),
         Some(command)

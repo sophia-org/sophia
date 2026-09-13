@@ -126,6 +126,14 @@ impl ControlPhase {
 #[cfg(unix)]
 struct ControlRecord {
     token: ControlCompletionToken,
+    /// Effects this operation queued on someone else, not yet ended.
+    ///
+    /// Routing a focus change puts a FocusOut on the previously focused
+    /// client's writer queue. That entry outlives the operation that caused
+    /// it, and this operation's own router and writer going quiet says nothing
+    /// about whether it has run. Counted here so that nothing about this
+    /// operation is settled while work it started can still happen.
+    dependents: usize,
     identity: ControlOperationIdentity,
     phase: ControlPhase,
 }
@@ -322,6 +330,7 @@ impl ControlCompletionRegistry {
         inner.next_incarnation = next;
         inner.records.push(ControlRecord {
             token,
+            dependents: 0,
             identity: ControlOperationIdentity::of(&command),
             phase: ControlPhase::Reserved(command),
         });
@@ -710,7 +719,10 @@ impl ControlCompletionRegistry {
             .records
             .iter()
             .filter_map(|held| match held.phase {
-                ControlPhase::Abandoned(command) => Some(ControlCleanup {
+                // Abandoned, and nothing it queued elsewhere can still run.
+                // While one can, this operation is not waiting on a cleanup:
+                // it is waiting to find out what else it did.
+                ControlPhase::Abandoned(command) if held.dependents == 0 => Some(ControlCleanup {
                     token: held.token,
                     command,
                 }),

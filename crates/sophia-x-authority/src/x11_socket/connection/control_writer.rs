@@ -133,7 +133,11 @@ fn spawn_x11_control_writer(
                     focus,
                     completion,
                 } => (command, focus, completion),
-                X11RoutedControl::FocusOut { window, time_msec } => {
+                X11RoutedControl::FocusOut {
+                    window,
+                    time_msec,
+                    origin,
+                } => {
                     focused_surface_window.store(
                         u64::from(X_SETUP_DEFAULT_ROOT),
                         Ordering::Release,
@@ -160,6 +164,11 @@ fn spawn_x11_control_writer(
                         &sequence,
                         records,
                     )?;
+                    // Run, so it can no longer happen, and its origin is told
+                    // by the same guard that would have told it had this queue
+                    // gone instead. Not an outcome for that operation: only
+                    // that this particular effect of it is over.
+                    drop(origin);
                     continue;
                 }
             };

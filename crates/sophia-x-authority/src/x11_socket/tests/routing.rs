@@ -8505,3 +8505,180 @@ fn losing_a_connection_gives_up_its_writers_and_then_its_registration() {
     );
     assert!(!active(&state), "and then it was taken back");
 }
+
+#[test]
+fn nothing_is_owed_a_cleanup_while_work_it_queued_elsewhere_can_still_run() {
+    let client = XServerFrontendClientId(343);
+    let surface = SurfaceId::new(343, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let token = accepted(&registry, configure(client, surface, 44001));
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+
+    // Routing a focus change queues a FocusOut on the previously focused
+    // client's writer. It outlives this operation, and this operation's own
+    // router and writer going quiet says nothing about it.
+    let queued = X11DependentEffect::note(&registry, token).expect("a live record");
+    assert_eq!(registry.dependents_outstanding(token), Some(1));
+
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+    assert!(
+        registry
+            .cleanups_owed()
+            .expect("a readable registry")
+            .is_empty(),
+        "an operation with work that can still happen is not waiting on a cleanup"
+    );
+
+    // Ended -- run by that writer, or given up unrun when its queue went. Both
+    // are ends, and the guard reports either the same way, because which it
+    // was is not a receipt.
+    drop(queued);
+    assert_eq!(registry.dependents_outstanding(token), Some(0));
+    assert_eq!(
+        registry.cleanups_owed().expect("a readable registry").len(),
+        1,
+        "only once nothing it started can still happen"
+    );
+}
+
+#[test]
+fn a_dependent_effect_reports_its_end_whether_it_ran_or_was_given_up() {
+    let client = XServerFrontendClientId(344);
+    let surface = SurfaceId::new(344, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(8).expect("an unused origin");
+
+    // Given up unrun: the queue it was sitting in went away.
+    let dropped = accepted(&registry, configure(client, surface, 45001));
+    let queued = X11DependentEffect::note(&registry, dropped).expect("a live record");
+    assert_eq!(registry.dependents_outstanding(dropped), Some(1));
+    drop(queued);
+    assert_eq!(registry.dependents_outstanding(dropped), Some(0));
+
+    // Run: the writer it was queued on processed it and let it go.
+    let ran = accepted(&registry, configure(client, surface, 45002));
+    let effect = X11DependentEffect::note(&registry, ran).expect("a live record");
+    let routed = X11RoutedControl::FocusOut {
+        window: XResourceId::new(0x200252, 1),
+        time_msec: 7,
+        origin: Some(effect),
+    };
+    assert_eq!(registry.dependents_outstanding(ran), Some(1));
+    drop(routed);
+    assert_eq!(
+        registry.dependents_outstanding(ran),
+        Some(0),
+        "the entry carries the report, so it arrives either way"
+    );
+
+    // An origin with no record left takes no count and hands back nothing to
+    // hold, rather than counting against a record that is not there.
+    let foreign = crate::ControlCompletionRegistry::with_capacity(2).expect("an unused origin");
+    assert!(X11DependentEffect::note(&foreign, ran).is_none());
+    assert_eq!(foreign.dependents_outstanding(ran), None);
+}
+
+#[test]
+fn routing_a_focus_change_counts_the_focus_out_it_queues_elsewhere() {
+    let focused = XServerFrontendClientId(345);
+    let claimant = XServerFrontendClientId(346);
+    let focused_surface = SurfaceId::new(345, 1);
+    let claimant_surface = SurfaceId::new(346, 1);
+    let (acknowledgements, _acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, held_channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, focused, focused_surface);
+    let (claimant_registration, claimant_channels) = private
+        .broker
+        .registry
+        .register_client(claimant)
+        .expect("a second client");
+    private
+        .broker
+        .registry
+        .register_surface(
+            claimant,
+            NamespaceId::from_raw(252),
+            claimant_surface,
+            XResourceId::new(0x200253, 1),
+        )
+        .expect("a second surface");
+
+    // The first client holds focus.
+    private
+        .broker
+        .registry
+        .route_control(XAuthorityClientControlCommand {
+            client: focused,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(46001),
+                surface: focused_surface,
+            },
+        })
+        .expect("the first focus");
+    assert!(held_channels.control.try_recv().is_ok());
+
+    // The second takes it, through the private path so the operation has a
+    // record. Routing queues a FocusOut on the first client's writer.
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client: claimant,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(46002),
+                surface: claimant_surface,
+            },
+        })
+        .expect("the shared admission to accept control");
+    let ran = private.route_pending().expect("a turn");
+    let Some(crate::PrivateIdentity::Control {
+        completion: Some(token),
+        ..
+    }) = ran.first().map(|run| run.identity)
+    else {
+        panic!("a control that names its registration");
+    };
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+
+    // That queued effect is counted against the operation that caused it.
+    // Nothing linked the two before, so the claimant's own router and writer
+    // could both go quiet while it still sat in the other connection's queue.
+    assert_eq!(
+        registry.dependents_outstanding(token),
+        Some(1),
+        "the FocusOut queued elsewhere is counted against its origin"
+    );
+    let queued = held_channels
+        .control
+        .try_recv()
+        .expect("the previously focused client is told");
+    assert!(matches!(queued, X11RoutedControl::FocusOut { .. }));
+
+    // And letting that entry go is what ends it.
+    drop(queued);
+    assert_eq!(registry.dependents_outstanding(token), Some(0));
+    assert!(claimant_channels.control.try_recv().is_ok());
+    drop(claimant_registration);
+}
+
+#[test]
+fn a_record_that_is_gone_has_no_dependent_count_rather_than_zero() {
+    let client = XServerFrontendClientId(347);
+    let surface = SurfaceId::new(347, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let token = accepted(&registry, configure(client, surface, 47001));
+    assert_eq!(registry.dependents_outstanding(token), Some(0));
+
+    // Given up to another owner. Nothing outstanding and nothing to ask about
+    // are different answers, and a caller told the first would treat a record
+    // it no longer holds as one with no work left.
+    assert!(registry.discard(token));
+    assert_eq!(registry.dependents_outstanding(token), None);
+}

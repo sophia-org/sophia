@@ -1,5 +1,58 @@
+/// One effect a control operation queued on another client's writer, which
+/// reports its own end.
+///
+/// Held by the queued entry itself, so the report happens whether the entry is
+/// run or given up unrun: a queue that goes takes its entries with it, and a
+/// dependent effect that vanished silently would leave its origin waiting on
+/// something that can no longer happen.
+///
+/// Not a receipt. Which of the two ends it was is not recorded and is not an
+/// outcome: what it establishes is only that this particular effect can no
+/// longer happen.
 #[cfg(unix)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct X11DependentEffect {
+    registry: ControlCompletionRegistry,
+    origin: ControlCompletionToken,
+}
+
+/// Names the origin and nothing else.
+///
+/// Written rather than derived so that a routed control's debug output cannot
+/// grow to include what any client asked for: the registry behind this holds
+/// every accepted command.
+#[cfg(unix)]
+impl core::fmt::Debug for X11DependentEffect {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("X11DependentEffect")
+            .field("origin", &self.origin)
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(unix)]
+impl X11DependentEffect {
+    /// Queue one against its origin, if the origin still has a record.
+    fn note(
+        registry: &ControlCompletionRegistry,
+        origin: ControlCompletionToken,
+    ) -> Option<Self> {
+        registry.note_dependent(origin).then(|| Self {
+            registry: registry.clone(),
+            origin,
+        })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for X11DependentEffect {
+    fn drop(&mut self) {
+        self.registry.dependent_ended(self.origin);
+    }
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
 enum X11RoutedControl {
     Authority {
         command: XAuthorityControlCommand,
@@ -14,14 +67,21 @@ enum X11RoutedControl {
     FocusOut {
         window: XResourceId,
         time_msec: u32,
+        /// The operation whose routing queued this, when one did.
+        ///
+        /// Carried so that this effect ending is reported against the
+        /// operation that caused it. Nothing linked the two before, so an
+        /// operation's own router and writer could both go quiet while this
+        /// still sat in another connection's queue.
+        origin: Option<X11DependentEffect>,
     },
 }
 
 #[cfg(all(unix, test))]
 impl X11RoutedControl {
-    const fn authority_command(self) -> Option<XAuthorityControlCommand> {
+    fn authority_command(&self) -> Option<XAuthorityControlCommand> {
         match self {
-            Self::Authority { command, .. } => Some(command),
+            Self::Authority { command, .. } => Some(*command),
             Self::FocusOut { .. } => None,
         }
     }
@@ -101,7 +161,7 @@ impl XServerFrontendRouteRegistry {
                 time_msec,
             },
             Some(previous) => {
-                self.route_focus_out(previous, time_msec)?;
+                self.route_focus_out(previous, time_msec, completion)?;
                 X11FocusTransition::Enter {
                     previous: None,
                     time_msec,
@@ -133,7 +193,7 @@ impl XServerFrontendRouteRegistry {
                 time_msec,
             },
             Some(previous) => {
-                self.route_focus_out(previous, time_msec)?;
+                self.route_focus_out(previous, time_msec, completion)?;
                 X11FocusTransition::Clear {
                     previous: None,
                     time_msec,
@@ -153,14 +213,21 @@ impl XServerFrontendRouteRegistry {
         &self,
         previous: XServerFrontendSurfaceRoute,
         time_msec: u32,
+        origin: Option<ControlCompletionToken>,
     ) -> Result<(), XServerFrontendRouteError> {
         let sender = self.client_senders(previous.client)?.control;
+        // Counted against its origin before it is queued, so there is no
+        // moment where the effect exists and nothing is waiting for it.
+        let origin = origin.zip(self.control_completion.get()).and_then(
+            |(origin, registry)| X11DependentEffect::note(registry, origin),
+        );
         self.route_to_client(
             previous.client,
             sender,
             X11RoutedControl::FocusOut {
                 window: previous.window,
                 time_msec,
+                origin,
             },
         )
     }
