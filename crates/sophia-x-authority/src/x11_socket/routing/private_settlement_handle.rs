@@ -56,16 +56,33 @@ pub struct PrivateSettlement {
 
 #[cfg(unix)]
 impl PrivateSettlement {
+    /// Whether nothing is owed at all.
+    ///
+    /// Includes what the instance still owed for work it accepted. A hold
+    /// waiting for its release, or a decision waiting to be handed on, is an
+    /// obligation as much as an unanswered command is -- and reporting settled
+    /// while one is retained tells an owner it may stop.
     pub fn is_settled(&self) -> bool {
-        self.pending.is_empty() && self.outstanding.is_empty() && !self.queue_unreadable
+        self.pending.is_empty()
+            && self.outstanding.is_empty()
+            && !self.queue_unreadable
+            && self.terminal_outstanding() == 0
     }
 
-    /// How many obligations remain undischarged.
+    /// How many commands are waiting to be answered.
+    ///
+    /// Commands only. A retained hold is an obligation too, and it is not
+    /// here: `terminal_outstanding` reports those, and `is_settled` is the
+    /// question that covers both. A caller reading this alone sees an
+    /// instance with nothing left when it still owes a release.
     pub fn owed(&self) -> usize {
         self.pending.len()
     }
 
     /// How many routed operations have not reached a terminal outcome.
+    ///
+    /// Routed operations only, for the same reason as `owed`: what the
+    /// instance owed for work it already finished is not counted here.
     pub fn outstanding(&self) -> usize {
         self.outstanding.len()
     }
@@ -152,7 +169,6 @@ impl PrivateSettlement {
     /// answered stays pending rather than being counted off, so retrying twice
     /// does not answer anything twice.
     /// What this instance still owed when it closed, if anything.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn terminal_outstanding(&self) -> usize {
         self.terminal
             .as_ref()

@@ -491,6 +491,11 @@ impl PrivateXServerFrontend {
             broker.registry.install_control_completion(completion.clone()),
             "a freshly built broker has no completion registry yet"
         );
+        let terminal = PrivateTerminalInventory::with_capacity(
+            broker.registry.clone(),
+            controller.clone(),
+            capacity,
+        );
         Ok(Self {
             broker,
             admission: Arc::new(SharedAdmission::new(staged, durable.clone())),
@@ -508,7 +513,7 @@ impl PrivateXServerFrontend {
             parked: None,
             parked_barrier: None,
             ordered_runner: false,
-            terminal: PrivateTerminalInventory::with_capacity(capacity),
+            terminal,
         })
     }
 

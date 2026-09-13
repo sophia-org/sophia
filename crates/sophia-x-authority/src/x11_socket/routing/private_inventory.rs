@@ -17,6 +17,22 @@
 /// tell. What is carried is the right to finish answering for it.
 #[cfg(unix)]
 struct PrivateTerminalInventory {
+    /// The registry that can answer for everything here.
+    ///
+    /// Inseparable from the obligations rather than held alongside them. A
+    /// hold's plan names a client, a window and a seat's projection, and all
+    /// of those are the registry's to reach -- so an inventory that outlived
+    /// its registry would describe obligations nothing could act on. Custody
+    /// sometimes keeping a capability alive is not a guarantee for the
+    /// inventory as a whole: the last custody can be observed and dropped
+    /// while holds remain.
+    origin: XServerFrontendRouteRegistry,
+    /// The authority these obligations answer to.
+    ///
+    /// Carried for the same reason. A retained hold still names a ledger
+    /// incarnation and a credit, and neither can be reached once the
+    /// controller has gone.
+    controller: PrivateAuthorityController,
     /// Holds this executor began, with where each was delivered.
     ///
     /// A release answers to what its press reached, so this is what makes a
@@ -44,10 +60,17 @@ struct PrivateTerminalInventory {
 
 #[cfg(unix)]
 impl PrivateTerminalInventory {
-    /// Storage is reserved up front, so recording an obligation never
-    /// allocates on the path where something has already happened.
-    fn with_capacity(capacity: usize) -> Self {
+    /// Storage for the fixed-size records is reserved up front. The turn and
+    /// delivery lists are reserved to the service budget and can still grow
+    /// past it, which is open preallocation work rather than a guarantee.
+    fn with_capacity(
+        origin: XServerFrontendRouteRegistry,
+        controller: PrivateAuthorityController,
+        capacity: usize,
+    ) -> Self {
         Self {
+            origin,
+            controller,
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             current: None,
@@ -86,22 +109,41 @@ impl PrivateTerminalInventory {
             .saturating_add(self.undelivered.len())
     }
 
-    /// Move everything owed out, leaving an inventory that owes nothing.
+    /// Move everything owed out, storage and capabilities together.
     ///
-    /// The reserved buffers stay with the emptied inventory rather than going
-    /// with what is taken: the instance handing over may still be running, and
-    /// the next obligation it records must not allocate.
-    fn hand_over(&mut self, capacity: usize) -> Self {
-        let mut taken = Self::with_capacity(capacity);
-        taken.holds.append(&mut self.holds);
-        taken.settling.append(&mut self.settling);
-        taken.current = self.current.take();
-        taken.turn.append(&mut self.turn);
-        taken.delivering.append(&mut self.delivering);
-        taken.undelivered.append(&mut self.undelivered);
-        // The phase describes the head of `delivering`, which has moved with
-        // it, so it moves too rather than being left describing nothing.
-        taken.emission = std::mem::replace(&mut self.emission, PrivateEmissionPhase::NotOwed);
-        taken
+    /// A move, not a copy into fresh buffers. This runs while an instance is
+    /// closing, and building new destinations there allocates during cleanup
+    /// -- the opposite of what reserving them was for. The emptied inventory
+    /// is left with no capacity because nothing records into a closing
+    /// instance; an inventory that had to keep recording would need its
+    /// destination reserved before the work was accepted, which is a different
+    /// arrangement from this one.
+    fn hand_over(&mut self) -> Self {
+        std::mem::replace(
+            self,
+            Self {
+                origin: self.origin.clone(),
+                controller: self.controller.clone(),
+                holds: Vec::new(),
+                settling: Vec::new(),
+                current: None,
+                turn: Vec::new(),
+                delivering: Vec::new(),
+                emission: PrivateEmissionPhase::NotOwed,
+                undelivered: Vec::new(),
+            },
+        )
+    }
+
+    /// The registry that can answer for what is here.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn origin(&self) -> &XServerFrontendRouteRegistry {
+        &self.origin
+    }
+
+    /// The authority these obligations answer to.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn controller(&self) -> &PrivateAuthorityController {
+        &self.controller
     }
 }

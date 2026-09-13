@@ -105,7 +105,7 @@ impl PrivateXServerFrontend {
                     outstanding: std::mem::take(&mut self.outstanding),
                     queue_unreadable: true,
                     settling: None,
-                    terminal: Some(self.terminal.hand_over(self.service_budget)),
+                    terminal: Some(self.terminal.hand_over()),
                 };
             }
         };
@@ -140,7 +140,7 @@ impl PrivateXServerFrontend {
             outstanding,
             queue_unreadable: false,
             settling: None,
-            terminal: Some(self.terminal.hand_over(self.service_budget)),
+            terminal: Some(self.terminal.hand_over()),
         };
         let _answered = settlement.settle_pending();
         // Records still unexecuted after the queue was answered belong to

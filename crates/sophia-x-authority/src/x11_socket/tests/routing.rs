@@ -14179,3 +14179,278 @@ fn what_an_instance_still_owes_reaches_the_durable_owner() {
         "the obligations reached the owner that outlives both"
     );
 }
+
+#[test]
+fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
+    let client = XServerFrontendClientId(971);
+    let surface = SurfaceId::new(971, 1);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (sender, _acks) = sync_channel(8);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (authority, issuer, submit) = private_authority();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            NamespaceId::from_raw(client.raw()),
+            surface,
+            XResourceId::new(0x200971, 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+
+    // Weak handles to the two capabilities a retained hold needs: the seat
+    // projection its release must move, and the authority its debt answers to.
+    let projection = std::sync::Arc::downgrade(&private.broker.registry.pointer_state);
+    let common = std::sync::Arc::downgrade(&private.authority().common);
+
+    // A press that begins a hold, delivered and its completion observed -- so
+    // its custody is gone and only the hold plan is left.
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(971),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    let delivered = private.deliver_turn(turn);
+    assert!(matches!(
+        delivered[0].completion,
+        Some(sophia_input_authority::RequestCompletion::Processed)
+    ));
+
+    // Everything that might have kept those capabilities alive incidentally
+    // goes: the producer, the client's routes and channels, and the instance.
+    drop(ingress);
+    drop(channels);
+    drop(registration);
+    let settlement = private.shutdown();
+    assert_eq!(
+        settlement.terminal_outstanding(),
+        1,
+        "the hold is still owed"
+    );
+    assert!(
+        !settlement.is_settled(),
+        "and a retained obligation is not a settled report"
+    );
+    // The narrow counters stay narrow, which is why the settled question has
+    // to be the aggregate one: a caller reading either of these alone sees an
+    // instance with nothing left while it still owes a release.
+    assert_eq!(settlement.owed(), 0, "no command is waiting");
+    assert_eq!(settlement.outstanding(), 0, "and none is in flight");
+    assert!(
+        projection.upgrade().is_some(),
+        "the seat projection its release must move is still reachable"
+    );
+    assert!(
+        common.upgrade().is_some(),
+        "and so is the authority its debt answers to"
+    );
+
+    // Handed on to the owner behind the handle, still with both. The
+    // capability is asserted before the count: that an obligation was kept
+    // somewhere is a weaker claim than that what answers it was kept with it.
+    drop(settlement);
+    assert!(
+        projection.upgrade().is_some(),
+        "an inventory that outlived its registry would describe obligations \
+         nothing could act on"
+    );
+    assert!(common.upgrade().is_some());
+    assert_eq!(durable.terminal_inventories().expect("readable"), 1);
+    // And on the owner's side the same distinction holds: there is nothing to
+    // drive, and driving is not what discharges this.
+    assert_eq!(durable.owed(), Some(0));
+    assert_eq!(durable.outstanding(), Some(0));
+    let progress = durable.drive();
+    assert!(progress.readable);
+    assert!(
+        !progress.made_progress(),
+        "a drive loop ends here with the hold still owed, so 'no progress' \
+         cannot be read as 'nothing owed'"
+    );
+    assert_eq!(durable.terminal_inventories().expect("readable"), 1);
+
+    // And they go only when the obligations do.
+    drop(durable);
+    assert!(projection.upgrade().is_none());
+    assert!(common.upgrade().is_none());
+}
+
+/// One instance that ends owing a hold it can no longer answer for, handed to
+/// `durable`. Returns the authority that hold answers to, so a caller can ask
+/// which instance a retained inventory kept.
+fn instance_handing_over_a_retained_hold(
+    durable: &crate::PrivateSettlementOwner,
+    client: XServerFrontendClientId,
+    surface: SurfaceId,
+    namespace: NamespaceId,
+    delivery: u64,
+    button: u32,
+) -> std::sync::Arc<Mutex<sophia_input_authority::AuthorityInstance>> {
+    let (sender, _acks) = sync_channel(8);
+    let (delivery_sender, _deliveries) = channel();
+    let (authority, issuer, submit) = private_authority();
+    let mut private = crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
+    let common = std::sync::Arc::clone(&private.authority().common);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(namespaced(client, namespace)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, namespaced(client, namespace))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(
+            client,
+            namespace,
+            surface,
+            XResourceId::new(0x200000 | client.raw(), 1),
+        )
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(delivery),
+            button,
+            true,
+        ))
+        .expect("the order to accept it");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    let delivered = private.deliver_turn(turn);
+    assert!(matches!(
+        delivered[0].completion,
+        Some(sophia_input_authority::RequestCompletion::Processed)
+    ));
+    drop(ingress);
+    drop(channels);
+    drop(registration);
+    let settlement = private.shutdown();
+    assert_eq!(
+        settlement.terminal_outstanding(),
+        1,
+        "the instance ends owing exactly the hold this control is about"
+    );
+    drop(settlement);
+    common
+}
+
+#[test]
+fn two_instances_owing_the_same_names_each_answer_through_their_own_origin() {
+    // The same surface, in the same namespace, on the same seat, in two
+    // unrelated instances. Nothing in the names distinguishes the two
+    // obligations; only which registry and which authority accepted each does.
+    let surface = SurfaceId::new(981, 1);
+    let namespace = NamespaceId::from_raw(500);
+    let seat = SeatId::from_raw(1);
+    let durable = crate::PrivateSettlementOwner::default();
+    // Different buttons, so a projection read through the wrong registry is
+    // visible rather than indistinguishable.
+    let first = instance_handing_over_a_retained_hold(
+        &durable,
+        XServerFrontendClientId(981),
+        surface,
+        namespace,
+        981,
+        272,
+    );
+    let second = instance_handing_over_a_retained_hold(
+        &durable,
+        XServerFrontendClientId(982),
+        surface,
+        namespace,
+        982,
+        273,
+    );
+    assert_eq!(durable.terminal_inventories().expect("readable"), 2);
+    assert!(
+        !std::sync::Arc::ptr_eq(&first, &second),
+        "two instances, two authorities"
+    );
+
+    // The clients' routes are gone -- both registrations dropped before
+    // shutdown, which is the case retention exists for. What a release still
+    // has to move is the seat projection its press raised, and that is the
+    // registry's.
+    // Reached here rather than through a query on the owner: what each
+    // retained inventory kept is a question this control asks, not one the
+    // owner needs to answer.
+    let held = durable.inner.lock().expect("the owner to be readable");
+    let answered = held
+        .terminal
+        .iter()
+        .map(|inventory| {
+            let projected = inventory
+            .origin()
+            .pointer_state
+            .lock()
+            .expect("its own seat projection")
+                .get(&(namespace, seat))
+                .map_or(0, |mapper| mapper.state());
+            (
+                projected,
+                std::sync::Arc::ptr_eq(&inventory.controller().common, &first),
+                std::sync::Arc::ptr_eq(&inventory.controller().common, &second),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        answered,
+        vec![(0x100, true, false), (0x400, false, true)],
+        "each retained hold reaches the seat projection its own press raised \
+         and the authority its own credit answers to -- reaching the other \
+         would release a button this instance never pressed, in an instance \
+         that never accepted it"
+    );
+}

@@ -238,7 +238,12 @@ impl PrivateSettlementOwner {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// How many obligations are waiting for someone to drive them.
+    /// How many operations are waiting for someone to drive them.
+    ///
+    /// Drivable operations only. Inventories handed over by instances that
+    /// closed owing something are not driven and not counted here; ask
+    /// `terminal_inventories` for those.
+    ///
     /// `None` where the owner cannot be read: nothing owed and nothing
     /// knowable are different answers.
     pub fn owed(&self) -> Option<usize> {
@@ -246,6 +251,9 @@ impl PrivateSettlementOwner {
     }
 
     /// How many abandoned operations are still waiting on a terminal outcome.
+    ///
+    /// Abandoned operations only, with the same scope as `owed`.
+    ///
     /// `None` where the owner cannot be read.
     pub fn outstanding(&self) -> Option<usize> {
         self.inner.lock().ok().map(|held| held.outstanding.len())
@@ -622,11 +630,6 @@ impl PrivateSettlementOwner {
         }
     }
 
-    /// Take responsibility for abandoned work.
-    ///
-    /// Cannot refuse. Every operation here already holds a credit taken when
-    /// it was accepted, so the storage for it is reserved and this is a move
-    /// into space that was set aside rather than a request for space.
     /// Take an instance's terminal inventory.
     ///
     /// Cannot refuse. These are obligations already accepted, and the space
@@ -677,6 +680,10 @@ pub struct DriveProgress {
 #[cfg(unix)]
 impl DriveProgress {
     /// Whether this drive changed anything at all.
+    ///
+    /// Of what a drive can reach. A drive answers operations; it does not
+    /// discharge what a closed instance handed over, so a loop that runs
+    /// until this is false has finished driving, not finished owing.
     pub fn made_progress(self) -> bool {
         self.answered > 0 || self.reclaimed > 0
     }
