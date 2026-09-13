@@ -3821,7 +3821,7 @@ fn a_full_acknowledgement_channel_retains_the_obligation() {
     assert_eq!(report.owed(), 1, "the control is still owed");
     assert!(
         matches!(
-            report.unsettled.first(),
+            report.pending.first(),
             Some(PrivateOperation::Control(_))
         ),
         "and it is the control itself, not a note about it"
@@ -3857,4 +3857,151 @@ fn an_unresolved_target_is_handed_back_rather_than_attributed() {
         1,
         "a receipt nobody can attribute is not a settlement"
     );
+}
+
+#[test]
+fn a_retained_handle_settles_once_the_channel_drains() {
+    let namespace = NamespaceId::from_raw(60);
+    let client = XServerFrontendClientId(78);
+    let surface = SurfaceId::new(66, 1);
+    let window = XResourceId::new(0x200220, 1);
+    let (control_ack_sender, control_ack_receiver) = sync_channel(1);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (gate, _instance, _issuer, _submit) = control_gate_with_submit();
+    let private = crate::PrivateXServerFrontend::new(
+        NonZeroUsize::new(8).unwrap(),
+        control_ack_sender.clone(),
+        delivery_sender,
+        gate,
+    );
+    let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .unwrap();
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(910),
+                surface,
+            },
+        })
+        .expect("the shared admission to accept control");
+
+    // The only slot is taken by something else.
+    control_ack_sender
+        .try_send(XAuthorityClientControlAck {
+            client,
+            acknowledgement: XAuthorityControlAck {
+                kind: XAuthorityControlKind::FocusSurface,
+                transaction: TransactionId::from_raw(1),
+                surface,
+                outcome: XAuthorityControlOutcome::Delivered,
+            },
+        })
+        .expect("the empty slot");
+
+    let mut settlement = private.shutdown();
+    assert_eq!(settlement.owed(), 1, "the channel was full");
+
+    // Drain the original, then retry through the HANDLE. It keeps the registry
+    // that accepted the work, so nothing else has to be supplied.
+    let first = control_ack_receiver.recv().expect("the prefilled ack");
+    assert_eq!(first.acknowledgement.transaction, TransactionId::from_raw(1));
+
+    assert_eq!(settlement.retry(), 1, "the obligation is discharged now");
+    assert!(settlement.is_settled());
+
+    let owed = control_ack_receiver
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("the retained acknowledgement");
+    assert_eq!(owed.acknowledgement.transaction, TransactionId::from_raw(910));
+    assert_eq!(
+        owed.acknowledgement.outcome,
+        XAuthorityControlOutcome::AuthorityRejected
+    );
+
+    // Retrying again answers nothing a second time.
+    assert_eq!(settlement.retry(), 0);
+    assert!(
+        control_ack_receiver
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .is_err(),
+        "a settled obligation is not answered twice"
+    );
+}
+
+#[test]
+fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
+    let namespace = NamespaceId::from_raw(61);
+    let client = XServerFrontendClientId(79);
+    let surface = SurfaceId::new(67, 1);
+    let window = XResourceId::new(0x200230, 1);
+    let (first_ack, first_ack_receiver) = sync_channel(8);
+    let (second_ack, second_ack_receiver) = sync_channel(8);
+    let (first_delivery, _first_delivery_receiver) = channel();
+    let (second_delivery, _second_delivery_receiver) = channel();
+    let (first_gate, _i1, _s1, _u1) = control_gate_with_submit();
+    let (second_gate, _i2, _s2, _u2) = control_gate_with_submit();
+
+    let build = |ack, delivery, gate| {
+        let private = crate::PrivateXServerFrontend::new(
+            NonZeroUsize::new(8).unwrap(),
+            ack,
+            delivery,
+            gate,
+        );
+        let (registration, channels) = private.broker.registry.register_client(client).unwrap();
+        private
+            .broker
+            .registry
+            .register_surface(client, namespace, surface, window)
+            .unwrap();
+        (private, registration, channels)
+    };
+    let (first, _r1, _c1) = build(first_ack, first_delivery, first_gate);
+    let (second, _r2, _c2) = build(second_ack, second_delivery, second_gate);
+
+    // The same client id in both, which is ordinary: ids are unique per
+    // frontend, not across frontends.
+    first
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(1001),
+                surface,
+            },
+        })
+        .expect("the first frontend to accept");
+    second
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(2002),
+                surface,
+            },
+        })
+        .expect("the second frontend to accept");
+
+    let first_settlement = first.shutdown();
+    let second_settlement = second.shutdown();
+    assert!(first_settlement.is_settled());
+    assert!(second_settlement.is_settled());
+
+    // Each frontend's obligation went to its own receiver, and only its own.
+    assert_eq!(
+        first_ack_receiver.try_recv().unwrap().acknowledgement.transaction,
+        TransactionId::from_raw(1001)
+    );
+    assert!(first_ack_receiver.try_recv().is_err());
+    assert_eq!(
+        second_ack_receiver.try_recv().unwrap().acknowledgement.transaction,
+        TransactionId::from_raw(2002)
+    );
+    assert!(second_ack_receiver.try_recv().is_err());
 }

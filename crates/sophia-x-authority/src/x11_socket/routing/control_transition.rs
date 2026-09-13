@@ -102,37 +102,147 @@ impl SharedAdmission {
     }
 }
 
-/// What a shutdown could not settle, handed to whoever shut it down.
+/// What a shutdown could not settle, and the means to settle it later.
 ///
 /// Counting an unsettled obligation and logging it is a diagnostic, not a
-/// transfer: the work still leaves scope unanswered. This carries the
-/// obligations themselves, so an owner that is still alive can do something
-/// about them.
+/// transfer. Nor is handing back the work alone: a report holding only
+/// operations would have thrown away the registry that could answer them, so
+/// a caller would be left holding obligations and nothing to discharge them
+/// with. This retains the originating capability along with the work.
+///
+/// The obligations themselves stay private. They carry the stamped envelope
+/// shape, and exporting that so an out-of-crate owner could read a report
+/// would be publishing the wire format to deliver a status. What a caller
+/// needs is not to inspect them but to retry them, which it can.
 #[cfg(unix)]
-#[must_use = "unsettled work is owed an answer by whoever shut this down"]
-pub struct PrivateShutdown {
-    /// Accepted work that could not be answered here.
-    ///
-    /// Held rather than published: the envelope it carries is module-private,
-    /// and exporting the stamped wire shape so an out-of-crate owner could
-    /// read a report is a wider decision than this. What is public is that
-    /// obligations remain and how many, which is what a caller must not be
-    /// able to ignore.
-    unsettled: Vec<PrivateOperation>,
-    /// The queue could not be read, so nothing in it could even be recovered.
-    pub queue_unreadable: bool,
+#[must_use = "unsettled work is owed an answer; retry or record the failure"]
+pub struct PrivateSettlement {
+    /// The capability that can answer the work, retained from the instance
+    /// that accepted it. Not supplied by a caller: an external authority
+    /// argument would let one instance's obligations be settled against
+    /// another's registry.
+    origin: XServerFrontendRouteRegistry,
+    pending: Vec<PrivateOperation>,
+    queue_unreadable: bool,
 }
 
 #[cfg(unix)]
-impl PrivateShutdown {
+impl PrivateSettlement {
     pub fn is_settled(&self) -> bool {
-        self.unsettled.is_empty() && !self.queue_unreadable
+        self.pending.is_empty() && !self.queue_unreadable
     }
 
-    /// How many obligations this shutdown could not discharge.
+    /// How many obligations remain undischarged.
     pub fn owed(&self) -> usize {
-        self.unsettled.len()
+        self.pending.len()
     }
+
+    /// Whether the queue could not be read, so its contents were unrecoverable.
+    pub fn queue_unreadable(&self) -> bool {
+        self.queue_unreadable
+    }
+
+    /// Try again to discharge what remains, against the origin that accepted
+    /// it.
+    ///
+    /// Returns how many were discharged this time. Work that still cannot be
+    /// answered stays pending rather than being counted off, so retrying twice
+    /// does not answer anything twice.
+    pub fn retry(&mut self) -> usize {
+        let pending = std::mem::take(&mut self.pending);
+        let before = pending.len();
+        self.pending = settle_against(&self.origin, pending);
+        before.saturating_sub(self.pending.len())
+    }
+}
+
+#[cfg(unix)]
+impl Drop for PrivateSettlement {
+    fn drop(&mut self) {
+        if self.pending.is_empty() {
+            return;
+        }
+        // A last attempt with the capability still in hand, because a handle
+        // that is abandoned still owes what it holds. Whatever survives this
+        // has no owner left at all, and saying so is the most that remains.
+        let pending = std::mem::take(&mut self.pending);
+        let owed = settle_against(&self.origin, pending).len();
+        if owed > 0 {
+            tracing::error!(
+                "sophia_private_settlement status=abandoned owed={owed} unreadable={}",
+                self.queue_unreadable
+            );
+        }
+    }
+}
+
+/// Answer what can be answered, returning what still cannot.
+#[cfg(unix)]
+fn settle_against(
+    registry: &XServerFrontendRouteRegistry,
+    pending: Vec<PrivateOperation>,
+) -> Vec<PrivateOperation> {
+    let mut unsettled = Vec::with_capacity(pending.len());
+    for operation in pending {
+        match operation {
+            PrivateOperation::RoutedInput(envelope) => {
+                let client = registry
+                    .surfaces
+                    .lock()
+                    .ok()
+                    .and_then(|surfaces| {
+                        surfaces
+                            .get(&envelope.route.request.target_surface)
+                            .map(|route| route.client)
+                    });
+                let Some(client) = client else {
+                    // Ownership is retained rather than resolved by guessing.
+                    // A receipt goes to the issuer's channel rather than to the
+                    // named client, so the harm is not that another client
+                    // receives it; it is a receipt attributed to a client
+                    // nobody resolved, which correlates with nothing. Choosing
+                    // a recipient here would also choose it at the wrong
+                    // moment: final target resolution belongs at execution.
+                    unsettled.push(PrivateOperation::RoutedInput(envelope));
+                    continue;
+                };
+                if registry
+                    .send_input_delivery(
+                        client,
+                        envelope.route.delivery,
+                        XAuthorityInputDeliveryOutcome::RouteRejected,
+                    )
+                    .is_err()
+                {
+                    unsettled.push(PrivateOperation::RoutedInput(envelope));
+                }
+            }
+            PrivateOperation::Control(control) => {
+                let acknowledgement = XAuthorityClientControlAck {
+                    client: control.client,
+                    acknowledgement: XAuthorityControlAck {
+                        kind: control.command.kind(),
+                        transaction: control.command.transaction(),
+                        surface: control.command.surface(),
+                        outcome: XAuthorityControlOutcome::AuthorityRejected,
+                    },
+                };
+                if registry
+                    .acknowledgement_sender
+                    .try_send(acknowledgement)
+                    .is_err()
+                {
+                    unsettled.push(PrivateOperation::Control(control));
+                }
+            }
+            PrivateOperation::LeaseRelease(release) => {
+                if registry.release_route_lease(release).is_err() {
+                    unsettled.push(PrivateOperation::LeaseRelease(release));
+                }
+            }
+        }
+    }
+    unsettled
 }
 
 /// One operation the consumer took, and where it sat.
@@ -511,117 +621,39 @@ pub struct PrivateXServerFrontend {
 
 #[cfg(unix)]
 impl PrivateXServerFrontend {
-    /// Stop accepting, settle what can be settled, and hand back what cannot.
+    /// Stop accepting, settle what can be settled, and keep the means to
+    /// settle the rest.
     ///
-    /// The explicit path. It runs while the registry and the authority are
-    /// still alive, so settlement here can actually reach a client, and it
-    /// returns the obligations it could not discharge to a caller that must
-    /// deal with them. Drop is the fallback for when nobody called this, and
-    /// a fallback cannot be the only thing able to see a failure.
-    pub fn shutdown(mut self) -> PrivateShutdown {
-        let report = self.settle_accepted();
-        // Drop still runs, and will find the queue already closed and empty.
-        report
+    /// The returned handle retains the registry that accepted the work, so a
+    /// caller can retry without holding a frontend or naming an authority. A
+    /// report of bare operations would have been useless the moment this
+    /// consumed self: the component able to answer them would have gone with
+    /// it.
+    pub fn shutdown(mut self) -> PrivateSettlement {
+        self.settle_accepted()
     }
 
-    /// Close and answer what was accepted, returning what is still owed.
-    fn settle_accepted(&mut self) -> PrivateShutdown {
+    /// Close and answer what was accepted, keeping what is still owed.
+    fn settle_accepted(&mut self) -> PrivateSettlement {
+        let origin = self.broker.registry.clone();
         let stranded = match self.admission.close() {
             Ok(stranded) => stranded,
             Err(()) => {
-                return PrivateShutdown {
-                    unsettled: Vec::new(),
+                // The queue could not be opened, so nothing in it could be
+                // recovered. The handle still carries the capability, so a
+                // caller learns this from something that could have acted
+                // rather than from a log line.
+                return PrivateSettlement {
+                    origin,
+                    pending: Vec::new(),
                     queue_unreadable: true,
                 };
             }
         };
-        let mut unsettled = Vec::new();
-        for operation in stranded {
-            match operation {
-                PrivateOperation::RoutedInput(envelope) => {
-                    // The consumer stopping is not evidence the target is
-                    // gone. This work was accepted and not performed, which is
-                    // a rejected route.
-                    let client = self
-                        .broker
-                        .registry
-                        .surfaces
-                        .lock()
-                        .ok()
-                        .and_then(|surfaces| {
-                            surfaces
-                                .get(&envelope.route.request.target_surface)
-                                .map(|route| route.client)
-                        });
-                    let Some(client) = client else {
-                        // Ownership is retained rather than resolved by
-                        // guessing. A receipt goes to the issuer's channel
-                        // rather than to the named client, so the harm is not
-                        // that some other client would receive it -- frontend
-                        // ids start at one and never wrap. It is that a
-                        // receipt attributed to a client nobody resolved
-                        // cannot be correlated with anything. Choosing a
-                        // recipient here would also choose it at the wrong
-                        // moment: final target resolution belongs at
-                        // execution.
-                        unsettled.push(PrivateOperation::RoutedInput(envelope));
-                        continue;
-                    };
-                    if self
-                        .broker
-                        .registry
-                        .send_input_delivery(
-                            client,
-                            envelope.route.delivery,
-                            XAuthorityInputDeliveryOutcome::RouteRejected,
-                        )
-                        .is_err()
-                    {
-                        unsettled.push(PrivateOperation::RoutedInput(envelope));
-                    }
-                }
-                PrivateOperation::Control(control) => {
-                    // Control has its own acknowledgement contract. Not
-                    // ClientGone: the authority stopped, not the client.
-                    let acknowledgement = XAuthorityClientControlAck {
-                        client: control.client,
-                        acknowledgement: XAuthorityControlAck {
-                            kind: control.command.kind(),
-                            transaction: control.command.transaction(),
-                            surface: control.command.surface(),
-                            outcome: XAuthorityControlOutcome::AuthorityRejected,
-                        },
-                    };
-                    if self
-                        .broker
-                        .registry
-                        .acknowledgement_sender
-                        .try_send(acknowledgement)
-                        .is_err()
-                    {
-                        // A full acknowledgement channel is reachable by
-                        // ordinary use. The obligation is retained, not
-                        // counted and dropped.
-                        unsettled.push(PrivateOperation::Control(control));
-                    }
-                }
-                PrivateOperation::LeaseRelease(release) => {
-                    // A queued release is an obligation to perform settlement,
-                    // not proof that settlement happened. Perform it through
-                    // privileged cleanup, and retain it if that fails.
-                    if self
-                        .broker
-                        .registry
-                        .release_route_lease(release)
-                        .is_err()
-                    {
-                        unsettled.push(PrivateOperation::LeaseRelease(release));
-                    }
-                }
-            }
-        }
-        PrivateShutdown {
-            unsettled,
+        let pending = settle_against(&origin, stranded);
+        PrivateSettlement {
+            origin,
+            pending,
             queue_unreadable: false,
         }
     }
@@ -630,17 +662,11 @@ impl PrivateXServerFrontend {
 #[cfg(unix)]
 impl Drop for PrivateXServerFrontend {
     fn drop(&mut self) {
-        // The fallback. An owner that called shutdown has already settled and
-        // this finds nothing; an owner that did not gets a best effort and a
-        // report, because there is nowhere left to hand an obligation to.
-        let report = self.settle_accepted();
-        if !report.is_settled() {
-            tracing::error!(
-                "sophia_private_admission status=unsettled unreadable={} owed={}",
-                report.queue_unreadable,
-                report.unsettled.len()
-            );
-        }
+        // The fallback for an owner that never called shutdown. The handle
+        // this produces is dropped immediately, and its own Drop makes one
+        // final attempt with the capability still in hand before reporting
+        // what nobody is left to own.
+        let _fallback = self.settle_accepted();
     }
 }
 
