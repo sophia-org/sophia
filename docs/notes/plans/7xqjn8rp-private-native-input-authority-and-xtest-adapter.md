@@ -755,3 +755,23 @@ is `.artifacts/private-admission-review-025d59ba/` (two controls PASS, one desir
 assertion FAIL). Fixture compile errors are retained separately and are not
 behavioral evidence. This confirms the consumer-close blocker rather than
 accepting the candidate's complete lifecycle.
+
+Three independent exhaustion tests pass against `025d59ba` with an explicit
+`cfg(test)` counter fixture in copied source. Actual private submissions at
+`u64::MAX` return their payload without a recovery ticket; repeated attempts do
+not reuse a position or leak a ticket; entries accepted at `MAX-2` and `MAX-1`
+remain consumable exactly once. Deliberately removing exhaustion rollback makes
+all three tests fail. Evidence is
+`.artifacts/private-exhaustion-review-025d59ba/`; this is boundary-fixture
+coverage, not a naturally exhausted instance or complete execution acceptance.
+The fixture's initial compile error is retained separately, and the runtime
+mutation was restored byte-for-byte.
+
+A separate poison probe confirms the source finding: after accepting control
+transaction 8201, poisoning the shared queue makes `route_pending` return
+`Ok(0)` without emitting the control. A healthy empty queue passes its control;
+the desired unavailable-error assertion fails. Evidence is
+`.artifacts/private-poison-review-025d59ba/`. The result proves failure is hidden
+and accepted work is inaccessible through this consumer path, not that the
+payload was destroyed or its completion settled. Consumer departure, poison
+handling and owned control refusal still block integration.
