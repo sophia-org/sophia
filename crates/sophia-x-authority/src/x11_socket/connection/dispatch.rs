@@ -507,7 +507,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     state.runtime.lock()
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
         .input_authority_mut().register_query_client(namespace, client.raw());
-    let input_writer = input_receiver
+    // Declared before the first spawn, so every path out from here owns the
+    // shutdown of whatever has already started.
+    let mut writers = X11ClientWriters::default();
+    writers.input = input_receiver
         .map(|receiver| {
             spawn_x11_input_event_writer(
                 X11InputWriterState {
@@ -531,7 +534,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             )
         })
         .transpose()?;
-    let control_writer = control_channels
+    writers.control = control_channels
         .map(|channels| {
             spawn_x11_control_writer(
                 output_stream.clone(),
@@ -556,7 +559,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             )
         })
         .transpose()?;
-    let protocol_writer = protocol_receiver
+    writers.protocol = protocol_receiver
         .map(|receiver| {
             spawn_x11_protocol_event_writer(
                 output_stream.clone(),
@@ -2436,28 +2439,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     } else {
         Ok(())
     };
-    let writer_result: Result<(), X11SetupSocketError> = (|| {
-        if let Some(writer) = input_writer {
-            writer.stop.store(true, Ordering::Release);
-            writer.thread.join().map_err(|_| {
-                X11SetupSocketError::new("X11 input event writer thread panicked")
-            })??;
-        }
-        if let Some(writer) = control_writer {
-            writer.stop.store(true, Ordering::Release);
-            writer
-                .thread
-                .join()
-                .map_err(|_| X11SetupSocketError::new("X11 control writer thread panicked"))??;
-        }
-        if let Some(writer) = protocol_writer {
-            writer.stop.store(true, Ordering::Release);
-            writer.thread.join().map_err(|_| {
-                X11SetupSocketError::new("X11 protocol event writer thread panicked")
-            })??;
-        }
-        Ok(())
-    })();
+    // Every writer is stopped before any is joined, and every one is joined
+    // whatever the others did. Returning on the first failure left the rest
+    // running, never told to stop, against a stream about to close.
+    let writer_result = writers.shut_down().outcome;
     state
         .runtime
         .lock()

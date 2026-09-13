@@ -7386,3 +7386,266 @@ fn nothing_is_admitted_without_the_handover_it_was_accepted_for() {
         "and nothing was queued"
     );
 }
+
+#[test]
+fn stopping_one_writer_does_not_leave_the_others_running() {
+    let client = XServerFrontendClientId(324);
+    let surface = SurfaceId::new(324, 1);
+    let state = writer_runtime(surface);
+    let (routes, control) = sync_channel(4);
+    let (acknowledgements, _acks) = sync_channel(4);
+    let (control_writer, _peer) = writer_start(
+        None,
+        &state,
+        control,
+        None,
+        acknowledgements,
+        client,
+        writer_windows(surface),
+        Arc::new(AtomicUsize::new(0)),
+    );
+    let control_stop = control_writer.stop.clone();
+
+    // An input writer that fails the moment it is joined, ahead of the others.
+    let failing_stop = Arc::new(AtomicBool::new(false));
+    let failing = X11InputEventWriter {
+        stop: failing_stop.clone(),
+        thread: std::thread::spawn(|| {
+            Err(X11SetupSocketError::new("an input writer that failed"))
+        }),
+    };
+    let mut writers = X11ClientWriters {
+        input: Some(failing),
+        control: Some(control_writer),
+        protocol: None,
+    };
+
+    let shutdown = writers.shut_down();
+    assert!(shutdown.outcome.is_err(), "the first failure is reported");
+    assert_eq!(
+        shutdown.joined, 2,
+        "and every writer is waited for, not left detached behind the failure"
+    );
+    // And the ones behind it were stopped and joined anyway. Returning on the
+    // first failure left them running, never told to stop, holding a stream
+    // and a route queue.
+    assert!(
+        control_stop.load(Ordering::Acquire),
+        "every writer is told to stop, whatever an earlier one did"
+    );
+    assert!(
+        writers.control.is_none() && writers.input.is_none(),
+        "and every writer is joined, not abandoned"
+    );
+    let again = writers.shut_down();
+    assert!(again.outcome.is_ok() && again.joined == 0,
+        "shutting down twice finds nothing left to do");
+    let _ = routes;
+}
+
+#[test]
+fn losing_a_registration_leaves_a_partly_applied_control_owed_its_cleanup() {
+    let client = XServerFrontendClientId(325);
+    let surface = SurfaceId::new(325, 1);
+    let (acknowledgements, acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, channels, registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+
+    // One reaches a writer's queue and claims execution; one never leaves the
+    // shared order.
+    private
+        .control_producer()
+        .submit(configure(client, surface, 33001))
+        .expect("the shared admission to accept control");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    private
+        .control_producer()
+        .submit(configure(client, surface, 33002))
+        .expect("the shared admission to accept control");
+    assert_eq!(durable.reserved(), 2);
+
+    // The registration goes while the first is mid-application. Losing it is
+    // the edge, so nothing here re-runs the reconciliation to make it true:
+    // what follows observes what the drop already did.
+    assert!(
+        registry.cleanups_owed().is_empty(),
+        "nothing is owed a cleanup while the registration is alive"
+    );
+    drop(registration);
+    assert_eq!(
+        registry.cleanups_owed().len(),
+        1,
+        "losing the registration is what makes the cleanup owed"
+    );
+
+    // Asking again says the same thing, and changes nothing.
+    let reconciled = registry.reconcile_client(client);
+    assert!(reconciled.readable);
+    assert_eq!(
+        reconciled.abandoned, 1,
+        "what was being applied is owed a cleanup, not an outcome"
+    );
+    assert_eq!(
+        reconciled.unexecuted, 1,
+        "and the one that never started is still truthfully unexecuted"
+    );
+    assert_eq!(reconciled.owed, 0, "nothing was answered");
+    assert_eq!(reconciled.reserved, 0);
+    assert!(
+        acks.try_recv().is_err(),
+        "nothing is published for an operation nobody can describe"
+    );
+    assert_eq!(
+        private.reclaim_settled(),
+        0,
+        "and its credit stays with it"
+    );
+
+    // It cannot be resumed, and no outcome may be published for it.
+    let cleanups = registry.cleanups_owed();
+    assert_eq!(cleanups.len(), 1);
+    let owed = cleanups[0];
+    assert_eq!(
+        owed.command.command.transaction(),
+        TransactionId::from_raw(33001)
+    );
+    assert_eq!(
+        registry.resume_execution(owed.token),
+        crate::ControlExecutionClaim::Refused(crate::ControlClaimRefusal::Abandoned)
+    );
+    assert_eq!(
+        registry.publish_with(
+            owed.token,
+            completion_ack(owed.command, XAuthorityControlOutcome::Delivered),
+            |_| panic!("an abandoned operation must not reach the emission"),
+        ),
+        Err(crate::ControlPublicationRefusal::Abandoned)
+    );
+
+    // A cleanup that did not happen leaves the responsibility where it was.
+    assert_eq!(
+        registry.record_cleanup(owed.token, false),
+        Err(crate::ControlCleanupRefusal::StillOwed)
+    );
+    assert_eq!(registry.cleanups_owed().len(), 1);
+    assert_eq!(private.reclaim_settled(), 0, "so the credit stays too");
+
+    // Cleanup done is not an outcome, but it is the end of what is owed.
+    assert_eq!(registry.record_cleanup(owed.token, true), Ok(()));
+    assert!(registry.cleanups_owed().is_empty());
+    assert_eq!(
+        private.reclaim_settled(),
+        1,
+        "and exactly one credit is released for it"
+    );
+    assert_eq!(private.reclaim_settled(), 0);
+    assert_eq!(
+        registry.record_cleanup(owed.token, true),
+        Err(crate::ControlCleanupRefusal::NoLongerHeld),
+        "and not a second time"
+    );
+    let _ = channels;
+}
+
+#[test]
+fn dropping_the_writers_stops_them_even_if_nobody_shut_them_down() {
+    let client = XServerFrontendClientId(326);
+    let surface = SurfaceId::new(326, 1);
+    let state = writer_runtime(surface);
+    let (routes, control) = sync_channel(4);
+    let (acknowledgements, _acks) = sync_channel(4);
+    let (control_writer, _peer) = writer_start(
+        None,
+        &state,
+        control,
+        None,
+        acknowledgements,
+        client,
+        writer_windows(surface),
+        Arc::new(AtomicUsize::new(0)),
+    );
+    let stop = control_writer.stop.clone();
+
+    // A setup failure between two spawns leaves by dropping, not by calling
+    // anything. Whatever has already started is still owned.
+    drop(X11ClientWriters {
+        input: None,
+        control: Some(control_writer),
+        protocol: None,
+    });
+    assert!(
+        stop.load(Ordering::Acquire),
+        "a writer nobody shut down is stopped by losing the thing that owned it"
+    );
+    let _ = routes;
+}
+
+#[test]
+fn an_unreadable_registry_reconciles_nothing_and_says_so() {
+    let client = XServerFrontendClientId(327);
+    let surface = SurfaceId::new(327, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let command = configure(client, surface, 34001);
+    let token = accepted(&registry, command);
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+    let poisoner = registry.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.inner.lock().unwrap();
+            panic!("poisoning the registry");
+        })
+        .join()
+        .is_err()
+    );
+
+    // Finding nothing because nothing could be looked at is not finding
+    // nothing. A caller that read this as a clean teardown would walk away
+    // from an operation still mid-application.
+    let reconciled = registry.reconcile_client(client);
+    assert!(!reconciled.readable);
+    assert_eq!(reconciled.abandoned, 0);
+    assert_eq!(
+        registry.record_cleanup(token, true),
+        Err(crate::ControlCleanupRefusal::Unavailable)
+    );
+}
+
+#[test]
+fn cleanup_is_only_recorded_for_an_operation_that_is_owed_one() {
+    let client = XServerFrontendClientId(328);
+    let surface = SurfaceId::new(328, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let applying = accepted(&registry, configure(client, surface, 35001));
+    assert_eq!(
+        registry.claim_execution(applying),
+        crate::ControlExecutionClaim::Claimed
+    );
+    let accepted_only = accepted(&registry, configure(client, surface, 35002));
+
+    // An operation whose executor is still there, and one that never started,
+    // are not waiting on a cleanup. Recording one for either would retire a
+    // record that is still owed something else entirely.
+    for token in [applying, accepted_only] {
+        assert_eq!(
+            registry.record_cleanup(token, true),
+            Err(crate::ControlCleanupRefusal::NotAbandoned)
+        );
+    }
+    assert_eq!(registry.outstanding(), 2);
+
+    // A foreign registration is not this registry's to clean up either.
+    let other = crate::ControlCompletionRegistry::with_capacity(2).expect("an unused origin");
+    assert_eq!(
+        other.record_cleanup(applying, true),
+        Err(crate::ControlCleanupRefusal::Foreign)
+    );
+}

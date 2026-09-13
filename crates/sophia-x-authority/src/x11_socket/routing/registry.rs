@@ -137,6 +137,11 @@ struct XServerFrontendClientRouteChannels {
 struct XServerFrontendClientRouteRegistration {
     input_recovery: InputRecovery,
     client: XServerFrontendClientId,
+    /// The completion registry this client's control is answered through,
+    /// when the instance is private. Held so that losing the registration is
+    /// an edge this client's control records are told about, rather than one
+    /// that quietly leaves them waiting for a writer that has gone.
+    control_completion: Arc<std::sync::OnceLock<ControlCompletionRegistry>>,
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
     focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
@@ -320,6 +325,7 @@ impl XServerFrontendRouteRegistry {
             XServerFrontendClientRouteRegistration {
                 input_recovery: self.input_recovery.clone(),
                 client,
+                control_completion: self.control_completion.clone(),
                 clients: self.clients.clone(),
                 surfaces: self.surfaces.clone(),
                 focused_surface: self.focused_surface.clone(),

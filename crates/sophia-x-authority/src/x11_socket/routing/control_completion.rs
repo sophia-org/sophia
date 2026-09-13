@@ -86,17 +86,41 @@ enum ControlPhase {
     ///
     /// The command is kept for the identity and cleanup responsibility it
     /// carries, not to be replayed: replaying a partly applied command is the
-    /// mistake this phase exists to prevent. Nothing reads it back out, and
-    /// that is the point: it is held so that no later pass can mistake this
-    /// operation for one that never ran.
-    #[allow(dead_code)]
+    /// mistake this phase exists to prevent.
     Applying(XAuthorityClientControlCommand),
+    /// Execution began and the executor that could have established an outcome
+    /// has gone. No outcome is coming.
+    ///
+    /// Not a terminal outcome, and nothing is published for it: what the
+    /// runtime did is still unknown, and saying otherwise would invent the
+    /// receipt every other rule here exists to avoid inventing. What it does
+    /// establish is that the cleanup this operation named is now owed to
+    /// someone, and owed until it is recorded done -- so the credit stays held
+    /// and the record stays outstanding.
+    Abandoned(XAuthorityClientControlCommand),
     /// An outcome is established and its acknowledgement has not been
     /// published. The effect has happened, so this is republished, never
     /// replayed, and never replaced: the first established outcome is what
     /// happened, and a later contradicting one is a bug in the caller rather
     /// than a correction.
     Owed(XAuthorityClientControlAck),
+}
+
+#[cfg(unix)]
+impl ControlPhase {
+    /// The client this operation belongs to, in every phase.
+    ///
+    /// An owed acknowledgement names its client as surely as an unexecuted
+    /// command does, so nothing is exempt from a per-client edge.
+    fn client(&self) -> XServerFrontendClientId {
+        match self {
+            Self::Reserved(command)
+            | Self::Accepted(command)
+            | Self::Applying(command)
+            | Self::Abandoned(command) => command.client,
+            Self::Owed(acknowledgement) => acknowledgement.client,
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -154,6 +178,9 @@ pub enum ControlPublicationRefusal {
     /// The work is still its producer's; it has not been accepted, so no
     /// outcome may be published for it.
     NotAccepted,
+    /// Its executor has gone with the outcome unestablished. Nothing here
+    /// knows what happened, so nothing here may say.
+    Abandoned,
 }
 
 /// Why an execution claim was refused.
@@ -176,6 +203,9 @@ pub enum ControlClaimRefusal {
     AlreadyAnswered,
     /// The registry cannot be reached, so nothing can be established.
     Unavailable,
+    /// Execution began and the executor that could have established an outcome
+    /// has gone. Its cleanup is owed; its application is not to be resumed.
+    Abandoned,
 }
 
 /// Whether a caller may produce this operation's effects.
@@ -384,6 +414,12 @@ impl ControlCompletionRegistry {
             (ControlPhase::Owed(_), _) => {
                 ControlExecutionClaim::Refused(ControlClaimRefusal::AlreadyAnswered)
             }
+            // The executor that was applying it has gone. Picking it up now
+            // would apply an operation whose earlier application nobody can
+            // describe, on top of whatever that left behind.
+            (ControlPhase::Abandoned(_), _) => {
+                ControlExecutionClaim::Refused(ControlClaimRefusal::Abandoned)
+            }
         }
     }
 
@@ -428,6 +464,11 @@ impl ControlCompletionRegistry {
         // verdict reached after the send would refuse nothing.
         if matches!(inner.records[position].phase, ControlPhase::Reserved(_)) {
             return Err(ControlPublicationRefusal::NotAccepted);
+        }
+        // Nothing establishes what an abandoned operation did, so nothing may
+        // publish an outcome for it. Cleanup is what it is owed.
+        if matches!(inner.records[position].phase, ControlPhase::Abandoned(_)) {
+            return Err(ControlPublicationRefusal::Abandoned);
         }
         if matches!(&inner.records[position].phase, ControlPhase::Owed(established)
             if *established != acknowledgement)
@@ -526,6 +567,111 @@ impl ControlCompletionRegistry {
         }
     }
 
+    /// Reconcile one client's records when its registration goes.
+    ///
+    /// Three different things, kept apart, because collapsing them is how a
+    /// receipt gets invented:
+    ///
+    /// - an established outcome stays exactly as it is, still to publish;
+    /// - a command that never started stays too, still truthfully unexecuted,
+    ///   and is handed on when the instance closes rather than from here;
+    /// - a command caught mid-application becomes abandoned. Nothing is
+    ///   published for it and nothing is replayed. What its registration now
+    ///   names is the cleanup it is owed, and the credit stays with it until
+    ///   that cleanup is recorded done.
+    ///
+    /// Reservations are left alone: they are still their producer's.
+    ///
+    /// Counts, not payloads. This runs on a teardown path, and a caller that
+    /// wanted the abandoned operations themselves asks for them separately
+    /// rather than having a vector built for it on the way out.
+    pub fn reconcile_client(&self, client: XServerFrontendClientId) -> ControlReconciliation {
+        let Ok(mut inner) = self.inner.lock() else {
+            return ControlReconciliation::unavailable();
+        };
+        let mut reconciled = ControlReconciliation {
+            readable: true,
+            ..ControlReconciliation::default()
+        };
+        for held in inner.records.iter_mut() {
+            if held.phase.client() != client {
+                continue;
+            }
+            match held.phase {
+                ControlPhase::Reserved(_) => {
+                    reconciled.reserved = reconciled.reserved.saturating_add(1);
+                }
+                ControlPhase::Accepted(_) => {
+                    reconciled.unexecuted = reconciled.unexecuted.saturating_add(1);
+                }
+                ControlPhase::Applying(command) => {
+                    held.phase = ControlPhase::Abandoned(command);
+                    reconciled.abandoned = reconciled.abandoned.saturating_add(1);
+                }
+                ControlPhase::Abandoned(_) => {
+                    reconciled.abandoned = reconciled.abandoned.saturating_add(1);
+                }
+                ControlPhase::Owed(_) => {
+                    reconciled.owed = reconciled.owed.saturating_add(1);
+                }
+            }
+        }
+        reconciled
+    }
+
+    /// The operations whose cleanup is owed, with what each named.
+    ///
+    /// For an owner that can actually perform the cleanup. The records stay
+    /// here: this is what is owed, not a handover, and each is retired only
+    /// when the cleanup is recorded done.
+    pub fn cleanups_owed(&self) -> Vec<ControlCleanup> {
+        let Ok(inner) = self.inner.lock() else {
+            return Vec::new();
+        };
+        inner
+            .records
+            .iter()
+            .filter_map(|held| match held.phase {
+                ControlPhase::Abandoned(command) => Some(ControlCleanup {
+                    token: held.token,
+                    command,
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Record what became of an abandoned operation's cleanup.
+    ///
+    /// Cleanup done retires the record: the operation is finished with, not
+    /// because an outcome was established but because nothing is owed for it
+    /// any more. Cleanup that failed keeps it, and the caller is told the
+    /// responsibility is still theirs -- reporting a failure and dropping the
+    /// record would leave the cleanup owed to nobody.
+    pub fn record_cleanup(
+        &self,
+        token: ControlCompletionToken,
+        done: bool,
+    ) -> Result<(), ControlCleanupRefusal> {
+        if token.origin != self.origin {
+            return Err(ControlCleanupRefusal::Foreign);
+        }
+        let Ok(mut inner) = self.inner.lock() else {
+            return Err(ControlCleanupRefusal::Unavailable);
+        };
+        let Some(position) = inner.records.iter().position(|held| held.token == token) else {
+            return Err(ControlCleanupRefusal::NoLongerHeld);
+        };
+        if !matches!(inner.records[position].phase, ControlPhase::Abandoned(_)) {
+            return Err(ControlCleanupRefusal::NotAbandoned);
+        }
+        if !done {
+            return Err(ControlCleanupRefusal::StillOwed);
+        }
+        inner.records.remove(position);
+        Ok(())
+    }
+
     /// Give up this record because the operation now has another owner.
     ///
     /// Only an unexecuted command can be handed on, so only that phase is
@@ -581,7 +727,7 @@ impl ControlCompletionRegistry {
                 cancellable.push((held.token, command));
                 false
             }
-            ControlPhase::Applying(_) => {
+            ControlPhase::Applying(_) | ControlPhase::Abandoned(_) => {
                 indeterminate = indeterminate.saturating_add(1);
                 true
             }
@@ -647,6 +793,64 @@ pub enum ControlRecordState {
     /// token was never issued here. Not an outcome: reading either as one
     /// would close work on the strength of an absent record.
     Unanswerable,
+}
+
+/// One abandoned operation, and the cleanup it named.
+///
+/// The command is carried for what it identifies, never to be run. Whatever it
+/// did before its executor went is exactly what nobody here can describe.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ControlCleanup {
+    pub token: ControlCompletionToken,
+    pub command: XAuthorityClientControlCommand,
+}
+
+/// Why recording a cleanup was refused.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlCleanupRefusal {
+    /// This registry did not issue the registration.
+    Foreign,
+    /// No record is held for it.
+    NoLongerHeld,
+    /// It is not an operation whose executor has gone, so cleanup is not what
+    /// it is waiting for.
+    NotAbandoned,
+    /// The cleanup did not happen. The record is kept and the responsibility
+    /// is still the caller's.
+    StillOwed,
+    /// The registry cannot be reached.
+    Unavailable,
+}
+
+/// What reconciling one client's registrations found.
+#[cfg(unix)]
+#[derive(Debug, Default)]
+pub struct ControlReconciliation {
+    /// Accepted and never started. Still held here, still truthfully
+    /// unexecuted, and handed on when the instance closes.
+    pub unexecuted: usize,
+    /// Caught mid-application. Retained, and owed the cleanup they name.
+    pub abandoned: usize,
+    /// Outcomes established and not yet published. Untouched: republishing is
+    /// right and reconciling is not publication.
+    pub owed: usize,
+    /// Still their producer's, and not this edge's business.
+    pub reserved: usize,
+    /// Whether the registry could be read at all. A reconciliation that found
+    /// nothing because nothing could be looked at is not a reconciliation.
+    pub readable: bool,
+}
+
+#[cfg(unix)]
+impl ControlReconciliation {
+    fn unavailable() -> Self {
+        Self {
+            readable: false,
+            ..Self::default()
+        }
+    }
 }
 
 /// What a cancellation edge found.

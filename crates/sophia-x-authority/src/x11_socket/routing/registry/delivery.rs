@@ -690,6 +690,13 @@ impl XServerFrontendRouteRegistry {
 #[cfg(unix)]
 impl Drop for XServerFrontendClientRouteRegistration {
     fn drop(&mut self) {
+        // Before the route senders go. What was mid-application when the
+        // client's registration ended is not unexecuted and is not answered;
+        // it is owed the cleanup it named, and saying so here is what keeps
+        // that responsibility from ending with the registration.
+        if let Some(completion) = self.control_completion.get() {
+            let _reconciled = completion.reconcile_client(self.client);
+        }
         let _ = self.input_recovery.disconnect(self.client, XAuthorityInputDeliveryOutcome::ClientDisconnected);
         if let Ok(mut clients) = self.clients.lock() {
             clients.remove(&self.client);

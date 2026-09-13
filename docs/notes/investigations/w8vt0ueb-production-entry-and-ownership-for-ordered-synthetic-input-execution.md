@@ -374,8 +374,22 @@ acknowledgement must name what was registered, the first established outcome
 is not replaced by a later contradiction, repeating it changes nothing, and
 neither part of an identity is ever reused: an exhausted counter refuses to
 register rather than issue a value twice, and a registry that cannot take an
-unused origin is not built. Not done here: the registration `Drop`, worker join and `register_client`
-rows above are still unowned; the durable owner observes carried control only
+unused origin is not built. Three of the rows above are now owned. A client connection's writers are held
+together, so a setup failure after any spawn shuts down whatever had already
+started, and teardown stops every writer before joining any and joins every one
+whatever an earlier one reported -- returning on the first failure left the
+rest running, never told to stop, against a closing stream. Losing a client's
+route registration reconciles that client's control: an established outcome is
+untouched, a command that never started stays truthfully unexecuted, and one
+caught mid-application becomes abandoned. Abandoned is not an outcome. Nothing
+is published for it and nothing is replayed; what its registration now names is
+the cleanup it is owed, its credit stays held, and only cleanup recorded done
+retires it. A cleanup that failed keeps the record and tells the caller the
+responsibility is still theirs.
+
+Not done here: the worker-join row is owned but the route registration at
+`dispatch.rs:468` and `state.register_client` at `:571` remain different
+registrations, so a failure between them is owned only for the writers; the durable owner observes carried control only
 through the origin it kept; records retained as applying are counted and
 reachable but not yet reconciled, so sealing is not completion; and the
 process-global origin counter's exhaustion refusal is unreachable from any
