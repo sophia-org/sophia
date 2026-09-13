@@ -19,7 +19,8 @@ Neither UID matching nor knowledge of a socket pathname authorizes injection.
 
 ## Current integration state
 
-The isolated input branch is based on published content commit `d7654d23`.
+The isolated input branch includes published content commit `22c01aa1` through
+reconciliation merge `e48571f1`, preserving the reviewed input commit identities.
 Reviewed common-authority and constructor/helper code is retained there; the
 later M3 producer/consumer candidates remain unintegrated. XTEST discovery stays
 disabled. The mandatory native manifest has 40 obligations, including 20 with no
@@ -1332,3 +1333,27 @@ to an accepted queue entry, and phase validation before publication: a Reserved
 record is still producer-owned and cannot justify an acknowledgement. The
 uncommitted implementation and temporary mutations remain Claude's; review uses
 frozen snapshots and does not treat an in-progress mutant as a candidate.
+
+## Reconciliation with accepted content at 22c01aa1
+
+Signed merge `e48571f1` brings accepted master `22c01aa1` into the isolated input
+branch without moving master or importing Claude's completion candidate. Only
+`todo.md` needed manual conflict resolution; t081, t093, t094 and t096 are each
+retained once. Both Session test-file changes and the common-authority lockfile
+entry survive, and the remaining content files match master exactly.
+
+Workspace compilation reproduced the refusable-input-sender mismatch in two CLI
+smoke call sites. The self-contained fix `f2144b51` was independently reviewed
+and imported alone as `504ae33f`; no smoke was executed. At that exact source,
+workspace all-target compilation, affected clippy and source layout pass.
+Common-authority, X-authority and default Session tests record 954 passes and one
+ignored; the native-feature Session run records 655 passes and 13 ignored. These
+are test executions across feature configurations, not counts of unique cases.
+The existing backend `with_accepted_capacity` dead-code warning remains.
+
+Evidence is retained at `.artifacts/input-reconcile-22c01aa1/`, including the
+pre-fix compiler failure and overlap checks. The canonical check uses the
+device-hidden wrapper and retains its own exact-source report separately; these
+targeted results are not a full canonical or hardware claim. The four existing
+notebook broken-link reports are unchanged. XTEST stays disabled and M3's later
+production lifecycle work remains unintegrated.
