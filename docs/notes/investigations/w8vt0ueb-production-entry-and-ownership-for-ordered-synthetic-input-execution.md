@@ -537,8 +537,31 @@ cannot be counted -- an unreadable registry after a genuine claim -- refuses
 before anything is queued rather than falling through to work that looks
 ungoverned.
 
-Everything else stays retained. No kind is discharged and the per-kind
-obligations above remain open; this closes exactly one of them.
+### The operation reports what it did, and an owner settles on that
+
+A snapshot taken afterwards is not proof: it can agree and be made wrong
+immediately, and it cannot tell an operation that never started from one that
+finished. So each step is recorded by the code that performs it, immediately
+after it succeeds. What is recorded is what happened, which does not change
+afterwards, and only an operation being applied can record anything -- a
+reservation is its producer's, an accepted command has not started, and a step
+reported after the outcome would describe work that outcome did not cover.
+
+Configure reports two: the shared runtime changed, and the connection's
+projection of it caught up. Between them is the window that matters.
+
+`reconcile_abandoned` on the private frontend is the only thing that retires an
+abandoned operation, and `record_cleanup` is gone: there is no longer a way for
+a caller to assert a cleanup is done. The owner decides from the report. A
+Configure that reported neither step, or both, leaves nothing reachable
+disagreeing and is retired -- which says nothing is owed and nothing about what
+its client was told, and publishes nothing. One that reported changing the
+runtime and not the projection kept a residual obligation, and is retained with
+its credit. Every other kind is retained too: nothing reports what they did,
+and an absent report is not a report of nothing.
+
+Everything else stays retained. Eight of the nine kinds are not instrumented,
+the per-kind obligations above remain open, and this closes one more of them.
 
 What survives from the earlier draft is only the shape of the rule, not its
 application: discharging a cleanup means nothing reachable is left disagreeing,

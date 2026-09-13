@@ -394,6 +394,22 @@ impl Drop for PrivateXServerFrontend {
     }
 }
 
+/// What settling the abandoned operations found.
+#[cfg(unix)]
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ControlReconcileReport {
+    /// Nothing reachable is left disagreeing, so nothing is owed. Not a
+    /// statement about what the operation did.
+    pub discharged: usize,
+    /// It changed shared state and the state derived from it never caught up.
+    pub retained_half_applied: usize,
+    /// Nothing establishes what it left, so it keeps its obligation.
+    pub retained_unproved: usize,
+    /// Whether the records could be read at all. Finding nothing because
+    /// nothing could be looked at is not finding nothing.
+    pub readable: bool,
+}
+
 /// One thing the private host has to run, in the order it was admitted.
 ///
 /// Carried in a shutdown report so an owner can act on what it is handed, but
@@ -535,6 +551,62 @@ impl PrivateXServerFrontend {
             completion: self.completion.clone(),
             routing: self.broker.registry.clone(),
         }
+    }
+
+    /// Settle what each abandoned operation is owed, on what it reported
+    /// doing rather than on anyone asserting it is done.
+    ///
+    /// An operation is retired only where its own report establishes that
+    /// nothing reachable is left disagreeing. That is never the same as
+    /// knowing what it did: retiring says nothing is owed, and no outcome is
+    /// published for any of these.
+    ///
+    /// A kind whose steps this server does not yet report is retained, not
+    /// discharged. Reading an absent report as "nothing happened" is exactly
+    /// the inference this exists to avoid, and there is no sound way to tell
+    /// the two apart from outside.
+    pub fn reconcile_abandoned(&mut self) -> ControlReconcileReport {
+        let Ok(owed) = self.completion.cleanups_owed() else {
+            return ControlReconcileReport {
+                readable: false,
+                ..ControlReconcileReport::default()
+            };
+        };
+        let mut report = ControlReconcileReport {
+            readable: true,
+            ..ControlReconcileReport::default()
+        };
+        for cleanup in owed {
+            match cleanup.command.command.kind() {
+                // Its steps are reported, so its report is the proof.
+                XAuthorityControlKind::ConfigureSurface => {
+                    if cleanup.steps.runtime && !cleanup.steps.projection {
+                        // It changed shared state that outlives the connection
+                        // and the state derived from it never caught up. That
+                        // is a real residual obligation and nothing here can
+                        // discharge it.
+                        report.retained_half_applied =
+                            report.retained_half_applied.saturating_add(1);
+                        continue;
+                    }
+                    // Either it never changed anything, or it finished
+                    // changing everything it would have. Both leave nothing
+                    // reachable disagreeing. What its client was told is still
+                    // unknown, and no acknowledgement is invented for it.
+                    if self.completion.discharge(cleanup.token).is_ok() {
+                        report.discharged = report.discharged.saturating_add(1);
+                    } else {
+                        report.retained_unproved = report.retained_unproved.saturating_add(1);
+                    }
+                }
+                // Not instrumented. An absent report is not a report of
+                // nothing, so these are retained with their obligation open.
+                _ => {
+                    report.retained_unproved = report.retained_unproved.saturating_add(1);
+                }
+            }
+        }
+        report
     }
 
     /// Republish acknowledgements a client writer could not deliver.

@@ -411,6 +411,22 @@ impl X11ControlChannels {
         }
     }
 
+    /// Report a step this operation has just performed.
+    ///
+    /// The code that performed it reports it, immediately after it succeeded,
+    /// so what is recorded is what happened rather than what a later look at
+    /// the state suggests.
+    fn record_step(
+        &self,
+        token: Option<ControlCompletionToken>,
+        step: impl FnOnce(&mut ControlSteps),
+    ) {
+        if let (Some(registry), Some(token)) = (self.completion(), token) {
+            registry.record_step(token, step);
+        }
+    }
+
+
     /// Publish an acknowledgement against a private completion registration.
     ///
     /// The registration authorises the send and the send happens under the

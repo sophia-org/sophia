@@ -63,6 +63,27 @@ impl ControlOperationIdentity {
     }
 }
 
+/// What an operation has actually done, recorded as it does it.
+///
+/// A snapshot of state taken afterwards is not proof: it can agree and be
+/// made wrong immediately, and it cannot tell an operation that never
+/// started from one that finished. What the operation reports as it goes
+/// is about what happened, which does not change afterwards.
+///
+/// Every step is recorded by the code that performs it, immediately after
+/// it succeeds, so a step that is set is a step that happened and a step
+/// that is not set either did not happen or was interrupted -- and those
+/// two are the same thing for anything that has to be answered later.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ControlSteps {
+    /// The shared runtime has been changed. Outlives the connection.
+    pub runtime: bool,
+    /// The state derived from it, for this connection, agrees with the
+    /// change. Dies with the connection.
+    pub projection: bool,
+}
+
 /// How far one control operation has got.
 ///
 /// What is retained differs by phase, and collapsing the three loses the case
@@ -136,6 +157,8 @@ impl ControlPhase {
 #[cfg(unix)]
 struct ControlRecord {
     token: ControlCompletionToken,
+    /// What this operation has actually done, as it reported it.
+    steps: ControlSteps,
     /// Effects this operation queued on someone else, not yet ended.
     ///
     /// Routing a focus change puts a FocusOut on the previously focused
@@ -343,6 +366,7 @@ impl ControlCompletionRegistry {
         inner.next_incarnation = next;
         inner.records.push(ControlRecord {
             token,
+            steps: ControlSteps::default(),
             dependents: 0,
             identity: ControlOperationIdentity::of(&command),
             phase: ControlPhase::Reserved(command),
@@ -396,6 +420,41 @@ impl ControlCompletionRegistry {
         Some(ControlAcceptance {
             held: Some((inner, position)),
         })
+    }
+
+    /// Record a step this operation has just performed.
+    ///
+    /// Called by the code that performed it, immediately after it succeeded,
+    /// so what is recorded is what happened rather than what a later look at
+    /// the state suggests. Only an operation being applied is doing anything.
+    pub fn record_step(&self, token: ControlCompletionToken, step: impl FnOnce(&mut ControlSteps)) {
+        if token.origin != self.origin {
+            return;
+        }
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
+        let Some(record) = inner.records.iter_mut().find(|held| held.token == token) else {
+            return;
+        };
+        if !matches!(record.phase, ControlPhase::Applying(_)) {
+            return;
+        }
+        step(&mut record.steps);
+    }
+
+    /// What one operation reported doing, or `None` where there is no record
+    /// to ask or the registry cannot be read.
+    pub fn steps_of(&self, token: ControlCompletionToken) -> Option<ControlSteps> {
+        if token.origin != self.origin {
+            return None;
+        }
+        let inner = self.inner.lock().ok()?;
+        inner
+            .records
+            .iter()
+            .find(|held| held.token == token)
+            .map(|held| held.steps)
     }
 
     /// Claim execution before the first authoritative effect.
@@ -681,24 +740,20 @@ impl ControlCompletionRegistry {
                 ControlPhase::Abandoned(command) if held.dependents == 0 => Some(ControlCleanup {
                     token: held.token,
                     command,
+                    steps: held.steps,
                 }),
                 _ => None,
             })
             .collect())
     }
 
-    /// Record what became of an abandoned operation's cleanup.
+    /// Retire an abandoned operation because nothing is owed for it.
     ///
-    /// Cleanup done retires the record: the operation is finished with, not
-    /// because an outcome was established but because nothing is owed for it
-    /// any more. Cleanup that failed keeps it, and the caller is told the
-    /// responsibility is still theirs -- reporting a failure and dropping the
-    /// record would leave the cleanup owed to nobody.
-    pub fn record_cleanup(
-        &self,
-        token: ControlCompletionToken,
-        done: bool,
-    ) -> Result<(), ControlCleanupRefusal> {
+    /// Not a caller saying so. The only caller is the owner that worked that
+    /// out from what the operation reported doing, and it is refused here for
+    /// anything that is not an abandoned record with nothing still queued
+    /// elsewhere -- the point that retires is the one that has to refuse.
+    fn discharge(&self, token: ControlCompletionToken) -> Result<(), ControlCleanupRefusal> {
         if token.origin != self.origin {
             return Err(ControlCleanupRefusal::Foreign);
         }
@@ -710,9 +765,6 @@ impl ControlCompletionRegistry {
         };
         if !matches!(inner.records[position].phase, ControlPhase::Abandoned(_)) {
             return Err(ControlCleanupRefusal::NotAbandoned);
-        }
-        if !done {
-            return Err(ControlCleanupRefusal::StillOwed);
         }
         if inner.records[position].dependents != 0 {
             return Err(ControlCleanupRefusal::DependentsOutstanding);
@@ -853,6 +905,8 @@ pub enum ControlRecordState {
 pub struct ControlCleanup {
     pub token: ControlCompletionToken,
     pub command: XAuthorityClientControlCommand,
+    /// What the operation reported doing before it was abandoned.
+    pub steps: ControlSteps,
 }
 
 /// Why recording a cleanup was refused.
@@ -866,9 +920,6 @@ pub enum ControlCleanupRefusal {
     /// It is not an operation whose executor has gone, so cleanup is not what
     /// it is waiting for.
     NotAbandoned,
-    /// The cleanup did not happen. The record is kept and the responsibility
-    /// is still the caller's.
-    StillOwed,
     /// Work this operation queued elsewhere can still run, so it is not
     /// waiting on a cleanup yet.
     DependentsOutstanding,

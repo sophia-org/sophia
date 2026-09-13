@@ -355,6 +355,12 @@ fn spawn_x11_control_writer(
                             continue;
                         }
                     };
+                    // Reported by the code that did it, immediately after it
+                    // succeeded. From here to the projection below is the
+                    // window where this operation has changed shared state
+                    // that outlives the connection and the state derived
+                    // from it does not agree yet.
+                    channels.record_step(completion, |steps| steps.runtime = true);
                     drop(runtime);
                     let mut selections = core_event_selections
                         .lock()
@@ -362,6 +368,7 @@ fn spawn_x11_control_writer(
                             X11SetupSocketError::new("X11 core event selection lock poisoned")
                         })?;
                     selections.update_geometry(window, geometry);
+                    channels.record_step(completion, |steps| steps.projection = true);
                     if previous_geometry == Some(geometry) {
                         Vec::new()
                     } else {

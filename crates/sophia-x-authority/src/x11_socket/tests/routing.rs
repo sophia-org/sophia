@@ -7545,16 +7545,16 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
         Err(crate::ControlPublicationRefusal::Abandoned)
     );
 
-    // A cleanup that did not happen leaves the responsibility where it was.
+    // Until something establishes that nothing is owed, it stays owed, and
+    // so does its credit.
     assert_eq!(
-        registry.record_cleanup(owed.token, false),
-        Err(crate::ControlCleanupRefusal::StillOwed)
+        registry.cleanups_owed().expect("a readable registry").len(),
+        1
     );
-    assert_eq!(registry.cleanups_owed().expect("a readable registry").len(), 1);
     assert_eq!(private.reclaim_settled(), 0, "so the credit stays too");
 
-    // Cleanup done is not an outcome, but it is the end of what is owed.
-    assert_eq!(registry.record_cleanup(owed.token, true), Ok(()));
+    // Retiring it is not an outcome, but it is the end of what is owed.
+    assert_eq!(registry.discharge(owed.token), Ok(()));
     assert!(registry.cleanups_owed().expect("a readable registry").is_empty());
     assert_eq!(
         private.reclaim_settled(),
@@ -7563,7 +7563,7 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
     );
     assert_eq!(private.reclaim_settled(), 0);
     assert_eq!(
-        registry.record_cleanup(owed.token, true),
+        registry.discharge(owed.token),
         Err(crate::ControlCleanupRefusal::NoLongerHeld),
         "and not a second time"
     );
@@ -7632,13 +7632,13 @@ fn an_unreadable_registry_reconciles_nothing_and_says_so() {
     assert!(!reconciled.readable);
     assert_eq!(reconciled.abandoned, 0);
     assert_eq!(
-        registry.record_cleanup(token, true),
+        registry.discharge(token),
         Err(crate::ControlCleanupRefusal::Unavailable)
     );
 }
 
 #[test]
-fn cleanup_is_only_recorded_for_an_operation_that_is_owed_one() {
+fn only_an_abandoned_operation_with_nothing_queued_can_be_retired() {
     let client = XServerFrontendClientId(328);
     let surface = SurfaceId::new(328, 1);
     let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
@@ -7654,7 +7654,7 @@ fn cleanup_is_only_recorded_for_an_operation_that_is_owed_one() {
     // record that is still owed something else entirely.
     for token in [applying, accepted_only] {
         assert_eq!(
-            registry.record_cleanup(token, true),
+            registry.discharge(token),
             Err(crate::ControlCleanupRefusal::NotAbandoned)
         );
     }
@@ -7663,7 +7663,7 @@ fn cleanup_is_only_recorded_for_an_operation_that_is_owed_one() {
     // A foreign registration is not this registry's to clean up either.
     let other = crate::ControlCompletionRegistry::with_capacity(2).expect("an unused origin");
     assert_eq!(
-        other.record_cleanup(applying, true),
+        other.discharge(applying),
         Err(crate::ControlCleanupRefusal::Foreign)
     );
 }
@@ -8536,7 +8536,7 @@ fn nothing_is_owed_a_cleanup_while_work_it_queued_elsewhere_can_still_run() {
     // list is not enforcement: the caller that retires has to be the one that
     // refuses.
     assert_eq!(
-        registry.record_cleanup(token, true),
+        registry.discharge(token),
         Err(crate::ControlCleanupRefusal::DependentsOutstanding)
     );
 
@@ -8799,7 +8799,7 @@ fn an_answered_operation_is_still_held_while_work_it_started_can_run() {
             .is_empty()
     );
     assert_eq!(
-        registry.record_cleanup(token, true),
+        registry.discharge(token),
         Err(crate::ControlCleanupRefusal::NotAbandoned)
     );
 
@@ -9192,5 +9192,313 @@ fn a_retry_that_lands_settles_where_it_stands() {
     assert_eq!(
         registry.state_of(with_work),
         crate::ControlRecordState::Retired
+    );
+}
+
+#[test]
+fn an_operation_that_finished_applying_reports_it_and_owes_nothing() {
+    let client = XServerFrontendClientId(358);
+    let surface = SurfaceId::new(358, 1);
+    let (acknowledgements, acks) = sync_channel(1);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, channels, _registration, _deliveries) =
+        private_with_client(acknowledgements.clone(), &durable, client, surface);
+    let state = writer_runtime(surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+
+    // Fill the one acknowledgement slot so the writer applies and then fails
+    // to publish, leaving the operation unanswered but fully applied.
+    acknowledgements
+        .try_send(completion_ack(
+            configure(client, surface, 1),
+            XAuthorityControlOutcome::Delivered,
+        ))
+        .expect("the empty slot");
+    private
+        .control_producer()
+        .submit(configure(client, surface, 56001))
+        .expect("the shared admission to accept control");
+    let ran = private.route_pending().expect("a turn");
+    let Some(crate::PrivateIdentity::Control {
+        completion: Some(token),
+        ..
+    }) = ran.first().map(|run| run.identity)
+    else {
+        panic!("a control that names its registration");
+    };
+    let (writer, mut peer) = writer_start(
+        Some(&private.broker.registry),
+        &state,
+        channels.control,
+        Some(registry.clone()),
+        acknowledgements,
+        client,
+        writer_windows(surface),
+        Arc::new(AtomicUsize::new(0)),
+    );
+    writer_configure_notify(&mut peer, 80);
+    assert!(!writer_join(writer), "a full channel fails this writer");
+
+    // It reported both steps as it took them, and the writer going is what
+    // makes the operation abandoned.
+    assert_eq!(
+        registry.steps_of(token),
+        Some(crate::ControlSteps {
+            runtime: true,
+            projection: true
+        })
+    );
+    // Its outcome is established even though the channel was full, so it is
+    // not abandoned and is not a cleanup candidate: what it is waiting for is
+    // publication, not a reconciliation.
+    let reconciled = registry.reconcile_client(client);
+    assert_eq!(reconciled.abandoned, 0);
+    assert_eq!(reconciled.owed, 1);
+    assert_eq!(private.reconcile_abandoned().discharged, 0);
+    assert_eq!(private.reclaim_settled(), 0, "and its credit stays with it");
+
+    // Draining lets the retained outcome out, and only then is it over.
+    assert_eq!(
+        acks.try_recv().unwrap().acknowledgement.transaction,
+        TransactionId::from_raw(1)
+    );
+    assert_eq!(private.republish_owed_acknowledgements(), 1);
+    assert_eq!(private.reclaim_settled(), 1);
+    assert_eq!(private.reclaim_settled(), 0);
+}
+
+#[test]
+fn an_operation_that_reported_finishing_owes_nothing() {
+    let client = XServerFrontendClientId(361);
+    let surface = SurfaceId::new(361, 1);
+    let (acknowledgements, acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    private
+        .control_producer()
+        .submit(configure(client, surface, 59001))
+        .expect("the shared admission to accept control");
+    let ran = private.route_pending().expect("a turn");
+    let Some(crate::PrivateIdentity::Control {
+        completion: Some(token),
+        ..
+    }) = ran.first().map(|run| run.identity)
+    else {
+        panic!("a control that names its registration");
+    };
+
+    // It reported finishing both steps, and then its executor went without
+    // establishing an outcome.
+    registry.record_step(token, |steps| steps.runtime = true);
+    registry.record_step(token, |steps| steps.projection = true);
+    registry.writer_started(client);
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+
+    // Nothing reachable is left disagreeing, so nothing is owed. That is not
+    // a statement about what its client was told: no acknowledgement is
+    // invented and none is sent.
+    let report = private.reconcile_abandoned();
+    assert!(report.readable);
+    assert_eq!(report.discharged, 1);
+    assert_eq!(report.retained_half_applied, 0);
+    assert_eq!(report.retained_unproved, 0);
+    assert_eq!(
+        private.reclaim_settled(),
+        1,
+        "and its credit is released once"
+    );
+    assert_eq!(private.reclaim_settled(), 0);
+    assert!(acks.try_recv().is_err(), "with nothing answered for it");
+}
+
+#[test]
+fn an_operation_caught_between_its_steps_keeps_its_obligation() {
+    let client = XServerFrontendClientId(359);
+    let surface = SurfaceId::new(359, 1);
+    let (acknowledgements, acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    private
+        .control_producer()
+        .submit(configure(client, surface, 57001))
+        .expect("the shared admission to accept control");
+    let ran = private.route_pending().expect("a turn");
+    let Some(crate::PrivateIdentity::Control {
+        completion: Some(token),
+        ..
+    }) = ran.first().map(|run| run.identity)
+    else {
+        panic!("a control that names its registration");
+    };
+
+    // Caught between changing shared state and the state derived from it
+    // catching up. This is what the writer reports having done at that point.
+    registry.record_step(token, |steps| steps.runtime = true);
+    registry.writer_started(client);
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+
+    // It changed something that outlives the connection and left the
+    // projection of it behind. Nothing here can discharge that, so it keeps
+    // the obligation and the credit.
+    let report = private.reconcile_abandoned();
+    assert_eq!(report.retained_half_applied, 1);
+    assert_eq!(report.discharged, 0);
+    assert_eq!(private.reclaim_settled(), 0);
+    assert_eq!(
+        registry.cleanups_owed().expect("a readable registry").len(),
+        1,
+        "and it is still owed one"
+    );
+    assert!(acks.try_recv().is_err(), "with nothing answered for it");
+}
+
+#[test]
+fn a_kind_whose_steps_are_not_reported_is_retained_rather_than_discharged() {
+    let client = XServerFrontendClientId(360);
+    let surface = SurfaceId::new(360, 1);
+    let (acknowledgements, _acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    private
+        .control_producer()
+        .submit(XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::CloseSurface {
+                transaction: TransactionId::from_raw(58001),
+                surface,
+            },
+        })
+        .expect("the shared admission to accept control");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    registry.writer_started(client);
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+
+    // Nothing reports what closing a surface did, and an absent report is not
+    // a report of nothing. Discharging it would be reading silence as proof.
+    let report = private.reconcile_abandoned();
+    assert_eq!(report.retained_unproved, 1);
+    assert_eq!(report.discharged, 0);
+    assert_eq!(report.retained_half_applied, 0);
+    assert_eq!(private.reclaim_settled(), 0, "so its credit stays held");
+}
+
+#[test]
+fn an_unreadable_registry_settles_nothing_and_says_so() {
+    let client = XServerFrontendClientId(362);
+    let surface = SurfaceId::new(362, 1);
+    let (acknowledgements, _acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    private
+        .control_producer()
+        .submit(configure(client, surface, 60001))
+        .expect("the shared admission to accept control");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    registry.writer_started(client);
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+
+    let poisoner = registry.clone();
+    assert!(
+        std::thread::spawn(move || {
+            let _guard = poisoner.inner.lock().unwrap();
+            panic!("poisoning the registry");
+        })
+        .join()
+        .is_err()
+    );
+
+    // Settling nothing because nothing could be looked at is not settling
+    // nothing. A caller told the first would walk away from an operation that
+    // is still owed something.
+    let report = private.reconcile_abandoned();
+    assert!(!report.readable);
+    assert_eq!(report.discharged, 0);
+    assert_eq!(private.reclaim_settled(), 0, "and no credit is released");
+}
+
+#[test]
+fn only_an_operation_being_applied_can_report_a_step() {
+    let client = XServerFrontendClientId(363);
+    let surface = SurfaceId::new(363, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(8).expect("an unused origin");
+    let command = configure(client, surface, 61001);
+
+    // A reservation is its producer's and an accepted command has not
+    // started, so neither has anything to report.
+    let token = registry.register(command).expect("a fresh registry");
+    registry.record_step(token, |steps| steps.runtime = true);
+    assert_eq!(registry.steps_of(token), Some(crate::ControlSteps::default()));
+    registry.writer_started(client);
+    registry
+        .begin_acceptance(token)
+        .expect("a fresh reservation")
+        .commit();
+    registry.record_step(token, |steps| steps.runtime = true);
+    assert_eq!(registry.steps_of(token), Some(crate::ControlSteps::default()));
+
+    // Applying is when there is something to report.
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+    registry.record_step(token, |steps| steps.runtime = true);
+    assert_eq!(
+        registry.steps_of(token),
+        Some(crate::ControlSteps {
+            runtime: true,
+            projection: false
+        })
+    );
+
+    // And once it is answered, nothing more is reported against it: a step
+    // recorded after the outcome would describe work the outcome did not
+    // cover.
+    assert_eq!(
+        registry.publish_with(
+            token,
+            completion_ack(command, XAuthorityControlOutcome::Delivered),
+            |_| ControlPublication::Retained,
+        ),
+        Ok(ControlPublication::Retained)
+    );
+    registry.record_step(token, |steps| steps.projection = true);
+    assert_eq!(
+        registry.steps_of(token),
+        Some(crate::ControlSteps {
+            runtime: true,
+            projection: false
+        })
     );
 }
