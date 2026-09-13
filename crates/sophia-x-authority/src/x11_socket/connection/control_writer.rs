@@ -36,13 +36,18 @@ impl Drop for X11ControlWriterSeal<'_> {
             return;
         };
         routing.mark_control_writer_gone(self.client);
-        // This writer is the executor, and it is going, so it does not have to
-        // guess whether one is still there. Anything it left mid-application
-        // has nothing left to establish an outcome for it: that is abandoned,
-        // which is not an outcome and not a cancellation, and what it names
-        // now is the cleanup it is owed.
+        // This writer stops being an executor before anything asks whether one
+        // is left. It is not the whole executor: routing produces authoritative
+        // effects before any writer runs, so a routing call still in flight
+        // keeps this client executing and nothing of its is abandoned.
         if let Some(completion) = routing.control_completion() {
-            let _reconciled = completion.reconcile_client(self.client, true);
+            // This writer stops being an executor before anything asks whether
+            // one is left, and it is not the whole executor: routing produces
+            // authoritative effects before any writer runs, so a routing call
+            // still in flight keeps this client executing and nothing of its
+            // is abandoned.
+            completion.writer_stopped(self.client);
+            let _reconciled = completion.reconcile_client(self.client);
         }
     }
 }

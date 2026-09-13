@@ -69,6 +69,7 @@ include!("x11_socket/routing/private_admission.rs");
 include!("x11_socket/routing/control_transition.rs");
 include!("x11_socket/routing/private_settlement.rs");
 include!("x11_socket/routing/control_completion.rs");
+include!("x11_socket/routing/control_executors.rs");
 include!("x11_socket/routing/recovery.rs");
 include!("x11_socket/routing/focus.rs");
 include!("x11_socket/routing/registry.rs");

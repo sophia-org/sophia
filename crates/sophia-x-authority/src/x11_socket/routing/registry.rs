@@ -311,6 +311,12 @@ impl XServerFrontendRouteRegistry {
             return Err(XServerFrontendRouteError::DuplicateClient { client });
         }
         self.input_recovery.register(client)?;
+        // A writer for this client exists or is about to: registration comes
+        // before the spawn, and control accepted in that window is not control
+        // with nowhere to go. The writer stopping is what clears it.
+        if let Some(completion) = self.control_completion.get() {
+            completion.expect_writer(client);
+        }
         clients.insert(
             client,
             XServerFrontendClientRouteSenders {

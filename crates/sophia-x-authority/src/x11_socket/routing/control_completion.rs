@@ -206,6 +206,8 @@ pub enum ControlClaimRefusal {
     /// Execution began and the executor that could have established an outcome
     /// has gone. Its cleanup is owed; its application is not to be resumed.
     Abandoned,
+    /// Nothing is executing for this client, so nothing may begin.
+    NoExecutor,
 }
 
 /// Whether a caller may produce this operation's effects.
@@ -239,6 +241,19 @@ impl ControlExecutionClaim {
 #[cfg(unix)]
 struct ControlCompletions {
     records: Vec<ControlRecord>,
+    /// How many executors are live for each client.
+    ///
+    /// A writer is one. So is a routing call in flight, because routing is
+    /// where the first authoritative effect happens -- focus routing sends
+    /// FocusOut and moves the focused surface before any writer runs, which is
+    /// why the claim lives there. Counting only writers would let a writer's
+    /// exit abandon an operation another thread is still inside.
+    ///
+    /// Held here so that claiming and abandoning contend for one lock. A
+    /// caller that checked liveness elsewhere and then claimed would have a
+    /// gap between the two, and a sweep landing in it turns an untouched
+    /// record into an applying one after the sweep has passed.
+    executors: BTreeMap<XServerFrontendClientId, ControlExecutors>,
     next_incarnation: u64,
     capacity: usize,
 }
@@ -271,6 +286,7 @@ impl ControlCompletionRegistry {
             origin,
             inner: Arc::new(Mutex::new(ControlCompletions {
                 records: Vec::with_capacity(capacity),
+                executors: BTreeMap::new(),
                 next_incarnation: 1,
                 capacity,
             })),
@@ -392,9 +408,24 @@ impl ControlCompletionRegistry {
         let Ok(mut inner) = self.inner.lock() else {
             return ControlExecutionClaim::Refused(ControlClaimRefusal::Unavailable);
         };
-        let Some(record) = inner.records.iter_mut().find(|held| held.token == token) else {
+        let Some(position) = inner.records.iter().position(|held| held.token == token) else {
             return ControlExecutionClaim::Refused(ControlClaimRefusal::NoLongerHeld);
         };
+        // What the record itself is comes first. A reservation is not the
+        // instance's at all, and an abandoned operation stays abandoned
+        // however many executors appear afterwards.
+        if matches!(inner.records[position].phase, ControlPhase::Reserved(_)) {
+            return ControlExecutionClaim::Refused(ControlClaimRefusal::NotAccepted);
+        }
+        if matches!(inner.records[position].phase, ControlPhase::Abandoned(_)) {
+            return ControlExecutionClaim::Refused(ControlClaimRefusal::Abandoned);
+        }
+        // Under the same lock that abandons, so a claim and a sweep cannot
+        // both decide they were first.
+        if !Self::executing(&inner, inner.records[position].phase.client()) {
+            return ControlExecutionClaim::Refused(ControlClaimRefusal::NoExecutor);
+        }
+        let record = &mut inner.records[position];
         match (&record.phase, starting) {
             // Not accepted, so no part of the instance may act on it yet.
             (ControlPhase::Reserved(_), _) => {
@@ -582,26 +613,24 @@ impl ControlCompletionRegistry {
     ///
     /// Reservations are left alone: they are still their producer's.
     ///
-    /// `executor_gone` is what licenses the third of those, and it is asked
-    /// for rather than assumed. Losing a registration is not proof that the
-    /// writer serving it has stopped: it may have claimed the operation and
-    /// still be inside it. Abandoning one that is still being applied would
-    /// take an operation with a live executor and an outcome about to be
-    /// established, and turn it into one that can never be answered -- the
-    /// writer's real outcome would then be refused. Without that proof the
-    /// operation stays exactly what it is, still applying.
+    /// An operation is abandoned only where nothing is executing for its
+    /// client, and that is read here under the same lock rather than asserted
+    /// by the caller. A writer is not the whole executor: routing is where the
+    /// first authoritative effect happens, so a routing call in flight is one
+    /// too, and a writer's exit while a router is inside an operation it
+    /// already claimed must not abandon it. Abandoning one that is still being
+    /// applied would take an operation with a live executor and an outcome
+    /// about to be established and turn it into one that can never be
+    /// answered.
     ///
     /// Counts, not payloads. This runs on a teardown path, and a caller that
     /// wanted the abandoned operations themselves asks for them separately
     /// rather than having a vector built for it on the way out.
-    pub fn reconcile_client(
-        &self,
-        client: XServerFrontendClientId,
-        executor_gone: bool,
-    ) -> ControlReconciliation {
+    pub fn reconcile_client(&self, client: XServerFrontendClientId) -> ControlReconciliation {
         let Ok(mut inner) = self.inner.lock() else {
             return ControlReconciliation::unavailable();
         };
+        let executor_gone = !Self::executing(&inner, client);
         let mut reconciled = ControlReconciliation {
             readable: true,
             ..ControlReconciliation::default()

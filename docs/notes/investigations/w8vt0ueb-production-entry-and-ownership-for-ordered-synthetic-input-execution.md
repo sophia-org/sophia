@@ -378,9 +378,14 @@ unused origin is not built. Three of the rows above are now owned. A client conn
 together, so a setup failure after any spawn shuts down whatever had already
 started, and teardown stops every writer before joining any and joins every one
 whatever an earlier one reported -- returning on the first failure left the
-rest running, never told to stop, against a closing stream. A control writer's own exit
-reconciles what it was applying: it is the executor, so it does not have to
-guess whether one is still there. An established outcome is untouched, a
+rest running, never told to stop, against a closing stream. A writer is not the whole executor. Routing produces authoritative effects
+before any writer runs -- focus routing sends FocusOut to whoever held focus
+and moves the focused surface -- which is why the claim lives there, and why a
+routing call in flight is an executor too. So a client is executing while it
+has a writer, or is registered and about to, or has any routing call inside
+it, and that is read under the lock that abandons rather than asserted by a
+caller. Taking a routing lease is itself the check, because a separate
+precheck can be true and then false before the claim. An established outcome is untouched, a
 command that never started stays truthfully unexecuted, and one caught
 mid-application becomes abandoned. Losing a client's route registration
 reconciles too, but only where it can establish that nothing is still serving

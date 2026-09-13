@@ -14,6 +14,23 @@ struct X11InputWriterState {
     client: XServerFrontendClientId,
 }
 
+/// What one attempt to write an input event achieved.
+///
+/// Cancellation and a completed write were the same `Ok(())`, and every
+/// `Ok(())` reported the delivery flushed -- so a delivery this writer was
+/// told to abandon before touching the socket was recorded as having reached
+/// its client. Success and cancellation do not share a return value.
+#[cfg(unix)]
+enum X11InputWriteOutcome {
+    /// The event reached the socket and was flushed.
+    Flushed,
+    /// The delivery was no longer live before anything was written. Settled as
+    /// it was before: the ledger has already moved on from it.
+    Inactive,
+    /// This writer was told to stop before anything was written.
+    Cancelled,
+}
+
 #[cfg(unix)]
 fn spawn_x11_input_event_writer(
     state: X11InputWriterState,
@@ -457,15 +474,15 @@ fn spawn_x11_input_event_writer(
             } else {
                 [None, None, None, None]
             };
-            let write_result = (|| -> Result<(), X11SetupSocketError> {
+            let write_result = (|| -> Result<X11InputWriteOutcome, X11SetupSocketError> {
                 let Some(mut stream) =
                     lock_x11_non_control_output(&stream, &output_control_pending, Some(&writer_stop))?
                 else {
-                    // Told to stop while waiting for control output. Nothing
-                    // was written, and the delivery below is not marked sent.
-                    return Ok(());
+                    return Ok(X11InputWriteOutcome::Cancelled);
                 };
-                if !receiver.delivery_active(client, delivery) { return Ok(()); }
+                if !receiver.delivery_active(client, delivery) {
+                    return Ok(X11InputWriteOutcome::Inactive);
+                }
                 let sequence = sequence.load(Ordering::Acquire);
                 write_xi_u16(byte_order, &mut record[2..4], sequence);
                 let transition = match event {
@@ -719,12 +736,28 @@ fn spawn_x11_input_event_writer(
                         x11_peer_write_error("failed to write emulated XI2 wheel-button event", error)
                     })?;
                 }
-                stream.flush().map_err(|error| {
-                    x11_peer_write_error("failed to flush X11 input event", error)
-                })
+                stream
+                    .flush()
+                    .map(|()| X11InputWriteOutcome::Flushed)
+                    .map_err(|error| {
+                        x11_peer_write_error("failed to flush X11 input event", error)
+                    })
             })();
             match write_result {
-                Ok(()) => receipt.finish(XAuthorityInputDeliveryOutcome::Flushed)?,
+                Ok(X11InputWriteOutcome::Flushed | X11InputWriteOutcome::Inactive) => {
+                    receipt.finish(XAuthorityInputDeliveryOutcome::Flushed)?
+                }
+                Ok(X11InputWriteOutcome::Cancelled) => {
+                    // Nothing reached the socket. Not flushed, and not the
+                    // recipient's doing: this writer was told to stop. The
+                    // receipt is left unsettled so the writer's own teardown
+                    // settles it for what it is, rather than this reporting an
+                    // outcome that did not happen.
+                    //
+                    // "Nothing written" is not "nothing owed": the delivery was
+                    // accepted, and something still has to answer for it.
+                    return Ok(());
+                }
                 Err(error) => {
                     if error.client_disconnect {
                         receipt.finish(XAuthorityInputDeliveryOutcome::ClientDisconnected)?;

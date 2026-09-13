@@ -517,6 +517,23 @@ impl XServerFrontendRouteRegistry {
             .unwrap_or(false)
     }
 
+    /// Enter a routing call as an executor for this client.
+    ///
+    /// A control with no registration is ungoverned and routes as it always
+    /// did. One with a registration needs something already executing for its
+    /// client, or there is nothing to route it to.
+    fn enter_routing_execution(
+        &self,
+        client: XServerFrontendClientId,
+        completion: Option<ControlCompletionToken>,
+    ) -> Option<ControlExecutorLease> {
+        match (self.control_completion.get(), completion) {
+            (Some(registry), Some(_)) => registry.enter_routing(client),
+            (_, None) => Some(ControlExecutorLease::Ungoverned),
+            (None, Some(_)) => None,
+        }
+    }
+
     /// Claim execution of a control before anything authoritative happens.
     ///
     /// A command with no registration is ungoverned and routes as it always
@@ -550,14 +567,18 @@ impl XServerFrontendRouteRegistry {
         if !self.input_recovery.active(None, route.client) {
             return Err(XServerFrontendRouteError::UnknownClient { client: route.client });
         }
-        // Positive evidence that something is still there to execute this,
-        // checked here as well as at the producer. The producer's check and
-        // this claim are separate moments: a client can be swept between them,
-        // and a record left claimable after its sweep would take a claim and
-        // start producing effects for a client nothing is serving.
-        if !self.control_writer_present(route.client) {
+        // Taken before the first authoritative effect and held across all of
+        // them, because routing is one of them: focus routing sends FocusOut
+        // and moves the focused surface before any writer runs. Holding it is
+        // what stops a writer's exit abandoning an operation this call is
+        // still inside.
+        //
+        // Taking it is also the liveness check, so there is no gap between
+        // deciding this client has an executor and being one. A separate
+        // precheck could be true and then false before the claim.
+        let Some(_executing) = self.enter_routing_execution(route.client, completion) else {
             return Err(XServerFrontendRouteError::UnknownClient { client: route.client });
-        }
+        };
         // Before the first authoritative effect, which is not the writer.
         // Focus routing sends FocusOut to the previously focused client and
         // moves the focused surface before any writer runs, so a claim taken
@@ -703,19 +724,12 @@ impl Drop for XServerFrontendClientRouteRegistration {
         // it is owed the cleanup it named, and saying so here is what keeps
         // that responsibility from ending with the registration.
         if let Some(completion) = self.control_completion.get() {
-            // Whether anything is still serving this client, established
-            // before its route senders go. A registration ending is not proof
-            // that its writer stopped, and a client that is already out of the
-            // map has nothing serving it. A map that cannot be read proves
-            // nothing either way, so nothing is abandoned on the strength of
-            // it.
-            let executor_gone = match self.clients.lock() {
-                Ok(clients) => clients.get(&self.client).is_none_or(|senders| {
-                    senders.control_writer_gone.load(Ordering::Acquire)
-                }),
-                Err(_) => false,
-            };
-            let _reconciled = completion.reconcile_client(self.client, executor_gone);
+            // Whether anything is still executing for this client is read
+            // inside the registry, under the lock that abandons. Establishing
+            // it here and passing it in was a gap: a router or a writer can
+            // start or finish between the two, and a sweep that lands in that
+            // gap either abandons a live operation or misses a dead one.
+            let _reconciled = completion.reconcile_client(self.client);
         }
         let _ = self.input_recovery.disconnect(self.client, XAuthorityInputDeliveryOutcome::ClientDisconnected);
         if let Ok(mut clients) = self.clients.lock() {

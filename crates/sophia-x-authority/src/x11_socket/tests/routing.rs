@@ -5964,6 +5964,8 @@ fn accepted(
     registry: &crate::ControlCompletionRegistry,
     command: XAuthorityClientControlCommand,
 ) -> ControlCompletionToken {
+    // A client being served is what a test means by an accepted operation.
+    registry.expect_writer(command.client);
     let token = registry
         .register(command)
         .expect("a fresh registry to have room");
@@ -7482,7 +7484,8 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
             .is_empty(),
         "nothing is owed a cleanup while something could still answer"
     );
-    let reconciled = registry.reconcile_client(client, false);
+    registry.expect_writer(client);
+    let reconciled = registry.reconcile_client(client);
     assert!(reconciled.readable);
     assert_eq!(reconciled.abandoned, 0);
     assert_eq!(
@@ -7496,9 +7499,10 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
     assert_eq!(reconciled.owed, 0, "nothing was answered");
     assert_eq!(reconciled.reserved, 0);
 
-    // The writer going is the edge that establishes it, because the writer is
-    // the executor and does not have to guess.
-    let reconciled = registry.reconcile_client(client, true);
+    // The executor going is the edge that establishes it, and the registry
+    // reads that for itself rather than being told.
+    registry.writer_stopped(client);
+    let reconciled = registry.reconcile_client(client);
     assert_eq!(reconciled.abandoned, 1);
     assert_eq!(reconciled.applying, 0);
     assert!(
@@ -7614,7 +7618,7 @@ fn an_unreadable_registry_reconciles_nothing_and_says_so() {
     // Finding nothing because nothing could be looked at is not finding
     // nothing. A caller that read this as a clean teardown would walk away
     // from an operation still mid-application.
-    let reconciled = registry.reconcile_client(client, true);
+    let reconciled = registry.reconcile_client(client);
     assert!(!reconciled.readable);
     assert_eq!(reconciled.abandoned, 0);
     assert_eq!(
@@ -7709,7 +7713,8 @@ fn an_unreadable_registry_owes_an_answer_rather_than_an_empty_list() {
         registry.claim_execution(token),
         crate::ControlExecutionClaim::Claimed
     );
-    assert_eq!(registry.reconcile_client(client, true).abandoned, 1);
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
     assert_eq!(registry.cleanups_owed().map(|owed| owed.len()), Ok(1));
 
     let poisoner = registry.clone();
@@ -7805,7 +7810,8 @@ fn a_command_cannot_claim_execution_after_its_client_is_swept() {
     // The writer goes. The producer's check and the claim at routing are
     // separate moments, and this is between them.
     private.broker.registry.mark_control_writer_gone(client);
-    assert_eq!(registry.reconcile_client(client, true).unexecuted, 1);
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).unexecuted, 1);
 
     // Routing must not claim it now. A record left claimable after its sweep
     // would start producing effects for a client nothing is serving.
@@ -7831,4 +7837,214 @@ fn a_command_cannot_claim_execution_after_its_client_is_swept() {
         .collect();
     assert_eq!(carried, vec![38001]);
     assert_eq!(report.retry(), 1);
+}
+
+#[test]
+fn a_writer_exit_cannot_abandon_what_a_router_is_still_inside() {
+    let client = XServerFrontendClientId(333);
+    let surface = SurfaceId::new(333, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let token = accepted(&registry, configure(client, surface, 39001));
+
+    // A routing call in flight, holding what it needs to still produce an
+    // effect. Routing is where the first authoritative effect happens: focus
+    // routing sends FocusOut to whoever held focus and moves the focused
+    // surface before any writer runs.
+    let routing = registry
+        .enter_routing(client)
+        .expect("a client with a writer is executing");
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+
+    // The writer stops and joins, and sweeps. It is not the whole executor,
+    // so this must not abandon an operation the router is still inside: the
+    // effects that follow would land after the abandonment.
+    registry.writer_stopped(client);
+    let reconciled = registry.reconcile_client(client);
+    assert_eq!(
+        reconciled.abandoned, 0,
+        "a writer exiting does not license cleanup while routing can act"
+    );
+    assert_eq!(reconciled.applying, 1);
+    assert!(
+        registry
+            .cleanups_owed()
+            .expect("a readable registry")
+            .is_empty()
+    );
+
+    // Once the router is out too, nothing can establish an outcome and the
+    // operation is owed its cleanup.
+    drop(routing);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+    assert_eq!(
+        registry.cleanups_owed().expect("a readable registry").len(),
+        1
+    );
+}
+
+#[test]
+fn taking_the_routing_lease_is_the_liveness_check_itself() {
+    let client = XServerFrontendClientId(334);
+    let surface = SurfaceId::new(334, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let token = accepted(&registry, configure(client, surface, 40001));
+
+    // A separate precheck could be true and then false before the claim. This
+    // one holds what it checked, so a sweep cannot land between them.
+    registry.writer_stopped(client);
+    assert!(
+        registry.enter_routing(client).is_none(),
+        "nothing is executing, so nothing may enter"
+    );
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Refused(crate::ControlClaimRefusal::NoExecutor),
+        "and the claim refuses under the same lock that abandons"
+    );
+
+    // A client registered and waiting for its writer to spawn is executing:
+    // registration comes before the spawn, and control accepted in that
+    // window is not control with nowhere to go.
+    registry.expect_writer(client);
+    let _routing = registry
+        .enter_routing(client)
+        .expect("a registered client is executing");
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+}
+
+#[test]
+fn a_cancelled_input_write_is_not_reported_as_flushed() {
+    let client = XServerFrontendClientId::from_raw(1);
+    let window = XResourceId::new(0x200001, 1);
+    let surface = SurfaceId::new(1, 1);
+    let mut selections = XCoreEventSelectionState::default();
+    selections.register(
+        window,
+        XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+        Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+        },
+    );
+    selections.update(window, Some(1 << 6), None);
+    let (deliveries, settled) = channel();
+    let recovery = InputRecovery::new(4, Some(deliveries), Arc::default());
+    recovery.register(client).expect("a fresh ledger");
+    let (events, receiver) = channel();
+    let (stream, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+    // Control output is registered and nobody will clear it, so the writer
+    // parks before touching the socket.
+    let pending = Arc::new(AtomicUsize::new(1));
+    let writer = spawn_x11_input_event_writer(
+        X11InputWriterState {
+            stream: Arc::new(Mutex::new(stream)),
+            output_control_pending: pending.clone(),
+            byte_order: XByteOrder::LittleEndian,
+            sequence: Arc::new(AtomicU16::new(1)),
+            focused_surface_window: Arc::new(AtomicU64::new(window.local.raw())),
+            core_event_selections: Arc::new(Mutex::new(selections)),
+            xkb_state_details: Arc::new(AtomicU16::new(1)),
+            xkb_modifiers: Arc::new(AtomicU16::new(0)),
+            surface_windows: Arc::new(Mutex::new(BTreeMap::from([(surface, window)]))),
+            input_authority: None,
+            standalone_query_authority: None,
+            namespace: NamespaceId::from_raw(1),
+            client,
+        },
+        X11InputEventReceiver::Routed {
+            receiver,
+            deliveries: None,
+            recovery: Some(recovery.clone()),
+        },
+    )
+    .expect("an input writer");
+
+    let delivery = XAuthorityInputDeliveryId::from_raw(79002);
+    let request = XAuthorityRoutedInput {
+        request: RoutedInputRequest {
+            serial: 79002,
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(1),
+            time_msec: 0,
+            target_surface: surface,
+            global_position: Point::default(),
+            local_position: Point::default(),
+            kind: InputEventKind::Key {
+                keycode: 30,
+                pressed: false,
+            },
+        },
+        route_lease: None,
+        delivery: Some(delivery),
+        mode: XAuthorityRoutedInputMode::Deliver,
+    };
+    recovery.admit(&request, 1, std::time::Instant::now());
+    recovery
+        .bind(Some(delivery), client)
+        .expect("a live delivery");
+    events
+        .send(XAuthorityClientInputEvent {
+            client,
+            event: XAuthorityInputEvent::Key(XAuthorityKeyEvent {
+                keycode: 30,
+                pressed: false,
+                state: 0,
+                modifiers_after: 0,
+                time_msec: 0,
+            }),
+            target_window: Some(window),
+            xi_event_type: None,
+            xi_event_window: None,
+            xi_emulated_button_type: None,
+            xi_emulated_button_window: None,
+            xi_pointer_crossing_mask: 0,
+            delivery: Some(delivery),
+        })
+        .expect("room");
+
+    let parked = std::time::Instant::now() + std::time::Duration::from_millis(200);
+    while std::time::Instant::now() < parked {
+        std::thread::yield_now();
+    }
+
+    let mut writers = X11ClientWriters {
+        input: Some(writer),
+        control: None,
+        protocol: None,
+    };
+    let shutdown = writers.shut_down();
+    assert_eq!(shutdown.joined, 1, "the join returned without a rescue");
+    assert_eq!(
+        pending.load(Ordering::Acquire),
+        1,
+        "nothing cleared what it was waiting for"
+    );
+
+    // Nothing reached the socket. A delivery cancelled before any write must
+    // not be recorded as having reached its client, and must not be blamed on
+    // the recipient either.
+    let outcomes: Vec<_> = settled
+        .try_iter()
+        .map(|delivery| delivery.outcome)
+        .collect();
+    assert!(
+        !outcomes.is_empty(),
+        "the writer reached the delivery and settled it"
+    );
+    assert!(
+        !outcomes.contains(&XAuthorityInputDeliveryOutcome::Flushed),
+        "a cancelled write is not a flush: {outcomes:?}"
+    );
+    assert!(
+        !outcomes.contains(&XAuthorityInputDeliveryOutcome::ClientDisconnected),
+        "and it is not the recipient's doing: {outcomes:?}"
+    );
 }
