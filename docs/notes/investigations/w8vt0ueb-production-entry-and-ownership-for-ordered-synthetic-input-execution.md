@@ -454,31 +454,46 @@ replayed, it cannot be resumed, and its credit stays held.
 
 ### What an abandoned operation can actually have left behind
 
-Source-confirmed, because the answer decides what a reconciler can honestly
-discharge.
+An earlier draft of this section claimed a writer stopping meant its connection
+was ending, and built a per-kind discharge on top of that. It is false, and the
+test that disproves it is one already in this tree: a writer that returns on a
+full acknowledgement channel leaves its route registration live and the
+connection's local state held. Writer quiescence is permission to inspect, not
+proof that anything ended. Four corrections, all source-confirmed.
 
-The state a control writer touches is in three places, with three different
-lifetimes. Per-connection state -- `core_event_selections`, `surface_windows`
-and `metadata_rules`, all created in `dispatch.rs` around `:508` -- goes when
-the connection goes, and a writer stopping means its connection is ending, so
-nothing there outlives the operation to disagree with anything. Registry state
--- `surfaces` and `focused_surface` -- outlives the connection and is cleaned
-by the route registration's drop, except where it names something that never
-happened. The `XAuthorityRuntime` outlives both and is authoritative: each of
-its applications either happened or did not, so it is never itself half
-applied.
+**The connection may still be there.** Discharging anything on the strength of
+a stopped writer requires an owned proof that the connection's state is gone --
+the registration given up and the local state unreachable -- or else the live
+state has to be inspected and reconciled as it is.
 
-That gives the split a reconciler has to respect.
+**Shared state is wider than the runtime.** `X11CoreSocketServerState` holds
+`atoms` and `properties` on Arcs shared by every client of one listener
+(`state.rs:4-8`), and presentation applies directly into them
+(`control_writer.rs:375+`) before separately building and emitting records. A
+metadata rule changes connection-local state and then emits a candidate
+outwards. Neither is disposed of by a connection ending.
 
-| Kind | What can be established, and what is owed |
-| --- | --- |
-| `AdmitSurface`, `ConfigureSurface`, `WithdrawSurface`, `SetPresentationState`, `RestorePresentationState`, `PublishMetadataRule` | The runtime either applied it or did not, and the derived state that could have disagreed died with the connection. Nothing outlives the operation that anyone could observe as half applied, so the cleanup is discharged. The operation's outcome stays unknown and is never published: what is discharged is the cleanup, not the operation |
-| `FocusSurface`, `ClearFocus` | Routing moves `focused_surface` and can send FocusOut to whoever held focus, before any writer runs. An abandoned one can therefore leave the registry naming a surface that never took focus, while the runtime's input focus says otherwise. That disagreement is establishable from `XServerFrontendSurfaceRoute`, which carries the client, namespace and window, against the runtime's input focus. The cleanup is to give up the unbacked claim, never to move focus: the runtime is not touched, so nothing is replayed |
-| `CloseSurface` | Writes a ClientMessage or shuts the socket down, and mutates no server state. Whether the peer received it is not a question the runtime can answer, so no proof of the outcome exists -- and equally there is nothing half applied to repair |
+**A command is multi-step even where each runtime call is atomic.** Configure
+applies to the runtime, releases that guard, and then updates the connection's
+selections, with fallible steps after the application. Focus sends FocusOut to
+the previously focused client, which changes *that* connection's
+`focused_surface_window` and can emit events to it. So giving up this target's
+registry focus claim does not establish that every reachable projection agrees,
+and any repair has to keep the exact application and route provenance: a newer
+focus claim must never be cleared on the strength of older debt, and never on a
+bare window id.
 
-The rule that falls out: a cleanup is discharged when nothing reachable is left
-disagreeing, which is not the same as knowing what the operation did. Retiring
-on that is saying nothing is owed, and it never becomes a receipt.
+**Closing a surface is not one branch.** It either writes a ClientMessage or
+takes the `terminate_client` path, which shuts the client's socket down and
+then acknowledges. The second is a real effect on the connection, not a
+message whose fate is only the peer's.
+
+What survives from the earlier draft is only the shape of the rule, not its
+application: discharging a cleanup means nothing reachable is left disagreeing,
+which is never the same as knowing what the operation did, and retiring on it
+says nothing is owed rather than issuing a receipt. Every kind whose residual
+obligation is not actually proved is retained, and none is discharged by
+assuming its state went away.
 
 What is built for it is bookkeeping and nothing more. `cleanups_owed` and
 `record_cleanup` have no production owner: nothing performs or proves any
