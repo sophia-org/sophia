@@ -168,11 +168,14 @@ No render-node bind, GPU permission, installed profile or shell replacement was
 added. The CPU pool does not claim to count renderer/upload copies that are not
 yet integrated with it.
 
-Still required: action lifecycle, GPU-domain launch admission, Lom's persistent
-connection and exact presented-target adapter, and attended acceptance. The
-operator profile vocabulary now defaults content off, admits an explicit
-content decision, and validates the exact prototype GPU-memory number. The first
-live configuration is workspaces, clock and calendar. Other Minimal modules
-remain fixtures until authorized live sources exist. Acceptance must prove
-retirement, activation, anchoring, consumed outside dismissal, restart and
-output changes.
+Lom `b77e4eb` now owns a bounded persistent connection, allocation, Vello
+readback, resource transfer, pacing, complete-candidate presentation and safe
+two-slot retirement. A real-socket fixture proves two presented generations and
+an indicator update arriving during the first lifecycle; it is not native or
+GPU evidence. Still required: action lifecycle, GPU-domain launch admission,
+the exact presented-target adapter and attended acceptance. The operator profile
+vocabulary defaults content off, admits an explicit content decision, and
+validates the exact prototype GPU-memory number. The first live configuration is
+workspaces, clock and calendar. Other Minimal modules remain fixtures until
+authorized live sources exist. Acceptance must prove retirement, activation,
+anchoring, consumed outside dismissal, restart and output changes.
