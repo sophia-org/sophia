@@ -302,10 +302,32 @@ bound to origin and admission plus an operation incarnation, and to a grant
 generation where one applies -- without requiring a live synthetic grant, since
 privileged issuer cleanup must outlive grants.
 
-Writer stop, disconnect, an error before any acknowledgement, and queue
-teardown are all terminal edges too. And retrying a whole command can be wrong
-where a focus-out side effect has already partly applied, so a retained
-acknowledgement is not the same as a replayable command.
+### The cancellation edges, as audited
+
+Two acknowledgement publishers are a useful start and not the map. These are
+the other ways a control ends without one, from a source audit.
+
+| Edge | What happens |
+| --- | --- |
+| Writer stop (`writers.rs:249`, exiting at `:731`) | Channels and queued commands are dropped. A disconnected receive drains buffered work first, so this is not buffered loss, but the exit itself settles nothing. `dispatch.rs:2443` sets stop explicitly |
+| A `?` after dequeue and before the ack | `write_x11_control_records` at `:720` returns before `send_ack` at `:721`; surface, metadata and runtime lock failures do the same. `focus.rs:336-354` adds output lock, write and flush failures |
+| `terminate_client` (`:225-245`) | Acknowledges its own request and returns. Controls accepted later and still queued are owned by nobody |
+| Registration `Drop` (`delivery.rs:602-648`) | Cleans input recovery and frozen input. There is no control completion registry for it to clean, so one needs an origin-bound teardown sweep, including an early registration `Drop` |
+| Worker join (`dispatch.rs:2435-2456`) | The input writer is joined first with `??`, so an error or panic returns before `control.stop` and its join ever run. `X11ControlWriter` holds a stop flag and a `JoinHandle` and has no `Drop` cleanup |
+| `register_client` failing (`dispatch.rs:567`) | Can fail after writers are spawned and before the cleanup closure exists |
+
+Two consequences for the record's shape.
+
+It has to carry an execution **phase**, not just an identity. The runtime may
+already have mutated before the failure -- `AdmitSurface` at `:374` applies
+before later selection handling -- so a command that failed before its
+acknowledgement cannot be blanket-classified as unexecuted, and retrying the
+whole of it can be wrong. A retained acknowledgement is not a replayable
+command.
+
+And private construction has to own every worker it started, and their
+accepted controls, across all of these exits, including the ones where another
+worker failed first. Without widening ordinary-mode behaviour to get it.
 
 ## What still needs stating
 
