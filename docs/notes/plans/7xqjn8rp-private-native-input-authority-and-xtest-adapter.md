@@ -918,3 +918,34 @@ with source-confirmed destruction of the surviving operations and absence of a
 post-Drop settlement owner, establishes the remaining ownership blocker. It is
 not evidence of recipient failure. No runtime integration or executor acceptance
 follows from the two positive controls.
+
+Candidate `a5ba03d1` adds a shared settlement owner and guards against settling
+the frontend twice. Source review finds the transfer still fallible after
+acceptance: a full owner increments `lost` and destroys the operations that do
+not fit. Settlement capacity must instead be reserved before accepting work,
+with ownership retained across queued, executing and abandoned states. A new
+operation may be refused with its payload; an accepted obligation cannot be
+discarded because its subsequent owner has no room. Capacity accounting must
+cover multiple instances sharing an owner and repeated shutdowns, not only a
+single admission queue.
+
+The claimed poisoned-queue transfer is also absent in this candidate:
+`unreadable_queues` stores a count, not the admission queue or its origin-bound
+failure authority. Poisoning the settlement owner's own mutex additionally
+makes transfer drop its pending vector and makes `drive`, `owed` and `lost`
+return zero. The failed-instance owner must retain the actual state, expose a
+typed unavailable result, and avoid resuming poisoned execution. A boolean or
+counter on a longer-lived object does not supply that ownership. The candidate
+remains unintegrated pending these corrections and independent capacity tests.
+
+The independent capacity test at `.artifacts/private-owner-review-a5ba03d1/`
+records one positive PASS and one desired conservation assertion FAIL (133
+filtered; 9.83 seconds). The public capacity-1 owner successfully retains one
+abandoned control and delivers it after a real prefilled acknowledgement is
+read. In the negative, one frontend with input capacity 2 accepts controls 9901
+and 9902 while real acknowledgement 9900 fills the output channel. Shutdown
+reports two owed operations; dropping the handle leaves owner `owed=1, lost=1`.
+After reading 9900 and driving three bounded rounds, only 9901 arrives; 9902
+is absent and the owner reports `owed=0, lost=1`. This is loss after acceptance,
+not an admission refusal. Poison ownership findings above remain source-review
+findings rather than newly reproduced behavior.
