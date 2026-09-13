@@ -419,9 +419,12 @@ token, and both identity counters refuse exhaustion. The narrow
 `m3_coordinator_state` manifest entry names the 24 actual test attributes, not
 helper functions. These tests check declared installation sequencing. Production
 clearing, final execution, queued/thawed validation and receipt producers remain
-open. The [writer investigation](../investigations/0t8n7mwl-asynchronous-client-writers-publish-seat-modifier-state-out-of-order.md)
-records source-confirmed modifier-publication and target-reselection hazards
-that t093's private integration must address; it is not live reproduction.
+open. The [writer investigation](../investigations/0t8n7mwl-client-writers-re-select-the-key-target-at-write-time.md)
+records target re-selection at write time, not live reproduction. Its earlier
+cross-client modifier-cache finding is withdrawn: the atomic is allocated per
+connection, not shared across clients. The genuinely shared XKB state belongs
+to the seat-keyed worker. Ordered private execution must preserve that state
+without treating each client's notification cache as seat authority.
 
 The canonical run at `1c32f3ab` passed workspace, Clippy, layout and the repaired
 orphan regression, then failed an archive-verifier fixture that assumed a
@@ -539,11 +542,14 @@ rank. Evidence is `.artifacts/synthetic-executor-review-2caba34c/`. Repair
 `b5d371c4` captures authority identity in the gate for lock-free checks. All nine
 retained tests and the previously hanging re-entry case pass independently;
 evidence is `.artifacts/synthetic-executor-review-b5d371c4/`. Public mutable access
-to the whole coordinator still permits replacement while the gate retains the old
-cached identity; that API must preserve ownership before the cache can serve as
-an invariant. Committed focus, actual recipient routing,
-modifier publication and StateOnly thaw remain required before production-path
-acceptance; the helper is still unintegrated.
+to the whole coordinator allowed replacement while the gate retained the old
+identity. Repair `cbd94859` restricts that access through a facade: all ten helper
+cases and its compile-fail regression pass independently. A compiling mutant that
+restores mutable dereferencing makes the regression fail at the intended boundary.
+Evidence is `.artifacts/synthetic-executor-review-cbd94859/`. The repaired helper
+is integrated into the isolated branch only. Committed focus, actual recipient
+routing, ordered XKB state application and StateOnly thaw remain required before
+production-path acceptance.
 
 The canonical contained check now passes on exact clean `49d38924`, using the
 device-hidden wrapper: command exit 0, 282 Rust result groups with 3,311 passes,
@@ -555,3 +561,20 @@ later content commit `9cf6650a`; the result does not certify current master.
 Hardware proofs and promoted host archives are explicitly NOT_RUN. Passing the
 canonical checks does not discharge the native profile's missing production
 obligations or make the private XTEST host operational.
+
+Master subsequently passed the exact-source contained canonical check at
+`a65edae8`; evidence is `.artifacts/offline-check-a65edae8/report.json`, again
+with hardware and promoted archives NOT_RUN. The input branch is reconciled
+onto that root, preserving its verifier repairs and closed t095 record. Neither
+root's PASS nor the older input snapshot's PASS certifies their newly combined
+input changes without checks on the combined source.
+
+The [production operation inventory](../investigations/w8vt0ueb-production-entry-and-ownership-for-ordered-synthetic-input-execution.md)
+now includes writer-side focus application, direct SetInputFocus, core
+subscriptions and route-relevant window publication, registration-drop/recovery
+cleanup, grab rollback and repeat ownership. These are dependencies of the real
+private execution path, not additional work deferred past its acceptance. Only
+route-relevant state needs a coherent publication boundary; ordinary property and
+clipboard operations need not move into the input executor. Unstamped private
+ingress must return an explicit producer refusal without mutating state, inventing
+a receipt identity, or terminating healthy-client service.
