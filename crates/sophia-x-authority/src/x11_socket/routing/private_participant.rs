@@ -224,6 +224,46 @@ impl PrivateAdmissionParticipant {
         })?
     }
 
+    /// Resume retirement for bindings that were closed with work unresolved.
+    ///
+    /// A revocation that could not retire everything leaves its binding closed
+    /// with the remainder recorded, which denies further work but does not
+    /// finish the cleanup. Nothing revisits those on its own: revoking the
+    /// namespace again skips them, because they are already closed and closing
+    /// is not what they are waiting for.
+    ///
+    /// So the origin drives this. It retires what it can and removes each
+    /// record as its retirement returns, leaving anything still unresolved
+    /// exactly where it was for the next attempt.
+    pub fn resume_unresolved(&self) -> Result<PrivateRevocation, PrivateAdmissionRefusal> {
+        self.under_boundary(|authority, issuer, bindings| {
+            let mut total = PrivateRevocation::default();
+            while let Some(client) = bindings
+                .bound
+                .iter()
+                .find(|(_, bound)| bound.closed && !bound.grants.is_empty())
+                .map(|(client, _)| *client)
+            {
+                let before = bindings
+                    .bound
+                    .get(&client)
+                    .map_or(0, |bound| bound.grants.len());
+                let one = close_and_retire(authority, issuer, bindings, client);
+                total.retired = total.retired.saturating_add(one.retired);
+                let after = bindings
+                    .bound
+                    .get(&client)
+                    .map_or(0, |bound| bound.grants.len());
+                if after >= before {
+                    // Nothing moved, so trying again would loop on the same
+                    // binding. Left for a later attempt rather than spun on.
+                    break;
+                }
+            }
+            Ok(total)
+        })?
+    }
+
     /// Issue a reservation role for an admitted client.
     ///
     /// The grant is issued and recorded on the binding in one pass under
@@ -268,11 +308,17 @@ impl PrivateAdmissionParticipant {
             let capability = match authority.allocate_device(issuer, grant, generation, device) {
                 Ok(capability) => capability,
                 Err(refused) => {
-                    // Rolled back exactly: the grant this call issued is
-                    // retired and its record removed, rather than left behind
-                    // for a revocation that has no reason to expect it.
-                    let _debt = authority.revoke_grant(issuer, grant);
-                    if let Some(bound) = bindings.bound.get_mut(&client) {
+                    // Rolled back exactly: the grant this call issued, not
+                    // whatever the binding currently holds. The record is
+                    // removed only if the retirement actually happened --
+                    // removing it on a failed rollback would forget a grant
+                    // that still exists, which is the obligation this record
+                    // is for.
+                    let retired = matches!(
+                        authority.revoke_grant(issuer, grant),
+                        Ok(_) | Err(sophia_input_authority::RegistrationError::StaleGeneration)
+                    );
+                    if retired && let Some(bound) = bindings.bound.get_mut(&client) {
                         bound.grants.retain(|held| *held != grant);
                     }
                     return Err(PrivateAdmissionRefusal::Authority(refused));

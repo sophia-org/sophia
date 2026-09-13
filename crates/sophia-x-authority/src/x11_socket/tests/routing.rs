@@ -11827,6 +11827,87 @@ fn a_binding_refuses_a_grant_it_could_not_account_for() {
 }
 
 #[test]
+fn cleanup_left_unresolved_is_resumed_rather_than_revisited_by_revocation() {
+    let private = private_for_roles();
+    let namespace = NamespaceId::from_raw(611);
+    let client = XServerFrontendClientId(611);
+    private
+        .admission_participant()
+        .admit(client, namespaced(client, namespace))
+        .expect("the boundary to admit");
+    let _role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
+
+    // Staged as an interrupted revocation leaves it: closed, so further work
+    // is already denied, with its grant still recorded because retirement did
+    // not finish.
+    {
+        let mut bindings = private
+            .admission_participant()
+            .bindings
+            .lock()
+            .expect("the boundary");
+        let bound = bindings.bound.get_mut(&client).expect("the binding");
+        bound.closed = true;
+        assert_eq!(bound.grants.len(), 1, "its grant is still owed retirement");
+    }
+
+    // Revoking the namespace again does not finish it. Closing is not what
+    // this binding is waiting for, and it is already closed.
+    let swept = private
+        .admission_participant()
+        .revoke_namespace(namespace)
+        .expect("the boundary to revoke the namespace");
+    assert_eq!(
+        swept,
+        crate::PrivateRevocation {
+            closed: 0,
+            retired: 0
+        },
+        "a second revocation passes over work that is already closed"
+    );
+    assert_eq!(
+        private
+            .admission_participant()
+            .bindings
+            .lock()
+            .expect("the boundary")
+            .bound
+            .get(&client)
+            .map_or(0, |bound| bound.grants.len()),
+        1,
+        "so the outstanding retirement is still outstanding"
+    );
+
+    // The origin's continuation is what finishes it.
+    let resumed = private
+        .admission_participant()
+        .resume_unresolved()
+        .expect("the boundary");
+    assert_eq!(resumed.retired, 1, "the owed retirement was completed");
+    assert!(
+        !private
+            .admission_participant()
+            .bindings
+            .lock()
+            .expect("the boundary")
+            .bound
+            .contains_key(&client),
+        "and with nothing left owed against it the record goes"
+    );
+
+    // Nothing left to resume, and it says so rather than looping.
+    assert_eq!(
+        private
+            .admission_participant()
+            .resume_unresolved()
+            .expect("the boundary"),
+        crate::PrivateRevocation::default()
+    );
+}
+
+#[test]
 fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
     let private = private_for_roles();
     let _admitted = admit_role_client(&private, XServerFrontendClientId(541));
