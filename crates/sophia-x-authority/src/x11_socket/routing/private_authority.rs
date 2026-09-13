@@ -395,6 +395,7 @@ pub struct PrivateReservation {
     capability: sophia_input_authority::DeviceCapability,
     submit: sophia_input_authority::SubmitHandle,
     admission: sophia_protocol::ClientAdmissionId,
+    grant: sophia_input_authority::GrantId,
 }
 
 #[cfg(unix)]
@@ -420,6 +421,7 @@ impl PrivateReservation {
             token,
             connection: self.connection,
             admission: self.admission,
+            grant: self.grant,
             observed: std::cell::Cell::new(false),
             phase: std::cell::Cell::new(PrivateRequestPhase::Unused),
         }
@@ -476,6 +478,8 @@ pub struct PrivateOutstandingRequest {
     connection: sophia_input_authority::ConnectionIdentity,
     /// The admission this request's grant was issued under.
     admission: sophia_protocol::ClientAdmissionId,
+    /// The grant that owns this request, for authorising its settlement.
+    grant: sophia_input_authority::GrantId,
     /// Whether the terminal outcome has been taken.
     ///
     /// Execution alone does not free the cell -- the completion has to be
@@ -516,6 +520,11 @@ impl PrivateOutstandingRequest {
     /// The admission this request's grant answers to.
     fn admission(&self) -> sophia_protocol::ClientAdmissionId {
         self.admission
+    }
+
+    /// The grant that owns this request.
+    fn grant(&self) -> sophia_input_authority::GrantId {
+        self.grant
     }
 
     /// The client this request was reserved for.
@@ -614,6 +623,13 @@ pub struct PrivateReservationRole {
     /// they exist are this role and another role's.
     generation: sophia_input_authority::GrantGeneration,
     connection: sophia_input_authority::ConnectionIdentity,
+    /// The grant this role's capability was issued under.
+    ///
+    /// Carried because settling a debt names the participant that owes it, and
+    /// the capability does not expose its grant outside the authority. A
+    /// settlement offered without it cannot be authorised, and the debt stays
+    /// open on work that was delivered.
+    grant: sophia_input_authority::GrantId,
     /// The admission this role was issued under.
     ///
     /// Carried so execution can tell a replacement admission from the one its
@@ -632,6 +648,7 @@ impl PrivateReservationRole {
         generation: sophia_input_authority::GrantGeneration,
         connection: sophia_input_authority::ConnectionIdentity,
         admission: sophia_protocol::ClientAdmissionId,
+        grant: sophia_input_authority::GrantId,
     ) -> Self {
         Self {
             controller,
@@ -640,6 +657,7 @@ impl PrivateReservationRole {
             generation,
             connection,
             admission,
+            grant,
         }
     }
 
@@ -682,6 +700,7 @@ impl PrivateReservationRole {
             capability: self.capability,
             submit: self.submit,
             admission: self.admission,
+            grant: self.grant,
         })
     }
 }

@@ -49,6 +49,13 @@ pub struct PrivateReachedResources {
     seat: SeatId,
     /// Whether a grab chose this rather than the route.
     grabbed: bool,
+    /// The grant that authorised the press.
+    ///
+    /// Settling a debt names the participant that owes it, and the capability
+    /// does not expose its grant outside the authority. Recorded with the plan
+    /// so the release that ends this hold can name the same participant its
+    /// press was made by.
+    grant: sophia_input_authority::GrantId,
 }
 
 #[cfg(unix)]
@@ -104,6 +111,12 @@ pub enum PrivateExecutionRefusal {
     /// can currently discharge -- reporting it as nothing to emit would settle
     /// a debt by losing the evidence of it.
     HoldPlanMissing,
+    /// The item was taken from the order and execution had not been attempted.
+    ///
+    /// The phase a current item carries while it is owned and before its
+    /// execution returns, so an interruption leaves a record that says what
+    /// was and was not tried.
+    NotAttempted,
     /// The transaction returned without deciding.
     ///
     /// Carries the completion the authority actually recorded, because that is
@@ -152,6 +165,33 @@ pub struct PrivateOrderedRun {
 
 #[cfg(unix)]
 impl PrivateXServerFrontend {
+    /// Run the item this instance currently owns.
+    ///
+    /// The custody and the work both come from the owned slot rather than from
+    /// parameters, so there is no moment where the only handle to an accepted
+    /// request is a local that an unwind would take with the frame. The slot
+    /// is borrowed, never emptied for the call.
+    fn run_current(
+        &mut self,
+        keyboards: &mut PrivateKeyboards,
+    ) -> Result<PrivateOrderedRun, PrivateExecutionRefusal> {
+        let Self {
+            current,
+            participant,
+            controller,
+            broker,
+            holds,
+            settling,
+            ..
+        } = self;
+        let Some(PrivateOrderedItem::Refused { custody, route, .. }) = current.as_ref() else {
+            return Err(PrivateExecutionRefusal::NotAttempted);
+        };
+        execute_owned(
+            controller, participant, broker, holds, settling, keyboards, route, custody,
+        )
+    }
+
     /// Run one admitted input through the ordered path.
     ///
     /// The order is the substance. Before anything is entered: the keyboard
@@ -176,91 +216,17 @@ impl PrivateXServerFrontend {
         route: &XAuthorityRoutedInput,
         custody: &PrivateOutstandingRequest,
     ) -> Result<PrivateOrderedRun, PrivateExecutionRefusal> {
-        let identity = self
-            .controller
-            .identity()
-            .map_err(PrivateExecutionRefusal::Authority)?;
-        if !keyboards.answers_for(identity) {
-            // Another instance's history would answer every identity check the
-            // request can make and hold none of the keys this one is holding.
-            return Err(PrivateExecutionRefusal::ForeignKeyboards);
-        }
-        if !keyboards.prepare(route.request.seat) {
-            return Err(PrivateExecutionRefusal::SeatUnavailable);
-        }
-
-        // Refused before the transaction, so each reason is its own. Deciding
-        // these inside would mean borrowing an authority error to stand for a
-        // question the authority was never asked -- and a caller acting on a
-        // release barrier that is really an unapplied focus looks in entirely
-        // the wrong place.
-        match route.request.kind {
-            InputEventKind::PointerButton { .. } => {}
-            InputEventKind::Key { .. } => return Err(PrivateExecutionRefusal::FocusNotApplied),
-            InputEventKind::PointerMotion | InputEventKind::PointerAxis { .. } => {
-                return Err(PrivateExecutionRefusal::Unmappable);
-            }
-        }
-
-        let client = custody.client();
-        let mut decided = None;
-        let mut plan_missing = false;
-        let mut records_exhausted = false;
         let Self {
             participant,
+            controller,
             broker,
             holds,
             settling,
             ..
         } = self;
-        let completion = participant
-            .execute_current(custody, client, |permit, bindings| {
-                resolve_and_apply(
-                    permit,
-                    bindings,
-                    &broker.registry,
-                    holds,
-                    settling,
-                    route,
-                    &mut decided,
-                    &mut plan_missing,
-                    &mut records_exhausted,
-                )
-            })
-            // Typed through, not collapsed. An unreadable boundary is not a
-            // client nobody admitted, and saying so here would reinstate the
-            // conflation that was already repaired one level down.
-            .map_err(|refusal| match refusal {
-                PrivateAdmissionRefusal::Unreachable => {
-                    PrivateExecutionRefusal::Authority(PrivateAuthorityRefusal::Unreachable)
-                }
-                other => PrivateExecutionRefusal::Admission(other),
-            })?
-            .map_err(PrivateExecutionRefusal::Authority)?;
-
-        if records_exhausted {
-            return Err(PrivateExecutionRefusal::RecordsExhausted);
-        }
-        if plan_missing {
-            // Named for what it is rather than by whatever authority error
-            // carried it out of the transaction. A hold ended and its record
-            // is gone, which is an obligation nobody can currently discharge.
-            return Err(PrivateExecutionRefusal::HoldPlanMissing);
-        }
-        let Some(decided) = decided else {
-            // The transaction returned without deciding anything, which means
-            // the callback refused before recording. Its own cause travelled
-            // in the completion rather than being renamed here.
-            return Err(PrivateExecutionRefusal::NotDecided(completion));
-        };
-        Ok(PrivateOrderedRun {
-            reached: decided.reached,
-            first_press: decided.first_press,
-            keyboard_applied: decided.keyboard_applied,
-            release: decided.release,
-            completion,
-            event: decided.event,
-        })
+        execute_owned(
+            controller, participant, broker, holds, settling, keyboards, route, custody,
+        )
     }
 }
 
@@ -285,6 +251,7 @@ fn resolve_and_apply(
     holds: &mut Vec<(u64, PrivateReachedResources)>,
     settling: &mut Vec<PrivateSettlingRelease>,
     route: &XAuthorityRoutedInput,
+    grant: sophia_input_authority::GrantId,
     decided: &mut Option<PrivateOrderedDecision>,
     plan_missing: &mut bool,
     records_exhausted: &mut bool,
@@ -469,6 +436,7 @@ fn resolve_and_apply(
                     namespace: surface_route.namespace,
                     seat: route.request.seat,
                     grabbed,
+                    grant,
                 };
                 // Published into storage reserved before anything was
                 // accepted, so recording where the press went cannot fail
@@ -560,6 +528,103 @@ impl PrivateSettlingRelease {
         self.event
     }
 }
+
+/// Execute one admitted input against pieces the caller already owns.
+///
+/// Takes the parts rather than the whole instance so the custody can be
+/// borrowed from the slot that owns it while the rest is used mutably.
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+fn execute_owned(
+    controller: &PrivateAuthorityController,
+    participant: &PrivateAdmissionParticipant,
+    broker: &XServerFrontendRouteBroker,
+    holds: &mut Vec<(u64, PrivateReachedResources)>,
+    settling: &mut Vec<PrivateSettlingRelease>,
+    keyboards: &mut PrivateKeyboards,
+    route: &XAuthorityRoutedInput,
+    custody: &PrivateOutstandingRequest,
+) -> Result<PrivateOrderedRun, PrivateExecutionRefusal> {
+        let identity = controller
+            .identity()
+            .map_err(PrivateExecutionRefusal::Authority)?;
+        if !keyboards.answers_for(identity) {
+            // Another instance's history would answer every identity check the
+            // request can make and hold none of the keys this one is holding.
+            return Err(PrivateExecutionRefusal::ForeignKeyboards);
+        }
+        if !keyboards.prepare(route.request.seat) {
+            return Err(PrivateExecutionRefusal::SeatUnavailable);
+        }
+
+        // Refused before the transaction, so each reason is its own. Deciding
+        // these inside would mean borrowing an authority error to stand for a
+        // question the authority was never asked -- and a caller acting on a
+        // release barrier that is really an unapplied focus looks in entirely
+        // the wrong place.
+        match route.request.kind {
+            InputEventKind::PointerButton { .. } => {}
+            InputEventKind::Key { .. } => return Err(PrivateExecutionRefusal::FocusNotApplied),
+            InputEventKind::PointerMotion | InputEventKind::PointerAxis { .. } => {
+                return Err(PrivateExecutionRefusal::Unmappable);
+            }
+        }
+
+        let client = custody.client();
+        let mut decided = None;
+        let mut plan_missing = false;
+        let mut records_exhausted = false;
+        let completion = participant
+            .execute_current(custody, client, |permit, bindings| {
+                resolve_and_apply(
+                    permit,
+                    bindings,
+                    &broker.registry,
+                    holds,
+                    settling,
+                    route,
+                    custody.grant(),
+                    &mut decided,
+                    &mut plan_missing,
+                    &mut records_exhausted,
+                )
+            })
+            // Typed through, not collapsed. An unreadable boundary is not a
+            // client nobody admitted, and saying so here would reinstate the
+            // conflation that was already repaired one level down.
+            .map_err(|refusal| match refusal {
+                PrivateAdmissionRefusal::Unreachable => {
+                    PrivateExecutionRefusal::Authority(PrivateAuthorityRefusal::Unreachable)
+                }
+                other => PrivateExecutionRefusal::Admission(other),
+            })?
+            .map_err(PrivateExecutionRefusal::Authority)?;
+
+        if records_exhausted {
+            return Err(PrivateExecutionRefusal::RecordsExhausted);
+        }
+        if plan_missing {
+            // Named for what it is rather than by whatever authority error
+            // carried it out of the transaction. A hold ended and its record
+            // is gone, which is an obligation nobody can currently discharge.
+            return Err(PrivateExecutionRefusal::HoldPlanMissing);
+        }
+        let Some(decided) = decided else {
+            // The transaction returned without deciding anything, which means
+            // the callback refused before recording. Its own cause travelled
+            // in the completion rather than being renamed here.
+            return Err(PrivateExecutionRefusal::NotDecided(completion));
+        };
+        Ok(PrivateOrderedRun {
+            reached: decided.reached,
+            first_press: decided.first_press,
+            keyboard_applied: decided.keyboard_applied,
+            release: decided.release,
+            completion,
+            event: decided.event,
+        })
+    }
+
 
 /// What the guarded transition decided, before anything is emitted.
 #[cfg(unix)]
@@ -660,19 +725,17 @@ impl PrivateXServerFrontend {
         &mut self,
         keyboards: &mut PrivateKeyboards,
     ) -> Result<Vec<PrivateOrderedItem>, XServerFrontendRouteError> {
-        // Claimed on the first turn. From here the older route refuses this
-        // order rather than draining it alongside.
-        self.ordered_runner = true;
         // Anything an earlier turn parked still holds its place. Nothing after
         // it may run until its disposition is established, and that outlives
         // the turn that met it -- a turn that merely stopped would let the
         // next one overtake exactly the operation it stopped for.
-        if let Some((sequence, _)) = self.parked.as_ref() {
-            // Still parked, so nothing runs. Said rather than returned empty,
-            // because an empty turn and a blocked one are different facts.
-            return Ok(vec![PrivateOrderedItem::Parked {
-                sequence: *sequence,
-            }]);
+        if let Some(sequence) = self.parked_barrier {
+            // Still blocked. Holding the operation and having established what
+            // becomes of it are different things, so this survives the operation
+            // being handed to an owner: an owner that took it and then dropped
+            // it established nothing, and running later input at that point is
+            // exactly the overtaking the park prevents.
+            return Ok(vec![PrivateOrderedItem::Parked { sequence }]);
         }
         let budget = self.service_budget;
         while self.turn.len() < budget {
@@ -694,11 +757,13 @@ impl PrivateXServerFrontend {
                 // and the turn ends: later input must not apply past an
                 // earlier operation that has neither run nor been cancelled.
                 self.parked = Some((sequence, operation));
+                self.parked_barrier = Some(sequence);
                 self.turn.push(PrivateOrderedItem::Parked { sequence });
                 break;
             };
             let Some(reservation) = envelope.reservation.take() else {
                 self.parked = Some((sequence, PrivateOperation::RoutedInput(envelope)));
+                self.parked_barrier = Some(sequence);
                 self.turn.push(PrivateOrderedItem::Parked { sequence });
                 break;
             };
@@ -706,7 +771,28 @@ impl PrivateXServerFrontend {
             // becomes the custody it runs against.
             let custody = reservation.accepted();
             let route = envelope.route;
-            match self.run_ordered_input(keyboards, &route, &custody) {
+            // Owned before the execution, not after it. The item has left the
+            // order and nothing else holds it, so a failure or an unwind
+            // inside execution would otherwise take the custody and the work
+            // with the frame. Its phase is the custody's own: never entered,
+            // entered and unknown, or settled.
+            self.current = Some(PrivateOrderedItem::Refused {
+                sequence,
+                refusal: PrivateExecutionRefusal::NotAttempted,
+                custody,
+                route,
+            });
+            let outcome = self.run_current(keyboards);
+            let Some(PrivateOrderedItem::Refused {
+                sequence,
+                custody,
+                route,
+                ..
+            }) = self.current.take()
+            else {
+                break;
+            };
+            match outcome {
                 Ok(run) => self.turn.push(PrivateOrderedItem::Ran {
                     sequence,
                     run,
@@ -732,11 +818,22 @@ impl PrivateXServerFrontend {
         self.parked.as_ref().map(|(sequence, _)| *sequence)
     }
 
-    /// Take the parked operation, accepting responsibility for its
-    /// disposition.
+    /// Whether the order is still blocked on an earlier operation.
     ///
-    /// The consumer resumes only once this has been taken, because taking it
-    /// is what moves the obligation somewhere that can execute or cancel it.
+    /// True while its disposition is unestablished, whether or not the
+    /// operation itself has been handed to an owner.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn blocked(&self) -> Option<crate::ReadySequence> {
+        self.parked_barrier
+    }
+
+    /// Take the parked operation into an owner's hands.
+    ///
+    /// This moves the operation; it does **not** establish what becomes of it,
+    /// and the order stays blocked. Executing or cancelling it is what would
+    /// lift the barrier, and no path does that yet -- so until one exists, the
+    /// honest state after a handover is still blocked rather than running the
+    /// input behind an operation nothing has answered for.
     #[cfg_attr(not(test), allow(dead_code))]
     fn take_parked(&mut self) -> Option<(crate::ReadySequence, PrivateOperation)> {
         self.parked.take()
@@ -750,5 +847,151 @@ impl PrivateXServerFrontend {
     #[cfg_attr(not(test), allow(dead_code))]
     fn take_interrupted_turn(&mut self) -> Vec<PrivateOrderedItem> {
         std::mem::take(&mut self.turn)
+    }
+}
+
+/// What delivering one decided item established.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct PrivateDelivered {
+    sequence: crate::ReadySequence,
+    /// Whether the event reached the client it was decided for.
+    ///
+    /// A queue that is full and a client that has gone are both failures to
+    /// reach it, and neither is a receipt. Only a send that succeeded settles
+    /// the recipient half of a debt.
+    recipient_settled: bool,
+    /// The outcome the request recorded, taken exactly once.
+    completion: Option<sophia_input_authority::RequestCompletion>,
+    /// Whether a release debt was closed by this delivery.
+    debt_settled: bool,
+}
+
+#[cfg(unix)]
+impl PrivateXServerFrontend {
+    /// Deliver what a turn decided, then settle what the delivery established.
+    ///
+    /// Emission happens here, with no guard held: the decision was made under
+    /// the guards and is immutable, and sending on a client's queue is exactly
+    /// the kind of work that must not happen beneath them.
+    ///
+    /// Settlement follows delivery rather than accompanying it. The native
+    /// half was reconciled under the guard when the aggregate and the
+    /// projection moved together; the recipient half is only established by
+    /// the event actually reaching the client. A full queue, a disconnected
+    /// client, a cleared mapper or an observed completion are none of them
+    /// receipts, and a debt closed on any of those would be closed on
+    /// something that did not happen.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn deliver_turn(&mut self, items: Vec<PrivateOrderedItem>) -> Vec<PrivateDelivered> {
+        let mut delivered = Vec::with_capacity(items.len());
+        for item in items {
+            let PrivateOrderedItem::Ran {
+                sequence,
+                run,
+                custody,
+                route,
+            } = item
+            else {
+                continue;
+            };
+            let recipient_settled = match (run.event, run.reached) {
+                (Some(event), Some(reached)) => {
+                    // The delivery identity the work was accepted with, which
+                    // is why a successful run keeps its route: the client
+                    // answers against that identity, and a completion token is
+                    // not it.
+                    self.emit(reached, event, route.delivery).is_ok()
+                }
+                // Nothing was owed an event, so nothing failed to reach
+                // anybody. That is not a receipt either.
+                _ => false,
+            };
+            // Taken exactly once, which is what frees the grant's cell.
+            let completion = custody.observe().ok().flatten();
+            let debt_settled = match run.release {
+                Some(sophia_input_authority::ReleaseOutcome::DeliverTo(hold))
+                    if recipient_settled =>
+                {
+                    self.settle_release(hold)
+                }
+                _ => false,
+            };
+            delivered.push(PrivateDelivered {
+                sequence,
+                recipient_settled,
+                completion,
+                debt_settled,
+            });
+        }
+        delivered
+    }
+
+    /// Send one decided event to the client it was decided for.
+    fn emit(
+        &self,
+        reached: PrivateReachedResources,
+        event: XAuthorityInputEvent,
+        delivery: Option<XAuthorityInputDeliveryId>,
+    ) -> Result<(), XServerFrontendRouteError> {
+        let senders = self.broker.registry.client_senders(reached.client())?;
+        self.broker.registry.route_to_client(
+            reached.client(),
+            senders.input,
+            XAuthorityClientInputEvent {
+                client: reached.client(),
+                event,
+                target_window: Some(reached.window()),
+                xi_event_type: None,
+                xi_event_window: None,
+                xi_emulated_button_type: None,
+                xi_emulated_button_window: None,
+                xi_pointer_crossing_mask: 0,
+                delivery,
+            },
+        )
+    }
+
+    /// Close the debt one delivered release established.
+    ///
+    /// Both halves together: the native side reconciled under the guard when
+    /// the aggregate and the projection moved, and the recipient side by the
+    /// event reaching the client. The continuation for this hold is retired
+    /// only once the debt is closed, because until then it is still the record
+    /// of an obligation.
+    fn settle_release(&mut self, hold: sophia_input_authority::HoldIncarnation) -> bool {
+        // The participant the press was made by, taken from the continuation
+        // rather than guessed. A settlement offered without an owner it can
+        // authorise is refused, and the debt stays open on work that was
+        // delivered.
+        let Some(owner) = self
+            .settling
+            .iter()
+            .find(|held| held.hold() == hold.hold())
+            .map(|held| held.reached().grant)
+        else {
+            return false;
+        };
+        let settled = self
+            .controller
+            .under_common_as_origin(|authority, issuer| {
+                authority.settle(
+                    issuer,
+                    Some(owner),
+                    hold.input,
+                    hold,
+                    sophia_input_authority::SettlementBit {
+                        native_reconciled: true,
+                        recipient_settled: true,
+                    },
+                )
+            })
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or(false);
+        if settled {
+            self.settling.retain(|held| held.hold() != hold.hold());
+        }
+        settled
     }
 }

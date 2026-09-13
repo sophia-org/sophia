@@ -339,6 +339,7 @@ impl PrivateAdmissionParticipant {
                 generation,
                 connection,
                 admission,
+                grant,
             ))
         })?
     }

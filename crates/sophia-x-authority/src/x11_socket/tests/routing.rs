@@ -11249,7 +11249,7 @@ fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
 
 #[test]
 fn two_detached_producers_reserve_against_one_authority() {
-    let private = private_for_roles();
+    let mut private = private_for_roles();
     let _first_admitted = admit_role_client(&private, XServerFrontendClientId(511));
     let _second_admitted = admit_role_client(&private, XServerFrontendClientId(512));
     let first = private
@@ -11385,9 +11385,13 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
     // filled is still there -- drained across as many turns as the service
     // budget needs, and counted, so a refusal that quietly consumed an earlier
     // item would show up as a short count rather than being invisible.
+    let mut keyboards = private.keyboards().expect("this instance's state");
     let mut drained = 0usize;
     loop {
-        let ran = private.route_pending().expect("a readable order").len();
+        let ran = private
+            .route_pending_ordered(&mut keyboards)
+            .expect("a readable order")
+            .len();
         if ran == 0 {
             break;
         }
@@ -12806,7 +12810,7 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
     let client = XServerFrontendClientId(801);
     let surface = SurfaceId::new(801, 1);
     let window = XResourceId::new(0x200801, 1);
-    let private = private_for_roles();
+    let mut private = private_for_roles();
     let _registration = admit_role_client(&private, client);
     private
         .broker
@@ -12881,7 +12885,7 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
 fn a_consumer_refusal_hands_back_the_custody_it_was_accepted_with() {
     let client = XServerFrontendClientId(811);
     let surface = SurfaceId::new(811, 1);
-    let private = private_for_roles();
+    let mut private = private_for_roles();
     let _registration = admit_role_client(&private, client);
     private
         .broker
@@ -13013,7 +13017,7 @@ fn unreserved_work_in_the_order_is_handed_back_rather_than_run() {
 fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
     let client = XServerFrontendClientId(831);
     let surface = SurfaceId::new(831, 1);
-    let private = private_for_roles();
+    let mut private = private_for_roles();
     let _registration = admit_role_client(&private, client);
     private
         .broker
@@ -13079,24 +13083,35 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
     ));
     assert!(private.holds.is_empty());
 
-    // Once its disposition is taken on, the input behind it runs.
+    // Handing the operation to an owner does not lift the barrier. Taking it
+    // moves it; it does not establish what becomes of it, and an owner that
+    // took it and then dropped it has answered nothing. Until a path exists
+    // that executes or cancels such an operation, the order stays blocked --
+    // which is the honest state rather than a convenient one.
     let (_, parked) = private.take_parked().expect("the parked control");
     assert!(matches!(parked, PrivateOperation::Control(_, _)));
-    let resumed = private
+    let after = private
         .route_pending_ordered(&mut keyboards)
         .expect("a readable order");
     assert!(
-        matches!(resumed.as_slice(), [PrivateOrderedItem::Ran { .. }]),
-        "the input behind it runs once the earlier obligation has an owner"
+        matches!(after.as_slice(), [PrivateOrderedItem::Parked { .. }]),
+        "holding the operation is not having answered for it"
     );
-    assert_eq!(private.holds.len(), 1, "and only then is its hold applied");
+    assert!(
+        private.holds.is_empty(),
+        "so no later hold applied behind it"
+    );
+    assert!(
+        private.blocked().is_some(),
+        "and the order says it is still blocked"
+    );
 }
 
 #[test]
 fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
     let client = XServerFrontendClientId(841);
     let surface = SurfaceId::new(841, 1);
-    let private = private_for_roles();
+    let mut private = private_for_roles();
     let _registration = admit_role_client(&private, client);
     private
         .broker
@@ -13191,6 +13206,10 @@ fn a_turn_that_fails_part_way_keeps_what_it_already_took() {
     };
     let sequence = *sequence;
     let _ = private.take_parked();
+    // Cleared here only to reach the case under test. Nothing in production
+    // lifts this yet, which is the point of the control above; this one is
+    // about what a failed turn keeps, not about when the order resumes.
+    private.parked_barrier = None;
 
     // Staged as an earlier iteration leaves it: work already taken out of the
     // order and recorded, with the turn still in progress. Staged rather than
@@ -13228,5 +13247,128 @@ fn a_turn_that_fails_part_way_keeps_what_it_already_took() {
     assert!(
         private.take_interrupted_turn().is_empty(),
         "and recovering them twice yields nothing the second time"
+    );
+}
+
+#[test]
+fn delivery_then_settlement_is_what_lets_the_next_press_through() {
+    let client = XServerFrontendClientId(861);
+    let surface = SurfaceId::new(861, 1);
+    let window = XResourceId::new(0x200861, 1);
+    let mut private = private_for_roles();
+    // Registered with channels held, so a delivered event has somewhere to go.
+    let (_registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client to register");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary to admit");
+    private
+        .broker
+        .registry
+        .register_surface(client, NamespaceId::from_raw(client.raw()), surface, window)
+        .expect("the surface to register");
+    let ingress = private
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("an ingress");
+    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut private = private;
+
+    // Press, run, deliver.
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(861),
+            272,
+            true,
+        ))
+        .expect("the order to accept the press");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    let delivered = private.deliver_turn(turn);
+    assert_eq!(delivered.len(), 1);
+    assert!(
+        delivered[0].recipient_settled,
+        "the press reached the client"
+    );
+    assert!(
+        matches!(
+            delivered[0].completion,
+            Some(sophia_input_authority::RequestCompletion::Processed)
+        ),
+        "and its outcome was taken exactly once, which is what freed the cell"
+    );
+    assert!(
+        !delivered[0].debt_settled,
+        "a press creates no release debt to close"
+    );
+    let event = channels
+        .input
+        .try_recv()
+        .expect("the client received the press");
+    assert_eq!(
+        event.delivery,
+        Some(XAuthorityInputDeliveryId::from_raw(861)),
+        "answered against the delivery identity it was accepted with"
+    );
+    assert_eq!(event.target_window, Some(window));
+
+    // Release, run, deliver. Delivery establishes the recipient half; the
+    // native half was reconciled under the guard when the aggregate and the
+    // projection moved together.
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(862),
+            272,
+            false,
+        ))
+        .expect("the order to accept the release");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    let delivered = private.deliver_turn(turn);
+    assert_eq!(delivered.len(), 1);
+    assert!(delivered[0].recipient_settled, "the release reached it too");
+    assert!(
+        delivered[0].sequence.raw() > 0,
+        "each delivery names the place in the order it came from"
+    );
+    assert!(
+        delivered[0].debt_settled,
+        "and the debt that release created was closed by the delivery"
+    );
+    assert!(
+        channels.input.try_recv().is_ok(),
+        "the client received the release"
+    );
+    assert!(
+        private.settling.is_empty(),
+        "the continuation retires once its debt is closed, not before"
+    );
+
+    // Only now does the same input press again. Before settlement this was
+    // refused with the authority's release barrier.
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(863),
+            272,
+            true,
+        ))
+        .expect("the order to accept the second press");
+    let turn = private
+        .route_pending_ordered(&mut keyboards)
+        .expect("a readable order");
+    let [PrivateOrderedItem::Ran { run, .. }] = turn.as_slice() else {
+        panic!("the second press runs once the debt is settled");
+    };
+    assert!(
+        run.first_press,
+        "and it begins a hold rather than joining a stale one"
     );
 }

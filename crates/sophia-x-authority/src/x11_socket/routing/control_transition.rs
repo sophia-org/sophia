@@ -312,6 +312,24 @@ pub struct PrivateXServerFrontend {
     /// outlives the turn that met it: a turn that merely stopped would let the
     /// next one overtake the operation it stopped for.
     parked: Option<(crate::ReadySequence, PrivateOperation)>,
+    /// Whether an earlier operation's disposition is still unestablished.
+    ///
+    /// Separate from holding the operation, because handing it to an owner is
+    /// not the same as executing or cancelling it. The barrier survives the
+    /// handover: an owner that takes the operation and then drops it has
+    /// established nothing, and letting later input apply at that point is the
+    /// overtaking the park exists to prevent.
+    ///
+    /// Nothing clears it yet. There is no path that establishes an ordered
+    /// execution or cancellation boundary for such an operation, so the honest
+    /// state is that the order stays blocked until there is one.
+    parked_barrier: Option<crate::ReadySequence>,
+    /// The item currently being executed.
+    ///
+    /// Owned before the execution that could fail or unwind, not after it.
+    /// A dequeued item held in a local is one the order no longer has and
+    /// nothing else does either.
+    current: Option<PrivateOrderedItem>,
     /// Whether the ordered consumer has taken a turn on this instance.
     ///
     /// Set by the first ordered turn and never cleared: an order this
@@ -514,6 +532,8 @@ impl PrivateXServerFrontend {
             submit,
             keyboards_issued: std::sync::atomic::AtomicBool::new(false),
             parked: None,
+            parked_barrier: None,
+            current: None,
             ordered_runner: false,
             turn: Vec::with_capacity(capacity),
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
@@ -691,10 +711,15 @@ impl PrivateXServerFrontend {
     /// right to reserve and to observe its own outcomes -- never the authority
     /// and never the issuer.
     pub fn ingress_for(
-        &self,
+        &mut self,
         client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
     ) -> Result<PrivateIngress, PrivateAdmissionRefusal> {
+        // Claimed when a reserving producer is exposed, not when the first
+        // ordered turn happens to run. Between those two moments the older
+        // route could drain reserved work and apply it without the execution
+        // its reservation exists for, which is the case this refusal is for.
+        self.ordered_runner = true;
         Ok(PrivateIngress {
             sender: self.broker.routed_input_sender(),
             admission: Arc::clone(&self.admission),
