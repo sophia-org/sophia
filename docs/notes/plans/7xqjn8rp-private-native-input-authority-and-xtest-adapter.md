@@ -589,7 +589,7 @@ Late activation with already accepted untracked raw work may explicitly refuse
 activation; it cannot retroactively return an error through a completed
 `SyncSender::send` or fabricate a receipt for that work.
 
-Ready-stream candidate `c6e4475e` remains unintegrated. Independent tests of its
+The initial ready-stream candidate `c6e4475e` failed independent review. Independent tests of its
 exact std-only source pass four controls for FIFO, reserve capacity, sequence
 accounting and accepted-payload ownership. A desired-safety assertion fails:
 capacity refusal destroys the incoming owned payload before returning, so its
@@ -615,3 +615,18 @@ eventual completion. Extracted control apply/report bodies are unchanged apart
 from whitespace. Evidence is `.artifacts/control-install-review-0c24e888/`.
 This verifies an already-gated broker's continuity. First activation after raw
 ingress exposure, the private constructor and real producer wiring remain open.
+
+The branch was reconciled onto published content commit `d7654d23` at
+`eb8e1078`, preserving root's wrapper and closed t095 record without importing
+another copy. Root master was not moved. The root's exact contained canonical
+PASS remains evidence for `d7654d23`; it does not certify this combined branch.
+
+Raw-ingress repairs through `42766ddb` pass six independent cases on that exact
+source, retained in `.artifacts/raw-ingress-review-42766ddb/`. Taking a raw handle
+prevents later activation even after every handle is dropped. Refusal preserves
+an already queued event and subsequent ordinary operation. An installed gate
+refuses raw access without disturbing a pending transition. These repairs are
+integrated as `2c662b64` and `30279f29`. The exposure flag covers queued raw work
+because the guarded getter is currently the only export of that channel; an
+internal producer bypassing the getter would invalidate that argument. The
+private constructor and production executor still require independent evidence.
