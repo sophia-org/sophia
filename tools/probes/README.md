@@ -1,5 +1,29 @@
 # Private graphics probes
 
+## Lom protected GPU/content proof
+
+`tools/lom_gpu_content_hardware_proof.sh` launches the exact source-built Lom
+`--serve` client through Sophia's production metadata-shell protection policy.
+The private domain receives one render node at `/dev/dri/renderD128`, with no
+card node, input device, display socket or network. Lom renders a 256x24 Vello
+panel and sends its real complete content candidate. The host verifies the
+nonempty immutable pixels, returns the real `RendererFailed` outcome, and
+requires resource and backing cleanup. This is a hardware render and protocol
+proof; it deliberately records `native_presentation=false` and does not acquire
+DRM master.
+
+```sh
+SOPHIA_LOM_GPU_PROOF_ARM=1 tools/lom_gpu_content_hardware_proof.sh
+```
+
+The separate `tools/run_current_lom_panel_gate_tty4.sh` is the native acceptance
+candidate. Run it only from tty4 after ending the graphical session, with
+`SOPHIA_LOM_NATIVE_GATE_ARM=1`. It builds from clean signed Sophia and Lom tips,
+runs for twenty seconds, restores the TTY through the existing session harness,
+and retains exact identities and session diagnostics. A machine-independent
+gate or isolated proof cannot establish that the bar was visible; the attended
+run still requires the operator to confirm its placement and appearance.
+
 ## Private GLX pixmap probe
 
 `glx_pixmap.c` creates offscreen resources and compares synthetic pixels read

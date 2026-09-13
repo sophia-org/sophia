@@ -97,6 +97,15 @@ content-backing credit are implemented with deterministic tests and the
 proof, other-device exclusion, Lom adapter match, and native retirement evidence
 remain separately authorized and unrun.
 
+The next candidate adds a production-policy isolated runner and a dedicated
+tty4 native gate. The isolated runner launches Lom through the same GPU policy,
+mounts one render node and no display, card or input device, verifies a real
+nonuniform 256x24 candidate, then deliberately settles it as RendererFailed and
+requires lease/backing cleanup. The native gate uses the tracked Minimal
+workspaces-and-seconds configuration and requires two presented generations per
+output. These are runnable gates, not results: neither has been executed on
+hardware, and t097 remains active until their retained evidence passes.
+
 ### t098
 
 Carry content target tables through production projection to the exact native

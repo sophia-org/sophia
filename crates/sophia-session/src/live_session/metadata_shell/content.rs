@@ -148,6 +148,16 @@ impl LiveContentSession {
             runtime.set_shell_content(frame, scene, native_scanout.as_deref_mut())?;
             let grant = transport.content_grant().ok_or("content grant vanished")?;
             transport.content_prepared(grant, output, generation, 1, 1, now)?;
+            let usage = transport.content_usage().unwrap_or_default();
+            crate::session_println!(
+                "sophia_live_shell_content schema=1 status=prepared output={} candidate_generation={} staging_bytes={} resident_bytes={} retiring_bytes={} backing_bytes={}",
+                output.id,
+                generation,
+                usage.staging,
+                usage.resident,
+                usage.retiring,
+                usage.backing,
+            );
             let candidate_allocations = bundle
                 .surfaces
                 .iter()
@@ -195,6 +205,17 @@ impl LiveContentSession {
             1,
             1,
         )?;
+        let usage = transport.content_usage().unwrap_or_default();
+        crate::session_println!(
+            "sophia_live_shell_content schema=1 status=presented output={} candidate_generation={} presentation_epoch={} staging_bytes={} resident_bytes={} retiring_bytes={} backing_bytes={}",
+            pending.output.id,
+            pending.candidate_generation,
+            epoch,
+            usage.staging,
+            usage.resident,
+            usage.retiring,
+            usage.backing,
+        );
         self.presented_bands = pending.bands;
         self.presented_allocations = pending
             .allocations

@@ -67,6 +67,10 @@ pub(crate) fn print(verbose: bool) {
     #[cfg(feature = "native-session")]
     println!("commands: live-session-composition-smoke");
     #[cfg(feature = "native-session")]
+    println!(
+        "commands: sophia-shell-gpu-content-hardware-proof --client=/absolute/lom --config=/absolute/live-shell.kdl [--seat=seat0] [--render-node=/dev/dri/renderD128]"
+    );
+    #[cfg(feature = "native-session")]
     println!("commands: atomic-scanout-preflight");
     #[cfg(feature = "native-session")]
     println!("commands: native-topology-probe (read-only; needs DRM master)");

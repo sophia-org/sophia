@@ -1,6 +1,7 @@
 use super::*;
 mod content;
 mod gpu;
+pub(crate) mod gpu_content_proof;
 pub(crate) mod indicators;
 
 mod launcher;

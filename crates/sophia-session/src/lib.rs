@@ -78,6 +78,18 @@ pub fn run_input_guard(args: &[String]) -> Result<(), Box<dyn std::error::Error>
     live_session::input_guard::run(args)
 }
 
+/// Exercise Lom's real protected GPU/content path without acquiring DRM master
+/// or claiming native presentation.
+#[cfg(feature = "native-session")]
+pub fn run_shell_gpu_content_hardware_proof(
+    client: &std::path::Path,
+    config: &std::path::Path,
+    seat: &str,
+    render_node: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    live_session::metadata_shell::gpu_content_proof::run(client, config, seat, render_node)
+}
+
 #[cfg(feature = "native-session")]
 pub fn plan_validation_device<'a>(
     scanout: &'a sophia_backend_live::LiveProductionNativeScanout,

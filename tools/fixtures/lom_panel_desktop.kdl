@@ -1,0 +1,19 @@
+schema 1
+
+policy { layout "scroller"; }
+shell {
+    enabled #true
+    content #true
+    panel 24
+    gpu "direct"
+}
+shortcut {
+    profile "lom-panel-gate"
+    bind "Super+Return" "session:spawn-terminal"
+}
+session {
+    terminal "terminal"
+}
+input { inherit-sophia #true; }
+output { inherit-sophia #true; }
+broker { enabled #false; }
