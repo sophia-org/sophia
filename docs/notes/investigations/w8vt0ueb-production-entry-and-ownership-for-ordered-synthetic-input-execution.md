@@ -76,6 +76,64 @@ These are not in any drain loop and are the ones most easily forgotten.
 | `select_xi_events` | XI subscription state | Ordered with the rest |
 | `cleanup_owner` (client teardown) | Drops that client's grabs and query state | Privileged cleanup, outlives grants |
 
+### Control is queued in one place and applied in another
+
+Sequenced enqueue is not an ordered state change, and this is the family the
+first draft got most wrong. `registry/delivery.rs:468-485` only queues the
+control. The mutation happens later, in the connection's own writer:
+`connection/writers.rs:602` calls `runtime.set_input_focus`, `:617` swaps that
+connection's `focused_surface_window`, and `:682` unmaps on
+`WithdrawSurface`. Ordering the queue says nothing about when any of that
+lands.
+
+Direct core `SetInputFocus` does not pass through the control queue at all
+(`dispatch/core/input_discovery.rs:44-48`, reached from
+`connection/dispatch.rs:1544`).
+
+| Producer | Current mutation | Sequence point |
+| --- | --- | --- |
+| `control_receiver` then connection writer | `set_input_focus`, `focused_surface_window` swap, withdraw unmap | The **application**, not the enqueue |
+| Core `SetInputFocus` | Same runtime focus, no queue involved | Same transaction as the above |
+
+### Route-relevant window state
+
+Event masks and do-not-propagate, map and unmap, hierarchy and stacking all
+change who a final recipient is (`connection/dispatch.rs:1550-1610`, consumed
+in `writers/input.rs:72-91` and `:134-153`). Reparent and configure move the
+anchors a pointer query resolves against (`runtime/windows.rs:296`, `:458`,
+into `runtime/pointer_query.rs:14-30`). Destroy clears query window and focus
+(`runtime/windows.rs:534`, `:549-550`).
+
+This does **not** mean running every window or property operation inside the
+input executor. The seam is an explicit invalidation and publication
+transaction with immutable recipient resolution: route-relevant state
+publishes coherently under the ranked boundary, and a writer never selects
+from state that has changed since the resolution it is acting on.
+
+Clipboard and property work has no reason to route through the executor.
+
+### Cleanup has more than one source
+
+`cleanup_owner` is the orderly one. It is not the only one.
+
+| Source | What it drops |
+| --- | --- |
+| `XServerFrontendClientRouteRegistration::drop` (`registry/delivery.rs:602-647`) | Client, surfaces, focus, subscriptions, frozen state |
+| Input recovery (`routing/recovery.rs:377-380`) | Calls `cleanup_owner` independently |
+| Pointer grab activation rollback (`connection/dispatch.rs:2176-2207`) | Undoes a partially activated grab |
+
+Each needs either joined cleanup or an explicit private exclusion, with
+receipts retained either way. A cleanup that runs outside the ordering is a
+teardown that can reorder against the presses it is tearing down.
+
+### Repeat has producers outside this host
+
+The repeat row above covers delivery only. Ownership, arming and cancellation
+live in Session: `live_session/input.rs:1064` and `:1127`,
+`client_keys.rs:76` and `:79`, `session_control.rs:199-200`. Which of these are
+absent from a private host, and which bridge into the ordering, has to be
+stated rather than assumed.
+
 ## Rules this table has to respect
 
 Lease retirement and client teardown are privileged cleanup that outlive
@@ -95,9 +153,21 @@ is not a delivery.
 Retained completions are bounded, and the agreed external private-instance
 watchdog stands outside this.
 
+## What still needs stating
+
+Pure getters need coherent snapshots and request ordering. They do not need
+mutation operations invented for them, and inventing some would be a worse
+error than leaving them unlisted.
+
+The concrete private construction and production call path is not in this note
+yet. It is the next thing owed, and it should name the actual entry rather
+than another helper nothing calls.
+
 ## Status
 
-Source-confirmed inventory. No implementation is proposed here for live mode
+Source-confirmed inventory, and known to be incomplete: an independent audit
+found the four families above after the first draft, which listed only the
+broker drain loops and the connection-side grab writers. No implementation is proposed here for live mode
 or any ambient fallback, and nothing here is an approval to enable one.
 
 Related: [[0t8n7mwl]] for the writer-side target finding this ordering has to
