@@ -401,8 +401,12 @@ pub struct ControlReconcileReport {
     /// Nothing reachable is left disagreeing, so nothing is owed. Not a
     /// statement about what the operation did.
     pub discharged: usize,
-    /// It changed shared state and the state derived from it never caught up.
+    /// It finished changing the shared runtime and never began projecting it,
+    /// so the projection it left behind does not agree.
     pub retained_half_applied: usize,
+    /// A step had begun and is not known to have finished. The effect may have
+    /// happened, which is not the same as knowing it did not.
+    pub retained_in_progress: usize,
     /// Nothing establishes what it left, so it keeps its obligation.
     pub retained_unproved: usize,
     /// Whether the records could be read at all. Finding nothing because
@@ -577,32 +581,41 @@ impl PrivateXServerFrontend {
             ..ControlReconcileReport::default()
         };
         for cleanup in owed {
-            match cleanup.command.command.kind() {
-                // Its steps are reported, so its report is the proof.
-                XAuthorityControlKind::ConfigureSurface => {
-                    if cleanup.steps.runtime && !cleanup.steps.projection {
-                        // It changed shared state that outlives the connection
-                        // and the state derived from it never caught up. That
-                        // is a real residual obligation and nothing here can
-                        // discharge it.
-                        report.retained_half_applied =
-                            report.retained_half_applied.saturating_add(1);
-                        continue;
-                    }
-                    // Either it never changed anything, or it finished
-                    // changing everything it would have. Both leave nothing
-                    // reachable disagreeing. What its client was told is still
-                    // unknown, and no acknowledgement is invented for it.
-                    if self.completion.discharge(cleanup.token).is_ok() {
+            // The only thing these reports prove is that an operation whose
+            // first step never began cannot have had any effect, because
+            // beginning is recorded before the effect can happen and the
+            // effect does not happen if it cannot be recorded.
+            //
+            // They do not prove agreement. The runtime guard is released
+            // before the projection is brought into line, and neither report
+            // carries a revision, so a projection reported as agreeing can
+            // already have been overtaken by a later change. And an operation
+            // continues through fallible work after its projection -- records,
+            // presentation, peer routing -- that these say nothing about. Two
+            // finished steps are history, not a statement about now.
+            match (cleanup.steps.runtime, cleanup.steps.projection) {
+                (ControlStepState::InProgress, _) | (_, ControlStepState::InProgress) => {
+                    report.retained_in_progress = report.retained_in_progress.saturating_add(1);
+                }
+                (ControlStepState::Completed, ControlStepState::Completed) => {
+                    report.retained_unproved = report.retained_unproved.saturating_add(1);
+                }
+                (ControlStepState::Completed, ControlStepState::NotStarted) => {
+                    report.retained_half_applied =
+                        report.retained_half_applied.saturating_add(1);
+                }
+                (ControlStepState::NotStarted, _) => {
+                    if matches!(
+                        cleanup.command.command.kind(),
+                        XAuthorityControlKind::ConfigureSurface
+                    ) && self.completion.discharge(cleanup.token).is_ok()
+                    {
                         report.discharged = report.discharged.saturating_add(1);
                     } else {
+                        // Nothing reports what the other kinds do, and an
+                        // absent report is not a report of nothing.
                         report.retained_unproved = report.retained_unproved.saturating_add(1);
                     }
-                }
-                // Not instrumented. An absent report is not a report of
-                // nothing, so these are retained with their obligation open.
-                _ => {
-                    report.retained_unproved = report.retained_unproved.saturating_add(1);
                 }
             }
         }

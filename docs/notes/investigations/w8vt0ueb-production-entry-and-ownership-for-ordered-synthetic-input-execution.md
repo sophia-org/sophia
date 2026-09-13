@@ -537,31 +537,51 @@ cannot be counted -- an unreadable registry after a genuine claim -- refuses
 before anything is queued rather than falling through to work that looks
 ungoverned.
 
-### The operation reports what it did, and an owner settles on that
+### Intermediate: what an operation reports, and the little it proves
 
-A snapshot taken afterwards is not proof: it can agree and be made wrong
-immediately, and it cannot tell an operation that never started from one that
-finished. So each step is recorded by the code that performs it, immediately
-after it succeeds. What is recorded is what happened, which does not change
-afterwards, and only an operation being applied can record anything -- a
-reservation is its producer's, an accepted command has not started, and a step
-reported after the outcome would describe work that outcome did not cover.
+Reporting after success cannot tell an interrupted effect from one that never
+happened, and an independent review demonstrated exactly that: an unwind
+injected between a successful runtime change and its report left the runtime
+changed, the projection stale, and the record saying nothing had begun -- which
+the owner then discharged. Reporting only outcomes also left the reporting API
+an assertion seam under another name, because a caller handed the state could
+set both steps without performing either, take a reported one back, or claim a
+projection without the runtime change it projects.
 
-Configure reports two: the shared runtime changed, and the connection's
-projection of it caught up. Between them is the window that matters.
+So progress is a closed, ordered set recorded by the code that performs each
+step, and a step is marked as beginning *before* the effect can happen. The
+effect does not happen if that cannot be recorded: an effect nobody noted the
+intent for cannot afterwards be told from one that never happened. Nothing goes
+backwards, nothing finishes before it begins, and no step begins before the one
+it depends on has finished; anything else is refused rather than recorded. Only
+an operation being applied can report at all.
 
-`reconcile_abandoned` on the private frontend is the only thing that retires an
-abandoned operation, and `record_cleanup` is gone: there is no longer a way for
-a caller to assert a cleanup is done. The owner decides from the report. A
-Configure that reported neither step, or both, leaves nothing reachable
-disagreeing and is retired -- which says nothing is owed and nothing about what
-its client was told, and publishes nothing. One that reported changing the
-runtime and not the projection kept a residual obligation, and is retained with
-its credit. Every other kind is retained too: nothing reports what they did,
-and an absent report is not a report of nothing.
+That gives three states per step -- not started, in progress, completed -- and
+the middle one is the one that matters, because it is the honest answer for an
+operation that died inside its own effect.
 
-Everything else stays retained. Eight of the nine kinds are not instrumented,
-the per-kind obligations above remain open, and this closes one more of them.
+**What the reports prove, exactly one thing.** An operation whose first step
+never began cannot have had any effect, because beginning is recorded before the
+effect can happen. That is dischargeable, and discharging says nothing is owed;
+it says nothing about what the client was told, and publishes nothing.
+
+**What they do not prove.** Not agreement. The runtime guard is released before
+the projection is brought into line and neither report carries a revision, so a
+projection reported as agreeing can already have been overtaken by a later
+change. And the operation continues afterwards through fallible work -- geometry
+records, presentation, peer routing -- that the reports say nothing about. Two
+finished steps are history, not a statement about now. Every other state is
+retained with its credit: begun and unfinished, finished the runtime without
+projecting it, and finished both.
+
+Lock rank, since the reporter runs inside the applier: the runtime guard is
+released before its completion is reported, a connection's selections are taken
+before the completion registry, and the registry takes no other lock while it
+is held, so there is no other direction for either pair.
+
+Eight of the nine kinds report nothing at all and are retained. An absent report
+is not a report of nothing, which is the same mistake as inferring teardown from
+a stopped writer.
 
 What survives from the earlier draft is only the shape of the rule, not its
 application: discharging a cleanup means nothing reachable is left disagreeing,

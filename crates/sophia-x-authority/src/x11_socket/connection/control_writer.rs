@@ -332,6 +332,18 @@ fn spawn_x11_control_writer(
                         )?;
                         continue;
                     }
+                    // Recorded before the change can happen, and the change
+                    // does not happen if it cannot be recorded: an effect
+                    // nobody noted the intent for cannot afterwards be told
+                    // from one that never happened.
+                    channels
+                        .record_progress(completion, ControlProgress::RuntimeBegun)
+                        .map_err(|refusal| {
+                            X11SetupSocketError::new(format!(
+                                "X11 control could not record that it was about to change the \
+                                 runtime: {refusal:?}"
+                            ))
+                        })?;
                     let mut runtime =
                         lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
                     let previous_geometry = runtime.window_geometry(namespace, window).ok();
@@ -358,17 +370,36 @@ fn spawn_x11_control_writer(
                     // Reported by the code that did it, immediately after it
                     // succeeded. From here to the projection below is the
                     // window where this operation has changed shared state
-                    // that outlives the connection and the state derived
-                    // from it does not agree yet.
-                    channels.record_step(completion, |steps| steps.runtime = true);
+                    // that outlives the connection and the state derived from
+                    // it does not agree yet.
                     drop(runtime);
+                    // Reported after the guard goes, so this never holds the
+                    // runtime and the completion registry at once. Between the
+                    // change and this the step reads as in progress, which is
+                    // the safe reading: it says the effect may have happened,
+                    // and nothing is discharged on it.
+                    let _ = channels.record_progress(completion, ControlProgress::RuntimeApplied);
+                    channels
+                        .record_progress(completion, ControlProgress::ProjectionBegun)
+                        .map_err(|refusal| {
+                            X11SetupSocketError::new(format!(
+                                "X11 control could not record that it was about to project its \
+                                 runtime change: {refusal:?}"
+                            ))
+                        })?;
                     let mut selections = core_event_selections
                         .lock()
                         .map_err(|_| {
                             X11SetupSocketError::new("X11 core event selection lock poisoned")
                         })?;
                     selections.update_geometry(window, geometry);
-                    channels.record_step(completion, |steps| steps.projection = true);
+                    // Reported while the selections guard is held, because the
+                    // records below need it. Lock rank: a connection's
+                    // selections are taken before the completion registry, and
+                    // the registry takes nothing else while it is held, so
+                    // there is no other direction for this pair.
+                    let _ =
+                        channels.record_progress(completion, ControlProgress::ProjectionApplied);
                     if previous_geometry == Some(geometry) {
                         Vec::new()
                     } else {

@@ -9248,8 +9248,8 @@ fn an_operation_that_finished_applying_reports_it_and_owes_nothing() {
     assert_eq!(
         registry.steps_of(token),
         Some(crate::ControlSteps {
-            runtime: true,
-            projection: true
+            runtime: crate::ControlStepState::Completed,
+            projection: crate::ControlStepState::Completed
         })
     );
     // Its outcome is established even though the channel was full, so it is
@@ -9272,7 +9272,7 @@ fn an_operation_that_finished_applying_reports_it_and_owes_nothing() {
 }
 
 #[test]
-fn an_operation_that_reported_finishing_owes_nothing() {
+fn an_operation_that_reported_finishing_is_still_not_proved_to_agree() {
     let client = XServerFrontendClientId(361);
     let surface = SurfaceId::new(361, 1);
     let (acknowledgements, acks) = sync_channel(8);
@@ -9299,20 +9299,62 @@ fn an_operation_that_reported_finishing_owes_nothing() {
 
     // It reported finishing both steps, and then its executor went without
     // establishing an outcome.
-    registry.record_step(token, |steps| steps.runtime = true);
-    registry.record_step(token, |steps| steps.projection = true);
+    for progress in [
+        crate::ControlProgress::RuntimeBegun,
+        crate::ControlProgress::RuntimeApplied,
+        crate::ControlProgress::ProjectionBegun,
+        crate::ControlProgress::ProjectionApplied,
+    ] {
+        registry
+            .record_progress(token, progress)
+            .expect("an applying record in order");
+    }
     registry.writer_started(client);
     registry.writer_stopped(client);
     assert_eq!(registry.reconcile_client(client).abandoned, 1);
 
-    // Nothing reachable is left disagreeing, so nothing is owed. That is not
-    // a statement about what its client was told: no acknowledgement is
-    // invented and none is sent.
+    // Both steps finished, and that is history rather than a statement about
+    // now. The runtime guard was released before the projection was brought
+    // into line and neither report carries a revision, so a projection that
+    // agreed can have been overtaken; and the operation continues through
+    // fallible work after it that these reports say nothing about.
     let report = private.reconcile_abandoned();
     assert!(report.readable);
+    assert_eq!(report.discharged, 0);
+    assert_eq!(report.retained_unproved, 1);
+    assert_eq!(private.reclaim_settled(), 0, "so its credit stays held");
+    assert!(acks.try_recv().is_err(), "with nothing answered for it");
+}
+
+#[test]
+fn an_operation_whose_first_step_never_began_owes_nothing() {
+    let client = XServerFrontendClientId(364);
+    let surface = SurfaceId::new(364, 1);
+    let (acknowledgements, acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    private
+        .control_producer()
+        .submit(configure(client, surface, 62001))
+        .expect("the shared admission to accept control");
+    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+
+    // It never began anything, and beginning is recorded before an effect can
+    // happen, so this is evidence that nothing happened rather than an absence
+    // of evidence.
+    registry.writer_started(client);
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+
+    let report = private.reconcile_abandoned();
     assert_eq!(report.discharged, 1);
-    assert_eq!(report.retained_half_applied, 0);
-    assert_eq!(report.retained_unproved, 0);
+    assert_eq!(report.retained_in_progress, 0);
     assert_eq!(
         private.reclaim_settled(),
         1,
@@ -9320,6 +9362,49 @@ fn an_operation_that_reported_finishing_owes_nothing() {
     );
     assert_eq!(private.reclaim_settled(), 0);
     assert!(acks.try_recv().is_err(), "with nothing answered for it");
+}
+
+#[test]
+fn an_operation_interrupted_inside_a_step_is_not_one_that_never_began() {
+    let client = XServerFrontendClientId(365);
+    let surface = SurfaceId::new(365, 1);
+    let (acknowledgements, _acks) = sync_channel(8);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mut private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let registry = private
+        .broker
+        .registry
+        .control_completion()
+        .expect("a private instance to install one");
+    private
+        .control_producer()
+        .submit(configure(client, surface, 63001))
+        .expect("the shared admission to accept control");
+    let ran = private.route_pending().expect("a turn");
+    let Some(crate::PrivateIdentity::Control {
+        completion: Some(token),
+        ..
+    }) = ran.first().map(|run| run.identity)
+    else {
+        panic!("a control that names its registration");
+    };
+
+    // Begun and never reported finished: the writer went between noting the
+    // intent and the change succeeding. Reporting only after success cannot
+    // tell this from an operation that never began, and that gap is where the
+    // runtime ends up changed while the record says nothing happened.
+    registry
+        .record_progress(token, crate::ControlProgress::RuntimeBegun)
+        .expect("an applying record");
+    registry.writer_started(client);
+    registry.writer_stopped(client);
+    assert_eq!(registry.reconcile_client(client).abandoned, 1);
+
+    let report = private.reconcile_abandoned();
+    assert_eq!(report.discharged, 0, "the effect may have happened");
+    assert_eq!(report.retained_in_progress, 1);
+    assert_eq!(private.reclaim_settled(), 0, "so its credit stays held");
 }
 
 #[test]
@@ -9350,7 +9435,14 @@ fn an_operation_caught_between_its_steps_keeps_its_obligation() {
 
     // Caught between changing shared state and the state derived from it
     // catching up. This is what the writer reports having done at that point.
-    registry.record_step(token, |steps| steps.runtime = true);
+    for progress in [
+        crate::ControlProgress::RuntimeBegun,
+        crate::ControlProgress::RuntimeApplied,
+    ] {
+        registry
+            .record_progress(token, progress)
+            .expect("an applying record in order");
+    }
     registry.writer_started(client);
     registry.writer_stopped(client);
     assert_eq!(registry.reconcile_client(client).abandoned, 1);
@@ -9361,6 +9453,7 @@ fn an_operation_caught_between_its_steps_keeps_its_obligation() {
     let report = private.reconcile_abandoned();
     assert_eq!(report.retained_half_applied, 1);
     assert_eq!(report.discharged, 0);
+    assert_eq!(report.retained_in_progress, 0);
     assert_eq!(private.reclaim_settled(), 0);
     assert_eq!(
         registry.cleanups_owed().expect("a readable registry").len(),
@@ -9449,7 +9542,7 @@ fn an_unreadable_registry_settles_nothing_and_says_so() {
 }
 
 #[test]
-fn only_an_operation_being_applied_can_report_a_step() {
+fn only_an_operation_being_applied_can_report_progress() {
     let client = XServerFrontendClientId(363);
     let surface = SurfaceId::new(363, 1);
     let registry = crate::ControlCompletionRegistry::with_capacity(8).expect("an unused origin");
@@ -9458,14 +9551,19 @@ fn only_an_operation_being_applied_can_report_a_step() {
     // A reservation is its producer's and an accepted command has not
     // started, so neither has anything to report.
     let token = registry.register(command).expect("a fresh registry");
-    registry.record_step(token, |steps| steps.runtime = true);
-    assert_eq!(registry.steps_of(token), Some(crate::ControlSteps::default()));
+    assert_eq!(
+        registry.record_progress(token, crate::ControlProgress::RuntimeBegun),
+        Err(crate::ControlProgressRefusal::NotApplying)
+    );
     registry.writer_started(client);
     registry
         .begin_acceptance(token)
         .expect("a fresh reservation")
         .commit();
-    registry.record_step(token, |steps| steps.runtime = true);
+    assert_eq!(
+        registry.record_progress(token, crate::ControlProgress::RuntimeBegun),
+        Err(crate::ControlProgressRefusal::NotApplying)
+    );
     assert_eq!(registry.steps_of(token), Some(crate::ControlSteps::default()));
 
     // Applying is when there is something to report.
@@ -9473,12 +9571,19 @@ fn only_an_operation_being_applied_can_report_a_step() {
         registry.claim_execution(token),
         crate::ControlExecutionClaim::Claimed
     );
-    registry.record_step(token, |steps| steps.runtime = true);
+    for progress in [
+        crate::ControlProgress::RuntimeBegun,
+        crate::ControlProgress::RuntimeApplied,
+    ] {
+        registry
+            .record_progress(token, progress)
+            .expect("an applying record in order");
+    }
     assert_eq!(
         registry.steps_of(token),
         Some(crate::ControlSteps {
-            runtime: true,
-            projection: false
+            runtime: crate::ControlStepState::Completed,
+            projection: crate::ControlStepState::NotStarted
         })
     );
 
@@ -9493,12 +9598,111 @@ fn only_an_operation_being_applied_can_report_a_step() {
         ),
         Ok(ControlPublication::Retained)
     );
-    registry.record_step(token, |steps| steps.projection = true);
+    assert_eq!(
+        registry.record_progress(token, crate::ControlProgress::ProjectionBegun),
+        Err(crate::ControlProgressRefusal::NotApplying)
+    );
     assert_eq!(
         registry.steps_of(token),
         Some(crate::ControlSteps {
-            runtime: true,
-            projection: false
+            runtime: crate::ControlStepState::Completed,
+            projection: crate::ControlStepState::NotStarted
         })
+    );
+}
+
+#[test]
+fn progress_cannot_be_taken_back_or_skipped() {
+    let client = XServerFrontendClientId(366);
+    let surface = SurfaceId::new(366, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let token = accepted(&registry, configure(client, surface, 64001));
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+    let progressed = |steps: crate::ControlSteps| registry.steps_of(token) == Some(steps);
+
+    // A step cannot finish before it begins, and a projection cannot be
+    // claimed without the runtime change it projects. Both were reachable
+    // when a caller could set the state directly, and either one lets an
+    // operation report work nothing did.
+    for out_of_order in [
+        crate::ControlProgress::RuntimeApplied,
+        crate::ControlProgress::ProjectionBegun,
+        crate::ControlProgress::ProjectionApplied,
+    ] {
+        assert_eq!(
+            registry.record_progress(token, out_of_order),
+            Err(crate::ControlProgressRefusal::OutOfOrder),
+            "{out_of_order:?} before what it depends on"
+        );
+    }
+    assert!(progressed(crate::ControlSteps::default()));
+
+    registry
+        .record_progress(token, crate::ControlProgress::RuntimeBegun)
+        .expect("the first step");
+    // And it cannot begin twice, which would take the record backwards from
+    // whatever the first beginning already established.
+    assert_eq!(
+        registry.record_progress(token, crate::ControlProgress::RuntimeBegun),
+        Err(crate::ControlProgressRefusal::OutOfOrder)
+    );
+    assert!(progressed(crate::ControlSteps {
+        runtime: crate::ControlStepState::InProgress,
+        projection: crate::ControlStepState::NotStarted,
+    }));
+
+    registry
+        .record_progress(token, crate::ControlProgress::RuntimeApplied)
+        .expect("the runtime change");
+    assert_eq!(
+        registry.record_progress(token, crate::ControlProgress::ProjectionApplied),
+        Err(crate::ControlProgressRefusal::OutOfOrder),
+        "the projection cannot finish before it begins"
+    );
+    registry
+        .record_progress(token, crate::ControlProgress::ProjectionBegun)
+        .expect("the projection");
+    registry
+        .record_progress(token, crate::ControlProgress::ProjectionApplied)
+        .expect("the projection finishing");
+    assert!(progressed(crate::ControlSteps {
+        runtime: crate::ControlStepState::Completed,
+        projection: crate::ControlStepState::Completed,
+    }));
+}
+
+#[test]
+fn an_effect_whose_intent_cannot_be_recorded_does_not_happen() {
+    let client = XServerFrontendClientId(367);
+    let surface = SurfaceId::new(367, 1);
+    let registry = crate::ControlCompletionRegistry::with_capacity(4).expect("an unused origin");
+    let token = accepted(&registry, configure(client, surface, 65001));
+    assert_eq!(
+        registry.claim_execution(token),
+        crate::ControlExecutionClaim::Claimed
+    );
+
+    // A registration whose registry a writer cannot reach. Continuing would
+    // produce an effect nobody noted the intent for, and afterwards nothing
+    // could tell it from one that never happened -- which is exactly the
+    // state a discharge is read from.
+    let orphaned = X11ControlChannels::ClientBound {
+        receiver: channel().1,
+        acknowledgements: sync_channel(1).0,
+        completion: None,
+    };
+    assert_eq!(
+        orphaned.record_progress(Some(token), crate::ControlProgress::RuntimeBegun),
+        Err(crate::ControlProgressRefusal::Unavailable),
+        "so the caller is failed rather than allowed to continue"
+    );
+
+    // An operation no record governs is not gated by this at all.
+    assert_eq!(
+        orphaned.record_progress(None, crate::ControlProgress::RuntimeBegun),
+        Ok(())
     );
 }

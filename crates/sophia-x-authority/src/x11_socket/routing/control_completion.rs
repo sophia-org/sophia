@@ -63,27 +63,6 @@ impl ControlOperationIdentity {
     }
 }
 
-/// What an operation has actually done, recorded as it does it.
-///
-/// A snapshot of state taken afterwards is not proof: it can agree and be
-/// made wrong immediately, and it cannot tell an operation that never
-/// started from one that finished. What the operation reports as it goes
-/// is about what happened, which does not change afterwards.
-///
-/// Every step is recorded by the code that performs it, immediately after
-/// it succeeds, so a step that is set is a step that happened and a step
-/// that is not set either did not happen or was interrupted -- and those
-/// two are the same thing for anything that has to be answered later.
-#[cfg(unix)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ControlSteps {
-    /// The shared runtime has been changed. Outlives the connection.
-    pub runtime: bool,
-    /// The state derived from it, for this connection, agrees with the
-    /// change. Dies with the connection.
-    pub projection: bool,
-}
-
 /// How far one control operation has got.
 ///
 /// What is retained differs by phase, and collapsing the three loses the case
@@ -420,41 +399,6 @@ impl ControlCompletionRegistry {
         Some(ControlAcceptance {
             held: Some((inner, position)),
         })
-    }
-
-    /// Record a step this operation has just performed.
-    ///
-    /// Called by the code that performed it, immediately after it succeeded,
-    /// so what is recorded is what happened rather than what a later look at
-    /// the state suggests. Only an operation being applied is doing anything.
-    pub fn record_step(&self, token: ControlCompletionToken, step: impl FnOnce(&mut ControlSteps)) {
-        if token.origin != self.origin {
-            return;
-        }
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
-        let Some(record) = inner.records.iter_mut().find(|held| held.token == token) else {
-            return;
-        };
-        if !matches!(record.phase, ControlPhase::Applying(_)) {
-            return;
-        }
-        step(&mut record.steps);
-    }
-
-    /// What one operation reported doing, or `None` where there is no record
-    /// to ask or the registry cannot be read.
-    pub fn steps_of(&self, token: ControlCompletionToken) -> Option<ControlSteps> {
-        if token.origin != self.origin {
-            return None;
-        }
-        let inner = self.inner.lock().ok()?;
-        inner
-            .records
-            .iter()
-            .find(|held| held.token == token)
-            .map(|held| held.steps)
     }
 
     /// Claim execution before the first authoritative effect.

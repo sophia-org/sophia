@@ -70,6 +70,7 @@ include!("x11_socket/routing/control_transition.rs");
 include!("x11_socket/routing/private_settlement.rs");
 include!("x11_socket/routing/control_completion.rs");
 include!("x11_socket/routing/control_executors.rs");
+include!("x11_socket/routing/control_progress.rs");
 include!("x11_socket/routing/control_dependents.rs");
 include!("x11_socket/routing/control_publication.rs");
 include!("x11_socket/routing/recovery.rs");

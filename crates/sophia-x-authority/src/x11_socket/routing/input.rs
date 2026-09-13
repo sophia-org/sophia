@@ -411,18 +411,25 @@ impl X11ControlChannels {
         }
     }
 
-    /// Report a step this operation has just performed.
+    /// Report that this operation has reached one step.
     ///
-    /// The code that performed it reports it, immediately after it succeeded,
-    /// so what is recorded is what happened rather than what a later look at
-    /// the state suggests.
-    fn record_step(
+    /// Failing to record that a step is beginning prevents the step: an
+    /// effect nobody recorded the intent for cannot afterwards be told from
+    /// one that never happened.
+    fn record_progress(
         &self,
         token: Option<ControlCompletionToken>,
-        step: impl FnOnce(&mut ControlSteps),
-    ) {
-        if let (Some(registry), Some(token)) = (self.completion(), token) {
-            registry.record_step(token, step);
+        progress: ControlProgress,
+    ) -> Result<(), ControlProgressRefusal> {
+        match (self.completion(), token) {
+            (Some(registry), Some(token)) => registry.record_progress(token, progress),
+            // No record governs this operation, so there is nothing to report
+            // to and nothing gating the effect.
+            (_, None) => Ok(()),
+            // A registration whose registry cannot be reached. The effect must
+            // not happen: an effect nothing recorded the intent for cannot be
+            // told afterwards from one that never happened.
+            (None, Some(_)) => Err(ControlProgressRefusal::Unavailable),
         }
     }
 
