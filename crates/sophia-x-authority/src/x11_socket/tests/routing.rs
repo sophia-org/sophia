@@ -10526,6 +10526,117 @@ fn an_obligation_a_live_record_still_answers_for_is_not_published_here() {
 }
 
 #[test]
+fn a_full_channel_is_congestion_and_the_obligation_survives_it() {
+    let client = XServerFrontendClientId(382);
+    let surface = SurfaceId::new(382, 1);
+    let (acknowledgements, acks) = sync_channel(1);
+    acknowledgements
+        .try_send(completion_ack(
+            configure(client, surface, 1),
+            XAuthorityControlOutcome::Delivered,
+        ))
+        .expect("the empty slot");
+    let durable = crate::PrivateSettlementOwner::default();
+    let (private, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    private
+        .control_producer()
+        .submit(configure(client, surface, 79001))
+        .expect("the shared admission to accept control");
+    drop(private.shutdown());
+
+    // Driven repeatedly against a full channel. Each attempt establishes
+    // ownership and fails to send; none of them may conclude anything from
+    // that, because a full channel with a live receiver is congestion.
+    for attempt in 0..3 {
+        let progress = durable.drive();
+        assert!(progress.readable);
+        assert_eq!(progress.answered, 0, "attempt {attempt} answered nothing");
+        assert_eq!(durable.owed(), Some(1), "and kept it");
+        assert_eq!(durable.reserved(), Some(1), "with its credit");
+        assert_eq!(durable.indeterminate(), Some(0), "no attempt was interrupted");
+    }
+
+    // Drained, and the same obligation is answered once.
+    assert_eq!(
+        acks.try_recv().unwrap().acknowledgement.transaction,
+        TransactionId::from_raw(1)
+    );
+    let progress = durable.drive();
+    assert_eq!(progress.answered, 1);
+    assert_eq!(
+        acks.try_recv().unwrap().acknowledgement.transaction,
+        TransactionId::from_raw(79001),
+        "the exact obligation that was accepted"
+    );
+    assert_eq!(durable.owed(), Some(0));
+    assert_eq!(durable.reserved(), Some(0), "its credit returned");
+
+    // Repeat control: nothing is answered twice and no credit is released
+    // twice, whether by driving again or by restoring.
+    for _ in 0..3 {
+        assert_eq!(durable.drive().answered, 0);
+        assert_eq!(durable.restore_interrupted(), 0);
+    }
+    assert!(acks.try_recv().is_err(), "and only one acknowledgement went out");
+    assert_eq!(durable.reserved(), Some(0));
+}
+
+#[test]
+fn a_token_from_another_registry_is_not_permission_and_is_not_taken() {
+    let client = XServerFrontendClientId(383);
+    let surface = SurfaceId::new(383, 1);
+    let (acknowledgements, acks) = sync_channel(4);
+    let durable = crate::PrivateSettlementOwner::default();
+    let (mine, _channels, _registration, _deliveries) =
+        private_with_client(acknowledgements.clone(), &durable, client, surface);
+    let (theirs, _their_channels, _their_registration, _their_deliveries) =
+        private_with_client(acknowledgements, &durable, client, surface);
+    let their_completion = theirs
+        .broker
+        .registry
+        .control_completion()
+        .expect("a registry that issues completion records");
+
+    // Same client, same surface, same transaction. Only the registry that
+    // issued the registration differs, which is the whole identity here: a
+    // command's fields are not unique to one operation.
+    let command = configure(client, surface, 80001);
+    let foreign = accepted(&their_completion, command);
+    assert_eq!(their_completion.outstanding(), Some(1));
+
+    {
+        let mut held = durable.records_even_if_poisoned();
+        held.held.push((
+            mine.broker.registry.clone(),
+            PrivateOperation::Control(command, Some(foreign)),
+        ));
+        held.reserved = held.reserved.saturating_add(1);
+    }
+
+    let progress = durable.drive();
+    assert_eq!(
+        progress.answered, 0,
+        "one registry cannot answer for another's registration"
+    );
+    assert!(
+        acks.try_recv().is_err(),
+        "and must not publish on the strength of a record it did not issue"
+    );
+    assert_eq!(
+        their_completion.outstanding(),
+        Some(1),
+        "nor take a record belonging to another registry"
+    );
+    assert_eq!(durable.owed(), Some(1), "kept whole");
+    assert_eq!(durable.reserved(), Some(1), "with its credit");
+    assert_eq!(durable.outstanding(), Some(0), "and not counted as routed");
+
+    drop(mine);
+    drop(theirs);
+}
+
+#[test]
 fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
     let client = XServerFrontendClientId(377);
     let surface = SurfaceId::new(377, 1);
