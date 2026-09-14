@@ -214,6 +214,7 @@ pub struct LivePresentedInputProjection {
     pub descriptor_occlusion: Option<Rect>,
     pub descriptor_projection: Option<u64>,
     pub tab_occlusions: Vec<Rect>,
+    pub content: Option<sophia_engine::PresentedContentBinding>,
 }
 
 /// Retains policy order only for surfaces present in Engine's committed scene.
@@ -248,8 +249,17 @@ fn replace_displayed_surface(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LiveShellContentFrame {
     pub output: OutputId,
+    pub content_output: sophia_protocol::ContentOutputId,
+    pub grant: sophia_protocol::ContentGrant,
     pub candidate_generation: u64,
+    pub interaction_generation: u64,
     pub images: Vec<sophia_engine::CompositorContentImage>,
+    pub targets: Vec<sophia_engine::PresentedContentTarget>,
+    pub allocations: Vec<(
+        sophia_protocol::ContentAllocationId,
+        sophia_protocol::ContentLogicalRect,
+        sophia_protocol::ContentPixelRect,
+    )>,
 }
 
 pub struct LiveProductionVisualRuntime {
@@ -381,6 +391,7 @@ impl LiveProductionVisualRuntime {
                 descriptor_occlusion: None,
                 descriptor_projection: None,
                 tab_occlusions: Vec::new(),
+                content: None,
             })
             .collect();
         Ok(Self {

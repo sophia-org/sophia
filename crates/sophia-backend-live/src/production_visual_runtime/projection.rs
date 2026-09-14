@@ -1,5 +1,8 @@
 use super::*;
 
+mod content;
+use content::{content_binding_from_frame, presented_content_matches, same_content_binding};
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct LiveSurfaceProjectionMetadata {
     namespace: Option<NamespaceId>,
@@ -113,6 +116,9 @@ impl LiveProductionVisualRuntime {
                 None,
                 descriptor_targets,
                 descriptor_occlusion,
+                self.shell_content
+                    .get(&output)
+                    .map(content_binding_from_frame),
             );
         }
         tracing::trace!(
@@ -145,9 +151,10 @@ impl LiveProductionVisualRuntime {
                 chrome_occlusion,
                 descriptor_targets,
                 descriptor_occlusion,
+                content,
                 presented_scene_surfaces,
             ) = native_scanout.presented_output_frame(output).map_or_else(
-                || (Vec::new(), Vec::new(), None, Vec::new(), None, 0),
+                || (Vec::new(), Vec::new(), None, Vec::new(), None, None, 0),
                 |presented| {
                     let logical_viewport =
                         self.outputs.logical_viewport(output).unwrap_or_default();
@@ -170,6 +177,10 @@ impl LiveProductionVisualRuntime {
                         chrome_occlusion,
                         descriptor_targets,
                         descriptor_occlusion,
+                        self.shell_content.get(&output).and_then(|frame| {
+                            presented_content_matches(presented, frame)
+                                .then(|| content_binding_from_frame(frame))
+                        }),
                         presented.surfaces.len(),
                     )
                 },
@@ -181,6 +192,7 @@ impl LiveProductionVisualRuntime {
                 chrome_occlusion,
                 descriptor_targets,
                 descriptor_occlusion,
+                content,
             );
             tracing::trace!(
                 output = output.raw(),
@@ -199,6 +211,7 @@ impl LiveProductionVisualRuntime {
         chrome_occlusion: Option<Rect>,
         descriptor_targets: Vec<sophia_engine::PresentedChromeTarget>,
         descriptor_occlusion: Option<Rect>,
+        mut content: Option<sophia_engine::PresentedContentBinding>,
     ) {
         let Some(output) = self.input_projections.get(index).map(|p| p.output) else {
             return;
@@ -253,6 +266,7 @@ impl LiveProductionVisualRuntime {
             || projection.descriptor_occlusion != descriptor_occlusion
             || projection.descriptor_projection != descriptor_projection
             || projection.tab_occlusions != tab_occlusions
+            || !same_content_binding(projection.content.as_ref(), content.as_ref())
         {
             projection.epoch = projection
                 .epoch
@@ -266,6 +280,13 @@ impl LiveProductionVisualRuntime {
         projection.descriptor_occlusion = descriptor_occlusion;
         projection.descriptor_projection = descriptor_projection;
         projection.tab_occlusions = tab_occlusions;
+        if let Some(binding) = &mut content {
+            binding.presentation_epoch = projection.epoch.max(1);
+            for target in &mut binding.targets {
+                target.presentation_epoch = binding.presentation_epoch;
+            }
+        }
+        projection.content = content;
     }
 
     pub(super) fn compositor_layer_templates(&self) -> Vec<LayerSnapshot> {
@@ -758,6 +779,7 @@ mod tests {
             None,
             Vec::new(),
             None,
+            None,
         );
         assert_eq!(runtime.input_projections()[0].epoch, 1);
         assert_eq!(runtime.input_projections()[1].epoch, 0);
@@ -768,6 +790,7 @@ mod tests {
             Vec::new(),
             None,
             Vec::new(),
+            None,
             None,
         );
         assert_eq!(runtime.input_projections()[0].epoch, 1);
@@ -781,6 +804,7 @@ mod tests {
             None,
             Vec::new(),
             None,
+            None,
         );
         assert_eq!(runtime.input_projections()[0].epoch, 1);
         assert_eq!(runtime.input_projections()[1].epoch, 1);
@@ -791,6 +815,7 @@ mod tests {
             Vec::new(),
             None,
             Vec::new(),
+            None,
             None,
         );
         assert_eq!(runtime.input_projections()[0].epoch, 2);
@@ -835,6 +860,7 @@ mod tests {
             None,
             vec![target],
             Some(geometry),
+            None,
         );
         assert_eq!(runtime.input_projections()[0].epoch, 1);
 

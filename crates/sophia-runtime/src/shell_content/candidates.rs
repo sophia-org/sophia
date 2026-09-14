@@ -94,8 +94,10 @@ struct Candidate {
 /// until the renderer drops this value after native retirement.
 #[derive(Clone)]
 pub struct ContentRenderBundle {
+    pub grant: ContentGrant,
     pub output: ContentOutputId,
     pub candidate_generation: u64,
+    pub interaction_generation: u64,
     pub surfaces: Vec<ContentSurface>,
     pub placements: Vec<ContentPlacement>,
     pub targets: Vec<ContentTarget>,
@@ -555,8 +557,10 @@ impl ContentCandidateStore {
             return Err(ContentCandidateError::Stale);
         }
         let bundle = ContentRenderBundle {
+            grant: self.limits.grant,
             output,
             candidate_generation,
+            interaction_generation: candidate.begin.interaction_generation,
             surfaces: candidate.surfaces.clone(),
             placements: candidate.placements.clone(),
             targets: candidate.targets.clone(),
@@ -810,7 +814,27 @@ fn validate_targets(
             return Err(ContentCandidateError::Malformed);
         }
     }
+    for (index, left) in targets.iter().enumerate() {
+        for right in &targets[index + 1..] {
+            if left.surface_index == right.surface_index
+                && rectangles_overlap(left.bounds_px, right.bounds_px)
+            {
+                return Err(ContentCandidateError::Malformed);
+            }
+        }
+    }
     Ok(())
+}
+
+fn rectangles_overlap(left: ContentPixelRect, right: ContentPixelRect) -> bool {
+    let left_right = i64::from(left.x) + i64::from(left.width);
+    let left_bottom = i64::from(left.y) + i64::from(left.height);
+    let right_right = i64::from(right.x) + i64::from(right.width);
+    let right_bottom = i64::from(right.y) + i64::from(right.height);
+    i64::from(left.x) < right_right
+        && i64::from(right.x) < left_right
+        && i64::from(left.y) < right_bottom
+        && i64::from(right.y) < left_bottom
 }
 
 fn valid_chunk_rows(chunk: &ContentCandidateChunk, max_margin: u32) -> bool {

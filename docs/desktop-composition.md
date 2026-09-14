@@ -144,18 +144,18 @@ launcher. Its own configuration controls the choices and appearance settings
 those features support. Changing shells does not change the application's
 execution policy or give the WM access to shell metadata.
 
-The proposed content model would let a shell draw its own widgets, typography,
-and artwork. Sophia would still control placement, GPU composition, physical
-input, and presentation. Such a shell could provide a custom panel while using
-the existing descriptor launcher. These are capabilities of the one admitted
-native shell, not two native shell processes.
+The content model lets an admitted shell submit its own widgets, typography,
+and artwork while Sophia controls placement, composition, physical input, and
+presentation. Such a shell can provide a custom panel while using the existing
+descriptor launcher. These are capabilities of the one admitted native shell,
+not two native shell processes.
 
-Choosing that shell and permitting custom content would be separate operator
-decisions. Under the proposal, content is denied unless the session policy
-explicitly grants it at startup. The shell cannot grant itself more permission.
-The grant would be recorded with the effective profile. Content support and its
-configuration syntax do not exist yet; there is no setting to add to your
-current profile to enable it.
+Choosing that shell, permitting custom content, granting direct GPU execution,
+and admitting discrete content actions are separate operator decisions. The
+profile uses `content`, `gpu`, and `content-input`; each defaults denied. The
+shell cannot grant itself more permission, and the effective profile records
+the selected authority. Deterministic source gates cover these paths, while
+daily-driver native acceptance remains open.
 
 The added permission concerns what the shell can show you. A content shell
 could imitate a prompt or mislabel a button inside its own space, so you would
@@ -166,7 +166,7 @@ restrictions reduce visual freedom without promising that a shell can never
 mislead you.
 
 Your Quickshell X11 panel remains an ordinary application under its existing
-application policy. The proposed native-shell restrictions do not retroactively
+application policy. The native-shell restrictions do not retroactively
 confine it or grant it the native role. See the
 [content-shell proposal](content-shell.md) for the developer contract; X11
 compatibility and your current shell selection remain the development priority.

@@ -491,6 +491,7 @@ fn run_session_loop_inner(
     let k=&config.xkb_config;
     let mut launcher_keyboard=sophia_engine::LauncherKeyboard::new(&k.rules,&k.model,&k.layout,&k.variant,&k.options,&std::env::var_os("LC_ALL").or_else(||std::env::var_os("LC_CTYPE")).or_else(||std::env::var_os("LANG")).unwrap_or_else(||"C".into()))?;
     let mut descriptor_captures = sophia_engine::PresentedChromeCaptureState::default();
+    let mut content_captures = sophia_engine::ContentCaptureState::default();
     if native_scanout.is_some() {
         pointer.set_output_bounds(
             wm_output_bounds(&outputs)
@@ -697,6 +698,7 @@ fn run_session_loop_inner(
                 .cancel_all()
                 .len()
                 .saturating_add(descriptor_captures.cancel_all().len());
+            content_captures.revoke_targets();
             if revoked != 0 {
                 crate::session_println!(
                     "sophia_live_chrome_input schema=1 status=captures_cancelled reason={} count={revoked}",

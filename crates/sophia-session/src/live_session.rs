@@ -725,6 +725,7 @@ pub(crate) fn run_persistent_xterm_session(
                 process,
                 config.shell_panel_thickness,
                 config.shell_content_enabled,
+                config.shell_content_input_enabled,
                 config.shell_gpu_mode,
                 gpu_device,
                 config.shell_config.as_deref(),

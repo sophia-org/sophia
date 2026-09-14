@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use sophia_backend_live::LiveShellContentFrame;
@@ -5,6 +6,10 @@ use sophia_engine::{CompositorContentImage, CompositorNodeId, HeadlessOutput};
 use sophia_protocol::{ContentOutputId, OutputId, Rect, Size};
 use sophia_runtime::{ContentAllocationSnapshot, ContentRenderBundle};
 use sophia_runtime::{ShellSessionTransport, ShellTransportError};
+
+#[path = "content/actions.rs"]
+pub(in crate::live_session) mod actions;
+use actions::ContentActionLedger;
 
 const DRM_FORMAT_ARGB8888: u32 = u32::from_le_bytes(*b"AR24");
 
@@ -17,31 +22,39 @@ struct PendingPresentation {
     allocations: Vec<sophia_protocol::ContentAllocationId>,
 }
 
+#[derive(Clone, Debug, Default)]
+struct PresentedOutputContent {
+    bands: Vec<sophia_protocol::OutputReservation>,
+    allocations: Vec<(sophia_protocol::ContentAllocationId, u64)>,
+}
+
 pub(super) struct LiveContentSession {
     requested: bool,
+    input_requested: bool,
     panel_limit: Option<u16>,
     facts_generation: u64,
     published_facts: Vec<sophia_protocol::ContentOutputFactsEntry>,
     next_allocation_id: u64,
     next_permit_id: u64,
     pending: Vec<PendingPresentation>,
-    presented_bands: Vec<sophia_protocol::OutputReservation>,
-    presented_allocations: Vec<(sophia_protocol::ContentAllocationId, u64)>,
+    presented: BTreeMap<ContentOutputId, PresentedOutputContent>,
+    actions: ContentActionLedger,
     started: std::time::Instant,
 }
 
 impl LiveContentSession {
-    pub(super) fn new(requested: bool, panel_limit: Option<u16>) -> Self {
+    pub(super) fn new(requested: bool, input_requested: bool, panel_limit: Option<u16>) -> Self {
         Self {
             requested,
+            input_requested,
             panel_limit,
             facts_generation: 0,
             published_facts: Vec::new(),
             next_allocation_id: 1,
             next_permit_id: 1,
             pending: Vec::new(),
-            presented_bands: Vec::new(),
-            presented_allocations: Vec::new(),
+            presented: BTreeMap::new(),
+            actions: ContentActionLedger::default(),
             started: std::time::Instant::now(),
         }
     }
@@ -50,7 +63,7 @@ impl LiveContentSession {
         match self.requested {
             false => sophia_runtime::ShellContentAdmissionPolicy::Denied,
             true => sophia_runtime::ShellContentAdmissionPolicy::Granted {
-                discrete_input: false,
+                discrete_input: self.input_requested,
             },
         }
     }
@@ -59,10 +72,18 @@ impl LiveContentSession {
         self.facts_generation = 0;
         self.published_facts.clear();
         self.pending.clear();
+        self.actions.reset();
     }
 
-    pub(super) fn work_area_bands(&self) -> &[sophia_protocol::OutputReservation] {
-        &self.presented_bands
+    fn now_msec(&self) -> u64 {
+        u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+
+    pub(super) fn work_area_bands(&self) -> Vec<sophia_protocol::OutputReservation> {
+        self.presented
+            .values()
+            .flat_map(|presented| presented.bands.iter().cloned())
+            .collect()
     }
 
     pub(super) const fn owns_work_area(&self) -> bool {
@@ -87,10 +108,15 @@ impl LiveContentSession {
         if transport.content_grant().is_none() {
             return Ok(());
         }
-        let now = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let now = self.now_msec();
+        let presented_allocations = self
+            .presented
+            .values()
+            .flat_map(|presented| presented.allocations.iter().copied())
+            .collect::<Vec<_>>();
         transport.service_content_resources(now)?;
         self.publish_outputs(transport, outputs, transaction)?;
-        transport.service_content_allocation_requests(&self.presented_allocations, now)?;
+        transport.service_content_allocation_requests(&presented_allocations, now)?;
         while let Some((_, request)) = transport.next_content_allocation_request() {
             if request.operation == 3 {
                 transport.release_content_allocation(request.allocation_request_id)?;
@@ -101,7 +127,7 @@ impl LiveContentSession {
                 Ok(snapshot) => transport.grant_content_allocation(
                     request.allocation_request_id,
                     snapshot,
-                    &self.presented_allocations,
+                    &presented_allocations,
                 )?,
                 Err(error) => {
                     transport.reject_content_allocation(request.allocation_request_id, error)?
@@ -216,12 +242,17 @@ impl LiveContentSession {
             usage.retiring,
             usage.backing,
         );
-        self.presented_bands = pending.bands;
-        self.presented_allocations = pending
-            .allocations
-            .into_iter()
-            .map(|allocation| (allocation, epoch))
-            .collect();
+        self.presented.insert(
+            pending.output,
+            PresentedOutputContent {
+                bands: pending.bands,
+                allocations: pending
+                    .allocations
+                    .into_iter()
+                    .map(|allocation| (allocation, epoch))
+                    .collect(),
+            },
+        );
         Ok(true)
     }
 
@@ -700,10 +731,45 @@ pub(super) fn project_render_bundle(
     if images.is_empty() {
         return Err("content candidate has no visible placements");
     }
+    let mut allocation_rows = Vec::new();
+    let mut targets = Vec::with_capacity(bundle.targets.len());
+    for target in &bundle.targets {
+        let surface = bundle
+            .surfaces
+            .get(usize::from(target.surface_index))
+            .ok_or("content target names an absent surface")?;
+        let allocation = allocations
+            .iter()
+            .find(|candidate| candidate.allocation == surface.allocation)
+            .ok_or("content target names a lost allocation")?;
+        let row = (allocation.allocation, allocation.logical, allocation.pixel);
+        if !allocation_rows.contains(&row) {
+            allocation_rows.push(row);
+        }
+        targets.push(sophia_engine::PresentedContentTarget {
+            grant: bundle.grant,
+            output: bundle.output,
+            candidate_generation: bundle.candidate_generation,
+            presentation_epoch: 0,
+            interaction_generation: bundle.interaction_generation,
+            allocation: allocation.allocation,
+            allocation_logical: allocation.logical,
+            allocation_pixel: allocation.pixel,
+            target_id: target.target_id,
+            target_generation: target.target_generation,
+            action_id: target.action_id,
+            bounds_px: target.bounds_px,
+        });
+    }
     Ok(LiveShellContentFrame {
         output: OutputId::from_raw(output_identity.id),
+        content_output: output_identity,
+        grant: bundle.grant,
         candidate_generation: bundle.candidate_generation,
+        interaction_generation: bundle.interaction_generation,
         images,
+        targets,
+        allocations: allocation_rows,
     })
 }
 

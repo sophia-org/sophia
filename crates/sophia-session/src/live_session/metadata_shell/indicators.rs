@@ -61,10 +61,7 @@ impl LiveMetadataShell {
     /// screen the session was.
     pub(in crate::live_session) fn take_indicator_activation(
         &mut self,
-    ) -> Result<
-        Option<(sophia_protocol::OutputId, sophia_protocol::WmActionId)>,
-        Box<dyn std::error::Error>,
-    > {
+    ) -> Result<Option<LiveIndicatorActivationRequest>, Box<dyn std::error::Error>> {
         if !self.connected || !self.transport.supports_indicator_activation() {
             return Ok(None);
         }
@@ -77,29 +74,53 @@ impl LiveMetadataShell {
         let (tx, activation) = sophia_protocol::decode_shell_indicator_activation(&frame)
             .map_err(sophia_runtime::ShellTransportError::Codec)?;
 
-        let status =
+        let mut status =
             classify_indicator_activation(self.indicators.last_published.as_ref(), &activation);
+        if status == sophia_protocol::ShellIndicatorActivationStatus::Accepted
+            && !self.content_input_requested()
+        {
+            if activation.event_id <= self.indicators.direct_event_high_water {
+                status = sophia_protocol::ShellIndicatorActivationStatus::Stale;
+            } else {
+                self.indicators.direct_event_high_water = activation.event_id;
+            }
+        }
+        Ok(Some(LiveIndicatorActivationRequest {
+            transaction: tx,
+            activation,
+            status,
+        }))
+    }
 
+    pub(in crate::live_session) fn finish_indicator_activation(
+        &mut self,
+        request: LiveIndicatorActivationRequest,
+        status: sophia_protocol::ShellIndicatorActivationStatus,
+        reason: u16,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let outcome = sophia_protocol::ShellIndicatorActivationOutcome {
             connection_epoch: self.transport.connection_epoch(),
-            snapshot_generation: activation.snapshot_generation,
-            event_id: activation.event_id,
+            snapshot_generation: request.activation.snapshot_generation,
+            event_id: request.activation.event_id,
             status,
-            reason: 0,
+            reason,
         };
         self.transport.send_async(
-            sophia_protocol::encode_shell_indicator_activation_outcome(tx, &outcome)
-                .map_err(sophia_runtime::ShellTransportError::Codec)?,
+            sophia_protocol::encode_shell_indicator_activation_outcome(
+                request.transaction,
+                &outcome,
+            )
+            .map_err(sophia_runtime::ShellTransportError::Codec)?,
         )?;
-
-        if status == sophia_protocol::ShellIndicatorActivationStatus::Accepted {
-            return Ok(Some((
-                activation.output,
-                sophia_protocol::WmActionId::from_raw(activation.action),
-            )));
-        }
-        Ok(None)
+        Ok(())
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::live_session) struct LiveIndicatorActivationRequest {
+    pub(in crate::live_session) transaction: sophia_protocol::TransactionId,
+    pub(in crate::live_session) activation: sophia_protocol::ShellIndicatorActivation,
+    pub(in crate::live_session) status: sophia_protocol::ShellIndicatorActivationStatus,
 }
 
 /// Project a policy indicator publication onto the wire snapshot.
@@ -182,4 +203,5 @@ pub(in crate::live_session) fn classify_indicator_activation(
 #[derive(Default)]
 pub(in crate::live_session) struct LiveIndicatorState {
     pub(in crate::live_session) last_published: Option<ShellIndicatorSnapshot>,
+    direct_event_high_water: u64,
 }

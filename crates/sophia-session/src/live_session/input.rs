@@ -23,6 +23,7 @@ struct PhysicalInputRouteReport {
     launcher_events: Vec<sophia_engine::LauncherInputEvent>,
     reference_operations: Vec<(sophia_protocol::OutputId,u64,sophia_protocol::ShellReferenceOperation)>,
     chrome_activations: Vec<(sophia_protocol::OutputId, WmActionId)>,
+    content_activations: Vec<sophia_engine::PresentedContentTarget>,
     descriptor_activations: Vec<(sophia_protocol::ToplevelActionCapabilityRef, u64)>,
     chrome_captures_started: usize,
     chrome_actions_activated: usize,
@@ -191,6 +192,7 @@ type PointerInputProjection<'a> = (
     Option<sophia_protocol::Rect>,
     &'a [sophia_engine::PresentedChromeTarget],
     Option<sophia_protocol::Rect>,
+    Option<&'a sophia_engine::PresentedContentBinding>,
     Option<sophia_protocol::OutputId>,
     u64,
 );
@@ -209,7 +211,7 @@ fn input_projection_for_pointer<'a>(
     if let (Some(projections), Some(output)) = (projections,
         output_index.and_then(|i| pointer_outputs.and_then(|outputs| outputs.get(i))))
         && !projections.iter().any(|p| p.output == output.id) {
-        return (&[], &[], None, &[], None, Some(output.id), 0);
+        return (&[], &[], None, &[], None, None, Some(output.id), 0);
     }
     output_index
         .and_then(|index| pointer_outputs.and_then(|outputs| outputs.get(index)))
@@ -227,6 +229,7 @@ fn input_projection_for_pointer<'a>(
                 None,
                 &[],
                 None,
+                None,
                 fallback_output,
                 fallback_epoch,
             ),
@@ -237,6 +240,7 @@ fn input_projection_for_pointer<'a>(
                     projection.chrome_occlusion,
                     projection.descriptor_targets.as_slice(),
                     projection.descriptor_occlusion,
+                    projection.content.as_ref(),
                     Some(projection.output),
                     projection.epoch,
                 )
@@ -398,6 +402,7 @@ struct PhysicalInputRoutingContext<'a> {
     pending_lease_input: &'a mut PendingLeaseInput,
     chrome_captures: &'a mut sophia_engine::ChromeCaptureState,
     descriptor_captures: &'a mut sophia_engine::PresentedChromeCaptureState,
+    content_captures: &'a mut sophia_engine::ContentCaptureState,
     reference_capture: &'a mut sophia_engine::ReferenceSheetCapture,
     launcher_capture: &'a mut sophia_engine::LauncherCapture,
     launcher_keyboard: &'a mut sophia_engine::LauncherKeyboard,
@@ -444,6 +449,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         pending_lease_input,
         chrome_captures,
         descriptor_captures,
+        content_captures,
         reference_capture,
         launcher_capture,
         launcher_keyboard,
@@ -482,6 +488,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         Some(application_route_leases),
         Some(chrome_captures),
         Some(descriptor_captures),
+        Some(content_captures),
         Some(route_lease_release_sender),
         input_output,
         input_presentation_epoch,
@@ -631,6 +638,7 @@ fn route_input_events_with_pointer_focus(
         application_route_leases,
         chrome_captures,
         descriptor_captures,
+        None,
         route_lease_release_sender,
         input_output,
         input_presentation_epoch,
@@ -674,6 +682,7 @@ fn route_input_events_with_launcher(
     mut application_route_leases: Option<&mut ApplicationRouteLeaseState>,
     mut chrome_captures: Option<&mut sophia_engine::ChromeCaptureState>,
     mut descriptor_captures: Option<&mut sophia_engine::PresentedChromeCaptureState>,
+    mut content_captures: Option<&mut sophia_engine::ContentCaptureState>,
     route_lease_release_sender: Option<&SyncSender<XAuthorityRouteLeaseRelease>>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
@@ -692,6 +701,7 @@ fn route_input_events_with_launcher(
         launcher_events: Vec::new(),
         chrome_activations: Vec::new(),
         descriptor_activations: Vec::new(),
+        content_activations: Vec::new(),
         chrome_captures_started: 0,
         chrome_actions_activated: 0,
         chrome_captures_cancelled: 0,
@@ -1246,6 +1256,7 @@ fn route_input_events_with_launcher(
                     chrome_occlusion,
                     descriptor_targets,
                     descriptor_occlusion,
+                    content_binding,
                     input_output,
                     input_presentation_epoch,
                 ) =
@@ -1363,6 +1374,42 @@ fn route_input_events_with_launcher(
                             continue;
                         }
                         sophia_engine::ChromePointerDisposition::Consumed => {
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            continue;
+                        }
+                    }
+                }
+                if pointer_routing_enabled
+                    && let Some(state) = content_captures.as_deref_mut()
+                {
+                    match sophia_engine::resolve_content_pointer_event(
+                        state,
+                        event.seat,
+                        event.device,
+                        kind,
+                        event.global_position,
+                        content_binding,
+                        application_owned,
+                    ) {
+                        sophia_engine::ContentPointerDisposition::Pass => {}
+                        sophia_engine::ContentPointerDisposition::Activated(target) => {
+                            report.content_activations.push(target);
+                            report.chrome_actions_activated =
+                                report.chrome_actions_activated.saturating_add(1);
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            continue;
+                        }
+                        sophia_engine::ContentPointerDisposition::Captured => {
+                            report.chrome_captures_started =
+                                report.chrome_captures_started.saturating_add(1);
+                            report.chrome_events_consumed =
+                                report.chrome_events_consumed.saturating_add(1);
+                            continue;
+                        }
+                        sophia_engine::ContentPointerDisposition::Cancelled
+                        | sophia_engine::ContentPointerDisposition::Consumed => {
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
                             continue;

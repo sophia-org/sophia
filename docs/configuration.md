@@ -305,6 +305,17 @@ retired `gpu-memory-bytes` form with an actionable migration diagnostic rather
 than silently weakening a requested quota. Content may remain CPU-rendered with
 `gpu "denied"`; direct GPU permission also requires an enabled shell process.
 
+`content-input #true` separately admits the bounded discrete-input workflow for
+presented shell targets. It defaults to false and is invalid unless `content
+#true` is also set. This permission does not grant pointer coordinates, motion,
+keyboard input, application identity, or an ambient toolkit input stream. Engine
+selects a target from the exact native-presented content candidate, captures the
+press/release sequence, and sends only the target-bound action identity. The
+shell acknowledges that action and may echo its already-published opaque
+indicator action; Session reports acceptance only after the WM admits the
+operation. This keeps drawing, input admission, and WM authority as separate
+profile and lifecycle decisions.
+
 Direct mode exposes exactly the selected render node under its kernel
 `/dev/dri/renderD<minor>` basename and binds its kernel identity to the shell
 connection epoch. It also supplies a generated read-only sysfs view containing

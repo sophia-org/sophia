@@ -84,6 +84,7 @@ struct PersistentXtermSessionConfig {
     shell_config: Option<std::path::PathBuf>,
     shell_panel_thickness: Option<u16>,
     shell_content_enabled: bool,
+    shell_content_input_enabled: bool,
     shell_gpu_mode: sophia_config::ShellGpuMode,
     shell_proof_restart_after_visible: Option<u32>,
     wm_interface: sophia_config::ExternalWmInterface,
@@ -832,6 +833,8 @@ impl PersistentXtermSessionConfig {
         }
         let shell_content_enabled =
             sophia_config::desktop_profile_shell_content_enabled(&desktop_profile);
+        let shell_content_input_enabled =
+            sophia_config::desktop_profile_shell_content_input_enabled(&desktop_profile);
         let shell_gpu_mode = sophia_config::desktop_profile_shell_gpu_mode(&desktop_profile);
         if shell_content_enabled {
             if shell_process.is_none() {
@@ -840,6 +843,9 @@ impl PersistentXtermSessionConfig {
             if shell_panel_thickness.is_none() {
                 return Err("shell content requires a positive shell { panel } allowance".into());
             }
+        }
+        if shell_content_input_enabled && !shell_content_enabled {
+            return Err("shell { content-input #true; } requires shell { content #true; }".into());
         }
         if shell_gpu_mode == sophia_config::ShellGpuMode::Direct && shell_process.is_none() {
             return Err("shell { gpu \"direct\"; } requires an enabled shell".into());
@@ -1070,6 +1076,7 @@ impl PersistentXtermSessionConfig {
             shell_config,
             shell_panel_thickness,
             shell_content_enabled,
+            shell_content_input_enabled,
             shell_gpu_mode,
             shell_proof_restart_after_visible,
             wm_interface,

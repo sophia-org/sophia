@@ -191,6 +191,15 @@ Route workspace intent through the existing authorized indicator action token;
 do not turn a widget index into a capability or reuse unrelated toplevel actions.
 Do not synthesize a general pointer stream for a toolkit.
 
+Implemented in the t098 source tranche: the profile has an independent,
+default-denied `content-input` choice; native retirement publishes the exact
+candidate target table; Engine owns capture and release suppression; and the
+Session action ledger keeps content acknowledgement separate from WM admission.
+Lom derives the target rectangles and retained TEA meanings from the same
+Masonry layout used to render the candidate. Deterministic reducer, transport,
+projection and model gates cover this source boundary. Native pointer acceptance
+remains part of t008/t081 and is not inferred from those headless checks.
+
 Exit: model controls and deterministic production-owner/private-socket tests
 prove one correct action and reject unpresented, stale, duplicate, revoked,
 old-epoch, wrong-output and changed-meaning targets. Delayed rendering cannot

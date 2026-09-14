@@ -114,6 +114,7 @@ fn projection(layers: Vec<LayerSnapshot>) -> sophia_backend_live::LivePresentedI
         chrome_occlusion: None,
         descriptor_targets: Vec::new(),
         descriptor_occlusion: None,
+        content: None,
         descriptor_projection: None,
         tab_occlusions: Vec::new(),
     }
@@ -642,6 +643,7 @@ fn a_bound_grab_routes_physical_motion_and_release_after_a_scene_change() {
         Some(target),
         None,
         Some(&mut state),
+        None,
         None,
         None,
         Some(&release_sender),

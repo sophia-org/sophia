@@ -4,6 +4,7 @@ policy { layout "scroller"; }
 shell {
     enabled #true
     content #true
+    content-input #true
     panel 24
     gpu "direct"
 }

@@ -47,6 +47,7 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
         None,
         Vec::new(),
         Some(geometry),
+        None,
     );
     assert_eq!(
         runtime.descriptor_overlay_presentation_epoch(output.id, 9, true),
@@ -66,6 +67,7 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
         None,
         Vec::new(),
         Some(geometry),
+        None,
     );
     assert!(
         runtime
@@ -79,7 +81,15 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
         None
     );
     runtime.tab_frames.remove(&output.id);
-    runtime.replace_presented_input_projection(0, Vec::new(), Vec::new(), None, Vec::new(), None);
+    runtime.replace_presented_input_projection(
+        0,
+        Vec::new(),
+        Vec::new(),
+        None,
+        Vec::new(),
+        None,
+        None,
+    );
     assert!(
         runtime
             .descriptor_overlay_presentation_epoch(output.id, 9, false)

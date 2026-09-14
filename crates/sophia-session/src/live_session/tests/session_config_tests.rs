@@ -325,19 +325,24 @@ fn production_content_requires_the_complete_explicit_shell_authority() {
         std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
     };
 
-    write("schema 1\nshell { enabled #true; content #true; panel 32; gpu \"direct\"; }\n");
+    write(
+        "schema 1\nshell { enabled #true; content #true; content-input #true; panel 32; gpu \"direct\"; }\n",
+    );
     let config = PersistentXtermSessionConfig::from_args(&arguments(&profile)).unwrap();
     assert!(config.shell_content_enabled);
+    assert!(config.shell_content_input_enabled);
     assert_eq!(config.shell_gpu_mode, sophia_config::ShellGpuMode::Direct);
 
     write("schema 1\nshell { enabled #true; content #true; panel 32; }\n");
     let config = PersistentXtermSessionConfig::from_args(&arguments(&profile)).unwrap();
     assert!(config.shell_content_enabled);
+    assert!(!config.shell_content_input_enabled);
     assert_eq!(config.shell_gpu_mode, sophia_config::ShellGpuMode::Denied);
 
     for source in [
         "schema 1\nshell { enabled #true; content #true; gpu \"direct\"; }\n",
         "schema 1\nshell { enabled #true; content #true; panel 32; gpu-memory-bytes 268435456; }\n",
+        "schema 1\nshell { enabled #true; content-input #true; panel 32; }\n",
     ] {
         write(source);
         assert!(PersistentXtermSessionConfig::from_args(&arguments(&profile)).is_err());

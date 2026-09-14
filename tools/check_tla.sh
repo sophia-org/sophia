@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership PresentMixedOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration PointerGrabAdmission FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation ShellContentLifecycle ShellContentBundleComposition ShellGpuLaunchAdmission InputDeliveryRecovery XAuthorityShutdown; do
+for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership PresentMixedOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration PointerGrabAdmission FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation ShellContentLifecycle ShellContentBundleComposition ShellPresentedContentAction ShellGpuLaunchAdmission InputDeliveryRecovery XAuthorityShutdown; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (
@@ -393,6 +393,58 @@ grep -Fq 'Invariant PresentedBundleHasLiveContent is violated.' "$log" || {
     echo "TLA+ latched-readiness control failed for the wrong reason" >&2
     exit 1
 }
+
+# A content target is input authority only after exact native presentation.
+# Revocation and replacement suppress its later release without exposing that
+# release to an application, while shell acknowledgement and WM admission keep
+# their independent settlement boundaries.
+for control in \
+    ShellPresentedContentActionCapturePrepared \
+    ShellPresentedContentActionRoutesRevokedRelease \
+    ShellPresentedContentActionRoutesReplacedRelease \
+    ShellPresentedContentActionClickThrough \
+    ShellPresentedContentActionAckWaitsForWm \
+    ShellPresentedContentActionAcceptsBeforeAdmission; do
+    control_dir="$TEMP_DIR/$control"
+    mkdir "$control_dir"
+    cp "$MODEL_DIR/ShellPresentedContentAction.tla" "$control_dir/"
+    cp "$MODEL_DIR/$control.cfg" "$control_dir/"
+    log="$control_dir/control.log"
+    if (
+        cd "$control_dir"
+        timeout 30m java -XX:+UseParallelGC -jar "$JAR_PATH" \
+            -deadlock -workers 1 -fp 0 -config "$control.cfg" \
+            ShellPresentedContentAction.tla
+    ) >"$log" 2>&1; then
+        echo "TLA+ shell content-action negative control unexpectedly passed: $control" >&2
+        exit 1
+    fi
+    case "$control" in
+        ShellPresentedContentActionCapturePrepared)
+            invariant=CapturesNameExactPresentedContent
+            ;;
+        ShellPresentedContentActionRoutesRevokedRelease)
+            invariant=RevokedReleaseIsSuppressed
+            ;;
+        ShellPresentedContentActionRoutesReplacedRelease)
+            invariant=ReplacedReleaseIsSuppressed
+            ;;
+        ShellPresentedContentActionClickThrough)
+            invariant=NoClickThrough
+            ;;
+        ShellPresentedContentActionAckWaitsForWm)
+            invariant=AckIndependentFromWmOutcome
+            ;;
+        ShellPresentedContentActionAcceptsBeforeAdmission)
+            invariant=AcceptedOnlyAfterWmAdmission
+            ;;
+    esac
+    grep -Fq "Invariant $invariant is violated." "$log" || {
+        echo "TLA+ shell content-action control failed for the wrong reason: $control" >&2
+        cat "$log" >&2
+        exit 1
+    }
+done
 
 for control in InputDeliveryRecoveryNoDeadline InputDeliveryRecoveryEarlyBarrier; do
     control_dir="$TEMP_DIR/$control"

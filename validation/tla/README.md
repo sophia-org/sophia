@@ -394,6 +394,38 @@ configuration explores 883 generated states and 161 distinct states.
 revalidating, and must violate `Invariant PresentedBundleHasLiveContent`.
 `tools/check_tla.sh` verifies that exact failure.
 
+`ShellPresentedContentAction.tla` owns the discrete-input seam after a complete
+content candidate reaches native presentation. Prepared and presented target
+identities are separate, and capture records the complete shell, output,
+allocation, candidate, presentation, interaction and target identity. A new
+presentation, interaction revocation or shell replacement invalidates capture;
+the later physical release is consumed but cannot emit a stale shell action or
+fall through to an application. Content-action acknowledgement settles when the
+shell reply is reduced, independently of the later authorized WM activation,
+and an `Accepted` activation outcome is possible only after WM admission.
+
+The checked configuration explores 3,115 generated states and 1,476 distinct
+states to depth 23. Six retained controls make each boundary executable:
+
+- capturing the prepared candidate violates
+  `CapturesNameExactPresentedContent`;
+- routing a release after interaction revocation violates
+  `RevokedReleaseIsSuppressed`;
+- routing a release after presentation or shell replacement violates
+  `ReplacedReleaseIsSuppressed`;
+- allowing a suppressed release to reach an application violates
+  `NoClickThrough`;
+- delaying shell acknowledgement until a WM outcome violates
+  `AckIndependentFromWmOutcome`; and
+- publishing `Accepted` before WM admission violates
+  `AcceptedOnlyAfterWmAdmission`.
+
+The model is a bounded safety model. It does not model coordinates, native
+renderer objects, transport bytes, queue capacities, action deadlines or WM
+policy semantics after admission. Production-owner tests retain responsibility
+for those implementation boundaries and for distinguishing queued, routed and
+client-observed outcomes.
+
 `PixelSilentAdmission.tla` distinguishes presentation intent from complete
 pixels. A first timeout without a safe extent preserves the standing target,
 owner loop, and one bounded retry. Later pixels may complete admission;

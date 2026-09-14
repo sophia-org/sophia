@@ -105,6 +105,7 @@ impl LiveMetadataShell {
         executable: &str,
         panel_thickness: Option<u16>,
         content_requested: bool,
+        content_input_requested: bool,
         gpu_mode: sophia_config::ShellGpuMode,
         gpu_device: Option<sophia_backend_live::LiveRenderDeviceIdentitySnapshot>,
         selected_config: Option<&std::path::Path>,
@@ -151,7 +152,11 @@ impl LiveMetadataShell {
         let gpu = gpu::ShellGpuLaunchPolicy::new(gpu_mode, gpu_device)?;
         let supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec.clone());
         let mut shell = Self {
-            content: content::LiveContentSession::new(content_requested, panel_thickness),
+            content: content::LiveContentSession::new(
+                content_requested,
+                content_input_requested,
+                panel_thickness,
+            ),
             tabs: LiveTabSession::default(),
             indicators: indicators::LiveIndicatorState::default(),
             reference: LiveReferenceSession::default(),
@@ -599,7 +604,7 @@ impl LiveMetadataShell {
     /// The shell's committed work-area claim, as bands the reduction consumes.
     pub(super) fn work_area_bands(&self) -> Vec<sophia_protocol::OutputReservation> {
         if self.content.owns_work_area() {
-            self.content.work_area_bands().to_vec()
+            self.content.work_area_bands()
         } else {
             self.reservations.active_bands()
         }
@@ -780,6 +785,7 @@ impl LiveMetadataShell {
         self.presented = None;
         self.presented_actions.clear();
         self.content.reset_connection();
+        self.indicators = indicators::LiveIndicatorState::default();
         // The in-flight claim dies with the connection. The presented one is
         // deliberately retained beside the inert pixels: growing the work area
         // while no shell can reproject it is the half-new desktop the

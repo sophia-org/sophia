@@ -42,6 +42,7 @@ fn route_overlay_input(
         None,
         None,
         None,
+        None,
         Some(OutputId::from_raw(1)),
         7,
         None,

@@ -128,6 +128,11 @@ grep -q '^[[:space:]]*startup$' \
     echo "native panel profile does not explicitly select an empty startup set" >&2
     exit 1
 }
+grep -q '^[[:space:]]*content-input #true$' \
+    "$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl" || {
+    echo "native panel profile does not admit discrete content input" >&2
+    exit 1
+}
 grep -q 'application-catalog "lom-panel-gate" launch-policy="trusted-host"' \
     "$ROOT_DIR/tools/fixtures/lom_panel_core.kdl" || {
     echo "native panel core fixture does not define its admitted catalog" >&2

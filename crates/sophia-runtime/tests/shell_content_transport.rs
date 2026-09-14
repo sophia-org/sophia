@@ -559,6 +559,102 @@ fn invalid_allocation_request_gets_a_correlated_result_without_closing_the_peer(
     session.disconnect().unwrap();
 }
 
+#[test]
+fn a_discrete_action_and_its_exact_ack_cross_the_real_socket() {
+    let mut session = ShellSessionTransport::bind_for_supervised_uid(
+        directory(),
+        rustix::process::geteuid().as_raw(),
+    )
+    .unwrap();
+    session.authorize_protected_peer(&evidence()).unwrap();
+    let socket = session.socket_path().to_path_buf();
+    let client = std::thread::spawn(move || {
+        let capabilities = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
+            | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+            | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT;
+        let mut client = ShellConnection::connect(
+            socket,
+            ShellClientOptions {
+                minimum_revision: 5,
+                maximum_revision: 6,
+                required_capabilities: capabilities,
+                handshake_timeout: Duration::from_secs(2),
+            },
+        )
+        .unwrap();
+        let ShellContentRecord::Limits(_) = next_content(&mut client) else {
+            panic!("expected limits");
+        };
+        let ShellContentRecord::Action(action) = next_content(&mut client) else {
+            panic!("expected discrete action");
+        };
+        client
+            .send_content(
+                TransactionId::from_raw(51),
+                &ShellContentRecord::ActionAck(ContentActionAck {
+                    grant: action.grant,
+                    output: action.output,
+                    candidate_generation: action.candidate_generation,
+                    presentation_epoch: action.presentation_epoch,
+                    interaction_generation: action.interaction_generation,
+                    allocation: action.allocation,
+                    target_id: action.target_id,
+                    target_generation: action.target_generation,
+                    action_id: action.action_id,
+                    event_id: action.event_id,
+                    disposition: 1,
+                }),
+            )
+            .unwrap();
+    });
+    session
+        .accept_and_negotiate_with_content_policy(
+            1,
+            Duration::from_secs(2),
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: true,
+            },
+        )
+        .unwrap();
+    let grant = session.content_grant().unwrap();
+    let action = ContentAction {
+        grant,
+        output: ContentOutputId {
+            id: 2,
+            generation: 3,
+        },
+        candidate_generation: 4,
+        presentation_epoch: 5,
+        interaction_generation: 1,
+        allocation: ContentAllocationId {
+            id: 6,
+            generation: 7,
+        },
+        target_id: 8,
+        target_generation: 9,
+        action_id: 10,
+        event_id: 11,
+        kind: 1,
+        reason: ContentReason::None as u16,
+    };
+    session
+        .send_content_action(TransactionId::from_raw(50), &action)
+        .unwrap();
+    let start = Instant::now();
+    let ack = loop {
+        if let Some((transaction, ack)) = session.poll_content_action_ack().unwrap() {
+            break (transaction, ack);
+        }
+        assert!(start.elapsed() < Duration::from_secs(2));
+        std::thread::yield_now();
+    };
+    assert_eq!(ack.0, TransactionId::from_raw(51));
+    assert_eq!(ack.1.event_id, action.event_id);
+    assert_eq!(ack.1.disposition, 1);
+    client.join().unwrap();
+    session.disconnect().unwrap();
+}
+
 fn resource_id(id: u64) -> ContentResourceId {
     ContentResourceId { id, generation: 1 }
 }

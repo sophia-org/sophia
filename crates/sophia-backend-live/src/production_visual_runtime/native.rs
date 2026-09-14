@@ -324,6 +324,7 @@ impl LiveProductionVisualRuntime {
                 descriptor_occlusion: None,
                 descriptor_projection: None,
                 tab_occlusions: Vec::new(),
+                content: None,
             })
             .collect();
         Ok(LiveProductionNativeSuspendReport {
@@ -501,6 +502,7 @@ impl LiveProductionVisualRuntime {
                 descriptor_occlusion: None,
                 descriptor_projection: None,
                 tab_occlusions: Vec::new(),
+                content: None,
             })
             .collect();
         self.translations.settle();

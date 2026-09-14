@@ -725,9 +725,15 @@ fn validate_setting(
         // Policy is an ordered WM-owned payload. Its vocabulary and values
         // are admitted by the selected WM before profile activation.
         DesktopAuthority::Policy => true,
-        DesktopAuthority::Shell => {
-            ["enabled", "panel", "content", "gpu", "gpu-memory-bytes"].contains(&name)
-        }
+        DesktopAuthority::Shell => [
+            "enabled",
+            "panel",
+            "content",
+            "content-input",
+            "gpu",
+            "gpu-memory-bytes",
+        ]
+        .contains(&name),
         DesktopAuthority::Shortcut => ["profile", "bind", "pointer-bind"].contains(&name),
         DesktopAuthority::Session => [
             "application",
@@ -755,7 +761,7 @@ fn validate_setting(
         )));
     }
     if authority == DesktopAuthority::Shell
-        && ["enabled", "content"].contains(&name)
+        && ["enabled", "content", "content-input"].contains(&name)
         && (node.entries().len() != 1
             || node.children().is_some()
             || node.get(0).and_then(|value| value.as_bool()).is_none())
@@ -838,6 +844,29 @@ pub fn desktop_profile_shell_content_enabled(profile: &DesktopProfileGeneration)
                 .values
                 .iter()
                 .find(|value| value.key == "shell.content")
+        })
+        .and_then(|value| KdlDocument::parse_v2(&value.encoded).ok())
+        .and_then(|document| {
+            (document.nodes().len() == 1)
+                .then(|| document.nodes()[0].get(0).and_then(|value| value.as_bool()))
+                .flatten()
+        })
+        .unwrap_or(false)
+}
+
+/// Returns the explicit permission for target-bound discrete shell actions.
+///
+/// This is independent of ordinary pointer routing. Absence is denial, and
+/// Session additionally requires the content owner itself to be enabled.
+pub fn desktop_profile_shell_content_input_enabled(profile: &DesktopProfileGeneration) -> bool {
+    profile
+        .candidates
+        .get(&DesktopAuthority::Shell)
+        .and_then(|candidate| {
+            candidate
+                .values
+                .iter()
+                .find(|value| value.key == "shell.content-input")
         })
         .and_then(|value| KdlDocument::parse_v2(&value.encoded).ok())
         .and_then(|document| {

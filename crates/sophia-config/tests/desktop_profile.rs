@@ -9,13 +9,14 @@ use sophia_config::{
     DesktopOutputVrrMode, DesktopPointerAccelProfile, DesktopProfileActivationKey,
     DesktopProfileError, DesktopSessionShortcut, DesktopShortcutBindingKind,
     DesktopShortcutModifiers, DesktopShortcutTarget, SHELL_PANEL_MAX_THICKNESS_PX, ShellGpuMode,
-    desktop_profile_shell_content_enabled, desktop_profile_shell_enabled,
-    desktop_profile_shell_gpu_mode, desktop_profile_shell_panel_thickness,
-    discover_desktop_profile_source, load_desktop_authority_fragment, load_desktop_profile,
-    load_prepared_desktop_profile, prepare_desktop_input_candidate,
-    prepare_desktop_output_candidate, prepare_desktop_profile_candidates,
-    prepare_desktop_session_candidate, prepare_desktop_shortcut_candidate, restage_desktop_profile,
-    stage_desktop_profile, validate_desktop_profile_fragments,
+    desktop_profile_shell_content_enabled, desktop_profile_shell_content_input_enabled,
+    desktop_profile_shell_enabled, desktop_profile_shell_gpu_mode,
+    desktop_profile_shell_panel_thickness, discover_desktop_profile_source,
+    load_desktop_authority_fragment, load_desktop_profile, load_prepared_desktop_profile,
+    prepare_desktop_input_candidate, prepare_desktop_output_candidate,
+    prepare_desktop_profile_candidates, prepare_desktop_session_candidate,
+    prepare_desktop_shortcut_candidate, restage_desktop_profile, stage_desktop_profile,
+    validate_desktop_profile_fragments,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -985,11 +986,12 @@ fn shell_content_and_direct_gpu_permission_are_explicit_and_independent() {
     let path = root.join("config.kdl");
     write_profile(
         &path,
-        "schema 1\nshell { enabled #true; content #true; panel 32; gpu \"direct\"; }\n",
+        "schema 1\nshell { enabled #true; content #true; content-input #true; panel 32; gpu \"direct\"; }\n",
     );
     let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
 
     assert!(desktop_profile_shell_content_enabled(&profile));
+    assert!(desktop_profile_shell_content_input_enabled(&profile));
     assert_eq!(
         desktop_profile_shell_gpu_mode(&profile),
         ShellGpuMode::Direct
@@ -1008,6 +1010,7 @@ fn old_and_descriptor_only_profiles_do_not_gain_content_permission() {
         write_profile(&path, source);
         let profile = load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
         assert!(!desktop_profile_shell_content_enabled(&profile));
+        assert!(!desktop_profile_shell_content_input_enabled(&profile));
         assert_eq!(
             desktop_profile_shell_gpu_mode(&profile),
             ShellGpuMode::Denied
@@ -1021,6 +1024,9 @@ fn shell_content_profile_fields_are_exact() {
         "schema 1\nshell { content; }\n",
         "schema 1\nshell { content 1; }\n",
         "schema 1\nshell { content #true #false; }\n",
+        "schema 1\nshell { content-input; }\n",
+        "schema 1\nshell { content-input 1; }\n",
+        "schema 1\nshell { content-input #true #false; }\n",
         "schema 1\nshell { gpu; }\n",
         "schema 1\nshell { gpu 1; }\n",
         "schema 1\nshell { gpu \"direct\" \"denied\"; }\n",

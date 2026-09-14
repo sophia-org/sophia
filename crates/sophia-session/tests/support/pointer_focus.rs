@@ -281,6 +281,7 @@ fn an_unpresented_second_output_never_borrows_primary_input_authority() {
         chrome_occlusion: None,
         descriptor_targets: vec![],
         descriptor_occlusion: None,
+        content: None,
         descriptor_projection: None,
         tab_occlusions: vec![],
     };
@@ -293,8 +294,8 @@ fn an_unpresented_second_output_never_borrows_primary_input_authority() {
         Some(outputs[0].id),
         99,
     );
-    assert_eq!(result.5, Some(outputs[1].id));
-    assert_eq!(result.6, 0);
+    assert_eq!(result.6, Some(outputs[1].id));
+    assert_eq!(result.7, 0);
 }
 
 #[test]

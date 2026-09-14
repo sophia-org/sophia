@@ -25,6 +25,7 @@ use crate::{
     PolicyRoleEndpoint, PolicyRoleEndpointError, ProtectionDomainEvidence,
 };
 
+mod content_actions;
 mod content_admission;
 mod content_allocations;
 mod content_candidates;
@@ -165,6 +166,10 @@ impl ShellSessionTransport {
 
     pub const fn connection_epoch(&self) -> u64 {
         self.connection_epoch
+    }
+
+    pub fn content_limits(&self) -> Option<&ContentLimits> {
+        self.content_limits.as_ref()
     }
 
     pub fn accept_and_negotiate(

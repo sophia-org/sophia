@@ -94,6 +94,7 @@ macro_rules! drain_physical_input {
                     pending_lease_input: &mut pending_lease_input,
                     chrome_captures: &mut chrome_captures,
                     descriptor_captures: &mut descriptor_captures,
+                    content_captures: &mut content_captures,
                     reference_capture: &mut reference_capture,
                     launcher_capture: &mut launcher_capture,
                     launcher_keyboard: &mut launcher_keyboard,
@@ -483,6 +484,15 @@ macro_rules! drain_physical_input {
                                 action.raw(),
                             );
                         }
+                    }
+                }
+            }
+            if let Some(shell) = metadata_shell.as_mut() {
+                for target in report.content_activations.iter().cloned() {
+                    if shell.issue_content_activation(target)?.is_none() {
+                        crate::session_eprintln!(
+                            "sophia_live_shell_content schema=1 status=input_rejected reason=capacity"
+                        );
                     }
                 }
             }
@@ -1105,10 +1115,53 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     crate::session_eprintln!("sophia_shell_indicators status=unavailable error={error}");
                     shell.recover_transport("indicator_failure")?;revoke_shell_input=true;
                 }
+                let presented_content = runtime
+                    .input_projections()
+                    .iter()
+                    .filter_map(|projection| projection.content.clone())
+                    .collect::<Vec<_>>();
+                if let Err(error) = shell.service_content_actions(&presented_content) {
+                    crate::session_eprintln!(
+                        "sophia_live_shell_content schema=1 status=action_service_failed reason={error}"
+                    );
+                    shell.recover_transport("content_action_failure")?;
+                    revoke_shell_input = true;
+                }
                 match shell.take_indicator_activation() {
-                    Ok(Some((output,action)))=>if let Some(wm)=wm_session.as_mut() {
-                        wm.enqueue_indicator_action(action,output)?;
-                    },
+                    Ok(Some(request)) => {
+                        use sophia_protocol::ShellIndicatorActivationStatus as Status;
+                        let mut status = request.status;
+                        let mut reason = 0_u16;
+                        if status == Status::Accepted
+                            && !shell.content_indicator_admitted_by_ledger(&request.activation)
+                        {
+                            status = Status::Stale;
+                            reason = sophia_protocol::ContentReason::Stale as u16;
+                        }
+                        if status == Status::Accepted {
+                            let action = sophia_protocol::WmActionId::from_raw(request.activation.action);
+                            let admission = wm_session.as_mut().map_or(
+                                Ok(LiveWmRequestAdmission::Duplicate),
+                                |wm| wm.enqueue_indicator_action(action, request.activation.output),
+                            )?;
+                            match admission {
+                                LiveWmRequestAdmission::Admitted => {
+                                    shell.content_indicator_admitted(request.activation.event_id);
+                                }
+                                LiveWmRequestAdmission::RejectedCapacity => {
+                                    shell.content_indicator_rejected(request.activation.event_id);
+                                    status = Status::Unknown;
+                                    reason = sophia_protocol::ContentReason::Budget as u16;
+                                }
+                                LiveWmRequestAdmission::Duplicate => {
+                                    shell.content_indicator_rejected(request.activation.event_id);
+                                    status = Status::Stale;
+                                    reason = sophia_protocol::ContentReason::Stale as u16;
+                                }
+                            }
+                        }
+                        shell.finish_indicator_activation(request, status, reason)?;
+                    }
                     Ok(None)=>{},
                     Err(error)=>{
                         crate::session_eprintln!("sophia_shell_indicators status=activation_failed error={error}");
@@ -1208,6 +1261,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 reference_capture.present(None);
                 shell.revoke_interaction();
                 descriptor_captures.cancel_all();
+                content_captures.revoke_targets();
                 if let Some(runtime) = runtime.as_mut() {
                     runtime.revoke_descriptor_overlay_interaction();
                     if reference_was_active {runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;}

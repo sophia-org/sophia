@@ -276,6 +276,29 @@ fn complete_candidate_holds_pixels_through_native_retirement() {
 }
 
 #[test]
+fn overlapping_targets_on_one_surface_are_rejected() {
+    let (mut candidates, mut resources) = stores();
+    upload(&mut resources, 1);
+    candidates.grant_permit(tx(10), output(), 1, 1, 0).unwrap();
+    let mut begin = begin(1);
+    begin.target_count = 2;
+    candidates.begin(tx(11), begin, 1).unwrap();
+    let mut chunk = chunk(1, resource_id(1));
+    let mut overlap = chunk.targets[0].clone();
+    overlap.target_id = 2;
+    overlap.action_id = 2;
+    overlap.bounds_px.x = 4;
+    chunk.targets.push(overlap);
+    candidates.chunk(tx(12), chunk, 2).unwrap();
+    let mut end = end(1);
+    end.target_count = 2;
+    assert_eq!(
+        candidates.end(tx(13), end, context(&[allocation()]), &resources, 3),
+        Err(ContentCandidateError::Malformed)
+    );
+}
+
+#[test]
 fn incomplete_end_pays_the_terminal_outcome_debt() {
     let (mut candidates, mut resources) = stores();
     upload(&mut resources, 1);
