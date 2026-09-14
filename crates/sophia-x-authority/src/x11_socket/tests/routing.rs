@@ -15703,3 +15703,66 @@ fn a_cancellation_kept_by_one_claim_is_still_there_for_the_next() {
         XAuthorityInputDeliveryOutcome::EpochRevoked
     );
 }
+
+#[test]
+fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
+    let client = XServerFrontendClientId(1201);
+    let surface = SurfaceId::new(1201, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let seat = SeatId::from_raw(1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    held_button(&mut fixture, surface, 12011);
+
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(12012),
+            272,
+            false,
+        ))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+    assert_eq!(projected_buttons(&fixture.private, namespace, seat), 0);
+    assert_eq!(fixture.private.terminal.settling.len(), 1);
+
+    // What the ledger itself reports as owed. A debt is named by its whole
+    // incarnation -- authority, recipient, connection generation and input --
+    // and both settle and an attempt claim are matched against that name.
+    let mut cursor = 0;
+    let reported = fixture
+        .private
+        .authority()
+        .under_common(|authority| authority.next_debt(&mut cursor))
+        .expect("the authority to be readable")
+        .expect("a retained debt for the release that just happened");
+
+    // The retained record has to carry the same name. A record holding only
+    // the number inside an incarnation can be compared with nothing the
+    // ledger offers, so the debt it describes is one this executor could
+    // never settle.
+    assert_eq!(
+        fixture.private.terminal.settling[0].incarnation(),
+        reported.0,
+        "the retained debt is named the way the ledger names it"
+    );
+    assert_eq!(
+        reported.0.input,
+        fixture.private.terminal.settling[0].incarnation().input,
+        "including the input it is for"
+    );
+    assert!(
+        !reported.1.is_settled(),
+        "and nothing has settled it: neither half is established by a release \
+         having happened"
+    );
+    assert!(!reported.1.native_reconciled);
+    assert!(!reported.1.recipient_settled);
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}

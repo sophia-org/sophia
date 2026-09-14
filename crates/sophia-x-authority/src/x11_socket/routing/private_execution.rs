@@ -325,7 +325,8 @@ fn resolve_and_apply(
                 let outcome = permit.release(input)?;
                 match outcome {
                     sophia_input_authority::ReleaseOutcome::DeliverTo(hold) => {
-                        let Some(index) = holds.iter().position(|record| record.hold == hold.hold())
+                        let Some(index) =
+                            holds.iter().position(|record| record.incarnation == hold)
                         else {
                             notes.plan_missing = true;
                             // The ledger ended a hold and the record of where
@@ -414,7 +415,7 @@ fn resolve_and_apply(
                         let reaches = binding == PrivateReleaseBinding::Reached;
                         let removed = holds.remove(index);
                         settling.push(PrivateSettlingRelease {
-                            hold: removed.hold,
+                            incarnation: removed.incarnation,
                             reached: removed.reached,
                             outcome,
                             event,
@@ -512,7 +513,7 @@ fn resolve_and_apply(
             // two presses is exactly that case.
             let joining = holds
                 .iter()
-                .find(|record| record.button == core_button)
+                .find(|record| record.incarnation.input == input)
                 .copied();
             let bound_to = joining.map_or(client, |record| record.reached.client);
             match registry.input_recovery.bind(route.delivery, bound_to) {
@@ -533,7 +534,7 @@ fn resolve_and_apply(
 
             notes.may_have_applied.set(true);
             let applied = permit.press(input, recipient)?;
-            let hold = applied.incarnation().hold();
+            let incarnation = applied.incarnation();
             let reached = if applied.first_press() {
                 let reached = PrivateReachedResources {
                     client,
@@ -548,8 +549,7 @@ fn resolve_and_apply(
                 // accepted, so recording where the press went cannot fail
                 // after the ledger has already moved.
                 holds.push(PrivateHoldRecord {
-                    hold,
-                    button: core_button,
+                    incarnation,
                     reached,
                 });
                 if joining.is_some() {
@@ -566,13 +566,16 @@ fn resolve_and_apply(
                 // A join adopts the hold that already exists. What this press
                 // would have resolved is a proposal the ledger did not take,
                 // and reporting it would name a client the hold never went to.
-                let Some(record) = holds.iter().find(|record| record.hold == hold) else {
+                let Some(record) = holds
+                    .iter()
+                    .find(|record| record.incarnation == incarnation)
+                else {
                     // The ledger joined a hold whose record is gone, so this
                     // press has an owner nobody can name.
                     notes.plan_missing = true;
                     return Err(sophia_input_authority::RegistrationError::StaleRequest);
                 };
-                if joining.is_none_or(|predicted| predicted.hold != record.hold) {
+                if joining.is_none_or(|predicted| predicted.incarnation != record.incarnation) {
                     // The ledger joined a different hold than the one this
                     // delivery was bound to, so the binding names a recipient
                     // this press did not reach.
@@ -634,7 +637,8 @@ fn resolve_and_apply(
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy)]
 pub struct PrivateSettlingRelease {
-    hold: u64,
+    /// The identity a settlement is named against.
+    incarnation: sophia_input_authority::HoldIncarnation,
     reached: PrivateReachedResources,
     outcome: sophia_input_authority::ReleaseOutcome,
     event: Option<XAuthorityInputEvent>,
@@ -651,8 +655,12 @@ pub struct PrivateSettlingRelease {
 
 #[cfg(unix)]
 impl PrivateSettlingRelease {
-    pub fn hold(self) -> u64 {
-        self.hold
+    /// The identity, not the number inside it.
+    ///
+    /// A caller settling this debt names the incarnation; one that could only
+    /// ask for the number could not settle anything with the answer.
+    pub fn incarnation(self) -> sophia_input_authority::HoldIncarnation {
+        self.incarnation
     }
     pub fn reached(self) -> PrivateReachedResources {
         self.reached
@@ -701,9 +709,13 @@ enum PrivateReleaseBinding {
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy)]
 struct PrivateHoldRecord {
-    hold: u64,
-    /// The core button this hold is for.
-    button: u8,
+    /// The whole minted identity, not the number inside it.
+    ///
+    /// A settlement names an incarnation -- authority, recipient, connection
+    /// generation and input together -- and an attempt claim is matched
+    /// against one. The number alone cannot be compared with either, so a
+    /// debt recorded as a number is a debt nothing can later answer for.
+    incarnation: sophia_input_authority::HoldIncarnation,
     reached: PrivateReachedResources,
 }
 
