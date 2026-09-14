@@ -54,6 +54,7 @@ struct XNamespaceInputAuthority {
     query: XPointerQueryState,
     query_clients: std::collections::BTreeSet<u64>,
     pointer: Option<XActiveInputGrab>,
+    pointer_activation: PointerActivationState,
     keyboard: Option<XActiveInputGrab>,
     buttons: Vec<XPassiveInputGrab>,
     keys: Vec<XPassiveInputGrab>,
@@ -71,6 +72,9 @@ struct XNamespaceInputAuthority {
 pub struct XInputAuthorityState {
     namespaces: BTreeMap<NamespaceId, XNamespaceInputAuthority>,
     xi_selections: BTreeMap<(NamespaceId, u64, XResourceId, u16), Vec<u32>>,
+    // Kept outside namespace storage: removing and recreating a namespace must
+    // not make an old automatic-grab identity current again.
+    pointer_activation_high_water: u64,
 }
 
 impl XInputAuthorityState {
@@ -87,11 +91,18 @@ impl XInputAuthorityState {
         {
             return Err(XInputGrabError::AlreadyGrabbed);
         }
+        let activation =
+            PointerActivationStamp::reserve(&mut self.pointer_activation_high_water, namespace);
+        state.pointer_activation = PointerActivationState::Changing;
         state.pointer = Some(grab);
         state.pointer_implicit = false;
         state.pointer_passive_detail = None;
         state.pointer_frozen = grab.pointer_mode == 0;
         state.keyboard_frozen |= grab.keyboard_mode == 0;
+        state.pointer_activation = activation.map_or(
+            PointerActivationState::Changing,
+            PointerActivationState::Applied,
+        );
         Ok(())
     }
 
@@ -99,6 +110,7 @@ impl XInputAuthorityState {
         if let Some(state) = self.namespaces.get_mut(&namespace)
             && state.pointer.is_some_and(|grab| grab.owner == owner)
         {
+            state.pointer_activation = PointerActivationState::Changing;
             state.pointer = None;
             state.pointer_implicit = false;
             state.pointer_passive_detail = None;
@@ -106,6 +118,7 @@ impl XInputAuthorityState {
             if state.keyboard.is_none() {
                 state.keyboard_frozen = false;
             }
+            state.pointer_activation = PointerActivationState::Absent;
         }
     }
 
@@ -307,6 +320,7 @@ impl XInputAuthorityState {
     /// or frozen delivery is allowed to cross the transition.
     pub fn advance_security_epoch(&mut self) {
         for state in self.namespaces.values_mut() {
+            state.pointer_activation = PointerActivationState::Changing;
             state.query = XPointerQueryState::default();
             state.pointer = None;
             state.keyboard = None;
@@ -314,6 +328,7 @@ impl XInputAuthorityState {
             state.keyboard_frozen = false;
             state.server_owner = None;
             state.server_grab_waiters.notify_all();
+            state.pointer_activation = PointerActivationState::Absent;
         }
     }
 
@@ -414,11 +429,18 @@ impl XInputAuthorityState {
             })
             .map(|grab| (active_from_passive(grab), false))
             .unwrap_or((implicit, true));
+        let activation =
+            PointerActivationStamp::reserve(&mut self.pointer_activation_high_water, namespace);
+        state.pointer_activation = PointerActivationState::Changing;
         state.pointer = Some(active);
         state.pointer_implicit = is_implicit;
         state.pointer_passive_detail = (!is_implicit).then_some(button);
         state.pointer_frozen = active.pointer_mode == 0;
         state.keyboard_frozen |= active.keyboard_mode == 0;
+        state.pointer_activation = activation.map_or(
+            PointerActivationState::Changing,
+            PointerActivationState::Applied,
+        );
         active
     }
 
@@ -432,10 +454,12 @@ impl XInputAuthorityState {
             && ((state.pointer_implicit && all_core_buttons_released)
                 || state.pointer_passive_detail == Some(button))
         {
+            state.pointer_activation = PointerActivationState::Changing;
             state.pointer = None;
             state.pointer_implicit = false;
             state.pointer_passive_detail = None;
             state.pointer_frozen = false;
+            state.pointer_activation = PointerActivationState::Absent;
         }
     }
 
@@ -448,10 +472,12 @@ impl XInputAuthorityState {
                 state.query = XPointerQueryState::default();
             }
             if state.pointer.is_some_and(|grab| grab.owner == owner) {
+                state.pointer_activation = PointerActivationState::Changing;
                 state.pointer = None;
                 state.pointer_frozen = false;
                 state.pointer_implicit = false;
                 state.pointer_passive_detail = None;
+                state.pointer_activation = PointerActivationState::Absent;
             }
             if state.keyboard.is_some_and(|grab| grab.owner == owner) {
                 state.keyboard = None;

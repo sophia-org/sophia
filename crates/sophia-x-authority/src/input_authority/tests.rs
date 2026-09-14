@@ -62,7 +62,7 @@ fn preparing_an_uninitialized_namespace_allocates_no_namespace() {
     assert!(
         state
             .prepare_pointer_press(NamespaceId::from_raw(1), 1, 0, implicit(1))
-            .is_none()
+            .is_err_and(|error| error == PointerPreparationRefusal::NamespaceUnprepared)
     );
     assert!(state.namespaces.is_empty());
 }
@@ -93,4 +93,146 @@ fn side_buttons_keep_native_implicit_grab_debt_after_core_state_is_clear() {
     assert!(!pointer.all_buttons_released());
     pointer.map_evdev_button(275, false).unwrap();
     assert!(pointer.all_buttons_released());
+}
+
+#[test]
+fn stamped_retirement_does_not_retire_an_identical_replacement() {
+    let ns = NamespaceId::from_raw(1);
+    let mut state = XInputAuthorityState::default();
+    state.prepare_ordered_namespace(ns);
+    let first = state
+        .prepare_pointer_press(ns, 1, 0, implicit(10))
+        .unwrap()
+        .commit_stamped();
+    assert!(first.automatic());
+    state.ungrab_pointer(ns, 10);
+    let second = state
+        .prepare_pointer_press(ns, 1, 0, implicit(10))
+        .unwrap()
+        .commit_stamped();
+    assert_eq!(first.recipient(), second.recipient());
+    assert_ne!(first.stamp(), second.stamp());
+    let pointer = crate::XCorePointerMapper::new();
+    assert_eq!(
+        state.retire_pointer_activation(ns, first.stamp(), 1, &pointer),
+        PointerActivationRetirement::Replaced
+    );
+    assert_eq!(state.pointer_grab(ns), Some(second.recipient()));
+    assert_eq!(
+        state.retire_pointer_activation(ns, second.stamp(), 1, &pointer),
+        PointerActivationRetirement::Retired
+    );
+    assert_eq!(
+        state.retire_pointer_activation(ns, second.stamp(), 1, &pointer),
+        PointerActivationRetirement::AlreadyAbsent
+    );
+}
+
+#[test]
+fn namespace_recreation_and_ordinary_activation_cannot_reuse_a_stamp() {
+    let ns = NamespaceId::from_raw(1);
+    let mut state = XInputAuthorityState::default();
+    state.prepare_ordered_namespace(ns);
+    let first = state
+        .prepare_pointer_press(ns, 1, 0, implicit(10))
+        .unwrap()
+        .commit_stamped();
+    state.cleanup_owner(10);
+    assert!(!state.has_ordered_namespace(ns));
+    state.activate_button(ns, 1, 0, implicit(10));
+    let replacement = state
+        .prepare_pointer_press(ns, 2, 0, implicit(20))
+        .unwrap()
+        .commit_stamped();
+    assert_ne!(first.stamp(), replacement.stamp());
+    assert_eq!(
+        state.retire_pointer_activation(ns, first.stamp(), 1, &crate::XCorePointerMapper::new()),
+        PointerActivationRetirement::Replaced
+    );
+    assert_eq!(state.pointer_grab(ns), Some(implicit(10)));
+}
+
+#[test]
+fn one_implicit_activation_spans_buttons_and_waits_for_side_buttons() {
+    let ns = NamespaceId::from_raw(1);
+    let mut state = XInputAuthorityState::default();
+    state.prepare_ordered_namespace(ns);
+    let mut pointer = crate::XCorePointerMapper::new();
+    pointer.map_evdev_button(272, true).unwrap();
+    let first = state
+        .prepare_pointer_press(ns, 1, 0, implicit(10))
+        .unwrap()
+        .commit_stamped();
+    pointer.map_evdev_button(275, true).unwrap();
+    let side = state
+        .prepare_pointer_press(ns, 8, 0, implicit(20))
+        .unwrap()
+        .commit_stamped();
+    assert_eq!(first.stamp(), side.stamp());
+    pointer.map_evdev_button(272, false).unwrap();
+    assert_eq!(pointer.state(), 0);
+    assert_eq!(
+        state.retire_pointer_activation(ns, first.stamp(), 1, &pointer),
+        PointerActivationRetirement::StillRequiredByOtherButtons
+    );
+    pointer.map_evdev_button(275, false).unwrap();
+    assert_eq!(
+        state.retire_pointer_activation(ns, side.stamp(), 8, &pointer),
+        PointerActivationRetirement::Retired
+    );
+}
+
+#[test]
+fn a_stamped_explicit_grab_is_not_an_automatic_cleanup_obligation() {
+    let ns = NamespaceId::from_raw(1);
+    let mut state = XInputAuthorityState::default();
+    state.grab_pointer(ns, implicit(10)).unwrap();
+    let reached = state
+        .prepare_pointer_press(ns, 1, 0, implicit(20))
+        .unwrap()
+        .commit_stamped();
+    assert!(!reached.automatic());
+    assert_eq!(
+        state.retire_pointer_activation(ns, reached.stamp(), 1, &crate::XCorePointerMapper::new()),
+        PointerActivationRetirement::Explicit
+    );
+    assert_eq!(state.pointer_grab(ns), Some(implicit(10)));
+}
+
+#[test]
+fn identity_exhaustion_refuses_before_an_automatic_grab_can_begin() {
+    let ns = NamespaceId::from_raw(1);
+    let mut state = XInputAuthorityState::default();
+    state.prepare_ordered_namespace(ns);
+    state.pointer_activation_high_water = u64::MAX;
+    assert!(
+        state
+            .prepare_pointer_press(ns, 1, 0, implicit(10))
+            .is_err_and(|error| error == PointerPreparationRefusal::IdentityExhausted)
+    );
+    assert_eq!(state.pointer_grab(ns), None);
+    assert_eq!(state.pointer_activation_high_water, u64::MAX);
+}
+
+#[test]
+fn interrupted_activation_is_unavailable_even_if_its_grab_fields_agree() {
+    let ns = NamespaceId::from_raw(1);
+    let mut state = XInputAuthorityState::default();
+    state.prepare_ordered_namespace(ns);
+    let reached = state
+        .prepare_pointer_press(ns, 1, 0, implicit(10))
+        .unwrap()
+        .commit_stamped();
+    // Staged interruption: the write-ahead marker, not a completed mutation.
+    state.namespaces.get_mut(&ns).unwrap().pointer_activation = PointerActivationState::Changing;
+    assert!(
+        state
+            .prepare_pointer_press(ns, 1, 0, implicit(10))
+            .is_err_and(|error| error == PointerPreparationRefusal::ProvenanceUnavailable)
+    );
+    assert_eq!(
+        state.retire_pointer_activation(ns, reached.stamp(), 1, &crate::XCorePointerMapper::new()),
+        PointerActivationRetirement::Unavailable
+    );
+    assert_eq!(state.pointer_grab(ns), Some(reached.recipient()));
 }
