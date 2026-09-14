@@ -15884,7 +15884,7 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     let first_delivery = XAuthorityInputDeliveryId::from_raw(13011);
     let mut marked = Vec::new();
     let step = {
-        let mut mark = |sequence: crate::ReadySequence| {
+        let mut mark = |sequence: crate::ReadySequence, _taken_at: std::time::Instant| {
             // Common is not held: the mark sits above that guard in the rank
             // and reaching for it here would invert the order.
             assert!(
@@ -15915,13 +15915,19 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
             .step_once(&mut fixture.keyboards, &mut mark)
             .expect("a readable order")
     };
-    let PrivateOrderedStep::Decided(first) = step else {
+    let PrivateOrderedStep::Decided(sequence) = step else {
         panic!("one item decided")
     };
     assert_eq!(marked.len(), 1, "one step marks exactly one item");
-    let PrivateOrderedItem::Ran { sequence, .. } = first else {
+    // Stored by the step, not handed back for the caller to hold.
+    assert_eq!(fixture.private.terminal.turn.len(), 1);
+    let PrivateOrderedItem::Ran {
+        sequence: stored, ..
+    } = fixture.private.terminal.turn[0]
+    else {
         panic!("the press ran")
     };
+    assert_eq!(stored, sequence);
     assert_eq!(
         marked[0], sequence,
         "and marks the item it actually took, not one it was about to"
@@ -15932,7 +15938,7 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     let mut second_marked = Vec::new();
     let step = fixture
         .private
-        .step_once(&mut fixture.keyboards, &mut |sequence| {
+        .step_once(&mut fixture.keyboards, &mut |sequence, _| {
             second_marked.push(sequence)
         })
         .expect("a readable order");
@@ -15945,7 +15951,7 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     assert!(matches!(
         fixture
             .private
-            .step_once(&mut fixture.keyboards, &mut |_| panic!("nothing to mark"))
+            .step_once(&mut fixture.keyboards, &mut |_, _| panic!("nothing to mark"))
             .expect("a readable order"),
         PrivateOrderedStep::Idle
     ));
@@ -15968,7 +15974,7 @@ fn a_blocked_order_takes_nothing_and_marks_nothing() {
         .expect("the order to accept it");
     let step = fixture
         .private
-        .step_once(&mut fixture.keyboards, &mut |_| {})
+        .step_once(&mut fixture.keyboards, &mut |_, _| {})
         .expect("a readable order");
     assert!(matches!(step, PrivateOrderedStep::Parked(_)));
 
@@ -15977,7 +15983,7 @@ fn a_blocked_order_takes_nothing_and_marks_nothing() {
     // doing so for as long as the barrier stood.
     let step = fixture
         .private
-        .step_once(&mut fixture.keyboards, &mut |_| {
+        .step_once(&mut fixture.keyboards, &mut |_, _| {
             panic!("nothing may be taken while the order is blocked")
         })
         .expect("a readable order");
@@ -16060,6 +16066,72 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
         "the revoked connection's grab is gone even though its delivery \
          published nothing"
     );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_mark_that_panics_does_not_take_the_work_with_it() {
+    let client = XServerFrontendClientId(1304);
+    let surface = SurfaceId::new(1304, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(1304);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+    let reserved_before = fixture.durable.reserved().expect("a readable owner");
+    assert_eq!(reserved_before, 1, "the order accepted and reserved for it");
+
+    // No hook: a mark that panics is the ordinary way accounting fails. What
+    // matters is where the work is standing when it does.
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = fixture
+            .private
+            .step_once(&mut fixture.keyboards, &mut |_, _| {
+                panic!("accounting failed")
+            });
+    }));
+    assert!(outcome.is_err(), "the mark panicked");
+
+    // The item is this instance's, not the lost frame's. Had it still been a
+    // local when the mark ran, the accepted custody and the payload would have
+    // gone with the unwind, and nothing would be left to say the order had
+    // ever given it out.
+    let Some(PrivateOrderedItem::Refused {
+        sequence: _,
+        refusal: PrivateExecutionRefusal::NotAttempted,
+        route,
+        ..
+    }) = &fixture.private.terminal.current
+    else {
+        panic!("the exact work is still held, un-attempted")
+    };
+    assert_eq!(
+        route.delivery,
+        Some(delivery),
+        "and it is the work that was accepted, not a reconstruction of it"
+    );
+    assert_eq!(
+        fixture.durable.reserved().expect("a readable owner"),
+        reserved_before,
+        "its reservation is still held, so nothing was silently freed"
+    );
+
+    // And the order is honestly blocked on it rather than quietly moving on.
+    assert!(matches!(
+        fixture
+            .private
+            .step_once(&mut fixture.keyboards, &mut |_, _| {}),
+        Err(XServerFrontendRouteError::OrderedItemUnresolved)
+    ));
+
+    // The obligation survives the instance, which is what retention is for.
+    let settlement = fixture.private.shutdown();
+    assert!(settlement.terminal_outstanding() >= 1);
+    drop(settlement);
+    assert_eq!(fixture.durable.terminal_inventories().expect("readable"), 1);
     drop(fixture.registration);
     drop(fixture.channels);
     drop(fixture.durable);
