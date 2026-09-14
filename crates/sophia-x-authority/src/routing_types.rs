@@ -560,61 +560,31 @@ impl core::fmt::Display for XServerFrontendRouteError {
 
 impl std::error::Error for XServerFrontendRouteError {}
 
-/// How deep a window chain an ordered delivery may carry.
-///
-/// Sixty-four parent links and the leaf itself. A declared capacity policy of
-/// the private path, not a claim about what an X tree can be: a hierarchy
-/// deeper than this is refused before any effect rather than carried short,
-/// because a truncated ancestry delivers to the wrong window and nothing
-/// downstream could tell.
-pub(crate) const X_AUTHORITY_ORDERED_ANCESTRY_LIMIT: usize = 65;
-
-/// The window chain an ordered delivery was resolved against.
-///
-/// Fixed storage rather than a growable one, so resolving a delivery cannot
-/// allocate on the path that must not, and so the bound above is a property of
-/// the type rather than a check somebody has to remember.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
-pub(crate) struct XAuthorityOrderedAncestry {
-    windows: [XResourceId; X_AUTHORITY_ORDERED_ANCESTRY_LIMIT],
-    len: u8,
-}
-
-#[allow(dead_code)]
-impl XAuthorityOrderedAncestry {
-    pub(crate) fn chain(&self) -> &[XResourceId] {
-        &self.windows[..usize::from(self.len)]
-    }
-}
-
-/// One ordered delivery, resolved once and written as it stands.
+/// One ordered delivery: what it answers for, and who it was resolved for.
 ///
 /// Crate-private, with private fields and no constructor outside the resolver
 /// that builds it under the guards. A caller able to assemble one could assert
 /// a resolved state it never resolved -- which is the whole of what makes this
 /// immutable rather than merely copied.
 ///
-/// What it carries is deliberately its identity and its resolved target. The
-/// emission forms and coordinates a writer needs are the guarded resolver's to
-/// supply, and they are not invented here: a field shaped by guesswork would
-/// have to be reshaped when the resolver's own output is settled, and until
-/// then it would look like a decision that had been made.
+/// Deliberately NOT Copy or Clone. It carries custody of a delivery and its
+/// origin, and a type that duplicates itself lets two holders each believe
+/// they are the one that owes an outcome for it.
 ///
-/// Nothing constructs one yet: the guarded resolver that builds it is the
-/// ordered-state stream's and is still being finished. The queue it travels on
-/// is landed now so that the struct it lives in is not edited twice in two
-/// windows, which is a coordination cost rather than a claim that the path
-/// works.
-#[derive(Clone, Copy, Debug)]
+/// What the writer must put on the wire is not described here. The guarded
+/// resolver already decides every target, form, coordinate, depth and crossing,
+/// and restating any of that in this file would be a second description of the
+/// same thing -- one that could drift from the one that is actually resolved
+/// and would be believed because it looked like a field. The resolved emission
+/// arrives as an opaque payload from the resolver's own vocabulary and is held
+/// here, not re-modelled.
+#[derive(Debug)]
 #[allow(dead_code)]
 pub(crate) struct XAuthorityOrderedDelivery {
     client: XServerFrontendClientId,
     delivery: crate::XAuthorityInputDeliveryId,
     incarnation: sophia_input_authority::HoldIncarnation,
     recipient: sophia_input_authority::ConnectionIdentity,
-    delivered_window: XResourceId,
-    ancestry: XAuthorityOrderedAncestry,
 }
 
 #[allow(dead_code)]
@@ -633,11 +603,5 @@ impl XAuthorityOrderedDelivery {
     /// The connection this was resolved for, exactly.
     pub(crate) fn recipient(&self) -> sophia_input_authority::ConnectionIdentity {
         self.recipient
-    }
-    pub(crate) fn delivered_window(&self) -> XResourceId {
-        self.delivered_window
-    }
-    pub(crate) fn ancestry(&self) -> &XAuthorityOrderedAncestry {
-        &self.ancestry
     }
 }
