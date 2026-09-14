@@ -349,11 +349,171 @@ fn resolve_and_apply(
                         sophia_input_authority::CapacityError::NoCompletionCell,
                     ));
                 }
-                let mut pointers = registry.pointer_state.lock().map_err(|_| unavailable)?;
-                // Told before the effect and again once it is known to have
-                // happened, from the same two points that decide whether a
-                // cancellation had anything to contradict. A supervisor told
-                // later would be watching an interval that had already passed.
+                // A release is owed to where its press went, so the hold this
+                // executor retained selects the operation. The route says
+                // where the pointer points now, which is a different question.
+                //
+                // No pointer guard is taken here: the source takes the mapper,
+                // the authority and the recipient's selections together under
+                // this connection, and one held over that call would be the
+                // same mutex twice.
+                if let Some(index) = holds.iter().position(|record| {
+                    record
+                        .native
+                        .as_ref()
+                        .is_some_and(|hold| hold.input() == input)
+                }) {
+                    // The exact connection the press retained. A release
+                    // converts its coordinates against the geometry that
+                    // connection still holds; the press's own numbers describe
+                    // a moment that has passed.
+                    let connection = holds[index]
+                        .native
+                        .as_ref()
+                        .expect("selected by the hold it carries")
+                        .connection();
+                    let mut guards = native.lock_for_release(&connection).map_err(|refusal| {
+                        notes.native_refusal = Some(refusal);
+                        unavailable
+                    })?;
+                    // Told before the effect and again once it is known to have
+                    // happened, from the same two points that decide whether a
+                    // cancellation had anything to contradict.
+                    notes
+                        .watched
+                        .applying()
+                        .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
+                    // LENT, NOT SURRENDERED. The hold stays in the record this
+                    // executor owns for the whole source release, so every
+                    // residual it records -- a retained activation, a mapper
+                    // that has gone, a selection no longer there -- stays
+                    // attached to the obligation that owns it.
+                    let hold = holds[index]
+                        .native
+                        .as_mut()
+                        .expect("selected by the hold it carries");
+                    let (outcome, built) = guards
+                        .release(permit, hold, route, notes.may_have_applied)
+                        .map_err(|refusal| {
+                            notes.native_refusal = Some(refusal);
+                            unavailable
+                        })?;
+                    notes
+                        .watched
+                        .committed()
+                        .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
+                    // The adapter guards go here. NOTHING RECORDS A PROOF IN
+                    // THIS FUNCTION: the proof enters common as its own origin,
+                    // and the common transaction around this call has not
+                    // dropped yet. That recording happens once it has.
+                    drop(guards);
+                    match outcome {
+                        sophia_input_authority::ReleaseOutcome::DeliverTo(incarnation) => {
+                            if holds[index].incarnation != incarnation {
+                                // The ledger ended an incarnation this record
+                                // is not for. The hold stays exactly where it
+                                // is rather than being released against the
+                                // wrong identity.
+                                notes.plan_missing = true;
+                                return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                            }
+                            let reached = holds[index].reached;
+                            // Kept as built or as the cause it failed with.
+                            // An event that could not be built and an event
+                            // that was never owed are different facts, and
+                            // flattening them here would leave whoever reads
+                            // the release later unable to tell which happened.
+                            let (event, unbuilt) = match built {
+                                Ok(event) => (event.map(XAuthorityInputEvent::Pointer), None),
+                                Err(cause) => (None, Some(cause)),
+                            };
+                            // Bound after the ledger moved, which is the
+                            // opposite of the press and for the opposite
+                            // reason. The aggregate hold has already ended,
+                            // and that is not conditional on whether anyone is
+                            // still there to be told.
+                            //
+                            // NOT that the button is lifted natively. A
+                            // release ending in a residual -- a mapper that
+                            // has gone, for one -- leaves exactly that fact
+                            // unresolved, which is why the residual is kept.
+                            // What is settled here is the ledger transition,
+                            // not the projection. What the binding decides here is only
+                            // whether an event is owed -- and binding it to
+                            // where the press went, rather than to whatever
+                            // the release's own route names, is what makes a
+                            // later disconnect answer it.
+                            let binding =
+                                match registry.input_recovery.bind(route.delivery, reached.client) {
+                                    Ok(true) => PrivateReleaseBinding::Reached,
+                                    Ok(false) => PrivateReleaseBinding::Ended,
+                                    Err(_) => {
+                                        // Nothing is emitted, but the debt is
+                                        // recorded below first: a release whose
+                                        // recipient nobody could look up is
+                                        // still a release that happened. Kept
+                                        // apart from Ended, because this
+                                        // establishes nothing about whether a
+                                        // receipt can still arrive.
+                                        notes.recovery_unavailable = true;
+                                        PrivateReleaseBinding::Unknown
+                                    }
+                                };
+                            let reaches = binding == PrivateReleaseBinding::Reached;
+                            // Moved WITH ITS SOURCE OBLIGATION. The hold owns
+                            // the implicit activation, the query scope and the
+                            // selection this press raised, and it is the only
+                            // thing holding the exact connection they belong
+                            // to. A record removed without it leaves all three
+                            // owed by nobody and unretirable.
+                            let removed = holds.remove(index);
+                            settling.push(PrivateSettlingRelease {
+                                incarnation: removed.incarnation,
+                                reached: removed.reached,
+                                native: removed.native,
+                                unbuilt,
+                                native_recorded: false,
+                                native_failure: None,
+                                native_attempts: 0,
+                                outcome,
+                                event,
+                                binding,
+                                delivery: route.delivery,
+                            });
+                            notes.decided = Some(PrivateOrderedDecision {
+                                owes_event: reaches,
+                                reached: Some(reached),
+                                first_press: false,
+                                keyboard_applied: false,
+                                release: Some(outcome),
+                                event: reaches.then_some(event).flatten(),
+                            });
+                        }
+                        // Not a delivery and not a failure. The source was not
+                        // holding, or another still is, so the aggregate owes
+                        // nobody an event and its buttons are unchanged. The
+                        // record and its obligation stay exactly as they were,
+                        // and no settling entry is made -- which is what tells
+                        // this apart from a delivery whose event went unbuilt.
+                        sophia_input_authority::ReleaseOutcome::NotHeld
+                        | sophia_input_authority::ReleaseOutcome::SurvivorRemains => {
+                            notes.decided = Some(PrivateOrderedDecision {
+                                owes_event: false,
+                                reached: None,
+                                first_press: false,
+                                keyboard_applied: false,
+                                release: Some(outcome),
+                                event: None,
+                            });
+                        }
+                    }
+                    return Ok(());
+                }
+
+                // No hold here for this input. The ledger is still asked,
+                // because a release of nothing held is an outcome and not a
+                // missing target -- answering it from this executor's own
+                // emptiness would be deciding what only the ledger can say.
                 notes
                     .watched
                     .applying()
@@ -364,131 +524,23 @@ fn resolve_and_apply(
                     .watched
                     .committed()
                     .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
-                match outcome {
-                    sophia_input_authority::ReleaseOutcome::DeliverTo(hold) => {
-                        let Some(index) =
-                            holds.iter().position(|record| record.incarnation == hold)
-                        else {
-                            notes.plan_missing = true;
-                            // The ledger ended a hold and the record of where
-                            // it went is gone. Owing nobody an event and being
-                            // unable to say who is owed one are different
-                            // facts, and reporting the second as the first
-                            // settles a debt by losing the evidence of it.
-                            return Err(sophia_input_authority::RegistrationError::StaleRequest);
-                        };
-                        let reached = holds[index].reached;
-                        // The mapper the press moved, keyed by what the press
-                        // recorded. A release naming its own seat, or found
-                        // from the current route, would clear a different
-                        // seat's buttons and leave this one's held forever.
-                        //
-                        // Not created if absent. A press projected this
-                        // button, so a missing mapper is retained state that
-                        // has become unavailable, and a fresh one would be a
-                        // clear history asserting the button was never down.
-                        let Some(pointer) = pointers.get_mut(&(reached.namespace, reached.seat))
-                        else {
-                            return Err(unavailable);
-                        };
-                        // Moved only on a final release, and the state it
-                        // reports is the one before this event -- which still
-                        // has this button down, because this is the event that
-                        // lifts it.
-                        let event = pointer.map_evdev_button(button, false).map(
-                            |(core, before)| {
-                                XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
-                                    kind: XAuthorityPointerEventKind::Button {
-                                        button: core,
-                                        pressed: false,
-                                    },
-                                    surface: reached.surface,
-                                    root_x: clamp_input_coordinate(
-                                        route.request.global_position.x,
-                                    ),
-                                    root_y: clamp_input_coordinate(
-                                        route.request.global_position.y,
-                                    ),
-                                    event_x: clamp_input_coordinate(
-                                        route.request.local_position.x,
-                                    ),
-                                    event_y: clamp_input_coordinate(
-                                        route.request.local_position.y,
-                                    ),
-                                    state: before,
-                                    time_msec: u32::try_from(route.request.time_msec)
-                                        .unwrap_or(u32::MAX),
-                                })
-                            },
-                        );
-                        // Moved to the continuation rather than deleted, and
-                        // with everything the delivery owes rather than the
-                        // plan alone. An event having been built is not an
-                        // event having been delivered, and reconstructing its
-                        // coordinates or its state from later facts would
-                        // describe a different moment.
-                        // Bound after the ledger moved, which is the
-                        // opposite of the press above and for the opposite
-                        // reason. The hold has already ended and this button
-                        // has already been lifted; neither can be conditional
-                        // on whether anyone is still there to be told. What
-                        // the binding decides here is only whether an event is
-                        // owed -- and binding it to where the press went,
-                        // rather than to whatever the release's own route
-                        // names, is what makes a later disconnect answer it.
-                        let binding = match registry
-                            .input_recovery
-                            .bind(route.delivery, reached.client)
-                        {
-                            Ok(true) => PrivateReleaseBinding::Reached,
-                            Ok(false) => PrivateReleaseBinding::Ended,
-                            Err(_) => {
-                                // Nothing is emitted, but the debt is recorded
-                                // below first: a release whose recipient
-                                // nobody could look up is still a release that
-                                // happened. Kept apart from Ended, because
-                                // this establishes nothing about whether a
-                                // receipt can still arrive.
-                                notes.recovery_unavailable = true;
-                                PrivateReleaseBinding::Unknown
-                            }
-                        };
-                        let reaches = binding == PrivateReleaseBinding::Reached;
-                        let removed = holds.remove(index);
-                        settling.push(PrivateSettlingRelease {
-                            incarnation: removed.incarnation,
-                            reached: removed.reached,
-                            outcome,
-                            event,
-                            binding,
-                            delivery: route.delivery,
-                        });
-                        notes.decided = Some(PrivateOrderedDecision {
-                            owes_event: reaches,
-                            reached: Some(reached),
-                            first_press: false,
-                            keyboard_applied: false,
-                            release: Some(outcome),
-                            event: reaches.then_some(event).flatten(),
-                        });
-                    }
-                    // Not a delivery and not a failure. The source was not
-                    // holding, or another still is, so the aggregate owes
-                    // nobody an event and its buttons are unchanged: moving
-                    // the mapper here would lift a button somebody still
-                    // holds.
-                    sophia_input_authority::ReleaseOutcome::NotHeld
-                    | sophia_input_authority::ReleaseOutcome::SurvivorRemains => {
-                        notes.decided = Some(PrivateOrderedDecision {
-                            owes_event: false,
-                            reached: None,
-                            first_press: false,
-                            keyboard_applied: false,
-                            release: Some(outcome),
-                            event: None,
-                        });
-                    }
+                if matches!(outcome, sophia_input_authority::ReleaseOutcome::DeliverTo(_)) {
+                    notes.plan_missing = true;
+                    // The ledger ended a hold and the record of where it went
+                    // is gone. Owing nobody an event and being unable to say
+                    // who is owed one are different facts, and reporting the
+                    // second as the first settles a debt by losing the
+                    // evidence of it.
+                    return Err(sophia_input_authority::RegistrationError::StaleRequest);
                 }
+                notes.decided = Some(PrivateOrderedDecision {
+                    owes_event: false,
+                    reached: None,
+                    first_press: false,
+                    keyboard_applied: false,
+                    release: Some(outcome),
+                    event: None,
+                });
                 return Ok(());
             }
 
@@ -504,6 +556,84 @@ fn resolve_and_apply(
             // release: what it names has to still be true when the effect
             // lands, and a route read and let go describes a moment that has
             // passed.
+            // A KNOWN JOIN IS ASKED AS A JOIN. This executor already holds the
+            // obligation for this input, so the source has the operation for
+            // it and nothing here needs resolving: no surfaces, no current
+            // selection, no grab recipient lookup. Asking press instead would
+            // install a second native obligation, leave it retained in pending
+            // on the disagreement the source reports, and refuse every later
+            // press of this instance for a phase it put there itself.
+            //
+            // This selects which operation to ask, and does not decide
+            // first_press. Guards::join enters permit.press and refuses unless
+            // the ledger agrees it is a join of exactly this incarnation.
+            if let Some(index) = holds.iter().position(|record| {
+                record
+                    .native
+                    .as_ref()
+                    .is_some_and(|hold| hold.input() == input)
+            }) {
+                let record = &holds[index];
+                let hold = record
+                    .native
+                    .as_ref()
+                    .expect("selected by the hold it carries");
+                // Bound to the recipient the press reached, before the ledger
+                // is entered. Re-resolving would bind this delivery to
+                // whoever the route reaches now, and a grab taken since the
+                // press makes those two different clients.
+                match registry.input_recovery.bind(route.delivery, hold.client()) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        notes.delivery_ended = true;
+                        return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                    }
+                    Err(_) => {
+                        notes.recovery_unavailable = true;
+                        return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                    }
+                }
+                // The exact connection the hold retained, not whichever
+                // connection this client has now.
+                let connection = hold.connection();
+                let mut guards = native.lock_for_release(&connection).map_err(|refusal| {
+                    notes.native_refusal = Some(refusal);
+                    unavailable
+                })?;
+                notes
+                    .watched
+                    .applying()
+                    .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
+                // The hold is lent, never surrendered. A disagreement leaves
+                // it exactly where it was, with the work already accepted
+                // still owned here rather than replaced by a synthetic one.
+                let applied = guards
+                    .join(permit, hold, notes.may_have_applied)
+                    .map_err(|refusal| {
+                        notes.native_refusal = Some(refusal);
+                        unavailable
+                    })?;
+                notes
+                    .watched
+                    .committed()
+                    .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
+                drop(guards);
+                debug_assert!(
+                    !applied.first_press(),
+                    "the source refuses a join that is not one"
+                );
+                notes.decided = Some(PrivateOrderedDecision {
+                    // The button is already down. A join owes nobody an event.
+                    owes_event: false,
+                    reached: Some(record.reached),
+                    first_press: false,
+                    keyboard_applied: false,
+                    release: None,
+                    event: None,
+                });
+                return Ok(());
+            }
+
             let clients = registry.clients.lock().map_err(|_| unavailable)?;
             let surfaces = registry.surfaces.lock().map_err(|_| unavailable)?;
             let Some(surface_route) = surfaces.get(&route.request.target_surface).copied() else {
@@ -613,9 +743,6 @@ fn resolve_and_apply(
                 .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
             let incarnation = applied.incarnation();
             let reached = if applied.first_press() {
-                // Where the press reached, from the obligation the source
-                // installed rather than from the route this executor was
-                // handed.
                 // Where the press reached, taken from what the ledger minted
                 // and what the source resolved, rather than from the route
                 // this executor was handed. The recipient is the incarnation's
@@ -651,20 +778,19 @@ fn resolve_and_apply(
                 }
                 Some(reached)
             } else {
-                // A join adopts the hold that exists and the source installs
-                // nothing for it, so pending stays exactly as it was.
-                let Some(record) = holds
-                    .iter()
-                    .find(|record| record.incarnation == incarnation)
-                else {
-                    notes.plan_missing = true;
-                    return Err(sophia_input_authority::RegistrationError::StaleRequest);
-                };
-                if joining.is_none_or(|(predicted, _)| predicted != record.incarnation) {
-                    notes.plan_missing = true;
-                    return Err(sophia_input_authority::RegistrationError::StaleRequest);
-                }
-                Some(record.reached)
+                // THE LEDGER DISAGREES. This path was entered as a new press,
+                // because no record here carries a native hold for this input,
+                // and the ledger has answered that the button was already
+                // down. One of the two readings is wrong and this executor is
+                // not the one that can say which.
+                //
+                // The source installed an obligation before entering the
+                // ledger and left it retained on this disagreement. It stays
+                // in pending: it names real native state, and dropping it
+                // because it arrived unexpectedly would leave an activation,
+                // a query scope and a selection owed by nobody.
+                notes.plan_missing = true;
+                return Err(sophia_input_authority::RegistrationError::StaleRequest);
             };
             let event = event.map(XAuthorityInputEvent::Pointer);
             notes.decided = Some(PrivateOrderedDecision {
@@ -833,101 +959,3 @@ fn execute_owned(
             event: decided.event,
         })
     }
-
-
-/// What the guarded transition recorded on its way out.
-///
-/// Out-parameters rather than a return value: the transaction's result is the
-/// authority's, and these are facts about what happened inside it that the
-/// authority has no vocabulary for. Collected in one place so that recording
-/// another fact does not mean threading another argument.
-#[cfg(unix)]
-struct PrivateTransactionNotes<'a> {
-    /// What was decided, if anything was.
-    decided: Option<PrivateOrderedDecision>,
-    /// A hold ended and the record of where its press went is gone.
-    plan_missing: bool,
-    /// This executor already holds as many records as it may.
-    records_exhausted: bool,
-    /// The ledger will not carry this delivery to its recipient.
-    delivery_ended: bool,
-    /// The ledger could not be read.
-    recovery_unavailable: bool,
-    /// What the native source refused, when it refused.
-    ///
-    /// Carried out rather than renamed. The source tells a delivery that ended
-    /// from a ledger nobody could read from a selection that was not there
-    /// from an origin that was not ours, and an authority error standing in
-    /// for all four would lose which one happened.
-    native_refusal: Option<private_native::Refusal>,
-    /// The execution a supervisor is watching.
-    ///
-    /// Borrowed from whoever owns the watch and finishes it, and carried with
-    /// the notes rather than as another argument because the phases it records
-    /// belong beside the marker they describe: the two points that say an
-    /// effect may have happened are the two a supervisor has to hear about.
-    watched: &'a mut private_watchdog::PrivateWatchedExecution,
-    /// Whether an effect may have reached the authority's ledger.
-    ///
-    /// Set before each call that can move it, never after: a marker written
-    /// afterwards says nothing about a call that did not return. Shared with
-    /// the claim guard rather than copied to it, so an error returned out of
-    /// the transaction carries the same answer an unwind does.
-    may_have_applied: &'a std::cell::Cell<bool>,
-}
-
-#[cfg(unix)]
-impl<'a> PrivateTransactionNotes<'a> {
-    fn new(
-        may_have_applied: &'a std::cell::Cell<bool>,
-        watched: &'a mut private_watchdog::PrivateWatchedExecution,
-    ) -> Self {
-        Self {
-            watched,
-            decided: None,
-            plan_missing: false,
-            records_exhausted: false,
-            delivery_ended: false,
-            recovery_unavailable: false,
-            native_refusal: None,
-            may_have_applied,
-        }
-    }
-}
-
-/// An execution's hold on a delivery, given back however the execution ends.
-///
-/// A guard, because giving it back is the part that must not be skipped. An
-/// unwind between the claim and the end of the transaction would otherwise
-/// leave a delivery nothing can cancel again, and it resolves as
-/// possibly-applied: the direction that cannot publish a cancellation over an
-/// effect that happened.
-#[cfg(unix)]
-struct PrivateDeliveryClaim<'a> {
-    recovery: &'a InputRecovery,
-    delivery: Option<XAuthorityInputDeliveryId>,
-    /// Read at drop, not at construction. The transaction writes through this
-    /// as it goes, so every way out of the execution -- a decision, an error
-    /// returned from a fallible call, an unwind -- gives the claim back with
-    /// what had actually happened by then.
-    applied: &'a std::cell::Cell<bool>,
-}
-
-#[cfg(unix)]
-impl Drop for PrivateDeliveryClaim<'_> {
-    fn drop(&mut self) {
-        self.recovery.resolve_claim(self.delivery, self.applied.get());
-    }
-}
-
-/// What the guarded transition decided, before anything is emitted.
-#[cfg(unix)]
-#[derive(Debug, Clone, Copy)]
-struct PrivateOrderedDecision {
-    owes_event: bool,
-    reached: Option<PrivateReachedResources>,
-    first_press: bool,
-    keyboard_applied: bool,
-    release: Option<sophia_input_authority::ReleaseOutcome>,
-    event: Option<XAuthorityInputEvent>,
-}

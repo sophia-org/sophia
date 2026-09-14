@@ -427,7 +427,7 @@ fn runner_does_not_charge_or_resend_an_indeterminate_terminal_head() {
     let usage = runner.service.usage();
     for _ in 0..3 {
         assert!(matches!(runner.deliver_accounted_step().unwrap(),
-            PrivateAccountedDelivery::Step { step: PrivateDeliveryStep::Blocked(s), charge: None, unwatched: None } if s==sequence));
+            PrivateAccountedDelivery::Step { step: PrivateDeliveryStep::Blocked(s), charge: None, watch_failed: false, unwatched: None } if s==sequence));
     }
     assert_eq!(runner.service.usage(), usage);
     assert_eq!(channels.input.try_iter().count(), 0);

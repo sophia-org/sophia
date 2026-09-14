@@ -266,6 +266,23 @@ mod private_native {
         pub(super) fn press_event(&self) -> XAuthorityPointerEvent {
             self.press_event
         }
+        /// The input this hold is named against.
+        ///
+        /// Read so a caller can select the hold a join belongs to without
+        /// resolving anything: the hold already knows which input it is for.
+        pub(super) fn input(&self) -> Input {
+            self.input
+        }
+
+        /// The recipient this hold's press actually reached.
+        ///
+        /// A join delivers where the press went. Resolving a recipient again
+        /// would answer a different question -- where the route would reach
+        /// now -- and bind this delivery to whoever that is.
+        pub(super) fn client(&self) -> XServerFrontendClientId {
+            self.client
+        }
+
         pub(super) fn status(&self) -> Status {
             self.status
         }

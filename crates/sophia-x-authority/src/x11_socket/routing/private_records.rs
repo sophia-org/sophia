@@ -53,18 +53,65 @@ impl PrivateReachedResources {
     }
 }
 
+/// How many refused recording attempts a release absorbs before visits stop
+/// choosing it.
+///
+/// THIS IS NOT A PROOF THAT ANOTHER ATTEMPT WOULD FAIL. Common can become
+/// usable again after any number of refusals, and nothing here can see that
+/// happen. What the bound buys is that one unrecordable release cannot absorb
+/// every visit and starve the others; what it costs is that such a release
+/// ends up RETAINED BUT NOT DRIVEN -- its proof, its identity and its cause
+/// are all still held, and nothing is currently scheduled to try again.
+///
+/// Scheduling that retry is open work, not a decision made here.
+#[cfg(unix)]
+const PRIVATE_NATIVE_RECORDING_ATTEMPTS: u8 = 3;
+
 /// A release whose delivery has been decided and not yet handed on.
 ///
 /// Everything the delivery owes, kept together and bound to the hold it ends.
 /// The plan alone is not enough: the event carries the coordinates and the
 /// state from the moment it was decided, and rebuilding either from later
 /// facts would describe a different moment.
+// Not Copy and not Clone. It owns a source obligation, and an obligation
+// that can be duplicated is one that two places can both believe they are
+// answering for.
 #[cfg(unix)]
-#[derive(Debug, Clone, Copy)]
 pub struct PrivateSettlingRelease {
     /// The identity a settlement is named against.
     incarnation: sophia_input_authority::HoldIncarnation,
     reached: PrivateReachedResources,
+    /// The source obligation this release is still answering for.
+    ///
+    /// Carried rather than dropped with the record it came from. The hold
+    /// owns the implicit activation, the query scope and the selection the
+    /// press raised, and it is the only thing holding the exact connection
+    /// they belong to. A release that removed the record and left this behind
+    /// would retire none of them and leave nothing able to.
+    ///
+    /// Noncopy, and it stays owned here until a terminal continuation takes
+    /// it: a release is not finished when its event is built.
+    ///
+    /// Retiring it is the sibling retirement work and is still open; carrying
+    /// it is what makes that work possible at all, because the alternative is
+    /// not "unread" but "gone". Donor holds stay here until those visits are
+    /// complete.
+    native: Option<private_native::Hold>,
+    /// Why this release's event could not be built, when it could not.
+    ///
+    /// Kept as its own cause rather than folded into an absent event. A
+    /// release that owes an event nobody could build is not a release that
+    /// owes none, and the two are told apart here rather than by whoever
+    /// later finds an empty slot.
+    #[cfg_attr(not(test), allow(dead_code))]
+    unbuilt: Option<PrivateAppliedRefusal>,
+    /// Whether the source's own native bit has been recorded for this release.
+    native_recorded: bool,
+    /// What the last recording attempt refused with, if one did.
+    #[cfg_attr(not(test), allow(dead_code))]
+    native_failure: Option<PrivateAuthorityRefusal>,
+    /// How many recording attempts have been spent against the bound below.
+    native_attempts: u8,
     outcome: sophia_input_authority::ReleaseOutcome,
     event: Option<XAuthorityInputEvent>,
     /// The delivery that carries this release's event.
@@ -93,23 +140,90 @@ pub struct PrivateSettlingRelease {
 #[cfg(unix)]
 impl PrivateSettlingRelease {
     /// The delivery whose receipt settles this debt, if it has one.
-    pub fn delivery(self) -> Option<XAuthorityInputDeliveryId> {
+    pub fn delivery(&self) -> Option<XAuthorityInputDeliveryId> {
         self.delivery
     }
     /// The identity, not the number inside it.
     ///
     /// A caller settling this debt names the incarnation; one that could only
     /// ask for the number could not settle anything with the answer.
-    pub fn incarnation(self) -> sophia_input_authority::HoldIncarnation {
+    pub fn incarnation(&self) -> sophia_input_authority::HoldIncarnation {
         self.incarnation
     }
-    pub fn reached(self) -> PrivateReachedResources {
+    pub fn reached(&self) -> PrivateReachedResources {
         self.reached
     }
-    pub fn outcome(self) -> sophia_input_authority::ReleaseOutcome {
+    /// The source obligation this release still carries.
+    ///
+    /// Borrowed, never taken: whoever retires it has to be the terminal
+    /// continuation that owns this release, not a reader passing through.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn native(&self) -> Option<&private_native::Hold> {
+        self.native.as_ref()
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn unbuilt(&self) -> Option<PrivateAppliedRefusal> {
+        self.unbuilt
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn native_recorded(&self) -> bool {
+        self.native_recorded
+    }
+
+    /// Record the source's native bit for this release, if it is still owed.
+    ///
+    /// CALLED WITH NO ADAPTER GUARD AND NO COMMON TRANSACTION HELD. The proof
+    /// enters common as its own origin, so calling this from inside the
+    /// transaction that produced it is common re-entering itself.
+    ///
+    /// Bounded. A recording that refuses is retried on later turns and then
+    /// left owed with its cause: retrying without end is a release that never
+    /// finishes, and giving up quietly is a debt nobody knows is open. THE
+    /// RECORDING IS RETRIED, NEVER THE RELEASE -- the effect happened once.
+    fn record_native_once(&mut self) -> bool {
+        if !self.owes_native_recording() {
+            return false;
+        }
+        let Some(proof) = self.native.as_ref().and_then(private_native::Hold::proof) else {
+            return false;
+        };
+        self.native_attempts = self.native_attempts.saturating_add(1);
+        match proof.record_native() {
+            // `false` is not a failure. It says the native bit is recorded
+            // while the recipient's own obligation is still outstanding, and
+            // those are two different debts; this call answers one of them.
+            Ok(_) => {
+                self.native_recorded = true;
+                self.native_failure = None;
+            }
+            Err(cause) => self.native_failure = Some(cause),
+        }
+        // WHETHER THE BIT WENT IN, not whether a visit happened. The visit is
+        // the caller's own fact -- it spent one either way -- and reporting a
+        // refusal as a recording would let a counter rise while the debt it
+        // counts stays exactly as owed as before.
+        self.native_recorded
+    }
+
+    /// Whether a visit should choose this release.
+    ///
+    /// False once recorded, and false once the attempt bound is reached --
+    /// which says this release is no longer being driven, not that it is
+    /// finished. Its proof and cause are still here to be driven by whatever
+    /// schedules that later.
+    fn owes_native_recording(&self) -> bool {
+        !self.native_recorded
+            && self.native_attempts < PRIVATE_NATIVE_RECORDING_ATTEMPTS
+            && self.native.as_ref().and_then(private_native::Hold::proof).is_some()
+    }
+
+
+    pub fn outcome(&self) -> sophia_input_authority::ReleaseOutcome {
         self.outcome
     }
-    pub fn event(self) -> Option<XAuthorityInputEvent> {
+    pub fn event(&self) -> Option<XAuthorityInputEvent> {
         self.event
     }
     /// Not `pub`, because what it answers with is not. The reason a release
@@ -117,7 +231,7 @@ impl PrivateSettlingRelease {
     /// type to match an accessor would export a decision nobody outside has
     /// asked to make.
     #[cfg_attr(not(test), allow(dead_code))]
-    fn binding(self) -> PrivateReleaseBinding {
+    fn binding(&self) -> PrivateReleaseBinding {
         self.binding
     }
 }

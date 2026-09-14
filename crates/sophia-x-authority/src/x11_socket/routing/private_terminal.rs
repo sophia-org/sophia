@@ -22,10 +22,28 @@
 /// retained inventory produces no report and is still a step that happened,
 /// so a caller that read "no report" as "no work" would charge nothing for
 /// work it did.
+/// How many delivery steps native work waits before it is given a turn of its
+/// own, while deliveries are still ready.
+///
+/// A bound on waiting, not a share of the service: deliveries keep the step
+/// they would have had, and native work simply stops being postponed for
+/// ever by traffic that never stops arriving.
+#[cfg(unix)]
+const PRIVATE_NATIVE_TURN_INTERVAL: u8 = 4;
+
 #[cfg(unix)]
 enum PrivateDeliveryStep {
-    /// Nothing was waiting.
+    /// Nothing was waiting, and nothing owed a recording either.
     Idle,
+    /// One proof-recording visit was spent on one chosen release.
+    ///
+    /// `recorded` says whether that release's native bit went in. False is an
+    /// attempt that refused, which keeps its cause and its identity and stays
+    /// owed; it is not the visit failing to happen.
+    Recorded {
+        #[cfg_attr(not(test), allow(dead_code))]
+        recorded: bool,
+    },
     /// The entry at the head cannot be described, so nothing may be done with
     /// it. Not the same as nothing waiting.
     ///
@@ -459,13 +477,89 @@ impl PrivateXServerFrontend {
     /// Advancing is not settling. A refusal moved into retained inventory
     /// consumed a real step and produced no report, and neither that nor a
     /// report itself says a recipient received anything.
+    /// Whether any release is currently owed a recording visit.
+    ///
+    /// Asked before the step is charged, so an idle turn with nothing owed
+    /// stays idle and costs nothing. Choosing the entry is still the visit's
+    /// own job -- this only says whether there is one to choose.
+    fn owes_native_recording(&self) -> bool {
+        self.terminal
+            .settling
+            .iter()
+            .any(PrivateSettlingRelease::owes_native_recording)
+    }
+
+    /// Spend one proof-recording visit on one chosen release.
+    ///
+    /// ONE ENTRY, ONE ATTEMPT. The cursor is retained across visits so they
+    /// move through the releases that owe a recording rather than returning
+    /// to whichever is first; a visit that swept the whole vector would do
+    /// unbounded work and would make recording a side effect of something
+    /// else rather than work the service can be asked for on its own.
+    ///
+    /// Returns None when nothing owes a recording, so an idle turn stays
+    /// idle. The RELEASE IS NEVER REPLAYED here: the effect happened once and
+    /// what is retried is only the recording of its proof.
+    fn record_one_native(&mut self) -> Option<bool> {
+        let settling = &mut self.terminal.settling;
+        if settling.is_empty() {
+            return None;
+        }
+        let cursor = &mut self.terminal.native_recording_cursor;
+        for _ in 0..settling.len() {
+            if *cursor >= settling.len() {
+                *cursor = 0;
+            }
+            let chosen = *cursor;
+            *cursor = cursor.saturating_add(1);
+            if settling[chosen].owes_native_recording() {
+                return Some(settling[chosen].record_native_once());
+            }
+        }
+        None
+    }
+
+    /// The charge and watch hook takes an optional sequence because not every
+    /// terminal step is an ordered entry. A proof-recording visit is real
+    /// work and must be admitted and watched like any other, and it has no
+    /// sequence to name.
     fn deliver_one(
         &mut self,
         start: &mut dyn FnMut(
-            crate::ReadySequence,
+            Option<crate::ReadySequence>,
             std::time::Instant,
         ) -> Result<(), XServerFrontendRouteError>,
     ) -> Result<PrivateDeliveryStep, XServerFrontendRouteError> {
+        // THE CHOICE BETWEEN TWO KINDS OF WORK, made before either is taken.
+        //
+        // Deliveries keep their order and their head; nothing here reorders
+        // them, replays one, or steps past the one in front. What this decides
+        // is only whether THIS step goes to a delivery or to a native proof,
+        // and it is decided from retained state because a chooser that looked
+        // only at the moment would give native work a turn exactly when the
+        // queues fell empty -- which, for a pointer anyone is using, is never.
+        let native_owed = self.owes_native_recording();
+        let nothing_to_deliver = self.terminal.delivering.is_empty() && self.terminal.turn.is_empty();
+        // A head nobody can describe blocks ITS OWN delivery. It says nothing
+        // about a sealed proof on an unrelated release, and letting it stop
+        // that work too would make one stuck entry hold up obligations it has
+        // no connection to.
+        let head_blocked = !self.terminal.delivering.is_empty()
+            && self.terminal.emission == PrivateEmissionPhase::Indeterminate;
+        let native_turn = native_owed
+            && (nothing_to_deliver
+                || head_blocked
+                || self.terminal.native_turn_debt >= PRIVATE_NATIVE_TURN_INTERVAL);
+        if native_turn {
+            // CHARGED AND WATCHED BEFORE THE VISIT, like every other terminal
+            // step, and before anything takes common.
+            start(None, std::time::Instant::now())?;
+            self.terminal.native_turn_debt = 0;
+            return Ok(match self.record_one_native() {
+                Some(recorded) => PrivateDeliveryStep::Recorded { recorded },
+                None => PrivateDeliveryStep::Idle,
+            });
+        }
         {
             // Between two places this inventory owns, with nothing that can
             // fail in between.
@@ -494,7 +588,12 @@ impl PrivateXServerFrontend {
         // Charged for the step about to happen, before any guard is taken and
         // before anything is observed or sent. A refusal here leaves the entry
         // owned and untouched.
-        start(sequence, std::time::Instant::now())?;
+        start(Some(sequence), std::time::Instant::now())?;
+        // AFTER ADMISSION, not before it. A refused charge is not a delivery
+        // step, and counting it would move native work closer to its turn for
+        // work that never happened -- or, the other way round, spend the debt
+        // that was about to give it one.
+        self.terminal.native_turn_debt = self.terminal.native_turn_debt.saturating_add(1);
         // What may happen to the entry at the head depends on how far it
         // already got. Starting a new call is not a disposition, and
         // deciding that from scratch turns an event that may already be
@@ -629,15 +728,23 @@ impl PrivateXServerFrontend {
     /// only ever be called with a receipt nobody has would be machinery
     /// describing a decision nothing makes.
     ///
-    /// The native half is not established here either, and nothing below says
-    /// otherwise. What the guarded code demonstrates is that the aggregate
-    /// transition and the projection it moves happen in one interval. That is
-    /// not native reconciliation: the aggregate, the exact retained
-    /// projection, the passive and implicit grab lifecycle and the route-lease
-    /// and query projections all have to be reconciled together, and only the
-    /// producer that owns the operation can seal a proof of it. Until such a
-    /// proof is consumed here, the native half is unproved -- it was asserted
-    /// once in this file and that assertion is withdrawn.
+    /// THE NATIVE HALF IS NOW ESTABLISHED HERE, AND ONLY THE NATIVE HALF. This
+    /// path reaches deliver_one, which may spend a proof-recording visit and
+    /// return Recorded, so a source proof can be consumed on the way through.
+    /// That is what changed: an earlier paragraph here said no proof is
+    /// consumed, and it is withdrawn.
+    ///
+    /// What a consumed proof establishes is exactly the native bit for the
+    /// incarnation the proof itself names. The producer that owns the
+    /// operation sealed it over the aggregate, the exact retained projection,
+    /// the passive and implicit grab lifecycle and the route-lease and query
+    /// projections together; nothing here reconstructs that reasoning or
+    /// stands in for it.
+    ///
+    /// It establishes NOTHING about the recipient, and nothing about the debt
+    /// as a whole. A release whose event was queued, or built and unsent, or
+    /// never built at all, is in the same position on that half as one that
+    /// was never delivered.
     ///
     /// Emission happens here, with no guard held: the decision was made under
     /// the guards and is immutable, and sending on a client's queue is exactly

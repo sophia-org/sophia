@@ -45,6 +45,17 @@ pub struct PrivateRunnerProgress {
     pub enqueued: usize,
     pub observed: usize,
     pub settled: usize,
+    /// How many proof-recording visits put a native bit in during this turn.
+    ///
+    /// Separate from `settled`: a native bit is one half of a debt, and a
+    /// recording is not a receipt.
+    pub recorded: usize,
+    /// Whether the supervisor failed during this turn.
+    ///
+    /// Separate from `unwatched`, which names an entry: native work has none,
+    /// and a failure reported only as an absent name is a failure nobody is
+    /// told about.
+    pub watch_failed: bool,
     pub blocked: Option<crate::ReadySequence>,
     /// The service allowance stopped this turn. It will be checked again on
     /// the next owner-loop turn; waiting is not part of an operation.
@@ -95,6 +106,13 @@ enum PrivateAccountedDelivery {
     Step {
         step: PrivateDeliveryStep,
         charge: Option<sophia_input_authority::ServiceCharge>,
+        /// THAT the supervisor failed, kept apart from WHICH entry it was.
+        ///
+        /// Native work has no ordered entry to name, so a failure carried only
+        /// as an optional sequence would arrive as None and be indistinguishable
+        /// from no failure at all. Nothing invents a sequence to make the
+        /// failure reportable; the fact travels on its own.
+        watch_failed: bool,
         unwatched: Option<crate::ReadySequence>,
     },
 }
@@ -223,12 +241,16 @@ impl PrivatePreparedRunner {
         let mut watched = None;
         let mut refused = None;
         let mut chosen = None;
+        let mut watch_failed = false;
         let mut unwatched = None;
         let result = frontend
             .as_mut()
             .expect("live runner")
             .deliver_one(&mut |sequence, began| {
-                chosen = Some(sequence);
+                // None is a proof-recording visit: real work with no ordered
+                // entry to name. It is admitted and watched the same way, and
+                // simply has nothing to report as taken or blocked.
+                chosen = sequence;
                 let admission = admission
                     .take()
                     .ok_or(XServerFrontendRouteError::OrderedItemUnresolved)?;
@@ -252,13 +274,15 @@ impl PrivatePreparedRunner {
                 {
                     Ok(guard) => guard,
                     Err(_) => {
-                        unwatched = Some(sequence);
+                        watch_failed = true;
+                        unwatched = sequence;
                         return Err(XServerFrontendRouteError::OrderedItemUnresolved);
                     }
                 };
                 watched = Some(guard);
                 if watched.as_mut().expect("installed").applying().is_err() {
-                    unwatched = Some(sequence);
+                    watch_failed = true;
+                    unwatched = sequence;
                     return Err(XServerFrontendRouteError::OrderedItemUnresolved);
                 }
                 Ok(())
@@ -266,6 +290,7 @@ impl PrivatePreparedRunner {
         if let Some(watched) = watched
             && watched.finish().is_err()
         {
+            watch_failed = true;
             unwatched = chosen;
         }
         let charge = running
@@ -283,11 +308,17 @@ impl PrivatePreparedRunner {
             Err(_) if unwatched.is_some() => {
                 PrivateDeliveryStep::Blocked(unwatched.expect("checked"))
             }
+            // The supervisor failed on work that has no ordered entry to name.
+            // No step was taken -- the failure happened during admission, so
+            // nothing was observed, sent or recorded -- and the fact travels
+            // beside this rather than as a sequence nobody could supply.
+            Err(_) if watch_failed => PrivateDeliveryStep::Idle,
             Err(error) => return Err(error),
         };
         Ok(PrivateAccountedDelivery::Step {
             step,
             charge,
+            watch_failed,
             unwatched,
         })
     }
@@ -424,12 +455,34 @@ impl PrivatePreparedRunner {
                     PrivateAccountedDelivery::Step {
                         step,
                         charge,
+                        watch_failed,
                         unwatched,
                     } => {
                         let overran = progress.record_charge(charge);
                         progress.unwatched = unwatched;
+                        // Recorded whether or not an entry could be named, so
+                        // a supervisor failure on native work is not lost to
+                        // an absent sequence.
+                        progress.watch_failed |= watch_failed;
+                        if watch_failed {
+                            break;
+                        }
                         match step {
                             PrivateDeliveryStep::Idle => cleanup_idle = true,
+                            // A visit was spent, so this side of the service
+                            // made progress and is not idle. Counted as the
+                            // terminal step it is: the work was chosen,
+                            // charged and done, whether or not the recording
+                            // it attempted went in.
+                            PrivateDeliveryStep::Recorded { recorded } => {
+                                progress.terminal_steps += 1;
+                                progress.recorded += usize::from(recorded);
+                                self.prefer_cleanup = false;
+                                if overran || unwatched.is_some() {
+                                    break;
+                                }
+                                continue;
+                            }
                             PrivateDeliveryStep::Blocked(sequence) => {
                                 progress.blocked = Some(sequence);
                                 break;

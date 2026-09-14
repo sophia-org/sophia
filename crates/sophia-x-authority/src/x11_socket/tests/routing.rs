@@ -12662,6 +12662,347 @@ fn projected_buttons(
 }
 
 #[test]
+fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
+    // Choosing native work only when the queues fall empty is not fairness,
+    // it is a promise that never comes due: a pointer anyone is actually
+    // using keeps a delivery ready at every terminal call, and the proof of a
+    // release that already happened waits behind traffic for ever.
+    let client = XServerFrontendClientId(2441);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    // One release, left owing a proof. Its entry is delivered by hand so the
+    // wrapper does not spend the visit.
+    let run_by_hand = |private: &mut crate::PrivateXServerFrontend,
+                           keyboards: &mut crate::PrivateKeyboards,
+                           delivery: u64,
+                           button: u32,
+                           pressed: bool| {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                button,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.terminal.delivering.extend(turn);
+    };
+    run_by_hand(private, keyboards, 2441, 272, true);
+    private.deliver_one(&mut |_, _| Ok(())).expect("the press delivers");
+    run_by_hand(private, keyboards, 2442, 272, false);
+    private
+        .deliver_one(&mut |_, _| Ok(()))
+        .expect("the release delivers");
+    assert_eq!(private.terminal.settling.len(), 1);
+    assert!(
+        !private.terminal.settling[0].native_recorded(),
+        "its proof is still owed, which is what this control is about"
+    );
+
+    // Now keep a real delivery ready at EVERY terminal call, on a different
+    // button so no new native debt is created, and count the visits the old
+    // proof gets while that traffic runs.
+    let mut visits = 0;
+    let mut delivered = 0;
+    for round in 0..8u64 {
+        // A real entry is ready and waiting at every terminal call. The first
+        // is a press of a second button; the rest join it, so the traffic
+        // creates no new native debt of its own.
+        run_by_hand(private, keyboards, 2450 + round, 273, true);
+        // Steps until this round's entry is delivered. A native visit taking
+        // one of them is exactly the fairness under test; the delivery still
+        // gets its step and keeps its place.
+        loop {
+            match private
+                .deliver_one(&mut |_, _| Ok(()))
+                .expect("a terminal step")
+            {
+                PrivateDeliveryStep::Recorded { .. } => visits += 1,
+                PrivateDeliveryStep::Advanced { .. } => {
+                    delivered += 1;
+                    break;
+                }
+                PrivateDeliveryStep::Idle => panic!("traffic was ready, so no step is idle"),
+                PrivateDeliveryStep::Blocked(_) => panic!("no entry is indeterminate here"),
+            }
+        }
+    }
+    assert_eq!(delivered, 8, "every round's entry was delivered, in its turn");
+
+    assert!(
+        visits >= 1,
+        "native work got a bounded turn while deliveries stayed ready; it \
+         received {visits} visits across eight rounds of traffic"
+    );
+    assert!(
+        private.terminal.settling[0].native_recorded(),
+        "and the older proof was recorded rather than waiting behind traffic"
+    );
+}
+
+#[test]
+fn a_proof_recording_visit_is_charged_and_watched_like_any_other_step() {
+    // A visit that returned before the charge hook would be work the service
+    // never admitted and the supervisor never saw -- unbudgeted, unwatched,
+    // and invisible to the accounting that bounds every other terminal step.
+    let client = XServerFrontendClientId(2431);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    // The press goes through the wrapper; the release is driven by hand so
+    // the visit that follows it can be observed being charged.
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2431),
+            272,
+            true,
+        ))
+        .expect("the order to accept the press");
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
+        .expect("a readable order");
+    private.deliver_turn(turn);
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2432),
+            272,
+            false,
+        ))
+        .expect("the order to accept the release");
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
+        .expect("a readable order");
+    assert_eq!(turn.len(), 1, "the release is ready to deliver");
+    // Installed by hand rather than through the wrapper, because the wrapper
+    // charges nothing and would spend the visit this control is watching for.
+    private.terminal.delivering.extend(turn);
+
+    let charged: std::cell::RefCell<Vec<Option<crate::ReadySequence>>> =
+        std::cell::RefCell::new(Vec::new());
+    let mut charge = |sequence: Option<crate::ReadySequence>, _: std::time::Instant| {
+        charged.borrow_mut().push(sequence);
+        Ok(())
+    };
+    // One step to deliver the release itself, charged under its own entry.
+    assert!(matches!(
+        private.deliver_one(&mut charge).expect("a step"),
+        PrivateDeliveryStep::Advanced { .. }
+    ));
+    assert!(
+        charged.borrow()[0].is_some(),
+        "an ordered entry charges under its own sequence"
+    );
+    assert_eq!(
+        private.terminal.settling.len(),
+        1,
+        "and its release is owed a recording"
+    );
+    charged.borrow_mut().clear();
+
+    // The next step has nothing left to deliver, so it spends a recording
+    // visit -- and asks to be charged for it first.
+    let step = private.deliver_one(&mut charge).expect("a step");
+    assert!(
+        matches!(step, PrivateDeliveryStep::Recorded { recorded: true }),
+        "the visit recorded the release's native bit"
+    );
+    assert_eq!(
+        charged.borrow().as_slice(),
+        &[None],
+        "and it asked to be charged first, naming no ordered entry because it \
+         is not one"
+    );
+
+    // With nothing left owed, an empty order is idle again and costs nothing.
+    let before = charged.borrow().len();
+    assert!(matches!(
+        private.deliver_one(&mut charge).expect("a step"),
+        PrivateDeliveryStep::Idle
+    ));
+    assert_eq!(
+        charged.borrow().len(),
+        before,
+        "an idle turn with nothing owed charges nothing"
+    );
+}
+
+#[test]
+fn a_release_proof_is_recorded_by_service_rather_than_by_the_next_input() {
+    // The blocker this control exists for: proof recording used to happen as
+    // incidental work inside a successful input execution, so a release whose
+    // proof was still owed only progressed when somebody submitted ANOTHER
+    // input. An idle session never finished it. Recording is terminal work
+    // now, and this proves it can be asked for with an empty order.
+    let client = XServerFrontendClientId(2421);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2421),
+            272,
+            true,
+        ))
+        .expect("the order to accept the press");
+    for _ in 0..4 {
+        runner.service_turn().expect("a serviceable turn");
+    }
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2422),
+            272,
+            false,
+        ))
+        .expect("the order to accept the release");
+
+    // NOTHING MORE IS SUBMITTED FROM HERE. Every recording counted below is
+    // done by service turns alone.
+    let mut recorded = 0;
+    for _ in 0..12 {
+        recorded += runner
+            .service_turn()
+            .expect("a serviceable turn")
+            .recorded;
+    }
+    let private = runner.frontend.as_ref().expect("a live runner");
+    assert_eq!(
+        private.terminal.settling.len(),
+        1,
+        "the release is owed and its record carries the obligation"
+    );
+    assert!(
+        private.terminal.settling[0].native_recorded(),
+        "service reached the obligation with no further input submitted"
+    );
+    // ONE visit, ONE entry. Not a sweep, and not repeated against an entry
+    // already recorded.
+    assert_eq!(
+        recorded, 1,
+        "exactly one visit put the bit in, and nothing revisited it after"
+    );
+    // WHAT THIS CONTROL DOES NOT PROVE, stated rather than implied: the
+    // recording happens during the same run of turns that delivers the
+    // release, so this does not by itself separate "service did it" from
+    // "delivering it did it". What separates them is that removing the
+    // terminal visit -- the only thing that calls the recording now -- fails
+    // this control and the retained-debt control with it.
+}
+
+#[test]
+fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
+    // The press raises real native state: an implicit activation, a query
+    // scope and a selection, all owned by the hold and reachable only through
+    // the exact connection it retained. A release that removed the record and
+    // left the hold behind would retire none of them and leave nothing able
+    // to -- the obligation would still be live with no owner.
+    let client = XServerFrontendClientId(2411);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2411),
+            272,
+            true,
+        ))
+        .expect("the order to accept the press");
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
+        .expect("a readable order");
+    assert!(private.deliver_turn(turn)[0].enqueued);
+    assert!(
+        private.terminal.holds[0].native.is_some(),
+        "the press left a source obligation on its record"
+    );
+
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2412),
+            272,
+            false,
+        ))
+        .expect("the order to accept the release");
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
+        .expect("a readable order");
+    let delivered = private.deliver_turn(turn);
+    assert!(delivered[0].enqueued, "the release owes its recipient an event");
+    assert!(
+        private.terminal.holds.is_empty(),
+        "the hold ended, so its record is gone"
+    );
+    assert_eq!(
+        private.terminal.settling.len(),
+        1,
+        "and its release is owed to whoever settles it"
+    );
+    assert!(
+        private.terminal.settling[0].native().is_some(),
+        "the obligation travelled with the release rather than dying with the \
+         record: nothing else holds the connection its activation, query scope \
+         and selection belong to"
+    );
+}
+
+#[test]
 fn a_final_release_clears_what_its_press_projected_and_reports_it() {
     let client = XServerFrontendClientId(761);
     let namespace = NamespaceId::from_raw(client.raw());
@@ -12883,7 +13224,7 @@ fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing(
 }
 
 #[test]
-fn a_release_refuses_when_its_seats_projection_is_gone() {
+fn a_release_whose_seat_projection_is_gone_retains_a_residual_rather_than_refusing() {
     let client = XServerFrontendClientId(791);
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
@@ -12923,16 +13264,89 @@ fn a_release_refuses_when_its_seats_projection_is_gone() {
         .remove(&(namespace, seat));
 
     let released = role.reserve(stamp, 2).expect("a reservation").accepted();
-    let refused = private.run_ordered_input(
-        keyboards,
-        &button_to(surface, XAuthorityInputDeliveryId::from_raw(792), 272, false),
-        &released,
-    
-                watch,
-            );
+    let run = private
+        .run_ordered_input(
+            keyboards,
+            &button_to(surface, XAuthorityInputDeliveryId::from_raw(792), 272, false),
+            &released,
+            watch,
+        )
+        // OLD CLAIM: the whole release is refused, because retained state that
+        //   has become unavailable is not a fresh clear history.
+        // NEW CLAIM: a missing mapper after DeliverTo is a POST-EFFECT
+        //   RESIDUAL, not a refusal of the release. The aggregate release
+        //   already happened in the ledger, and refusing here would discard a
+        //   transition that had occurred rather than prevent one.
+        // The original concern is unchanged and still asserted below: nothing
+        // rebuilds the mapper, so no clear history is ever asserted.
+        .expect("the aggregate release to occur despite the missing projection");
+
+    // The aggregate release occurred, and the ledger says whose.
     assert!(
-        refused.is_err(),
-        "retained state that has become unavailable is not a fresh clear history, got {refused:?}"
+        matches!(
+            run.release,
+            Some(sophia_input_authority::ReleaseOutcome::DeliverTo(_))
+        ),
+        "the hold ended and its delivery was decided"
+    );
+    assert_eq!(private.terminal.settling.len(), 1);
+
+    // The required event remains UNBUILT, and says why. Owed and absent is
+    // not the same as never owed: a reader finding an empty slot with no
+    // cause could not tell this release from one that owed nothing.
+    assert!(run.owes_event, "the recipient is still owed its release event");
+    assert!(run.event.is_none(), "and it could not be built");
+    assert_eq!(
+        private.terminal.settling[0].unbuilt(),
+        Some(PrivateAppliedRefusal::Interrupted),
+        "the cause travels with the debt rather than being flattened away"
+    );
+
+    // The exact hold is retained against what actually went missing.
+    assert!(
+        matches!(
+            private.terminal.settling[0]
+                .native()
+                .expect("the release carries its source obligation")
+                .status(),
+            private_native::Status::Retained(private_native::Residual::MissingMapper)
+        ),
+        "the obligation is retained naming the projection that is gone"
+    );
+
+    // AND THE MAPPER IS NOT RECREATED. This is the whole of the original
+    // concern: a fresh mapper would assert the button was never down.
+    assert!(
+        !private
+            .broker
+            .registry
+            .pointer_state
+            .lock()
+            .expect("the pointer state")
+            .contains_key(&(namespace, seat)),
+        "nothing rebuilt the projection, so no clear history is asserted"
+    );
+
+    // Neither half is inferred. There is no proof -- the release ended in a
+    // residual -- so nothing recorded the native bit, and no receipt has
+    // arrived to settle the recipient's.
+    assert!(
+        !private.terminal.settling[0].native_recorded(),
+        "a residual produces no proof, so the native half stays owed"
+    );
+    let mut cursor = 0;
+    let reported = private
+        .authority()
+        .under_common(|authority| authority.next_debt(&mut cursor))
+        .expect("the authority to be readable")
+        .expect("a debt for the release that just happened");
+    assert!(
+        !reported.1.native_reconciled,
+        "the native half is not inferred from the release having happened"
+    );
+    assert!(
+        !reported.1.recipient_settled,
+        "and neither is the recipient's"
     );
 }
 
@@ -14681,6 +15095,83 @@ fn separate_ordered_sender(
 }
 
 #[test]
+fn a_join_leaves_the_source_obligation_alone_so_a_later_press_still_runs() {
+    // The sequence that a join asked as a press poisons: press, join the same
+    // button, then press a DIFFERENT button. Asking press for the join
+    // installs a second source obligation and leaves it retained on the
+    // disagreement the source reports, and the third press is then refused
+    // WrongPhase for a phase the executor put there itself.
+    let client = XServerFrontendClientId(2401);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    let run = |private: &mut crate::PrivateXServerFrontend,
+                   keyboards: &mut crate::PrivateKeyboards,
+                   delivery: u64,
+                   button: u32| {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                button,
+                true,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.deliver_turn(turn)
+    };
+
+    let first = run(private, keyboards, 2401, 272);
+    assert!(first[0].enqueued, "the first press owes its recipient an event");
+    assert_eq!(private.terminal.holds.len(), 1);
+
+    // The join. It owes nobody an event, and it must not leave a second
+    // obligation behind it.
+    let joined = run(private, keyboards, 2402, 272);
+    assert!(
+        !joined[0].enqueued,
+        "a join owes nobody an event: the button is already down"
+    );
+    assert_eq!(
+        private.terminal.holds.len(),
+        1,
+        "and it joined rather than beginning a second hold"
+    );
+    assert!(
+        private.terminal.native_pending.is_none(),
+        "the join asked the source for a join, so nothing was installed to retain"
+    );
+
+    // The press this blocker actually kills.
+    let third = run(private, keyboards, 2403, 273);
+    assert!(
+        third[0].enqueued,
+        "a different button still presses: the join left no phase behind it"
+    );
+    assert_eq!(
+        private.terminal.holds.len(),
+        2,
+        "and it began its own hold rather than being refused"
+    );
+}
+
+#[test]
 fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
     let client = XServerFrontendClientId(992);
     let delivery = XAuthorityInputDeliveryId::from_raw(992);
@@ -15577,7 +16068,7 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     let first = XAuthorityInputDeliveryId::from_raw(10031);
     let second = XAuthorityInputDeliveryId::from_raw(10032);
         let PreparedOrderedFixture {
-        mut runner, ingress, channels, registration, durable, selections, window,
+        mut runner, ingress, channels, registration, durable, selections: _, window: _,
         _acks,
         deliveries: _deliveries,
         client: _client,
@@ -15601,8 +16092,10 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
         Some(client)
     );
 
-    // A second admitted client of this instance with its own live queue. It
-    // is here to have somewhere the press could wrongly go, not to grab.
+    // A REAL REPLACEMENT, without forcing any state. B alone cannot displace
+    // the implicit grab this press took, but A can release its own first --
+    // so the owner ungrabs and B grabs, and a fresh resolution of this button
+    // now genuinely reaches a different client than the press did.
     let owner = XServerFrontendClientId(1004);
     let (owner_registration, owner_channels) = private
         .broker
@@ -15614,26 +16107,32 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
         .registry
         .attach_private_lifecycle(&owner_registration, namespaced(owner, namespace))
         .expect("the boundary to admit");
-
-    // WHAT THIS SETUP USED TO BE, and why it changed. It installed a second
-    // client's pointer grab here, so that a fresh resolution of the same
-    // button would reach the grab owner instead. That is no longer reachable:
-    // the first press takes an implicit grab for the duration the button is
-    // down, so grab_pointer is refused with AlreadyGrabbed -- which is the
-    // operation behaving correctly, not the control being wrong.
-    //
-    // OLD CLAIM: with a grab installed after the press, a join binds the
-    //   recipient the hold reached rather than the grab owner.
-    // NEW CLAIM: with this window's button selection withdrawn after the
-    //   press, a join binds the recipient the hold reached rather than
-    //   re-resolving against a source view that would now reach nobody.
-    //
-    // The discriminator is at least as sharp: a join that re-resolved would
-    // now have nothing to reach at all, so binding the original recipient
-    // cannot be an accident of both paths landing on the same client.
     {
-        let mut selected = selections.lock().expect("the selections");
-        selected.update(window, Some(0), None);
+        let mut grabs = private
+            .broker
+            .registry
+            .input_authority
+            .lock()
+            .expect("the grab state");
+        // The press's own client gives up the grab it holds. Nothing is
+        // forced: this is the owner releasing its own.
+        grabs.ungrab_pointer(namespace, client.raw());
+        grabs
+            .grab_pointer(
+                namespace,
+                crate::XActiveInputGrab {
+                    owner: owner.raw(),
+                    window: XResourceId::new(0x201004, 1),
+                    owner_events: false,
+                    pointer_mode: 1,
+                    keyboard_mode: 1,
+                    event_mask: u16::MAX,
+                    xi_event_mask: [0; 8],
+                    xi_event_mask_words: 0,
+                    route_lease: None,
+                },
+            )
+            .expect("the grab to take");
     }
 
     // The same button again. The ledger joins the hold that exists: no new
@@ -16014,11 +16513,26 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     );
     assert!(
         !reported.1.is_settled(),
-        "and nothing has settled it: neither half is established by a release \
-         having happened"
+        "and nothing has settled it whole: a release having happened \
+         establishes neither half by itself"
     );
-    assert!(!reported.1.native_reconciled);
-    assert!(!reported.1.recipient_settled);
+    // OLD CLAIM: neither bit is set, because a release having happened
+    //   establishes neither half.
+    // NEW CLAIM: the native half is set, and NOT because a release happened.
+    //   The source produced a proof that its own projection was reconciled,
+    //   and that proof recorded the bit once the adapter guards and the
+    //   common transaction had both dropped. A release that ends with a
+    //   residual produces no proof and leaves this false, which is what makes
+    //   the bit evidence rather than a restatement of "a release occurred".
+    assert!(
+        reported.1.native_reconciled,
+        "the source's own proof recorded the native half"
+    );
+    assert!(
+        !reported.1.recipient_settled,
+        "and nothing here establishes the recipient's half: an event being \
+         owed, built, or queued is not a receipt"
+    );
     drop(registration);
     drop(channels);
     drop(durable);
@@ -16758,8 +17272,12 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
 
     // An empty order is not a step and costs nothing.
     let charged = std::cell::RefCell::new(Vec::new());
-    let mut charge = |sequence: crate::ReadySequence, _: std::time::Instant| {
-        charged.borrow_mut().push(sequence);
+    let mut charge = |sequence: Option<crate::ReadySequence>, _: std::time::Instant| {
+        // None would be a proof-recording visit. This control drives ordered
+        // entries, so every charge it sees names one.
+        charged
+            .borrow_mut()
+            .push(sequence.expect("an ordered entry, not a recording visit"));
         Ok(())
     };
     let step = private.deliver_one(&mut charge).expect("a step");

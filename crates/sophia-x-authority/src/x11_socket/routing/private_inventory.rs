@@ -52,6 +52,23 @@ struct PrivateTerminalInventory {
     native_pending: Option<private_native::Hold>,
     /// Releases whose delivery was decided and whose debt is still open.
     settling: Vec<PrivateSettlingRelease>,
+    /// How many terminal steps have gone to deliveries since native work last
+    /// had a turn.
+    ///
+    /// Retained, because fairness between two kinds of work cannot be decided
+    /// from a single step: choosing native work only when the queues happen to
+    /// be empty lets a delivery that is always ready starve a proof forever,
+    /// and that is not a rare interleaving -- it is what a busy pointer looks
+    /// like.
+    native_turn_debt: u8,
+    /// Where the next proof-recording visit starts looking.
+    ///
+    /// Retained rather than restarted, so visits move through the releases
+    /// that owe a recording instead of returning to the same one. One entry
+    /// is chosen per charged visit; sweeping the whole vector would make the
+    /// work unbounded and, worse, make it incidental to whatever else was
+    /// happening rather than something the service can be asked for.
+    native_recording_cursor: usize,
     /// The item currently being executed.
     ///
     /// Owned before the execution that could fail, so an interruption leaves
@@ -87,6 +104,8 @@ impl PrivateTerminalInventory {
             lifecycle,
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             native_pending: None,
+            native_recording_cursor: 0,
+            native_turn_debt: 0,
             settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             current: None,
             turn: Vec::with_capacity(capacity),
@@ -103,6 +122,12 @@ impl PrivateTerminalInventory {
     fn is_empty(&self) -> bool {
         self.lifecycle.inventory().is_ok_and(|inventory| inventory.open == 0 && inventory.closed == 0)
             && self.holds.is_empty()
+            // A retained source obligation is an obligation. It is normally
+            // empty between operations, but a disagreement leaves one here
+            // deliberately, and an instance reporting itself empty while
+            // holding an activation, a query scope and a selection would be
+            // reporting the absence of the record rather than of the debt.
+            && self.native_pending.is_none()
             && self.settling.is_empty()
             && self.current.is_none()
             && self.turn.is_empty()
@@ -119,6 +144,7 @@ impl PrivateTerminalInventory {
         let lifecycle = self.lifecycle.inventory().ok()?;
         Some(self.holds
             .len()
+            .saturating_add(usize::from(self.native_pending.is_some()))
             .saturating_add(self.settling.len())
             .saturating_add(usize::from(self.current.is_some()))
             .saturating_add(self.turn.len())
@@ -145,6 +171,8 @@ impl PrivateTerminalInventory {
                 lifecycle: self.lifecycle.clone(),
                 holds: Vec::new(),
                 native_pending: None,
+                native_recording_cursor: 0,
+                native_turn_debt: 0,
                 settling: Vec::new(),
                 current: None,
                 turn: Vec::new(),
