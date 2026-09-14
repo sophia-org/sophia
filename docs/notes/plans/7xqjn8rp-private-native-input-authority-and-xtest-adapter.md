@@ -19,21 +19,25 @@ Neither UID matching nor knowledge of a socket pathname authorizes injection.
 
 ## Current integration state
 
-The isolated input branch includes published content commit `22c01aa1` through
-reconciliation merge `e48571f1`, preserving the reviewed input commit identities.
-Reviewed common-authority and constructor/helper code is retained there; the
-later M3 producer/consumer candidates remain unintegrated. XTEST discovery stays
-disabled. The mandatory native manifest has 40 obligations, including 20 with no
-production implementation evidence.
+**M3 is open and implementation is proceeding in parallel.** Claude owns the
+writer, recovery and terminal stream; Codex owns the applied-state producers,
+runner, native proof and lifecycle integration, with independent review across
+the boundary. t093 remains the recording home. M4–M6 and physical task t094
+remain separate; no partial path enables discovery.
 
-The current runtime focus is terminal completion: control and untracked input
-need real completion signals, and accepted work needs owned error and shutdown
-continuations through poison, missing targets and output backpressure. Narrow
-admission, failure-slot and tracked-input controls are recorded below; they do
-not establish the complete lifecycle. Counting a failure is not settlement.
-The ordered executor still owes final guarded validation, authority/XKB state
-application, remaining producers and the chosen interval/cleanup budgets. These
-are already authorized implementation requirements, not new operator decisions.
+The base-only checkpoint is `fbe6e990`, carrying published `5c199b9f` without
+the unaccepted private producer/consumer slice. Its next batched base refresh
+targets `feca59c8`. The active input implementation is separate:
+`37d1a0cb` merges the watched step `9fdc75b4` with the applied-registry bridge
+`5bd552a0`, exact pointer activation `2e4b933a` and focus lock-order repair
+`375e92c7`. These are implementation checkpoints, not M3 acceptance. Reviewed
+identities are preserved by merge, never replayed or replaced.
+
+The content/GPU track does not establish input acceptance: the retained
+`20260914T011705Z` run on `56fc17a2` presented both outputs for 20 seconds
+without a runtime fatal, but reconnected because Lom first used resource IDs
+in order 1,3,2. Lom `fec727d` repairs that ordering. A stable grant and an
+accepted workspace action still require their own attended evidence.
 
 ## Deliverable and limits
 
@@ -56,7 +60,7 @@ descriptors and connections to a different authority are not.
 | --- | --- | --- |
 | M1 | Repair the default Session build by extracting indicator projection from the native module | Retain the fresh 100-execution default-off core baseline and this scope record |
 | M2 | Review the common API for executor integration | Own and repair `sophia-input-authority`, its pool and identity regressions, and independent evidence |
-| M3 | Guarded synchronization API, private ordered executor, retained completions and phase-aware delivery recovery | Review races, failure attribution, capacity and test mutations |
+| M3 | Ordered writer, delivery arbitration, real receipts and origin-bound terminal/debt consumer | Applied routing and native proof, prepared runner/service budget/watchdog, exact lifecycle integration, independent fault controls |
 | M4 | Expose production Session controller and broker integration with deterministic topology/clock adapters | Build the private Session host and containment runner with fabricated endpoint negatives |
 | M5 | Implement all four XTEST 2.1 requests, admission and cancellation | Independent clients in both byte orders with absolute deadlines |
 | M6 | Affected Rust tests, default build, warnings and workspace checks | All profiles, retained provenance, honest XTS result, tracking and coordinated integration |
@@ -64,6 +68,32 @@ descriptors and connections to a different authority are not.
 Separate targets and worktrees prevent stale include-file and build-cache
 comparisons. No merge precedes coordination of runtime, gate and tracking diffs.
 Passing one milestone does not enable discovery or close the full task.
+
+### M3 closure gates (all required under t093)
+
+| Gate | Remaining implementation | Required production evidence |
+| --- | --- | --- |
+| A: terminal critical path | Immutable ordered capsule and writer; exact delivery binding; real flush or established disconnect; sealed full-incarnation native proof; bounded `next_debt`/attempt/`settle` consumer | Real ingress and exact queued envelope, press bytes, final release bytes, separate native and recipient evidence, then same-grant re-press succeeds past the common release barrier. Queue acceptance and completion observation never substitute for a receipt. |
+| B: complete ordered state | Actual applied focus and selection publication; generation-bound dependent focus; key/XKB continuity; motion/axis, StateOnly/thaw, grab/lease/query cleanup | Pending focus refuses; applied focus permits. Foreign or replacement history refuses. Duplicate/join and survivor release do not repeat effects. No worker wait under execution guards, late reselection, restamp or independent deferred mutation. |
+| C: bounded ownership and recovery | Before-acceptance output/plan/seat storage; one origin-bound inventory through live owner, handle and durable owner; all nine control kinds' actual cleanup; explicit safe poison recovery; native sibling-grab continuations | Interrupted current item and remainder survive; indeterminate sends never replay; enqueued items retry observation only; full channel, exact origin collisions and repeated recovery preserve credits and exact outcomes. Unreadable state cannot report zero or settled. |
+| D: lifecycle and scheduling | Actual admission/revocation producer participation; one exact connection cleanup owner; prepared runner owns its unique XKB history and supervisor; start/teardown failure paths; fair bounded execution and cleanup service | Producer exposure follows readiness; revocation orders against execution; failed/lost runner closes its ingress and transports while obligations remain owned. Idle/blocked polls cost no starts, every dequeue is charged, and a watchdog covers guard acquisition without joining a stuck worker. |
+
+The planned allowance is 32 starts and 2 ms per 16 ms, retaining four starts
+and 0.5 ms for eligible cleanup. Donation requires a fresh positive observation
+that no cleanup can start; unknown eligibility preserves the reserve. Starts
+do not preempt an operation, so elapsed overruns are reported. The 250 ms
+execution watchdog is independent of the six-second transport deadline, which
+counts actual blockage of that delivery only. Per-call nonblocking sends must
+not change shared socket flags or ordinary writer policy.
+
+`5bd552a0` has 11 bridge and two real runner-preparation controls; it does not
+publish applied focus by itself. `2e4b933a` passed 970 X-authority tests across
+28 suites (one ignored), clippy and layout. That proves stamped native grab
+handling, not the unfinished native/recipient settlement join. The runner's
+new actual-queue accounting controls and the focus/native/lifecycle integration
+remain implementation work until frozen and reviewed together with their
+production callers. Full headless and contained canonical gates follow these
+integration gates; none authorizes hardware, installation or default enablement.
 
 ## Native identities, state and capacity
 

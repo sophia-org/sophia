@@ -75,6 +75,7 @@ include!("x11_socket/routing/private_execution.rs");
 include!("x11_socket/routing/private_runner.rs");
 include!("x11_socket/routing/private_applied_state.rs");
 include!("x11_socket/routing/private_applied_registry.rs");
+include!("x11_socket/routing/private_native.rs");
 include!("x11_socket/routing/private_terminal.rs");
 include!("x11_socket/routing/private_inventory.rs");
 include!("x11_socket/routing/private_settlement.rs");

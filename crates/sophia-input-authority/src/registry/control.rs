@@ -5,7 +5,7 @@ use crate::identity::AuthorityUid;
 /// An authority lifetime, distinct even when two instances have identical
 /// public seat bindings. Comparing this identity grants no mutation rights.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AuthorityIdentity(AuthorityUid);
+pub struct AuthorityIdentity(pub(super) AuthorityUid);
 
 /// Exclusive access for a privileged adapter-side control transaction.
 ///
