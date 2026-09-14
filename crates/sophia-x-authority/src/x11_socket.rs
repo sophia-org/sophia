@@ -79,6 +79,9 @@ include!("x11_socket/routing/private_applied_state.rs");
 include!("x11_socket/routing/private_applied_registry.rs");
 include!("x11_socket/routing/private_focus_runtime.rs");
 include!("x11_socket/routing/private_native.rs");
+#[cfg(unix)]
+#[allow(unused_imports)] // Ordered queue integration takes this sealed payload.
+pub(crate) use private_native::PrivateOrderedEmission;
 include!("x11_socket/routing/private_terminal.rs");
 include!("x11_socket/routing/private_inventory.rs");
 include!("x11_socket/routing/private_settlement.rs");
@@ -95,6 +98,7 @@ include!("x11_socket/routing/registry.rs");
 include!("x11_socket/routing/subscriptions.rs");
 include!("x11_socket/routing/selection_subscriptions.rs");
 include!("x11_socket/routing/keyboard.rs");
+include!("x11_socket/routing/ordered_codec.rs");
 include!("x11_socket/routing/input.rs");
 include!("x11_socket/frontend/service.rs");
 include!("x11_socket/frontend/clipboard.rs");

@@ -52,6 +52,7 @@ enum PrivateAppliedRefusal {
     HierarchyCycle,
     HierarchyMissing,
     CoordinateOverflow,
+    WireResourceOverflow,
     TraversalBudget,
     NativeRefused,
 }
@@ -300,6 +301,8 @@ impl PrivateAppliedRoutingView<'_> {
         let xi_wins = xi_depth.is_some_and(|depth| core_depth.is_none_or(|core| depth <= core));
         let delivered_window =
             if xi_wins { xi } else { core }.ok_or(PrivateAppliedRefusal::NotSelected)?;
+        u32::try_from(delivered_window.local.raw())
+            .map_err(|_| PrivateAppliedRefusal::WireResourceOverflow)?;
         Ok(PrivateResolvedKeyboard {
             revision: self.revision(),
             selection_revision: self.selection_revision,
@@ -506,6 +509,10 @@ impl PrivateAppliedRoutingView<'_> {
         let child = ancestry_depth
             .checked_sub(1)
             .map_or(XResourceId::NONE, |index| ancestry.as_slice()[index]);
+        u32::try_from(window.local.raw())
+            .map_err(|_| PrivateAppliedRefusal::WireResourceOverflow)?;
+        u32::try_from(child.local.raw())
+            .map_err(|_| PrivateAppliedRefusal::WireResourceOverflow)?;
         let (event_x, event_y) = self.selections.ordered_coordinates_budget(
             surface,
             window,

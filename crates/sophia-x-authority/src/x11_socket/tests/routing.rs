@@ -16839,46 +16839,18 @@ fn a_failed_wait_is_not_a_recipient_that_blocked() {
     );
 }
 
-/// One ordered delivery capsule, assembled from parts rather than resolved.
-///
-/// Explicitly NOT how a real one is made: the resolver derives these
-/// identities from a resolved emission, and this asserts them. What the
-/// controls below exercise is the writer's custody of a capsule, never how one
-/// comes to be trustworthy.
-fn ordered_capsule(
-    client: XServerFrontendClientId,
-    delivery: u64,
-    incarnation: sophia_input_authority::HoldIncarnation,
-) -> XAuthorityOrderedDelivery {
-    XAuthorityOrderedDelivery::from_parts_unchecked(
-        client,
-        XAuthorityInputDeliveryId::from_raw(delivery),
-        incarnation,
-        role_connection(client.raw()),
-    )
-}
-
-/// An incarnation the ledger actually minted.
-///
-/// Taken from a real press rather than assembled, because the identity fields
-/// are the authority's and a name this crate invented would not be one any
-/// settlement could be matched against.
-fn a_minted_incarnation() -> sophia_input_authority::HoldIncarnation {
-    let client = XServerFrontendClientId(1799);
-    let surface = SurfaceId::new(1799, 1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    held_button(&mut fixture, surface, 17990);
-    let minted = fixture.private.terminal.holds[0].incarnation;
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
-    minted
+/// The writer fixture uses a real resolved source emission. These controls
+/// still prove writer custody, not production producer/consumer completion.
+fn ordered_capsule(delivery: u64) -> XAuthorityOrderedDelivery {
+    XAuthorityOrderedDelivery::from_emission(
+        private_native_tests::emission_for_writer_fixture(delivery),
+    ).unwrap()
 }
 
 #[test]
 fn a_taken_delivery_lands_where_it_will_be_answered_for() {
-    let client = XServerFrontendClientId(1701);
-    let incarnation = a_minted_incarnation();
+    let first = ordered_capsule(17011);
+    let client = first.client();
     let (sender, queue) = sync_channel(4);
     let mut in_flight = None;
 
@@ -16890,7 +16862,7 @@ fn a_taken_delivery_lands_where_it_will_be_answered_for() {
     assert!(in_flight.is_none());
 
     sender
-        .send(ordered_capsule(client, 17011, incarnation))
+        .send(first)
         .expect("the queue to accept it");
     take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
     let held = in_flight.as_ref().expect("taken into storage");
@@ -16907,7 +16879,7 @@ fn a_taken_delivery_lands_where_it_will_be_answered_for() {
     // answers for what it holds until that is finished, and taking another
     // would leave the first owed by nobody with its frames half-written.
     sender
-        .send(ordered_capsule(client, 17012, incarnation))
+        .send(ordered_capsule(17012))
         .expect("the queue to accept it");
     assert_eq!(
         take_ordered_delivery(&queue, &mut in_flight),
@@ -16937,10 +16909,9 @@ fn a_taken_delivery_lands_where_it_will_be_answered_for() {
 
 #[test]
 fn a_frame_index_does_not_move_past_an_unfinished_frame() {
-    let client = XServerFrontendClientId(1702);
     let (sender, queue) = sync_channel(1);
     sender
-        .send(ordered_capsule(client, 1702, a_minted_incarnation()))
+        .send(ordered_capsule(1702))
         .expect("the queue to accept it");
     let mut in_flight = None;
     take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");

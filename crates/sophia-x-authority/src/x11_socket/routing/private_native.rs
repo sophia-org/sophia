@@ -220,6 +220,8 @@ mod private_native {
         query_surface_window: XResourceId,
         plan: PrivateResolvedPointer,
         press_event: XAuthorityPointerEvent,
+        press_emission: Option<PrivateOrderedEmission>,
+        release_emission: Option<PrivateOrderedEmission>,
         surface: SurfaceId,
         activation: Option<crate::PointerActivationCommit>,
         route_lease: Option<sophia_protocol::ApplicationRouteLeaseIdentity>,
@@ -498,6 +500,8 @@ mod private_native {
                 query_surface_window: surface_window,
                 plan,
                 press_event: selected_event,
+                press_emission: None,
+                release_emission: None,
                 surface: event.surface,
                 activation: None,
                 route_lease: route.route_lease,
@@ -549,6 +553,7 @@ mod private_native {
             selected_event.state = event.state;
             hold.press_event = selected_event;
             hold.status = Status::Held;
+            hold.press_emission = Some(PrivateOrderedEmission::pointer(hold, route.delivery, selected_event, plan));
             Ok((applied, Some(selected_event)))
         }
     }
@@ -759,9 +764,17 @@ mod private_native {
             } else {
                 Err(PrivateAppliedRefusal::Interrupted)
             };
+            let event = event.and_then(|event| {
+                let Some(event) = event else { return Ok(None) };
+                let plan = self.release_plan(hold, event)?;
+                hold.release_emission = Some(PrivateOrderedEmission::pointer(hold, route.delivery, event, plan));
+                Ok(Some(event))
+            });
             Ok((outcome, event))
         }
     }
+
+    include!("private_native_emission.rs");
 
     fn pointer_event(
         route: &XAuthorityRoutedInput,
