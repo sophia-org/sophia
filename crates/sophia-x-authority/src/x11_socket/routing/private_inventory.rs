@@ -39,6 +39,17 @@ struct PrivateTerminalInventory {
     /// A release answers to what its press reached, so this is what makes a
     /// later release answerable at all.
     holds: Vec<PrivateHoldRecord>,
+    /// Where the source installs a native obligation before its effect.
+    ///
+    /// It has to exist before the operation is called, because the source
+    /// refuses to begin one while this is occupied, and it has to be owned
+    /// here rather than by the call: an interruption between the effect and
+    /// the record would otherwise take with it the only thing that can answer
+    /// for the hold the ledger has already begun.
+    ///
+    /// Empty between operations. What lands here moves into the record for its
+    /// hold as soon as that record exists, and nothing else reads it.
+    native_pending: Option<private_native::Hold>,
     /// Releases whose delivery was decided and whose debt is still open.
     settling: Vec<PrivateSettlingRelease>,
     /// The item currently being executed.
@@ -75,6 +86,7 @@ impl PrivateTerminalInventory {
             controller,
             lifecycle,
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
+            native_pending: None,
             settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             current: None,
             turn: Vec::with_capacity(capacity),
@@ -132,6 +144,7 @@ impl PrivateTerminalInventory {
                 controller: self.controller.clone(),
                 lifecycle: self.lifecycle.clone(),
                 holds: Vec::new(),
+                native_pending: None,
                 settling: Vec::new(),
                 current: None,
                 turn: Vec::new(),

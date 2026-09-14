@@ -33,6 +33,37 @@ fn prepared_runner_fixture() -> (
         .admission_participant()
         .admit(client, admitted(client))
         .unwrap();
+    // The source resolves the recipient itself now, out of the selection state
+    // attached to this connection. A surface registered with no window that
+    // ever selected button events leaves that resolution nothing to reach, so
+    // this preparation is the press's precondition rather than scenery.
+    let selections = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+    let focused = Arc::new(AtomicU64::new(0));
+    private
+        .broker
+        .registry
+        .attach_connection_state(
+            &registration,
+            NamespaceId::from_raw(client.raw()),
+            selections.clone(),
+            focused.clone(),
+        )
+        .unwrap();
+    {
+        let mut selected = selections.lock().unwrap();
+        selected.register(
+            XResourceId::new(9000, 1),
+            XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 100,
+            },
+        );
+        selected.observe_mapped(XResourceId::new(9000, 1));
+        selected.update(XResourceId::new(9000, 1), Some((1 << 2) | (1 << 3)), None);
+    }
     private
         .broker
         .registry
@@ -46,6 +77,33 @@ fn prepared_runner_fixture() -> (
     let runner = private
         .prepare_runner(NamespaceId::from_raw(client.raw()))
         .unwrap_or_else(|(cause, _)| panic!("runner refused: {cause:?}"));
+
+    // The publication starts unavailable, and resolution refuses against an
+    // unpublished one. A real initial clear through the publication the runner
+    // installed, borrowed rather than installed again -- not a flag set to
+    // stand in for one.
+    {
+        let publication = runner
+            .frontend
+            .as_ref()
+            .expect("a live runner")
+            .broker
+            .registry
+            .private_applied
+            .get()
+            .expect("prepare_runner installed it")
+            .publication
+            .clone();
+        let mut runtime = XAuthorityRuntime::new();
+        runtime.prepare_input_focus_namespace(NamespaceId::from_raw(client.raw()));
+        publication
+            .lock()
+            .expect("the publication")
+            .begin_focus_change()
+            .expect("a focus change")
+            .apply(&mut runtime, &focused, None)
+            .expect("the clear applies");
+    }
     (runner, durable, registration, channels, acks, deliveries)
 }
 
@@ -104,22 +162,15 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
 
 #[test]
 fn native_preparation_is_retained_and_a_second_runner_cannot_replace_it() {
-    let (mut runner, _durable, registration, _channels, _acks, _deliveries) =
+    let (mut runner, _durable, _registration, _channels, _acks, _deliveries) =
         prepared_runner_fixture();
     let client = XServerFrontendClientId::from_raw(9000);
     let namespace = runner.namespace();
-    let selections = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+    // The connection state this instance already carries. Attaching a second
+    // one here would be refused as a different state for the same connection,
+    // and the witness below has to come from the one the registry is actually
+    // resolving against rather than from a fresh stand-in.
     let private = runner.frontend.as_ref().unwrap();
-    private
-        .broker
-        .registry
-        .attach_connection_state(
-            &registration,
-            namespace,
-            selections,
-            Arc::new(AtomicU64::new(0)),
-        )
-        .unwrap();
     let owner = private.native_owner.as_ref().unwrap().clone();
     // The prepared origin accepts a witness from the actual registry under
     // common and admission. A foreign instance with colliding names does not.

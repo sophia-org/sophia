@@ -308,16 +308,19 @@ fn lifecycle_integration_query_owner_finish_and_drop_do_not_repeat_cleanup() {
 fn lifecycle_integration_native_hold_debt_is_not_query_cleanup() {
     let client = XServerFrontendClientId(7609);
     let surface = SurfaceId::new(7609, 1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    let owner = fixture.private.terminal.lifecycle.clone();
-    let gate = lifecycle_gate(&fixture.registration);
-    held_button(&mut fixture, surface, 7609);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, ingress, registration, .. } = &mut fixture;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let owner = private.terminal.lifecycle.clone();
+    let gate = lifecycle_gate(registration);
+    held_button(private, ingress, keyboards, watch, surface, 7609);
     gate.close();
     lifecycle_drain(&owner);
     let mut cursor = 0;
     assert!(
-        fixture
-            .private
+        private
             .authority()
             .common
             .lock()
@@ -325,7 +328,7 @@ fn lifecycle_integration_native_hold_debt_is_not_query_cleanup() {
             .next_debt(&mut cursor)
             .is_some()
     );
-    assert_eq!(fixture.private.terminal.holds.len(), 1);
+    assert_eq!(private.terminal.holds.len(), 1);
 }
 
 struct LifecycleSetupPolicy(sophia_protocol::ClientAdmissionContext);

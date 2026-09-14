@@ -12268,22 +12268,18 @@ fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
 
 #[test]
 fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() {
-    let private = private_for_roles();
     let client = XServerFrontendClientId(701);
-    let surface = SurfaceId::new(701, 1);
-    let window = XResourceId::new(0x200701, 1);
-    let _registration = admit_role_client(&private, client);
-    private
-        .broker
-        .registry
-        .register_surface(client, NamespaceId::from_raw(client.raw()), surface, window)
-        .expect("the surface to register");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     let role = private
         .reservation_role(client, DeviceId::from_raw(1))
         .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
-    let mut keyboards = private.keyboards().expect("this instance's state");
-    let mut private = private;
 
     // Press, through the whole ordered path: custody accepted, common then the
     // boundary then the X guards, target resolved there rather than earlier,
@@ -12291,17 +12287,31 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
     let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(701), 272, true),
             &pressed,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the press to run");
     let reached = run.reached.expect("a press decides where it went");
     assert_eq!(reached.client(), client, "it reached the route's client");
     assert_eq!(reached.window(), window);
-    assert!(!reached.grabbed(), "no grab chose it");
+    // An assertion that no grab chose the recipient stood here. It is REMOVED,
+    // not relocated: the source resolves the recipient itself now and does not
+    // report whether a grab was involved, so this executor cannot establish
+    // that fact and no longer records it.
+    //
+    // The two assertions above do NOT stand in for it. An active grab with
+    // owner_events over the surface's own window reaches exactly this client
+    // and this window, so they hold whether or not a grab chose the recipient,
+    // and reading them as evidence of its absence would be inferring the fact
+    // from a pair that cannot distinguish it.
+    //
+    // Nothing read the removed flag in production. The selected-event
+    // authority it was watching is still decided at the source boundary, while
+    // the immutable plan is built, and the control over it belongs there --
+    // not to a replacement boolean reported back out to this executor.
     assert!(run.first_press, "this press began the hold");
     assert!(!run.keyboard_applied, "a button moves no keyboard state");
     assert!(matches!(
@@ -12322,11 +12332,11 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
     let joined = role.reserve(stamp, 2).expect("a second reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(703), 272, true),
             &joined,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the joining press to run");
     assert!(
@@ -12348,11 +12358,11 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
     let released = role.reserve(stamp, 3).expect("a third reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(702), 272, false),
             &released,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the release to run");
     let released_to = run.reached.expect("a delivering release names its hold");
@@ -12379,26 +12389,18 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
 
 #[test]
 fn a_key_press_refuses_rather_than_delivering_on_queued_focus() {
-    let private = private_for_roles();
     let client = XServerFrontendClientId(711);
-    let surface = SurfaceId::new(711, 1);
-    let _registration = admit_role_client(&private, client);
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200711, 1),
-        )
-        .expect("the surface to register");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     let role = private
         .reservation_role(client, DeviceId::from_raw(1))
         .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
-    let mut keyboards = private.keyboards().expect("this instance's state");
-    let mut private = private;
     let custody = role.reserve(stamp, 1).expect("a reservation").accepted();
 
     let mut key = motion_to(surface, XAuthorityInputDeliveryId::from_raw(711));
@@ -12406,7 +12408,7 @@ fn a_key_press_refuses_rather_than_delivering_on_queued_focus() {
         keycode: 30,
         pressed: true,
     };
-    let refused = private.run_ordered_input(&mut keyboards, &key, &custody, &control_watchdog());
+    let refused = private.run_ordered_input(keyboards, &key, &custody, watch);
     assert!(
         matches!(refused, Err(crate::PrivateExecutionRefusal::FocusNotApplied)),
         "the reason is the missing applied focus, not an authority error standing in for it, got {refused:?}"
@@ -12423,27 +12425,20 @@ fn a_key_press_refuses_rather_than_delivering_on_queued_focus() {
 
 #[test]
 fn another_instances_keyboard_history_cannot_drive_this_one() {
-    let private = private_for_roles();
     let other = private_for_roles();
     let client = XServerFrontendClientId(721);
-    let surface = SurfaceId::new(721, 1);
-    let _registration = admit_role_client(&private, client);
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200721, 1),
-        )
-        .expect("the surface to register");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards: _, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     let role = private
         .reservation_role(client, DeviceId::from_raw(1))
         .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
     let mut foreign = other.keyboards().expect("the other instance's state");
-    let mut private = private;
     let custody = role.reserve(stamp, 1).expect("a reservation").accepted();
 
     let refused = private.run_ordered_input(
@@ -12451,7 +12446,7 @@ fn another_instances_keyboard_history_cannot_drive_this_one() {
         &button_to(surface, XAuthorityInputDeliveryId::from_raw(721), 272, true),
         &custody,
     
-                &control_watchdog(),
+                watch,
             );
     assert!(
         matches!(
@@ -12491,20 +12486,26 @@ fn ordered_fixture(
 #[test]
 fn a_release_answers_its_hold_after_the_surface_is_gone() {
     let client = XServerFrontendClientId(731);
-    let surface = SurfaceId::new(731, 1);
-    let window = XResourceId::new(0x200731, 1);
-    let (mut private, _registration, role, mut keyboards) =
-        ordered_fixture(client, surface, window);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
 
     let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(731), 272, true),
             &pressed,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the press to run");
     assert!(run.first_press);
@@ -12524,11 +12525,11 @@ fn a_release_answers_its_hold_after_the_surface_is_gone() {
     let released = role.reserve(stamp, 2).expect("a reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(732), 272, false),
             &released,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the release to run with its target gone");
     let reached = run.reached.expect("the release names its hold");
@@ -12547,20 +12548,26 @@ fn a_release_answers_its_hold_after_the_surface_is_gone() {
 #[test]
 fn a_release_keeps_the_window_its_press_recorded() {
     let client = XServerFrontendClientId(741);
-    let surface = SurfaceId::new(741, 1);
-    let window = XResourceId::new(0x200741, 1);
-    let (mut private, _registration, role, mut keyboards) =
-        ordered_fixture(client, surface, window);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
 
     let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(741), 272, true),
             &pressed,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the press to run");
     assert_eq!(run.reached.expect("a press decides").window(), window);
@@ -12582,11 +12589,11 @@ fn a_release_keeps_the_window_its_press_recorded() {
     let released = role.reserve(stamp, 2).expect("a reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(742), 272, false),
             &released,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the release to run");
     let reached = run.reached.expect("the release names its hold");
@@ -12601,9 +12608,16 @@ fn a_release_keeps_the_window_its_press_recorded() {
 #[test]
 fn a_release_of_nothing_held_is_an_outcome_not_a_missing_target() {
     let client = XServerFrontendClientId(751);
-    let surface = SurfaceId::new(751, 1);
-    let (mut private, _registration, role, mut keyboards) =
-        ordered_fixture(client, surface, XResourceId::new(0x200751, 1));
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
 
     // Nothing was ever pressed. The target is registered and present, so a
@@ -12612,11 +12626,11 @@ fn a_release_of_nothing_held_is_an_outcome_not_a_missing_target() {
     let released = role.reserve(stamp, 1).expect("a reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(751), 272, false),
             &released,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("an unheld release is a successful outcome");
     assert!(
@@ -12650,27 +12664,34 @@ fn projected_buttons(
 #[test]
 fn a_final_release_clears_what_its_press_projected_and_reports_it() {
     let client = XServerFrontendClientId(761);
-    let surface = SurfaceId::new(761, 1);
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
-    let (mut private, _registration, role, mut keyboards) =
-        ordered_fixture(client, surface, XResourceId::new(0x200761, 1));
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
 
     let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(761), 272, true),
             &pressed,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the press to run");
     assert!(run.first_press);
     let _ = pressed.observe();
     assert_eq!(
-        projected_buttons(&private, namespace, seat),
+        projected_buttons(private, namespace, seat),
         256,
         "the press projects button one"
     );
@@ -12678,11 +12699,11 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
     let released = role.reserve(stamp, 2).expect("a reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(762), 272, false),
             &released,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the release to run");
     let Some(XAuthorityInputEvent::Pointer(event)) = run.event else {
@@ -12703,7 +12724,7 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
         "and reports the state before it, which still has that button down"
     );
     assert_eq!(
-        projected_buttons(&private, namespace, seat),
+        projected_buttons(private, namespace, seat),
         0,
         "the projection is cleared by the release, not left held"
     );
@@ -12715,17 +12736,21 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
     // be shown here, and the barrier is named rather than worked around.
     let again = role.reserve(stamp, 3).expect("a reservation").accepted();
     let barred = private.run_ordered_input(
-        &mut keyboards,
+        keyboards,
         &button_to(surface, XAuthorityInputDeliveryId::from_raw(763), 272, true),
         &again,
     
-                &control_watchdog(),
+                watch,
             );
     assert!(
         matches!(
             barred,
-            Err(crate::PrivateExecutionRefusal::NotDecided(
-                sophia_input_authority::RequestCompletion::Refused(
+            // Renamed, not reclassified: the source's press carries the
+            // authority's own ReleaseBarrier out under Refusal::Authority,
+            // so the barrier is still the named cause -- one layer in,
+            // because the press is where the authority is now entered.
+            Err(crate::PrivateExecutionRefusal::Native(
+                private_native::Refusal::Authority(
                     sophia_input_authority::RegistrationError::ReleaseBarrier
                 )
             ))
@@ -12733,7 +12758,7 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
         "the release's debt bars the next press until it is settled, got {barred:?}"
     );
     assert_eq!(
-        projected_buttons(&private, namespace, seat),
+        projected_buttons(private, namespace, seat),
         0,
         "and the projection stayed clear, so no stale bit is hiding behind it"
     );
@@ -12742,11 +12767,18 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
 #[test]
 fn a_release_with_a_survivor_leaves_the_projection_alone() {
     let client = XServerFrontendClientId(771);
-    let surface = SurfaceId::new(771, 1);
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
-    let (mut private, _registration, role, mut keyboards) =
-        ordered_fixture(client, surface, XResourceId::new(0x200771, 1));
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
 
     // Two presses on one input: the second joins, so two participants hold it.
@@ -12754,7 +12786,7 @@ fn a_release_with_a_survivor_leaves_the_projection_alone() {
         let custody = role.reserve(stamp, request).expect("a reservation").accepted();
         private
             .run_ordered_input(
-                &mut keyboards,
+                keyboards,
                 &button_to(
                     surface,
                     XAuthorityInputDeliveryId::from_raw(delivery),
@@ -12763,37 +12795,37 @@ fn a_release_with_a_survivor_leaves_the_projection_alone() {
                 ),
                 &custody,
             
-                &control_watchdog(),
+                watch,
             )
             .expect("the press to run");
         let _ = custody.observe();
     }
-    assert_eq!(projected_buttons(&private, namespace, seat), 256);
+    assert_eq!(projected_buttons(private, namespace, seat), 256);
 
     // One release. Whether the aggregate is now clear is the ledger's to say,
     // and the projection must not be cleared while anyone still holds it.
     let released = role.reserve(stamp, 3).expect("a reservation").accepted();
     let run = private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(773), 272, false),
             &released,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the release to run");
     match run.release.expect("a release outcome") {
         sophia_input_authority::ReleaseOutcome::SurvivorRemains => {
             assert!(run.event.is_none(), "a survivor owes nobody an event");
             assert_eq!(
-                projected_buttons(&private, namespace, seat),
+                projected_buttons(private, namespace, seat),
                 256,
                 "and the button somebody still holds stays projected"
             );
         }
         sophia_input_authority::ReleaseOutcome::DeliverTo(_) => {
             assert_eq!(
-                projected_buttons(&private, namespace, seat),
+                projected_buttons(private, namespace, seat),
                 0,
                 "a final release clears it"
             );
@@ -12807,19 +12839,26 @@ fn a_release_with_a_survivor_leaves_the_projection_alone() {
 #[test]
 fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing() {
     let client = XServerFrontendClientId(781);
-    let surface = SurfaceId::new(781, 1);
-    let (mut private, _registration, role, mut keyboards) =
-        ordered_fixture(client, surface, XResourceId::new(0x200781, 1));
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
 
     let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
     private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(781), 272, true),
             &pressed,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the press to run");
     let _ = pressed.observe();
@@ -12831,11 +12870,11 @@ fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing(
 
     let released = role.reserve(stamp, 2).expect("a reservation").accepted();
     let refused = private.run_ordered_input(
-        &mut keyboards,
+        keyboards,
         &button_to(surface, XAuthorityInputDeliveryId::from_raw(782), 272, false),
         &released,
     
-                &control_watchdog(),
+                watch,
             );
     assert!(
         matches!(refused, Err(crate::PrivateExecutionRefusal::HoldPlanMissing)),
@@ -12846,21 +12885,28 @@ fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing(
 #[test]
 fn a_release_refuses_when_its_seats_projection_is_gone() {
     let client = XServerFrontendClientId(791);
-    let surface = SurfaceId::new(791, 1);
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
-    let (mut private, _registration, role, mut keyboards) =
-        ordered_fixture(client, surface, XResourceId::new(0x200791, 1));
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
     let stamp = private.control_gate().stamp().expect("an open coordinator");
 
     let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
     private
         .run_ordered_input(
-            &mut keyboards,
+            keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(791), 272, true),
             &pressed,
         
-                &control_watchdog(),
+                watch,
             )
         .expect("the press to run");
     let _ = pressed.observe();
@@ -12878,11 +12924,11 @@ fn a_release_refuses_when_its_seats_projection_is_gone() {
 
     let released = role.reserve(stamp, 2).expect("a reservation").accepted();
     let refused = private.run_ordered_input(
-        &mut keyboards,
+        keyboards,
         &button_to(surface, XAuthorityInputDeliveryId::from_raw(792), 272, false),
         &released,
     
-                &control_watchdog(),
+                watch,
             );
     assert!(
         refused.is_err(),
@@ -12893,21 +12939,17 @@ fn a_release_refuses_when_its_seats_projection_is_gone() {
 #[test]
 fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
     let client = XServerFrontendClientId(801);
-    let surface = SurfaceId::new(801, 1);
-    let window = XResourceId::new(0x200801, 1);
-    let mut private = private_for_roles();
-    let _registration = admit_role_client(&private, client);
-    private
-        .broker
-        .registry
-        .register_surface(client, NamespaceId::from_raw(client.raw()), surface, window)
-        .expect("the surface to register");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     // The producer handle, with the reservation role bound to this client.
     let ingress = private
         .ingress_for(client, DeviceId::from_raw(1))
         .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
-    let mut private = private;
 
     // Sent through the producer. Nothing here builds custody by hand: the
     // reservation is made at submission, travels on the envelope, and is what
@@ -12922,7 +12964,7 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
         .expect("the order to accept it");
 
     let mut turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     assert_eq!(turn.len(), 1, "the order held exactly what was sent");
     let item = turn.remove(0);
@@ -12960,7 +13002,7 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
     // The order is empty now: the turn consumed it rather than copying it.
     assert!(
         private
-            .route_pending_ordered(&mut keyboards, &control_watchdog())
+            .route_pending_ordered(keyboards, watch)
             .expect("a readable order")
             .is_empty()
     );
@@ -12969,24 +13011,16 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
 #[test]
 fn a_consumer_refusal_hands_back_the_custody_it_was_accepted_with() {
     let client = XServerFrontendClientId(811);
-    let surface = SurfaceId::new(811, 1);
-    let mut private = private_for_roles();
-    let _registration = admit_role_client(&private, client);
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200811, 1),
-        )
-        .expect("the surface to register");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     let ingress = private
         .ingress_for(client, DeviceId::from_raw(1))
         .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
-    let mut private = private;
 
     // A key: accepted by the order, refused by the consumer because no applied
     // focus can name where it would go.
@@ -12998,7 +13032,7 @@ fn a_consumer_refusal_hands_back_the_custody_it_was_accepted_with() {
     ingress.submit(key).expect("the order to accept it");
 
     let mut turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     assert_eq!(turn.len(), 1);
     let PrivateOrderedItem::Refused {
@@ -13195,29 +13229,21 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
 #[test]
 fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
     let client = XServerFrontendClientId(841);
-    let surface = SurfaceId::new(841, 1);
-    let mut private = private_for_roles();
-    let _registration = admit_role_client(&private, client);
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200841, 1),
-        )
-        .expect("the surface to register");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     let ingress = private
         .ingress_for(client, DeviceId::from_raw(1))
         .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
-    let mut private = private;
 
     // The ordered consumer takes a turn, which claims this order.
     assert!(
         private
-            .route_pending_ordered(&mut keyboards, &control_watchdog())
+            .route_pending_ordered(keyboards, watch)
             .expect("a readable order")
             .is_empty()
     );
@@ -13245,7 +13271,7 @@ fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
 
     // And the work is still there for the consumer that may run it.
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     assert!(
         matches!(turn.as_slice(), [PrivateOrderedItem::Ran { .. }]),
@@ -13338,29 +13364,14 @@ fn a_turn_that_fails_part_way_keeps_what_it_already_took() {
 #[test]
 fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
     let client = XServerFrontendClientId(861);
-    let surface = SurfaceId::new(861, 1);
-    let window = XResourceId::new(0x200861, 1);
-    let mut private = private_for_roles();
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, ingress, channels, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     // Registered with channels held, so a delivered event has somewhere to go.
-    let (_registration, channels) = private
-        .broker
-        .registry
-        .register_client_with_admission(client, Some(admitted(client)))
-        .expect("a fresh client to register");
-    private
-        .admission_participant()
-        .admit(client, admitted(client))
-        .expect("the boundary to admit");
-    private
-        .broker
-        .registry
-        .register_surface(client, NamespaceId::from_raw(client.raw()), surface, window)
-        .expect("the surface to register");
-    let ingress = private
-        .ingress_for(client, DeviceId::from_raw(1))
-        .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
-    let mut private = private;
 
     // Press, run, deliver.
     ingress
@@ -13372,7 +13383,7 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         ))
         .expect("the order to accept the press");
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
@@ -13415,7 +13426,7 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         ))
         .expect("the order to accept the release");
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
@@ -13450,7 +13461,7 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         ))
         .expect("the order to accept the second press");
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let [PrivateOrderedItem::Refused { refusal, .. }] = turn.as_slice() else {
         panic!("the second press is barred while the debt is open");
@@ -13458,8 +13469,10 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
     assert!(
         matches!(
             refusal,
-            crate::PrivateExecutionRefusal::NotDecided(
-                sophia_input_authority::RequestCompletion::Refused(
+            // Renamed, not reclassified: the authority's own ReleaseBarrier
+            // travels out of the source press under Refusal::Authority.
+            crate::PrivateExecutionRefusal::Native(
+                private_native::Refusal::Authority(
                     sophia_input_authority::RegistrationError::ReleaseBarrier
                 )
             )
@@ -13534,23 +13547,16 @@ fn a_refusal_is_retained_by_delivery_rather_than_discarded() {
 #[test]
 fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
     let client = XServerFrontendClientId(881);
-    let surface = SurfaceId::new(881, 1);
-    let mut private = private_for_roles();
-    let _registration = admit_role_client(&private, client);
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200881, 1),
-        )
-        .expect("the surface to register");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     let ingress = private
         .ingress_for(client, DeviceId::from_raw(1))
         .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
 
     // Staged as an interruption before the effect leaves it: an item taken
     // from the order, owned, with execution not attempted.
@@ -13563,7 +13569,7 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let [PrivateOrderedItem::Ran { .. }] = turn.as_slice() else {
         panic!("the first item ran");
@@ -13576,7 +13582,7 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
     // that dequeued into the same slot would overwrite the only record of an
     // item already taken, whose application nobody can describe.
     let other = XServerFrontendClientId(882);
-    let _other_registration = admit_role_client(&private, other);
+    let _other_registration = admit_role_client(private, other);
     private
         .broker
         .registry
@@ -13597,7 +13603,7 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
             true,
         ))
         .expect("the order to accept it");
-    let blocked = private.route_pending_ordered(&mut keyboards, &control_watchdog());
+    let blocked = private.route_pending_ordered(keyboards, watch);
     assert!(
         matches!(
             blocked,
@@ -13614,31 +13620,13 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
 #[test]
 fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() {
     let client = XServerFrontendClientId(891);
-    let surface = SurfaceId::new(891, 1);
-    let mut private = private_for_roles();
-    let (_registration, _channels) = private
-        .broker
-        .registry
-        .register_client_with_admission(client, Some(admitted(client)))
-        .expect("a fresh client to register");
-    private
-        .admission_participant()
-        .admit(client, admitted(client))
-        .expect("the boundary to admit");
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200891, 1),
-        )
-        .expect("the surface to register");
-    let ingress = private
-        .ingress_for(client, DeviceId::from_raw(1))
-        .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, ingress, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
 
     let run_one_submission = |private: &mut crate::PrivateXServerFrontend,
                                   keyboards: &mut crate::PrivateKeyboards,
@@ -13653,20 +13641,20 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
             ))
             .expect("the order to accept it");
         let turn = private
-            .route_pending_ordered(keyboards, &control_watchdog())
+            .route_pending_ordered(keyboards, watch)
             .expect("a readable order");
         private.deliver_turn(turn)
     };
 
     // A press that begins the hold: an event is owed and delivered.
-    let delivered = run_one_submission(&mut private, &mut keyboards, 891, true);
+    let delivered = run_one_submission(private, keyboards, 891, true);
     assert_eq!(delivered.len(), 1);
     assert!(delivered[0].enqueued);
 
     // The same input pressed again joins the hold. It owes nobody an event,
     // which is an outcome rather than a failure to emit one -- so its
     // completion is taken and the grant's cell is freed.
-    let delivered = run_one_submission(&mut private, &mut keyboards, 892, true);
+    let delivered = run_one_submission(private, keyboards, 892, true);
     assert_eq!(
         delivered.len(),
         1,
@@ -13688,7 +13676,7 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
     // Which means the hold this grant still owns can be released. Retaining
     // the join would have left the grant unable to reserve, holding a button
     // it could never let go of.
-    let delivered = run_one_submission(&mut private, &mut keyboards, 893, false);
+    let delivered = run_one_submission(private, keyboards, 893, false);
     assert_eq!(delivered.len(), 1, "the release reserved and ran");
     assert!(delivered[0].enqueued, "and it owed an event, which was queued");
 }
@@ -13771,31 +13759,13 @@ fn a_parked_operation_is_handed_to_the_durable_owner_at_shutdown() {
 #[test]
 fn an_enqueued_event_whose_outcome_is_unreadable_is_marked_as_already_sent() {
     let client = XServerFrontendClientId(911);
-    let surface = SurfaceId::new(911, 1);
-    let mut private = private_for_roles();
-    let (_registration, channels) = private
-        .broker
-        .registry
-        .register_client_with_admission(client, Some(admitted(client)))
-        .expect("a fresh client to register");
-    private
-        .admission_participant()
-        .admit(client, admitted(client))
-        .expect("the boundary to admit");
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200911, 1),
-        )
-        .expect("the surface to register");
-    let ingress = private
-        .ingress_for(client, DeviceId::from_raw(1))
-        .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, ingress, channels, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
 
     ingress
         .submit(button_to(
@@ -13806,7 +13776,7 @@ fn an_enqueued_event_whose_outcome_is_unreadable_is_marked_as_already_sent() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
 
     // The authority becomes unreadable between the send and the observation.
@@ -14021,31 +13991,13 @@ fn a_new_delivery_call_does_not_reset_an_interrupted_entry() {
 #[test]
 fn an_enqueued_entry_is_observed_rather_than_sent_again() {
     let client = XServerFrontendClientId(941);
-    let surface = SurfaceId::new(941, 1);
-    let mut private = private_for_roles();
-    let (_registration, channels) = private
-        .broker
-        .registry
-        .register_client_with_admission(client, Some(admitted(client)))
-        .expect("a fresh client to register");
-    private
-        .admission_participant()
-        .admit(client, admitted(client))
-        .expect("the boundary to admit");
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200941, 1),
-        )
-        .expect("the surface to register");
-    let ingress = private
-        .ingress_for(client, DeviceId::from_raw(1))
-        .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, ingress, channels, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
 
     ingress
         .submit(button_to(
@@ -14056,7 +14008,7 @@ fn an_enqueued_entry_is_observed_rather_than_sent_again() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
 
     // Staged as an interruption after the send and before the observation
@@ -14181,47 +14133,13 @@ fn a_parked_control_whose_registry_is_unreadable_is_kept_whole() {
 #[test]
 fn what_an_instance_still_owes_reaches_the_durable_owner() {
     let client = XServerFrontendClientId(961);
-    let surface = SurfaceId::new(961, 1);
-    let durable = crate::PrivateSettlementOwner::default();
-    let (sender, _acks) = sync_channel(8);
-    let (delivery_sender, _delivery_receiver) = channel();
-    let (authority, issuer, submit) = private_authority();
-    let mut private = crate::PrivateXServerFrontend::new(
-        crate::PrivateFrontendParts {
-            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
-            input_capacity: NonZeroUsize::new(4).unwrap(),
-            control_acknowledgements: sender,
-            input_deliveries: delivery_sender,
-            authority,
-            issuer,
-            submit,
-        },
-        &durable,
-    )
-    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
-    let (_registration, _channels) = private
-        .broker
-        .registry
-        .register_client_with_admission(client, Some(admitted(client)))
-        .expect("a fresh client to register");
-    private
-        .admission_participant()
-        .admit(client, admitted(client))
-        .expect("the boundary to admit");
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200961, 1),
-        )
-        .expect("the surface to register");
-    let ingress = private
-        .ingress_for(client, DeviceId::from_raw(1))
-        .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, ingress, durable, registration: _, channels: _, surface, window, .. } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
 
     // A press that begins a hold. Its plan is recorded, and the hold is an
     // obligation: a later release answers to what this press reached.
@@ -14234,7 +14152,7 @@ fn what_an_instance_still_owes_reaches_the_durable_owner() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let _delivered = private.deliver_turn(turn);
     assert_eq!(
@@ -14249,7 +14167,7 @@ fn what_an_instance_still_owes_reaches_the_durable_owner() {
 
     // Shutdown. The instance can no longer answer, so what it owes travels to
     // the handle rather than dying with it.
-    let settlement = private.shutdown();
+    let settlement = frontend.take().expect("a live runner").shutdown();
     assert_eq!(
         settlement.terminal_outstanding().expect("readable terminal inventory"),
         owed - 1,
@@ -14275,47 +14193,27 @@ fn what_an_instance_still_owes_reaches_the_durable_owner() {
 #[test]
 fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
     let client = XServerFrontendClientId(971);
-    let surface = SurfaceId::new(971, 1);
-    let durable = crate::PrivateSettlementOwner::default();
-    let (sender, _acks) = sync_channel(8);
-    let (delivery_sender, _delivery_receiver) = channel();
-    let (authority, issuer, submit) = private_authority();
-    let mut private = crate::PrivateXServerFrontend::new(
-        crate::PrivateFrontendParts {
-            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
-            input_capacity: NonZeroUsize::new(4).unwrap(),
-            control_acknowledgements: sender,
-            input_deliveries: delivery_sender,
-            authority,
-            issuer,
-            submit,
-        },
-        &durable,
-    )
-    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
-    let (registration, channels) = private
-        .broker
-        .registry
-        .register_client_with_admission(client, Some(admitted(client)))
-        .expect("a fresh client to register");
-    private
-        .admission_participant()
-        .admit(client, admitted(client))
-        .expect("the boundary to admit");
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200971, 1),
-        )
-        .expect("the surface to register");
-    let ingress = private
-        .ingress_for(client, DeviceId::from_raw(1))
-        .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
+    // Taken by value rather than borrowed: this control drops the producer,
+    // the routes and the instance and then asks whether what they were
+    // keeping alive is gone. References into a fixture that outlived them
+    // would answer that question about the fixture instead.
+    let PreparedOrderedFixture {
+        mut runner,
+        ingress,
+        durable,
+        registration,
+        channels,
+        surface,
+        window: _,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
 
     // Weak handles to the two capabilities a retained hold needs: the seat
     // projection its release must move, and the authority its debt answers to.
@@ -14333,7 +14231,7 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert!(matches!(
@@ -14346,7 +14244,7 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
     drop(ingress);
     drop(channels);
     drop(registration);
-    let settlement = private.shutdown();
+    let settlement = frontend.take().expect("a live runner").shutdown();
     assert_eq!(
         settlement.terminal_outstanding().expect("readable terminal inventory"),
         1,
@@ -14414,7 +14312,7 @@ fn instance_handing_over_a_retained_hold(
     let (sender, _acks) = sync_channel(8);
     let (delivery_sender, _deliveries) = channel();
     let (authority, issuer, submit) = private_authority();
-    let mut private = crate::PrivateXServerFrontend::new(
+    let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
@@ -14437,20 +14335,68 @@ fn instance_handing_over_a_retained_hold(
         .admission_participant()
         .admit(client, namespaced(client, namespace))
         .expect("the boundary to admit");
+    // The source resolves the recipient out of this connection's own
+    // selection state, so the window has to exist there and to have selected
+    // button events before anything is submitted.
+    let window = XResourceId::new(0x200000 | client.raw(), 1);
+    let selections = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+    let focused = Arc::new(AtomicU64::new(0));
     private
         .broker
         .registry
-        .register_surface(
-            client,
-            namespace,
-            surface,
-            XResourceId::new(0x200000 | client.raw(), 1),
-        )
+        .attach_connection_state(&registration, namespace, selections.clone(), focused.clone())
+        .expect("the connection state attaches");
+    {
+        let mut selected = selections.lock().expect("the selections");
+        selected.register(
+            window,
+            XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 100,
+            },
+        );
+        selected.observe_mapped(window);
+        selected.update(window, Some((1 << 2) | (1 << 3)), None);
+    }
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
         .expect("the surface to register");
-    let ingress = private
+    let mut runner = private
+        .prepare_runner(namespace)
+        .unwrap_or_else(|(cause, _)| panic!("runner refused: {cause:?}"));
+    {
+        let publication = runner
+            .frontend
+            .as_ref()
+            .expect("a live runner")
+            .broker
+            .registry
+            .private_applied
+            .get()
+            .expect("prepare_runner installed it")
+            .publication
+            .clone();
+        let mut runtime = XAuthorityRuntime::new();
+        runtime.prepare_input_focus_namespace(namespace);
+        publication
+            .lock()
+            .expect("the publication")
+            .begin_focus_change()
+            .expect("a focus change")
+            .apply(&mut runtime, &focused, None)
+            .expect("the clear applies");
+    }
+    let ingress = runner
         .ingress_for(client, DeviceId::from_raw(1))
         .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     ingress
         .submit(button_to(
             surface,
@@ -14460,7 +14406,7 @@ fn instance_handing_over_a_retained_hold(
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert!(matches!(
@@ -14470,7 +14416,7 @@ fn instance_handing_over_a_retained_hold(
     drop(ingress);
     drop(channels);
     drop(registration);
-    let settlement = private.shutdown();
+    let settlement = frontend.take().expect("a live runner").shutdown();
     assert_eq!(
         settlement.terminal_outstanding().expect("readable terminal inventory"),
         1,
@@ -14552,48 +14498,22 @@ fn two_instances_owing_the_same_names_each_answer_through_their_own_origin() {
 #[test]
 fn an_ordered_press_whose_delivery_ended_does_not_execute() {
     let client = XServerFrontendClientId(991);
-    let surface = SurfaceId::new(991, 1);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        durable: _,
+        channels,
+        surface,
+        window,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let _window = *window;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     let delivery = XAuthorityInputDeliveryId::from_raw(991);
-    let durable = crate::PrivateSettlementOwner::default();
-    let (sender, _acks) = sync_channel(8);
-    let (delivery_sender, _deliveries) = channel();
-    let (authority, issuer, submit) = private_authority();
-    let mut private = crate::PrivateXServerFrontend::new(
-        crate::PrivateFrontendParts {
-            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
-            input_capacity: NonZeroUsize::new(4).unwrap(),
-            control_acknowledgements: sender,
-            input_deliveries: delivery_sender,
-            authority,
-            issuer,
-            submit,
-        },
-        &durable,
-    )
-    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
-    let (_registration, channels) = private
-        .broker
-        .registry
-        .register_client_with_admission(client, Some(admitted(client)))
-        .expect("a fresh client to register");
-    private
-        .admission_participant()
-        .admit(client, admitted(client))
-        .expect("the boundary to admit");
-    private
-        .broker
-        .registry
-        .register_surface(
-            client,
-            NamespaceId::from_raw(client.raw()),
-            surface,
-            XResourceId::new(0x200991, 1),
-        )
-        .expect("the surface to register");
-    let ingress = private
-        .ingress_for(client, DeviceId::from_raw(1))
-        .expect("an ingress");
-    let mut keyboards = private.keyboards().expect("this instance's state");
 
     ingress
         .submit(button_to(surface, delivery, 272, true))
@@ -14623,7 +14543,7 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
     );
 
     let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert!(
@@ -14653,7 +14573,7 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
     );
     // The request itself is still owed its observation, which is why the
     // refusal keeps custody rather than dropping it.
-    let mut settlement = private.shutdown();
+    let mut settlement = frontend.take().expect("a live runner").shutdown();
     assert_eq!(settlement.terminal_outstanding(), Some(2), "one refusal observation and one pending lifecycle cleanup");
     for _ in 0..16 { settlement.retry(); }
     assert_eq!(settlement.terminal_outstanding(), Some(1), "lifecycle cleanup leaves the original refusal observation owned");
@@ -14745,34 +14665,51 @@ fn ordered_ingress_fixture(
 // Keep source admission alive when a test disconnects its recipient. A
 // departed source is denied at the lifecycle gate before recipient binding.
 fn separate_ordered_sender(
-    fixture: &mut OrderedIngressFixture,
+    private: &mut crate::PrivateXServerFrontend,
+    ingress: &mut crate::PrivateIngress,
     recipient: XServerFrontendClientId,
 ) -> (XServerFrontendClientRouteRegistration, XServerFrontendClientRouteChannels) {
     let sender = XServerFrontendClientId(recipient.raw() + 50_000);
     let context = namespaced(sender, NamespaceId::from_raw(recipient.raw()));
-    let registry = &fixture.private.broker.registry;
-    let (registration, channels) = registry.register_client_with_admission(sender, Some(context)).unwrap();
+    let registry = &private.broker.registry;
+    let (registration, channels) = registry
+        .register_client_with_admission(sender, Some(context))
+        .unwrap();
     registry.attach_private_lifecycle(&registration, context).unwrap();
-    fixture.ingress = fixture.private.ingress_for(sender, DeviceId::from_raw(2)).unwrap();
+    *ingress = private.ingress_for(sender, DeviceId::from_raw(2)).unwrap();
     (registration, channels)
 }
 
 #[test]
 fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
     let client = XServerFrontendClientId(992);
-    let surface = SurfaceId::new(992, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(992);
-    let mut fixture = ordered_ingress_fixture(client, surface);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        channels: _,
+        deliveries,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
 
     // Before the turn the ledger tracks the delivery with no recipient: it
     // knows something was accepted, not who is waiting for it.
-    fixture
-        .ingress
+    ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     assert_eq!(
-        fixture
-            .private
+        private
             .broker
             .registry
             .input_recovery
@@ -14782,15 +14719,13 @@ fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
         None
     );
 
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    let delivered = fixture.private.deliver_turn(turn);
+    let delivered = private.deliver_turn(turn);
     assert!(delivered[0].enqueued, "the press reached the client's queue");
     assert_eq!(
-        fixture
-            .private
+        private
             .broker
             .registry
             .input_recovery
@@ -14804,15 +14739,13 @@ fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
     // Which is what makes the client going answerable. An unbound delivery is
     // not one a disconnect can answer: it is answered to nobody, and only a
     // deadline would ever end it.
-    fixture
-        .private
+    private
         .broker
         .registry
         .input_recovery
         .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
         .expect("the ledger to be readable");
-    let receipt = fixture
-        .deliveries
+    let receipt = deliveries
         .try_recv()
         .expect("a terminal outcome for the bound delivery");
     assert_eq!(receipt.delivery, delivery);
@@ -14828,25 +14761,33 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     let client = XServerFrontendClientId(993);
     let surface = SurfaceId::new(993, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(993);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    let (_sender_registration, _sender_channels) = separate_ordered_sender(&mut fixture, client);
+        let PreparedOrderedFixture {
+        mut runner, mut ingress, channels, deliveries, registration, durable,
+        _acks,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let (_sender_registration, _sender_channels) = separate_ordered_sender(private, &mut ingress, client);
 
     // The recipient closes first. The distinct submitter remains authorized,
     // but the recipient gate refuses before binding or pressing the ledger.
-    fixture
-        .private
+    private
         .broker
         .registry
         .input_recovery
         .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
         .expect("the ledger to be readable");
-    fixture
-        .ingress
+    ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     assert!(
-        fixture
-            .private
+        private
             .broker
             .registry
             .input_recovery
@@ -14855,31 +14796,37 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
         "the delivery itself has not ended"
     );
 
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(private.deliver_turn(turn).is_empty());
     assert!(
-        fixture.private.terminal.holds.is_empty(),
+        private.terminal.holds.is_empty(),
         "a press that cannot be delivered must not leave a hold: the release \
          answering it would be owed to a client that was already gone"
     );
+    // OLD CLAIM: the refusal is the authority's WrongConnection, raised by
+    //   this executor's own precheck of the recipient's connection.
+    // NEW CLAIM: the refusal is the source's own Connection(AdmissionClosed).
+    //   The source resolves the recipient's connection inside the press now,
+    //   and that lookup is what finds the admission closed -- so the fact
+    //   belongs to the source and is reported under the source's name.
+    // The claim that matters is unchanged and still asserted: this press
+    // refused BECAUSE the recipient was already gone, not for some other
+    // reason that happens to refuse.
     assert!(matches!(
-        &fixture.private.terminal.undelivered[0].item,
+        &private.terminal.undelivered[0].item,
         PrivateOrderedItem::Refused {
-            refusal: PrivateExecutionRefusal::NotDecided(
-                sophia_input_authority::RequestCompletion::Refused(
-                    sophia_input_authority::RegistrationError::WrongConnection
-                )
-            ),
+            refusal: PrivateExecutionRefusal::Native(private_native::Refusal::Connection(
+                PrivateAppliedRegistryRefusal::AdmissionClosed
+            )),
             ..
         }
     ));
-    assert!(fixture.channels.input.try_recv().is_err());
-    assert_eq!(fixture.private.broker.registry.input_recovery.ticket(delivery).unwrap().client, None,
+    assert!(channels.input.try_recv().is_err());
+    assert_eq!(private.broker.registry.input_recovery.ticket(delivery).unwrap().client, None,
         "recipient closure refuses before recovery binding, not through its cancellation path");
-    assert!(fixture.deliveries.try_recv().is_err());
+    assert!(deliveries.try_recv().is_err());
 
     // The hold record above is this executor's own bookkeeping. What matters
     // is the authority's ledger, and it is reachable: this refusal entered the
@@ -14887,7 +14834,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     // kept can be observed. Observing frees the grant's completion cell, which
     // is what lets the same source ask again.
     let observed = {
-        let PrivateOrderedItem::Refused { custody, .. } = &fixture.private.terminal.undelivered[0].item
+        let PrivateOrderedItem::Refused { custody, .. } = &private.terminal.undelivered[0].item
         else {
             panic!("a refusal")
         };
@@ -14901,8 +14848,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     // Now ask the ledger itself. An untouched one reports nothing was held and
     // the release finishes; one that was pressed would end a hold whose plan
     // this executor never recorded, and refuse.
-    fixture
-        .ingress
+    ingress
         .submit(button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(9931),
@@ -14910,11 +14856,10 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
             false,
         ))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    let released = fixture.private.deliver_turn(turn);
+    let released = private.deliver_turn(turn);
     assert_eq!(
         released.len(),
         1,
@@ -14922,8 +14867,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     );
     assert!(!released[0].enqueued, "and it owes nobody an event");
     assert!(
-        !fixture
-            .private
+        !private
             .terminal
             .undelivered
             .iter()
@@ -14936,8 +14880,8 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
             )),
         "nothing ended a hold this executor never recorded"
     );
-    drop(fixture.registration);
-    drop(fixture.durable);
+    drop(registration);
+    drop(durable);
 }
 
 #[test]
@@ -14946,12 +14890,23 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
     let surface = SurfaceId::new(994, 1);
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    let (_sender_registration, _sender_channels) = separate_ordered_sender(&mut fixture, client);
+        let PreparedOrderedFixture {
+        mut runner, mut ingress, channels, registration, durable,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let (_sender_registration, _sender_channels) = separate_ordered_sender(private, &mut ingress, client);
 
     // A press that lands while the client is there.
-    fixture
-        .ingress
+    ingress
         .submit(button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(9941),
@@ -14959,24 +14914,21 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
             true,
         ))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
-    assert_eq!(projected_buttons(&fixture.private, namespace, seat), 0x100);
-    assert_eq!(fixture.private.terminal.holds.len(), 1);
+    assert!(private.deliver_turn(turn)[0].enqueued);
+    assert_eq!(projected_buttons(private, namespace, seat), 0x100);
+    assert_eq!(private.terminal.holds.len(), 1);
 
     // Then it goes, and the release arrives afterwards.
-    fixture
-        .private
+    private
         .broker
         .registry
         .input_recovery
         .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
         .expect("the ledger to be readable");
-    fixture
-        .ingress
+    ingress
         .submit(button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(9942),
@@ -14984,21 +14936,20 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
             false,
         ))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    let delivered = fixture.private.deliver_turn(turn);
+    let delivered = private.deliver_turn(turn);
 
     // The hold ended and the button is up. Neither could be conditional on
     // anyone still being there to be told: a button left down because its
     // client vanished is held forever, by nobody.
     assert!(
-        fixture.private.terminal.holds.is_empty(),
+        private.terminal.holds.is_empty(),
         "the hold ended"
     );
     assert_eq!(
-        projected_buttons(&fixture.private, namespace, seat),
+        projected_buttons(private, namespace, seat),
         0,
         "and the button this seat had down is up"
     );
@@ -15007,23 +14958,23 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
         "but nothing was enqueued for a client that is gone"
     );
     assert_eq!(
-        fixture.private.terminal.settling.len(),
+        private.terminal.settling.len(),
         1,
         "the debt is recorded even though nothing will be sent"
     );
     assert!(
-        fixture.private.terminal.settling[0].binding() == PrivateReleaseBinding::Ended,
+        private.terminal.settling[0].binding() == PrivateReleaseBinding::Ended,
         "and it says which: established gone, not merely unlooked-up"
     );
     assert_eq!(
-        fixture.private.terminal.settling[0].delivery(),
+        private.terminal.settling[0].delivery(),
         Some(XAuthorityInputDeliveryId::from_raw(9942)),
         "and still records which delivery would have answered it: what is \
          unknown is the receipt, not which delivery it belongs to"
     );
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 #[test]
@@ -15033,24 +14984,66 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
     let surface = SurfaceId::new(995, 1);
     let namespace = NamespaceId::from_raw(client.raw());
     let delivery = XAuthorityInputDeliveryId::from_raw(995);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    // The grab owner is a real admitted client of this instance, with its own
-    // live queue: the press is delivered to it, so the boundary has to know
-    // it and something has to be there to receive it.
-    let (owner_registration, owner_channels) = fixture
-        .private
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, registration, durable,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    // The grab owner is a real admitted client of this instance, in the same
+    // namespace the grab is recorded in, with its own live queue: the press is
+    // delivered to it, so the boundary has to know it and something has to be
+    // there to receive it. Admitting it into its own namespace instead would
+    // make the grab name a window this press's origin cannot reach.
+    let (owner_registration, owner_channels) = private
         .broker
         .registry
-        .register_client_with_admission(owner, Some(admitted(owner)))
+        .register_client_with_admission(owner, Some(namespaced(owner, namespace)))
         .expect("a fresh client to register");
-    fixture
-        .private
+    private
         .admission_participant()
-        .admit(owner, admitted(owner))
+        .admit(owner, namespaced(owner, namespace))
         .expect("the boundary to admit");
+    // The grab owner's own view of its own window. A grab names a window to
+    // deliver into, and the source resolves that window through the owner's
+    // selection state -- so an owner that never registered one has nothing for
+    // the press to reach, however well the grab is recorded.
+    let owner_selections = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+    let owner_focused = Arc::new(AtomicU64::new(0));
+    private
+        .broker
+        .registry
+        .attach_connection_state(
+            &owner_registration,
+            namespace,
+            owner_selections.clone(),
+            owner_focused.clone(),
+        )
+        .expect("the owner's connection state attaches");
+    {
+        let mut selected = owner_selections.lock().expect("the owner's selections");
+        selected.register(
+            XResourceId::new(0x200996, 1),
+            XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 100,
+            },
+        );
+        selected.observe_mapped(XResourceId::new(0x200996, 1));
+        selected.update(XResourceId::new(0x200996, 1), Some((1 << 2) | (1 << 3)), None);
+    }
 
-    fixture
-        .private
+    private
         .broker
         .registry
         .input_authority
@@ -15072,22 +15065,20 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
         )
         .expect("the grab to take");
 
-    fixture
-        .ingress
+    ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    let delivered = fixture.private.deliver_turn(turn);
+    let delivered = private.deliver_turn(turn);
     assert!(delivered[0].enqueued);
     assert!(
         owner_channels.input.try_recv().is_ok(),
         "the grab owner is the one that received it"
     );
     assert!(
-        fixture.channels.input.try_recv().is_err(),
+        channels.input.try_recv().is_err(),
         "and the surface's own client did not"
     );
 
@@ -15097,8 +15088,7 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
     // client would answer the wrong client's departure and leave this
     // delivery owed to nobody.
     assert_eq!(
-        fixture
-            .private
+        private
             .broker
             .registry
             .input_recovery
@@ -15108,15 +15098,15 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
         Some(owner)
     );
     assert_eq!(
-        fixture.private.terminal.holds[0].reached.client(),
+        private.terminal.holds[0].reached.client(),
         owner,
         "and the hold records the same recipient"
     );
     drop(owner_registration);
     drop(owner_channels);
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 #[test]
@@ -15124,28 +15114,38 @@ fn an_unreadable_ledger_is_not_a_delivery_that_ended() {
     let client = XServerFrontendClientId(997);
     let surface = SurfaceId::new(997, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(997);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    fixture
-        .ingress
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, registration, durable,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
 
     // The ledger becomes unreadable while that delivery is still waiting its
     // turn.
-    let recovery = fixture.private.broker.registry.input_recovery.clone();
+    let recovery = private.broker.registry.input_recovery.clone();
     let _ = std::thread::spawn(move || {
         let _guard = recovery.state.lock().expect("the ledger");
         panic!("poisoning the recovery ledger");
     })
     .join();
 
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(private.deliver_turn(turn).is_empty());
     assert!(
-        fixture.private.terminal.holds.is_empty(),
+        private.terminal.holds.is_empty(),
         "nothing is applied on the strength of what nobody could read"
     );
     // Refused for the absence of an answer, not for an answer. Reporting this
@@ -15154,7 +15154,7 @@ fn an_unreadable_ledger_is_not_a_delivery_that_ended() {
     // is still owed.
     assert!(
         matches!(
-            &fixture.private.terminal.undelivered[0].item,
+            &private.terminal.undelivered[0].item,
             PrivateOrderedItem::Refused {
                 refusal: PrivateExecutionRefusal::RecoveryUnavailable,
                 ..
@@ -15162,15 +15162,21 @@ fn an_unreadable_ledger_is_not_a_delivery_that_ended() {
         ),
         "an unreadable ledger is its own refusal"
     );
-    assert!(fixture.channels.input.try_recv().is_err());
-    drop(fixture.registration);
-    drop(fixture.durable);
+    assert!(channels.input.try_recv().is_err());
+    drop(registration);
+    drop(durable);
 }
 
 /// A press that ran, leaving a hold and a button down.
-fn held_button(fixture: &mut OrderedIngressFixture, surface: SurfaceId, delivery: u64) {
-    fixture
-        .ingress
+fn held_button(
+    private: &mut crate::PrivateXServerFrontend,
+    ingress: &crate::PrivateIngress,
+    keyboards: &mut crate::PrivateKeyboards,
+    watch: &private_watchdog::PrivateWatchdogOwner,
+    surface: SurfaceId,
+    delivery: u64,
+) {
+    ingress
         .submit(button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(delivery),
@@ -15178,12 +15184,11 @@ fn held_button(fixture: &mut OrderedIngressFixture, surface: SurfaceId, delivery
             true,
         ))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
-    assert_eq!(fixture.private.terminal.holds.len(), 1);
+    assert!(private.deliver_turn(turn)[0].enqueued);
+    assert_eq!(private.terminal.holds.len(), 1);
 }
 
 #[test]
@@ -15192,13 +15197,24 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
     let surface = SurfaceId::new(998, 1);
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    held_button(&mut fixture, surface, 9981);
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, registration, durable,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    held_button(private, &ingress, keyboards, watch, surface, 9981);
 
     // The release is accepted, and then its own delivery ends while it waits
     // its turn.
-    fixture
-        .ingress
+    ingress
         .submit(button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(9982),
@@ -15206,19 +15222,17 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
             false,
         ))
         .expect("the order to accept it");
-    fixture
-        .private
+    private
         .broker
         .registry
         .input_recovery
         .recover(std::time::Instant::now(), true)
         .expect("the ledger to be readable");
 
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(private.deliver_turn(turn).is_empty());
 
     // Refused before the ledger moved. This is the case the gate exists for:
     // the press path finds out by binding, but a release binds only after its
@@ -15227,7 +15241,7 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
     // already reported.
     assert!(
         matches!(
-            &fixture.private.terminal.undelivered[0].item,
+            &private.terminal.undelivered[0].item,
             PrivateOrderedItem::Refused {
                 refusal: PrivateExecutionRefusal::DeliveryEnded,
                 ..
@@ -15236,21 +15250,29 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
         "the release is refused for its delivery having ended"
     );
     assert_eq!(
-        fixture.private.terminal.holds.len(),
+        private.terminal.holds.len(),
         1,
         "and the hold it would have ended is still here"
     );
     assert_eq!(
-        projected_buttons(&fixture.private, namespace, seat),
+        projected_buttons(private, namespace, seat),
         0x100,
         "with the button still down, because nothing lifted it"
     );
     // Not lost, either: the obligation is retained rather than discarded, and
     // whoever takes the inventory is the one that can still answer it.
-    assert!(fixture.private.shutdown().terminal_outstanding().expect("readable terminal inventory") >= 1);
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    assert!(
+        frontend
+            .take()
+            .expect("a live runner")
+            .shutdown()
+            .terminal_outstanding()
+            .expect("readable terminal inventory")
+            >= 1
+    );
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 #[test]
@@ -15259,11 +15281,22 @@ fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
     let surface = SurfaceId::new(999, 1);
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    held_button(&mut fixture, surface, 9991);
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, registration, durable,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    held_button(private, &ingress, keyboards, watch, surface, 9991);
 
-    fixture
-        .ingress
+    ingress
         .submit(button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(9992),
@@ -15271,21 +15304,20 @@ fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
             false,
         ))
         .expect("the order to accept it");
-    let recovery = fixture.private.broker.registry.input_recovery.clone();
+    let recovery = private.broker.registry.input_recovery.clone();
     let _ = std::thread::spawn(move || {
         let _guard = recovery.state.lock().expect("the ledger");
         panic!("poisoning the recovery ledger");
     })
     .join();
 
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(private.deliver_turn(turn).is_empty());
     assert!(
         matches!(
-            &fixture.private.terminal.undelivered[0].item,
+            &private.terminal.undelivered[0].item,
             PrivateOrderedItem::Refused {
                 refusal: PrivateExecutionRefusal::RecoveryUnavailable,
                 ..
@@ -15296,15 +15328,15 @@ fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
     // The distinction is the whole point: this release may still be owed. Had
     // it run, the hold would be gone and the button up on the strength of
     // something nobody could read.
-    assert_eq!(fixture.private.terminal.holds.len(), 1);
-    assert_eq!(projected_buttons(&fixture.private, namespace, seat), 0x100);
+    assert_eq!(private.terminal.holds.len(), 1);
+    assert_eq!(projected_buttons(private, namespace, seat), 0x100);
     assert!(
-        fixture.private.terminal.settling.is_empty(),
+        private.terminal.settling.is_empty(),
         "and no debt was recorded, because no release happened"
     );
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 /// A ledger with one admitted, unbound delivery.
@@ -15425,37 +15457,51 @@ fn one_delivery_cannot_be_claimed_by_two_executions() {
 #[test]
 fn an_ordered_turn_gives_its_claim_back() {
     let client = XServerFrontendClientId(1001);
-    let surface = SurfaceId::new(1001, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(1001);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    fixture
-        .ingress
+        let PreparedOrderedFixture {
+        mut runner,
+        ingress,
+        channels,
+        deliveries,
+        surface,
+        durable: _durable,
+        registration: _registration,
+        _acks,
+        selections: _selections,
+        client: _client,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+    assert!(private.deliver_turn(turn)[0].enqueued);
 
     // Given back, so the delivery can still be cancelled. A claim nobody
     // resolves is not a delivery that is safe: it is one nothing can ever
     // answer again, because every cancellation after it defers forever.
-    fixture
-        .private
+    private
         .broker
         .registry
         .input_recovery
         .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
         .expect("the ledger to be readable");
-    let receipt = fixture
-        .deliveries
+    let receipt = deliveries
         .try_recv()
         .expect("the delivery to still be answerable");
     assert_eq!(receipt.delivery, delivery);
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(channels);
 }
 
 #[test]
@@ -15465,18 +15511,28 @@ fn a_release_whose_delivery_another_execution_holds_applies_nothing() {
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
     let release = XAuthorityInputDeliveryId::from_raw(10022);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    held_button(&mut fixture, surface, 10021);
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, registration, durable,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    held_button(private, &ingress, keyboards, watch, surface, 10021);
 
-    fixture
-        .ingress
+    ingress
         .submit(button_to(surface, release, 272, false))
         .expect("the order to accept it");
     // Something else holds this delivery. Its effect may be under way, and a
     // second one applied here would be a second effect for one request.
     assert_eq!(
-        fixture
-            .private
+        private
             .broker
             .registry
             .input_recovery
@@ -15484,14 +15540,13 @@ fn a_release_whose_delivery_another_execution_holds_applies_nothing() {
         ExecutionClaim::Claimed
     );
 
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn).is_empty());
+    assert!(private.deliver_turn(turn).is_empty());
     assert!(
         matches!(
-            &fixture.private.terminal.undelivered[0].item,
+            &private.terminal.undelivered[0].item,
             PrivateOrderedItem::Refused {
                 refusal: PrivateExecutionRefusal::DeliveryClaimedElsewhere,
                 ..
@@ -15500,35 +15555,43 @@ fn a_release_whose_delivery_another_execution_holds_applies_nothing() {
         "refused for contention, which is not the delivery having ended"
     );
     assert_eq!(
-        fixture.private.terminal.holds.len(),
+        private.terminal.holds.len(),
         1,
         "and nothing was applied: the hold is untouched"
     );
     assert_eq!(
-        projected_buttons(&fixture.private, namespace, seat),
+        projected_buttons(private, namespace, seat),
         0x100,
         "with the button still down"
     );
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 #[test]
 fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     let client = XServerFrontendClientId(1003);
-    let owner = XServerFrontendClientId(1004);
     let surface = SurfaceId::new(1003, 1);
     let namespace = NamespaceId::from_raw(client.raw());
     let first = XAuthorityInputDeliveryId::from_raw(10031);
     let second = XAuthorityInputDeliveryId::from_raw(10032);
-    let mut fixture = ordered_ingress_fixture(client, surface);
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, registration, durable, selections, window,
+        _acks,
+        deliveries: _deliveries,
+        client: _client,
+        surface: _surface,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
 
     // A press that reaches this client and starts a hold.
-    held_button(&mut fixture, surface, 10031);
+    held_button(private, &ingress, keyboards, watch, surface, 10031);
     assert_eq!(
-        fixture
-            .private
+        private
             .broker
             .registry
             .input_recovery
@@ -15538,60 +15601,57 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
         Some(client)
     );
 
-    // A grab is installed afterwards, so the same button now resolves
-    // somewhere else entirely.
-    let (owner_registration, owner_channels) = fixture
-        .private
+    // A second admitted client of this instance with its own live queue. It
+    // is here to have somewhere the press could wrongly go, not to grab.
+    let owner = XServerFrontendClientId(1004);
+    let (owner_registration, owner_channels) = private
         .broker
         .registry
-        .register_client_with_admission(owner, Some(admitted(owner)))
+        .register_client_with_admission(owner, Some(namespaced(owner, namespace)))
         .expect("a fresh client to register");
-    fixture
-        .private
-        .admission_participant()
-        .admit(owner, admitted(owner))
-        .expect("the boundary to admit");
-    fixture
-        .private
+    private
         .broker
         .registry
-        .input_authority
-        .lock()
-        .expect("the grab state")
-        .grab_pointer(
-            namespace,
-            crate::XActiveInputGrab {
-                owner: owner.raw(),
-                window: XResourceId::new(0x201004, 1),
-                owner_events: false,
-                pointer_mode: 1,
-                keyboard_mode: 1,
-                event_mask: u16::MAX,
-                xi_event_mask: [0; 8],
-                xi_event_mask_words: 0,
-                route_lease: None,
-            },
-        )
-        .expect("the grab to take");
+        .attach_private_lifecycle(&owner_registration, namespaced(owner, namespace))
+        .expect("the boundary to admit");
+
+    // WHAT THIS SETUP USED TO BE, and why it changed. It installed a second
+    // client's pointer grab here, so that a fresh resolution of the same
+    // button would reach the grab owner instead. That is no longer reachable:
+    // the first press takes an implicit grab for the duration the button is
+    // down, so grab_pointer is refused with AlreadyGrabbed -- which is the
+    // operation behaving correctly, not the control being wrong.
+    //
+    // OLD CLAIM: with a grab installed after the press, a join binds the
+    //   recipient the hold reached rather than the grab owner.
+    // NEW CLAIM: with this window's button selection withdrawn after the
+    //   press, a join binds the recipient the hold reached rather than
+    //   re-resolving against a source view that would now reach nobody.
+    //
+    // The discriminator is at least as sharp: a join that re-resolved would
+    // now have nothing to reach at all, so binding the original recipient
+    // cannot be an accident of both paths landing on the same client.
+    {
+        let mut selected = selections.lock().expect("the selections");
+        selected.update(window, Some(0), None);
+    }
 
     // The same button again. The ledger joins the hold that exists: no new
     // hold, no new event, and the recipient is the one the hold already has.
-    fixture
-        .ingress
+    ingress
         .submit(button_to(surface, second, 272, true))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    let delivered = fixture.private.deliver_turn(turn);
+    let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
     assert!(
         !delivered[0].enqueued,
         "a join owes nobody an event: the button is already down"
     );
     assert_eq!(
-        fixture.private.terminal.holds.len(),
+        private.terminal.holds.len(),
         1,
         "and it joined rather than starting a second hold"
     );
@@ -15602,8 +15662,7 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     // answer it, and the client that is actually holding the button would
     // not.
     assert_eq!(
-        fixture
-            .private
+        private
             .broker
             .registry
             .input_recovery
@@ -15615,22 +15674,21 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     );
     assert!(
         owner_channels.input.try_recv().is_err(),
-        "and the grab owner received nothing"
+        "and no other client of this instance received it either"
     );
     drop(owner_registration);
     drop(owner_channels);
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 /// What the ledger records about one delivery's claim lifetime.
 fn claim_state(
-    fixture: &OrderedIngressFixture,
+    private: &crate::PrivateXServerFrontend,
     delivery: XAuthorityInputDeliveryId,
 ) -> (bool, bool) {
-    let held = fixture
-        .private
+    let held = private
         .broker
         .registry
         .input_recovery
@@ -15676,7 +15734,7 @@ fn a_refusal_before_the_effect_resolves_the_claim_as_having_applied_nothing() {
         "nothing was applied"
     );
     assert_eq!(
-        claim_state(&fixture, delivery),
+        claim_state(&fixture.private, delivery),
         (false, false),
         "the claim is given back, saying nothing was applied -- which the \
          guard has to know on a returned error, not only on an unwind"
@@ -15824,18 +15882,27 @@ fn a_press_that_applied_cannot_be_revoked_afterwards() {
     let client = XServerFrontendClientId(1203);
     let surface = SurfaceId::new(1203, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(1203);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    fixture
-        .ingress
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, deliveries, registration, durable,
+        _acks,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+    assert!(private.deliver_turn(turn)[0].enqueued);
     assert_eq!(
-        claim_state(&fixture, delivery),
+        claim_state(private, delivery),
         (false, true),
         "the claim is back, and the delivery is on record as having applied"
     );
@@ -15844,8 +15911,7 @@ fn a_press_that_applied_cannot_be_revoked_afterwards() {
     // happened, the button is down, and saying the delivery was withdrawn
     // would tell everyone waiting to stop on account of something that did
     // occur.
-    let revoked = fixture
-        .private
+    let revoked = private
         .broker
         .registry
         .input_recovery
@@ -15855,28 +15921,26 @@ fn a_press_that_applied_cannot_be_revoked_afterwards() {
         revoked.is_empty(),
         "nothing is reported revoked that was not"
     );
-    assert!(fixture.deliveries.try_recv().is_err());
+    assert!(deliveries.try_recv().is_err());
 
     // The client going is still sayable, because that is what became of the
     // delivery rather than a denial that it happened.
-    fixture
-        .private
+    private
         .broker
         .registry
         .input_recovery
         .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
         .expect("the ledger to be readable");
     assert_eq!(
-        fixture
-            .deliveries
+        deliveries
             .try_recv()
             .expect("an established recipient fact")
             .outcome,
         XAuthorityInputDeliveryOutcome::ClientDisconnected
     );
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 #[test]
@@ -15885,11 +15949,22 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     let surface = SurfaceId::new(1201, 1);
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    held_button(&mut fixture, surface, 12011);
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, registration, durable,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    held_button(private, &ingress, keyboards, watch, surface, 12011);
 
-    fixture
-        .ingress
+    ingress
         .submit(button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(12012),
@@ -15897,20 +15972,18 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
             false,
         ))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
-    assert_eq!(projected_buttons(&fixture.private, namespace, seat), 0);
-    assert_eq!(fixture.private.terminal.settling.len(), 1);
+    assert!(private.deliver_turn(turn)[0].enqueued);
+    assert_eq!(projected_buttons(private, namespace, seat), 0);
+    assert_eq!(private.terminal.settling.len(), 1);
 
     // What the ledger itself reports as owed. A debt is named by its whole
     // incarnation -- authority, recipient, connection generation and input --
     // and both settle and an attempt claim are matched against that name.
     let mut cursor = 0;
-    let reported = fixture
-        .private
+    let reported = private
         .authority()
         .under_common(|authority| authority.next_debt(&mut cursor))
         .expect("the authority to be readable")
@@ -15921,7 +15994,7 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     // ledger offers, so the debt it describes is one this executor could
     // never settle.
     assert_eq!(
-        fixture.private.terminal.settling[0].incarnation(),
+        private.terminal.settling[0].incarnation(),
         reported.0,
         "the retained debt is named the way the ledger names it"
     );
@@ -15930,13 +16003,13 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     // else holds both, so without this a writer result could be observed and
     // still not be attributable to the debt it settles.
     assert_eq!(
-        fixture.private.terminal.settling[0].delivery(),
+        private.terminal.settling[0].delivery(),
         Some(XAuthorityInputDeliveryId::from_raw(12012)),
         "the debt knows which delivery answers it"
     );
     assert_eq!(
         reported.0.input,
-        fixture.private.terminal.settling[0].incarnation().input,
+        private.terminal.settling[0].incarnation().input,
         "including the input it is for"
     );
     assert!(
@@ -15946,24 +16019,34 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     );
     assert!(!reported.1.native_reconciled);
     assert!(!reported.1.recipient_settled);
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 #[test]
 fn one_step_takes_one_item_and_marks_it_before_common() {
     let client = XServerFrontendClientId(1301);
     let surface = SurfaceId::new(1301, 1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, registration, durable,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     // A second producer, so two items can wait at once: one grant holds one
     // completion cell, and the first request keeps it until it is observed.
-    let second = fixture
-        .private
+    let second = private
         .ingress_for(client, DeviceId::from_raw(2))
         .expect("a second ingress");
-    fixture
-        .ingress
+    ingress
         .submit(button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(13011),
@@ -15982,8 +16065,8 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
 
     // Cloned rather than reached through the frontend, which the step borrows
     // mutably while the mark runs.
-    let common = Arc::clone(&fixture.private.authority().common);
-    let recovery = fixture.private.broker.registry.input_recovery.clone();
+    let common = Arc::clone(&private.authority().common);
+    let recovery = private.broker.registry.input_recovery.clone();
     let first_delivery = XAuthorityInputDeliveryId::from_raw(13011);
     let mut marked = Vec::new();
     let step = {
@@ -16016,9 +16099,8 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
             marked.push(sequence);
             Ok(())
         };
-        fixture
-            .private
-            .step_once(&mut fixture.keyboards, &mut mark, &control_watchdog())
+        private
+            .step_once(keyboards, &mut mark, watch)
             .expect("a readable order")
     };
     let PrivateOrderedStep::Decided(sequence) = step else {
@@ -16026,10 +16108,10 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     };
     assert_eq!(marked.len(), 1, "one step marks exactly one item");
     // Stored by the step, not handed back for the caller to hold.
-    assert_eq!(fixture.private.terminal.turn.len(), 1);
+    assert_eq!(private.terminal.turn.len(), 1);
     let PrivateOrderedItem::Ran {
         sequence: stored, ..
-    } = fixture.private.terminal.turn[0]
+    } = private.terminal.turn[0]
     else {
         panic!("the press ran")
     };
@@ -16042,12 +16124,11 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     // The second is still waiting: a step does not drain what it was not
     // charged for.
     let mut second_marked = Vec::new();
-    let step = fixture
-        .private
-        .step_once(&mut fixture.keyboards, &mut |sequence, _| {
+    let step = private
+        .step_once(keyboards, &mut |sequence, _| {
             second_marked.push(sequence);
             Ok(())
-        }, &control_watchdog())
+        }, watch)
         .expect("a readable order");
     assert!(matches!(step, PrivateOrderedStep::Decided(_)));
     assert_eq!(second_marked.len(), 1);
@@ -16056,57 +16137,71 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     // And now the order is empty, which is its own answer rather than a
     // failure to find work.
     assert!(matches!(
-        fixture
-            .private
+        private
             .step_once(
-                &mut fixture.keyboards,
+                keyboards,
                 &mut |_, _| panic!("nothing to mark"),
-                &control_watchdog(),
+                watch,
             )
             .expect("a readable order"),
         PrivateOrderedStep::Idle
     ));
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 #[test]
 fn a_blocked_order_takes_nothing_and_marks_nothing() {
     let client = XServerFrontendClientId(1302);
-    let surface = SurfaceId::new(1302, 1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
+        let PreparedOrderedFixture {
+        mut runner,
+        ingress: _,
+        channels,
+        deliveries: _,
+        surface,
+        durable: _durable,
+        registration: _registration,
+        _acks,
+        selections: _selections,
+        client: _client,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     // A control command is an operation this path does not execute, so the
     // order parks behind it.
-    fixture
-        .private
+    private
         .control_producer()
         .submit(configure(client, surface, 13021))
         .expect("the order to accept it");
-    let step = fixture
-        .private
-        .step_once(&mut fixture.keyboards, &mut |_, _| Ok(()), &control_watchdog())
+    let step = private
+        .step_once(keyboards, &mut |_, _| Ok(()), watch)
         .expect("a readable order");
     assert!(matches!(step, PrivateOrderedStep::Parked(_)));
 
     // Blocked is not idle. A runner told only "no item" would charge a start
     // and mark a watchdog for work it could never have run, and would keep
     // doing so for as long as the barrier stood.
-    let step = fixture
-        .private
+    let step = private
         .step_once(
-            &mut fixture.keyboards,
+            keyboards,
             &mut |_, _| panic!("nothing may be taken while the order is blocked"),
-            &control_watchdog(),
+            watch,
         )
         .expect("a readable order");
     assert!(
         matches!(step, PrivateOrderedStep::Blocked(_)),
         "the barrier is reported as itself, not as an empty order"
     );
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(channels);
 }
 
 #[test]
@@ -16115,10 +16210,22 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
     let surface = SurfaceId::new(1303, 1);
     let namespace = NamespaceId::from_raw(client.raw());
     let delivery = XAuthorityInputDeliveryId::from_raw(1303);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    // A grab this client owns, which is what cleanup has to remove.
-    fixture
-        .private
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, deliveries, registration, durable, window,
+        _acks,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    // A grab this client owns, over the window it actually has. The
+    // source resolves a grab through the owner's own selection state, so
+    // a grab naming a window this client never registered would leave the
+    // press nothing to reach and prove nothing about cleanup.
+    private
         .broker
         .registry
         .input_authority
@@ -16128,7 +16235,7 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
             namespace,
             crate::XActiveInputGrab {
                 owner: client.raw(),
-                window: XResourceId::new(0x201303, 1),
+                window,
                 owner_events: false,
                 pointer_mode: 1,
                 keyboard_mode: 1,
@@ -16141,34 +16248,30 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
         .expect("the grab to take");
 
     // A press that applies, so its delivery can no longer be revoked.
-    fixture
-        .ingress
+    ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+    assert!(private.deliver_turn(turn)[0].enqueued);
 
     // The sweep revokes the connection and publishes nothing for the delivery,
     // because saying it was withdrawn would contradict the effect.
-    let revoked = fixture
-        .private
+    let revoked = private
         .broker
         .registry
         .input_recovery
         .recover(std::time::Instant::now(), true)
         .expect("the ledger to be readable");
     assert!(revoked.is_empty(), "nothing reported revoked that was not");
-    assert!(fixture.deliveries.try_recv().is_err());
+    assert!(deliveries.try_recv().is_err());
 
     // The connection was still taken down, so what it owned still has to go.
     // Reading cleanup off the published list would skip exactly this case and
     // leave a grab installed for a client whose socket is gone.
     assert!(
-        fixture
-            .private
+        private
             .broker
             .registry
             .input_authority
@@ -16179,9 +16282,9 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
         "the revoked connection's grab is gone even though its delivery \
          published nothing"
     );
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 #[test]
@@ -16257,17 +16360,26 @@ fn private_work_does_not_expire_because_it_waited() {
     let client = XServerFrontendClientId(1401);
     let surface = SurfaceId::new(1401, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(1401);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    fixture
-        .ingress
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, deliveries, registration, durable,
+        _acks,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
 
     // Long past the legacy deadline, and nothing has been attempted for it --
     // so this is the age of a queue entry, not of a send. No writer has
     // blocked, because no writer has been given anything.
-    let expired = fixture
-        .private
+    let expired = private
         .broker
         .registry
         .input_recovery
@@ -16281,10 +16393,9 @@ fn private_work_does_not_expire_because_it_waited() {
         "waiting in a queue is not a transport failure, and manufacturing an \
          outcome from it would report a delivery finished that nothing tried"
     );
-    assert!(fixture.deliveries.try_recv().is_err());
+    assert!(deliveries.try_recv().is_err());
     assert!(
-        fixture
-            .private
+        private
             .broker
             .registry
             .input_recovery
@@ -16294,32 +16405,29 @@ fn private_work_does_not_expire_because_it_waited() {
     );
 
     // It still runs when its turn comes: retaining it is not shelving it.
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+    assert!(private.deliver_turn(turn)[0].enqueued);
 
     // And a real cancellation still reaches it, because what was disabled is
     // the age producer and not the sweep.
-    fixture
-        .private
+    private
         .broker
         .registry
         .input_recovery
         .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
         .expect("the ledger to be readable");
     assert_eq!(
-        fixture
-            .deliveries
+        deliveries
             .try_recv()
             .expect("an established recipient fact")
             .delivery,
         delivery
     );
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 include!("review_private_deadline.rs");
 
@@ -16358,7 +16466,7 @@ fn a_start_that_refuses_stops_before_the_effect() {
             ..
         })
     ));
-    assert_eq!(claim_state(&fixture, delivery), (false, false));
+    assert_eq!(claim_state(&fixture.private, delivery), (false, false));
     drop(fixture.registration);
     drop(fixture.channels);
     drop(fixture.durable);
@@ -16387,7 +16495,7 @@ fn nothing_runs_when_nothing_will_watch_it() {
     assert!(matches!(step, PrivateOrderedStep::Unwatched(_)));
     assert!(fixture.private.terminal.holds.is_empty());
     assert_eq!(
-        claim_state(&fixture, delivery),
+        claim_state(&fixture.private, delivery),
         (false, false),
         "the ledger never moved for it"
     );
@@ -16608,13 +16716,23 @@ fn a_departed_recipient_is_a_failed_recipient_not_a_failed_server() {
 fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
     let client = XServerFrontendClientId(1601);
     let surface = SurfaceId::new(1601, 1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    let second = fixture
-        .private
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, registration, durable,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let _watch = watch.as_ref().expect("a sealed watch");
+    let second = private
         .ingress_for(client, DeviceId::from_raw(2))
         .expect("a second ingress");
-    fixture
-        .ingress
+    ingress
         .submit(button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(16011),
@@ -16632,12 +16750,11 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
         .expect("the order to accept it");
     let watch = control_watchdog();
     for _ in 0..2 {
-        fixture
-            .private
-            .step_once(&mut fixture.keyboards, &mut |_, _| Ok(()), &watch)
+        private
+            .step_once(keyboards, &mut |_, _| Ok(()), &watch)
             .expect("a readable order");
     }
-    assert_eq!(fixture.private.terminal.turn.len(), 2);
+    assert_eq!(private.terminal.turn.len(), 2);
 
     // An empty order is not a step and costs nothing.
     let charged = std::cell::RefCell::new(Vec::new());
@@ -16645,7 +16762,7 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
         charged.borrow_mut().push(sequence);
         Ok(())
     };
-    let step = fixture.private.deliver_one(&mut charge).expect("a step");
+    let step = private.deliver_one(&mut charge).expect("a step");
     let PrivateDeliveryStep::Advanced { sequence, report } = step else {
         panic!("one entry disposed")
     };
@@ -16656,12 +16773,12 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
     );
     assert!(report.expect("a disposed entry reports").enqueued);
     assert_eq!(
-        fixture.private.terminal.turn.len(),
+        private.terminal.turn.len(),
         1,
         "exactly one entry left the turn"
     );
 
-    let step = fixture.private.deliver_one(&mut charge).expect("a step");
+    let step = private.deliver_one(&mut charge).expect("a step");
     assert!(matches!(step, PrivateDeliveryStep::Advanced { .. }));
     assert_eq!(charged.borrow().len(), 2);
     assert_ne!(charged.borrow()[0], charged.borrow()[1], "a different entry");
@@ -16669,13 +16786,13 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
     // Nothing waiting is its own answer, and takes nothing.
     let before = charged.borrow().len();
     assert!(matches!(
-        fixture.private.deliver_one(&mut charge).expect("a step"),
+        private.deliver_one(&mut charge).expect("a step"),
         PrivateDeliveryStep::Idle
     ));
     assert_eq!(charged.borrow().len(), before, "an empty turn is not a step");
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 #[test]
@@ -17231,9 +17348,20 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
     // The service runner shares nothing with either socket and completes.
     let client = XServerFrontendClientId(1903);
     let surface = SurfaceId::new(1903, 1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    fixture
-        .ingress
+        let PreparedOrderedFixture {
+        mut runner, ingress, channels, registration, durable,
+        _acks,
+        deliveries: _deliveries,
+        selections: _selections,
+        client: _client,
+        surface: _surface,
+        window: _window,
+        namespace: _namespace,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    ingress
         .submit(button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(1903),
@@ -17241,11 +17369,10 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
             true,
         ))
         .expect("the order to accept it");
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+    assert!(private.deliver_turn(turn)[0].enqueued);
 
     // A's writer reports its own delivery blocked and still owns it. Whether
     // any of the frame reached the wire depends on how full the socket already
@@ -17267,9 +17394,9 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
         .expect("the socket can be ended");
     assert!(in_flight.as_ref().expect("still owned").send.frame.is_some());
     drop(reader_a);
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    drop(registration);
+    drop(channels);
+    drop(durable);
 }
 
 
@@ -17312,11 +17439,18 @@ fn a_request_carries_the_capability_it_was_reserved_under() {
 #[allow(dead_code)]
 struct PreparedOrderedFixture {
     runner: PrivatePreparedRunner,
+    /// Taken from the runner at construction so a control can borrow the
+    /// frontend, the keyboards and the watch disjointly afterwards. The
+    /// producer is owned, so holding it costs the runner no borrow.
+    ingress: crate::PrivateIngress,
     durable: PrivateSettlementOwner,
     registration: XServerFrontendClientRouteRegistration,
     channels: XServerFrontendClientRouteChannels,
     _acks: Receiver<XAuthorityClientControlAck>,
     deliveries: Receiver<XAuthorityClientInputDelivery>,
+    /// The source's own view of this connection's windows, so a control can
+    /// change what a fresh resolution would reach.
+    selections: Arc<Mutex<XCoreEventSelectionState>>,
     client: XServerFrontendClientId,
     surface: SurfaceId,
     window: XResourceId,
@@ -17349,11 +17483,15 @@ fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedF
         .registry
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a fresh client registers");
+    // Admitted through the lifecycle rather than beside it: attaching the
+    // lifecycle admits too, so a fixture that did both would be refused as
+    // already admitted, and one that admits without it leaves anything
+    // closing this connection with no gate to close.
     private
-        .admission_participant()
-        .admit(client, admitted(client))
-        .expect("the boundary admits");
-
+        .broker
+        .registry
+        .attach_private_lifecycle(&registration, admitted(client))
+        .expect("the boundary admits and the lifecycle attaches");
     // The selections the resolver actually reads, and the focus projection,
     // both retained here rather than left to defaults.
     let selections = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
@@ -17388,9 +17526,12 @@ fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedF
         .register_surface(client, namespace, surface, window)
         .expect("the surface registers");
 
-    let runner = private
+    let mut runner = private
         .prepare_runner(namespace)
         .unwrap_or_else(|(cause, _)| panic!("runner refused: {cause:?}"));
+    let ingress = runner
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("the runner exposes a producer");
 
     // A real initial clear through the publication the runner installed,
     // borrowed rather than installed again. Nothing here sets a published flag
@@ -17420,11 +17561,13 @@ fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedF
 
     PreparedOrderedFixture {
         runner,
+        ingress,
         durable,
         registration,
         channels,
         _acks: acks,
         deliveries,
+        selections,
         client,
         surface,
         window,

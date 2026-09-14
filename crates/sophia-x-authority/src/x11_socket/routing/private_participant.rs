@@ -416,21 +416,6 @@ impl PrivateAdmissionParticipant {
 
 #[cfg(unix)]
 impl PrivateAdmissionBindings {
-    /// The connection identity a recipient is currently admitted under.
-    ///
-    /// Read from the binding the admission producer maintains, not from the
-    /// submitting request: a request's own connection says who sent it, and
-    /// says nothing about a different client it may be delivered to.
-    fn recipient(
-        &self,
-        client: XServerFrontendClientId,
-    ) -> Option<sophia_input_authority::Recipient> {
-        let bound = self.bound.get(&client).filter(|bound| !bound.closed && bound.lifecycle.as_ref().is_none_or(PrivateLifecycleGate::is_open))?;
-        Some(sophia_input_authority::Recipient {
-            recipient: client.raw(),
-            connection_generation: bound.generation,
-        })
-    }
 }
 
 /// Close one binding and retire what its admission authorised.

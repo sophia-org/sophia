@@ -29,7 +29,7 @@ struct PrivateAppliedRegistryOwner {
 
 #[cfg(unix)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PrivateAppliedRegistryRefusal {
+pub(crate) enum PrivateAppliedRegistryRefusal {
     AuthorityUnavailable,
     RegistryUnavailable,
     SelectionUnavailable,

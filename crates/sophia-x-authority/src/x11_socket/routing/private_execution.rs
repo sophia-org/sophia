@@ -30,14 +30,12 @@ const PRIVATE_HOLD_RECORDS: usize = sophia_input_authority::Capacity::PLANNED.in
 /// Why an ordered execution did not apply.
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrivateExecutionRefusal {
+pub(crate) enum PrivateExecutionRefusal {
     /// The keyboard state offered is not this instance's.
     ForeignKeyboards,
     /// This seat has no keyboard state and one could not be built. Refused
     /// before the transaction, where refusing is still free.
     SeatUnavailable,
-    /// The route names a surface nothing currently routes.
-    TargetGone,
     /// The input does not name anything this authority can validate.
     Unmappable,
     /// A new key press needs an authoritative reached target, and the only
@@ -65,6 +63,12 @@ pub enum PrivateExecutionRefusal {
     /// watching is starting the case it was meant to catch with nothing left
     /// to catch it.
     Unwatched,
+    /// This instance has no prepared native origin.
+    ///
+    /// Refused rather than pressed without one. Every hold clones that origin
+    /// and a proof is checked against it, so a press that began without one
+    /// would leave a hold nothing could ever prove anything about.
+    NativeUnprepared,
     /// Another execution holds this delivery.
     ///
     /// Its effect may be under way, so this one may not apply a second. Not
@@ -98,6 +102,15 @@ pub enum PrivateExecutionRefusal {
     /// the cause. Discarding it and naming a plausible error here would
     /// replace what happened with a guess about it.
     NotDecided(sophia_input_authority::RequestCompletion),
+    /// The source refused, under the name the source gave it.
+    ///
+    /// The source distinguishes a delivery that ended, a ledger nobody could
+    /// read, a selection that was not there and an origin that was not ours.
+    /// All of them leave the transaction carrying one authority error, so
+    /// reporting that error would say only that something went wrong inside.
+    /// Recording the cause and never reading it would be worse still: a fact
+    /// written down where nothing can reach it is not a fact anyone has.
+    Native(private_native::Refusal),
     /// The admission boundary refused.
     Admission(PrivateAdmissionRefusal),
     /// The authority refused.
@@ -165,19 +178,38 @@ impl PrivateXServerFrontend {
             participant,
             controller,
             broker,
+            native_owner,
             ..
         } = self;
+        // An instance whose origin was never prepared cannot press: a hold
+        // cloning an origin that does not exist is one nothing could later
+        // prove anything about, and the preparation happens before any
+        // producer is exposed precisely so this is not a question at
+        // execution time.
+        let Some(native) = native_owner.as_ref() else {
+            return Err(PrivateExecutionRefusal::NativeUnprepared);
+        };
         let PrivateTerminalInventory {
             current,
             holds,
             settling,
+            native_pending,
             ..
         } = terminal;
         let Some(PrivateOrderedItem::Refused { custody, route, .. }) = current.as_ref() else {
             return Err(PrivateExecutionRefusal::NotAttempted);
         };
         execute_owned(
-            watched, controller, participant, broker, holds, settling, keyboards, route,
+            watched,
+            native,
+            native_pending,
+            controller,
+            participant,
+            broker,
+            holds,
+            settling,
+            keyboards,
+            route,
             custody,
         )
     }
@@ -223,13 +255,22 @@ impl PrivateXServerFrontend {
             participant,
             controller,
             broker,
+            native_owner,
             ..
         } = self;
+        let Some(native) = native_owner.as_ref() else {
+            return Err(PrivateExecutionRefusal::NativeUnprepared);
+        };
         let PrivateTerminalInventory {
-            holds, settling, ..
+            holds,
+            settling,
+            native_pending,
+            ..
         } = terminal;
         let outcome = execute_owned(
             &mut watched,
+            native,
+            native_pending,
             controller,
             participant,
             broker,
@@ -273,6 +314,9 @@ fn resolve_and_apply(
     settling: &mut Vec<PrivateSettlingRelease>,
     route: &XAuthorityRoutedInput,
     grant: sophia_input_authority::GrantId,
+    capability: sophia_input_authority::DeviceCapability,
+    native: &private_native::Owner,
+    native_pending: &mut Option<private_native::Hold>,
     notes: &mut PrivateTransactionNotes<'_>,
 ) -> Result<(), sophia_input_authority::RegistrationError> {
     let unavailable = sophia_input_authority::RegistrationError::RoutingUnavailable;
@@ -448,175 +492,181 @@ fn resolve_and_apply(
                 return Ok(());
             }
 
+            // The rank continues from the guards this transaction already
+            // holds -- common, and the boundary's bindings beneath it -- with
+            // clients, then surfaces, then the native base guards (pointer,
+            // then X authority), and the recipient's exact selections taken
+            // inside the source operation itself.
+            //
+            // The surface route is read under a guard that stays held through
+            // resolution and application. Losing the mapper and grab locks
+            // from this function does not make the route safe to read and
+            // release: what it names has to still be true when the effect
+            // lands, and a route read and let go describes a moment that has
+            // passed.
+            let clients = registry.clients.lock().map_err(|_| unavailable)?;
             let surfaces = registry.surfaces.lock().map_err(|_| unavailable)?;
             let Some(surface_route) = surfaces.get(&route.request.target_surface).copied() else {
                 return Err(unavailable);
             };
-            // Taken after surfaces, in rank, and both held across the ledger
-            // transition below.
-            let mut pointers = registry.pointer_state.lock().map_err(|_| unavailable)?;
-            let pointer = pointers
-                .entry((surface_route.namespace, route.request.seat))
-                .or_insert_with(crate::XCorePointerMapper::new);
-            // Held across the press, not read and released. A grab writer can
-            // take this without holding common, so letting go before applying
-            // reopens exactly the window resolving here was meant to close.
-            let grabs = registry.input_authority.lock().map_err(|_| unavailable)?;
-            let (client, window, grabbed) = match grabs.pointer_grab(surface_route.namespace) {
-                Some(grab) => {
-                    let owner = XServerFrontendClientId::from_raw(grab.owner);
-                    let window = if grab.owner_events && owner == surface_route.client {
-                        surface_route.window
-                    } else {
-                        grab.window
-                    };
-                    (owner, window, true)
-                }
-                None => (surface_route.client, surface_route.window, false),
-            };
-            // Checked before the ledger moves. A press whose plan could not be
-            // recorded would leave a hold nobody can later answer, and
-            // refusing after the effect is refusing too late.
+            // Checked before anything moves, against storage reserved before
+            // any work was accepted. That is what lets the hold this press may
+            // begin be recorded by a push which cannot grow the vector, so
+            // moving the native obligation out of pending afterwards follows
+            // the only fallible step rather than preceding it.
             if holds.len() >= PRIVATE_HOLD_RECORDS {
                 notes.records_exhausted = true;
                 return Err(sophia_input_authority::RegistrationError::Capacity(
                     sophia_input_authority::CapacityError::NoGrantSlot,
                 ));
             }
-            // The recipient's own admission, read from the binding under the
-            // guard already held. The submitting request's generation says who
-            // sent this and nothing about a different client receiving it.
-            let Some(recipient) = bindings.recipient(client) else {
-                return Err(sophia_input_authority::RegistrationError::WrongConnection);
-            };
-
-            // Bound to the client that will receive this press, which is not
-            // always the one the route named: a grab sends it elsewhere, and
-            // the ledger has to record where the event went rather than where
-            // it pointed. Until this, the delivery has no recipient, so a
-            // disconnect cannot answer it and a timeout answers it to nobody.
-            //
-            // Reached from under the surfaces, pointer and grab guards. The
-            // ledger ranks beneath them, and nothing inverts that: the two
-            // paths that reach the other way -- `disconnect_rejecting` and
-            // `recover` -- release the ledger before taking the authority
-            // guard they share with this registry.
-            //
-            // Whether this press starts a hold or joins one is decided here,
-            // before the ledger moves and under common, because it decides who
-            // the delivery is bound to. A join reaches nobody new: it adopts
-            // the hold that exists, with the recipient that hold was recorded
-            // with. Binding the target the route resolves to now would name a
-            // client the event never reached -- a grab installed between the
-            // two presses is exactly that case.
-            // Taken by value rather than as a reference into the records: the
-            // press may push a new one, and a borrow held across that would
-            // have to be given up exactly where the decision is needed.
+            // Whether this press joins a hold this executor already has, taken
+            // by value: the press may push a new record, and a borrow held
+            // across that would have to be surrendered exactly where the
+            // decision is needed.
             let joining = holds
                 .iter()
                 .find(|record| record.incarnation.input == input)
                 .map(|record| (record.incarnation, record.reached));
-            let bound_to = joining.map_or(client, |(_, reached)| reached.client);
-            match registry.input_recovery.bind(route.delivery, bound_to) {
-                Ok(true) => {}
-                Ok(false) => {
-                    // Refused here rather than after the press. A press that
-                    // cannot be delivered must not leave a hold behind: the
-                    // release answering it would be owed to a client that was
-                    // already gone when the press was applied.
-                    notes.delivery_ended = true;
-                    return Err(sophia_input_authority::RegistrationError::StaleRequest);
-                }
-                Err(_) => {
-                    notes.recovery_unavailable = true;
-                    return Err(unavailable);
-                }
-            }
+
+            let mut guards = native.lock_base().map_err(|refusal| {
+                notes.native_refusal = Some(refusal);
+                unavailable
+            })?;
+            // The fallback the source uses when no grab is established. Its
+            // mask is not selection authority: a new implicit activation is
+            // refined against what the recipient actually selected, so this
+            // names an owner and a window and claims nothing about what may be
+            // delivered through it.
+            let implicit = crate::XActiveInputGrab {
+                owner: surface_route.client.raw(),
+                window: surface_route.window,
+                owner_events: true,
+                pointer_mode: 1,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: route.route_lease,
+            };
 
             notes
                 .watched
                 .applying()
                 .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
-            notes.may_have_applied.set(true);
-            let applied = permit.press(input, recipient)?;
+            let (applied, event) = guards
+                .press(
+                    permit,
+                    capability,
+                    route,
+                    surface_route.window,
+                    implicit,
+                    native_pending,
+                    notes.may_have_applied,
+                    |recipient| {
+                        // The recipient's own binding, read from the boundary
+                        // this transaction already holds. A recipient with no
+                        // binding is not admitted here, which is a fact about
+                        // the boundary rather than about the route.
+                        let binding = bindings
+                            .bound
+                            .get(&recipient)
+                            .ok_or(PrivateAppliedRegistryRefusal::MissingAdmission)?;
+                        registry.applied_client(&clients, recipient, binding)
+                    },
+                    |witness, selected, prepared, event| {
+                        // Where this press actually reaches, from the source's
+                        // own selection rather than from the route: a grab
+                        // sends it elsewhere, and owner_events sends it back to
+                        // the surface's own window.
+                        let grab = prepared.recipient();
+                        let recipient = XServerFrontendClientId::from_raw(grab.owner);
+                        let window = if grab.owner_events && recipient == surface_route.client {
+                            surface_route.window
+                        } else {
+                            grab.window
+                        };
+                        witness
+                            .lock_publication()
+                            .map_err(|_| PrivateAppliedRefusal::Interrupted)?
+                            .view(recipient, selected, prepared.authority())?
+                            .pointer(
+                                window,
+                                *event,
+                                None,
+                                PrivatePointerSelection::Prepared(prepared),
+                            )
+                    },
+                )
+                .map_err(|refusal| {
+                    // Carried out under its own name. The source distinguishes
+                    // a delivery that ended, a ledger nobody could read, a
+                    // selection that was not there and an origin that was not
+                    // ours, and renaming any of those to an authority error
+                    // would lose which one happened.
+                    notes.native_refusal = Some(refusal);
+                    sophia_input_authority::RegistrationError::StaleExecution
+                })?;
             notes
                 .watched
                 .committed()
                 .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
             let incarnation = applied.incarnation();
             let reached = if applied.first_press() {
+                // Where the press reached, from the obligation the source
+                // installed rather than from the route this executor was
+                // handed.
+                // Where the press reached, taken from what the ledger minted
+                // and what the source resolved, rather than from the route
+                // this executor was handed. The recipient is the incarnation's
+                // own; the window is the one the resolution delivered to.
+                let reached_window = native_pending
+                    .as_ref()
+                    .map_or(surface_route.window, |hold| hold.plan().delivered_window);
                 let reached = PrivateReachedResources {
-                    client,
-                    window,
+                    client: XServerFrontendClientId::from_raw(incarnation.recipient),
+                    window: reached_window,
                     surface: route.request.target_surface,
                     namespace: surface_route.namespace,
                     seat: route.request.seat,
-                    grabbed,
                     grant,
                 };
-                // Published into storage reserved before anything was
-                // accepted, so recording where the press went cannot fail
-                // after the ledger has already moved.
+                // Pushed into storage reserved before anything was accepted,
+                // so recording where the press went cannot fail after the
+                // ledger has already moved -- and the native obligation leaves
+                // pending only once a record exists to hold it.
                 holds.push(PrivateHoldRecord {
                     incarnation,
                     reached,
                     native: None,
                 });
+                holds.last_mut().expect("just pushed").native = native_pending.take();
                 if joining.is_some() {
                     // The ledger began a hold for an input this executor
                     // already had one for. The record above keeps the new hold
-                    // from being hidden, but the delivery was bound to the
-                    // older hold's recipient on the strength of a reading the
-                    // ledger did not share.
+                    // from being hidden, but the delivery was bound on the
+                    // strength of a reading the ledger did not share.
                     notes.plan_missing = true;
                     return Err(sophia_input_authority::RegistrationError::StaleRequest);
                 }
                 Some(reached)
             } else {
-                // A join adopts the hold that already exists. What this press
-                // would have resolved is a proposal the ledger did not take,
-                // and reporting it would name a client the hold never went to.
+                // A join adopts the hold that exists and the source installs
+                // nothing for it, so pending stays exactly as it was.
                 let Some(record) = holds
                     .iter()
                     .find(|record| record.incarnation == incarnation)
                 else {
-                    // The ledger joined a hold whose record is gone, so this
-                    // press has an owner nobody can name.
                     notes.plan_missing = true;
                     return Err(sophia_input_authority::RegistrationError::StaleRequest);
                 };
                 if joining.is_none_or(|(predicted, _)| predicted != record.incarnation) {
-                    // The ledger joined a different hold than the one this
-                    // delivery was bound to, so the binding names a recipient
-                    // this press did not reach.
                     notes.plan_missing = true;
                     return Err(sophia_input_authority::RegistrationError::StaleRequest);
                 }
                 Some(record.reached)
             };
-            let event = if applied.first_press() {
-                pointer
-                    .map_evdev_button(button, true)
-                    .map(|(core, before)| {
-                        XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
-                            kind: XAuthorityPointerEventKind::Button {
-                                button: core,
-                                pressed: true,
-                            },
-                            surface: route.request.target_surface,
-                            root_x: clamp_input_coordinate(route.request.global_position.x),
-                            root_y: clamp_input_coordinate(route.request.global_position.y),
-                            event_x: clamp_input_coordinate(route.request.local_position.x),
-                            event_y: clamp_input_coordinate(route.request.local_position.y),
-                            state: before,
-                            time_msec: u32::try_from(route.request.time_msec).unwrap_or(u32::MAX),
-                        })
-                    })
-            } else {
-                // A join moves the aggregate without being a delivery, so the
-                // pointer state is not moved either: it already has this down.
-                None
-            };
+            let event = event.map(XAuthorityInputEvent::Pointer);
             notes.decided = Some(PrivateOrderedDecision {
                 owes_event: applied.first_press(),
                 reached,
@@ -646,6 +696,8 @@ fn resolve_and_apply(
 #[allow(clippy::too_many_arguments)]
 fn execute_owned(
     watched: &mut private_watchdog::PrivateWatchedExecution,
+    native: &private_native::Owner,
+    native_pending: &mut Option<private_native::Hold>,
     controller: &PrivateAuthorityController,
     participant: &PrivateAdmissionParticipant,
     broker: &XServerFrontendRouteBroker,
@@ -724,6 +776,9 @@ fn execute_owned(
                     settling,
                     route,
                     custody.grant(),
+                    custody.capability(),
+                    native,
+                    native_pending,
                     &mut notes,
                 )
             })
@@ -754,6 +809,13 @@ fn execute_owned(
             // carried it out of the transaction. A hold ended and its record
             // is gone, which is an obligation nobody can currently discharge.
             return Err(PrivateExecutionRefusal::HoldPlanMissing);
+        }
+        if let Some(refusal) = notes.native_refusal {
+            // Named by the source rather than by the authority error that
+            // carried it out of the transaction, for the same reason the
+            // refusals above are: the error says the transaction did not
+            // complete, and the refusal says what stopped it.
+            return Err(PrivateExecutionRefusal::Native(refusal));
         }
         let Some(decided) = notes.decided else {
             // The transaction returned without deciding anything, which means
@@ -791,6 +853,13 @@ struct PrivateTransactionNotes<'a> {
     delivery_ended: bool,
     /// The ledger could not be read.
     recovery_unavailable: bool,
+    /// What the native source refused, when it refused.
+    ///
+    /// Carried out rather than renamed. The source tells a delivery that ended
+    /// from a ledger nobody could read from a selection that was not there
+    /// from an origin that was not ours, and an authority error standing in
+    /// for all four would lose which one happened.
+    native_refusal: Option<private_native::Refusal>,
     /// The execution a supervisor is watching.
     ///
     /// Borrowed from whoever owns the watch and finishes it, and carried with
@@ -820,6 +889,7 @@ impl<'a> PrivateTransactionNotes<'a> {
             records_exhausted: false,
             delivery_ended: false,
             recovery_unavailable: false,
+            native_refusal: None,
             may_have_applied,
         }
     }

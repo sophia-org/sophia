@@ -19,21 +19,25 @@ fn review_private_deadline_enqueued_unwritten_work_keeps_socket_and_ticket() {
     let client = XServerFrontendClientId(6202);
     let surface = SurfaceId::new(6202, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(6202);
-    let mut f = ordered_ingress_fixture(client, surface);
+        let mut f = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, ingress, channels, deliveries, .. } = &mut f;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     let (mut socket, mut peer) = UnixStream::pair().unwrap();
     socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
-    f.private.broker.registry.input_recovery.attach(client, socket.try_clone().unwrap()).unwrap();
-    held_button(&mut f, surface, 6202);
-    let recovery = &f.private.broker.registry.input_recovery;
+    private.broker.registry.input_recovery.attach(client, socket.try_clone().unwrap()).unwrap();
+    held_button(private, ingress, keyboards, watch, surface, 6202);
+    let recovery = &private.broker.registry.input_recovery;
     let ticket = recovery.ticket(delivery).unwrap();
     assert_eq!(ticket.client, Some(client));
     // deliver_turn enqueued the real input event; no writer was constructed.
     assert!(recovery.recover(ticket.admitted_at + Duration::from_secs(7), false).unwrap().is_empty(),
         "private input queued for an absent writer produced a transport deadline");
-    assert!(f.deliveries.try_recv().is_err());
+    assert!(deliveries.try_recv().is_err());
     assert!(!recovery.state.lock().unwrap().connections.get(&client).unwrap().revoked);
     assert!(recovery.ticket(delivery).is_some());
-    assert!(f.channels.input.try_recv().is_ok(), "queued event was retained");
+    assert!(channels.input.try_recv().is_ok(), "queued event was retained");
     peer.write_all(b"p").unwrap();
     let mut byte = [0]; socket.read_exact(&mut byte).unwrap(); assert_eq!(byte, [b'p']);
 }
@@ -59,17 +63,21 @@ fn review_private_deadline_forced_bound_revoke_respects_an_applied_claim() {
     let client = XServerFrontendClientId(6204);
     let surface = SurfaceId::new(6204, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(6204);
-    let mut f = ordered_ingress_fixture(client, surface);
+        let mut f = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, ingress, deliveries, .. } = &mut f;
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
     let (mut socket, _peer) = UnixStream::pair().unwrap();
     socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
-    f.private.broker.registry.input_recovery.attach(client, socket.try_clone().unwrap()).unwrap();
-    held_button(&mut f, surface, 6204);
-    let recovery = &f.private.broker.registry.input_recovery;
+    private.broker.registry.input_recovery.attach(client, socket.try_clone().unwrap()).unwrap();
+    held_button(private, ingress, keyboards, watch, surface, 6204);
+    let recovery = &private.broker.registry.input_recovery;
     assert_eq!(recovery.claim_execution(Some(delivery)), ExecutionClaim::Claimed);
     assert!(recovery.recover(Instant::now(), true).unwrap().is_empty());
     assert!(recovery.state.lock().unwrap().connections.get(&client).unwrap().revoked);
     let mut byte = [0]; assert_eq!(socket.read(&mut byte).unwrap(), 0);
     recovery.resolve_claim(Some(delivery), false);
-    assert!(f.deliveries.try_recv().is_err(), "earlier application forbids pre-effect cancellation");
+    assert!(deliveries.try_recv().is_err(), "earlier application forbids pre-effect cancellation");
     assert!(recovery.ticket(delivery).is_some(), "delivery settlement remains owed");
 }

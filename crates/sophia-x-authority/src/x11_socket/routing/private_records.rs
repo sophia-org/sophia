@@ -25,8 +25,6 @@ pub struct PrivateReachedResources {
     /// release happens to name would clear a different seat's buttons and
     /// leave this one's held forever.
     seat: SeatId,
-    /// Whether a grab chose this rather than the route.
-    grabbed: bool,
     /// The grant that authorised the press.
     ///
     /// Settling a debt names the participant that owes it, and the capability
@@ -52,9 +50,6 @@ impl PrivateReachedResources {
     }
     pub fn seat(self) -> SeatId {
         self.seat
-    }
-    pub fn grabbed(self) -> bool {
-        self.grabbed
     }
 }
 

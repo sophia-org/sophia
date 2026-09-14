@@ -13,7 +13,7 @@ mod private_native {
     use std::sync::MutexGuard;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub(super) enum Refusal {
+    pub(crate) enum Refusal {
         ForeignOrigin,
         MissingMapper,
         MissingQueryScope,
