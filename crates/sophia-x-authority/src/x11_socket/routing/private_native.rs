@@ -23,6 +23,8 @@ mod private_native {
         WrongRecipient,
         ActivationMismatch,
         SelectionUnavailable,
+        DeliveryEnded,
+        RecoveryUnavailable,
         Preparation(crate::PointerPreparationRefusal),
         Resolution(PrivateAppliedRefusal),
         Connection(PrivateAppliedRegistryRefusal),
@@ -358,9 +360,12 @@ mod private_native {
 
     impl BaseGuards<'_> {
         /// New aggregate press. Resolution reads these exact selections and
-        /// the exclusive prepared grab; delivery binding belongs in `resolve`
-        /// before it returns. That closure must not reacquire these guards or
-        /// common. A join uses `join` below and never resolves a new recipient.
+        /// the exclusive prepared grab. The source then binds the original
+        /// delivery through its own origin, before the common or native effect.
+        /// Neither callback may reacquire these guards or common. The caller
+        /// keeps its execution claim across this operation; binding does not
+        /// replace cancellation arbitration. A join uses `join` below and
+        /// never resolves a new recipient.
         #[allow(clippy::too_many_arguments)]
         pub(super) fn press<'connection>(
             &mut self,
@@ -485,6 +490,16 @@ mod private_native {
                 prepared
             };
             let grab_lease = prepared.recipient().route_lease;
+            // Recovery ranks below the held X guards. Its cancellation and
+            // disconnect paths release the ledger before taking X authority.
+            // Do not delegate this to resolution: a delivery refusal is not a
+            // selection failure, and checking it after press leaves a hidden
+            // common hold for a recipient that could never accept the press.
+            match self.origin.registry.input_recovery.bind(route.delivery, client.client) {
+                Ok(true) => {}
+                Ok(false) => return Err(Refusal::DeliveryEnded),
+                Err(_) => return Err(Refusal::RecoveryUnavailable),
+            }
             *storage = Some(Hold {
                 origin: self.origin.clone(),
                 selections: client.connection.selections.clone(),

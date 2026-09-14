@@ -1491,3 +1491,30 @@ old completion check compiles and fails the same control. This accepts the
 frame-retirement component, not a writer receipt or Gate A. Native Hold/terminal,
 actual queue/writer/receipt/attempt settlement and same-grant re-press remain
 the critical integration gate. No hardware, root/master movement or enablement.
+
+### M3 native press binds through its retained origin
+
+The source press now binds its original delivery to the selected recipient
+through the recovery ledger retained by its native origin. Full selection and
+coordinate validation precede the bind; Hold installation, common press and
+native commit follow it. The former instruction to bind inside the resolution
+callback was not implementable without disguising a delivery refusal as a
+registry or selection error. DeliveryEnded and RecoveryUnavailable now preserve
+those distinct causes. The executor still owns the cancellation claim across
+the transaction. Join binds its inherited recipient before its common press;
+release binds the recorded recipient after its aggregate/native attempt.
+
+Thirty-one native source controls pass, including original delivery binding,
+another client's grab, an unreadable ledger, and recipient loss after selection.
+The refusal control observes the common completion and then asks the same grant
+to press again against the ledger: it begins a new hold, so the refusal hid none.
+Four disposable-source mutations compile and fail: omitted binding, binding after
+the common effect, unreadable reported as ended, and binding the submitting
+client instead of the grab recipient. The initial focused build had an invalid
+test method name; corrected before counting any results.
+
+Input-only serial checks: 1189 passed, zero failed, one existing ignored across
+42 suites; strict clippy, fmt, layout and diff pass. These are native source
+composition controls, not production writer delivery or settlement. Gate A's
+native Hold/inventory, queue, receipt and attempt join remains open. No hardware,
+Session/content change, master movement or enablement.
