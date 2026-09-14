@@ -599,6 +599,7 @@ impl XServerFrontendRouteRegistry {
             X11RoutedControl::Authority {
                 command: route.command,
                 focus: None,
+                claim: None,
                 completion,
             },
         )

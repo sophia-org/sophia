@@ -14,6 +14,7 @@ impl PrivateXServerFrontend {
     /// consumed self: the component able to answer them would have gone with
     /// it.
     pub fn shutdown(mut self) -> PrivateSettlement {
+        drop(self.pending_watch.take());
         self.terminal.lifecycle.close_all();
         let _lifecycle_progress = self.terminal.lifecycle.drive(NonZeroUsize::new(1).unwrap());
         self.settle_accepted()
@@ -188,6 +189,7 @@ impl PrivateXServerFrontend {
 #[cfg(unix)]
 impl Drop for PrivateXServerFrontend {
     fn drop(&mut self) {
+        drop(self.pending_watch.take());
         // The fallback for an owner that never called shutdown. The handle
         // this produces is dropped immediately, and its own Drop makes one
         // final attempt with the capability still in hand.

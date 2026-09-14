@@ -370,6 +370,11 @@ impl<'a> X11QueryOwner<'a> {
 struct X11ClientLifetime<'a> {
     /// Given up first.
     writers: X11ClientWriters,
+    /// Kept after every worker stops, including partial startup. Its socket
+    /// is independent of output serialization and belongs to this runner's
+    /// supervisor even when setup completed after that runner was prepared.
+    #[allow(dead_code)]
+    watchdog_transport: Option<private_watchdog::PrivateWatchdogTransport>,
     /// Given up after them.
     ///
     /// Never read: it is held for what losing it does, which is take this
@@ -413,6 +418,25 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         control_channels,
         client_routing,
     } = inputs;
+    // Register before any setup read/write and before a worker can escape.
+    // This local covers setup failure; the aggregate below then keeps it
+    // until all workers have stopped. No output/common/X guard is held here.
+    let watchdog_transport = client_routing
+        .as_ref()
+        .and_then(|routing| routing.input_recovery.watchdog.get())
+        .map(|registrar| {
+            let socket = stream.try_clone().map_err(|error| {
+                X11SetupSocketError::new(format!("failed to clone watchdog socket: {error}"))
+            })?;
+            registrar
+                .attach_transport(socket)
+                .map_err(|(cause, _socket)| {
+                    X11SetupSocketError::client_failure(format!(
+                        "private connection supervisor refused setup: {cause:?}"
+                    ))
+                })
+        })
+        .transpose()?;
     let X11ClientAdmissionContext {
         authorization,
         admission_policy,
@@ -488,6 +512,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         X11SetupSocketError::new("Sophia X Server Frontend did not retain a setup client lease")
     })?;
     let client = client_lease.client;
+    // Setup allocation, before registry attachment and worker exposure. A
+    // repeated connection preserves the focus already applied in its namespace.
+    state.runtime.lock().map_err(|_| {
+        X11SetupSocketError::new("X11 authority runtime unavailable during focus preparation")
+    })?.prepare_input_focus_namespace(namespace);
     // Publish the window-manager advertisement before the client can ask for it.
     // A toolkit reads it during startup, and one that finds nothing concludes
     // no manager is running and takes an unmanaged path for the rest of its
@@ -629,6 +658,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         // hand, so a refusal registers nothing that would need taking back.
         query_owner: X11QueryOwner::register(&state.runtime, namespace, client, private_query)?,
         writers: X11ClientWriters::owning(writer_transport),
+        watchdog_transport,
     };
     let writers = &mut owned.writers;
     writers.input = input_receiver
@@ -705,6 +735,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
 
     let mut pending_observation = None::<X11DispatchObservation>;
     let mut dispatch_started = false;
+    let mut pending_focus_publication = None::<X11PendingFocusPublication>;
     let mut dispatch_complete = false;
     let result = (|| {
         // SCM_RIGHTS on a Unix stream is an in-band barrier, but recvmsg can
@@ -1142,7 +1173,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     };
                     let selection_property_read = selection_property_read_trace(&request);
                     let requested_input_focus = match &request {
-                        crate::XWireRequest::SetInputFocus { focus, .. } => Some(*focus),
+                        crate::XWireRequest::SetInputFocus { focus, revert_to, .. } => Some((*focus, *revert_to)),
                         _ => None,
                     };
                     let mapped_window = match &request {
@@ -1316,7 +1347,18 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             expected.0.handle == current.0.handle
                         })
                     });
+                    let private_focus_routing = requested_input_focus.and(protocol_routing.as_ref())
+                        .filter(|routing| routing.private_applied.get().is_some());
                     let mut output = match explicit_pointer_preparation {
+                        _ if private_focus_routing.is_some() => {
+                            runtime.begin_dispatch();
+                            let (focus, revert_to) = requested_input_focus.expect("focus guard");
+                            let (output, pending) = x11_dispatch_private_focus(&mut runtime, dispatch_context, client,
+                                &focused_surface_window, private_focus_routing.expect("private owner"), focus, revert_to,
+                                state.runtime.clone(), state.control_runtime_pending.clone(), output_stream.clone(), output_control_pending.clone())?;
+                            pending_focus_publication = pending;
+                            output
+                        }
                         _ if pixmap_export_changed => {
                             runtime.begin_dispatch();
                             XDispatchResult {
@@ -1669,7 +1711,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                     })?;
                             }
                         }
-                        if let Some(focus) = requested_input_focus {
+                        if let Some((focus, _)) = requested_input_focus
+                            && private_focus_routing.is_none()
+                        {
                             focused_surface_window.store(focus.local.raw(), Ordering::Release);
                         }
                         let mut selections = core_event_selections.lock().map_err(|_| {
@@ -2482,7 +2526,14 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let encoded_outputs = output.encoded_outputs(setup.byte_order);
             let receipt = observer(pending_observation.take().expect("one observation per allocated ticket"))?;
             if let Some(receipt) = receipt { last_published_observation = Some(receipt); }
-            {
+            if let Some(pending) = pending_focus_publication.as_mut() {
+                if !server_reply_fds.is_empty() {
+                    return Err(X11SetupSocketError::new("private core focus cannot carry descriptor replies"));
+                }
+                pending.records = Some(encoded_outputs);
+                pending.write_output(&event_sequence, sequence)?;
+                pending_focus_publication = None;
+            } else {
                 // No stop flag: this is the dispatch thread itself, and it is
                 // the thread that will later stop and join the writers. There
                 // is nothing for it to observe being told by, so the wait

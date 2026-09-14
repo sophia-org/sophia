@@ -6709,6 +6709,7 @@ fn a_writer_refused_the_claim_produces_no_effect_and_no_outcome() {
             },
         },
         focus: None,
+        claim: None,
         completion,
     };
     routes
@@ -8766,6 +8767,7 @@ fn losing_a_connection_gives_up_its_writers_and_then_its_registration() {
     });
 
     let owned = X11ClientLifetime {
+        watchdog_transport: None,
         writers: X11ClientWriters {
             input: None,
             control: Some(X11ControlWriter { stop, thread }),
@@ -8862,6 +8864,7 @@ fn a_dependent_effect_reports_its_end_whether_it_ran_or_was_given_up() {
     let routed = X11RoutedControl::FocusOut {
         window: XResourceId::new(0x200252, 1),
         time_msec: 7,
+        claim: None,
         origin: Some(effect),
     };
     assert_eq!(registry.dependents_outstanding(ran), Some(1));

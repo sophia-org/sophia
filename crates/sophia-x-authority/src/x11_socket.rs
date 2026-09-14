@@ -77,6 +77,7 @@ include!("x11_socket/routing/private_execution.rs");
 include!("x11_socket/routing/private_runner.rs");
 include!("x11_socket/routing/private_applied_state.rs");
 include!("x11_socket/routing/private_applied_registry.rs");
+include!("x11_socket/routing/private_focus_runtime.rs");
 include!("x11_socket/routing/private_native.rs");
 include!("x11_socket/routing/private_terminal.rs");
 include!("x11_socket/routing/private_inventory.rs");
@@ -370,8 +371,7 @@ mod input_recovery_tests;
 
 #[cfg(unix)]
 #[path = "x11_socket/routing/private_watchdog.rs"]
-#[allow(dead_code)]
-// The supervisor. The ordered step and the direct ordered run both take an
-// owner and hold a watched execution across the transaction; attaching a
-// transport and gating production on it is still the runner's to wire.
+// The prepared runner owns this supervisor. Actual connection setup installs
+// independent transports through its registrar; producers share its failure
+// gate without acquiring the execution locks it supervises.
 mod private_watchdog;

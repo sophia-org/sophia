@@ -10,8 +10,9 @@ pub enum PrivateRunnerRefusal {
 
 /// One executing thread owns the frontend and its continuing keyboard history.
 /// Preparation completes before this value can expose a reserving ingress.
-/// Dropping it drops the frontend first, handing obligations to its durable
-/// owner, before the thread-local keyboard state is destroyed.
+/// Dropping it first closes its watchdog gate and transports, then drops the
+/// frontend, handing obligations to its durable owner before the thread-local
+/// keyboard state is destroyed. Transport shutdown cannot wait on common.
 ///
 /// This value cannot be sent to a different executing thread:
 /// ```compile_fail
@@ -21,6 +22,8 @@ pub enum PrivateRunnerRefusal {
 /// ```
 #[cfg(unix)]
 pub struct PrivatePreparedRunner {
+    // Close the gate and transports before frontend Drop can enter common.
+    watch: Option<private_watchdog::PrivateWatchdogOwner>,
     frontend: Option<PrivateXServerFrontend>,
     keyboards: PrivateKeyboards,
     namespace: NamespaceId,
@@ -101,7 +104,7 @@ impl PrivateXServerFrontend {
     /// a different seat for the same authority.
     #[allow(clippy::result_large_err)] // Refusal returns the caller's owned frontend without boxing.
     pub fn prepare_runner(
-        self,
+        mut self,
         namespace: NamespaceId,
     ) -> Result<PrivatePreparedRunner, (PrivateRunnerRefusal, Self)> {
         if self.ordered_runner {
@@ -112,7 +115,7 @@ impl PrivateXServerFrontend {
         if self
             .broker
             .registry
-            .install_private_applied(&self.controller, namespace)
+            .install_private_applied(&self.participant, namespace)
             .is_err()
         {
             return Err((PrivateRunnerRefusal::StateUnavailable, self));
@@ -149,7 +152,21 @@ impl PrivateXServerFrontend {
                 self,
             ));
         }
+        let gate = match self
+            .pending_watch
+            .as_mut()
+            .expect("constructed supervisor")
+            .seal()
+        {
+            Ok(gate) => gate,
+            Err(_) => return Err((PrivateRunnerRefusal::StateUnavailable, self)),
+        };
+        if self.admission.watch.set(gate).is_err() {
+            return Err((PrivateRunnerRefusal::StateUnavailable, self));
+        }
+        let watch = self.pending_watch.take();
         Ok(PrivatePreparedRunner {
+            watch,
             frontend: Some(self),
             keyboards,
             namespace,
@@ -165,10 +182,10 @@ impl PrivateXServerFrontend {
 impl PrivatePreparedRunner {
     fn deliver_accounted_step(
         &mut self,
-        watch: &private_watchdog::PrivateWatchdogOwner,
     ) -> Result<PrivateAccountedDelivery, XServerFrontendRouteError> {
         use sophia_input_authority::{CleanupReadiness, ServiceWork};
         let Self {
+            watch,
             frontend,
             service_origin,
             service,
@@ -209,7 +226,11 @@ impl PrivatePreparedRunner {
                 }
                 // Terminal observation can acquire common; watch it before that
                 // acquisition too. The item already belongs to the inventory.
-                let guard = match watch.begin_dequeued(began) {
+                let guard = match watch
+                    .as_ref()
+                    .expect("prepared supervisor")
+                    .begin_dequeued(began)
+                {
                     Ok(guard) => guard,
                     Err(_) => {
                         unwatched = Some(sequence);
@@ -257,10 +278,10 @@ impl PrivatePreparedRunner {
     /// already in the frontend before either can fail or unwind.
     fn execute_accounted_step(
         &mut self,
-        watch: &private_watchdog::PrivateWatchdogOwner,
     ) -> Result<PrivateAccountedStep, XServerFrontendRouteError> {
         use sophia_input_authority::{CleanupReadiness, ServiceWork};
         let Self {
+            watch,
             frontend,
             keyboards,
             service_origin,
@@ -304,7 +325,7 @@ impl PrivatePreparedRunner {
                     }
                 }
             },
-            watch,
+            watch.as_ref().expect("prepared supervisor"),
         );
         // Idle/Blocked never called the hook. Dropping that admission neither
         // consumes an interval nor marks an interrupted execution.
@@ -359,8 +380,15 @@ impl PrivatePreparedRunner {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn service_turn(
         &mut self,
-        watch: &private_watchdog::PrivateWatchdogOwner,
     ) -> Result<PrivateRunnerProgress, XServerFrontendRouteError> {
+        // Reap only a supervisor already known to have returned. This never
+        // waits for a running supervisor or a client worker, and its result
+        // cannot reopen the admission gate or settle accepted work.
+        let _ = self
+            .watch
+            .as_mut()
+            .expect("prepared supervisor")
+            .reap_finished();
         let mut progress = PrivateRunnerProgress::default();
         // Even if an owner-loop turn crosses several interval boundaries,
         // producers cannot keep this call open by continuously replenishing.
@@ -368,7 +396,7 @@ impl PrivatePreparedRunner {
         while progress.starts < turn_starts {
             let mut cleanup_idle = false;
             if self.prefer_cleanup {
-                match self.deliver_accounted_step(watch)? {
+                match self.deliver_accounted_step()? {
                     PrivateAccountedDelivery::Yield { cause, taken } => {
                         progress.allowance = Some(cause);
                         progress.blocked = taken;
@@ -408,7 +436,7 @@ impl PrivatePreparedRunner {
                     }
                 }
             }
-            let (step, charge) = match self.execute_accounted_step(watch)? {
+            let (step, charge) = match self.execute_accounted_step()? {
                 PrivateAccountedStep::Yield { cause, taken } => {
                     // A new-work reservation may yield while cleanup still
                     // has allowance. Try that side once before returning.
@@ -468,6 +496,7 @@ impl PrivatePreparedRunner {
     }
 
     pub fn shutdown(mut self) -> PrivateSettlement {
+        drop(self.watch.take());
         self.frontend.take().expect("live runner").shutdown()
     }
 }

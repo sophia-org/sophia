@@ -26,6 +26,9 @@ pub struct SharedAdmission {
     /// was already accepted keeps its completion and its debt; this refuses
     /// new work instead of pretending the instance is healthy.
     exhausted: AtomicBool,
+    /// Installed by this instance's prepared runner before producer exposure.
+    /// The independent supervisor can close this gate without queue/common.
+    watch: std::sync::OnceLock<private_watchdog::PrivateWatchdogGate>,
 }
 
 #[cfg(unix)]
@@ -38,7 +41,14 @@ impl SharedAdmission {
                 closed: false,
             })),
             exhausted: AtomicBool::new(false),
+            watch: std::sync::OnceLock::new(),
         }
+    }
+
+    fn lifecycle_open(&self) -> bool {
+        self.watch
+            .get()
+            .is_none_or(private_watchdog::PrivateWatchdogGate::allows_execution)
     }
 
     /// Stop accepting, and take what was accepted and never run.
@@ -95,6 +105,9 @@ impl SharedAdmission {
         // to afford it, since saturation is exactly when there is no room.
         // Checked before acceptance, so an exhausted stream never takes work
         // it cannot name.
+        if !self.lifecycle_open() {
+            return Err((AdmissionRefusal::ConsumerGone, operation));
+        }
         if self.exhausted.load(Ordering::Acquire) {
             return Err((AdmissionRefusal::Exhausted, operation));
         }
@@ -110,7 +123,7 @@ impl SharedAdmission {
         };
         // Checked inside the same hold as admission, so a close cannot land
         // between deciding this is acceptable and accepting it.
-        if queue.closed {
+        if queue.closed || !self.lifecycle_open() {
             self.durable.release();
             return Err((AdmissionRefusal::ConsumerGone, operation));
         }
@@ -137,18 +150,18 @@ impl SharedAdmission {
                 // lifetimes happen to be is one edit from being a deadlock.
                 drop(handoff);
                 match refused.refusal {
-                crate::ReadyRefusal::AtCapacity => {
-                    self.durable.release();
-                    Err((AdmissionRefusal::Saturated, refused.payload))
-                }
-                crate::ReadyRefusal::SequencesExhausted => {
-                    self.durable.release();
-                    // Latched here rather than rediscovered on every later
-                    // send, and never reset: reusing a position would answer
-                    // one request with another's identity.
-                    self.exhausted.store(true, Ordering::Release);
-                    Err((AdmissionRefusal::Exhausted, refused.payload))
-                }
+                    crate::ReadyRefusal::AtCapacity => {
+                        self.durable.release();
+                        Err((AdmissionRefusal::Saturated, refused.payload))
+                    }
+                    crate::ReadyRefusal::SequencesExhausted => {
+                        self.durable.release();
+                        // Latched here rather than rediscovered on every later
+                        // send, and never reset: reusing a position would answer
+                        // one request with another's identity.
+                        self.exhausted.store(true, Ordering::Release);
+                        Err((AdmissionRefusal::Exhausted, refused.payload))
+                    }
                 }
             }
         }
@@ -284,6 +297,9 @@ impl PrivateControlProducer {
         &self,
         control: XAuthorityClientControlCommand,
     ) -> Result<crate::ReadySequence, (AdmissionRefusal, XAuthorityClientControlCommand)> {
+        if !self.admission.lifecycle_open() {
+            return Err((AdmissionRefusal::ConsumerGone, control));
+        }
         // Nothing is left to execute work for a client whose control writer
         // has stopped, so it is refused before anything is reserved for it.
         // Positive evidence, not the absence of a revocation.
@@ -340,7 +356,15 @@ impl PrivateIngress {
     /// Position is assigned as the entry is published, inside the shared
     /// admission's own hold, so a send that has returned cannot be overtaken
     /// by one that started afterwards.
-    pub fn submit(&self, route: XAuthorityRoutedInput) -> Result<crate::ReadySequence, PrivateSendError> {
+    pub fn submit(
+        &self,
+        route: XAuthorityRoutedInput,
+    ) -> Result<crate::ReadySequence, PrivateSendError> {
+        // Refuse without waiting for a possibly wedged common authority.
+        // Acceptance checks again while it owns the publication queue.
+        if !self.admission.lifecycle_open() {
+            return Err(PrivateSendError::Disconnected(route));
+        }
         // The stamp is captured through the coordinator here, and that guard is
         // released before common is taken below. The coordinator is never
         // reached from under common.
@@ -452,9 +476,7 @@ impl PrivateIngress {
                     // because the work is in hand either way and the nearest
                     // true thing to say about it is that what would accept it
                     // cannot be reached.
-                    AdmissionRefusal::AuthorityUnreadable => {
-                        PrivateSendError::Unavailable(route)
-                    }
+                    AdmissionRefusal::AuthorityUnreadable => PrivateSendError::Unavailable(route),
                 }
             })
     }

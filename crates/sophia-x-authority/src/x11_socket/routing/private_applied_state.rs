@@ -76,6 +76,11 @@ struct PrivateAppliedRoutingState {
     revision: u64,
     published: bool,
     focus: Option<XServerFrontendSurfaceRoute>,
+    /// Latest attempted claim, written before any native focus effect. This
+    /// is provenance, not a statement that the attempt completed.
+    focus_generation: u64,
+    focus_window: XResourceId,
+    focus_revert_to: u8,
 }
 
 #[cfg(unix)]
@@ -88,6 +93,9 @@ impl PrivateAppliedRoutingState {
             revision: 0,
             published: false,
             focus: None,
+            focus_generation: 0,
+            focus_window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            focus_revert_to: 1,
         }
     }
 
@@ -151,9 +159,8 @@ impl PrivateAppliedFocusChange<'_> {
     /// This is the effect producer, not an assertion that an effect succeeded.
     /// There is no separate commit method and no caller-supplied success bit.
     /// Runtime and routed-focus projection change before the publication.
-    /// This implements Engine FocusSurface/ClearFocus (revert-to-parent).
-    /// Core SetInputFocus has distinct None/root/revert arguments and still
-    /// needs its own ordered producer integration, not coercion through this.
+    /// This convenience form implements Engine FocusSurface/ClearFocus.
+    /// The exact producer below also preserves core focus/revert arguments.
     fn apply(
         self,
         runtime: &mut XAuthorityRuntime,
@@ -167,13 +174,50 @@ impl PrivateAppliedFocusChange<'_> {
             XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             |route| route.window,
         );
-        runtime
-            .set_input_focus(self.state.namespace, window, 1)
-            .map_err(|_| PrivateAppliedRefusal::NativeRefused)?;
+        let change = if route.is_some() {
+            X11FocusChange::Surface { window }
+        } else {
+            X11FocusChange::Clear
+        };
+        self.apply_exact(runtime, focused_projection, route, change)
+            .map(|_| ())
+            .map_err(|_| PrivateAppliedRefusal::NativeRefused)
+    }
+
+    fn apply_exact(
+        self,
+        runtime: &mut XAuthorityRuntime,
+        focused_projection: &AtomicU64,
+        route: Option<XServerFrontendSurfaceRoute>,
+        change: X11FocusChange,
+    ) -> Result<X11AppliedFocus, crate::XAuthorityRuntimeError> {
+        let window = change.window();
+        let revert_to = change.revert_to();
+        if route
+            .is_some_and(|route| route.namespace != self.state.namespace || route.window != window)
+        {
+            return Err(crate::XAuthorityRuntimeError::InvalidResource);
+        }
+        let (previous_authority, previous_revert_to) = runtime.input_focus(self.state.namespace);
+        let previous_routed = XResourceId::new(focused_projection.load(Ordering::Acquire), 1);
+        // This runtime method validates access and writes its own focus map.
+        // It acquires neither input-authority nor selection locks.
+        runtime.set_prepared_input_focus(self.state.namespace, window, revert_to)?;
         focused_projection.store(window.local.raw(), Ordering::Release);
         self.state.focus = route;
-        self.state.published = true;
-        Ok(())
+        self.state.focus_window = window;
+        self.state.focus_revert_to = revert_to;
+        // The control writer already owns priority over input output. Core
+        // replies do not: keys must remain ineligible until the source-owned
+        // core continuation finishes its actual output boundary.
+        self.state.published = !matches!(change, X11FocusChange::Core { .. });
+        Ok(X11AppliedFocus {
+            previous_authority,
+            previous_revert_to,
+            previous_routed,
+            window,
+            revert_to,
+        })
     }
 }
 

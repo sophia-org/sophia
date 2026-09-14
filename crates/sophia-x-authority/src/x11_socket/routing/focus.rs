@@ -4,6 +4,7 @@ enum X11RoutedControl {
     Authority {
         command: XAuthorityControlCommand,
         focus: Option<X11FocusTransition>,
+        claim: Option<PrivateFocusClaim>,
         /// The private path's completion registration, when there is one.
         ///
         /// Travels with the command because the writer is where its outcome
@@ -14,6 +15,7 @@ enum X11RoutedControl {
     FocusOut {
         window: XResourceId,
         time_msec: u32,
+        claim: Option<PrivateFocusClaim>,
         /// The operation whose routing queued this, when one did.
         ///
         /// Carried so that this effect ending is reported against the
@@ -96,6 +98,8 @@ impl XServerFrontendRouteRegistry {
                 client: route.client,
             });
         }
+        let claim = self.reserve_private_focus(route.client, target.window)
+            .map_err(|cause| x11_focus_claim_route_error(route.client, cause))?;
         let mut focused = self
             .focused_surface
             .lock()
@@ -119,7 +123,8 @@ impl XServerFrontendRouteRegistry {
                 time_msec,
             },
         };
-        self.route_authority_control(route, Some(transition), completion)?;
+        self.route_authority_control_with_claim(route, Some(transition), completion, claim.clone())?;
+        if let Some(claim) = claim.as_ref() { Self::record_private_focus_queued(claim); }
         *focused = Some(target);
         Ok(())
     }
@@ -129,6 +134,8 @@ impl XServerFrontendRouteRegistry {
         route: XAuthorityClientControlCommand,
         completion: Option<ControlCompletionToken>,
     ) -> Result<(), XServerFrontendRouteError> {
+        let claim = self.reserve_private_focus(route.client, XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1))
+            .map_err(|cause| x11_focus_claim_route_error(route.client, cause))?;
         let mut focused = self
             .focused_surface
             .lock()
@@ -151,7 +158,8 @@ impl XServerFrontendRouteRegistry {
                 time_msec,
             },
         };
-        self.route_authority_control(route, Some(transition), completion)?;
+        self.route_authority_control_with_claim(route, Some(transition), completion, claim.clone())?;
+        if let Some(claim) = claim.as_ref() { Self::record_private_focus_queued(claim); }
         *focused = None;
         Ok(())
     }
@@ -162,6 +170,8 @@ impl XServerFrontendRouteRegistry {
         time_msec: u32,
         origin: Option<ControlCompletionToken>,
     ) -> Result<(), XServerFrontendRouteError> {
+        let claim = self.private_focus_dependency(previous.client, previous.window)
+            .map_err(|cause| x11_focus_claim_route_error(previous.client, cause))?;
         let sender = self.client_senders(previous.client)?.control;
         // Counted against its origin before it is queued, so there is no
         // moment where the effect exists and nothing is waiting for it.
@@ -194,6 +204,7 @@ impl XServerFrontendRouteRegistry {
             X11RoutedControl::FocusOut {
                 window: previous.window,
                 time_msec,
+                claim,
                 origin,
             },
         )
@@ -205,6 +216,16 @@ impl XServerFrontendRouteRegistry {
         focus: Option<X11FocusTransition>,
         completion: Option<ControlCompletionToken>,
     ) -> Result<(), XServerFrontendRouteError> {
+        self.route_authority_control_with_claim(route, focus, completion, None)
+    }
+
+    fn route_authority_control_with_claim(
+        &self,
+        route: XAuthorityClientControlCommand,
+        focus: Option<X11FocusTransition>,
+        completion: Option<ControlCompletionToken>,
+        claim: Option<PrivateFocusClaim>,
+    ) -> Result<(), XServerFrontendRouteError> {
         let sender = self.client_senders(route.client)?.control;
         self.route_to_client(
             route.client,
@@ -212,8 +233,22 @@ impl XServerFrontendRouteRegistry {
             X11RoutedControl::Authority {
                 command: route.command,
                 focus,
+                claim,
                 completion,
             },
         )
     }
+}
+
+#[cfg(unix)]
+fn x11_focus_claim_route_error(client: XServerFrontendClientId, cause: PrivateAppliedRegistryRefusal) -> XServerFrontendRouteError {
+    let refusal = match cause {
+        PrivateAppliedRegistryRefusal::AuthorityUnavailable | PrivateAppliedRegistryRefusal::RegistryUnavailable |
+        PrivateAppliedRegistryRefusal::SelectionUnavailable | PrivateAppliedRegistryRefusal::PublicationUnavailable => crate::XFocusClaimRefusal::Unreachable,
+        PrivateAppliedRegistryRefusal::FocusIdentityExhausted | PrivateAppliedRegistryRefusal::Selection(PrivateAppliedRefusal::IdentityExhausted) => crate::XFocusClaimRefusal::IdentityExhausted,
+        PrivateAppliedRegistryRefusal::ForeignOrigin | PrivateAppliedRegistryRefusal::DifferentConnectionState => crate::XFocusClaimRefusal::ForeignOrigin,
+        PrivateAppliedRegistryRefusal::MissingClient => return XServerFrontendRouteError::UnknownClient { client },
+        _ => crate::XFocusClaimRefusal::Unprepared,
+    };
+    XServerFrontendRouteError::FocusClaimRefused { client, refusal }
 }

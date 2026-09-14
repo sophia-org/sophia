@@ -21,6 +21,7 @@ mod private_native {
         InvalidButton,
         WrongPhase,
         WrongRecipient,
+        ActivationMismatch,
         SelectionUnavailable,
         Preparation(crate::PointerPreparationRefusal),
         Resolution(PrivateAppliedRefusal),
@@ -225,6 +226,15 @@ mod private_native {
         grab_lease: Option<sophia_protocol::ApplicationRouteLeaseIdentity>,
         status: Status,
         proof: Option<Proof>,
+        activation_retirement: Option<ActivationRetirement>,
+    }
+
+    /// Source evidence for one automatic activation, retained by the hold
+    /// whose native release retired it. This says nothing about that hold's
+    /// query/selection cleanup, common debt, or recipient delivery.
+    pub(super) struct ActivationRetirement {
+        origin: Arc<Origin>,
+        stamp: crate::PointerActivationStamp,
     }
 
     /// A clone of the exact retained connection capability, not a route lookup.
@@ -260,6 +270,45 @@ mod private_native {
         }
         pub(super) fn proof(&self) -> Option<&Proof> {
             self.proof.as_ref()
+        }
+
+        /// The terminal owner must retain this hold while siblings still need
+        /// its evidence. No global history or caller-created receipt exists.
+        pub(super) fn activation_retirement(&self) -> Option<&ActivationRetirement> {
+            self.activation_retirement.as_ref()
+        }
+
+        /// This residual is recorded only after this hold's other native
+        /// contributions were cleared. Combine that fact with source-produced
+        /// retirement of the exact shared activation; do not replay a release
+        /// or infer retirement from whichever grab happens to exist now.
+        pub(super) fn complete_shared_activation(
+            &mut self,
+            retirement: &ActivationRetirement,
+        ) -> Result<&Proof, Refusal> {
+            if self.status
+                != Status::Retained(Residual::Activation(
+                    crate::PointerActivationRetirement::StillRequiredByOtherButtons,
+                ))
+            {
+                return Err(Refusal::WrongPhase);
+            }
+            if !Arc::ptr_eq(&self.origin, &retirement.origin) {
+                return Err(Refusal::ForeignOrigin);
+            }
+            if self.activation.is_none_or(|activation| {
+                !activation.automatic() || activation.stamp() != retirement.stamp
+            }) {
+                return Err(Refusal::ActivationMismatch);
+            }
+            let incarnation = self.incarnation.ok_or(Refusal::WrongPhase)?;
+            self.proof = Some(Proof {
+                origin: self.origin.clone(),
+                incarnation,
+                grant: self.grant,
+            });
+            self.status = Status::NativeReconciled;
+            Ok(self.proof.as_ref().expect("source installed proof"))
         }
     }
 
@@ -455,6 +504,7 @@ mod private_native {
                 grab_lease,
                 status: Status::PressEntered,
                 proof: None,
+                activation_retirement: None,
             });
             may_have_applied.set(true);
             let applied = permit
@@ -648,6 +698,15 @@ mod private_native {
             } else {
                 crate::PointerActivationRetirement::Explicit
             };
+            if retirement == crate::PointerActivationRetirement::Retired {
+                // Record before later independent cleanup. A sibling may use
+                // this exact fact even if this hold still owes another native
+                // contribution; it does not settle that separate obligation.
+                hold.activation_retirement = Some(ActivationRetirement {
+                    origin: hold.origin.clone(),
+                    stamp: activation.stamp(),
+                });
+            }
             let query_cleared = self
                 .authority
                 .observe_query_button_release(self.origin.namespace, hold.button)

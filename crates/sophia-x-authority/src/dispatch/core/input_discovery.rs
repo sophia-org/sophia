@@ -45,42 +45,8 @@ fn dispatch_core_input_discovery_request(
                     focus, revert_to, ..
                 } => {
                     let (previous, _) = runtime.input_focus(context.namespace);
-                    let outputs = match runtime.set_input_focus(context.namespace, focus, revert_to) {
-                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
-                            error,
-                            context.sequence,
-                            context.major_opcode,
-                            0,
-                            u32::try_from(focus.local.raw()).unwrap_or(0)))],
-                        Ok(()) if previous == focus => Vec::new(),
-                        Ok(()) => {
-                            let mut outputs = Vec::with_capacity(2);
-                            if previous.local.raw() != 0 {
-                                outputs.push(XClientOutput::Event(XClientEvent::Focus {
-                                    sequence: context.sequence,
-                                    focused: false,
-                                    detail: 3,
-                                    event: previous,
-                                    mode: 0,
-                                }));
-                            }
-                            if focus.local.raw() != 0 {
-                                outputs.push(XClientOutput::Event(XClientEvent::Focus {
-                                    sequence: context.sequence,
-                                    focused: true,
-                                    detail: 3,
-                                    event: focus,
-                                    mode: 0,
-                                }));
-                            }
-                            outputs
-                        }
-                    };
-                    XDispatchResult {
-                        response: None,
-                        outputs,
-                        metadata_candidates: Vec::new(),
-                    }
+                    let applied = runtime.set_input_focus(context.namespace, focus, revert_to);
+                    input_focus_dispatch_result(context, focus, previous, applied)
                 }
                 XWireRequest::GetModifierMapping => XDispatchResult {
                     response: None,
@@ -467,4 +433,50 @@ fn color_error(context: XDispatchContext, code: XErrorCode, resource_id: u32) ->
         minor_code: 0,
         major_code: context.major_opcode,
     })
+}
+
+/// Shared exact core reply/event construction. The caller supplies the result
+/// of the actual effect producer; this routine changes no focus state.
+pub(crate) fn input_focus_dispatch_result(
+    context: XDispatchContext,
+    focus: XResourceId,
+    previous: XResourceId,
+    applied: Result<(), XAuthorityRuntimeError>,
+) -> XDispatchResult {
+                    let outputs = match applied {
+                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
+                            error,
+                            context.sequence,
+                            context.major_opcode,
+                            0,
+                            u32::try_from(focus.local.raw()).unwrap_or(0)))],
+                        Ok(()) if previous == focus => Vec::new(),
+                        Ok(()) => {
+                            let mut outputs = Vec::with_capacity(2);
+                            if previous.local.raw() != 0 {
+                                outputs.push(XClientOutput::Event(XClientEvent::Focus {
+                                    sequence: context.sequence,
+                                    focused: false,
+                                    detail: 3,
+                                    event: previous,
+                                    mode: 0,
+                                }));
+                            }
+                            if focus.local.raw() != 0 {
+                                outputs.push(XClientOutput::Event(XClientEvent::Focus {
+                                    sequence: context.sequence,
+                                    focused: true,
+                                    detail: 3,
+                                    event: focus,
+                                    mode: 0,
+                                }));
+                            }
+                            outputs
+                        }
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
 }

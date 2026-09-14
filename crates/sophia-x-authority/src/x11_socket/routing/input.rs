@@ -344,6 +344,7 @@ impl X11ControlChannels {
                     Ok(route) if route.client == client => Ok(X11RoutedControl::Authority {
                         command: route.command,
                         focus: None,
+                        claim: None,
                         // This path takes a command straight off the shared
                         // receiver rather than from a private producer, so
                         // there is no registration to carry.

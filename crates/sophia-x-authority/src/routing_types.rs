@@ -358,6 +358,11 @@ pub enum XServerFrontendServiceCommand {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XServerFrontendRouteError {
+    /// Private focus provenance could not be reserved before routing effects.
+    FocusClaimRefused {
+        client: XServerFrontendClientId,
+        refusal: XFocusClaimRefusal,
+    },
     /// An item an earlier turn took is still owned and unresolved, so the
     /// order does not run.
     ///
@@ -434,6 +439,16 @@ pub enum XServerFrontendRouteError {
     },
 }
 
+/// Why an origin could not reserve a private focus intent. This is neither
+/// an applied receipt nor permission to retry an already accepted command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum XFocusClaimRefusal {
+    Unreachable,
+    Unprepared,
+    ForeignOrigin,
+    IdentityExhausted,
+}
+
 /// Tracks the two independently ordered lifecycle phases of one X Present.
 ///
 /// Copy normally idles its source before display completion; Flip normally
@@ -473,6 +488,11 @@ impl core::fmt::Display for XServerFrontendRouteError {
             Self::LifecycleUnavailable => {
                 write!(formatter, "private connection lifecycle unavailable")
             }
+            Self::FocusClaimRefused { client, refusal } => write!(
+                formatter,
+                "private focus claim refused for client {}: {refusal:?}",
+                client.raw()
+            ),
             Self::OrderedItemUnresolved => write!(
                 formatter,
                 "X11 ordered input consumer holds an unresolved item"
