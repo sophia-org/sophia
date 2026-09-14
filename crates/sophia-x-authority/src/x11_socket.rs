@@ -77,6 +77,7 @@ include!("x11_socket/routing/private_execution.rs");
 include!("x11_socket/routing/private_execution_notes.rs");
 include!("x11_socket/routing/private_runner.rs");
 include!("x11_socket/routing/private_applied_state.rs");
+include!("x11_socket/routing/private_applied_keyboard.rs");
 include!("x11_socket/routing/private_applied_registry.rs");
 include!("x11_socket/routing/private_focus_runtime.rs");
 include!("x11_socket/routing/private_native.rs");

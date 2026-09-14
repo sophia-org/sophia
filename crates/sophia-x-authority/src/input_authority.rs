@@ -7,6 +7,9 @@ use crate::XResourceId;
 include!("input_authority/pointer_query.rs");
 include!("input_authority/ordered_pointer.rs");
 include!("input_authority/ordered_keyboard.rs");
+include!("input_authority/ordered_keyboard_retirement.rs");
+#[cfg(unix)]
+include!("input_authority/ordered_keyboard_press.rs");
 
 pub const X_ANY_MODIFIER: u16 = 0x8000;
 
@@ -600,3 +603,6 @@ mod ordered_pointer_tests;
 
 #[path = "input_authority/tests/ordered_keyboard.rs"]
 mod ordered_keyboard_tests;
+
+#[path = "input_authority/tests/keyboard_retirement.rs"]
+mod keyboard_retirement_tests;
