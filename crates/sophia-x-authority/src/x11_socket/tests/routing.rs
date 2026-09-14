@@ -17297,3 +17297,166 @@ fn a_request_carries_the_capability_it_was_reserved_under() {
     );
     let _ = custody.observe();
 }
+
+/// One prepared runner with a recipient that has actually selected.
+///
+/// Built in the order the production path builds it: connection state
+/// attached, the source's own window geometry and selections registered,
+/// the runner prepared -- which installs the applied registry itself, so
+/// nothing here reinstalls it -- and then a real initial focus clear applied
+/// through the installed publication. A pointer press resolves against that
+/// clear; it admits no key target and is not pretending to.
+///
+/// Every step unwraps. A setup that cannot reach the prepared state fails the
+/// control rather than leaving its body to run against something else.
+#[allow(dead_code)]
+struct PreparedOrderedFixture {
+    runner: PrivatePreparedRunner,
+    durable: PrivateSettlementOwner,
+    registration: XServerFrontendClientRouteRegistration,
+    channels: XServerFrontendClientRouteChannels,
+    _acks: Receiver<XAuthorityClientControlAck>,
+    deliveries: Receiver<XAuthorityClientInputDelivery>,
+    client: XServerFrontendClientId,
+    surface: SurfaceId,
+    window: XResourceId,
+    namespace: NamespaceId,
+}
+
+fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedFixture {
+    let namespace = NamespaceId::from_raw(client.raw());
+    let surface = SurfaceId::new(u32::try_from(client.raw()).unwrap(), 1);
+    let window = XResourceId::new(0x200000 | client.raw(), 1);
+    let durable = PrivateSettlementOwner::default();
+    let (ack_sender, acks) = sync_channel(8);
+    let (delivery_sender, deliveries) = channel();
+    let (authority, issuer, submit) = private_authority();
+    let private = PrivateXServerFrontend::new(
+        PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: ack_sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        &durable,
+    )
+    .unwrap_or_else(|(cause, _)| panic!("construction refused: {cause:?}"));
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a fresh client registers");
+    private
+        .admission_participant()
+        .admit(client, admitted(client))
+        .expect("the boundary admits");
+
+    // The selections the resolver actually reads, and the focus projection,
+    // both retained here rather than left to defaults.
+    let selections = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+    let focused = Arc::new(AtomicU64::new(0));
+    private
+        .broker
+        .registry
+        .attach_connection_state(&registration, namespace, selections.clone(), focused.clone())
+        .expect("the connection state attaches");
+    {
+        // The source's own view of this window: where it sits, that it is
+        // mapped, and that this recipient selected button press and release.
+        // Updating the coarse subscription map instead would leave the
+        // resolver reading a selection state nobody had told anything.
+        let mut selected = selections.lock().expect("the selections");
+        selected.register(
+            window,
+            XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 100,
+            },
+        );
+        selected.observe_mapped(window);
+        selected.update(window, Some((1 << 2) | (1 << 3)), None);
+    }
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, window)
+        .expect("the surface registers");
+
+    let runner = private
+        .prepare_runner(namespace)
+        .unwrap_or_else(|(cause, _)| panic!("runner refused: {cause:?}"));
+
+    // A real initial clear through the publication the runner installed,
+    // borrowed rather than installed again. Nothing here sets a published flag
+    // or seeds the focus atomic as though that were the same thing.
+    {
+        let publication = runner
+            .frontend
+            .as_ref()
+            .expect("a live runner")
+            .broker
+            .registry
+            .private_applied
+            .get()
+            .expect("prepare_runner installed it")
+            .publication
+            .clone();
+        let mut runtime = XAuthorityRuntime::new();
+        runtime.prepare_input_focus_namespace(namespace);
+        publication
+            .lock()
+            .expect("the publication")
+            .begin_focus_change()
+            .expect("a focus change")
+            .apply(&mut runtime, &focused, None)
+            .expect("the clear applies");
+    }
+
+    PreparedOrderedFixture {
+        runner,
+        durable,
+        registration,
+        channels,
+        _acks: acks,
+        deliveries,
+        client,
+        surface,
+        window,
+        namespace,
+    }
+}
+
+#[test]
+fn a_prepared_runner_presses_through_its_real_producer() {
+    let client = XServerFrontendClientId(2101);
+    let mut fixture = prepared_ordered_fixture(client);
+    let ingress = fixture
+        .runner
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("the runner exposes a producer");
+    ingress
+        .submit(button_to(
+            fixture.surface,
+            XAuthorityInputDeliveryId::from_raw(2101),
+            272,
+            true,
+        ))
+        .expect("the order accepts it");
+
+    // Driven through the runner's own turn, which is what production drives.
+    let progress = fixture
+        .runner
+        .service_turn()
+        .expect("a readable order");
+    assert_eq!(progress.taken, 1, "the runner took the submitted work");
+    assert_eq!(progress.refused, 0, "and did not refuse it");
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
