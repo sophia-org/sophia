@@ -244,6 +244,10 @@ pub struct PrivateXServerFrontend {
     /// Prepared before setup and moved into the runner before its producers
     /// escape. An unprepared frontend cannot expose a production ingress.
     pending_watch: Option<private_watchdog::PrivateWatchdogOwner>,
+    /// Prepared on the executing thread before any producer is exposed.
+    /// Every native turn borrows this origin; retained holds keep its same
+    /// allocation alive through settlement rather than constructing another.
+    native_owner: Option<private_native::Owner>,
     broker: XServerFrontendRouteBroker,
     /// The one place runnable work is accepted, shared with every producer
     /// handle this frontend hands out.
@@ -526,6 +530,7 @@ impl PrivateXServerFrontend {
         );
         Ok(Self {
             pending_watch: Some(watch),
+            native_owner: None,
             broker,
             admission: Arc::new(SharedAdmission::new(staged, durable.clone())),
             completion,

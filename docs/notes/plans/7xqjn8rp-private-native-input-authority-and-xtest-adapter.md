@@ -1464,3 +1464,30 @@ worker behaviour change. Source emission remains a component until the real
 consumer, writer receipt, native proof and debt settlement pass Gate A.
 Keys/XKB source, StateOnly/thaw and complete lifecycle remain open. No hardware,
 root/master move, installation or enablement.
+
+
+### M3 native origin prepared with the runner
+
+Runner construction now prepares the native owner after applied-route and
+pointer/query preparation, before keyboard issuance. It installs that origin
+only after the remaining fallible construction succeeds, before any public
+producer can escape. A second preparation refuses before replacing the owner,
+even before a first input turn. Native holds will retain this same allocation;
+the consumer and terminal inventory wiring remain the writer stream's work.
+
+Twelve runner controls pass, including an unconditional successful preparation
+followed by refusal, exact-registry acceptance and colliding foreign-origin
+refusal. Failed applied preparation installs no native owner. Two compiled
+mutations bite on omitted installation and permitted re-preparation. Input-only
+serial validation: 1186 pass, 0 fail, 1 existing ignored, across 42 suites;
+fmt, strict clippy, layout and diff checks pass. The initial runner filter
+selected zero tests and was corrected before these results were counted.
+
+Independent writer review additionally drives every frame of a multi-form
+source emission through the fixed-frame send owner and an owned socketpair.
+Repeated advancement refuses, exact bytes arrive in order, and frame retirement
+keeps the delivery's blocked-time accumulator. Replacing retirement with the
+old completion check compiles and fails the same control. This accepts the
+frame-retirement component, not a writer receipt or Gate A. Native Hold/terminal,
+actual queue/writer/receipt/attempt settlement and same-grant re-press remain
+the critical integration gate. No hardware, root/master movement or enablement.

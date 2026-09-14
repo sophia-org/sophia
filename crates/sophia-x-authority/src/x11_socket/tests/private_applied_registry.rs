@@ -162,6 +162,7 @@ mod private_applied_registry {
         assert_eq!(returned.controller.identity().unwrap(), original_authority);
         assert!(!returned.ordered_runner);
         assert!(!returned.keyboards_issued.load(Ordering::Acquire));
+        assert!(returned.native_owner.is_none());
         assert!(selections.is_poisoned());
         assert!(
             returned
