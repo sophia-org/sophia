@@ -420,6 +420,7 @@ fn resolve_and_apply(
                             outcome,
                             event,
                             binding,
+                            delivery: route.delivery,
                         });
                         notes.decided = Some(PrivateOrderedDecision {
                             owes_event: reaches,
@@ -642,6 +643,18 @@ pub struct PrivateSettlingRelease {
     reached: PrivateReachedResources,
     outcome: sophia_input_authority::ReleaseOutcome,
     event: Option<XAuthorityInputEvent>,
+    /// The delivery that carries this release's event.
+    ///
+    /// Recorded because a receipt arrives naming a delivery and settles a
+    /// debt named by an incarnation, and nothing else holds both. Without it
+    /// a writer's result can be observed and still not be attributable: the
+    /// debt it settles would have to be guessed from whatever else was in
+    /// flight, and a guess that settles the wrong incarnation lets a later
+    /// press through a barrier that was still owed.
+    ///
+    /// `None` where the release carried no delivery identity, which is not
+    /// the same as a receipt that has not arrived.
+    delivery: Option<XAuthorityInputDeliveryId>,
     /// What the ledger will do with this release's event.
     ///
     /// The debt is recorded whichever it is: the hold ended, and something was
@@ -655,6 +668,10 @@ pub struct PrivateSettlingRelease {
 
 #[cfg(unix)]
 impl PrivateSettlingRelease {
+    /// The delivery whose receipt settles this debt, if it has one.
+    pub fn delivery(self) -> Option<XAuthorityInputDeliveryId> {
+        self.delivery
+    }
     /// The identity, not the number inside it.
     ///
     /// A caller settling this debt names the incarnation; one that could only

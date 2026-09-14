@@ -14881,6 +14881,12 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
         fixture.private.terminal.settling[0].binding() == PrivateReleaseBinding::Ended,
         "and it says which: established gone, not merely unlooked-up"
     );
+    assert_eq!(
+        fixture.private.terminal.settling[0].delivery(),
+        Some(XAuthorityInputDeliveryId::from_raw(9942)),
+        "and still records which delivery would have answered it: what is \
+         unknown is the receipt, not which delivery it belongs to"
+    );
     drop(fixture.registration);
     drop(fixture.channels);
     drop(fixture.durable);
@@ -15749,6 +15755,15 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
         fixture.private.terminal.settling[0].incarnation(),
         reported.0,
         "the retained debt is named the way the ledger names it"
+    );
+    // And it records which delivery carries its event. A receipt arrives
+    // naming a delivery and settles a debt named by an incarnation; nothing
+    // else holds both, so without this a writer result could be observed and
+    // still not be attributable to the debt it settles.
+    assert_eq!(
+        fixture.private.terminal.settling[0].delivery(),
+        Some(XAuthorityInputDeliveryId::from_raw(12012)),
+        "the debt knows which delivery answers it"
     );
     assert_eq!(
         reported.0.input,
