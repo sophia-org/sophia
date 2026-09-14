@@ -12779,6 +12779,95 @@ fn settling_slot_is_empty(release: &PrivateSettlingRelease) -> bool {
 }
 
 #[test]
+fn an_attempt_that_cannot_be_placed_is_given_back_and_keeps_its_capsule() {
+    // A claim this executor cannot place is an unused reservation. It goes
+    // back with neither bit -- the debt is exactly as owed as before -- and
+    // the capsule stays here, because the event was decided at a moment that
+    // has passed and cannot be rebuilt.
+    let client = XServerFrontendClientId(2471);
+    // Taken by value: this control drops the recipient's routes on purpose,
+    // so it has to own them rather than borrow them from a fixture that
+    // outlives them.
+    let PreparedOrderedFixture {
+        mut runner,
+        ingress,
+        registration,
+        channels,
+        durable,
+        surface,
+        window: _window,
+        selections: _selections,
+        client: _client,
+        namespace: _namespace,
+        deliveries: _deliveries,
+        _acks,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    for (delivery, pressed) in [(2471u64, true), (2472u64, false)] {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                272,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.terminal.delivering.extend(turn);
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("the entry delivers");
+    }
+    assert_eq!(private.terminal.settling.len(), 1);
+    assert!(matches!(
+        private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
+        PrivateDeliveryStep::Recorded { recorded: true }
+    ));
+
+    // The recipient's routes go. Nothing this executor holds changes: the
+    // release is still owed and its event is still the one that was decided.
+    drop(registration);
+    drop(channels);
+
+    let step = private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+    assert!(
+        matches!(
+            step,
+            PrivateDeliveryStep::Dispatched {
+                enqueued: false,
+                ..
+            }
+        ),
+        "the attempt could not be placed, so nothing was enqueued"
+    );
+    assert!(
+        private.terminal.attempt_custody.is_none(),
+        "and the ledger's slot was given back rather than held for a delivery \
+         nobody will make"
+    );
+    assert!(
+        private.terminal.settling[0].attempt().is_none(),
+        "the record stops naming an attempt once the ledger confirmed it back"
+    );
+    assert!(
+        !private.terminal.is_empty(),
+        "the release itself is still owed"
+    );
+    drop(durable);
+    drop(_acks);
+}
+
+#[test]
 fn a_release_that_cannot_build_does_not_hide_the_ones_behind_it() {
     // Choosing the record before asking the ledger meant one release that can
     // never produce a capsule sat at the front and returned every visit

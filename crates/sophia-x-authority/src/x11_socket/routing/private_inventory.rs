@@ -15,6 +15,29 @@
 /// applied, or that may already be on a client's queue, is not replayable --
 /// requeueing it would apply an effect twice and no reader downstream could
 /// tell. What is carried is the right to finish answering for it.
+/// Where a claimed attempt has got to, while this executor holds it.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateAttemptPhase {
+    /// Claimed and not handed to anyone. An unused reservation, safe to give
+    /// back with neither bit.
+    Unplaced,
+    /// The handover to a recipient has begun and did not report.
+    ///
+    /// NOT SAFE TO GIVE BACK. The delivery may be on the queue, and returning
+    /// the attempt as unused would say a delivery that may have happened did
+    /// not. It is resolved by the receipt, not by this phase being tidied.
+    Dispatching,
+}
+
+/// One attempt held by this executor, with where it has got to.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+struct PrivateAttemptCustody {
+    token: sophia_input_authority::AttemptToken,
+    phase: PrivateAttemptPhase,
+}
+
 #[cfg(unix)]
 struct PrivateTerminalInventory {
     /// The registry that can answer for everything here.
@@ -61,14 +84,18 @@ struct PrivateTerminalInventory {
     /// and that is not a rare interleaving -- it is what a busy pointer looks
     /// like.
     native_turn_debt: u8,
-    /// Attempts claimed from the ledger and not yet placed or given back.
+    /// The one attempt this executor may hold unplaced at a time.
     ///
-    /// INVENTORY-OWNED THE MOMENT THE LEDGER GRANTS ONE. A token held only in
-    /// a local is one an unwind takes with it, leaving the ledger holding a
-    /// slot for a delivery nobody will make and nobody can relinquish. An
-    /// entry leaves here only when it has been placed on the record it serves,
-    /// or when the ledger has CONFIRMED the give-back.
-    attempts_outstanding: Vec<sophia_input_authority::AttemptToken>,
+    /// A PRE-EXISTING SLOT, not storage acquired after the grant. Claiming
+    /// first and finding somewhere to put the token afterwards is a
+    /// reservation whose custody is not yet reserved; this driver places one
+    /// claim at a time, so one slot is the exact storage and it is empty
+    /// before the ledger is asked.
+    ///
+    /// Carries its phase, because an unplaced claim and a claim whose handover
+    /// has begun are opposite things: the first is an unused reservation and
+    /// safe to give back, the second may already be on a recipient's queue.
+    attempt_custody: Option<PrivateAttemptCustody>,
     /// How many recording visits have passed since dispatch last had a turn.
     ///
     /// Recording must come first for any ONE release, because the ledger
@@ -128,7 +155,7 @@ impl PrivateTerminalInventory {
             native_pending: None,
             native_recording_cursor: 0,
             attempt_cursor: 0,
-            attempts_outstanding: Vec::new(),
+            attempt_custody: None,
             native_class_debt: 0,
             native_turn_debt: 0,
             settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
@@ -147,6 +174,10 @@ impl PrivateTerminalInventory {
     fn is_empty(&self) -> bool {
         self.lifecycle.inventory().is_ok_and(|inventory| inventory.open == 0 && inventory.closed == 0)
             && self.holds.is_empty()
+            // An attempt this executor holds is the ledger's slot, and an
+            // instance reporting itself empty while holding one is reporting
+            // the absence of its own records rather than of the obligation.
+            && self.attempt_custody.is_none()
             // A retained source obligation is an obligation. It is normally
             // empty between operations, but a disagreement leaves one here
             // deliberately, and an instance reporting itself empty while
@@ -170,6 +201,7 @@ impl PrivateTerminalInventory {
         Some(self.holds
             .len()
             .saturating_add(usize::from(self.native_pending.is_some()))
+            .saturating_add(usize::from(self.attempt_custody.is_some()))
             .saturating_add(self.settling.len())
             .saturating_add(usize::from(self.current.is_some()))
             .saturating_add(self.turn.len())
@@ -198,7 +230,7 @@ impl PrivateTerminalInventory {
                 native_pending: None,
                 native_recording_cursor: 0,
                 attempt_cursor: 0,
-                attempts_outstanding: Vec::new(),
+                attempt_custody: None,
                 native_class_debt: 0,
                 native_turn_debt: 0,
                 settling: Vec::new(),

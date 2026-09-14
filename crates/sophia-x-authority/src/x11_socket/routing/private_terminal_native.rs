@@ -8,37 +8,19 @@
 
 #[cfg(unix)]
 impl PrivateXServerFrontend {
-    /// Take one terminal step, if one is possible.
-    ///
-    /// At most one entry, chosen from work this instance already owns and
-    /// moved only between places it owns, so nothing accepted is ever held
-    /// outside the inventory. What comes back is a scalar: a report can be
-    /// owned by a caller once its entry has been disposed of, the entry itself
-    /// cannot.
-    ///
-    /// `start` is offered after the entry is chosen and before anything is
-    /// observed, sent or guarded. An empty turn and a head nobody can describe
-    /// cost nothing, because neither is a step; everything else is one, and a
-    /// refusal leaves the work exactly where it already was.
-    ///
-    /// Advancing is not settling. A refusal moved into retained inventory
-    /// consumed a real step and produced no report, and neither that nor a
-    /// report itself says a recipient received anything.
     /// Claim one delivery attempt and hand its capsule to the recipient.
     ///
     /// ONE RELEASE, ONE ATTEMPT, and the two ends are joined here because
     /// nothing else holds both: the ledger names a debt by its incarnation
-    /// and a receipt arrives naming a delivery. The ledger chooses which debt
-    /// gets the turn; this only supplies the delivery for the one chosen.
+    /// and a receipt arrives naming a delivery.
     ///
-    /// THE ORDER IS THE POINT.
-    ///   1. the destination slot is prepared before anything is taken, so an
-    ///      emission never leaves its hold with nowhere to be;
-    ///   2. the attempt and the phase are written down BEFORE the handover,
-    ///      because an attempt nobody recorded is one nothing can finish, and
-    ///      a handover nobody marked is one an interruption makes invisible;
-    ///   3. a refused queue returns the exact capsule and it goes straight
-    ///      back into the slot with nothing fallible in between.
+    /// THE LEDGER SELECTS. This asks only whether anything could be served at
+    /// all, then serves whatever debt the ledger's own cursor chose. Choosing
+    /// a record here and rejecting the ledger's answer let one unservable
+    /// release hide every other behind it.
+    ///
+    /// The custody slot is empty before the ledger is asked, so the token has
+    /// somewhere reserved to go the moment it exists.
     fn attempt_one_delivery(&mut self) -> Option<bool> {
         // Only a cheap "is there anything this executor could serve" -- NOT a
         // choice of which. Picking a record here and then rejecting whatever
@@ -53,9 +35,12 @@ impl PrivateXServerFrontend {
         {
             return None;
         }
-        // THE LEDGER SELECTS. Its cursor is the retained continuation: each
-        // visit offers a different debt whether or not the last one could be
-        // served, so nothing is permanently hidden by what sits at index zero.
+        // The one slot this driver may hold has to be free before the ledger
+        // is asked. Claiming into storage that does not exist yet is a
+        // reservation whose custody is not itself reserved.
+        if self.terminal.attempt_custody.is_some() {
+            return Some(false);
+        }
         let mut cursor = self.terminal.attempt_cursor;
         let claimed = self
             .authority()
@@ -67,10 +52,13 @@ impl PrivateXServerFrontend {
             Ok(Ok(Some(claim))) => claim,
             Ok(Ok(None)) | Ok(Err(_)) | Err(_) => return Some(false),
         };
-        // PERSISTED BEFORE ANYTHING ELSE CAN FAIL. From here the token is
-        // inventory-owned; no path below holds it only in a local, and an
-        // unwind leaves it here to be relinquished rather than leaked.
-        self.terminal.attempts_outstanding.push(claim.token);
+        // PERSISTED BEFORE ANYTHING ELSE CAN FAIL, into the slot that was
+        // already there. No path below holds the token only in a local, and an
+        // unwind leaves it here to be answered rather than leaked.
+        self.terminal.attempt_custody = Some(PrivateAttemptCustody {
+            token: claim.token,
+            phase: PrivateAttemptPhase::Unplaced,
+        });
 
         let Some(index) = self
             .terminal
@@ -145,6 +133,12 @@ impl PrivateXServerFrontend {
         // being made under, and the phase says the handover was begun. An
         // interruption from here leaves both, so the empty slot afterwards is
         // never read as "nothing was taken".
+        // The custody phase moves with the record's. From here the attempt is
+        // NOT an unused reservation: whatever happens next, it may have
+        // reached the recipient.
+        if let Some(custody) = self.terminal.attempt_custody.as_mut() {
+            custody.phase = PrivateAttemptPhase::Dispatching;
+        }
         let release = &mut self.terminal.settling[index];
         release.attempt = Some(claim.token);
         release.dispatch = PrivateDispatchPhase::Indeterminate;
@@ -159,9 +153,7 @@ impl PrivateXServerFrontend {
                 // would be a second event nobody asked for. The token moves
                 // from outstanding onto the record it now serves.
                 release.dispatch = PrivateDispatchPhase::Enqueued;
-                self.terminal
-                    .attempts_outstanding
-                    .retain(|token| *token != claim.token);
+                self.terminal.attempt_custody = None;
                 Some(true)
             }
             Err(std::sync::mpsc::TrySendError::Full(capsule)) => {
@@ -170,15 +162,17 @@ impl PrivateXServerFrontend {
                 // and nothing re-encodes or reselects anything.
                 release.pending = Some(PrivatePendingDelivery::Capsule(capsule));
                 release.dispatch = PrivateDispatchPhase::Pending;
-                // The record stops naming an attempt only once the ledger has
-                // confirmed it back. Until then the token is still outstanding
-                // and still this executor's to answer for.
+                // KNOWN NOT ENQUEUED, so this attempt is an unused reservation
+                // again and may be given back. The record stops naming it only
+                // once the ledger confirms.
+                self.mark_attempt_unplaced();
                 self.relinquish_outstanding_attempt(claim.token);
                 Some(false)
             }
             Err(std::sync::mpsc::TrySendError::Disconnected(capsule)) => {
                 release.pending = Some(PrivatePendingDelivery::Capsule(capsule));
                 release.dispatch = PrivateDispatchPhase::Pending;
+                self.mark_attempt_unplaced();
                 self.relinquish_outstanding_attempt(claim.token);
                 Some(false)
             }
@@ -193,6 +187,12 @@ impl PrivateXServerFrontend {
     /// ledger has actually answered. A refused or unreadable give-back leaves
     /// both in place, so a later visit tries again rather than leaving the
     /// ledger holding a slot nobody remembers.
+    fn mark_attempt_unplaced(&mut self) {
+        if let Some(custody) = self.terminal.attempt_custody.as_mut() {
+            custody.phase = PrivateAttemptPhase::Unplaced;
+        }
+    }
+
     fn relinquish_outstanding_attempt(
         &mut self,
         token: sophia_input_authority::AttemptToken,
@@ -209,9 +209,13 @@ impl PrivateXServerFrontend {
         if !matches!(answered, Ok(Ok(_))) {
             return false;
         }
-        self.terminal
-            .attempts_outstanding
-            .retain(|held| *held != token);
+        if self
+            .terminal
+            .attempt_custody
+            .is_some_and(|custody| custody.token == token)
+        {
+            self.terminal.attempt_custody = None;
+        }
         for release in &mut self.terminal.settling {
             if release.attempt() == Some(token) {
                 release.clear_attempt();
@@ -221,9 +225,29 @@ impl PrivateXServerFrontend {
     }
 
     /// Spend one visit relinquishing an attempt whose give-back never landed.
+    ///
+    /// ONLY AN UNPLACED CLAIM. A claim whose handover began is not an unused
+    /// reservation: its delivery may be on the recipient's queue, and giving
+    /// the attempt back as unused would say a delivery that may have happened
+    /// did not. That one waits for its receipt.
     fn relinquish_one_attempt(&mut self) -> Option<bool> {
-        let token = *self.terminal.attempts_outstanding.first()?;
-        Some(self.relinquish_outstanding_attempt(token))
+        let custody = self.terminal.attempt_custody?;
+        if custody.phase != PrivateAttemptPhase::Unplaced {
+            return None;
+        }
+        Some(self.relinquish_outstanding_attempt(custody.token))
+    }
+
+    /// Whether this executor holds return work of its own.
+    ///
+    /// Asked beside the release-derived work rather than through it. A held
+    /// attempt is the ledger's slot, and when the record it was claimed for
+    /// owes nothing further -- its proof recorded, its own attempt named --
+    /// nothing else would make service look at this at all.
+    fn owes_attempt_return(&self) -> bool {
+        self.terminal
+            .attempt_custody
+            .is_some_and(|custody| custody.phase == PrivateAttemptPhase::Unplaced)
     }
 
     /// Whether any release is currently owed a recording visit.
@@ -232,9 +256,10 @@ impl PrivateXServerFrontend {
     /// stays idle and costs nothing. Choosing the entry is still the visit's
     /// own job -- this only says whether there is one to choose.
     fn owes_native_recording(&self) -> bool {
-        self.terminal.settling.iter().any(|release| {
-            release.owes_native_recording() || release.owes_delivery_attempt()
-        })
+        self.owes_attempt_return()
+            || self.terminal.settling.iter().any(|release| {
+                release.owes_native_recording() || release.owes_delivery_attempt()
+            })
     }
 
     /// Spend one proof-recording visit on one chosen release.
