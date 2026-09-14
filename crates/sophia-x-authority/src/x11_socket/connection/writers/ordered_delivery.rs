@@ -14,7 +14,6 @@
 /// something it could no longer name.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
-#[derive(Debug)]
 struct X11OrderedInFlight {
     delivery: XAuthorityOrderedDelivery,
     /// Which frame of this delivery's emission is in hand.
@@ -24,7 +23,7 @@ struct X11OrderedInFlight {
     /// that refusal have to agree; it is incremented where that refusal would
     /// have fired, never beside it.
     frame: usize,
-    send: X11OrderedSendState,
+    send: X11OrderedSendState<PrivateOrderedFrame>,
 }
 
 #[cfg(unix)]

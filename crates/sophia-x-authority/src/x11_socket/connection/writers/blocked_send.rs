@@ -96,9 +96,8 @@ enum X11OrderedSendProgress {
 /// Owning them is what makes the offset mean anything.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
-#[derive(Debug)]
-struct X11OrderedFrame {
-    bytes: Vec<u8>,
+struct X11OrderedFrame<B> {
+    bytes: B,
     progress: X11OrderedSendProgress,
 }
 
@@ -114,22 +113,24 @@ struct X11OrderedFrame {
 /// would let an earlier stall be spent against a later deadline.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
-#[derive(Debug, Default)]
-struct X11OrderedSendState {
-    frame: Option<X11OrderedFrame>,
-    /// The buffer a retired frame gave back, waiting to be filled again.
-    ///
-    /// Kept rather than dropped so that beginning each frame of a delivery
-    /// does not allocate. It holds no meaning between frames: what it is for
-    /// is capacity, and the bytes in it are overwritten before anything reads
-    /// them.
-    spare: Option<Vec<u8>>,
+struct X11OrderedSendState<B = Vec<u8>> {
+    frame: Option<X11OrderedFrame<B>>,
     blocked: Duration,
 }
 
 #[cfg(unix)]
+impl<B> Default for X11OrderedSendState<B> {
+    fn default() -> Self {
+        Self {
+            frame: None,
+            blocked: Duration::ZERO,
+        }
+    }
+}
+
+#[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
-impl X11OrderedSendState {
+impl<B: AsRef<[u8]>> X11OrderedSendState<B> {
     /// Take the next frame of this delivery, if the last one is finished.
     ///
     /// Refuses while anything is still owed. A frame that has had bytes
@@ -142,11 +143,11 @@ impl X11OrderedSendState {
     /// There is no way to declare a frame finished. Finished means every byte
     /// of the frame this state owns was accepted, which only sending can
     /// establish.
-    fn begin_frame(&mut self, bytes: &[u8]) -> Result<(), X11FrameSendFailure> {
+    fn begin_frame(&mut self, bytes: B) -> Result<(), X11FrameSendFailure> {
         match self
             .frame
             .as_ref()
-            .map(|frame| (frame.progress, frame.bytes.len()))
+            .map(|frame| (frame.progress, frame.bytes.as_ref().len()))
         {
             Some((X11OrderedSendProgress::Unknown { .. }, _)) => {
                 return Err(X11FrameSendFailure::Interrupted);
@@ -160,11 +161,8 @@ impl X11OrderedSendState {
             Some(_) => return Err(X11FrameSendFailure::FrameHeld),
             None => {}
         }
-        let mut buffer = self.spare.take().unwrap_or_default();
-        buffer.clear();
-        buffer.extend_from_slice(bytes);
         self.frame = Some(X11OrderedFrame {
-            bytes: buffer,
+            bytes,
             progress: X11OrderedSendProgress::Sent(0),
         });
         Ok(())
@@ -187,13 +185,21 @@ impl X11OrderedSendState {
                 Err(X11FrameSendFailure::Interrupted)
             }
             Some(X11OrderedSendProgress::Sent(sent)) => {
-                let len = self.frame.as_ref().expect("frame in hand").bytes.len();
+                let len = self
+                    .frame
+                    .as_ref()
+                    .expect("frame in hand")
+                    .bytes
+                    .as_ref()
+                    .len();
                 if sent < len {
                     return Err(X11FrameSendFailure::Incomplete { sent, len });
                 }
-                // The buffer goes back for the next frame; the frame itself
-                // does not survive being retired.
-                self.spare = self.frame.take().map(|frame| frame.bytes);
+                // The frame does not survive being retired. Its bytes go with
+                // it: the next frame brings its own, already encoded, and
+                // holding this one's storage back would keep a copy of an
+                // event that has already gone.
+                self.frame = None;
                 Ok(())
             }
         }
@@ -208,9 +214,9 @@ impl X11OrderedSendState {
     /// Derived from what was sent, never set. A flag a caller could raise
     /// would be a claim about the wire made by something that cannot see it.
     fn frame_complete(&self) -> bool {
-        self.frame
-            .as_ref()
-            .is_some_and(|frame| frame.progress == X11OrderedSendProgress::Sent(frame.bytes.len()))
+        self.frame.as_ref().is_some_and(|frame| {
+            frame.progress == X11OrderedSendProgress::Sent(frame.bytes.as_ref().len())
+        })
     }
 }
 
@@ -229,9 +235,9 @@ impl X11OrderedSendState {
 /// its bytes.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
-fn send_pending_frame(
+fn send_pending_frame<B: AsRef<[u8]>>(
     socket: &UnixStream,
-    state: &mut X11OrderedSendState,
+    state: &mut X11OrderedSendState<B>,
 ) -> Result<(), X11FrameSendFailure> {
     loop {
         let blocked_so_far = state.blocked;
@@ -244,7 +250,8 @@ fn send_pending_frame(
             // event's middle after its own middle.
             return Err(X11FrameSendFailure::Interrupted);
         };
-        if offset >= frame.bytes.len() {
+        let frame_bytes = frame.bytes.as_ref();
+        if offset >= frame_bytes.len() {
             return Ok(());
         }
         // Marked before the bytes can leave, not after they are counted. A
@@ -254,7 +261,7 @@ fn send_pending_frame(
         frame.progress = X11OrderedSendProgress::Unknown { from: offset };
         let attempt = rustix::net::send(
             socket,
-            &frame.bytes[offset..],
+            &frame_bytes[offset..],
             rustix::net::SendFlags::DONTWAIT | rustix::net::SendFlags::NOSIGNAL,
         );
         match attempt {
