@@ -30,7 +30,7 @@ mod private_applied_registry {
         private
             .broker
             .registry
-            .install_private_applied(&private.controller, namespace())
+            .install_private_applied(&private.participant, namespace())
             .unwrap();
     }
 
@@ -312,7 +312,7 @@ mod private_applied_registry {
             first
                 .broker
                 .registry
-                .install_private_applied(&second.controller, namespace()),
+                .install_private_applied(&second.participant, namespace()),
             Err(PrivateAppliedRegistryRefusal::ForeignOrigin)
         ));
     }
@@ -376,7 +376,7 @@ mod private_applied_registry {
             private
                 .broker
                 .registry
-                .install_private_applied(&private.controller, namespace()),
+                .install_private_applied(&private.participant, namespace()),
             Err(PrivateAppliedRegistryRefusal::SelectionUnavailable)
         ));
         private
@@ -540,7 +540,7 @@ mod private_applied_registry {
             private
                 .broker
                 .registry
-                .install_private_applied(&private.controller, namespace()),
+                .install_private_applied(&private.participant, namespace()),
             Err(PrivateAppliedRegistryRefusal::RegistryUnavailable)
         ));
     }

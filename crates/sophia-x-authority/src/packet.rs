@@ -118,6 +118,8 @@ pub enum XAuthorityRuntimeError {
     MissingSourceNamespace,
     SameNamespace,
     PortalRejected,
+    /// A bound private focus producer could not establish its guarded state.
+    FocusAuthorityUnavailable,
 }
 
 impl From<XAuthorityAccessError> for XAuthorityRuntimeError {

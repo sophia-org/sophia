@@ -241,6 +241,9 @@ pub struct PrivateFrontendParts {
 /// ```
 #[cfg(unix)]
 pub struct PrivateXServerFrontend {
+    /// Prepared before setup and moved into the runner before its producers
+    /// escape. An unprepared frontend cannot expose a production ingress.
+    pending_watch: Option<private_watchdog::PrivateWatchdogOwner>,
     broker: XServerFrontendRouteBroker,
     /// The one place runnable work is accepted, shared with every producer
     /// handle this frontend hands out.
@@ -413,6 +416,12 @@ impl PrivateXServerFrontend {
             Ok(storage) => storage,
             Err(_) => return Err((AdmissionRefusal::Saturated, parts)),
         };
+        let watch = match private_watchdog::PrivateWatchdogOwner::prepare(
+            parts.max_concurrent_clients.get(),
+        ) {
+            Ok(watch) => watch,
+            Err(_) => return Err((AdmissionRefusal::Unavailable, parts)),
+        };
         // Before anything is exposed, and before the parts are taken apart.
         if let Err(refusal) = durable.reserve_failure_slot() {
             return Err((refusal, parts));
@@ -486,6 +495,12 @@ impl PrivateXServerFrontend {
         );
         broker.registry.input_recovery.require_writer_deadline();
         broker
+            .registry
+            .input_recovery
+            .watchdog
+            .set(watch.registrar())
+            .unwrap_or_else(|_| panic!("new recovery has no watchdog registrar"));
+        broker
             .try_install_control_gate(gate)
             .expect("a broker built here has exposed nothing to refuse over");
         let staged = crate::ReadyStream::new(
@@ -510,6 +525,7 @@ impl PrivateXServerFrontend {
             capacity,
         );
         Ok(Self {
+            pending_watch: Some(watch),
             broker,
             admission: Arc::new(SharedAdmission::new(staged, durable.clone())),
             completion,
@@ -554,7 +570,7 @@ impl PrivateXServerFrontend {
     /// Refuses for three different reasons and says which. An authority that
     /// cannot be read is not a keymap that will not compile, and reporting
     /// either as the other would send someone to look in the wrong place.
-    pub fn keyboards(&self) -> Result<PrivateKeyboards, PrivateKeyboardsRefusal> {
+    pub(crate) fn keyboards(&self) -> Result<PrivateKeyboards, PrivateKeyboardsRefusal> {
         let authority = self
             .controller
             .identity()
@@ -654,7 +670,7 @@ impl PrivateXServerFrontend {
     ///
     /// Issuing the capability is an origin act, so it happens on this side of
     /// the handover rather than being something the producer asks for.
-    pub fn reservation_role(
+    pub(crate) fn reservation_role(
         &self,
         client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
@@ -673,7 +689,8 @@ impl PrivateXServerFrontend {
     /// acceptance fails, so a refusal leaves no reservation behind and no
     /// other request's delivery is disturbed: only this envelope's own id is
     /// aborted, and only when this envelope was the one that failed.
-    pub fn submit(
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn submit(
         &self,
         route: XAuthorityRoutedInput,
     ) -> Result<crate::ReadySequence, PrivateSendError> {
@@ -686,7 +703,8 @@ impl PrivateXServerFrontend {
     /// from a private frontend, and it reports a policy denial as `Full`, so
     /// claiming every private producer error is typed would have been false
     /// while that escape existed.
-    pub fn ingress(&self) -> PrivateIngress {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn ingress(&self) -> PrivateIngress {
         PrivateIngress {
             sender: self.broker.routed_input_sender(),
             admission: Arc::clone(&self.admission),
@@ -702,11 +720,14 @@ impl PrivateXServerFrontend {
     /// origin's side of the handover, and what the producer receives is the
     /// right to reserve and to observe its own outcomes -- never the authority
     /// and never the issuer.
-    pub fn ingress_for(
+    pub(crate) fn ingress_for(
         &mut self,
         client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
     ) -> Result<PrivateIngress, PrivateAdmissionRefusal> {
+        if !self.admission.lifecycle_open() {
+            return Err(PrivateAdmissionRefusal::Unreachable);
+        }
         // Claimed when a reserving producer is exposed, not when the first
         // ordered turn happens to run. Between those two moments the older
         // route could drain reserved work and apply it without the execution
@@ -725,7 +746,7 @@ impl PrivateXServerFrontend {
     /// A second real producer class, so the shared order is something two
     /// producers actually contend for rather than one producer's queue with a
     /// new name.
-    pub fn control_producer(&self) -> PrivateControlProducer {
+    pub(crate) fn control_producer(&self) -> PrivateControlProducer {
         PrivateControlProducer {
             admission: Arc::clone(&self.admission),
             completion: self.completion.clone(),

@@ -1,3 +1,258 @@
+/// The runtime and connection projection changed in one guarded interval.
+/// This says nothing about FocusOut records, socket flush, or release debt.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct X11AppliedFocus {
+    previous_authority: XResourceId,
+    previous_revert_to: u8,
+    previous_routed: XResourceId,
+    window: XResourceId,
+    revert_to: u8,
+}
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11FocusApplyError {
+    State(PrivateAppliedRegistryRefusal),
+    Runtime(crate::XAuthorityRuntimeError),
+    Superseded,
+}
+
+/// Both Engine and core callers name the exact runtime semantics. Engine
+/// ClearFocus supplies root/revert=1 but deliberately publishes no key target.
+/// Core focus=None supplies zero; an explicit core root remains a real target.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+enum X11FocusChange {
+    Surface { window: XResourceId },
+    Clear,
+    Core { window: XResourceId, revert_to: u8 },
+}
+
+#[cfg(unix)]
+impl X11FocusChange {
+    fn window(self) -> XResourceId {
+        match self {
+            Self::Surface { window } | Self::Core { window, .. } => window,
+            Self::Clear => XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+        }
+    }
+    fn revert_to(self) -> u8 {
+        match self {
+            Self::Core { revert_to, .. } => revert_to,
+            Self::Surface { .. } | Self::Clear => 1,
+        }
+    }
+    fn has_key_target(self) -> bool {
+        !matches!(self, Self::Clear) && self.window().local.raw() != 0
+    }
+}
+
+/// Actual focus producer for the control writer and the core dispatcher.
+/// The caller already owns the outer runtime guard, with no X/selection guard.
+/// Private common is therefore beneath outer runtime here. The private
+/// executor/native cleanup must not acquire outer runtime while holding common.
+/// The checked-in producer call sites are supplied in the integration patch;
+/// this helper alone does not wire dispatch or establish writer completion.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+fn x11_apply_focus_change(
+    runtime: &mut XAuthorityRuntime,
+    namespace: NamespaceId,
+    client: XServerFrontendClientId,
+    focused_projection: &AtomicU64,
+    routing: Option<&XServerFrontendRouteRegistry>,
+    claim: Option<&PrivateFocusClaim>,
+    change: X11FocusChange,
+) -> Result<X11AppliedFocus, X11FocusApplyError> {
+    if let Some(routing) = routing
+        && routing.private_applied.get().is_some()
+    {
+        let claim = claim.ok_or(X11FocusApplyError::State(
+            PrivateAppliedRegistryRefusal::MissingFocusClaim,
+        ))?;
+        return routing.apply_private_focus(
+            runtime,
+            namespace,
+            client,
+            focused_projection,
+            claim,
+            change,
+        );
+    }
+    let (previous_authority, previous_revert_to) = runtime.input_focus(namespace);
+    let previous_routed = XResourceId::new(focused_projection.load(Ordering::Acquire), 1);
+    runtime
+        .set_input_focus(namespace, change.window(), change.revert_to())
+        .map_err(X11FocusApplyError::Runtime)?;
+    focused_projection.store(change.window().local.raw(), Ordering::Release);
+    Ok(X11AppliedFocus {
+        previous_authority,
+        previous_revert_to,
+        previous_routed,
+        window: change.window(),
+        revert_to: change.revert_to(),
+    })
+}
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11DependentFocusEffect {
+    ProjectionCleared,
+    Superseded,
+    Unproved,
+}
+
+/// Kept by the actual core request until its owned output stream has flushed.
+/// The only completion operation writes and flushes its records; it accepts no
+/// caller-supplied sent/published flag. Dropping it leaves focus unavailable.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Core source installation is in the call-site patch.
+struct X11PendingFocusPublication {
+    routing: XServerFrontendRouteRegistry,
+    claim: PrivateFocusClaim,
+    runtime: Arc<Mutex<XAuthorityRuntime>>,
+    control_runtime_pending: Arc<AtomicUsize>,
+    output: Arc<Mutex<UnixStream>>,
+    output_control_pending: Arc<AtomicUsize>,
+    revert_to: u8,
+    records: Option<Vec<Vec<u8>>>,
+    emission: X11CoreFocusEmission,
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum X11CoreFocusEmission {
+    Waiting,
+    Written(usize),
+    Indeterminate,
+    Flushed,
+    Superseded,
+    Published,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+impl X11PendingFocusPublication {
+    fn write_output(
+        &mut self,
+        event_sequence: &AtomicU16,
+        sequence: u16,
+    ) -> Result<(), X11SetupSocketError> {
+        if matches!(self.emission, X11CoreFocusEmission::Indeterminate) {
+            return Err(X11SetupSocketError::new(
+                "private focus output is indeterminate",
+            ));
+        }
+        if matches!(
+            self.emission,
+            X11CoreFocusEmission::Published | X11CoreFocusEmission::Superseded
+        ) {
+            return Ok(());
+        }
+        let records = self.records.as_ref().ok_or_else(|| {
+            X11SetupSocketError::new("private focus source has not supplied its records")
+        })?;
+        if self.emission != X11CoreFocusEmission::Flushed {
+            {
+                // Bind completion to the source's retained transport, never a
+                // socket supplied by a later caller. This is the core request's
+                // actual output path, not a callback asserting another path sent.
+                let mut stream =
+                    lock_x11_non_control_output(&self.output, &self.output_control_pending, None)?
+                        .expect("uncancellable source output");
+                // Socket -> common is a bounded validation only. No reviewed
+                // private path takes this socket while holding common. Outer
+                // runtime is deliberately not acquired under the socket.
+                if !self
+                    .routing
+                    .private_focus_output_current(&self.claim, self.revert_to)
+                    .map_err(|cause| {
+                        X11SetupSocketError::new(format!(
+                            "private focus output unavailable: {cause:?}"
+                        ))
+                    })?
+                {
+                    self.emission = X11CoreFocusEmission::Superseded;
+                    event_sequence.store(sequence, Ordering::Release);
+                    return Ok(());
+                }
+                let first = match self.emission {
+                    X11CoreFocusEmission::Written(next) => next,
+                    _ => 0,
+                };
+                for (index, bytes) in records.iter().enumerate().skip(first) {
+                    // The record stays on this request owner during partial
+                    // writes and unwind. Unknown output is never replayable.
+                    self.emission = X11CoreFocusEmission::Indeterminate;
+                    std::io::Write::write_all(&mut *stream, bytes).map_err(|error| {
+                        X11SetupSocketError::new(format!(
+                            "failed to write private focus output: {error}"
+                        ))
+                    })?;
+                    self.emission = X11CoreFocusEmission::Written(index + 1);
+                }
+                self.emission = X11CoreFocusEmission::Indeterminate;
+                std::io::Write::flush(&mut *stream).map_err(|error| {
+                    X11SetupSocketError::new(format!(
+                        "failed to flush private focus output: {error}"
+                    ))
+                })?;
+                self.emission = X11CoreFocusEmission::Flushed;
+                event_sequence.store(sequence, Ordering::Release);
+            }
+        }
+        // The socket is released before taking outer runtime. Recheck the
+        // actual runtime while that guard excludes ordinary mutation, then
+        // publish under common only if the exact source effect still agrees.
+        let runtime = lock_x11_request_runtime(&self.runtime, &self.control_runtime_pending)?;
+        let published = self
+            .routing
+            .publish_private_focus_after_output(&runtime, &self.claim, self.revert_to)
+            .map_err(|cause| {
+                X11SetupSocketError::new(format!(
+                    "private focus publication unavailable: {cause:?}"
+                ))
+            })?;
+        self.emission = if published {
+            X11CoreFocusEmission::Published
+        } else {
+            X11CoreFocusEmission::Superseded
+        };
+        Ok(())
+    }
+}
+
+/// An older notification remains owed, but it cannot clear a newer applied
+/// focus claim. None in private mode is unproved, never ordinary permission.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+fn x11_apply_dependent_focus_out(
+    namespace: NamespaceId,
+    client: XServerFrontendClientId,
+    window: XResourceId,
+    focused_projection: &AtomicU64,
+    routing: Option<&XServerFrontendRouteRegistry>,
+    claim: Option<&PrivateFocusClaim>,
+) -> Result<X11DependentFocusEffect, PrivateAppliedRegistryRefusal> {
+    if let Some(routing) = routing
+        && routing.private_applied.get().is_some()
+    {
+        let Some(claim) = claim else {
+            return Ok(X11DependentFocusEffect::Unproved);
+        };
+        return routing.apply_private_focus_out(
+            namespace,
+            client,
+            window,
+            focused_projection,
+            claim,
+        );
+    }
+    focused_projection.store(u64::from(X_SETUP_DEFAULT_ROOT), Ordering::Release);
+    Ok(X11DependentFocusEffect::ProjectionCleared)
+}
+
 #[cfg(unix)]
 fn x11_focus_event_record(
     byte_order: XByteOrder,
@@ -356,4 +611,91 @@ fn write_x11_control_records(
     stream
         .flush()
         .map_err(|error| x11_peer_write_error("failed to flush X11 control event", error))
+}
+
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)] // The core source retains its exact runtime and transport owners.
+fn x11_dispatch_private_focus(
+    runtime: &mut XAuthorityRuntime,
+    context: crate::XDispatchContext,
+    client: XServerFrontendClientId,
+    projection: &AtomicU64,
+    routing: &XServerFrontendRouteRegistry,
+    window: XResourceId,
+    revert_to: u8,
+    runtime_owner: Arc<Mutex<XAuthorityRuntime>>,
+    control_runtime_pending: Arc<AtomicUsize>,
+    output: Arc<Mutex<UnixStream>>,
+    output_control_pending: Arc<AtomicUsize>,
+) -> Result<(XDispatchResult, Option<X11PendingFocusPublication>), X11SetupSocketError> {
+    let claim = routing
+        .reserve_private_focus(client, window)
+        .map_err(|cause| {
+            X11SetupSocketError::new(format!("private core focus claim unavailable: {cause:?}"))
+        })?
+        .ok_or_else(|| X11SetupSocketError::new("private core focus has no origin"))?;
+    let mut previous = runtime.input_focus(context.namespace).0;
+    let mut pending = None;
+    let result = match x11_apply_focus_change(
+        runtime,
+        context.namespace,
+        client,
+        projection,
+        Some(routing),
+        Some(&claim),
+        X11FocusChange::Core { window, revert_to },
+    ) {
+        Ok(applied) => {
+            // The dependent producer really cleared this connection projection.
+            // Same-window runtime reassertion still owes the restoring FocusIn.
+            if previous == window && applied.previous_routed != window {
+                previous = applied.previous_routed;
+            }
+            pending = Some(X11PendingFocusPublication {
+                routing: routing.clone(),
+                claim,
+                runtime: runtime_owner,
+                control_runtime_pending,
+                output,
+                output_control_pending,
+                revert_to,
+                records: None,
+                emission: X11CoreFocusEmission::Waiting,
+            });
+            Ok(())
+        }
+        Err(X11FocusApplyError::Runtime(cause)) => Err(cause),
+        Err(
+            X11FocusApplyError::Superseded
+            | X11FocusApplyError::State(
+                PrivateAppliedRegistryRefusal::MissingAdmission
+                | PrivateAppliedRegistryRefusal::AdmissionClosed
+                | PrivateAppliedRegistryRefusal::ForeignOrigin,
+            ),
+        ) => {
+            return Ok((
+                XDispatchResult {
+                    response: None,
+                    outputs: vec![crate::XClientOutput::Error(crate::XClientError {
+                        code: crate::XErrorCode::BadAccess,
+                        sequence: context.sequence,
+                        resource_id: u32::try_from(window.local.raw()).unwrap_or(0),
+                        minor_code: 0,
+                        major_code: context.major_opcode,
+                    })],
+                    metadata_candidates: Vec::new(),
+                },
+                None,
+            ));
+        }
+        Err(cause) => {
+            return Err(X11SetupSocketError::new(format!(
+                "private core focus unavailable: {cause:?}"
+            )));
+        }
+    };
+    Ok((
+        crate::dispatch::input_focus_dispatch_result(context, window, previous, result),
+        pending,
+    ))
 }

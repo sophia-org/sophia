@@ -129,6 +129,36 @@ impl Shared {
         inventory.next_identity = identity.checked_add(1);
         Ok(identity)
     }
+
+    fn attach_transport(
+        self: &Arc<Self>,
+        socket: UnixStream,
+        preparing: bool,
+    ) -> Result<PrivateWatchdogTransport, (PrivateWatchdogRefusal, UnixStream)> {
+        let mut inventory = self.lock();
+        if let Err(refusal) = self.check_live(&mut inventory) {
+            return Err((refusal, socket));
+        }
+        if preparing && inventory.sealed {
+            return Err((PrivateWatchdogRefusal::Sealed, socket));
+        }
+        let Some(slot) = inventory.transports.iter().position(Option::is_none) else {
+            return Err((PrivateWatchdogRefusal::TransportCapacity, socket));
+        };
+        let identity = match self.take_identity(&mut inventory) {
+            Ok(identity) => identity,
+            Err(refusal) => return Err((refusal, socket)),
+        };
+        inventory.transports[slot] = Some(Transport {
+            identity,
+            socket: Arc::new(socket),
+        });
+        Ok(PrivateWatchdogTransport {
+            shared: self.clone(),
+            slot,
+            identity,
+        })
+    }
 }
 
 /// Constructed before producer exposure. Its supervisor owns a thread
@@ -186,33 +216,21 @@ impl PrivateWatchdogOwner {
     /// Transfer an already independent descriptor before sealing. Refusal
     /// hands it back; attachment never tries to acquire an output mutex.
     /// The returned registration must outlive the client workers it covers.
+    #[allow(dead_code)] // Exercised by the standalone supervisor controls; production setup uses its registrar.
     pub(crate) fn attach_transport(
         &mut self,
         socket: UnixStream,
     ) -> Result<PrivateWatchdogTransport, (PrivateWatchdogRefusal, UnixStream)> {
-        let mut inventory = self.shared.lock();
-        if let Err(refusal) = self.shared.check_live(&mut inventory) {
-            return Err((refusal, socket));
-        }
-        if inventory.sealed {
-            return Err((PrivateWatchdogRefusal::Sealed, socket));
-        }
-        let Some(slot) = inventory.transports.iter().position(Option::is_none) else {
-            return Err((PrivateWatchdogRefusal::TransportCapacity, socket));
-        };
-        let identity = match self.shared.take_identity(&mut inventory) {
-            Ok(identity) => identity,
-            Err(refusal) => return Err((refusal, socket)),
-        };
-        inventory.transports[slot] = Some(Transport {
-            identity,
-            socket: Arc::new(socket),
-        });
-        Ok(PrivateWatchdogTransport {
+        self.shared.attach_transport(socket, true)
+    }
+
+    /// Connection setup may continue after execution preparation. This role
+    /// can register independent shutdown descriptors, but cannot start an
+    /// execution, seal preparation, or reopen a failed owner.
+    pub(crate) fn registrar(&self) -> PrivateWatchdogRegistrar {
+        PrivateWatchdogRegistrar {
             shared: self.shared.clone(),
-            slot,
-            identity,
-        })
+        }
     }
 
     /// Finish descriptor preparation before exposing producers. Clones of
@@ -288,6 +306,26 @@ impl Drop for PrivateWatchdogOwner {
     }
 }
 
+/// Installed on this instance's actual connection setup path. Registration
+/// must precede worker exposure and its custody must outlive those workers.
+/// Capacity was reserved by the owner; live connection churn cannot grow it.
+#[derive(Clone)]
+pub(crate) struct PrivateWatchdogRegistrar {
+    shared: Arc<Shared>,
+}
+
+impl PrivateWatchdogRegistrar {
+    pub(crate) fn attach_transport(
+        &self,
+        socket: UnixStream,
+    ) -> Result<PrivateWatchdogTransport, (PrivateWatchdogRefusal, UnixStream)> {
+        // Serialized against the independent shutdown decision, with no
+        // common, output or client guard held by connection setup. A failure
+        // either includes this socket or refuses it before worker exposure.
+        self.shared.attach_transport(socket, false)
+    }
+}
+
 /// Admission/consumer failure gate, with no issuer or execution rights.
 #[derive(Clone)]
 pub(crate) struct PrivateWatchdogGate {
@@ -301,10 +339,12 @@ impl PrivateWatchdogGate {
         !self.shared.closed.load(Ordering::Acquire)
     }
 
+    #[cfg_attr(not(test), allow(dead_code))] // Explicit failure diagnostics; never an execution or settlement receipt.
     pub(crate) fn failure(&self) -> Option<PrivateWatchdogFailure> {
         self.shared.lock().failure
     }
 
+    #[allow(dead_code)] // Standalone lifecycle controls; the runner reaps its own finished handle.
     pub(crate) fn supervisor_finished(&self) -> bool {
         self.shared.supervisor_finished.load(Ordering::Acquire)
     }
@@ -325,7 +365,7 @@ impl Drop for PrivateWatchdogTransport {
         // Once failure selected this cohort, dropping a registration
         // cannot race its descriptor out from under the pending shutdown.
         // The failed inventory retains that bounded slot through cleanup.
-        if inventory.failure.is_some() {
+        if inventory.failure.is_some() || inventory.stop {
             return;
         }
         if inventory.transports[self.slot]
@@ -415,6 +455,8 @@ fn supervise(shared: &Shared) {
             return;
         }
         if inventory.stop {
+            drop(inventory);
+            shutdown_transports(shared);
             return;
         }
         let result = if let Some(active) = inventory.active {

@@ -169,6 +169,63 @@ fn completed_execution_releases_the_slot_without_resetting_live_execution() {
 }
 
 #[test]
+fn later_connections_share_the_prepared_bound_and_owner_shutdown() {
+    let mut owner = PrivateWatchdogOwner::prepare(1).unwrap();
+    let registrar = owner.registrar();
+    let gate = owner.seal().unwrap();
+    let (socket, mut peer) = UnixStream::pair().unwrap();
+    let _writer = socket.try_clone().unwrap();
+    peer.set_read_timeout(Some(TEST_LIMIT)).unwrap();
+    let registration = registrar
+        .attach_transport(socket)
+        .unwrap_or_else(|_| panic!("post-preparation connection refused"));
+    let (excess, mut excess_peer) = UnixStream::pair().unwrap();
+    let mut returned = match registrar.attach_transport(excess) {
+        Err((PrivateWatchdogRefusal::TransportCapacity, socket)) => socket,
+        _ => panic!("connection churn exceeded reserved slots"),
+    };
+    returned.write_all(b"still owned").unwrap();
+    let mut bytes = [0; 11];
+    excess_peer.read_exact(&mut bytes).unwrap();
+    assert_eq!(&bytes, b"still owned");
+
+    // Losing an idle runner closes its actual client transports too. An
+    // execution deadline is not required for owner loss to end admission.
+    drop(owner);
+    drop(registration);
+    wait_for_exit(&gate);
+    assert!(!gate.allows_execution());
+    assert_eq!(gate.failure(), None, "normal owner loss is not a receipt");
+    assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+    assert!(matches!(
+        registrar.attach_transport(returned),
+        Err((PrivateWatchdogRefusal::Closed, _))
+    ));
+}
+
+#[test]
+fn late_registration_cannot_escape_an_execution_failure() {
+    let mut owner = PrivateWatchdogOwner::prepare(1).unwrap();
+    let registrar = owner.registrar();
+    let gate = owner.seal().unwrap();
+    let execution = owner.begin_dequeued(Instant::now()).unwrap();
+    drop(execution);
+    let (socket, mut peer) = UnixStream::pair().unwrap();
+    let mut returned = match registrar.attach_transport(socket) {
+        Err((PrivateWatchdogRefusal::Failed(_), socket)) => socket,
+        _ => panic!("new connection escaped the failed owner"),
+    };
+    returned.write_all(b"refused").unwrap();
+    let mut bytes = [0; 7];
+    peer.read_exact(&mut bytes).unwrap();
+    assert_eq!(
+        &bytes, b"refused",
+        "caller retains the unexposed descriptor"
+    );
+    wait_for_exit(&gate);
+}
+
+#[test]
 fn actual_dequeue_time_is_kept_even_if_registration_is_delayed() {
     let mut owner = PrivateWatchdogOwner::prepare(0).unwrap();
     let gate = owner.seal().unwrap();

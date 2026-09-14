@@ -1407,3 +1407,38 @@ device-hidden wrapper and retains its own exact-source report separately; these
 targeted results are not a full canonical or hardware claim. The four existing
 notebook broken-link reports are unchanged. XTEST stays disabled and M3's later
 production lifecycle work remains unintegrated.
+
+
+### M3 actual focus producers, runner supervisor and shared activation continuation
+
+The private runner now owns its supervisor rather than accepting one from a
+caller. Actual connection setup registers independent transport descriptors
+before workers; runner and unprepared-frontend teardown close the gate and
+transports before waiting on common. Detached ingress refuses after failure.
+Actual dequeue/terminal steps retain their existing per-step accounting.
+
+Engine and core focus operations now enter the origin-bound applied source.
+Claims carry the original admission and connection generation; effects, output
+validation and post-flush publication consult current participant bindings and
+lifecycle gates under common. Core publication follows actual source output.
+Focus storage is prepared at connection setup; private mutation refuses absent
+storage. Real destruction invalidates old claims before its effect and publishes
+no key target only after the runtime reset. Runtime error codec tag 13 is
+additive; existing tags retain their bytes. Destruction can still scan/allocate
+and holds common across its existing resource cleanup; no constant-time claim.
+
+Native shared automatic capture now yields an opaque exact-origin/stamp
+retirement receipt from the operation that actually retires it. An earlier
+released sibling may combine that receipt with its already-completed native
+contributions to seal only its own full-incarnation native proof. Other residuals
+remain unresolved. The terminal owner must retain the receipt-bearing hold until
+its siblings have been visited; that consumer integration is still open.
+
+Combined input-only gates pass: 1170 tests, 0 failures, 1 existing ignored;
+fmt, clippy with warnings denied, layout and diff checks pass. The first combined
+run exposed native fixtures omitting prepared focus storage; their preparation
+now follows the production contract. Focus mutation results remain scoped to the
+agent's frozen slices. No recipient flush/disconnect settlement or full Gate A
+is claimed; immutable emission/writer/attempt integration, keys, StateOnly/thaw,
+preacceptance output capacity and complete lifecycle closure remain M3 work.
+No hardware, installation, default enablement or root/master movement.

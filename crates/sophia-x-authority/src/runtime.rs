@@ -231,6 +231,8 @@ pub struct XAuthorityRuntime {
     last_cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
     output_topology: OutputTopologySnapshot,
     input_focus: BTreeMap<NamespaceId, (crate::XResourceId, u8)>,
+    #[cfg(unix)]
+    private_focus_source: Option<crate::x11_socket::XPrivateFocusRuntimeSource>,
     defer_policy_maps: bool,
     /// Whether the provider keeps pixmap backings a GL client can sample.
     ///
@@ -297,6 +299,8 @@ impl Default for XAuthorityRuntime {
             last_cpu_buffer_updates: Vec::new(),
             output_topology: OutputTopologySnapshot::deterministic(),
             input_focus: Default::default(),
+            #[cfg(unix)]
+            private_focus_source: None,
             defer_policy_maps: false,
             pixmap_textures_supported: false,
             dma_buf_import_formats: None,
@@ -396,11 +400,59 @@ impl XAuthorityRuntime {
         Ok(true)
     }
 
+    /// Reserves the namespace's default focus storage during connection setup,
+    /// before any worker or common-held private focus producer is exposed.
+    /// Existing focus survives another connection in the same namespace. This
+    /// prepares storage only; it publishes no applied-focus authority.
+    pub(crate) fn prepare_input_focus_namespace(&mut self, namespace: NamespaceId) {
+        self.input_focus.entry(namespace).or_insert((
+            crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1),
+            1,
+        ));
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn bind_private_focus_source(
+        &mut self,
+        source: crate::x11_socket::XPrivateFocusRuntimeSource,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        if let Some(bound) = self.private_focus_source.as_ref() {
+            if !bound.same_origin(&source) {
+                return Err(XAuthorityRuntimeError::FocusAuthorityUnavailable);
+            }
+        } else {
+            self.private_focus_source = Some(source);
+        }
+        Ok(())
+    }
+
     pub fn input_focus(&self, namespace: NamespaceId) -> (crate::XResourceId, u8) {
         self.input_focus.get(&namespace).copied().unwrap_or((
             crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1),
             1,
         ))
+    }
+
+    /// Private effect entry: preparation is an admission prerequisite, never
+    /// permission to allocate missing namespace state while common is held.
+    pub(crate) fn set_prepared_input_focus(
+        &mut self,
+        namespace: NamespaceId,
+        focus: crate::XResourceId,
+        revert_to: u8,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        if revert_to > 2 {
+            return Err(XAuthorityRuntimeError::InvalidResource);
+        }
+        if focus.local.raw() != 0 && focus.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+            self.validate_window_access(namespace, focus)?;
+        }
+        let prepared = self
+            .input_focus
+            .get_mut(&namespace)
+            .ok_or(XAuthorityRuntimeError::FocusAuthorityUnavailable)?;
+        *prepared = (focus, revert_to);
+        Ok(())
     }
 
     pub fn set_input_focus(

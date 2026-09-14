@@ -57,14 +57,16 @@ mod private_native_tests {
             let publication = private
                 .broker
                 .registry
-                .install_private_applied(&private.controller, namespace())
+                .install_private_applied(&private.participant, namespace())
                 .unwrap();
+            let mut runtime = XAuthorityRuntime::new();
+            runtime.prepare_input_focus_namespace(namespace());
             publication
                 .lock()
                 .unwrap()
                 .begin_focus_change()
                 .unwrap()
-                .apply(&mut XAuthorityRuntime::new(), &focused, None)
+                .apply(&mut runtime, &focused, None)
                 .unwrap();
             {
                 let mut selected = selections.lock().unwrap();
@@ -343,6 +345,7 @@ mod private_native_tests {
             ReleaseOutcome::DeliverTo(_)
         ));
         assert_eq!(hold.status(), Status::Retained(Residual::MissingMapper));
+        assert_other_phase_rejects_receipt(&mut hold);
         assert!(hold.proof().is_none());
         assert!(
             !fixture
@@ -373,55 +376,9 @@ mod private_native_tests {
         let mut hold = hold.unwrap();
         fixture.release(&fixture.role, 272, &mut hold);
         assert_eq!(hold.status(), Status::Retained(Residual::ExternalLease));
+        assert_other_phase_rejects_receipt(&mut hold);
         assert!(hold.proof().is_none());
         assert_eq!(fixture.masks(), (0, 0, 0));
-    }
-
-    #[test]
-    fn side_buttons_keep_automatic_capture_until_every_button_is_up() {
-        let fixture = Fixture::new();
-        let mut left = None;
-        let mut side = None;
-        fixture.press(272, &mut left);
-        fixture.press(275, &mut side);
-        let mut left = left.unwrap();
-        let mut side = side.unwrap();
-        fixture.release(&fixture.role, 272, &mut left);
-        assert_eq!(fixture.masks(), (0, 0, 0));
-        assert_eq!(
-            left.status(),
-            Status::Retained(Residual::Activation(
-                crate::PointerActivationRetirement::StillRequiredByOtherButtons
-            ))
-        );
-        assert!(left.proof().is_none());
-        assert!(
-            fixture
-                .private
-                .broker
-                .registry
-                .input_authority
-                .lock()
-                .unwrap()
-                .pointer_grab(namespace())
-                .is_some()
-        );
-        fixture.release(&fixture.role, 275, &mut side);
-        assert_eq!(side.status(), Status::NativeReconciled);
-        assert!(
-            fixture
-                .private
-                .broker
-                .registry
-                .input_authority
-                .lock()
-                .unwrap()
-                .pointer_grab(namespace())
-                .is_none()
-        );
-        // A later release retiring capture is not retroactive proof for the
-        // earlier debt; an origin continuation must explicitly revisit it.
-        assert!(left.proof().is_none());
     }
 
     #[test]
@@ -613,6 +570,7 @@ mod private_native_tests {
             "unknown query modifiers are not a clear event state"
         );
         assert_eq!(hold.status(), Status::Retained(Residual::MissingQueryScope));
+        assert_other_phase_rejects_receipt(&mut hold);
         assert!(hold.proof().is_none());
         let mut authority = fixture
             .private
@@ -717,6 +675,7 @@ mod private_native_tests {
         let mut hold = hold.unwrap();
         fixture.release(&fixture.role, 272, &mut hold);
         assert_eq!(hold.status(), Status::Retained(Residual::Synchronous));
+        assert_other_phase_rejects_receipt(&mut hold);
         assert!(hold.proof().is_none());
         assert!(
             fixture
@@ -996,4 +955,6 @@ mod private_native_tests {
         assert_eq!(hold.status(), Status::NativeReconciled);
         assert_eq!(other_selections.lock().unwrap().pointer.unwrap().mask, 0);
     }
+
+    include!("private_native_sibling.rs");
 }

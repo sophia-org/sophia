@@ -127,21 +127,31 @@ fn spawn_x11_control_writer(
             // Marked before anything is written, because everything after
             // this point can leave the runtime changed with no acknowledgement
             // sent.
-            let (command, focus_transition, completion) = match routed {
+            let (command, focus_transition, completion, focus_claim) = match routed {
                 X11RoutedControl::Authority {
                     command,
                     focus,
                     completion,
-                } => (command, focus, completion),
+                    claim,
+                } => (command, focus, completion, claim),
                 X11RoutedControl::FocusOut {
                     window,
                     time_msec,
                     origin,
+                    claim,
                 } => {
-                    focused_surface_window.store(
-                        u64::from(X_SETUP_DEFAULT_ROOT),
-                        Ordering::Release,
-                    );
+                    let disposition = x11_apply_dependent_focus_out(
+                        namespace, client, window, &focused_surface_window,
+                        protocol_routing.as_ref(), claim.as_ref(),
+                    ).map_err(|cause| X11SetupSocketError::new(format!("private FocusOut unavailable: {cause:?}")))?;
+                    if disposition != X11DependentFocusEffect::ProjectionCleared {
+                        // A stale generationless FocusOut would undo the
+                        // newer FocusIn at the client even if our atomic were
+                        // preserved. End only this dependency's quiescence.
+                        tracing::debug!(?disposition, "private FocusOut not applicable");
+                        drop(origin);
+                        continue;
+                    }
                     let records = x11_focus_records(
                         byte_order,
                         sequence.load(Ordering::Acquire),
@@ -539,29 +549,25 @@ fn spawn_x11_control_writer(
                     )]
                 }
                 XAuthorityControlCommand::FocusSurface { .. } => {
-                    let previous = {
-                        let mut runtime =
-                            lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
-                        let (previous, _) = runtime.input_focus(namespace);
-                        if runtime.set_input_focus(namespace, window, 1).is_err() {
-                            channels.send_ack_for(
-                                client,
-                                XAuthorityControlAck {
-                                    kind,
-                                    transaction,
-                                    surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
-                                },
-                                completion,
-                            )?;
+                    let applied = {
+                        let mut runtime = lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
+                        x11_apply_focus_change(&mut runtime, namespace, client, &focused_surface_window,
+                            protocol_routing.as_ref(), focus_claim.as_ref(), X11FocusChange::Surface { window })
+                    };
+                    let applied = match applied {
+                        Ok(applied) => applied,
+                        Err(X11FocusApplyError::Runtime(_) | X11FocusApplyError::Superseded
+                            | X11FocusApplyError::State(PrivateAppliedRegistryRefusal::MissingAdmission
+                                | PrivateAppliedRegistryRefusal::AdmissionClosed | PrivateAppliedRegistryRefusal::ForeignOrigin)) => {
+                            channels.send_ack_for(client, XAuthorityControlAck {
+                                kind, transaction, surface, outcome: XAuthorityControlOutcome::AuthorityRejected,
+                            }, completion)?;
                             continue;
                         }
-                        previous
+                        Err(cause) => return Err(X11SetupSocketError::new(format!("private focus unavailable: {cause:?}"))),
                     };
-                    let previous_routed = XResourceId::new(
-                        focused_surface_window.swap(window.local.raw(), Ordering::AcqRel),
-                        1,
-                    );
+                    let previous = applied.previous_authority;
+                    let previous_routed = applied.previous_routed;
                     x11_focus_records(
                         byte_order,
                         event_sequence,
@@ -582,27 +588,24 @@ fn spawn_x11_control_writer(
                 }
                 XAuthorityControlCommand::ClearFocus { .. } => {
                     let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-                    {
-                        let mut runtime =
-                            lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
-                        if runtime.set_input_focus(namespace, root, 1).is_err() {
-                            channels.send_ack_for(
-                                client,
-                                XAuthorityControlAck {
-                                    kind,
-                                    transaction,
-                                    surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
-                                },
-                                completion,
-                            )?;
+                    let applied = {
+                        let mut runtime = lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
+                        x11_apply_focus_change(&mut runtime, namespace, client, &focused_surface_window,
+                            protocol_routing.as_ref(), focus_claim.as_ref(), X11FocusChange::Clear)
+                    };
+                    let applied = match applied {
+                        Ok(applied) => applied,
+                        Err(X11FocusApplyError::Runtime(_) | X11FocusApplyError::Superseded
+                            | X11FocusApplyError::State(PrivateAppliedRegistryRefusal::MissingAdmission
+                                | PrivateAppliedRegistryRefusal::AdmissionClosed | PrivateAppliedRegistryRefusal::ForeignOrigin)) => {
+                            channels.send_ack_for(client, XAuthorityControlAck {
+                                kind, transaction, surface, outcome: XAuthorityControlOutcome::AuthorityRejected,
+                            }, completion)?;
                             continue;
                         }
-                    }
-                    let previous_routed = XResourceId::new(
-                        focused_surface_window.swap(root.local.raw(), Ordering::AcqRel),
-                        1,
-                    );
+                        Err(cause) => return Err(X11SetupSocketError::new(format!("private focus unavailable: {cause:?}"))),
+                    };
+                    let previous_routed = applied.previous_routed;
                     x11_focus_records(
                         byte_order,
                         event_sequence,

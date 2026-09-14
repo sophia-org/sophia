@@ -498,7 +498,7 @@ fn lifecycle_integration_live_origin_cannot_resolve_a_closing_recipient() {
         registrations.push((registration, channels));
     }
     registry
-        .install_private_applied(f.authority(), namespace)
+        .install_private_applied(&f.participant, namespace)
         .unwrap();
     f.participant
         .under_boundary(|_, _, bindings| {

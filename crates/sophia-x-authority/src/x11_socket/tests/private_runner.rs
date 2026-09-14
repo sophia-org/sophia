@@ -82,7 +82,7 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
             true,
         ))
         .unwrap();
-    let first = runner.service_turn(&control_watchdog()).unwrap();
+    let first = runner.service_turn().unwrap();
     assert_eq!(first.taken, 1);
     assert_eq!(
         first.starts, 2,
@@ -94,7 +94,7 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
     assert_eq!(first.observed, 1);
     assert_eq!(first.settled, 0);
     assert_eq!(channels.input.try_iter().count(), 1);
-    let second = runner.service_turn(&control_watchdog()).unwrap();
+    let second = runner.service_turn().unwrap();
     assert_eq!(second.taken, 0);
     assert_eq!(second.enqueued, 0);
     assert_eq!(second.starts, 0);
@@ -119,10 +119,7 @@ fn losing_a_prepared_runner_closes_its_producers_and_carries_its_hold() {
             true,
         ))
         .unwrap();
-    assert_eq!(
-        runner.service_turn(&control_watchdog()).unwrap().observed,
-        1
-    );
+    assert_eq!(runner.service_turn().unwrap().observed, 1);
     drop(runner);
     assert!(matches!(
         ingress.submit(button_to(
@@ -177,10 +174,9 @@ fn focus_encoding_takes_input_authority_before_event_selections() {
 fn runner_accounts_a_park_once_and_never_charges_idle_or_blocked_reads() {
     let (mut runner, _durable, _registration, _channels, _acks, _deliveries) =
         prepared_runner_fixture();
-    let watch = control_watchdog();
     for _ in 0..3 {
         assert!(matches!(
-            runner.execute_accounted_step(&watch).unwrap(),
+            runner.execute_accounted_step().unwrap(),
             PrivateAccountedStep::Step {
                 step: PrivateOrderedStep::Idle,
                 charge: None
@@ -196,12 +192,12 @@ fn runner_accounts_a_park_once_and_never_charges_idle_or_blocked_reads() {
             91000,
         ))
         .unwrap();
-    assert!(matches!(runner.execute_accounted_step(&watch).unwrap(),
+    assert!(matches!(runner.execute_accounted_step().unwrap(),
         PrivateAccountedStep::Step { step: PrivateOrderedStep::Parked(s), charge: Some(_) } if s==sequence));
     assert_eq!(runner.service.usage().starts, 1);
     let charged = runner.service.usage().charged;
     for _ in 0..3 {
-        assert!(matches!(runner.execute_accounted_step(&watch).unwrap(),
+        assert!(matches!(runner.execute_accounted_step().unwrap(),
             PrivateAccountedStep::Step { step: PrivateOrderedStep::Blocked(s), charge: None } if s==sequence));
     }
     assert_eq!(runner.service.usage().starts, 1);
@@ -249,9 +245,8 @@ fn runner_checks_its_allowance_before_taking_accepted_work() {
         .unwrap()
         .finish(now)
         .unwrap();
-    let watch = control_watchdog();
     assert!(matches!(
-        runner.execute_accounted_step(&watch).unwrap(),
+        runner.execute_accounted_step().unwrap(),
         PrivateAccountedStep::Yield {
             cause: sophia_input_authority::ServiceStartRefusal::StartsExhausted { .. },
             taken: None
@@ -283,8 +278,17 @@ fn unwatchable_work_finishes_accounting_without_becoming_an_effect() {
             true,
         ))
         .unwrap();
-    let watch = private_watchdog::PrivateWatchdogOwner::prepare(0).unwrap(); // Deliberately not sealed.
-    assert!(matches!(runner.execute_accounted_step(&watch).unwrap(),
+    // Fail the actual runner-owned supervisor after acceptance. No external
+    // substitute can erase this runner's permanent failure latch.
+    drop(
+        runner
+            .watch
+            .as_ref()
+            .unwrap()
+            .begin_dequeued(std::time::Instant::now())
+            .unwrap(),
+    );
+    assert!(matches!(runner.execute_accounted_step().unwrap(),
         PrivateAccountedStep::Step { step: PrivateOrderedStep::Unwatched(s), charge: Some(_) } if s==sequence));
     assert_eq!(runner.service.usage().starts, 1);
     assert!(!runner.service.is_interrupted());
@@ -317,15 +321,14 @@ fn runner_does_not_charge_or_resend_an_indeterminate_terminal_head() {
             true,
         ))
         .unwrap();
-    let watch = control_watchdog();
-    assert!(matches!(runner.execute_accounted_step(&watch).unwrap(),
+    assert!(matches!(runner.execute_accounted_step().unwrap(),
         PrivateAccountedStep::Step { step: PrivateOrderedStep::Decided(s), .. } if s==sequence));
     // Compose the phase an interrupted send would leave on this real owned
     // decision. This is not an injected transport-unwind control.
     runner.frontend.as_mut().unwrap().terminal.emission = PrivateEmissionPhase::Indeterminate;
     let usage = runner.service.usage();
     for _ in 0..3 {
-        assert!(matches!(runner.deliver_accounted_step(&watch).unwrap(),
+        assert!(matches!(runner.deliver_accounted_step().unwrap(),
             PrivateAccountedDelivery::Step { step: PrivateDeliveryStep::Blocked(s), charge: None, unwatched: None } if s==sequence));
     }
     assert_eq!(runner.service.usage(), usage);
@@ -359,9 +362,17 @@ fn runner_charges_common_wait_and_supervision_can_end_it_independently() {
     let common = runner.frontend.as_ref().unwrap().controller.common.clone();
     let (transport, mut peer) = UnixStream::pair().unwrap();
     peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    let mut watch = private_watchdog::PrivateWatchdogOwner::prepare(1).unwrap();
-    let _transport_registration = watch.attach_transport(transport).unwrap();
-    let gate = watch.seal().unwrap();
+    let frontend = runner.frontend.as_ref().unwrap();
+    let _transport_registration = frontend
+        .broker
+        .registry
+        .input_recovery
+        .watchdog
+        .get()
+        .unwrap()
+        .attach_transport(transport)
+        .unwrap();
+    let gate = frontend.admission.watch.get().unwrap().clone();
     let (ready_sender, ready) = sync_channel(1);
     let holder = std::thread::spawn(move || {
         let _guard = common.lock().unwrap();
@@ -371,7 +382,7 @@ fn runner_charges_common_wait_and_supervision_can_end_it_independently() {
         peer.read(&mut [0u8; 1])
     });
     ready.recv_timeout(Duration::from_secs(2)).unwrap();
-    let result = runner.execute_accounted_step(&watch).unwrap();
+    let result = runner.execute_accounted_step().unwrap();
     assert_eq!(
         holder.join().unwrap().unwrap(),
         0,
@@ -389,8 +400,287 @@ fn runner_charges_common_wait_and_supervision_can_end_it_independently() {
     assert!(!charge.allowance_overrun.is_zero());
     assert!(!gate.allows_execution());
     assert!(runner.frontend.as_ref().unwrap().terminal.holds.is_empty());
+    assert_eq!(runner.frontend.as_ref().unwrap().terminal.turn.len(), 1);
     assert!(
         !runner.service.is_interrupted(),
         "a returned refusal still finishes accounting"
     );
+}
+
+#[test]
+fn runner_failure_refuses_a_detached_producer_while_common_is_held() {
+    let (mut runner, durable, _registration, _channels, _acks, _deliveries) =
+        prepared_runner_fixture();
+    let ingress = runner
+        .ingress_for(
+            XServerFrontendClientId::from_raw(9000),
+            DeviceId::from_raw(1),
+        )
+        .unwrap();
+    ingress
+        .submit(button_to(
+            SurfaceId::new(9000, 1),
+            XAuthorityInputDeliveryId::from_raw(92001),
+            272,
+            true,
+        ))
+        .unwrap();
+    let frontend = runner.frontend.as_ref().unwrap();
+    let gate = frontend.admission.watch.get().unwrap().clone();
+    drop(
+        runner
+            .watch
+            .as_ref()
+            .unwrap()
+            .begin_dequeued(std::time::Instant::now())
+            .unwrap(),
+    );
+    assert!(!gate.allows_execution());
+    let common = frontend.controller.common.clone();
+    let held = common.lock().unwrap();
+    let (answer, receive) = sync_channel(1);
+    let submitter = std::thread::spawn(move || {
+        answer
+            .send(ingress.submit(button_to(
+                SurfaceId::new(9000, 1),
+                XAuthorityInputDeliveryId::from_raw(92002),
+                272,
+                false,
+            )))
+            .unwrap();
+    });
+    let result = receive.recv_timeout(Duration::from_secs(2));
+    drop(held);
+    submitter.join().unwrap();
+    assert!(matches!(
+        result.unwrap(),
+        Err(PrivateSendError::Disconnected(_))
+    ));
+    assert_eq!(
+        frontend.admission.ready.lock().unwrap().ready.len(),
+        1,
+        "the accepted envelope remains owned while new work is refused"
+    );
+    assert_eq!(durable.reserved(), Some(1));
+    assert!(frontend.terminal.current.is_none());
+    assert!(frontend.terminal.holds.is_empty());
+}
+
+#[test]
+fn idle_runner_loss_closes_an_actual_connection_attached_after_preparation() {
+    use std::io::{Read, Write};
+    let (mut runner, _durable, _registration, _channels, _acks, _deliveries) =
+        prepared_runner_fixture();
+    let ingress = runner
+        .ingress_for(
+            XServerFrontendClientId::from_raw(9000),
+            DeviceId::from_raw(1),
+        )
+        .unwrap();
+    let frontend = runner.frontend.as_ref().unwrap();
+    let registry = frontend.broker.registry.clone();
+    let gate = frontend.admission.watch.get().unwrap().clone();
+    let common = frontend.controller.common.clone();
+    let state = Arc::new(X11CoreSocketServerState::new());
+    state
+        .runtime
+        .lock()
+        .unwrap()
+        .set_input_authority(registry.input_authority.clone());
+    let context = admitted(XServerFrontendClientId::from_raw(9000));
+    let (mut client, mut server) = UnixStream::pair().unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let (finished, receive) = sync_channel(1);
+    let worker = std::thread::spawn(move || {
+        let result = serve_x11_core_socket_client_with_trace_observer_and_input(
+            &mut server,
+            context.namespace.id,
+            &state,
+            X11ClientConnectionInputs {
+                input_receiver: None,
+                control_channels: None,
+                client_routing: Some(registry),
+            },
+            X11ClientAdmissionContext {
+                authorization: &XServerFrontendSetupAuthorization::default(),
+                admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
+                worker_admission: None,
+            },
+            |_| Ok(None),
+        );
+        finished.send(result).unwrap();
+    });
+    let setup = [b'l', 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    client.write_all(&setup).unwrap();
+    let mut prefix = [0; 8];
+    client.read_exact(&mut prefix).unwrap();
+    assert_eq!(prefix[0], 1);
+    let mut body = vec![0; usize::from(u16::from_le_bytes([prefix[6], prefix[7]])) * 4];
+    client.read_exact(&mut body).unwrap();
+    // A synchronous request demonstrates the actual route registration and
+    // all writer startup completed after runner preparation.
+    client.write_all(&[43, 0, 1, 0]).unwrap();
+    let mut reply = [0; 32];
+    client.read_exact(&mut reply).unwrap();
+    assert_eq!(reply[0], 1);
+    assert!(gate.allows_execution());
+    assert_eq!(gate.failure(), None);
+    let (held, receive_held) = sync_channel(1);
+    let holder = std::thread::spawn(move || {
+        let _common = common.lock().unwrap();
+        held.send(()).unwrap();
+        // Frontend teardown cannot acquire common until the independent
+        // supervisor closes this real, already-started client transport.
+        client.read(&mut [0])
+    });
+    receive_held.recv_timeout(Duration::from_secs(3)).unwrap();
+    drop(runner);
+    assert!(!gate.allows_execution());
+    assert_eq!(holder.join().unwrap().unwrap(), 0);
+    receive
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap()
+        .unwrap();
+    worker.join().unwrap();
+    assert!(matches!(
+        ingress.submit(button_to(
+            SurfaceId::new(9000, 1),
+            XAuthorityInputDeliveryId::from_raw(92003),
+            272,
+            true
+        )),
+        Err(PrivateSendError::Disconnected(_))
+    ));
+    assert_eq!(
+        gate.failure(),
+        None,
+        "idle owner stop is not an input outcome"
+    );
+}
+
+#[test]
+fn a_refused_actual_setup_returns_its_watchdog_slot() {
+    let (runner, _durable, _registration, _channels, _acks, _deliveries) =
+        prepared_runner_fixture();
+    let registry = runner.frontend.as_ref().unwrap().broker.registry.clone();
+    let registrar = registry.input_recovery.watchdog.get().unwrap().clone();
+    let (mut server, _peer) = UnixStream::pair().unwrap();
+    // This is the real private setup refusal before authentication: no
+    // production admission policy was supplied. No workers are started.
+    let refused = serve_x11_core_socket_client_with_trace_observer_and_input(
+        &mut server,
+        NamespaceId::from_raw(9000),
+        &X11CoreSocketServerState::new(),
+        X11ClientConnectionInputs {
+            input_receiver: None,
+            control_channels: None,
+            client_routing: Some(registry),
+        },
+        X11ClientAdmissionContext {
+            authorization: &XServerFrontendSetupAuthorization::default(),
+            admission_policy: None,
+            worker_admission: None,
+        },
+        |_| Ok(None),
+    )
+    .unwrap_err();
+    assert!(refused.to_string().contains("current admission policy"));
+    let mut registrations = Vec::new();
+    let mut peers = Vec::new();
+    for _ in 0..16 {
+        let (socket, peer) = UnixStream::pair().unwrap();
+        registrations.push(registrar.attach_transport(socket).unwrap());
+        peers.push(peer);
+    }
+    let (extra, _peer) = UnixStream::pair().unwrap();
+    assert!(matches!(
+        registrar.attach_transport(extra),
+        Err((
+            private_watchdog::PrivateWatchdogRefusal::TransportCapacity,
+            _
+        ))
+    ));
+}
+
+#[test]
+fn unprepared_frontend_teardown_closes_actual_setup_before_waiting_for_common() {
+    use std::io::{Read, Write};
+    for explicit_shutdown in [false, true] {
+        let private = private_for_roles();
+        let registry = private.broker.registry.clone();
+        let common = private.controller.common.clone();
+        let state = Arc::new(X11CoreSocketServerState::new());
+        state
+            .runtime
+            .lock()
+            .unwrap()
+            .set_input_authority(registry.input_authority.clone());
+        let context = admitted(XServerFrontendClientId::from_raw(92010));
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let (finished, receive) = sync_channel(1);
+        let worker = std::thread::spawn(move || {
+            let result = serve_x11_core_socket_client_with_trace_observer_and_input(
+                &mut server,
+                context.namespace.id,
+                &state,
+                X11ClientConnectionInputs {
+                    input_receiver: None,
+                    control_channels: None,
+                    client_routing: Some(registry),
+                },
+                X11ClientAdmissionContext {
+                    authorization: &XServerFrontendSetupAuthorization::default(),
+                    admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
+                    worker_admission: None,
+                },
+                |_| Ok(None),
+            );
+            finished.send(result).unwrap();
+        });
+        let setup = [b'l', 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        client.write_all(&setup).unwrap();
+        let mut prefix = [0; 8];
+        client.read_exact(&mut prefix).unwrap();
+        assert_eq!(prefix[0], 1);
+        let mut body = vec![0; usize::from(u16::from_le_bytes([prefix[6], prefix[7]])) * 4];
+        client.read_exact(&mut body).unwrap();
+        // A synchronous request demonstrates the actual route registration and
+        // all writer startup completed after runner preparation.
+        client.write_all(&[43, 0, 1, 0]).unwrap();
+        let mut reply = [0; 32];
+        client.read_exact(&mut reply).unwrap();
+        assert_eq!(reply[0], 1);
+
+        // No runner was prepared and no execution occurred. The actual setup
+        // nevertheless registered its socket with the constructor's owner.
+        assert!(private.pending_watch.is_some());
+        assert!(private.admission.watch.get().is_none());
+        let (held, receive_held) = sync_channel(1);
+        let holder = std::thread::spawn(move || {
+            let _common = common.lock().unwrap();
+            held.send(()).unwrap();
+            client.read(&mut [0])
+        });
+        receive_held.recv_timeout(Duration::from_secs(3)).unwrap();
+        if explicit_shutdown {
+            drop(private.shutdown());
+        } else {
+            drop(private);
+        }
+        assert_eq!(
+            holder.join().unwrap().unwrap(),
+            0,
+            "setup transport closes before teardown enters common"
+        );
+        receive
+            .recv_timeout(Duration::from_secs(3))
+            .unwrap()
+            .unwrap();
+        worker.join().unwrap();
+    }
 }

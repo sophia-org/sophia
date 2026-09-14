@@ -34,10 +34,12 @@ mod private_applied_state {
             })
             .unwrap();
         let mut state = PrivateAppliedRoutingState::new(identity, namespace);
+        let mut runtime = XAuthorityRuntime::new();
+        runtime.prepare_input_focus_namespace(namespace);
         state
             .begin_focus_change()
             .unwrap()
-            .apply(&mut XAuthorityRuntime::new(), &AtomicU64::new(0), None)
+            .apply(&mut runtime, &AtomicU64::new(0), None)
             .unwrap();
         (state, selections, crate::XInputAuthorityState::default())
     }
@@ -85,6 +87,7 @@ mod private_applied_state {
     fn actual_focus_effect_publishes_once_and_clear_publishes_no_key_target() {
         let (mut state, selections, authority) = fixture();
         let mut runtime = XAuthorityRuntime::new();
+        runtime.prepare_input_focus_namespace(state.namespace);
         let projection = AtomicU64::new(0);
         let route = XServerFrontendSurfaceRoute {
             client: XServerFrontendClientId::from_raw(7),
@@ -135,6 +138,7 @@ mod private_applied_state {
             Err(PrivateAppliedRefusal::Unpublished)
         ));
         let mut runtime = XAuthorityRuntime::new();
+        runtime.prepare_input_focus_namespace(state.namespace);
         let projection = AtomicU64::new(0);
         let unknown_window = XServerFrontendSurfaceRoute {
             client: XServerFrontendClientId::from_raw(7),
