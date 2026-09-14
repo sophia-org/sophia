@@ -34,6 +34,13 @@ const X_AUTHORITY_ORDERED_BLOCKED_SLICE: Duration = Duration::from_millis(50);
 enum X11FrameSendFailure {
     /// Nothing is in hand to send.
     NoFrame,
+    /// A finished frame is still in hand and has not been retired.
+    ///
+    /// Refused so that giving up a frame is something that happens once and
+    /// on purpose. Overwriting one here would let a frame that went out be
+    /// forgotten without anything having decided it was done with, and the
+    /// count of frames that went would stop matching the frames that did.
+    FrameHeld,
     /// A send was begun and never reported, so how much of the frame reached
     /// the wire is unknown. Not resumable and not retryable: the only honest
     /// disposition is to end the connection, because nothing can establish
@@ -110,6 +117,13 @@ struct X11OrderedFrame {
 #[derive(Debug, Default)]
 struct X11OrderedSendState {
     frame: Option<X11OrderedFrame>,
+    /// The buffer a retired frame gave back, waiting to be filled again.
+    ///
+    /// Kept rather than dropped so that beginning each frame of a delivery
+    /// does not allocate. It holds no meaning between frames: what it is for
+    /// is capacity, and the bytes in it are overwritten before anything reads
+    /// them.
+    spare: Option<Vec<u8>>,
     blocked: Duration,
 }
 
@@ -128,7 +142,7 @@ impl X11OrderedSendState {
     /// There is no way to declare a frame finished. Finished means every byte
     /// of the frame this state owns was accepted, which only sending can
     /// establish.
-    fn begin_frame(&mut self, bytes: Vec<u8>) -> Result<(), X11FrameSendFailure> {
+    fn begin_frame(&mut self, bytes: &[u8]) -> Result<(), X11FrameSendFailure> {
         match self
             .frame
             .as_ref()
@@ -140,13 +154,49 @@ impl X11OrderedSendState {
             Some((X11OrderedSendProgress::Sent(sent), len)) if sent < len => {
                 return Err(X11FrameSendFailure::Incomplete { sent, len });
             }
-            None | Some(_) => {}
+            // A frame that finished is still in hand until it is retired.
+            // Replacing it here would let a completed frame be forgotten
+            // without anything having decided it was finished with.
+            Some(_) => return Err(X11FrameSendFailure::FrameHeld),
+            None => {}
         }
+        let mut buffer = self.spare.take().unwrap_or_default();
+        buffer.clear();
+        buffer.extend_from_slice(bytes);
         self.frame = Some(X11OrderedFrame {
-            bytes,
+            bytes: buffer,
             progress: X11OrderedSendProgress::Sent(0),
         });
         Ok(())
+    }
+
+    /// Give up the frame in hand, once it is known to have gone whole.
+    ///
+    /// Consumptive: the frame leaves the send state, so nothing can retire the
+    /// same frame twice and nothing can mistake a finished frame for a fresh
+    /// one. A caller that retired twice would believe two frames had gone when
+    /// one had, and the second of them would never have been begun at all.
+    ///
+    /// The waiting is not given up with it. That belongs to the delivery, not
+    /// to any one of its frames, and a recipient that stalled on the first
+    /// frame has kept this delivery waiting whatever the next one does.
+    fn retire_frame(&mut self) -> Result<(), X11FrameSendFailure> {
+        match self.frame.as_ref().map(|frame| frame.progress) {
+            None => Err(X11FrameSendFailure::NoFrame),
+            Some(X11OrderedSendProgress::Unknown { .. }) => {
+                Err(X11FrameSendFailure::Interrupted)
+            }
+            Some(X11OrderedSendProgress::Sent(sent)) => {
+                let len = self.frame.as_ref().expect("frame in hand").bytes.len();
+                if sent < len {
+                    return Err(X11FrameSendFailure::Incomplete { sent, len });
+                }
+                // The buffer goes back for the next frame; the frame itself
+                // does not survive being retired.
+                self.spare = self.frame.take().map(|frame| frame.bytes);
+                Ok(())
+            }
+        }
     }
 
     fn blocked(&self) -> Duration {
@@ -285,6 +335,9 @@ fn x11_ordered_frame_error(context: &str, failure: X11FrameSendFailure) -> X11Se
         X11FrameSendFailure::NoFrame => {
             X11SetupSocketError::new(format!("{context}: nothing was in hand to send"))
         }
+        X11FrameSendFailure::FrameHeld => X11SetupSocketError::new(format!(
+            "{context}: the frame in hand was never retired"
+        )),
         X11FrameSendFailure::Interrupted => X11SetupSocketError::client_failure(format!(
             "{context}: a send never reported, so what reached this recipient is unknown"
         )),

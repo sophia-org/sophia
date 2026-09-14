@@ -16409,7 +16409,7 @@ fn a_send_counts_only_what_it_waited_on_this_recipient() {
     let mut state = X11OrderedSendState::default();
 
     // A recipient that is taking its bytes costs no waiting.
-    state.begin_frame(vec![7u8; 32]).expect("nothing owed yet");
+    state.begin_frame(&[7u8; 32]).expect("nothing owed yet");
     send_pending_frame(&writer, &mut state).expect("a healthy send");
     assert!(state.frame_complete(), "the whole frame went out");
     assert_eq!(
@@ -16424,9 +16424,12 @@ fn a_send_counts_only_what_it_waited_on_this_recipient() {
     state.blocked = X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(60);
     let failure = loop {
         if state.frame_complete() {
+            state.retire_frame().expect("the last frame finished");
+        }
+        if state.frame.is_none() {
             state
-                .begin_frame(vec![9u8; 1 << 16])
-                .expect("the last frame finished");
+                .begin_frame(&[9u8; 1 << 16])
+                .expect("nothing owed");
         }
         match send_pending_frame(&writer, &mut state) {
             Ok(()) => continue,
@@ -16457,8 +16460,11 @@ fn a_frame_still_owed_bytes_cannot_be_abandoned() {
 
     // Fill the buffer so a large frame stops part way through.
     loop {
-        if state.frame_complete() || state.frame.is_none() {
-            state.begin_frame(vec![1u8; 1 << 16]).expect("nothing owed");
+        if state.frame_complete() {
+            state.retire_frame().expect("it went whole");
+        }
+        if state.frame.is_none() {
+            state.begin_frame(&[1u8; 1 << 16]).expect("nothing owed");
         }
         if send_pending_frame(&writer, &mut state).is_err() {
             break;
@@ -16471,7 +16477,7 @@ fn a_frame_still_owed_bytes_cannot_be_abandoned() {
     // opening bytes inside the first one's body, which an X11 client has no
     // way to notice.
     let refused = state
-        .begin_frame(vec![2u8; 32])
+        .begin_frame(&[2u8; 32])
         .expect_err("a partly sent frame cannot be walked away from");
     let X11FrameSendFailure::Incomplete { sent, len } = refused else {
         panic!("refused for being incomplete")
@@ -16484,7 +16490,7 @@ fn a_frame_still_owed_bytes_cannot_be_abandoned() {
 fn a_send_that_never_reported_blocks_everything_after_it() {
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
     let mut state = X11OrderedSendState::default();
-    state.begin_frame(vec![4u8; 16]).expect("nothing owed yet");
+    state.begin_frame(&[4u8; 16]).expect("nothing owed yet");
     send_pending_frame(&writer, &mut state).expect("a healthy send");
 
     // The state a send leaves if it is interrupted between handing bytes to
@@ -16505,7 +16511,7 @@ fn a_send_that_never_reported_blocks_everything_after_it() {
     // appended to something nobody can describe, so the unknown is not
     // something a new frame may clear.
     let refused = state
-        .begin_frame(vec![5u8; 32])
+        .begin_frame(&[5u8; 32])
         .expect_err("an unknown wire position is not a finished frame");
     assert!(matches!(refused, X11FrameSendFailure::Interrupted));
     assert_eq!(
@@ -16528,7 +16534,7 @@ fn the_frame_a_resume_continues_is_the_one_it_began() {
     // There is no call that could offer different bytes behind the same
     // offset, which is what would send the tail of one event as though it
     // were the tail of another.
-    state.begin_frame(vec![0xAB; 64]).expect("nothing owed yet");
+    state.begin_frame(&[0xAB; 64]).expect("nothing owed yet");
     send_pending_frame(&writer, &mut state).expect("a healthy send");
     assert!(state.frame_complete());
     let mut seen = [0u8; 64];
@@ -16540,7 +16546,8 @@ fn the_frame_a_resume_continues_is_the_one_it_began() {
 
     // And completion is derived from what was sent rather than declared: a
     // fresh frame is not complete until its own bytes have gone.
-    state.begin_frame(vec![0xCD; 8]).expect("the last one finished");
+    state.retire_frame().expect("the last one went whole");
+    state.begin_frame(&[0xCD; 8]).expect("nothing owed");
     assert!(!state.frame_complete(), "nothing of this one has gone yet");
     drop(reader);
 }
@@ -16557,7 +16564,7 @@ fn the_socket_every_writer_shares_is_left_alone() {
         "no send timeout is installed on the shared socket"
     );
     let mut state = X11OrderedSendState::default();
-    state.begin_frame(vec![3u8; 16]).expect("nothing owed yet");
+    state.begin_frame(&[3u8; 16]).expect("nothing owed yet");
     send_pending_frame(&writer, &mut state).expect("a healthy send");
     assert!(
         writer.write_timeout().expect("a readable socket").is_none(),
@@ -16577,7 +16584,7 @@ fn a_departed_recipient_is_a_failed_recipient_not_a_failed_server() {
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
     drop(reader);
     let mut state = X11OrderedSendState::default();
-    state.begin_frame(vec![1u8; 32]).expect("nothing owed yet");
+    state.begin_frame(&[1u8; 32]).expect("nothing owed yet");
 
     // The send carries NOSIGNAL, so a peer that has gone gives an error rather
     // than killing the process with SIGPIPE -- a writer that died here would
@@ -16944,7 +16951,7 @@ fn a_frame_index_does_not_move_past_an_unfinished_frame() {
     assert_eq!(held.frame_index(), 0);
 
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
-    held.send.begin_frame(vec![6u8; 32]).expect("nothing owed");
+    held.send.begin_frame(&[6u8; 32]).expect("nothing owed");
 
     // Begun and not sent is not finished either: the recipient is waiting for
     // bytes this delivery still owes it.
@@ -17013,4 +17020,70 @@ fn a_second_native_preparation_is_refused_rather_than_replacing_the_first() {
     drop(fixture.registration);
     drop(fixture.channels);
     drop(fixture.durable);
+}
+
+#[test]
+fn one_completed_frame_is_advanced_past_exactly_once() {
+    let client = XServerFrontendClientId(1703);
+    let (sender, queue) = sync_channel(1);
+    sender
+        .send(ordered_capsule(client, 1703, a_minted_incarnation()))
+        .expect("the queue to accept it");
+    let mut in_flight = None;
+    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    let held = in_flight.as_mut().expect("taken");
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+
+    held.send.begin_frame(&[6u8; 32]).expect("nothing owed");
+    send_pending_frame(&writer, &mut held.send).expect("a healthy send");
+    held.advance_frame().expect("the frame went out whole");
+    assert_eq!(held.frame_index(), 1);
+
+    // The same completed frame cannot be advanced past twice. An index that
+    // moved again while nothing had been begun would count a frame that was
+    // never started, and the emission frame it skipped would never be sent at
+    // all -- an event silently missing from a delivery that reported itself
+    // finished.
+    let refused = held
+        .advance_frame()
+        .expect_err("nothing is in hand to advance past");
+    assert!(matches!(refused, X11FrameSendFailure::NoFrame));
+    assert_eq!(held.frame_index(), 1, "and the index did not move");
+    drop(reader);
+}
+
+#[test]
+fn two_frames_of_one_delivery_reach_the_wire_in_order_and_whole() {
+    let client = XServerFrontendClientId(1704);
+    let (sender, queue) = sync_channel(1);
+    sender
+        .send(ordered_capsule(client, 1704, a_minted_incarnation()))
+        .expect("the queue to accept it");
+    let mut in_flight = None;
+    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    let held = in_flight.as_mut().expect("taken");
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+
+    let first = [0x11u8; 32];
+    let second = [0x22u8; 32];
+    held.send.begin_frame(&first).expect("nothing owed");
+    send_pending_frame(&writer, &mut held.send).expect("the first frame");
+    held.advance_frame().expect("the first went whole");
+
+    // The buffer the first frame used is reused rather than reallocated, and
+    // filling it cannot leave any of the first frame's bytes behind.
+    held.send.begin_frame(&second).expect("the first was retired");
+    send_pending_frame(&writer, &mut held.send).expect("the second frame");
+    held.advance_frame().expect("the second went whole");
+    assert_eq!(held.frame_index(), 2);
+
+    let mut seen = [0u8; 64];
+    std::io::Read::read_exact(&mut &reader, &mut seen).expect("both frames");
+    assert_eq!(&seen[..32], &first, "the first frame, whole and first");
+    assert_eq!(
+        &seen[32..],
+        &second,
+        "then the second, with none of the first left in the buffer it reused"
+    );
+    drop(reader);
 }

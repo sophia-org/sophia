@@ -45,9 +45,11 @@ impl X11OrderedInFlight {
     /// for the rest of it. An index advanced past an unfinished frame would
     /// ask for the next event's bytes while the wire is still mid-event.
     fn advance_frame(&mut self) -> Result<(), X11FrameSendFailure> {
-        if !self.send.frame_complete() {
-            return Err(X11FrameSendFailure::NoFrame);
-        }
+        // Retire first. The index and the send state are two accounts of the
+        // same thing, and an index that moved while the frame stayed would let
+        // the next advance succeed against a frame that had already been
+        // counted -- skipping an emission frame nobody ever began.
+        self.send.retire_frame()?;
         self.frame += 1;
         Ok(())
     }
