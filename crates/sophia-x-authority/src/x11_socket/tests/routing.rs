@@ -16829,17 +16829,18 @@ fn a_failed_wait_is_not_a_recipient_that_blocked() {
     );
 }
 
-/// One ordered delivery capsule, built the way the resolver will build one.
+/// One ordered delivery capsule, assembled from parts rather than resolved.
 ///
-/// Reaches the private constructor directly rather than through a producer,
-/// because the producer is the guarded resolver and it is not here yet. What
-/// this exercises is the writer's custody of a capsule, not how one is made.
+/// Explicitly NOT how a real one is made: the resolver derives these
+/// identities from a resolved emission, and this asserts them. What the
+/// controls below exercise is the writer's custody of a capsule, never how one
+/// comes to be trustworthy.
 fn ordered_capsule(
     client: XServerFrontendClientId,
     delivery: u64,
     incarnation: sophia_input_authority::HoldIncarnation,
 ) -> XAuthorityOrderedDelivery {
-    XAuthorityOrderedDelivery::new(
+    XAuthorityOrderedDelivery::from_parts_unchecked(
         client,
         XAuthorityInputDeliveryId::from_raw(delivery),
         incarnation,

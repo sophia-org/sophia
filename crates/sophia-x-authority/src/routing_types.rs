@@ -589,11 +589,22 @@ pub(crate) struct XAuthorityOrderedDelivery {
 
 #[allow(dead_code)]
 impl XAuthorityOrderedDelivery {
-    /// Build one. The resolver's, and crate-private for the same reason the
-    /// fields are: what is assembled here is a claim that these things were
-    /// resolved together, and nothing outside this crate is in a position to
-    /// make it.
-    pub(crate) fn new(
+    /// Assemble one from parts, WITHOUT establishing that the parts belong
+    /// together.
+    ///
+    /// This is not the assembly path and must not become one. Being
+    /// crate-private limits who may make the claim; it does not make the claim
+    /// true. A caller handing over four identities is asserting that this
+    /// delivery, this incarnation and this connection were resolved as one
+    /// thing, and nothing here checks that -- which is exactly the assertion
+    /// this type's privacy exists to prevent.
+    ///
+    /// It exists only until assembly consumes a resolved emission and derives
+    /// these identities from it, including the original delivery the source
+    /// press or release carried. Until then: nothing enqueues a capsule, so
+    /// nothing built this way can reach a recipient, and that is the only
+    /// reason this is survivable rather than a hole.
+    pub(crate) fn from_parts_unchecked(
         client: XServerFrontendClientId,
         delivery: crate::XAuthorityInputDeliveryId,
         incarnation: sophia_input_authority::HoldIncarnation,
