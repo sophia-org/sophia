@@ -278,6 +278,20 @@ optional report handling; the next attended run remains the causal test. It
 must also establish stable two-output presentation and action delivery, which
 the source repair alone does not prove.
 
+The attended `20260914T011705Z` run on Sophia `56fc17a2` and Lom `d09e100`
+confirmed that repair's native effect: the 20-second session recorded no
+runtime fatal and repeatedly prepared, presented and completed content on both
+outputs. The strict verifier still rejected the run because Lom acquired 21 GPU
+grant epochs and logged 20 stale `ResourceBegin` outcomes. Its two slots per
+output were numbered `[1,2]`, then `[3,4]`, making first use `1,3,2`; Sophia's
+grant-wide resource high-water correctly refused the newly introduced 2 after
+3. Lom `fec727d` assigns all output-primary IDs before any alternate ID and pins
+first use `1,2,3,4` in the real-socket two-output lifecycle. Pointer clicks in
+the rejected run reached chrome or had no current content target, and no
+presented-content action was accepted. A successor attended run must show one
+stable grant, repeated generations on both outputs, and the exact action path;
+the source fix is not that evidence.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,
