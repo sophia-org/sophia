@@ -16346,3 +16346,46 @@ fn nothing_runs_when_nothing_will_watch_it() {
     drop(fixture.channels);
     drop(fixture.durable);
 }
+
+#[test]
+fn a_send_reports_the_time_it_actually_waited() {
+    let (mut writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    install_writer_blocked_accounting(&writer).expect("the accounting timeout");
+    let mut blocked = Duration::ZERO;
+
+    // A recipient that is reading takes its frame immediately, and a send that
+    // did not wait must not be reported as one that did.
+    send_frame_accounted(&mut writer, &[7u8; 32], &mut blocked).expect("a healthy send");
+    assert_eq!(
+        blocked,
+        Duration::ZERO,
+        "a send that never waited contributes nothing to a deadline"
+    );
+
+    // Now nobody reads. The socket buffer fills and the send starts waiting on
+    // a recipient that is not taking anything.
+    let frame = [9u8; 4096];
+    let failure = loop {
+        match send_frame_accounted(&mut writer, &frame, &mut blocked) {
+            Ok(()) => continue,
+            Err(failure) => break failure,
+        }
+    };
+    let X11FrameSendFailure::Blocked {
+        written: _,
+        blocked: waited,
+    } = failure
+    else {
+        panic!("a recipient that took nothing is the blocked case, not an io error")
+    };
+    // Measured, not assumed. What a deadline may be built from is time this
+    // send actually spent waiting on this recipient -- not how long the
+    // delivery had existed, how long it sat in a queue, or how long a lock was
+    // held.
+    assert!(
+        waited >= Duration::from_secs(2),
+        "the limit is reached by accumulated waiting: {waited:?}"
+    );
+    assert_eq!(waited, blocked, "and the caller's accumulator is the same one");
+    drop(reader);
+}
