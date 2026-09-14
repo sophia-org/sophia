@@ -33,6 +33,7 @@ struct PrivateTerminalInventory {
     /// incarnation and a credit, and neither can be reached once the
     /// controller has gone.
     controller: PrivateAuthorityController,
+    lifecycle: PrivateLifecycleOwner,
     /// Holds this executor began, with where each was delivered.
     ///
     /// A release answers to what its press reached, so this is what makes a
@@ -66,11 +67,13 @@ impl PrivateTerminalInventory {
     fn with_capacity(
         origin: XServerFrontendRouteRegistry,
         controller: PrivateAuthorityController,
+        lifecycle: PrivateLifecycleOwner,
         capacity: usize,
     ) -> Self {
         Self {
             origin,
             controller,
+            lifecycle,
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             current: None,
@@ -86,7 +89,8 @@ impl PrivateTerminalInventory {
     /// An empty inventory is one nobody needs to carry; a non-empty one is an
     /// obligation, whoever happens to be holding it.
     fn is_empty(&self) -> bool {
-        self.holds.is_empty()
+        self.lifecycle.inventory().is_ok_and(|inventory| inventory.open == 0 && inventory.closed == 0)
+            && self.holds.is_empty()
             && self.settling.is_empty()
             && self.current.is_none()
             && self.turn.is_empty()
@@ -99,14 +103,16 @@ impl PrivateTerminalInventory {
     /// Counted rather than summarised as a boolean, because "some" and "one"
     /// are different things to whoever has to finish them.
     #[cfg_attr(not(test), allow(dead_code))]
-    fn outstanding(&self) -> usize {
-        self.holds
+    fn outstanding(&self) -> Option<usize> {
+        let lifecycle = self.lifecycle.inventory().ok()?;
+        Some(self.holds
             .len()
             .saturating_add(self.settling.len())
             .saturating_add(usize::from(self.current.is_some()))
             .saturating_add(self.turn.len())
             .saturating_add(self.delivering.len())
             .saturating_add(self.undelivered.len())
+            .saturating_add(lifecycle.open).saturating_add(lifecycle.closed))
     }
 
     /// Move everything owed out, storage and capabilities together.
@@ -124,6 +130,7 @@ impl PrivateTerminalInventory {
             Self {
                 origin: self.origin.clone(),
                 controller: self.controller.clone(),
+                lifecycle: self.lifecycle.clone(),
                 holds: Vec::new(),
                 settling: Vec::new(),
                 current: None,

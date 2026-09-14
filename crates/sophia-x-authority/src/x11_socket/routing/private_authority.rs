@@ -63,6 +63,9 @@ pub enum PrivateAuthorityRefusal {
     /// authority: the question of who is admitted was asked and came back
     /// empty, which is different from an authority that declined.
     NoCurrentAdmission,
+    /// The frontend still owns its full configured client inventory. Retry
+    /// only after a closing client completes lifecycle cleanup.
+    ClientRecordsExhausted,
     /// The authority itself refused, before any effect.
     Authority(sophia_input_authority::RegistrationError),
     /// The instance could not be reached at all. Not an outcome: nothing was

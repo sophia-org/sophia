@@ -327,11 +327,13 @@ impl X11SurfaceGenerationLedger {
 /// Owned rather than ordered. A standalone client has no route registration
 /// whose drop would clean this up, and the device pin releases only its device
 /// bundle, so an early return after registering left the namespace reporting an
-/// owner that never finished starting. Holding it means every path out takes it
-/// back, including the ones nobody has thought of yet, rather than only the one
-/// that was noticed.
+/// owner that never finished starting. Ordinary teardown takes it back here.
+/// Private teardown requests closure on its exact retained lifecycle owner;
+/// that owner performs cleanup under common and preserves any interruption.
 #[cfg(unix)]
 struct X11QueryOwner<'a> {
+    private: Option<(PrivateLifecycleOwner, PrivateLifecycleGate)>,
+    finished: bool,
     runtime: &'a Mutex<XAuthorityRuntime>,
     client: XServerFrontendClientId,
 }
@@ -342,13 +344,18 @@ impl<'a> X11QueryOwner<'a> {
         runtime: &'a Mutex<XAuthorityRuntime>,
         namespace: NamespaceId,
         client: XServerFrontendClientId,
+        private: Option<(PrivateLifecycleOwner, PrivateLifecycleGate)>,
     ) -> Result<Self, X11SetupSocketError> {
+        if let Some((owner, gate)) = &private {
+            owner.register_query_gate(gate, namespace, client).map_err(|error| X11SetupSocketError::new(format!("private query owner refused: {error:?}")))?;
+            return Ok(Self { runtime, client, private, finished: false });
+        }
         runtime
             .lock()
             .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
             .input_authority_mut()
             .register_query_client(namespace, client.raw());
-        Ok(Self { runtime, client })
+        Ok(Self { runtime, client, private, finished: false })
     }
 }
 
@@ -372,11 +379,22 @@ struct X11ClientLifetime<'a> {
 }
 
 #[cfg(unix)]
+impl X11QueryOwner<'_> {
+    fn finish(&mut self) -> Result<(), X11SetupSocketError> {
+        if self.finished { return Ok(()) }
+        if let Some((owner, gate)) = &self.private {
+            gate.close();
+            owner.drive(NonZeroUsize::new(1).unwrap()).map_err(|error| X11SetupSocketError::new(format!("private cleanup unavailable: {error:?}")))?;
+        } else {
+            self.runtime.lock().map_err(|_| X11SetupSocketError::new("X11 runtime unavailable"))?.input_authority_mut().cleanup_owner(self.client.raw());
+        }
+        self.finished = true;
+        Ok(())
+    }
+}
 impl Drop for X11QueryOwner<'_> {
     fn drop(&mut self) {
-        if let Ok(runtime) = self.runtime.lock() {
-            runtime.input_authority_mut().cleanup_owner(self.client.raw());
-        }
+        if let Some((_, gate)) = &self.private { gate.close(); } else { let _ = self.finish(); }
     }
 }
 
@@ -400,6 +418,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         admission_policy,
         worker_admission,
     } = admission;
+    if admission_policy.is_none() && client_routing.as_ref().is_some_and(|routing| routing.input_recovery.lifecycle.get().is_some()) {
+        return Err(X11SetupSocketError::new("private instance requires a current admission policy"));
+    }
     let peer_credentials = if admission_policy.is_some() {
         x11_peer_credentials(stream)?
     } else {
@@ -537,6 +558,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // Keep the actual connection projection with this exact route
             // registration before any writer can observe or mutate it. Private
             // preparation may come before or after this setup edge.
+            if let Some(context) = admission { routing.attach_private_lifecycle(&registration, context)?; }
             routing.attach_connection_state(
                 &registration,
                 namespace,
@@ -591,10 +613,21 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // so the writers are stopped and joined before the registration they were
     // serving goes.
     let writer_transport = X11ClientWriters::take_transport(&output_stream)?;
+    let private_query = if let (Some(routing), Some(registration)) = (protocol_routing.as_ref(), route_registration.as_ref()) {
+        let lease = registration.lifecycle.lock().map_err(|_| X11SetupSocketError::new("private lease unavailable"))?;
+        match lease.as_ref() {
+            Some(lease) => {
+                let owner = routing.input_recovery.lifecycle.get().ok_or_else(|| X11SetupSocketError::new("private lease lost its owner"))?;
+                if !lease.belongs_to(owner) { return Err(X11SetupSocketError::new("private lease belongs to another origin")); }
+                Some((owner.clone(), lease.gate()))
+            }
+            None => None,
+        }
+    } else { None };
     let mut owned = X11ClientLifetime {
         // Registered only once the handle that can end a stalled write is in
         // hand, so a refusal registers nothing that would need taking back.
-        query_owner: X11QueryOwner::register(&state.runtime, namespace, client)?,
+        query_owner: X11QueryOwner::register(&state.runtime, namespace, client, private_query)?,
         writers: X11ClientWriters::owning(writer_transport),
     };
     let writers = &mut owned.writers;
@@ -2538,18 +2571,13 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // whatever the others did. Returning on the first failure left the rest
     // running, never told to stop, against a stream about to close.
     let writer_result = writers.shut_down().outcome;
-    state
-        .runtime
-        .lock()
-        .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
-        .input_authority_mut()
-        .cleanup_owner(client.raw());
+    owned.query_owner.finish()?;
     if let Some(routing) = protocol_routing.as_ref() {
         let mut pointers = routing.pointer_state.lock()
             .map_err(|_| X11SetupSocketError::new("X11 pointer state lock poisoned"))?;
         let authority = routing.input_authority.lock()
             .map_err(|_| X11SetupSocketError::new("X11 input authority lock poisoned"))?;
-        if !authority.query_namespace_active(namespace) {
+        if routing.input_recovery.lifecycle.get().is_none() && !authority.query_namespace_active(namespace) {
             pointers.retain(|(owner, _), _| *owner != namespace);
         }
     }

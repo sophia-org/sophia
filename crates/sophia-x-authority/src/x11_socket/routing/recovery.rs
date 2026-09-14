@@ -96,6 +96,7 @@ struct DeferredCancellation {
 
 #[cfg(unix)]
 struct InputRecoveryConnection {
+    lifecycle: Option<PrivateLifecycleGate>,
     // A distinct descriptor for the SAME socket. shutdown interrupts every
     // writer without acquiring the mutex protecting output serialization.
     socket: Option<UnixStream>,
@@ -112,6 +113,7 @@ struct InputRecoveryState {
 #[cfg(unix)]
 #[derive(Clone)]
 struct InputRecovery {
+    lifecycle: Arc<std::sync::OnceLock<PrivateLifecycleOwner>>,
     state: Arc<Mutex<InputRecoveryState>>,
     sender: Option<Sender<XAuthorityClientInputDelivery>>,
     capacity: usize,
@@ -174,6 +176,7 @@ impl InputRecovery {
         authority: Arc<Mutex<crate::XInputAuthorityState>>,
     ) -> Self {
         Self {
+            lifecycle: Arc::new(std::sync::OnceLock::new()),
             state: Arc::default(),
             sender,
             capacity,
@@ -559,10 +562,19 @@ impl InputRecovery {
             .insert(
                 client,
                 InputRecoveryConnection {
+                    lifecycle: None,
                     socket: None,
                     revoked: false,
                 },
             );
+        Ok(())
+    }
+
+    fn attach_lifecycle(&self, client: XServerFrontendClientId, gate: PrivateLifecycleGate) -> Result<(), XServerFrontendRouteError> {
+        let mut held = self.state.lock().map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let entry = held.connections.get_mut(&client).ok_or(XServerFrontendRouteError::UnknownClient { client })?;
+        if entry.revoked { gate.close(); }
+        entry.lifecycle = Some(gate);
         Ok(())
     }
 
@@ -606,6 +618,7 @@ impl InputRecovery {
         if let Some(connection) = state.connections.get_mut(&client) {
             // Revocation and shutdown precede terminal settlement. The ledger
             // lock arbitrates this transition against a successful writer.
+            if let Some(gate) = &connection.lifecycle { gate.close(); }
             connection.revoked = true;
             if let Some(socket) = &connection.socket
                 && let Err(error) = socket.shutdown(Shutdown::Both)
@@ -658,8 +671,14 @@ impl InputRecovery {
             .state
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-        self.disconnect_locked(&mut state, client, outcome, rejected)?;
+        let disconnected = self.disconnect_locked(&mut state, client, outcome, rejected);
         drop(state);
+        if self.lifecycle.get().is_some() {
+            // Also reached by registration Drop. The exact gate was closed
+            // under recovery state; origin drive performs cleanup separately.
+            return disconnected;
+        }
+        disconnected?;
         self.authority
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
@@ -740,6 +759,10 @@ impl InputRecovery {
             })
             .collect();
         drop(state);
+        if let Some(owner) = self.lifecycle.get() {
+            owner.drive(NonZeroUsize::new(1).unwrap()).map_err(|_| XServerFrontendRouteError::LifecycleUnavailable)?;
+            return Ok(expired);
+        }
         let mut authority = self
             .authority
             .lock()

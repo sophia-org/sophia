@@ -14,6 +14,8 @@ impl PrivateXServerFrontend {
     /// consumed self: the component able to answer them would have gone with
     /// it.
     pub fn shutdown(mut self) -> PrivateSettlement {
+        self.terminal.lifecycle.close_all();
+        let _lifecycle_progress = self.terminal.lifecycle.drive(NonZeroUsize::new(1).unwrap());
         self.settle_accepted()
     }
 
@@ -24,6 +26,9 @@ impl PrivateXServerFrontend {
     /// with the frontend, stranding their credits and losing any access to
     /// their completion -- including input that could still finish.
     fn settle_accepted(&mut self) -> PrivateSettlement {
+        // Drop uses this path too. Closure is requested here without entering
+        // common; explicit shutdown, retry, and durable drive perform cleanup.
+        self.terminal.lifecycle.close_all();
         let origin = self.broker.registry.clone();
         if self.settled {
             return PrivateSettlement {

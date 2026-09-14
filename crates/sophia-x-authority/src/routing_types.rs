@@ -364,6 +364,7 @@ pub enum XServerFrontendRouteError {
     /// Its application is unknown, and dequeuing into the same slot would
     /// overwrite the only record of it.
     OrderedItemUnresolved,
+    LifecycleUnavailable,
     /// This instance is being drained by the ordered consumer, so the older
     /// route may not also drain it.
     ///
@@ -469,6 +470,9 @@ impl XPresentFeedbackPhases {
 impl core::fmt::Display for XServerFrontendRouteError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::LifecycleUnavailable => {
+                write!(formatter, "private connection lifecycle unavailable")
+            }
             Self::OrderedItemUnresolved => write!(
                 formatter,
                 "X11 ordered input consumer holds an unresolved item"

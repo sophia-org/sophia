@@ -328,6 +328,7 @@ mod private_applied_registry {
             .unwrap();
         install(&private);
         private.participant.revoke_namespace(namespace()).unwrap();
+        lifecycle_drain(&private.terminal.lifecycle);
         let mut replacement = namespaced(client(), namespace());
         replacement.client_id = ClientAdmissionId::from_raw(client().raw() + 1);
         private.participant.admit(client(), replacement).unwrap();
