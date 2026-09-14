@@ -125,3 +125,38 @@ fn losing_a_prepared_runner_closes_its_producers_and_carries_its_hold() {
     assert_eq!(owned.terminal.len(), 1);
     assert_eq!(owned.terminal[0].holds.len(), 1);
 }
+
+#[test]
+fn focus_encoding_takes_input_authority_before_event_selections() {
+    // Error precedence pins the actual production acquisition order. This
+    // control does not claim to schedule a two-writer deadlock.
+    let authority = Arc::new(Mutex::new(crate::XInputAuthorityState::default()));
+    let selections = Mutex::new(XCoreEventSelectionState::default());
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = authority.lock().unwrap();
+        panic!("poison authority");
+    }));
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = selections.lock().unwrap();
+        panic!("poison selections");
+    }));
+    let error = x11_focus_records(
+        XByteOrder::LittleEndian,
+        1,
+        NamespaceId::from_raw(1),
+        XServerFrontendClientId::from_raw(1),
+        &selections,
+        Some(&authority),
+        0,
+        X11FocusRecordRequest::Clear {
+            root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            previous_routed: XResourceId::new(2, 1),
+            transition: None,
+        },
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("input authority lock poisoned"),
+        "{error}"
+    );
+}
