@@ -1163,3 +1163,5 @@ include!(concat!(
 ));
 
 include!("tests/private_applied_state.rs");
+
+include!("tests/private_applied_registry.rs");

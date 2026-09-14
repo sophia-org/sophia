@@ -534,6 +534,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     )));
                 }
             };
+            // Keep the actual connection projection with this exact route
+            // registration before any writer can observe or mutate it. Private
+            // preparation may come before or after this setup edge.
+            routing.attach_connection_state(
+                &registration,
+                namespace,
+                core_event_selections.clone(),
+                focused_surface_window.clone(),
+            ).map_err(|error| X11SetupSocketError::new(format!(
+                "failed to register X11 applied connection state: {error:?}"
+            )))?;
             routing.input_recovery.attach(client, stream.try_clone().map_err(|error|
                 X11SetupSocketError::new(format!("failed to clone recovery socket: {error}")))?)
                 .map_err(|error| X11SetupSocketError::new(error.to_string()))?;

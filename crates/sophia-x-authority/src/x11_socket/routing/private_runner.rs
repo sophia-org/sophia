@@ -53,6 +53,16 @@ impl PrivateXServerFrontend {
         if self.ordered_runner {
             return Err((PrivateRunnerRefusal::ProducerAlreadyExposed, self));
         }
+        // Installation takes common itself and binds the actual connection
+        // projections before any producer can reserve against this runner.
+        if self
+            .broker
+            .registry
+            .install_private_applied(&self.controller, namespace)
+            .is_err()
+        {
+            return Err((PrivateRunnerRefusal::StateUnavailable, self));
+        }
         let seat = self.submit.binding().seat();
         // These allocations initialize the supported namespace before any
         // execution can consume its state. No keymap work happens under common.
