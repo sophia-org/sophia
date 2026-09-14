@@ -580,77 +580,55 @@ impl core::fmt::Display for XServerFrontendRouteError {
 
 impl std::error::Error for XServerFrontendRouteError {}
 
-/// One ordered delivery: what it answers for, and who it was resolved for.
-///
-/// Crate-private, with private fields and no constructor outside the resolver
-/// that builds it under the guards. A caller able to assemble one could assert
-/// a resolved state it never resolved -- which is the whole of what makes this
-/// immutable rather than merely copied.
-///
-/// Deliberately NOT Copy or Clone. It carries custody of a delivery and its
-/// origin, and a type that duplicates itself lets two holders each believe
-/// they are the one that owes an outcome for it.
-///
-/// What the writer must put on the wire is not described here. The guarded
-/// resolver already decides every target, form, coordinate, depth and crossing,
-/// and restating any of that in this file would be a second description of the
-/// same thing -- one that could drift from the one that is actually resolved
-/// and would be believed because it looked like a field. The resolved emission
-/// arrives as an opaque payload from the resolver's own vocabulary and is held
-/// here, not re-modelled.
+/// A source-resolved emission with its original admitted delivery. The
+/// constructor accepts no replacement recipient, origin or incarnation.
+/// Neither this capsule nor its emission can be copied into another owner.
+#[cfg(unix)]
 #[derive(Debug)]
-#[allow(dead_code)]
+#[allow(dead_code)] // The ordered writer/consumer integration supplies production calls.
 pub(crate) struct XAuthorityOrderedDelivery {
-    client: XServerFrontendClientId,
     delivery: crate::XAuthorityInputDeliveryId,
-    incarnation: sophia_input_authority::HoldIncarnation,
-    recipient: sophia_input_authority::ConnectionIdentity,
+    emission: crate::x11_socket::PrivateOrderedEmission,
 }
 
-#[allow(dead_code)]
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XAuthorityOrderedAssemblyRefusal {
+    DeliveryMissing,
+}
+
+#[cfg(unix)]
+#[allow(dead_code)] // The source-only assembly is consumed by the ordered consumer.
 impl XAuthorityOrderedDelivery {
-    /// Assemble one from parts, WITHOUT establishing that the parts belong
-    /// together.
-    ///
-    /// This is not the assembly path and must not become one. Being
-    /// crate-private limits who may make the claim; it does not make the claim
-    /// true. A caller handing over four identities is asserting that this
-    /// delivery, this incarnation and this connection were resolved as one
-    /// thing, and nothing here checks that -- which is exactly the assertion
-    /// this type's privacy exists to prevent.
-    ///
-    /// It exists only until assembly consumes a resolved emission and derives
-    /// these identities from it, including the original delivery the source
-    /// press or release carried. Until then: nothing enqueues a capsule, so
-    /// nothing built this way can reach a recipient, and that is the only
-    /// reason this is survivable rather than a hole.
-    pub(crate) fn from_parts_unchecked(
-        client: XServerFrontendClientId,
-        delivery: crate::XAuthorityInputDeliveryId,
-        incarnation: sophia_input_authority::HoldIncarnation,
-        recipient: sophia_input_authority::ConnectionIdentity,
-    ) -> Self {
-        Self {
-            client,
-            delivery,
-            incarnation,
-            recipient,
-        }
+    #[allow(clippy::result_large_err)] // Return the exact owned emission without allocating on refusal.
+    pub(crate) fn from_emission(
+        emission: crate::x11_socket::PrivateOrderedEmission,
+    ) -> Result<
+        Self,
+        (
+            XAuthorityOrderedAssemblyRefusal,
+            crate::x11_socket::PrivateOrderedEmission,
+        ),
+    > {
+        let Some(delivery) = emission.delivery() else {
+            return Err((XAuthorityOrderedAssemblyRefusal::DeliveryMissing, emission));
+        };
+        Ok(Self { delivery, emission })
     }
 
     pub(crate) fn client(&self) -> XServerFrontendClientId {
-        self.client
+        XServerFrontendClientId::from_raw(self.emission.connection().recipient)
     }
-    /// The delivery this answers for, as it was admitted.
     pub(crate) fn delivery(&self) -> crate::XAuthorityInputDeliveryId {
         self.delivery
     }
-    /// The whole minted identity a settlement is named against.
     pub(crate) fn incarnation(&self) -> sophia_input_authority::HoldIncarnation {
-        self.incarnation
+        self.emission.incarnation()
     }
-    /// The connection this was resolved for, exactly.
     pub(crate) fn recipient(&self) -> sophia_input_authority::ConnectionIdentity {
-        self.recipient
+        self.emission.connection()
+    }
+    pub(crate) fn emission(&self) -> &crate::x11_socket::PrivateOrderedEmission {
+        &self.emission
     }
 }

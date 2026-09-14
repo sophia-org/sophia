@@ -1442,3 +1442,25 @@ agent's frozen slices. No recipient flush/disconnect settlement or full Gate A
 is claimed; immutable emission/writer/attempt integration, keys, StateOnly/thaw,
 preacceptance output capacity and complete lifecycle closure remain M3 work.
 No hardware, installation, default enablement or root/master movement.
+
+
+### M3 source-owned emission and fixed writer encoding
+
+Native source holds now retain separate press/release emission slots. Their
+opaque payload keeps the exact origin, connection, full incarnation and original
+route delivery. Capsule assembly consumes this value and derives its identities;
+missing delivery returns it intact. No unchecked identity constructor remains.
+Final release keeps reached resources and forms while converting its current
+coordinates under held exact selections, never replaying press crossings.
+Missing geometry remains an owed unbuilt event, not settlement or no-event success.
+
+The writer's pure fixed-frame encoder reads only this payload plus wire sequence
+and byte order. Storage is 104 bytes from the current XI codec maximum. Ordinary
+encoder wrappers retain their bytes; overall preacceptance capacity remains open.
+Six compiled source mutations bite. Final input-only serial gates: 1183 tests pass,
+0 fail,1 existing ignored; fmt/clippy/layout/diff pass. A prior parallel run hit
+one existing XKB worker timeout; that test passed alone and serially, with no
+worker behaviour change. Source emission remains a component until the real
+consumer, writer receipt, native proof and debt settlement pass Gate A.
+Keys/XKB source, StateOnly/thaw and complete lifecycle remain open. No hardware,
+root/master move, installation or enablement.

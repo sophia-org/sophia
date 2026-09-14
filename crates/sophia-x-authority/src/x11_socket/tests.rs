@@ -1169,3 +1169,5 @@ include!("tests/private_applied_registry.rs");
 include!("tests/private_applied_focus.rs");
 
 include!("tests/private_native.rs");
+
+include!("tests/ordered_codec.rs");

@@ -957,4 +957,5 @@ mod private_native_tests {
     }
 
     include!("private_native_sibling.rs");
+    include!("private_native_emission.rs");
 }
