@@ -29,12 +29,52 @@ struct TrackedInputDelivery {
     /// lost the race, and publishing a terminal outcome for it anyway would
     /// be a claim that the effect then contradicts.
     claimed: bool,
+    /// Whether any execution of this delivery may have applied an effect.
+    ///
+    /// Cumulative and never cleared. One claim resolving as having applied
+    /// nothing says what THAT execution did, not what the delivery has been
+    /// through: an earlier one may already have moved the ledger and cleared a
+    /// projection. Letting a later per-claim answer erase the earlier fact
+    /// puts a cancellation back in reach of a delivery whose effect already
+    /// happened, one claim cycle later than the arbitration prevented it.
+    may_have_applied: bool,
     /// What a cancellation wanted to record while this was claimed.
     ///
     /// Held rather than dropped, because a cancellation that lost to an
     /// execution which then applied nothing has not lost at all. The first is
     /// kept: later ones describe the same delivery already being cancelled.
     deferred: Option<DeferredCancellation>,
+}
+
+/// Whether an outcome asserts something about the delivery before its effect.
+///
+/// A cancellation says the delivery was withdrawn: it never happened, and
+/// whoever was waiting may stop. Once an effect may have happened, that is a
+/// claim the effect contradicts, and it must not be published however it
+/// arrives -- held over from a claim, or fresh from a later sweep.
+///
+/// What an established recipient fact says is different in kind. A client that
+/// disconnected, a write that failed, a flush that reached it: those describe
+/// what became of the delivery, not a denial that it occurred, and they stay
+/// publishable. Conflating the two would leave a delivery whose effect
+/// happened with no way to ever be answered.
+#[cfg(unix)]
+fn cancels_before_the_effect(outcome: XAuthorityInputDeliveryOutcome) -> bool {
+    match outcome {
+        // The epoch withdrew the request, or the route was refused before it
+        // was carried. Both say it did not happen.
+        XAuthorityInputDeliveryOutcome::EpochRevoked
+        | XAuthorityInputDeliveryOutcome::RouteRejected
+        | XAuthorityInputDeliveryOutcome::TargetGone => true,
+        // What became of a delivery that did happen. A deadline passing with
+        // no receipt is a statement about the receipt, not a denial of the
+        // effect, so it stays available -- otherwise a delivery whose writer
+        // never reported could never be answered at all.
+        XAuthorityInputDeliveryOutcome::Flushed
+        | XAuthorityInputDeliveryOutcome::WriteFailed
+        | XAuthorityInputDeliveryOutcome::ClientDisconnected
+        | XAuthorityInputDeliveryOutcome::TimedOut => false,
+    }
 }
 
 /// A cancellation that lost to a claim, with the identity it was recorded
@@ -171,6 +211,7 @@ impl InputRecovery {
             delivery,
             TrackedInputDelivery {
                 claimed: false,
+                may_have_applied: false,
                 deferred: None,
                 ticket: XAuthorityInputDeliveryTicket {
                     delivery,
@@ -305,11 +346,15 @@ impl InputRecovery {
             return;
         };
         entry.claimed = false;
-        if may_have_applied {
-            // An effect may have happened, so the cancellation cannot become
-            // this delivery's outcome. Kept rather than taken: whether it
-            // still applies is not this resolution's to decide, and a later
-            // cancellation of a delivery still owed an outcome will find it.
+        // Accumulated, not assigned. What this execution did is added to what
+        // the delivery has been through.
+        entry.may_have_applied |= may_have_applied;
+        if entry.may_have_applied {
+            // An effect may have happened, so a cancellation cannot become
+            // this delivery's outcome -- not now and not after a later claim
+            // that happens to apply nothing. It is kept rather than dropped
+            // because it remains a record of what was attempted, and the
+            // publication path above refuses it on the same fact.
             return;
         }
         let Some(deferred) = entry.deferred.take() else {
@@ -406,6 +451,14 @@ impl InputRecovery {
                     .client
                     .is_some_and(|client| client != receipt.client)
             {
+                return;
+            }
+            if entry.may_have_applied && cancels_before_the_effect(receipt.outcome) {
+                // An effect may already have happened for this delivery.
+                // Saying now that it was withdrawn would be the contradiction
+                // the claim exists to prevent, arriving after the claim rather
+                // than during it. The delivery stays owed an outcome, which
+                // its writer result or an established recipient fact answers.
                 return;
             }
             if entry.claimed {
@@ -623,14 +676,33 @@ impl InputRecovery {
             })
             .map(|entry| entry.ticket)
             .collect();
+        // Whose connection this sweep actually revoked. Collected as it
+        // happens, because what has to be cleaned up follows from the
+        // connection having been taken down, not from which receipts managed
+        // to publish. A delivery whose cancellation was suppressed publishes
+        // nothing and still leaves a revoked connection behind it, and reading
+        // cleanup off the published list would skip exactly that case --
+        // leaving this client's grabs and selections installed after its
+        // socket is gone.
+        let mut revoked: Vec<XServerFrontendClientId> = Vec::new();
         for ticket in &expired {
             if let Some(client) = ticket.client {
-                self.disconnect_locked(
-                    &mut state,
-                    client,
-                    XAuthorityInputDeliveryOutcome::TimedOut,
-                    None,
-                )?;
+                if !revoked.contains(&client) {
+                    revoked.push(client);
+                }
+                // What the sweep is, not what the path is called. A forced
+                // sweep revokes the epoch; a deadline sweep reports that no
+                // outcome arrived in time. Both reach a bound ticket through
+                // the disconnect machinery, and publishing a deadline for a
+                // revocation says a delivery ran out of time when it was
+                // withdrawn -- and hides, from anything that classifies by
+                // outcome, that this one denies the delivery happened.
+                let outcome = if force {
+                    XAuthorityInputDeliveryOutcome::EpochRevoked
+                } else {
+                    XAuthorityInputDeliveryOutcome::TimedOut
+                };
+                self.disconnect_locked(&mut state, client, outcome, None)?;
             } else {
                 self.terminal_locked(
                     &mut state,
@@ -660,10 +732,8 @@ impl InputRecovery {
             .authority
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-        for ticket in &expired {
-            if let Some(client) = ticket.client {
-                authority.cleanup_owner(client.raw());
-            }
+        for client in revoked {
+            authority.cleanup_owner(client.raw());
         }
         Ok(expired)
     }
