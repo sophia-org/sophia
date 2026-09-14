@@ -17143,9 +17143,15 @@ fn a_stalled_frame_is_resumed_rather_than_encoded_again() {
 }
 
 #[test]
-fn a_stalled_recipient_holds_only_its_own_writer() {
-    // Two recipients, each with its own socket and its own writer, which is
-    // the arrangement this step is for. A takes nothing; B reads.
+fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() {
+    // SCOPE, stated because the obvious reading is wider than what this
+    // establishes. It shows that a writer whose recipient takes nothing
+    // returns Blocked with its delivery still owned, and that a second
+    // recipient's writer and the service runner both complete their work on a
+    // run where that is true. It does NOT establish that the first writer was
+    // inside its readiness wait while the others ran -- that interval is not
+    // observable from here without a fault probe -- and it does not establish
+    // that a supervisor can interrupt a writer that is still waiting.
     let (writer_a, reader_a) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
     let (writer_b, reader_b) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
     let (sender_a, queue_a) = sync_channel(1);
@@ -17153,11 +17159,9 @@ fn a_stalled_recipient_holds_only_its_own_writer() {
     sender_a.send(ordered_capsule(1901)).expect("accepted");
     sender_b.send(ordered_capsule(1902)).expect("accepted");
 
-    let blocking = Arc::new(AtomicBool::new(false));
-    let signal = blocking.clone();
+    let reached = Arc::new(AtomicBool::new(false));
+    let signal = reached.clone();
     let stalled = std::thread::spawn(move || {
-        // Fill A's buffer so its delivery cannot go out, seeded so the stall
-        // is reached without waiting out the whole policy.
         let mut filling = X11OrderedSendState {
             blocked: X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(200),
             ..X11OrderedSendState::default()
@@ -17177,37 +17181,54 @@ fn a_stalled_recipient_holds_only_its_own_writer() {
         take_ordered_delivery(&queue_a, &mut in_flight).expect("one waiting");
         in_flight.as_mut().expect("taken").send.blocked =
             X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(200);
+        // Set before the call, and it says only that: this writer is about to
+        // attempt a send to a recipient that is taking nothing. It is not a
+        // claim about where inside that call the thread is.
         signal.store(true, Ordering::Release);
         let outcome =
             write_one_ordered_frame(&writer_a, &mut in_flight, XByteOrder::LittleEndian, 1);
         (outcome, in_flight, writer_a)
     });
 
-    // Wait until A's writer is actually inside its blocking wait.
     let limit = std::time::Instant::now() + Duration::from_secs(5);
-    while !blocking.load(Ordering::Acquire) && std::time::Instant::now() < limit {
+    while !reached.load(Ordering::Acquire) && std::time::Instant::now() < limit {
         std::thread::yield_now();
     }
-    assert!(blocking.load(Ordering::Acquire), "A's writer is blocking");
+    assert!(reached.load(Ordering::Acquire), "A's writer began its attempt");
 
-    // B's writer, on its own socket, is untouched by it.
+    // B's recipient reads, so B's delivery goes out whole -- and the bytes are
+    // checked off the socket rather than inferred from the step's answer.
     let mut b_flight = None;
     take_ordered_delivery(&queue_b, &mut b_flight).expect("one waiting");
-    let frames = b_flight
-        .as_ref()
-        .expect("taken")
-        .delivery()
-        .emission()
-        .frame_count();
-    for _ in 0..frames {
+    let expected = {
+        let held = b_flight.as_ref().expect("taken");
+        let emission = held.delivery().emission();
+        (0..emission.frame_count())
+            .map(|index| {
+                emission
+                    .encode_frame(index, XByteOrder::LittleEndian, 1)
+                    .expect("a frame")
+                    .as_bytes()
+                    .to_vec()
+            })
+            .collect::<Vec<_>>()
+    };
+    for _ in 0..expected.len() {
         assert!(matches!(
             write_one_ordered_frame(&writer_b, &mut b_flight, XByteOrder::LittleEndian, 1)
                 .expect("B is reading"),
             X11OrderedWriteStep::Advanced { .. }
         ));
     }
+    let mut seen = vec![0u8; expected.iter().map(Vec::len).sum()];
+    std::io::Read::read_exact(&mut &reader_b, &mut seen).expect("B's bytes");
+    assert_eq!(
+        seen,
+        expected.concat(),
+        "B received exactly its delivery's frames, in order"
+    );
 
-    // And so is the service runner, which shares nothing with either socket.
+    // The service runner shares nothing with either socket and completes.
     let client = XServerFrontendClientId(1903);
     let surface = SurfaceId::new(1903, 1);
     let mut fixture = ordered_ingress_fixture(client, surface);
@@ -17224,13 +17245,11 @@ fn a_stalled_recipient_holds_only_its_own_writer() {
         .private
         .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
-    assert!(
-        fixture.private.deliver_turn(turn)[0].enqueued,
-        "the runner made progress while A's recipient took nothing"
-    );
+    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
 
-    // A's own writer is the only thing A held up, and what it was part way
-    // through is still its own.
+    // A's writer reports its own delivery blocked and still owns it. Whether
+    // any of the frame reached the wire depends on how full the socket already
+    // was, so what is asserted is ownership and position, not partiality.
     let (outcome, in_flight, writer_a) = stalled.join().expect("A's writer returns");
     assert!(matches!(
         outcome,
@@ -17240,18 +17259,14 @@ fn a_stalled_recipient_holds_only_its_own_writer() {
     assert!(held.send.frame.is_some(), "with its frame still in hand");
     assert_eq!(held.frame_index(), 0, "and not advanced past");
 
-    // The supervisor can take A's socket down while that partial frame is
-    // owned. What the wire took stays recorded: the connection is over, and
-    // nothing about it is retried or forgotten.
+    // Taking the socket down afterwards does not disturb what is owned. This
+    // is shutdown of a writer that has already returned, not interruption of
+    // one still waiting.
     writer_a
         .shutdown(std::net::Shutdown::Both)
-        .expect("the supervisor can end A");
-    assert!(
-        in_flight.as_ref().expect("still owned").send.frame.is_some(),
-        "shutting the socket down does not take the partial frame with it"
-    );
+        .expect("the socket can be ended");
+    assert!(in_flight.as_ref().expect("still owned").send.frame.is_some());
     drop(reader_a);
-    drop(reader_b);
     drop(fixture.registration);
     drop(fixture.channels);
     drop(fixture.durable);

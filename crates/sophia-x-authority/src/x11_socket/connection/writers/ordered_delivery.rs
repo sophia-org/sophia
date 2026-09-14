@@ -177,13 +177,22 @@ fn write_one_ordered_frame(
     byte_order: XByteOrder,
     sequence: u16,
 ) -> Result<X11OrderedWriteStep, X11OrderedWriteFailure> {
-    // The caller holds this socket's output guard for the whole of this call,
-    // and that is what keeps the wire serialized. A frame stops part way only
-    // when the blocking allowance is exhausted or a send never reported, and
-    // both of those end the connection -- so between calls there is never an
-    // incomplete frame for a control or protocol write to be interleaved
-    // into. Releasing the guard around a stalled frame would put another
-    // writer's bytes inside an event's body.
+    // WIRE CUSTODY IS THE CALLER'S OBLIGATION, and this call does not discharge
+    // it. Several ways out leave an incomplete or unknown frame owned here --
+    // the blocking allowance exhausted, a wait that could not be performed, a
+    // send that failed, a send that never reported -- and none of them closes
+    // the socket. Nothing in this function closes a socket at all.
+    //
+    // So a caller holding this socket's output serialization must either keep
+    // holding it until the frame completes, or establish that the socket is
+    // shut down before releasing it, on EVERY exit that leaves a frame
+    // incomplete or unknown. Releasing it otherwise admits a control or
+    // protocol write into the body of a half-written event, which X11 can
+    // neither describe nor recover from.
+    //
+    // A failed wait is not the recipient's fault and must not be recorded as
+    // one to make this easier: the socket is equally unusable either way, and
+    // the blame is a separate fact from the custody.
 
     let Some(held) = in_flight.as_mut() else {
         return Ok(X11OrderedWriteStep::Idle);
