@@ -477,6 +477,7 @@ impl PrivateXServerFrontend {
             control_acknowledgements,
             input_deliveries,
         );
+        broker.registry.input_recovery.require_writer_deadline();
         broker
             .try_install_control_gate(gate)
             .expect("a broker built here has exposed nothing to refuse over");

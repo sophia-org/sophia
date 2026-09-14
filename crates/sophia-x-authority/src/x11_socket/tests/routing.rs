@@ -16136,3 +16136,74 @@ fn a_mark_that_panics_does_not_take_the_work_with_it() {
     drop(fixture.channels);
     drop(fixture.durable);
 }
+
+#[test]
+fn private_work_does_not_expire_because_it_waited() {
+    let client = XServerFrontendClientId(1401);
+    let surface = SurfaceId::new(1401, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(1401);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+
+    // Long past the legacy deadline, and nothing has been attempted for it --
+    // so this is the age of a queue entry, not of a send. No writer has
+    // blocked, because no writer has been given anything.
+    let expired = fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .recover(
+            std::time::Instant::now() + std::time::Duration::from_secs(30),
+            false,
+        )
+        .expect("the ledger to be readable");
+    assert!(
+        expired.is_empty(),
+        "waiting in a queue is not a transport failure, and manufacturing an \
+         outcome from it would report a delivery finished that nothing tried"
+    );
+    assert!(fixture.deliveries.try_recv().is_err());
+    assert!(
+        fixture
+            .private
+            .broker
+            .registry
+            .input_recovery
+            .ticket(delivery)
+            .is_some(),
+        "the obligation is retained rather than answered"
+    );
+
+    // It still runs when its turn comes: retaining it is not shelving it.
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+
+    // And a real cancellation still reaches it, because what was disabled is
+    // the age producer and not the sweep.
+    fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
+        .expect("the ledger to be readable");
+    assert_eq!(
+        fixture
+            .deliveries
+            .try_recv()
+            .expect("an established recipient fact")
+            .delivery,
+        delivery
+    );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+include!("review_private_deadline.rs");
