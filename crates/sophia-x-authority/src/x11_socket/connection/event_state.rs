@@ -61,6 +61,11 @@ struct XCoreMapTransition {
 #[cfg(unix)]
 #[derive(Debug)]
 struct XCoreEventSelectionState {
+    // None is an interrupted/exhausted mutation, never a clear selection.
+    applied_revision: Option<u64>,
+    // Bound only by private connection setup; ordinary clients do not use it.
+    #[cfg_attr(not(test), allow(dead_code))]
+    private_origin: Option<PrivateAppliedSelectionOrigin>,
     windows: BTreeMap<XResourceId, XCoreWindowEventSelection>,
     parents: BTreeMap<XResourceId, XResourceId>,
     geometries: BTreeMap<XResourceId, Rect>,
@@ -74,6 +79,8 @@ struct XCoreEventSelectionState {
 impl Default for XCoreEventSelectionState {
     fn default() -> Self {
         Self {
+            applied_revision: Some(1),
+            private_origin: None,
             windows: BTreeMap::new(),
             parents: BTreeMap::new(),
             geometries: BTreeMap::new(),
@@ -103,6 +110,7 @@ impl XCoreEventSelectionState {
         if event_mask.is_none() && do_not_propagate_mask.is_none() {
             return;
         }
+        let revision = self.begin_applied_mutation();
         let selection = self.windows.entry(window).or_default();
         if let Some(mask) = event_mask {
             selection.mask = mask;
@@ -110,21 +118,26 @@ impl XCoreEventSelectionState {
         if let Some(mask) = do_not_propagate_mask {
             selection.do_not_propagate_mask = mask;
         }
+        self.finish_applied_mutation(revision);
     }
 
     fn register(&mut self, window: XResourceId, parent: XResourceId, geometry: Rect) {
+        let revision = self.begin_applied_mutation();
         self.parents.insert(window, parent);
         self.geometries.insert(window, geometry);
         self.stacking.retain(|candidate| *candidate != window);
         self.stacking.push(window);
+        self.finish_applied_mutation(revision);
     }
 
     fn reparent(&mut self, window: XResourceId, parent: XResourceId, x: i16, y: i16) {
+        let revision = self.begin_applied_mutation();
         self.parents.insert(window, parent);
         if let Some(geometry) = self.geometries.get_mut(&window) {
             geometry.x = i32::from(x);
             geometry.y = i32::from(y);
         }
+        self.finish_applied_mutation(revision);
     }
 
     fn configure_geometry(
@@ -135,6 +148,7 @@ impl XCoreEventSelectionState {
         width: Option<u16>,
         height: Option<u16>,
     ) {
+        let revision = self.begin_applied_mutation();
         let geometry = self.geometries.entry(window).or_insert(Rect {
             x: 0,
             y: 0,
@@ -153,13 +167,17 @@ impl XCoreEventSelectionState {
         if let Some(height) = height {
             geometry.height = i32::from(height);
         }
+        self.finish_applied_mutation(revision);
     }
 
     fn update_geometry(&mut self, window: XResourceId, geometry: Rect) {
+        let revision = self.begin_applied_mutation();
         self.geometries.insert(window, geometry);
+        self.finish_applied_mutation(revision);
     }
 
     fn restack(&mut self, window: XResourceId, sibling: Option<XResourceId>, mode: Option<u8>) {
+        let revision = self.begin_applied_mutation();
         self.stacking.retain(|candidate| *candidate != window);
         let sibling_index = sibling.and_then(|sibling| {
             self.stacking
@@ -173,10 +191,13 @@ impl XCoreEventSelectionState {
             _ => self.stacking.len(),
         };
         self.stacking.insert(index.min(self.stacking.len()), window);
+        self.finish_applied_mutation(revision);
     }
 
     fn observe_mapped(&mut self, window: XResourceId) -> XCoreMapTransition {
+        let revision = self.begin_applied_mutation();
         if !self.mapped.insert(window) {
+            self.finish_applied_mutation(revision);
             return XCoreMapTransition {
                 viewable: self.is_viewable(window),
                 promoted_descendants: Vec::new(),
@@ -189,6 +210,7 @@ impl XCoreEventSelectionState {
         } else {
             Vec::new()
         };
+        self.finish_applied_mutation(revision);
         XCoreMapTransition {
             viewable,
             promoted_descendants,
@@ -196,6 +218,7 @@ impl XCoreEventSelectionState {
     }
 
     fn observe_unmapped(&mut self, window: XResourceId) {
+        let revision = self.begin_applied_mutation();
         self.mapped.remove(&window);
         if self.fallback_mapped_window == window {
             self.fallback_mapped_window = self
@@ -206,6 +229,7 @@ impl XCoreEventSelectionState {
                 .find(|candidate| self.mapped.contains(candidate))
                 .unwrap_or_else(|| XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1));
         }
+        self.finish_applied_mutation(revision);
     }
 
     fn is_viewable(&self, window: XResourceId) -> bool {
@@ -265,6 +289,7 @@ impl XCoreEventSelectionState {
     }
 
     fn remove(&mut self, window: XResourceId) {
+        let revision = self.begin_applied_mutation();
         self.windows.remove(&window);
         self.parents.remove(&window);
         self.geometries.remove(&window);
@@ -273,6 +298,7 @@ impl XCoreEventSelectionState {
         if self.fallback_mapped_window == window {
             self.fallback_mapped_window = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
         }
+        self.finish_applied_mutation(revision);
     }
 
     fn keyboard_target(&self, focused: XResourceId) -> XResourceId {
@@ -408,10 +434,7 @@ impl XCoreEventSelectionState {
         };
         let local_x = event_x + surface_x - candidate_x;
         let local_y = event_y + surface_y - candidate_y;
-        local_x >= 0
-            && local_y >= 0
-            && local_x < geometry.width
-            && local_y < geometry.height
+        local_x >= 0 && local_y >= 0 && local_x < geometry.width && local_y < geometry.height
     }
 
     fn root_origin(&self, window: XResourceId) -> Option<(i32, i32)> {
@@ -442,6 +465,7 @@ impl XCoreEventSelectionState {
         event_y: i16,
         mask: u16,
     ) {
+        let revision = self.begin_applied_mutation();
         self.pointer = Some(XCorePointerSnapshot {
             surface_window,
             pointer_window,
@@ -451,6 +475,7 @@ impl XCoreEventSelectionState {
             event_y,
             mask,
         });
+        self.finish_applied_mutation(revision);
     }
 
     fn query_pointer(&self, window: XResourceId) -> Option<XCorePointerQuery> {

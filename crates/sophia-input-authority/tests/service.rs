@@ -439,3 +439,166 @@ fn watchdog_clock_end_does_not_wrap_the_deadline() {
         Err(WatchdogError::ClockRegressed)
     );
 }
+
+#[test]
+fn idle_or_blocked_queue_inspection_neither_starts_nor_interrupts() {
+    let mut budget = ServiceBudget::planned(Duration::ZERO);
+    for now in [0, 1000, 16000, 32000] {
+        let admission = budget.prepare(us(now), NEW, ELIGIBLE).unwrap();
+        // The real queue reported Idle or Blocked; it never called dequeued.
+        drop(admission);
+        assert_eq!(budget.usage().starts, 0);
+        assert_eq!(budget.usage().charged, Duration::ZERO);
+        assert!(!budget.is_interrupted());
+    }
+    assert_eq!(
+        budget.account_interrupted(us(32000)),
+        Err(ServiceAccountingError::NotInterrupted)
+    );
+}
+
+#[test]
+fn unused_admission_does_not_erase_the_previous_interval_counters() {
+    let mut budget = ServiceBudget::planned(Duration::ZERO);
+    run(&mut budget, 0, 2000, CLEANUP);
+    let previous = budget.usage();
+    drop(budget.prepare(us(16000), NEW, ELIGIBLE).unwrap());
+    assert_eq!(budget.usage(), previous);
+    let admission = budget.prepare(us(17000), NEW, ELIGIBLE).unwrap();
+    admission
+        .dequeued(us(17050), ELIGIBLE)
+        .unwrap()
+        .finish(us(17150))
+        .unwrap();
+    assert_eq!(budget.usage().starts, 1);
+    assert_eq!(budget.usage().charged, us(100));
+}
+
+#[test]
+fn an_owned_admission_can_cross_a_mutable_dequeue_callback_once() {
+    let mut budget = ServiceBudget::planned(Duration::ZERO);
+    let mut admission = Some(budget.prepare(us(100), NEW, ELIGIBLE).unwrap());
+    let mut running = None;
+    {
+        let mut mark = || {
+            let Some(admission) = admission.take() else {
+                return false;
+            };
+            running = Some(admission.dequeued(us(200), ELIGIBLE).unwrap());
+            true
+        };
+        assert!(mark());
+        assert!(!mark());
+    }
+    assert!(admission.is_none());
+    let charge = running.take().unwrap().finish(us(250)).unwrap();
+    drop(running);
+    assert_eq!(charge.elapsed, us(50));
+    assert_eq!(budget.usage().starts, 1);
+    assert_eq!(budget.usage().charged, us(50));
+    assert!(!budget.is_interrupted());
+}
+
+#[test]
+fn preparation_refuses_an_exhausted_budget_before_queue_inspection() {
+    let mut budget = ServiceBudget::planned(Duration::ZERO);
+    for _ in 0..32 {
+        budget
+            .start(Duration::ZERO, NEW, EMPTY)
+            .unwrap()
+            .finish(Duration::ZERO)
+            .unwrap();
+    }
+    assert!(matches!(
+        budget.prepare(us(100), NEW, EMPTY),
+        Err(ServiceStartRefusal::StartsExhausted { .. })
+    ));
+    assert_eq!(budget.usage().starts, 32);
+    assert_eq!(budget.usage().charged, Duration::ZERO);
+    assert!(!budget.is_interrupted());
+}
+
+#[test]
+fn delayed_admission_starts_in_the_dequeue_interval_not_the_preparation_interval() {
+    let mut budget = ServiceBudget::planned(Duration::ZERO);
+    run(&mut budget, 0, 100, NEW);
+    let admission = budget.prepare(us(15900), NEW, ELIGIBLE).unwrap();
+    let charge = admission
+        .dequeued(us(17000), ELIGIBLE)
+        .unwrap()
+        .finish(us(17200))
+        .unwrap();
+    assert_eq!(charge.elapsed, us(200));
+    assert_eq!(charge.interval_charge, us(200));
+    assert_eq!(charge.interval_boundary_overrun, Duration::ZERO);
+    assert_eq!(budget.usage().starts, 1);
+}
+
+#[test]
+fn newly_eligible_cleanup_revokes_a_preparations_permission_to_donate() {
+    let mut budget = ServiceBudget::planned(Duration::ZERO);
+    for _ in 0..28 {
+        run(&mut budget, 0, 0, NEW);
+    }
+    let admission = budget.prepare(Duration::ZERO, NEW, EMPTY).unwrap();
+    assert!(matches!(
+        admission.dequeued(us(100), ELIGIBLE),
+        Err(ServiceStartRefusal::CleanupStartsReserved { .. })
+    ));
+    assert_eq!(budget.usage().starts, 28);
+    assert!(!budget.is_interrupted());
+    let admission = budget.prepare(us(100), CLEANUP, ELIGIBLE).unwrap();
+    admission
+        .dequeued(us(100), ELIGIBLE)
+        .unwrap()
+        .finish(us(200))
+        .unwrap();
+    assert_eq!(budget.usage().cleanup_starts, 1);
+}
+
+#[test]
+fn dequeue_checks_the_clock_again_without_starting_on_invalid_time() {
+    let mut budget = ServiceBudget::planned(Duration::ZERO);
+    let admission = budget.prepare(us(100), NEW, ELIGIBLE).unwrap();
+    assert_eq!(
+        admission.dequeued(us(99), ELIGIBLE).unwrap_err(),
+        ServiceStartRefusal::ClockRegressed
+    );
+    assert_eq!(budget.usage().starts, 0);
+    assert_eq!(budget.usage().charged, Duration::ZERO);
+    assert!(!budget.is_interrupted());
+    assert_eq!(
+        budget.prepare(us(99), NEW, ELIGIBLE).unwrap_err(),
+        ServiceStartRefusal::ClockRegressed
+    );
+    budget
+        .prepare(us(100), NEW, ELIGIBLE)
+        .unwrap()
+        .dequeued(us(100), ELIGIBLE)
+        .unwrap()
+        .finish(us(200))
+        .unwrap();
+    assert_eq!(budget.usage().starts, 1);
+}
+
+#[test]
+fn an_unwinding_queue_inspection_is_not_an_interrupted_execution() {
+    let mut budget = ServiceBudget::planned(Duration::ZERO);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _admission = budget.prepare(us(100), NEW, ELIGIBLE).unwrap();
+            panic!("queue inspection failed before taking an item");
+        }))
+        .is_err()
+    );
+    assert_eq!(budget.usage().starts, 0);
+    assert!(!budget.is_interrupted());
+    budget
+        .prepare(us(200), NEW, ELIGIBLE)
+        .unwrap()
+        .dequeued(us(200), ELIGIBLE)
+        .unwrap()
+        .finish(us(300))
+        .unwrap();
+    assert_eq!(budget.usage().charged, us(100));
+}

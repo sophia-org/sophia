@@ -147,8 +147,8 @@ struct ActiveService {
 
 /// One continuing budget owned by one execution runner.
 ///
-/// There is no reset method. A new interval begins on the first scheduling
-/// decision at least `interval` after the previous interval began; unused
+/// There is no reset method. A new interval begins on the first actual start
+/// at least `interval` after the previous interval began; unused
 /// intervals do not accumulate credit. A running operation keeps its original
 /// interval through accounting. Dropping its guard latches failure permanently
 /// so a later rollover cannot conceal unaccounted execution.
@@ -196,6 +196,22 @@ impl ServiceBudget {
         self.interrupted
     }
 
+    /// Check start eligibility before taking an item from its queue.
+    ///
+    /// The admission keeps this budget exclusively borrowed but consumes no
+    /// start, charge, or interval reset. An idle or blocked queue may drop it
+    /// without marking an interrupted execution. Actual dequeue checks the
+    /// allowance again using fresh time and fresh cleanup eligibility.
+    pub fn prepare(
+        &mut self,
+        now: Duration,
+        work: ServiceWork,
+        cleanup: CleanupReadiness,
+    ) -> Result<ServiceAdmission<'_>, ServiceStartRefusal> {
+        self.check_start(now, work, cleanup)?;
+        Ok(ServiceAdmission { budget: self, work })
+    }
+
     /// Start one operation without allocating, blocking, or reading a clock.
     ///
     /// Cleanup can consume the whole remaining allowance. New work preserves
@@ -208,50 +224,11 @@ impl ServiceBudget {
         work: ServiceWork,
         cleanup: CleanupReadiness,
     ) -> Result<ServiceRun<'_>, ServiceStartRefusal> {
-        // Even a deliberately forgotten guard cannot overwrite its active
-        // record with another operation or clear it through window rollover.
-        if self.interrupted || self.active.is_some() {
-            self.interrupted = true;
-            return Err(ServiceStartRefusal::Interrupted);
-        }
-        if now < self.last_now {
-            return Err(ServiceStartRefusal::ClockRegressed);
-        }
-        // A successful clock check changes no allowance by itself.
-        self.last_now = now;
-        let elapsed = now - self.interval_began;
-        if elapsed >= self.limits.interval {
+        let (reset_interval, new_work_ceiling) = self.check_start(now, work, cleanup)?;
+        if reset_interval {
             self.interval_began = now;
             self.usage = ServiceUsage::default();
         }
-        let retry_after = self.limits.interval - (now - self.interval_began);
-        if self.usage.starts >= self.limits.starts {
-            return Err(ServiceStartRefusal::StartsExhausted { retry_after });
-        }
-        if self.usage.charged >= self.limits.charge {
-            return Err(ServiceStartRefusal::TimeExhausted { retry_after });
-        }
-        let reserved = work == ServiceWork::NewWork && cleanup == CleanupReadiness::Eligible;
-        let new_work_ceiling = if reserved {
-            let starts_owed = self
-                .limits
-                .cleanup_starts
-                .saturating_sub(self.usage.cleanup_starts);
-            if self.usage.starts >= self.limits.starts - starts_owed {
-                return Err(ServiceStartRefusal::CleanupStartsReserved { retry_after });
-            }
-            let charge_owed = self
-                .limits
-                .cleanup_charge
-                .saturating_sub(self.usage.cleanup_charged);
-            let ceiling = self.limits.charge - charge_owed;
-            if self.usage.charged >= ceiling {
-                return Err(ServiceStartRefusal::CleanupTimeReserved { retry_after });
-            }
-            Some(ceiling)
-        } else {
-            None
-        };
         // Each increment is below a verified u32 bound, so it cannot wrap.
         self.usage.starts += 1;
         if work == ServiceWork::Cleanup {
@@ -266,6 +243,64 @@ impl ServiceBudget {
             budget: self,
             finished: false,
         })
+    }
+
+    fn check_start(
+        &mut self,
+        now: Duration,
+        work: ServiceWork,
+        cleanup: CleanupReadiness,
+    ) -> Result<(bool, Option<Duration>), ServiceStartRefusal> {
+        // Even a deliberately forgotten guard cannot overwrite its active
+        // record with another operation or clear it through window rollover.
+        if self.interrupted || self.active.is_some() {
+            self.interrupted = true;
+            return Err(ServiceStartRefusal::Interrupted);
+        }
+        if now < self.last_now {
+            return Err(ServiceStartRefusal::ClockRegressed);
+        }
+        // A successful clock check changes no allowance by itself.
+        self.last_now = now;
+        let reset_interval = now - self.interval_began >= self.limits.interval;
+        let usage = if reset_interval {
+            ServiceUsage::default()
+        } else {
+            self.usage
+        };
+        let retry_after = if reset_interval {
+            self.limits.interval
+        } else {
+            self.limits.interval - (now - self.interval_began)
+        };
+        if usage.starts >= self.limits.starts {
+            return Err(ServiceStartRefusal::StartsExhausted { retry_after });
+        }
+        if usage.charged >= self.limits.charge {
+            return Err(ServiceStartRefusal::TimeExhausted { retry_after });
+        }
+        let reserved = work == ServiceWork::NewWork && cleanup == CleanupReadiness::Eligible;
+        let new_work_ceiling = if reserved {
+            let starts_owed = self
+                .limits
+                .cleanup_starts
+                .saturating_sub(usage.cleanup_starts);
+            if usage.starts >= self.limits.starts - starts_owed {
+                return Err(ServiceStartRefusal::CleanupStartsReserved { retry_after });
+            }
+            let charge_owed = self
+                .limits
+                .cleanup_charge
+                .saturating_sub(usage.cleanup_charged);
+            let ceiling = self.limits.charge - charge_owed;
+            if usage.charged >= ceiling {
+                return Err(ServiceStartRefusal::CleanupTimeReserved { retry_after });
+            }
+            Some(ceiling)
+        } else {
+            None
+        };
+        Ok((reset_interval, new_work_ceiling))
     }
 
     /// Account time retained by an interrupted operation without reopening it.
@@ -319,6 +354,45 @@ impl ServiceBudget {
         self.last_now = now;
         self.active = None;
         Ok(charge)
+    }
+}
+
+/// Exclusive, unspent permission to inspect an owned execution queue.
+///
+/// This is not a start: dropping it changes no counters or interruption state.
+/// It cannot be copied, or held alongside another admission from the budget:
+/// ```compile_fail
+/// use sophia_input_authority::{CleanupReadiness, ServiceBudget, ServiceWork};
+/// use std::time::Duration;
+/// let mut budget = ServiceBudget::planned(Duration::ZERO);
+/// let first = budget.prepare(Duration::ZERO, ServiceWork::NewWork,
+///     CleanupReadiness::Eligible).unwrap();
+/// let second = budget.prepare(Duration::ZERO, ServiceWork::NewWork,
+///     CleanupReadiness::Eligible).unwrap();
+/// drop(first);
+/// drop(second);
+/// ```
+#[must_use = "dequeue one eligible item or drop the unspent admission"]
+#[derive(Debug)]
+pub struct ServiceAdmission<'a> {
+    budget: &'a mut ServiceBudget,
+    work: ServiceWork,
+}
+
+impl<'a> ServiceAdmission<'a> {
+    /// Consume the admission at actual dequeue, before execution guards.
+    ///
+    /// A previous empty-cleanup scan is not retained permission to donate its
+    /// allowance. The caller supplies current readiness again here; if it
+    /// cannot establish that none is eligible, it supplies `Eligible`.
+    /// Refusal starts nothing. The item just dequeued remains its caller's
+    /// obligation and must stay owned rather than be executed or discarded.
+    pub fn dequeued(
+        self,
+        now: Duration,
+        cleanup_now: CleanupReadiness,
+    ) -> Result<ServiceRun<'a>, ServiceStartRefusal> {
+        self.budget.start(now, self.work, cleanup_now)
     }
 }
 

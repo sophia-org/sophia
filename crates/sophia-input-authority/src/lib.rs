@@ -32,6 +32,6 @@ pub use registry::{
 
 pub use service::{
     CleanupReadiness, ExecutionPhase, ExecutionWatchdog, InvalidServiceLimits,
-    ServiceAccountingError, ServiceBudget, ServiceCharge, ServiceLimits, ServiceRun,
-    ServiceStartRefusal, ServiceUsage, ServiceWork, WatchdogError, WatchdogObservation,
+    ServiceAccountingError, ServiceAdmission, ServiceBudget, ServiceCharge, ServiceLimits,
+    ServiceRun, ServiceStartRefusal, ServiceUsage, ServiceWork, WatchdogError, WatchdogObservation,
 };
