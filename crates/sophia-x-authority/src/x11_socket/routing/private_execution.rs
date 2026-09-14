@@ -509,11 +509,14 @@ fn resolve_and_apply(
             // with. Binding the target the route resolves to now would name a
             // client the event never reached -- a grab installed between the
             // two presses is exactly that case.
+            // Taken by value rather than as a reference into the records: the
+            // press may push a new one, and a borrow held across that would
+            // have to be given up exactly where the decision is needed.
             let joining = holds
                 .iter()
                 .find(|record| record.incarnation.input == input)
-                .copied();
-            let bound_to = joining.map_or(client, |record| record.reached.client);
+                .map(|record| (record.incarnation, record.reached));
+            let bound_to = joining.map_or(client, |(_, reached)| reached.client);
             match registry.input_recovery.bind(route.delivery, bound_to) {
                 Ok(true) => {}
                 Ok(false) => {
@@ -557,6 +560,7 @@ fn resolve_and_apply(
                 holds.push(PrivateHoldRecord {
                     incarnation,
                     reached,
+                    native: None,
                 });
                 if joining.is_some() {
                     // The ledger began a hold for an input this executor
@@ -581,7 +585,7 @@ fn resolve_and_apply(
                     notes.plan_missing = true;
                     return Err(sophia_input_authority::RegistrationError::StaleRequest);
                 };
-                if joining.is_none_or(|predicted| predicted.incarnation != record.incarnation) {
+                if joining.is_none_or(|(predicted, _)| predicted != record.incarnation) {
                     // The ledger joined a different hold than the one this
                     // delivery was bound to, so the binding names a recipient
                     // this press did not reach.

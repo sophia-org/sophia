@@ -148,7 +148,6 @@ enum PrivateReleaseBinding {
 /// its delivery to whatever the route resolves to now would name a client the
 /// event never reached.
 #[cfg(unix)]
-#[derive(Debug, Clone, Copy)]
 struct PrivateHoldRecord {
     /// The whole minted identity, not the number inside it.
     ///
@@ -158,4 +157,18 @@ struct PrivateHoldRecord {
     /// debt recorded as a number is a debt nothing can later answer for.
     incarnation: sophia_input_authority::HoldIncarnation,
     reached: PrivateReachedResources,
+    /// The native obligation this press began.
+    ///
+    /// Carried whole rather than copied out of, because it is the only thing
+    /// that can answer for this hold natively and it does not duplicate. It
+    /// travels with the record through terminal transfers: an inventory handed
+    /// on without it would describe a hold whose native side nobody could
+    /// complete, and a second copy would let two holders each believe they
+    /// were the one completing it.
+    ///
+    /// `None` where no native operation produced one, which is every record
+    /// today: the press that installs one is the next step, and the slot is
+    /// here first so that the record it travels in is not reshaped twice.
+    #[allow(dead_code)]
+    native: Option<private_native::Hold>,
 }
