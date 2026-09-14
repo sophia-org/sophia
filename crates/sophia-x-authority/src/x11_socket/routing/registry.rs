@@ -3,6 +3,7 @@
 struct XServerFrontendRouteRegistry {
     input_recovery: InputRecovery,
     runtime: Arc<std::sync::OnceLock<std::sync::Weak<Mutex<XAuthorityRuntime>>>>,
+    private_applied: Arc<std::sync::OnceLock<PrivateAppliedRegistryOwner>>,
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
     focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
@@ -125,6 +126,7 @@ struct XAuthorityEpochRoutedInput {
 #[cfg(unix)]
 #[derive(Clone)]
 struct XServerFrontendClientRouteSenders {
+    connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
     input: SyncSender<XAuthorityClientInputEvent>,
     control: SyncSender<X11RoutedControl>,
     protocol: SyncSender<XClientEvent>,
@@ -148,6 +150,7 @@ struct XServerFrontendClientRouteChannels {
 
 #[cfg(unix)]
 struct XServerFrontendClientRouteRegistration {
+    connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
     input_recovery: InputRecovery,
     client: XServerFrontendClientId,
     /// The completion registry this client's control is answered through,
@@ -324,6 +327,7 @@ impl XServerFrontendRouteRegistry {
             return Err(XServerFrontendRouteError::DuplicateClient { client });
         }
         self.input_recovery.register(client)?;
+        let connection_state = Arc::new(std::sync::OnceLock::new());
         // A writer for this client exists or is about to: registration comes
         // before the spawn, and control accepted in that window is not control
         // with nowhere to go. The writer stopping is what clears it.
@@ -333,6 +337,7 @@ impl XServerFrontendRouteRegistry {
         clients.insert(
             client,
             XServerFrontendClientRouteSenders {
+                connection_state: connection_state.clone(),
                 input: input_sender,
                 control: control_sender,
                 protocol: protocol_sender,
@@ -342,6 +347,7 @@ impl XServerFrontendRouteRegistry {
         );
         Ok((
             XServerFrontendClientRouteRegistration {
+                connection_state,
                 input_recovery: self.input_recovery.clone(),
                 client,
                 control_completion: self.control_completion.clone(),

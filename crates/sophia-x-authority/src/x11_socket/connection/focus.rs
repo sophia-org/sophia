@@ -156,9 +156,6 @@ fn x11_focus_records(
     modifiers: u16,
     request: X11FocusRecordRequest,
 ) -> Result<Vec<Vec<u8>>, X11SetupSocketError> {
-    let selections = core_event_selections.lock().map_err(|_| {
-        X11SetupSocketError::new("X11 core event selection lock poisoned")
-    })?;
     let input_authority = input_authority
         .map(|authority| {
             authority
@@ -166,6 +163,13 @@ fn x11_focus_records(
                 .map_err(|_| X11SetupSocketError::new("X11 input authority lock poisoned"))
         })
         .transpose()?;
+    // The input writer reads XI source selections under this same order.
+    // Holding selections while waiting for input authority forms a cycle
+    // with that writer, which can already own input authority and need these
+    // selections. Keep the coherent snapshot, acquiring authority first.
+    let selections = core_event_selections
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 core event selection lock poisoned"))?;
     let context = X11FocusRecordContext {
         byte_order,
         sequence,
@@ -345,11 +349,11 @@ fn write_x11_control_records(
                 record.len(),
             );
         }
-        stream.write_all(&record).map_err(|error| {
-            x11_peer_write_error("failed to write X11 control event", error)
-        })?;
+        stream
+            .write_all(&record)
+            .map_err(|error| x11_peer_write_error("failed to write X11 control event", error))?;
     }
-    stream.flush().map_err(|error| {
-        x11_peer_write_error("failed to flush X11 control event", error)
-    })
+    stream
+        .flush()
+        .map_err(|error| x11_peer_write_error("failed to flush X11 control event", error))
 }

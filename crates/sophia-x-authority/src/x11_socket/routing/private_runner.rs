@@ -25,6 +25,9 @@ pub struct PrivatePreparedRunner {
     keyboards: PrivateKeyboards,
     namespace: NamespaceId,
     seat: SeatId,
+    service_origin: std::time::Instant,
+    service: sophia_input_authority::ServiceBudget,
+    prefer_cleanup: bool,
 }
 
 /// Processing, enqueue and settlement are counted separately. An enqueued
@@ -38,6 +41,57 @@ pub struct PrivateRunnerProgress {
     pub observed: usize,
     pub settled: usize,
     pub blocked: Option<crate::ReadySequence>,
+    /// The service allowance stopped this turn. It will be checked again on
+    /// the next owner-loop turn; waiting is not part of an operation.
+    pub allowance: Option<sophia_input_authority::ServiceStartRefusal>,
+    /// Elapsed execution and cleanup charged on this turn, including waits
+    /// for execution guards. An overrun is measured, never called preemption.
+    pub charged: std::time::Duration,
+    pub overrun: std::time::Duration,
+    pub unwatched: Option<crate::ReadySequence>,
+    /// All charged starts, including service of previously decided work.
+    pub starts: usize,
+    pub terminal_steps: usize,
+}
+
+#[cfg(unix)]
+impl PrivateRunnerProgress {
+    fn record_charge(&mut self, charge: Option<sophia_input_authority::ServiceCharge>) -> bool {
+        let Some(charge) = charge else {
+            return false;
+        };
+        self.starts += 1;
+        self.charged = self.charged.saturating_add(charge.elapsed);
+        self.overrun = self.overrun.max(charge.allowance_overrun);
+        !charge.allowance_overrun.is_zero()
+            || !charge.cleanup_reservation_overrun.is_zero()
+            || !charge.interval_boundary_overrun.is_zero()
+    }
+}
+
+#[cfg(unix)]
+enum PrivateAccountedStep {
+    Yield {
+        cause: sophia_input_authority::ServiceStartRefusal,
+        taken: Option<crate::ReadySequence>,
+    },
+    Step {
+        step: PrivateOrderedStep,
+        charge: Option<sophia_input_authority::ServiceCharge>,
+    },
+}
+
+#[cfg(unix)]
+enum PrivateAccountedDelivery {
+    Yield {
+        cause: sophia_input_authority::ServiceStartRefusal,
+        taken: Option<crate::ReadySequence>,
+    },
+    Step {
+        step: PrivateDeliveryStep,
+        charge: Option<sophia_input_authority::ServiceCharge>,
+        unwatched: Option<crate::ReadySequence>,
+    },
 }
 
 #[cfg(unix)]
@@ -52,6 +106,16 @@ impl PrivateXServerFrontend {
     ) -> Result<PrivatePreparedRunner, (PrivateRunnerRefusal, Self)> {
         if self.ordered_runner {
             return Err((PrivateRunnerRefusal::ProducerAlreadyExposed, self));
+        }
+        // Installation takes common itself and binds the actual connection
+        // projections before any producer can reserve against this runner.
+        if self
+            .broker
+            .registry
+            .install_private_applied(&self.controller, namespace)
+            .is_err()
+        {
+            return Err((PrivateRunnerRefusal::StateUnavailable, self));
         }
         let seat = self.submit.binding().seat();
         // These allocations initialize the supported namespace before any
@@ -90,12 +154,176 @@ impl PrivateXServerFrontend {
             keyboards,
             namespace,
             seat,
+            service_origin: std::time::Instant::now(),
+            service: sophia_input_authority::ServiceBudget::planned(std::time::Duration::ZERO),
+            prefer_cleanup: true,
         })
     }
 }
 
 #[cfg(unix)]
 impl PrivatePreparedRunner {
+    fn deliver_accounted_step(
+        &mut self,
+        watch: &private_watchdog::PrivateWatchdogOwner,
+    ) -> Result<PrivateAccountedDelivery, XServerFrontendRouteError> {
+        use sophia_input_authority::{CleanupReadiness, ServiceWork};
+        let Self {
+            frontend,
+            service_origin,
+            service,
+            ..
+        } = self;
+        let admission = match service.prepare(
+            service_origin.elapsed(),
+            ServiceWork::Cleanup,
+            CleanupReadiness::Eligible,
+        ) {
+            Ok(admission) => admission,
+            Err(cause) => return Ok(PrivateAccountedDelivery::Yield { cause, taken: None }),
+        };
+        let mut admission = Some(admission);
+        let mut running = None;
+        let mut watched = None;
+        let mut refused = None;
+        let mut chosen = None;
+        let mut unwatched = None;
+        let result = frontend
+            .as_mut()
+            .expect("live runner")
+            .deliver_one(&mut |sequence, began| {
+                chosen = Some(sequence);
+                let admission = admission
+                    .take()
+                    .ok_or(XServerFrontendRouteError::OrderedItemUnresolved)?;
+                let Some(elapsed) = began.checked_duration_since(*service_origin) else {
+                    refused = Some(sophia_input_authority::ServiceStartRefusal::ClockRegressed);
+                    return Err(XServerFrontendRouteError::OrderedItemUnresolved);
+                };
+                match admission.dequeued(elapsed, CleanupReadiness::Eligible) {
+                    Ok(run) => running = Some(run),
+                    Err(cause) => {
+                        refused = Some(cause);
+                        return Err(XServerFrontendRouteError::OrderedItemUnresolved);
+                    }
+                }
+                // Terminal observation can acquire common; watch it before that
+                // acquisition too. The item already belongs to the inventory.
+                let guard = match watch.begin_dequeued(began) {
+                    Ok(guard) => guard,
+                    Err(_) => {
+                        unwatched = Some(sequence);
+                        return Err(XServerFrontendRouteError::OrderedItemUnresolved);
+                    }
+                };
+                watched = Some(guard);
+                if watched.as_mut().expect("installed").applying().is_err() {
+                    unwatched = Some(sequence);
+                    return Err(XServerFrontendRouteError::OrderedItemUnresolved);
+                }
+                Ok(())
+            });
+        if let Some(watched) = watched
+            && watched.finish().is_err()
+        {
+            unwatched = chosen;
+        }
+        let charge = running
+            .map(|run| run.finish(service_origin.elapsed()))
+            .transpose()
+            .map_err(|_| XServerFrontendRouteError::OrderedItemUnresolved)?;
+        if let Some(cause) = refused {
+            return Ok(PrivateAccountedDelivery::Yield {
+                cause,
+                taken: chosen,
+            });
+        }
+        let step = match result {
+            Ok(step) => step,
+            Err(_) if unwatched.is_some() => {
+                PrivateDeliveryStep::Blocked(unwatched.expect("checked"))
+            }
+            Err(error) => return Err(error),
+        };
+        Ok(PrivateAccountedDelivery::Step {
+            step,
+            charge,
+            unwatched,
+        })
+    }
+
+    /// Check the allowance before dequeue, and charge only the item actually
+    /// taken. Both accounting guards are local; the work they describe is
+    /// already in the frontend before either can fail or unwind.
+    fn execute_accounted_step(
+        &mut self,
+        watch: &private_watchdog::PrivateWatchdogOwner,
+    ) -> Result<PrivateAccountedStep, XServerFrontendRouteError> {
+        use sophia_input_authority::{CleanupReadiness, ServiceWork};
+        let Self {
+            frontend,
+            keyboards,
+            service_origin,
+            service,
+            ..
+        } = self;
+        // Until every native/recipient cleanup source supplies an eligibility
+        // observation, keep the cleanup reservation. An unavailable scan or
+        // an unwired consumer is not evidence that the allowance can be donated.
+        let cleanup = CleanupReadiness::Eligible;
+        let admission =
+            match service.prepare(service_origin.elapsed(), ServiceWork::NewWork, cleanup) {
+                Ok(admission) => admission,
+                Err(cause) => return Ok(PrivateAccountedStep::Yield { cause, taken: None }),
+            };
+        let mut admission = Some(admission);
+        let mut running = None;
+        let mut refused = None;
+        let mut taken = None;
+        let result = frontend.as_mut().expect("live runner").step_once(
+            keyboards,
+            &mut |sequence, taken_at| {
+                taken = Some(sequence);
+                let admission = admission
+                    .take()
+                    .ok_or(XServerFrontendRouteError::OrderedItemUnresolved)?;
+                let Some(elapsed) = taken_at.checked_duration_since(*service_origin) else {
+                    refused = Some(sophia_input_authority::ServiceStartRefusal::ClockRegressed);
+                    return Err(XServerFrontendRouteError::OrderedItemUnresolved);
+                };
+                // Fresh readiness is deliberately conservative here too; an
+                // earlier empty snapshot must not authorize a later donation.
+                match admission.dequeued(elapsed, CleanupReadiness::Eligible) {
+                    Ok(run) => {
+                        running = Some(run);
+                        Ok(())
+                    }
+                    Err(cause) => {
+                        refused = Some(cause);
+                        Err(XServerFrontendRouteError::OrderedItemUnresolved)
+                    }
+                }
+            },
+            watch,
+        );
+        // Idle/Blocked never called the hook. Dropping that admission neither
+        // consumes an interval nor marks an interrupted execution.
+        // Every returned Result finishes accounting, including a refused
+        // execution. An unwind instead drops the ServiceRun and permanently
+        // closes this budget while the accepted item remains instance-owned.
+        let charge = running
+            .map(|run| run.finish(service_origin.elapsed()))
+            .transpose()
+            .map_err(|_| XServerFrontendRouteError::OrderedItemUnresolved)?;
+        if let Some(cause) = refused {
+            return Ok(PrivateAccountedStep::Yield { cause, taken });
+        }
+        Ok(PrivateAccountedStep::Step {
+            step: result?,
+            charge,
+        })
+    }
+
     pub fn seat(&self) -> SeatId {
         self.seat
     }
@@ -128,31 +356,114 @@ impl PrivatePreparedRunner {
     /// Consume the actual shared order using this runner's continuing state.
     /// Writer settlement is supplied by the terminal owner, not inferred from
     /// a turn returning or from a successful queue handoff.
-    // Transitional: the owner is threaded through the old drain so nothing
-    // executes unwatched while the step-driven runner is being integrated
-    // against the bounded step. The drain, the budget and this signature are
-    // the ordered-state stream's to replace.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn service_turn(
         &mut self,
         watch: &private_watchdog::PrivateWatchdogOwner,
     ) -> Result<PrivateRunnerProgress, XServerFrontendRouteError> {
-        let frontend = self.frontend.as_mut().expect("live runner");
-        let items = frontend.route_pending_ordered(&mut self.keyboards, watch)?;
-        let mut progress = PrivateRunnerProgress {
-            taken: items.len(),
-            refused: items
-                .iter()
-                .filter(|item| matches!(item, PrivateOrderedItem::Refused { .. }))
-                .count(),
-            ..PrivateRunnerProgress::default()
-        };
-        for delivered in frontend.deliver_turn(items) {
-            progress.enqueued += usize::from(delivered.enqueued);
-            progress.observed += usize::from(delivered.completion.is_some());
-            progress.settled += usize::from(delivered.debt_settled);
+        let mut progress = PrivateRunnerProgress::default();
+        // Even if an owner-loop turn crosses several interval boundaries,
+        // producers cannot keep this call open by continuously replenishing.
+        let turn_starts = self.service.limits().starts as usize;
+        while progress.starts < turn_starts {
+            let mut cleanup_idle = false;
+            if self.prefer_cleanup {
+                match self.deliver_accounted_step(watch)? {
+                    PrivateAccountedDelivery::Yield { cause, taken } => {
+                        progress.allowance = Some(cause);
+                        progress.blocked = taken;
+                        break;
+                    }
+                    PrivateAccountedDelivery::Step {
+                        step,
+                        charge,
+                        unwatched,
+                    } => {
+                        let overran = progress.record_charge(charge);
+                        progress.unwatched = unwatched;
+                        match step {
+                            PrivateDeliveryStep::Idle => cleanup_idle = true,
+                            PrivateDeliveryStep::Blocked(sequence) => {
+                                progress.blocked = Some(sequence);
+                                break;
+                            }
+                            PrivateDeliveryStep::Advanced {
+                                sequence: _,
+                                report,
+                            } => {
+                                progress.terminal_steps += 1;
+                                if let Some(delivered) = report {
+                                    progress.enqueued += usize::from(delivered.enqueued);
+                                    progress.observed +=
+                                        usize::from(delivered.completion.is_some());
+                                    progress.settled += usize::from(delivered.debt_settled);
+                                }
+                                self.prefer_cleanup = false;
+                                if overran || unwatched.is_some() {
+                                    break;
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+            let (step, charge) = match self.execute_accounted_step(watch)? {
+                PrivateAccountedStep::Yield { cause, taken } => {
+                    // A new-work reservation may yield while cleanup still
+                    // has allowance. Try that side once before returning.
+                    if taken.is_none()
+                        && !cleanup_idle
+                        && matches!(cause,
+                        sophia_input_authority::ServiceStartRefusal::CleanupStartsReserved { .. }
+                        | sophia_input_authority::ServiceStartRefusal::CleanupTimeReserved { .. })
+                    {
+                        self.prefer_cleanup = true;
+                        continue;
+                    }
+                    progress.allowance = Some(cause);
+                    progress.taken += usize::from(taken.is_some());
+                    progress.blocked = taken;
+                    break;
+                }
+                PrivateAccountedStep::Step { step, charge } => (step, charge),
+            };
+            progress.taken += usize::from(charge.is_some());
+            let overran = progress.record_charge(charge);
+            self.prefer_cleanup = true;
+            match step {
+                PrivateOrderedStep::Idle => {
+                    if cleanup_idle {
+                        break;
+                    }
+                    continue;
+                }
+                PrivateOrderedStep::Blocked(sequence) | PrivateOrderedStep::Parked(sequence) => {
+                    progress.blocked = Some(sequence);
+                    break;
+                }
+                PrivateOrderedStep::Unwatched(sequence) => {
+                    progress.unwatched = Some(sequence);
+                    progress.blocked = Some(sequence);
+                    break;
+                }
+                PrivateOrderedStep::Decided(sequence)
+                | PrivateOrderedStep::DecidedUnwatched(sequence) => {
+                    let frontend = self.frontend.as_ref().expect("live runner");
+                    progress.refused += usize::from(matches!(frontend.terminal.turn.last(),
+                        Some(PrivateOrderedItem::Refused { sequence: stored, .. }) if *stored==sequence));
+                    if matches!(step, PrivateOrderedStep::DecidedUnwatched(_)) {
+                        progress.unwatched = Some(sequence);
+                        break;
+                    }
+                }
+            }
+            if overran {
+                break;
+            }
         }
-        progress.blocked = frontend.blocked();
+        let frontend = self.frontend.as_ref().expect("live runner");
+        progress.blocked = progress.blocked.or_else(|| frontend.blocked());
         Ok(progress)
     }
 

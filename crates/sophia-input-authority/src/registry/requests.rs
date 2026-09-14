@@ -41,6 +41,13 @@ pub struct ExecutionPermit<'a> {
 }
 
 impl ExecutionPermit<'_> {
+    /// The authority that validated this exact executing request. This read
+    /// grants no mutation rights and lets an adapter reject foreign native
+    /// projections before it applies a ledger or projection effect.
+    pub fn identity(&self) -> super::AuthorityIdentity {
+        super::AuthorityIdentity(self.authority.uid)
+    }
+
     /// Before a non-ledger effect such as pointer movement, mark its commit
     /// boundary. An error after this point cannot be reported as effect-free.
     pub fn begin_external_effect(&mut self) -> Result<(), RegistrationError> {
