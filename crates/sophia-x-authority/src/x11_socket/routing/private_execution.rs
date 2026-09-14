@@ -27,59 +27,6 @@
 #[cfg(unix)]
 const PRIVATE_HOLD_RECORDS: usize = sophia_input_authority::Capacity::PLANNED.input_slots();
 
-/// What one ordered input reached.
-///
-/// Decided once, under the guards that decide it, and never asked again. The
-/// fields are private and there is no way to build one outside the resolver,
-/// so a later step cannot revise where an event went after the ledger has
-/// recorded it going there.
-#[cfg(unix)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PrivateReachedResources {
-    client: XServerFrontendClientId,
-    window: XResourceId,
-    surface: SurfaceId,
-    namespace: NamespaceId,
-    /// The seat whose pointer state this hold moved.
-    ///
-    /// Recorded with the plan so the release moves the same mapper the press
-    /// moved. Finding it from the current route or from whatever seat a
-    /// release happens to name would clear a different seat's buttons and
-    /// leave this one's held forever.
-    seat: SeatId,
-    /// Whether a grab chose this rather than the route.
-    grabbed: bool,
-    /// The grant that authorised the press.
-    ///
-    /// Settling a debt names the participant that owes it, and the capability
-    /// does not expose its grant outside the authority. Recorded with the plan
-    /// so the release that ends this hold can name the same participant its
-    /// press was made by.
-    grant: sophia_input_authority::GrantId,
-}
-
-#[cfg(unix)]
-impl PrivateReachedResources {
-    pub fn client(self) -> XServerFrontendClientId {
-        self.client
-    }
-    pub fn window(self) -> XResourceId {
-        self.window
-    }
-    pub fn surface(self) -> SurfaceId {
-        self.surface
-    }
-    pub fn namespace(self) -> NamespaceId {
-        self.namespace
-    }
-    pub fn seat(self) -> SeatId {
-        self.seat
-    }
-    pub fn grabbed(self) -> bool {
-        self.grabbed
-    }
-}
-
 /// Why an ordered execution did not apply.
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +58,13 @@ pub enum PrivateExecutionRefusal {
     /// can currently discharge -- reporting it as nothing to emit would settle
     /// a debt by losing the evidence of it.
     HoldPlanMissing,
+    /// No supervisor is watching this execution.
+    ///
+    /// Refused rather than run unwatched. The watch exists for the case where
+    /// an execution does not come back, and starting one that nothing is
+    /// watching is starting the case it was meant to catch with nothing left
+    /// to catch it.
+    Unwatched,
     /// Another execution holds this delivery.
     ///
     /// Its effect may be under way, so this one may not apply a second. Not
@@ -204,6 +158,7 @@ impl PrivateXServerFrontend {
     fn run_current(
         &mut self,
         keyboards: &mut PrivateKeyboards,
+        watched: &mut private_watchdog::PrivateWatchedExecution,
     ) -> Result<PrivateOrderedRun, PrivateExecutionRefusal> {
         let Self {
             terminal,
@@ -222,7 +177,8 @@ impl PrivateXServerFrontend {
             return Err(PrivateExecutionRefusal::NotAttempted);
         };
         execute_owned(
-            controller, participant, broker, holds, settling, keyboards, route, custody,
+            watched, controller, participant, broker, holds, settling, keyboards, route,
+            custody,
         )
     }
 
@@ -244,12 +200,24 @@ impl PrivateXServerFrontend {
     ///
     /// Nothing is emitted here. Delivery is the caller's, after the guards are
     /// gone, from the immutable record this returns.
-    pub fn run_ordered_input(
+    #[cfg_attr(not(test), allow(dead_code))]
+    // Narrowed to the crate rather than widening the supervisor it takes.
+    // What watches an execution is this crate's arrangement, and exporting it
+    // to match an entry point would publish a type nobody outside has asked
+    // to hold.
+    pub(crate) fn run_ordered_input(
         &mut self,
         keyboards: &mut PrivateKeyboards,
         route: &XAuthorityRoutedInput,
         custody: &PrivateOutstandingRequest,
+        watch: &private_watchdog::PrivateWatchdogOwner,
     ) -> Result<PrivateOrderedRun, PrivateExecutionRefusal> {
+        // Nothing runs unwatched. A supervisor that refuses to watch is not a
+        // reason to go ahead without one: the whole point of the watch is the
+        // case where this call does not come back.
+        let mut watched = watch
+            .begin_dequeued(std::time::Instant::now())
+            .map_err(|_| PrivateExecutionRefusal::Unwatched)?;
         let Self {
             terminal,
             participant,
@@ -260,9 +228,26 @@ impl PrivateXServerFrontend {
         let PrivateTerminalInventory {
             holds, settling, ..
         } = terminal;
-        execute_owned(
-            controller, participant, broker, holds, settling, keyboards, route, custody,
-        )
+        let outcome = execute_owned(
+            &mut watched,
+            controller,
+            participant,
+            broker,
+            holds,
+            settling,
+            keyboards,
+            route,
+            custody,
+        );
+        // Finished on every normal way out, refusals included. What the
+        // execution decided wins over a supervisor that would not take the
+        // finish: the refusal is the cause, and reporting the watch instead
+        // would replace what happened with what was not recorded about it.
+        match (outcome, watched.finish()) {
+            (Err(refusal), _) => Err(refusal),
+            (Ok(run), Ok(())) => Ok(run),
+            (Ok(_), Err(_)) => Err(PrivateExecutionRefusal::Unwatched),
+        }
     }
 }
 
@@ -321,8 +306,20 @@ fn resolve_and_apply(
                     ));
                 }
                 let mut pointers = registry.pointer_state.lock().map_err(|_| unavailable)?;
+                // Told before the effect and again once it is known to have
+                // happened, from the same two points that decide whether a
+                // cancellation had anything to contradict. A supervisor told
+                // later would be watching an interval that had already passed.
+                notes
+                    .watched
+                    .applying()
+                    .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
                 notes.may_have_applied.set(true);
                 let outcome = permit.release(input)?;
+                notes
+                    .watched
+                    .committed()
+                    .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
                 match outcome {
                     sophia_input_authority::ReleaseOutcome::DeliverTo(hold) => {
                         let Some(index) =
@@ -533,8 +530,16 @@ fn resolve_and_apply(
                 }
             }
 
+            notes
+                .watched
+                .applying()
+                .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
             notes.may_have_applied.set(true);
             let applied = permit.press(input, recipient)?;
+            notes
+                .watched
+                .committed()
+                .map_err(|_| sophia_input_authority::RegistrationError::StaleExecution)?;
             let incarnation = applied.incarnation();
             let reached = if applied.first_press() {
                 let reached = PrivateReachedResources {
@@ -634,115 +639,14 @@ fn resolve_and_apply(
 /// Everything the delivery owes, kept together and bound to the hold it ends.
 /// The plan alone is not enough: the event carries the coordinates and the
 /// state from the moment it was decided, and rebuilding either from later
-/// facts would describe a different moment.
-#[cfg(unix)]
-#[derive(Debug, Clone, Copy)]
-pub struct PrivateSettlingRelease {
-    /// The identity a settlement is named against.
-    incarnation: sophia_input_authority::HoldIncarnation,
-    reached: PrivateReachedResources,
-    outcome: sophia_input_authority::ReleaseOutcome,
-    event: Option<XAuthorityInputEvent>,
-    /// The delivery that carries this release's event.
-    ///
-    /// Recorded because a receipt arrives naming a delivery and settles a
-    /// debt named by an incarnation, and nothing else holds both. Without it
-    /// a writer's result can be observed and still not be attributable: the
-    /// debt it settles would have to be guessed from whatever else was in
-    /// flight, and a guess that settles the wrong incarnation lets a later
-    /// press through a barrier that was still owed.
-    ///
-    /// `None` where the release carried no delivery identity, which is not
-    /// the same as a receipt that has not arrived.
-    delivery: Option<XAuthorityInputDeliveryId>,
-    /// What the ledger will do with this release's event.
-    ///
-    /// The debt is recorded whichever it is: the hold ended, and something was
-    /// owed for it. What differs is what may be concluded from it. `Ended`
-    /// establishes that nothing will be carried, so a settlement waiting for a
-    /// receipt would wait for one that cannot come. `Unknown` establishes
-    /// nothing at all -- and neither may ever be read as the recipient having
-    /// settled, which is a fact only a writer's own outcome can supply.
-    binding: PrivateReleaseBinding,
-}
-
-#[cfg(unix)]
-impl PrivateSettlingRelease {
-    /// The delivery whose receipt settles this debt, if it has one.
-    pub fn delivery(self) -> Option<XAuthorityInputDeliveryId> {
-        self.delivery
-    }
-    /// The identity, not the number inside it.
-    ///
-    /// A caller settling this debt names the incarnation; one that could only
-    /// ask for the number could not settle anything with the answer.
-    pub fn incarnation(self) -> sophia_input_authority::HoldIncarnation {
-        self.incarnation
-    }
-    pub fn reached(self) -> PrivateReachedResources {
-        self.reached
-    }
-    pub fn outcome(self) -> sophia_input_authority::ReleaseOutcome {
-        self.outcome
-    }
-    pub fn event(self) -> Option<XAuthorityInputEvent> {
-        self.event
-    }
-    /// Not `pub`, because what it answers with is not. The reason a release
-    /// was or was not carried is this module's vocabulary, and widening the
-    /// type to match an accessor would export a decision nobody outside has
-    /// asked to make.
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn binding(self) -> PrivateReleaseBinding {
-        self.binding
-    }
-}
-
-/// What the ledger will do with a release's event.
-///
-/// Three answers rather than a flag, because the flag collapsed two facts a
-/// settlement has to keep apart: a recipient that is established to be gone,
-/// and a ledger nobody could read.
-#[cfg(unix)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PrivateReleaseBinding {
-    /// Bound to the recipient its press reached. An event is owed.
-    Reached,
-    /// The ledger will not carry it: a terminal outcome is already recorded
-    /// for this delivery, or its recipient's connection is revoked.
-    Ended,
-    /// The ledger could not be read. Whether anything can still be carried is
-    /// unknown, which is not the same as nothing being carried.
-    Unknown,
-}
-
-/// One hold this executor began, and what answering it needs.
-///
-/// The input is part of the record because a press has to know whether it is
-/// starting a hold or joining one *before* the ledger moves. A join reaches
-/// nobody new -- it adopts the recipient the hold already has -- so binding
-/// its delivery to whatever the route resolves to now would name a client the
-/// event never reached.
-#[cfg(unix)]
-#[derive(Debug, Clone, Copy)]
-struct PrivateHoldRecord {
-    /// The whole minted identity, not the number inside it.
-    ///
-    /// A settlement names an incarnation -- authority, recipient, connection
-    /// generation and input together -- and an attempt claim is matched
-    /// against one. The number alone cannot be compared with either, so a
-    /// debt recorded as a number is a debt nothing can later answer for.
-    incarnation: sophia_input_authority::HoldIncarnation,
-    reached: PrivateReachedResources,
-}
-
-/// Execute one admitted input against pieces the caller already owns.
-///
-/// Takes the parts rather than the whole instance so the custody can be
 /// borrowed from the slot that owns it while the rest is used mutably.
 #[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
+/// Execute one admitted input against pieces the caller already owns.
+///
+/// Takes the parts rather than the whole instance so the custody can be
 fn execute_owned(
+    watched: &mut private_watchdog::PrivateWatchedExecution,
     controller: &PrivateAuthorityController,
     participant: &PrivateAdmissionParticipant,
     broker: &XServerFrontendRouteBroker,
@@ -810,7 +714,7 @@ fn execute_owned(
         };
 
         let client = custody.client();
-        let mut notes = PrivateTransactionNotes::new(&applied);
+        let mut notes = PrivateTransactionNotes::new(&applied, watched);
         let completion = participant
             .execute_current(custody, client, |permit, bindings| {
                 resolve_and_apply(
@@ -888,6 +792,13 @@ struct PrivateTransactionNotes<'a> {
     delivery_ended: bool,
     /// The ledger could not be read.
     recovery_unavailable: bool,
+    /// The execution a supervisor is watching.
+    ///
+    /// Borrowed from whoever owns the watch and finishes it, and carried with
+    /// the notes rather than as another argument because the phases it records
+    /// belong beside the marker they describe: the two points that say an
+    /// effect may have happened are the two a supervisor has to hear about.
+    watched: &'a mut private_watchdog::PrivateWatchedExecution,
     /// Whether an effect may have reached the authority's ledger.
     ///
     /// Set before each call that can move it, never after: a marker written
@@ -899,8 +810,12 @@ struct PrivateTransactionNotes<'a> {
 
 #[cfg(unix)]
 impl<'a> PrivateTransactionNotes<'a> {
-    fn new(may_have_applied: &'a std::cell::Cell<bool>) -> Self {
+    fn new(
+        may_have_applied: &'a std::cell::Cell<bool>,
+        watched: &'a mut private_watchdog::PrivateWatchedExecution,
+    ) -> Self {
         Self {
+            watched,
             decided: None,
             plan_missing: false,
             records_exhausted: false,

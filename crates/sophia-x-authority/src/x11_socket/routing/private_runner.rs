@@ -138,9 +138,17 @@ impl PrivatePreparedRunner {
     /// Consume the actual shared order using this runner's continuing state.
     /// Writer settlement is supplied by the terminal owner, not inferred from
     /// a turn returning or from a successful queue handoff.
-    pub fn service_turn(&mut self) -> Result<PrivateRunnerProgress, XServerFrontendRouteError> {
+    // Transitional: the owner is threaded through the old drain so nothing
+    // executes unwatched while the step-driven runner is being integrated
+    // against the bounded step. The drain, the budget and this signature are
+    // the ordered-state stream's to replace.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn service_turn(
+        &mut self,
+        watch: &private_watchdog::PrivateWatchdogOwner,
+    ) -> Result<PrivateRunnerProgress, XServerFrontendRouteError> {
         let frontend = self.frontend.as_mut().expect("live runner");
-        let items = frontend.route_pending_ordered(&mut self.keyboards)?;
+        let items = frontend.route_pending_ordered(&mut self.keyboards, watch)?;
         let mut progress = PrivateRunnerProgress {
             taken: items.len(),
             refused: items

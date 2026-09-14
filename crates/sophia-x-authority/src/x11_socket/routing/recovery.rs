@@ -115,6 +115,9 @@ struct InputRecovery {
     state: Arc<Mutex<InputRecoveryState>>,
     sender: Option<Sender<XAuthorityClientInputDelivery>>,
     capacity: usize,
+    // The ordinary compatibility path keeps its admission-age policy. Private
+    // execution requires writer-produced transport deadlines instead.
+    admission_deadline: Arc<std::sync::atomic::AtomicBool>,
     authority: Arc<Mutex<crate::XInputAuthorityState>>,
 }
 
@@ -174,8 +177,16 @@ impl InputRecovery {
             state: Arc::default(),
             sender,
             capacity,
+            admission_deadline: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             authority,
         }
+    }
+
+    /// Installed before private producers or registrations are exposed.
+    /// No writer has blocked merely because a ticket waited in a queue.
+    /// This disables the legacy age producer; it creates no transport receipt.
+    fn require_writer_deadline(&self) {
+        self.admission_deadline.store(false, Ordering::Release);
     }
 
     fn admit(&self, route: &XAuthorityRoutedInput, epoch: u64, now: Instant) -> bool {
@@ -671,8 +682,9 @@ impl InputRecovery {
             .filter(|entry| {
                 entry.terminal.is_none()
                     && (force
-                        || now.saturating_duration_since(entry.ticket.admitted_at)
-                            >= X_AUTHORITY_INPUT_DELIVERY_DEADLINE)
+                        || (self.admission_deadline.load(Ordering::Acquire)
+                            && now.saturating_duration_since(entry.ticket.admitted_at)
+                                >= X_AUTHORITY_INPUT_DELIVERY_DEADLINE))
             })
             .map(|entry| entry.ticket)
             .collect();
