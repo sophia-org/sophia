@@ -881,13 +881,14 @@ mod private_native_tests {
         });
         assert_eq!(refused.unwrap_err(), Refusal::ForeignOrigin);
         assert!(hold.is_none());
+        let bound_route = admitted_native_press(&fixture, 813);
         fixture
             .run(&fixture.role, |permit, bindings| {
                 let clients = fixture.private.broker.registry.clients.lock().unwrap();
                 let (applied, event) = fixture.owner.lock_base()?.press(
                     permit,
                     fixture.role.capability,
-                    &fixture.route(272, true),
+                    &bound_route,
                     window(),
                     implicit(),
                     &mut hold,
@@ -923,6 +924,12 @@ mod private_native_tests {
                 Ok(())
             })
             .unwrap();
+        assert_eq!(
+            fixture.private.broker.registry.input_recovery
+                .ticket(bound_route.delivery.unwrap()).unwrap().client,
+            Some(other),
+            "the native source binds the grab recipient, not the submitting client"
+        );
         let mut hold = hold.unwrap();
         assert_eq!(hold.plan().surface_window, root);
         assert_eq!(hold.plan().primary_recipient_window().unwrap(), target);
@@ -958,4 +965,5 @@ mod private_native_tests {
 
     include!("private_native_sibling.rs");
     include!("private_native_emission.rs");
+    include!("private_native_binding.rs");
 }
