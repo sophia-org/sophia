@@ -156,9 +156,16 @@ impl ShellSessionTransport {
                     }
                     _ => unreachable!("candidate record was selected above"),
                 };
-                eprintln!(
-                    "sophia_shell_content_trace schema=1 status=intake stage={stage} candidate_generation={generation} output={output} transaction={} now_msec={now_msec}",
-                    transaction.raw(),
+                tracing::info!(
+                    target: "sophia_shell_content_trace",
+                    schema = 1,
+                    status = "intake",
+                    stage,
+                    candidate_generation = generation,
+                    output,
+                    transaction = transaction.raw(),
+                    now_msec,
+                    "shell content candidate intake"
                 );
             }
             let context = match &record {
@@ -217,8 +224,16 @@ impl ShellSessionTransport {
                 && let Err(error) = &outcome
             {
                 let (stage, generation, output) = trace_record;
-                eprintln!(
-                    "sophia_shell_content_trace schema=1 stage={stage} candidate_generation={generation} output={output} error={error:?} reported={reported}"
+                tracing::info!(
+                    target: "sophia_shell_content_trace",
+                    schema = 1,
+                    status = "rejected",
+                    stage,
+                    candidate_generation = generation,
+                    output,
+                    ?error,
+                    reported,
+                    "shell content candidate rejected"
                 );
             }
             processed += 1;

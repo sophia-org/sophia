@@ -600,6 +600,31 @@ pub fn live_production_mirror_head_work_frame(
     .map(LiveProductionScanoutContent::frame)
 }
 
+/// Moves the exact queued identity into renderer ownership when a worker starts.
+///
+/// The worker transition is authoritative even when the surrounding backend tick
+/// has no submit report. Tying this move to `ScanoutExportPending` left the
+/// renderer holding pixels while `pending_content` still named them; the next
+/// tick then tried to retire an empty `rendering_content` slot.
+pub fn advance_live_production_renderer_content(
+    worker_was_in_flight: bool,
+    worker_is_in_flight: bool,
+    pending_content: &mut Option<LiveProductionScanoutContent>,
+    rendering_content: &mut Option<LiveProductionScanoutContent>,
+) -> Result<bool, &'static str> {
+    if worker_was_in_flight || !worker_is_in_flight {
+        return Ok(false);
+    }
+    if rendering_content.is_some() {
+        return Err("renderer worker started while another content identity was rendering");
+    }
+    let content = pending_content
+        .take()
+        .ok_or("renderer worker started without a pending content identity")?;
+    *rendering_content = Some(content);
+    Ok(true)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LiveProductionNativeFrameRetirement {
     pub output: OutputId,

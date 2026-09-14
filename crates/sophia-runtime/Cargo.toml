@@ -10,6 +10,7 @@ rust-version.workspace = true
 rustix = { version = "1.1", default-features = false, features = ["net", "process", "std", "event", "rand"] }
 sophia-linux-peer = { path = "../sophia-linux-peer" }
 sophia-protocol = { path = "../sophia-protocol" }
+tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]

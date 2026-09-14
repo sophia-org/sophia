@@ -1411,19 +1411,56 @@ mod persistent_native_scanout {
                 self.observe_retire(index, retire);
             }
             self.observe_callbacks(index, report.page_flip_callbacks.clone());
+            let worker_is_in_flight = self.exporter(output).is_some_and(
+                crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::worker_in_flight,
+            );
+            let renderer_started = {
+                let head = &mut self.heads[index];
+                advance_live_production_renderer_content(
+                    worker_was_in_flight,
+                    worker_is_in_flight,
+                    &mut head.pending_content,
+                    &mut head.rendering_content,
+                )?
+            };
+            if renderer_started && self.heads[index].output_frames.pending().is_some() {
+                self.heads[index]
+                    .output_frames
+                    .mark_rendering()
+                    .map_err(|error| {
+                        format!("compositor display-list render transition failed: {error}")
+                    })?;
+            }
             if let Some(submit) = report.rendered_primary_plane_scanout_submit {
                 self.heads[index].last_submit_report = Some(submit);
                 use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
-                let worker_is_in_flight = self.exporter(output).is_some_and(
-                    crate::NativeGbmRenderedScanoutBufferDiscoveryExporter::worker_in_flight,
-                );
                 match submit.status {
                     Status::SubmittedWaitingForPageFlip => {
+                        let pending_before = self.heads[index].pending_content;
+                        let rendering_before = self.heads[index].rendering_content;
                         let content = if worker_was_in_flight {
                             self.heads[index].rendering_content.take()
                         } else {
                             self.heads[index].pending_content.take()
                         };
+                        if content.is_none() {
+                            return Err(format!(
+                                "accepted native submission lost its content identity: \
+output={} selected_slot={} worker_was_in_flight={} worker_is_in_flight={} \
+pending_before={pending_before:?} rendering_before={rendering_before:?} exporter_pending={}",
+                                output.raw(),
+                                if worker_was_in_flight {
+                                    "rendering"
+                                } else {
+                                    "pending"
+                                },
+                                worker_was_in_flight,
+                                worker_is_in_flight,
+                                self.exporter(output)
+                                    .is_some_and(|exporter| exporter.pending_frame()),
+                            )
+                            .into());
+                        }
                         // This is the head's pixel proof, not a measurement of
                         // this frame: a readback costs a whole framebuffer, so
                         // a renderer context takes a bounded number of them and
@@ -1534,20 +1571,6 @@ mod persistent_native_scanout {
                         }
                     }
                     Status::ScanoutExportPending => {
-                        if !worker_was_in_flight && worker_is_in_flight {
-                            self.heads[index].rendering_content =
-                                self.heads[index].pending_content.take();
-                            if self.heads[index].output_frames.pending().is_some() {
-                                self.heads[index]
-                                    .output_frames
-                                    .mark_rendering()
-                                    .map_err(|error| {
-                                        format!(
-                                            "compositor display-list render transition failed: {error}"
-                                        )
-                                    })?;
-                            }
-                        }
                         self.submit_deferred = self.submit_deferred.saturating_add(1);
                     }
                     Status::AlreadyInFlight | Status::CleanupPending => {
@@ -2362,16 +2385,60 @@ mod persistent_native_scanout {
                 };
                 self.heads[head_index].last_submit_report = Some(submit);
                 use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
+                let worker_is_in_flight = self.exporters[head_index].worker_in_flight();
+                let renderer_started = {
+                    let head = &mut self.heads[head_index];
+                    advance_live_production_renderer_content(
+                        worker_was_in_flight,
+                        worker_is_in_flight,
+                        &mut head.pending_content,
+                        &mut head.rendering_content,
+                    )?
+                };
+                if renderer_started && self.heads[head_index].output_frames.pending().is_some() {
+                    self.heads[head_index]
+                        .output_frames
+                        .mark_rendering()
+                        .map_err(|error| {
+                            format!("mirror display-list render transition failed: {error}")
+                        })?;
+                    let progressed = self
+                        .output_lifecycles
+                        .get_mut(&output)
+                        .expect("mirror output has a lifecycle")
+                        .observe_physical_progress(logical_frame);
+                    debug_assert!(progressed);
+                }
                 match submit.status {
                     Status::SubmittedWaitingForPageFlip => {
                         self.heads[head_index].prepared_group_frame = None;
                         self.heads[head_index].prepared_worker_was_in_flight = false;
+                        let pending_before = self.heads[head_index].pending_content;
+                        let rendering_before = self.heads[head_index].rendering_content;
                         let content = if worker_was_in_flight {
                             self.heads[head_index].rendering_content.take()
                         } else {
                             self.heads[head_index].pending_content.take()
+                        };
+                        if content.is_none() {
+                            return Err(format!(
+                                "accepted mirror submission lost its content identity: \
+output={} head={} selected_slot={} worker_was_in_flight={} worker_is_in_flight={} \
+pending_before={pending_before:?} rendering_before={rendering_before:?} exporter_pending={}",
+                                output.raw(),
+                                head_id.raw(),
+                                if worker_was_in_flight {
+                                    "rendering"
+                                } else {
+                                    "pending"
+                                },
+                                worker_was_in_flight,
+                                worker_is_in_flight,
+                                self.exporters[head_index].pending_frame(),
+                            )
+                            .into());
                         }
-                        .map(|content| {
+                        let content = content.map(|content| {
                             content.with_nonzero_rgb_pixels(
                                 self.exporters[head_index].composition_nonzero_rgb_pixels(),
                             )
@@ -2499,26 +2566,6 @@ mod persistent_native_scanout {
                         }
                     }
                     Status::ScanoutExportPending => {
-                        if !worker_was_in_flight && self.exporters[head_index].worker_in_flight() {
-                            self.heads[head_index].rendering_content =
-                                self.heads[head_index].pending_content.take();
-                            if self.heads[head_index].output_frames.pending().is_some() {
-                                self.heads[head_index]
-                                    .output_frames
-                                    .mark_rendering()
-                                    .map_err(|error| {
-                                        format!(
-                                            "mirror display-list render transition failed: {error}"
-                                        )
-                                    })?;
-                            }
-                            let progressed = self
-                                .output_lifecycles
-                                .get_mut(&output)
-                                .expect("mirror output has a lifecycle")
-                                .observe_physical_progress(logical_frame);
-                            debug_assert!(progressed);
-                        }
                         self.submit_deferred = self.submit_deferred.saturating_add(1);
                         // The logical Present owns this generation as soon as any
                         // physical exporter starts. Returning `None` leaves the
@@ -3907,16 +3954,16 @@ pub use persistent_native_scanout::{
     LiveProductionRetainedFrameQueueRequirement, LiveProductionRetainedSceneQueueStatus,
     LiveProductionRetiredLayoutWitness, LiveProductionScanoutContent,
     LiveProductionSemanticStartupBarrier, LiveRenderDeviceNodeIdentity,
-    finish_live_production_native_initialization, live_production_mirror_head_work_frame,
-    live_production_scanout_is_stable_present, live_topology_frame_renderer_image_requirements,
-    plan_live_production_native_topology, project_live_production_published_topology,
-    project_mirror_output_damage_snapshot, project_native_cursor_logical_viewport,
-    reduce_live_production_completion_timestamp, reduce_live_production_cpu_frame_queue,
-    reduce_live_production_head_render_target, reduce_live_production_mirror_generation_queue,
-    reduce_live_production_page_flip_watchdog, reduce_live_production_retained_frame_queue,
-    reduce_live_production_retained_scene_queue, reduce_live_production_semantic_startup_barrier,
-    validate_live_head_composition_frame_batch, validate_live_production_rollback_topology,
-    validate_live_production_topology_frames,
+    advance_live_production_renderer_content, finish_live_production_native_initialization,
+    live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
+    live_topology_frame_renderer_image_requirements, plan_live_production_native_topology,
+    project_live_production_published_topology, project_mirror_output_damage_snapshot,
+    project_native_cursor_logical_viewport, reduce_live_production_completion_timestamp,
+    reduce_live_production_cpu_frame_queue, reduce_live_production_head_render_target,
+    reduce_live_production_mirror_generation_queue, reduce_live_production_page_flip_watchdog,
+    reduce_live_production_retained_frame_queue, reduce_live_production_retained_scene_queue,
+    reduce_live_production_semantic_startup_barrier, validate_live_head_composition_frame_batch,
+    validate_live_production_rollback_topology, validate_live_production_topology_frames,
 };
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]

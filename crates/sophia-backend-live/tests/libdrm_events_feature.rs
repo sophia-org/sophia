@@ -115,9 +115,10 @@ use sophia_backend_live::{
     LiveRendererSlotBufferAge, LiveRendererSlotDamageHistory, LiveRendererSlotFullRepaintReason,
     LiveRendererSlotRepaint, NativeGbmRenderedScanoutBufferDiscoveryExporter,
     NativeGbmRenderedScanoutContextStatus, RealAtomicScanoutSmokeConfig,
-    RenderDeviceDiscoveryBackend, WorkerSlotDamage, finish_live_production_native_initialization,
-    live_production_mirror_head_work_frame, live_production_scanout_is_stable_present,
-    reduce_live_production_mirror_generation_queue, reduce_output_native_frame_phase,
+    RenderDeviceDiscoveryBackend, WorkerSlotDamage, advance_live_production_renderer_content,
+    finish_live_production_native_initialization, live_production_mirror_head_work_frame,
+    live_production_scanout_is_stable_present, reduce_live_production_mirror_generation_queue,
+    reduce_output_native_frame_phase,
 };
 #[cfg(feature = "gbm-probe")]
 use sophia_backend_live::{

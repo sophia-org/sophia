@@ -260,6 +260,24 @@ the operator's moving cursor. `motion_routed` specifically records delivery to
 a client surface; no application target or admitted discrete panel input was
 present, so its absence is expected and does not identify a diagnostics gap.
 
+The next attended run at
+`.artifacts/lom-panel-native/20260914T005638Z` used Sophia `d8264884` and Lom
+`d09e100`. Its protected GPU preflight again selected the physical Vulkan
+adapter and completed two sequential renders. In the native session Sophia
+prepared output 1, then exited with `native submit did not retain its content
+identity`. The compositor advanced `pending_content` into renderer ownership
+only inside an optional `ScanoutExportPending` report arm, although the worker
+can start on a tick whose report carries no submit record. A later accepted KMS
+submission then found the renderer-owned identity slot empty and correctly
+failed closed. The first bounded repair observes the worker transition
+independently of that optional report on singleton and mirror paths, moves the
+exact identity once, and still rejects absent or competing ownership. It also
+reports the selected ownership slot and worker state if the invariant can still
+fail. Deterministic tests pin both the state transition and its position before
+optional report handling; the next attended run remains the causal test. It
+must also establish stable two-output presentation and action delivery, which
+the source repair alone does not prove.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

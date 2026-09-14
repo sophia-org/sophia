@@ -209,6 +209,66 @@ fn renderer_work_keeps_its_generation_identity_during_coalescing() {
 }
 
 #[test]
+fn renderer_start_captures_content_even_without_a_submit_report() {
+    let frame = LiveProductionNativeFrameId::from_raw(41);
+    let content = LiveProductionScanoutContent::HeadComposition {
+        frame,
+        logical_content_checksum: 73,
+        nonzero_rgb_pixels: 0,
+    };
+    let mut pending = Some(content);
+    let mut rendering = None;
+
+    assert_eq!(
+        advance_live_production_renderer_content(false, true, &mut pending, &mut rendering),
+        Ok(true)
+    );
+    assert_eq!(pending, None);
+    assert_eq!(rendering, Some(content));
+    assert_eq!(
+        advance_live_production_renderer_content(true, false, &mut pending, &mut rendering),
+        Ok(false)
+    );
+    assert_eq!(rendering, Some(content));
+}
+
+#[test]
+fn renderer_start_refuses_missing_or_competing_content_identity() {
+    let frame = LiveProductionNativeFrameId::from_raw(41);
+    let content = LiveProductionScanoutContent::RetainedMixed {
+        frame,
+        nonzero_rgb_pixels: 0,
+    };
+
+    assert!(
+        advance_live_production_renderer_content(false, true, &mut None, &mut None).is_err()
+    );
+    assert!(
+        advance_live_production_renderer_content(
+            false,
+            true,
+            &mut Some(content),
+            &mut Some(content),
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn native_renderer_ownership_transition_is_not_gated_by_a_submit_report() {
+    let source = include_str!("../../src/production_session/native_scanout.rs");
+    let singleton = source
+        .split_once("            self.observe_callbacks(index, report.page_flip_callbacks.clone());\n")
+        .expect("singleton scanout observes callbacks")
+        .1
+        .split_once("            if let Some(submit) = report.rendered_primary_plane_scanout_submit")
+        .expect("singleton scanout later handles its optional submit report")
+        .0;
+
+    assert!(singleton.contains("advance_live_production_renderer_content("));
+}
+
+#[test]
 fn normal_mirror_retirement_cannot_reenter_scene_projection() {
     let source = include_str!("../../src/production_session/native_scanout.rs");
     let retirement = source
