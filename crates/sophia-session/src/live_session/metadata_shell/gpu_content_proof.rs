@@ -74,9 +74,7 @@ pub fn run(
     let welcome = transport.accept_and_negotiate_with_content_policy(
         1,
         Duration::from_secs(5),
-        ShellContentAdmissionPolicy::Granted {
-            discrete_input: false,
-        },
+        proof_content_admission_policy(),
     )?;
     let grant = transport.content_grant().ok_or("content was not granted")?;
     let output = ContentOutputId {
@@ -214,6 +212,14 @@ pub fn run(
     Err("Lom GPU/content proof exceeded its bounded deadline".into())
 }
 
+fn proof_content_admission_policy() -> ShellContentAdmissionPolicy {
+    // This launches the production Lom client, so its negotiation must match
+    // the production profile even though this isolated proof emits no input.
+    ShellContentAdmissionPolicy::Granted {
+        discrete_input: true,
+    }
+}
+
 fn validate_input(path: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
     if !path.is_absolute() || !path.is_file() {
         return Err(format!("{name} must be an absolute file").into());
@@ -301,3 +307,6 @@ fn checksum(bytes: &[u8]) -> u64 {
         (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
     })
 }
+
+#[path = "gpu_content_proof/tests.rs"]
+mod tests;

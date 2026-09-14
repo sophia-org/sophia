@@ -103,7 +103,7 @@ esac
 [[ "$adapter_render_major" == "$device_major" ]] || { echo "Lom adapter render major disagrees with the grant" >&2; exit 1; }
 [[ "$adapter_render_minor" == "$device_minor" ]] || { echo "Lom adapter render minor disagrees with the grant" >&2; exit 1; }
 [[ "$protected" == true ]] || { echo "proof did not establish protected launch" >&2; exit 1; }
-[[ "$revision" == 6 && "$capabilities" == 0x283 ]] || { echo "proof negotiated the wrong shell contract" >&2; exit 1; }
+[[ "$revision" == 6 && "$capabilities" == 0x783 ]] || { echo "proof negotiated the wrong shell contract" >&2; exit 1; }
 [[ "$width" == 256 && "$height" == 24 && "$bytes" == 24576 ]] || { echo "proof panel dimensions changed" >&2; exit 1; }
 [[ "$renderer_outcome" == 9 ]] || { echo "proof did not settle through RendererFailed" >&2; exit 1; }
 [[ "$backing_bytes" == 0 && "$native_presentation" == false ]] || { echo "proof did not release backing or overclaimed native presentation" >&2; exit 1; }
