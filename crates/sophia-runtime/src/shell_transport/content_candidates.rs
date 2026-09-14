@@ -143,6 +143,24 @@ impl ShellSessionTransport {
             let Some((transaction, record)) = self.poll_content_candidate_record()? else {
                 break;
             };
+            if std::env::var_os("SOPHIA_SHELL_CONTENT_TRACE").is_some() {
+                let (stage, generation, output) = match &record {
+                    ShellContentRecord::CandidateBegin(value) => {
+                        ("begin", value.candidate_generation, value.output.id)
+                    }
+                    ShellContentRecord::CandidateChunk(value) => {
+                        ("chunk", value.candidate_generation, 0)
+                    }
+                    ShellContentRecord::CandidateEnd(value) => {
+                        ("end", value.candidate_generation, 0)
+                    }
+                    _ => unreachable!("candidate record was selected above"),
+                };
+                eprintln!(
+                    "sophia_shell_content_trace schema=1 status=intake stage={stage} candidate_generation={generation} output={output} transaction={} now_msec={now_msec}",
+                    transaction.raw(),
+                );
+            }
             let context = match &record {
                 ShellContentRecord::CandidateEnd(value) => {
                     let output = self
@@ -161,6 +179,16 @@ impl ShellSessionTransport {
                     )
                 }
                 _ => None,
+            };
+            let trace_record = match &record {
+                ShellContentRecord::CandidateBegin(value) => {
+                    ("begin", value.candidate_generation, value.output.id)
+                }
+                ShellContentRecord::CandidateChunk(value) => {
+                    ("chunk", value.candidate_generation, 0)
+                }
+                ShellContentRecord::CandidateEnd(value) => ("end", value.candidate_generation, 0),
+                _ => unreachable!("candidate record was selected above"),
             };
             let (outcome, reported) = {
                 let (resources, candidates) = self
@@ -185,6 +213,14 @@ impl ShellSessionTransport {
                 };
                 (outcome, candidates.pending_event().is_some())
             };
+            if std::env::var_os("SOPHIA_SHELL_CONTENT_TRACE").is_some()
+                && let Err(error) = &outcome
+            {
+                let (stage, generation, output) = trace_record;
+                eprintln!(
+                    "sophia_shell_content_trace schema=1 stage={stage} candidate_generation={generation} output={output} error={error:?} reported={reported}"
+                );
+            }
             processed += 1;
             self.flush_content_candidate_events()?;
             if let Err(error) = outcome

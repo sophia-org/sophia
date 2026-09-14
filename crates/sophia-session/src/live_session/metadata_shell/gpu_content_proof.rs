@@ -20,9 +20,11 @@ const OUTPUT_HEIGHT: u32 = 64;
 const PANEL_HEIGHT: u32 = 24;
 const PROOF_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Run one real Vulkan render through Lom and accept its complete content
-/// candidate. The terminal outcome is deliberately RendererFailed because this
-/// process owns no native output and therefore cannot prove presentation.
+/// Run two sequential real Vulkan renders through Lom and accept both complete
+/// content candidates. The first receives a synthetic Presented outcome so the
+/// production client's replacement path and reusable renderer execute without
+/// taking over a native output. The second terminal outcome is deliberately
+/// RendererFailed because this process cannot prove native presentation.
 pub fn run(
     client: &Path,
     config: &Path,
@@ -97,14 +99,17 @@ pub fn run(
     let started = Instant::now();
     let deadline = started + PROOF_TIMEOUT;
     let mut allocation = None;
-    let mut permit_sent = false;
+    let mut permits_sent = 0_u64;
     let mut candidate_records = 0;
     let mut render: Option<ContentRenderBundle> = None;
-    let mut verified = None;
+    let mut first_verified = None;
+    let mut second_verified = None;
     while Instant::now() < deadline {
         let now = elapsed_msec(started);
-        service_resources(&mut transport, now, verified.is_some())?;
-        service_allocations(&mut transport, now, verified.is_some())?;
+        service_resources(&mut transport, now, second_verified.is_some())
+            .map_err(|error| format!("resource intake: {error}"))?;
+        service_allocations(&mut transport, now, second_verified.is_some())
+            .map_err(|error| format!("allocation intake: {error}"))?;
         if allocation.is_none()
             && let Some((_, request)) = transport.next_content_allocation_request()
         {
@@ -145,39 +150,91 @@ pub fn run(
                 anchor_parent_rect: ContentPixelRect::default(),
                 allowed_reservation_extent: PANEL_HEIGHT,
             };
-            transport.grant_content_allocation(request.allocation_request_id, snapshot, &[])?;
+            transport
+                .grant_content_allocation(request.allocation_request_id, snapshot, &[])
+                .map_err(|error| format!("grant panel allocation: {error}"))?;
             allocation = Some(());
         }
         let allocations = transport.content_allocation_snapshots();
-        service_demands(&mut transport, output, &allocations, verified.is_some())?;
-        if !permit_sent && let Some((transaction, demand)) = transport.next_content_demand() {
+        service_demands(
+            &mut transport,
+            output,
+            &allocations,
+            second_verified.is_some(),
+        )
+        .map_err(|error| format!("frame-demand intake after {permits_sent} permits: {error}"))?;
+        while let Some((transaction, demand)) = transport.next_content_demand() {
             if demand.output != output {
                 return Err("Lom demanded an unknown output".into());
             }
-            transport.grant_content_permit(transaction, output, demand.demand_id, 1, now)?;
-            permit_sent = true;
+            permits_sent = permits_sent
+                .checked_add(1)
+                .ok_or("proof permit identity exhausted")?;
+            transport
+                .grant_content_demand(transaction, output, permits_sent, now)
+                .map_err(|error| {
+                    format!(
+                        "grant frame permit {permits_sent} for demand {}: {error}",
+                        demand.demand_id
+                    )
+                })?;
         }
-        if permit_sent && candidate_records < 3 {
-            candidate_records += transport.service_content_candidates(
-                &[ContentCandidateContext {
-                    output,
-                    facts_generation: 1,
-                    interaction_generation: 1,
-                    allocations: &allocations,
-                }],
-                now,
-            )?;
+        if permits_sent != 0 && candidate_records < 6 {
+            candidate_records += transport
+                .service_content_candidates(
+                    &[ContentCandidateContext {
+                        output,
+                        facts_generation: 1,
+                        interaction_generation: 1,
+                        allocations: &allocations,
+                    }],
+                    now,
+                )
+                .map_err(|error| {
+                    format!(
+                        "candidate intake after {candidate_records} records and {permits_sent} permits: {error}"
+                    )
+                })?;
         }
-        if candidate_records == 3 && render.is_none() && verified.is_none() {
-            let bundle = transport.begin_content_submission(output, 1, now)?;
-            let (bytes, checksum) = verify_bundle(&bundle)?;
-            transport.content_renderer_failed(grant, output, 1)?;
-            render = Some(bundle);
-            verified = Some((bytes, checksum));
+        while let Some((candidate_output, generation)) = transport.next_content_submission() {
+            if candidate_output != output {
+                return Err("Lom submitted a candidate for an unknown output".into());
+            }
+            match generation {
+                1 if first_verified.is_none() => {
+                    let bundle = transport
+                        .begin_content_submission(output, generation, now)
+                        .map_err(|error| format!("first candidate submission: {error}"))?;
+                    let verified = verify_bundle(&bundle)?;
+                    drop(bundle);
+                    transport
+                        .content_prepared(grant, output, generation, 1, 1, now)
+                        .map_err(|error| format!("first candidate prepared: {error}"))?;
+                    transport
+                        .content_presented(grant, output, generation, 1, 1, 1)
+                        .map_err(|error| format!("first candidate presented: {error}"))?;
+                    first_verified = Some(verified);
+                }
+                2 if first_verified.is_some() && second_verified.is_none() => {
+                    let bundle = transport
+                        .begin_content_submission(output, generation, now)
+                        .map_err(|error| format!("second candidate submission: {error}"))?;
+                    let verified = verify_bundle(&bundle)?;
+                    transport
+                        .content_renderer_failed(grant, output, generation)
+                        .map_err(|error| format!("second candidate rejection: {error}"))?;
+                    render = Some(bundle);
+                    second_verified = Some(verified);
+                }
+                _ => return Err("Lom changed the bounded two-render candidate sequence".into()),
+            }
         }
         if supervisor.poll()? == Some(SupervisorEvent::ProcessExited) {
-            let Some((bytes, checksum)) = verified else {
-                return Err("Lom exited before submitting a verified panel".into());
+            let Some((first_bytes, first_checksum)) = first_verified else {
+                return Err("Lom exited before its first verified panel".into());
+            };
+            let Some((second_bytes, second_checksum)) = second_verified else {
+                return Err("Lom exited before its second verified panel".into());
             };
             transport.disconnect()?;
             if render.is_none() || transport.content_reserved_bytes() == 0 {
@@ -191,7 +248,7 @@ pub fn run(
                 return Err("content lease or backing survived renderer release".into());
             }
             crate::session_println!(
-                "sophia_shell_gpu_content_hardware_proof schema=1 status=complete protected=true revision={} capabilities=0x{:x} grant_epoch={} render_node={} device_major={} device_minor={} pci_bus_id={} width={} height={} bytes={} checksum={:016x} renderer_outcome={} backing_bytes=0 native_presentation=false",
+                "sophia_shell_gpu_content_hardware_proof schema=2 status=complete protected=true revision={} capabilities=0x{:x} grant_epoch={} render_node={} device_major={} device_minor={} pci_bus_id={} width={} height={} renders=2 first_bytes={} first_checksum={:016x} second_bytes={} second_checksum={:016x} first_outcome=presented_synthetic second_renderer_outcome={} backing_bytes=0 native_presentation=false",
                 welcome.selected_revision,
                 welcome.capabilities,
                 gpu.epoch,
@@ -201,8 +258,10 @@ pub fn run(
                 gpu.pci_bus_id.as_deref().unwrap_or("none"),
                 OUTPUT_WIDTH,
                 PANEL_HEIGHT,
-                bytes,
-                checksum,
+                first_bytes,
+                first_checksum,
+                second_bytes,
+                second_checksum,
                 ContentReason::RendererFailed as u16,
             );
             return Ok(());

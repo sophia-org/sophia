@@ -7,18 +7,19 @@ trap 'rm -rf "$work"' EXIT
 
 cat > "$work/gpu.log" <<'EOF'
 lom_gpu_admission schema=2 status=ready grant_epoch=1 render_node=/dev/dri/renderD128 device_major=226 device_minor=128 selection_method=drm_dev_t adapter_render_major=226 adapter_render_minor=128 adapter_has_render=true pci_bus_id=0000:01:00.0 pci_vendor_id=1002 pci_device_id=744c backend=Vulkan device_type=DiscreteGpu adapter_name="fixture" driver="fixture" visible_dri_entries=renderD128
-sophia_shell_gpu_content_hardware_proof schema=1 status=complete protected=true revision=6 capabilities=0x783 grant_epoch=1 render_node=/dev/dri/renderD128 device_major=226 device_minor=128 pci_bus_id=0000:01:00.0 width=256 height=24 bytes=24576 checksum=0123456789abcdef renderer_outcome=9 backing_bytes=0 native_presentation=false
+sophia_shell_gpu_content_hardware_proof schema=2 status=complete protected=true revision=6 capabilities=0x783 grant_epoch=1 render_node=/dev/dri/renderD128 device_major=226 device_minor=128 pci_bus_id=0000:01:00.0 width=256 height=24 renders=2 first_bytes=24576 first_checksum=0123456789abcdef second_bytes=24576 second_checksum=fedcba9876543210 first_outcome=presented_synthetic second_renderer_outcome=9 backing_bytes=0 native_presentation=false
 EOF
 "$ROOT_DIR/tools/verify_lom_gpu_content_hardware_proof.sh" "$work/gpu.log" >/dev/null
 for mutation in \
     extra_drm cpu zero_checksum native identity adapter_identity method has_render \
     missing_identity missing_backend missing_device_type duplicate_epoch malformed_major \
-    overflow_major zero_epoch non_vulkan missing_content_input_capability wrong_renderer_outcome; do
+    overflow_major zero_epoch non_vulkan missing_content_input_capability wrong_renderer_outcome \
+    one_render missing_second_checksum claimed_native_first; do
     cp "$work/gpu.log" "$work/$mutation.log"
     case "$mutation" in
         extra_drm) sed -i 's/visible_dri_entries=renderD128/visible_dri_entries=card0,renderD128/' "$work/$mutation.log" ;;
         cpu) sed -i 's/device_type=DiscreteGpu/device_type=Cpu/' "$work/$mutation.log" ;;
-        zero_checksum) sed -i 's/checksum=0123456789abcdef/checksum=0000000000000000/' "$work/$mutation.log" ;;
+        zero_checksum) sed -i 's/first_checksum=0123456789abcdef/first_checksum=0000000000000000/' "$work/$mutation.log" ;;
         native) sed -i 's/native_presentation=false/native_presentation=true/' "$work/$mutation.log" ;;
         identity) sed -i '/^lom_gpu_admission /s/device_minor=128/device_minor=129/' "$work/$mutation.log" ;;
         adapter_identity) sed -i '/^lom_gpu_admission /s/adapter_render_minor=128/adapter_render_minor=129/' "$work/$mutation.log" ;;
@@ -42,7 +43,10 @@ for mutation in \
         zero_epoch) sed -i 's/grant_epoch=1/grant_epoch=0/g' "$work/$mutation.log" ;;
         non_vulkan) sed -i '/^lom_gpu_admission /s/backend=Vulkan/backend=Gl/' "$work/$mutation.log" ;;
         missing_content_input_capability) sed -i 's/capabilities=0x783/capabilities=0x683/' "$work/$mutation.log" ;;
-        wrong_renderer_outcome) sed -i 's/renderer_outcome=9/renderer_outcome=10/' "$work/$mutation.log" ;;
+        wrong_renderer_outcome) sed -i 's/second_renderer_outcome=9/second_renderer_outcome=10/' "$work/$mutation.log" ;;
+        one_render) sed -i 's/renders=2/renders=1/' "$work/$mutation.log" ;;
+        missing_second_checksum) sed -i 's/ second_checksum=fedcba9876543210//' "$work/$mutation.log" ;;
+        claimed_native_first) sed -i 's/first_outcome=presented_synthetic/first_outcome=presented_native/' "$work/$mutation.log" ;;
     esac
     if "$ROOT_DIR/tools/verify_lom_gpu_content_hardware_proof.sh" "$work/$mutation.log" >/dev/null 2>&1; then
         echo "verifier accepted $mutation mutation" >&2
@@ -140,4 +144,4 @@ grep -q 'application-catalog "lom-panel-gate" launch-policy="trusted-host"' \
     exit 1
 }
 
-echo "lom_gpu_content_verifiers schema=1 status=pass mutations=25 structured_events=true pre_takeover_proof=true"
+echo "lom_gpu_content_verifiers schema=1 status=pass mutations=28 structured_events=true pre_takeover_proof=true sequential_renders=2"
