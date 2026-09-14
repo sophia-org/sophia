@@ -15,6 +15,7 @@ mod grant;
 mod identity;
 mod ledger;
 mod registry;
+mod service;
 
 pub use capacity::{Capacity, CapacityError};
 pub use grant::{GrantGeneration, GrantId, IssuerHandle, SubmitHandle};
@@ -27,4 +28,10 @@ pub use registry::{
     AttemptClaim, AttemptToken, AuthorityIdentity, AuthorityInstance, ControlPermit,
     ExecutionContext, ExecutionPermit, PublishedRevision, RegistrationError, RequestCompletion,
     RequestToken, RetiredDebt,
+};
+
+pub use service::{
+    CleanupReadiness, ExecutionPhase, ExecutionWatchdog, InvalidServiceLimits,
+    ServiceAccountingError, ServiceAdmission, ServiceBudget, ServiceCharge, ServiceLimits,
+    ServiceRun, ServiceStartRefusal, ServiceUsage, ServiceWork, WatchdogError, WatchdogObservation,
 };

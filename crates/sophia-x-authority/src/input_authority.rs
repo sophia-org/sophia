@@ -5,6 +5,7 @@ use sophia_protocol::NamespaceId;
 use crate::XResourceId;
 
 include!("input_authority/pointer_query.rs");
+include!("input_authority/ordered_pointer.rs");
 
 pub const X_ANY_MODIFIER: u16 = 0x8000;
 
@@ -542,3 +543,6 @@ fn remove_passive(
             || !(modifiers == X_ANY_MODIFIER || grab.modifiers == modifiers)
     });
 }
+
+#[path = "input_authority/tests.rs"]
+mod ordered_pointer_tests;

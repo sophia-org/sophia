@@ -71,6 +71,8 @@ include!("x11_socket/routing/private_shutdown.rs");
 include!("x11_socket/routing/private_authority.rs");
 include!("x11_socket/routing/private_participant.rs");
 include!("x11_socket/routing/private_execution.rs");
+include!("x11_socket/routing/private_runner.rs");
+include!("x11_socket/routing/private_applied_state.rs");
 include!("x11_socket/routing/private_terminal.rs");
 include!("x11_socket/routing/private_inventory.rs");
 include!("x11_socket/routing/private_settlement.rs");
@@ -360,3 +362,9 @@ mod present_layout_comparison_tests;
 #[cfg(all(test, unix))]
 #[path = "x11_socket/tests/input_recovery.rs"]
 mod input_recovery_tests;
+
+#[cfg(unix)]
+#[path = "x11_socket/routing/private_watchdog.rs"]
+#[allow(dead_code)]
+// Independently tested supervisor; consumer/ingress wiring is the next integration.
+mod private_watchdog;
