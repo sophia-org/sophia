@@ -443,32 +443,6 @@ struct PrivateDelivered {
 
 #[cfg(unix)]
 impl PrivateXServerFrontend {
-    /// Deliver what a turn decided.
-    ///
-    /// Settlement is not here, and there is no settlement path at all: closing
-    /// a release debt needs the recipient half, the recipient half is the
-    /// writer's outcome rather than the queue's acceptance, and nothing on
-    /// this path can yet observe one. Keeping a settlement step that could
-    /// only ever be called with a receipt nobody has would be machinery
-    /// describing a decision nothing makes.
-    ///
-    /// The native half is not established here either. What the guarded code
-    /// demonstrates is that the aggregate transition and the projection it
-    /// moves happen in one interval; what else native reconciliation requires
-    /// is not shown by that, and was previously asserted rather than proved.
-    ///
-    /// Emission happens here, with no guard held: the decision was made under
-    /// the guards and is immutable, and sending on a client's queue is exactly
-    /// the kind of work that must not happen beneath them.
-    ///
-    /// Settlement follows delivery rather than accompanying it. The native
-    /// half was reconciled under the guard when the aggregate and the
-    /// projection moved together; the recipient half is only established by
-    /// the event actually reaching the client. A full queue, a disconnected
-    /// client, a cleared mapper or an observed completion are none of them
-    /// receipts, and a debt closed on any of those would be closed on
-    /// something that did not happen.
-    #[cfg_attr(not(test), allow(dead_code))]
     /// Take one terminal step, if one is possible.
     ///
     /// At most one entry, chosen from work this instance already owns and
@@ -647,6 +621,31 @@ impl PrivateXServerFrontend {
     ///
     /// The unaccounted caller, kept for what already reads a whole turn. A
     /// runner that must charge each step calls `deliver_one` itself.
+    ///
+    /// Settlement is not here, and there is no settlement path at all: closing
+    /// a release debt needs the recipient half, the recipient half is the
+    /// writer's outcome rather than the queue's acceptance, and nothing on
+    /// this path can yet observe one. Keeping a settlement step that could
+    /// only ever be called with a receipt nobody has would be machinery
+    /// describing a decision nothing makes.
+    ///
+    /// The native half is not established here either, and nothing below says
+    /// otherwise. What the guarded code demonstrates is that the aggregate
+    /// transition and the projection it moves happen in one interval. That is
+    /// not native reconciliation: the aggregate, the exact retained
+    /// projection, the passive and implicit grab lifecycle and the route-lease
+    /// and query projections all have to be reconciled together, and only the
+    /// producer that owns the operation can seal a proof of it. Until such a
+    /// proof is consumed here, the native half is unproved -- it was asserted
+    /// once in this file and that assertion is withdrawn.
+    ///
+    /// Emission happens here, with no guard held: the decision was made under
+    /// the guards and is immutable, and sending on a client's queue is exactly
+    /// the kind of work that must not happen beneath them.
+    ///
+    /// A full queue, a disconnected client, a cleared mapper or an observed
+    /// completion are none of them receipts, and a debt closed on any of those
+    /// would be closed on something that did not happen.
     #[cfg_attr(not(test), allow(dead_code))]
     fn deliver_turn(&mut self, items: Vec<PrivateOrderedItem>) -> Vec<PrivateDelivered> {
         // Taken into storage this instance owns before anything is delivered.
