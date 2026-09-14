@@ -20,6 +20,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 drm-ffi = "0.9.1"
+sophia-runtime = { path = "../sophia-runtime" }
 sophia-xshmfence = { path = "../sophia-xshmfence" }
 
 [features]

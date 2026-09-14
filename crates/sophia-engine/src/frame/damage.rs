@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use crate::{
-    CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput,
-    compositor_display_list_damage, compositor_display_list_structure_is_valid,
+    CompositorDisplayCommand, CompositorDisplayList, CompositorRect, CompositorRgb8,
+    HeadlessOutput, compositor_display_list_damage, compositor_display_list_structure_is_valid,
 };
 
 pub const MAX_OUTPUT_FRAME_SURFACES: usize = 1_024;
@@ -27,6 +27,36 @@ pub struct OutputFrameDamageSnapshot {
     pub surfaces: Vec<OutputFrameSurfaceState>,
     pub compositor_display_list: CompositorDisplayList,
     pub software_cursor: Option<Rect>,
+}
+
+/// Keeps compositor damage identity after content pixels have been copied into
+/// storage owned by a renderer.
+///
+/// Damage history needs the node, generation, and geometry, but retaining the
+/// `ContentImage` would also retain its immutable resource lease. Converting it
+/// to a transparent rectangle is conservative: comparing the detached history
+/// with a live content image repaints that geometry, while the history can no
+/// longer delay `ResourceReleased` after the last real frame owner retires.
+pub fn detach_output_frame_content_sources(
+    mut snapshot: OutputFrameDamageSnapshot,
+) -> OutputFrameDamageSnapshot {
+    for command in &mut snapshot.compositor_display_list.commands {
+        let CompositorDisplayCommand::ContentImage(image) = command else {
+            continue;
+        };
+        *command = CompositorDisplayCommand::Rect(CompositorRect {
+            opacity: 0,
+            node: image.node,
+            generation: image.generation,
+            geometry: image.geometry_px,
+            color: CompositorRgb8 {
+                red: 0,
+                green: 0,
+                blue: 0,
+            },
+        });
+    }
+    snapshot
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

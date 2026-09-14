@@ -109,7 +109,10 @@ impl WorkerSlotDamage {
         // finish holds neither its old content nor its new one, and an age
         // named against it would let the next repaint paint too little.
         match snapshot.filter(|_| exported) {
-            Some(snapshot) => self.history.record(slot, snapshot),
+            Some(snapshot) => self.history.record(
+                slot,
+                sophia_engine::detach_output_frame_content_sources(snapshot),
+            ),
             None => self.history.invalidate(slot),
         }
     }

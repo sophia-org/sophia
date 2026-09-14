@@ -1,7 +1,7 @@
 use sophia_engine::{
     CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput, OutputFrameDamageSnapshot,
-    OutputRepaintPlan, OutputRepaintPolicy, output_frame_damage, output_frame_damage_snapshot,
-    plan_output_repaint,
+    OutputRepaintPlan, OutputRepaintPolicy, detach_output_frame_content_sources,
+    output_frame_damage, output_frame_damage_snapshot, plan_output_repaint,
 };
 use sophia_protocol::{BufferSource, CommittedSurfaceState, Point, Rect, Region, Size, SurfaceId};
 
@@ -505,7 +505,9 @@ impl LiveProductionCpuScene {
 
         self.retained_primary_frames.push(RetainedPrimaryCpuFrame {
             bytes: latest.bytes,
-            output_damage_snapshot: detach_content_sources(latest.output_damage_snapshot),
+            output_damage_snapshot: detach_output_frame_content_sources(
+                latest.output_damage_snapshot,
+            ),
         });
         let reusable = self
             .retained_primary_frames
@@ -787,28 +789,6 @@ impl LiveProductionCpuScene {
         }
         Ok(frames)
     }
-}
-
-/// Keeps conservative compositor damage identity without retaining immutable
-/// source pixels after they have been copied into a composed framebuffer.
-fn detach_content_sources(mut snapshot: OutputFrameDamageSnapshot) -> OutputFrameDamageSnapshot {
-    for command in &mut snapshot.compositor_display_list.commands {
-        let CompositorDisplayCommand::ContentImage(image) = command else {
-            continue;
-        };
-        *command = CompositorDisplayCommand::Rect(sophia_engine::CompositorRect {
-            opacity: 0,
-            node: image.node,
-            generation: image.generation,
-            geometry: image.geometry_px,
-            color: sophia_engine::CompositorRgb8 {
-                red: 0,
-                green: 0,
-                blue: 0,
-            },
-        });
-    }
-    snapshot
 }
 
 fn retained_primary_repaint_damage(

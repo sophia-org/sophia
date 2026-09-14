@@ -325,6 +325,25 @@ The next attended gate must remain on TTY4 until the command itself returns;
 native stability and workspace action delivery remain unaccepted until it
 passes without timeout or grant replacement.
 
+The attended successor at
+`.artifacts/lom-panel-native/20260914T101231Z` used Sophia `a98863ce` and
+Lom `fec727d`. Exact RADV `drm_dev_t` admission passed, both outputs repeatedly
+reached native presentation, and output 1 presented its clock-refresh candidate
+3 after its initial candidate 1. Lom then timed out waiting for
+`ResourceReleased` for candidate 1's resource, reconnected, and repeated the
+same sequence. The renderer worker's buffer-age history was the remaining
+owner: a successful mixed render cloned the complete output damage snapshot,
+including every `ContentResourceLease`, into each GPU buffer slot's semantic
+history. Those pixels had already been copied into the slot, so the history
+needed node, generation and geometry but had no storage claim. The repair stores
+the same conservative lease-free snapshot used by the CPU framebuffer reuse
+pool. A focused regression uploads a real shell resource, records the completed
+GPU-slot write, retires the resource and requires immediate `ResourceReleased`;
+restoring the raw snapshot makes that regression fail. This source repair does
+not turn the failed run into acceptance. A new attended run must show the old
+resource release, no `ResourceRetiring` timeout, a stable grant and continued
+presentation on both outputs.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

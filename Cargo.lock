@@ -919,6 +919,7 @@ dependencies = [
  "sophia-engine",
  "sophia-protocol",
  "sophia-renderer-live",
+ "sophia-runtime",
  "sophia-xshmfence",
  "tracing",
  "udev",

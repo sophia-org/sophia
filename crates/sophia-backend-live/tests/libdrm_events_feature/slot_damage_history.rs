@@ -366,3 +366,117 @@ fn worker_slot_damage_invalidates_a_failed_write() {
         "a write that did not complete leaves nothing to repaint against"
     );
 }
+
+#[test]
+fn worker_slot_damage_history_does_not_own_copied_shell_pixels() {
+    use sophia_engine::{CompositorContentImage, CompositorNodeId};
+    use sophia_protocol::{
+        ContentGrant, ContentLimits, ContentResourceBegin, ContentResourceChunk,
+        ContentResourceEnd, ContentResourceId, ContentResourceRetire, ShellContentRecord,
+        TransactionId,
+    };
+
+    let grant = ContentGrant {
+        connection_epoch: 7,
+        content_grant_epoch: 9,
+    };
+    let resource = ContentResourceId {
+        id: 11,
+        generation: 1,
+    };
+    let mut resources =
+        sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant)).unwrap();
+    resources
+        .begin(
+            TransactionId::from_raw(1),
+            ContentResourceBegin {
+                grant,
+                resource,
+                width_px: 1,
+                height_px: 1,
+                rendered_scale_numerator: 1,
+                rendered_scale_denominator: 1,
+                pixel_format: 1,
+                chunk_count: 1,
+                total_bytes: 4,
+            },
+            0,
+        )
+        .unwrap();
+    resources
+        .chunk(
+            TransactionId::from_raw(2),
+            &ContentResourceChunk {
+                grant,
+                resource,
+                ordinal: 0,
+                offset: 0,
+                bytes: vec![0x7f; 4],
+            },
+            0,
+        )
+        .unwrap();
+    resources
+        .end(
+            TransactionId::from_raw(3),
+            &ContentResourceEnd {
+                grant,
+                resource,
+                total_bytes: 4,
+                chunk_count: 1,
+            },
+            0,
+        )
+        .unwrap();
+    while resources.take_event().is_some() {}
+
+    let output = slot_damage_output();
+    let snapshot = sophia_engine::OutputFrameDamageSnapshot {
+        output,
+        surfaces: Vec::new(),
+        compositor_display_list: sophia_engine::CompositorDisplayList {
+            output: output.id,
+            commands: vec![sophia_engine::CompositorDisplayCommand::ContentImage(
+                CompositorContentImage {
+                    node: CompositorNodeId::ShellContent {
+                        output: output.id,
+                        candidate: 1,
+                        surface: 0,
+                        placement: 0,
+                    },
+                    generation: resource.generation,
+                    output_size_px: output.size,
+                    geometry_px: sophia_protocol::Rect {
+                        x: 0,
+                        y: 0,
+                        width: 1,
+                        height: 1,
+                    },
+                    size_px: sophia_protocol::Size {
+                        width: 1,
+                        height: 1,
+                    },
+                    stride: 4,
+                    format: u32::from_le_bytes(*b"AR24"),
+                    resource: resources.lease(grant, resource).unwrap(),
+                },
+            )],
+        },
+        software_cursor: None,
+    };
+    let mut damage = WorkerSlotDamage::with_enabled(true);
+    damage.settle(slot(0), true, Some(7), Some(snapshot));
+    assert_eq!(damage.metrics().records, 1);
+
+    resources
+        .retire(
+            TransactionId::from_raw(4),
+            &ContentResourceRetire { grant, resource },
+        )
+        .unwrap();
+    assert!(matches!(
+        resources.take_event().map(|event| event.record),
+        Some(ShellContentRecord::ResourceReleased(released))
+            if released.resource == resource
+    ));
+}
