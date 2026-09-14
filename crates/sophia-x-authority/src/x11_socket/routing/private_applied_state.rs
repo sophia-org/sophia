@@ -306,6 +306,7 @@ impl PrivateAppliedRoutingView<'_> {
         Ok(PrivateResolvedKeyboard {
             revision: self.revision(),
             selection_revision: self.selection_revision,
+            xkb_state_details: self.selections.xkb_state_details,
             delivered_window,
             core: !xi_wins,
             xi_event_type: xi_wins.then_some(event_type),
@@ -557,6 +558,7 @@ impl PrivateAppliedRoutingView<'_> {
 struct PrivateResolvedKeyboard {
     revision: u64,
     selection_revision: u64,
+    xkb_state_details: u16,
     delivered_window: XResourceId,
     core: bool,
     xi_event_type: Option<u16>,
