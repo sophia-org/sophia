@@ -244,6 +244,17 @@ pub struct PrivateXServerFrontend {
     /// Prepared before setup and moved into the runner before its producers
     /// escape. An unprepared frontend cannot expose a production ingress.
     pending_watch: Option<private_watchdog::PrivateWatchdogOwner>,
+    /// The native origin every hold this instance begins will clone.
+    ///
+    /// Prepared before any producer is exposed, never inside an execution:
+    /// preparing it reads the authority's identity and the installed applied
+    /// registry under common, and an execution that had to prepare one would
+    /// be reaching for common from inside a transaction that already holds it.
+    ///
+    /// `None` until prepared. A production press cannot proceed without it,
+    /// because a hold cloning an origin that does not exist is a hold nothing
+    /// could later prove anything about.
+    native: Option<private_native::Owner>,
     broker: XServerFrontendRouteBroker,
     /// The one place runnable work is accepted, shared with every producer
     /// handle this frontend hands out.
@@ -526,6 +537,7 @@ impl PrivateXServerFrontend {
         );
         Ok(Self {
             pending_watch: Some(watch),
+            native: None,
             broker,
             admission: Arc::new(SharedAdmission::new(staged, durable.clone())),
             completion,
@@ -606,6 +618,36 @@ impl PrivateXServerFrontend {
     ///
     /// Role-limited: what a caller can do with it depends on which method it
     /// reaches for, not on holding the instance.
+    /// Prepare the native origin, once, before any producer is exposed.
+    ///
+    /// Refuses a second preparation rather than replacing the first. Holds
+    /// clone this origin and a proof is checked against it by pointer, so a
+    /// replacement would leave earlier holds proving themselves against an
+    /// origin this instance no longer considers its own.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn prepare_native(
+        &mut self,
+        namespace: NamespaceId,
+        seat: SeatId,
+    ) -> Result<(), private_native::Refusal> {
+        if self.native.is_some() {
+            return Err(private_native::Refusal::WrongPhase);
+        }
+        self.native = Some(private_native::Owner::prepare(
+            &self.controller,
+            &self.broker.registry,
+            namespace,
+            seat,
+        )?);
+        Ok(())
+    }
+
+    /// The native origin, if this instance has been prepared.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn native(&self) -> Option<&private_native::Owner> {
+        self.native.as_ref()
+    }
+
     pub fn authority(&self) -> &PrivateAuthorityController {
         &self.controller
     }
