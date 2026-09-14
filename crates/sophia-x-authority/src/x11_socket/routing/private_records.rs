@@ -58,6 +58,11 @@ impl PrivateReachedResources {
     }
 }
 
+/// A release whose delivery has been decided and not yet handed on.
+///
+/// Everything the delivery owes, kept together and bound to the hold it ends.
+/// The plan alone is not enough: the event carries the coordinates and the
+/// state from the moment it was decided, and rebuilding either from later
 /// facts would describe a different moment.
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy)]

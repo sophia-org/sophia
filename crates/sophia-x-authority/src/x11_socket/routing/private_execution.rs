@@ -638,17 +638,12 @@ fn resolve_and_apply(
     }
 }
 
-/// A release whose delivery has been decided and not yet handed on.
-///
-/// Everything the delivery owes, kept together and bound to the hold it ends.
-/// The plan alone is not enough: the event carries the coordinates and the
-/// state from the moment it was decided, and rebuilding either from later
-/// borrowed from the slot that owns it while the rest is used mutably.
-#[cfg(unix)]
-#[allow(clippy::too_many_arguments)]
 /// Execute one admitted input against pieces the caller already owns.
 ///
 /// Takes the parts rather than the whole instance so the custody can be
+/// borrowed from the slot that owns it while the rest is used mutably.
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 fn execute_owned(
     watched: &mut private_watchdog::PrivateWatchedExecution,
     controller: &PrivateAuthorityController,
