@@ -847,6 +847,7 @@ fn x11_pointer_surface_window(
 #[cfg(unix)]
 include!("writers/records.rs");
 include!("writers/blocked_send.rs");
+include!("writers/ordered_delivery.rs");
 include!("writers/input.rs");
 
 include!("writers/xi_source.rs");

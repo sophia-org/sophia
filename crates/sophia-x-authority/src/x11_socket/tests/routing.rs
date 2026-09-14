@@ -16828,3 +16828,127 @@ fn a_failed_wait_is_not_a_recipient_that_blocked() {
         "a recipient that would not take its bytes is the one that failed"
     );
 }
+
+/// One ordered delivery capsule, built the way the resolver will build one.
+///
+/// Reaches the private constructor directly rather than through a producer,
+/// because the producer is the guarded resolver and it is not here yet. What
+/// this exercises is the writer's custody of a capsule, not how one is made.
+fn ordered_capsule(
+    client: XServerFrontendClientId,
+    delivery: u64,
+    incarnation: sophia_input_authority::HoldIncarnation,
+) -> XAuthorityOrderedDelivery {
+    XAuthorityOrderedDelivery::new(
+        client,
+        XAuthorityInputDeliveryId::from_raw(delivery),
+        incarnation,
+        role_connection(client.raw()),
+    )
+}
+
+/// An incarnation the ledger actually minted.
+///
+/// Taken from a real press rather than assembled, because the identity fields
+/// are the authority's and a name this crate invented would not be one any
+/// settlement could be matched against.
+fn a_minted_incarnation() -> sophia_input_authority::HoldIncarnation {
+    let client = XServerFrontendClientId(1799);
+    let surface = SurfaceId::new(1799, 1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    held_button(&mut fixture, surface, 17990);
+    let minted = fixture.private.terminal.holds[0].incarnation;
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+    minted
+}
+
+#[test]
+fn a_taken_delivery_lands_where_it_will_be_answered_for() {
+    let client = XServerFrontendClientId(1701);
+    let incarnation = a_minted_incarnation();
+    let (sender, queue) = sync_channel(4);
+    let mut in_flight = None;
+
+    // Nothing waiting is its own answer, and takes nothing.
+    assert_eq!(
+        take_ordered_delivery(&queue, &mut in_flight),
+        Err(X11OrderedTakeRefusal::Empty)
+    );
+    assert!(in_flight.is_none());
+
+    sender
+        .send(ordered_capsule(client, 17011, incarnation))
+        .expect("the queue to accept it");
+    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    let held = in_flight.as_ref().expect("taken into storage");
+    assert_eq!(held.delivery().client(), client);
+    assert_eq!(
+        held.delivery().delivery(),
+        XAuthorityInputDeliveryId::from_raw(17011),
+        "the capsule itself is held, not parts copied out of it"
+    );
+    assert_eq!(held.frame_index(), 0);
+    assert_eq!(held.blocked(), Duration::ZERO);
+
+    // A second is refused rather than queued behind the first. This writer
+    // answers for what it holds until that is finished, and taking another
+    // would leave the first owed by nobody with its frames half-written.
+    sender
+        .send(ordered_capsule(client, 17012, incarnation))
+        .expect("the queue to accept it");
+    assert_eq!(
+        take_ordered_delivery(&queue, &mut in_flight),
+        Err(X11OrderedTakeRefusal::InFlight)
+    );
+    assert_eq!(
+        in_flight
+            .as_ref()
+            .expect("still held")
+            .delivery()
+            .delivery(),
+        XAuthorityInputDeliveryId::from_raw(17011),
+        "and the one in hand is untouched"
+    );
+
+    // A producer that has gone is not an empty queue: one says to look again,
+    // the other says nothing more is coming.
+    drop(sender);
+    in_flight = None;
+    take_ordered_delivery(&queue, &mut in_flight).expect("the queued one is still there");
+    in_flight = None;
+    assert_eq!(
+        take_ordered_delivery(&queue, &mut in_flight),
+        Err(X11OrderedTakeRefusal::Closed)
+    );
+}
+
+#[test]
+fn a_frame_index_does_not_move_past_an_unfinished_frame() {
+    let client = XServerFrontendClientId(1702);
+    let (sender, queue) = sync_channel(1);
+    sender
+        .send(ordered_capsule(client, 1702, a_minted_incarnation()))
+        .expect("the queue to accept it");
+    let mut in_flight = None;
+    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    let held = in_flight.as_mut().expect("taken");
+
+    // No frame in hand at all is not a finished one.
+    assert!(held.advance_frame().is_err());
+    assert_eq!(held.frame_index(), 0);
+
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    held.send.begin_frame(vec![6u8; 32]).expect("nothing owed");
+
+    // Begun and not sent is not finished either: the recipient is waiting for
+    // bytes this delivery still owes it.
+    assert!(held.advance_frame().is_err());
+    assert_eq!(held.frame_index(), 0);
+
+    send_pending_frame(&writer, &mut held.send).expect("a healthy send");
+    held.advance_frame().expect("the frame in hand went out whole");
+    assert_eq!(held.frame_index(), 1, "and only then does the next one begin");
+    drop(reader);
+}

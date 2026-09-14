@@ -589,6 +589,24 @@ pub(crate) struct XAuthorityOrderedDelivery {
 
 #[allow(dead_code)]
 impl XAuthorityOrderedDelivery {
+    /// Build one. The resolver's, and crate-private for the same reason the
+    /// fields are: what is assembled here is a claim that these things were
+    /// resolved together, and nothing outside this crate is in a position to
+    /// make it.
+    pub(crate) fn new(
+        client: XServerFrontendClientId,
+        delivery: crate::XAuthorityInputDeliveryId,
+        incarnation: sophia_input_authority::HoldIncarnation,
+        recipient: sophia_input_authority::ConnectionIdentity,
+    ) -> Self {
+        Self {
+            client,
+            delivery,
+            incarnation,
+            recipient,
+        }
+    }
+
     pub(crate) fn client(&self) -> XServerFrontendClientId {
         self.client
     }
