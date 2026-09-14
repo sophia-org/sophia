@@ -15490,29 +15490,25 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     drop(fixture.durable);
 }
 
-/// A cancellation deferred by an earlier claim that may have applied, so it is
-/// retained and left for the next execution to resolve.
-fn retained_cancellation(fixture: &OrderedIngressFixture, delivery: XAuthorityInputDeliveryId) {
-    let recovery = &fixture.private.broker.registry.input_recovery;
-    assert_eq!(
-        recovery.claim_execution(Some(delivery)),
-        ExecutionClaim::Claimed
-    );
-    recovery
-        .recover(std::time::Instant::now(), true)
-        .expect("the ledger to be readable");
-    // Resolved as possibly-applied, so the cancellation is kept rather than
-    // published or discarded: whether it still applies is not that
-    // resolution's to decide.
-    recovery.resolve_claim(Some(delivery), true);
-    assert!(
-        fixture.deliveries.try_recv().is_err(),
-        "nothing published yet"
-    );
+/// What the ledger records about one delivery's claim lifetime.
+fn claim_state(
+    fixture: &OrderedIngressFixture,
+    delivery: XAuthorityInputDeliveryId,
+) -> (bool, bool) {
+    let held = fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let entry = held.tickets.get(&delivery).expect("still tracked");
+    (entry.claimed, entry.may_have_applied)
 }
 
 #[test]
-fn a_refusal_before_the_effect_lets_a_deferred_cancellation_stand() {
+fn a_refusal_before_the_effect_resolves_the_claim_as_having_applied_nothing() {
     let client = XServerFrontendClientId(1101);
     let surface = SurfaceId::new(1101, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(1101);
@@ -15521,11 +15517,12 @@ fn a_refusal_before_the_effect_lets_a_deferred_cancellation_stand() {
         .ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
-    retained_cancellation(&fixture, delivery);
 
     // The admission goes, so the real boundary refuses this request before the
     // effect callback is ever invoked. That refusal leaves the execution by a
-    // returned error, not by deciding anything.
+    // returned error, not by deciding anything -- and everything after a
+    // fallible call is skipped when that call returns an error, which is
+    // exactly where a copied progress marker would be wrong.
     fixture
         .private
         .admission_participant()
@@ -15544,19 +15541,11 @@ fn a_refusal_before_the_effect_lets_a_deferred_cancellation_stand() {
         fixture.private.terminal.holds.is_empty(),
         "nothing was applied"
     );
-
-    // So the cancellation had nothing to contradict, and stands. An execution
-    // that returned an error before reaching an effect is not one that may
-    // have applied something -- and the guard has to see that on the returned
-    // error, not only on an unwind.
-    let receipt = fixture
-        .deliveries
-        .try_recv()
-        .expect("the cancellation to stand once nothing applied");
-    assert_eq!(receipt.delivery, delivery);
     assert_eq!(
-        receipt.outcome,
-        XAuthorityInputDeliveryOutcome::EpochRevoked
+        claim_state(&fixture, delivery),
+        (false, false),
+        "the claim is given back, saying nothing was applied -- which the \
+         guard has to know on a returned error, not only on an unwind"
     );
     drop(fixture.registration);
     drop(fixture.channels);
@@ -15564,13 +15553,16 @@ fn a_refusal_before_the_effect_lets_a_deferred_cancellation_stand() {
 }
 
 #[test]
-fn a_deferred_cancellation_keeps_its_delivery_when_binding_names_its_recipient() {
+fn a_cancellation_deferred_by_the_execution_itself_stands_when_nothing_applied() {
     let client = XServerFrontendClientId(1102);
     let surface = SurfaceId::new(1102, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(1102);
     let mut fixture = ordered_ingress_fixture(client, surface);
-    // The recipient is already gone, so binding will refuse -- before any
-    // effect, which is the point.
+    // The recipient is already gone, so binding this delivery to it records a
+    // terminal outcome -- and binding happens inside the execution's own
+    // claim, so that record is deferred by the arbitration rather than
+    // published on the spot. No injection: the execution produces the
+    // cancellation it then has to resolve.
     fixture
         .private
         .broker
@@ -15582,46 +15574,32 @@ fn a_deferred_cancellation_keeps_its_delivery_when_binding_names_its_recipient()
         .ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
-    assert_eq!(
-        fixture
-            .private
-            .broker
-            .registry
-            .input_recovery
-            .ticket(delivery)
-            .expect("tracked")
-            .client,
-        None,
-        "cancelled while it still had no recipient"
+    assert!(
+        fixture.deliveries.try_recv().is_err(),
+        "nothing published before the turn"
     );
-    retained_cancellation(&fixture, delivery);
 
-    // The execution binds -- which gives the delivery a recipient -- and then
-    // refuses, having applied nothing.
     let turn = fixture
         .private
         .route_pending_ordered(&mut fixture.keyboards)
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn).is_empty());
-    assert!(fixture.private.terminal.holds.is_empty());
+    assert!(
+        fixture.private.terminal.holds.is_empty(),
+        "binding refused before the ledger moved"
+    );
+    assert_eq!(claim_state(&fixture, delivery), (false, false));
 
-    // The cancellation was recorded naming no recipient and the delivery has
-    // one now. Publishing the original receipt would fail the ledger's own
-    // identity check and the cancellation would be lost -- which is the
-    // silent loss deferring it exists to prevent.
+    // Nothing applied, so what the binding established stands.
     let receipt = fixture
         .deliveries
         .try_recv()
-        .expect("the cancellation to survive the binding that named its client");
+        .expect("the deferred outcome to be resolved once the claim gave way");
     assert_eq!(receipt.delivery, delivery);
+    assert_eq!(receipt.client, client);
     assert_eq!(
         receipt.outcome,
-        XAuthorityInputDeliveryOutcome::EpochRevoked
-    );
-    assert_eq!(
-        receipt.client, client,
-        "resolved to the recipient the ledger now names, not invented and not \
-         left as the placeholder it was cancelled under"
+        XAuthorityInputDeliveryOutcome::ClientDisconnected
     );
     drop(fixture.registration);
     drop(fixture.channels);
@@ -15677,7 +15655,7 @@ fn a_claim_is_given_back_even_when_the_ledger_cannot_be_read() {
 }
 
 #[test]
-fn a_cancellation_kept_by_one_claim_is_still_there_for_the_next() {
+fn a_cancellation_cannot_publish_once_the_delivery_may_have_applied() {
     let delivery = XAuthorityInputDeliveryId::from_raw(4005);
     let (recovery, receipts) = claim_fixture(delivery);
     assert_eq!(
@@ -15688,26 +15666,114 @@ fn a_cancellation_kept_by_one_claim_is_still_there_for_the_next() {
         .recover(std::time::Instant::now(), true)
         .expect("the ledger to be readable");
 
-    // Resolved as possibly-applied. The cancellation cannot become this
-    // delivery's outcome, but whether it still applies is not this
-    // resolution's to decide -- taking it and dropping it would answer that
-    // question by losing it.
+    // This execution applied something, so the cancellation it lost to cannot
+    // become the delivery's outcome.
     recovery.resolve_claim(Some(delivery), true);
     assert!(receipts.try_recv().is_err());
 
-    // The next execution applies nothing, and finds it.
+    // Nor can a later execution that happens to apply nothing publish it. What
+    // one claim did is not what the delivery has been through: the effect
+    // already happened, and a per-claim answer cannot erase that.
     assert_eq!(
         recovery.claim_execution(Some(delivery)),
         ExecutionClaim::Claimed
     );
     recovery.resolve_claim(Some(delivery), false);
+    assert!(
+        receipts.try_recv().is_err(),
+        "a second claim applying nothing does not put a stale cancellation \
+         back in reach of a delivery whose effect already happened"
+    );
+
+    // Nor can a fresh one arriving through the ordinary entry.
+    recovery
+        .recover(std::time::Instant::now(), true)
+        .expect("the ledger to be readable");
+    assert!(
+        receipts.try_recv().is_err(),
+        "the same contradiction refused at the normal entry, not only the \
+         deferred one"
+    );
+
+    // But what became of the delivery is still sayable. Refusing this too
+    // would leave a delivery whose effect happened with no way to be answered
+    // at all, which is the opposite failure.
+    recovery
+        .finish(
+            XServerFrontendClientId(1),
+            Some(delivery),
+            XAuthorityInputDeliveryOutcome::Flushed,
+        )
+        .expect("the ledger to be readable");
     assert_eq!(
         receipts
             .try_recv()
-            .expect("the kept cancellation")
+            .expect("an established outcome to publish")
             .outcome,
-        XAuthorityInputDeliveryOutcome::EpochRevoked
+        XAuthorityInputDeliveryOutcome::Flushed,
+        "a writer result is not a denial that the delivery happened, so it \
+         publishes"
     );
+}
+
+#[test]
+fn a_press_that_applied_cannot_be_revoked_afterwards() {
+    let client = XServerFrontendClientId(1203);
+    let surface = SurfaceId::new(1203, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(1203);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+    assert_eq!(
+        claim_state(&fixture, delivery),
+        (false, true),
+        "the claim is back, and the delivery is on record as having applied"
+    );
+
+    // A sweep that would have revoked it before is too late now: the effect
+    // happened, the button is down, and saying the delivery was withdrawn
+    // would tell everyone waiting to stop on account of something that did
+    // occur.
+    let revoked = fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .recover(std::time::Instant::now(), true)
+        .expect("the ledger to be readable");
+    assert!(
+        revoked.is_empty(),
+        "nothing is reported revoked that was not"
+    );
+    assert!(fixture.deliveries.try_recv().is_err());
+
+    // The client going is still sayable, because that is what became of the
+    // delivery rather than a denial that it happened.
+    fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
+        .expect("the ledger to be readable");
+    assert_eq!(
+        fixture
+            .deliveries
+            .try_recv()
+            .expect("an established recipient fact")
+            .outcome,
+        XAuthorityInputDeliveryOutcome::ClientDisconnected
+    );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
 }
 
 #[test]
