@@ -1,13 +1,16 @@
-// How long one recipient kept one delivery waiting.
+// One frame, its position on the wire, and how long its recipient kept it
+// waiting.
 //
-// Split by subject because the subject is time, not content. What goes on the
-// wire is decided elsewhere; this is only about a send that does not complete,
-// which is the one thing a transport deadline may honestly be built from.
+// Split by subject because the subject is custody of a frame in flight. What
+// goes on the wire is decided elsewhere; this owns the bytes from the moment
+// they may leave until the moment the whole frame is known to have gone.
+//
+// Exercised by controls and not yet by a writer: this is the measurement and
+// the custody, and the ordered path that will consume them is still being
+// built. Marked rather than wired early, because turning accumulated waiting
+// into a delivery's outcome is a separate decision from being able to measure
+// it.
 
-// Exercised by controls and not yet by a writer: this is the measurement, and
-// the ordered path that will consume it is still being built. Marked rather
-// than wired early, because turning accumulated waiting into a delivery's
-// outcome is a separate decision from being able to measure it.
 /// How long one delivery may spend waiting on its recipient before that
 /// recipient is treated as unable to take it.
 ///
@@ -29,34 +32,30 @@ const X_AUTHORITY_ORDERED_BLOCKED_SLICE: Duration = Duration::from_millis(50);
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
 enum X11FrameSendFailure {
-    /// This recipient did not take the rest of the frame within the limit.
-    ///
-    /// Carries how much of the frame went out, because that decides what can
-    /// be done next and nothing else establishes it. Anything other than zero
-    /// means the wire holds part of an event, which X11 can neither describe
-    /// nor retract, so the connection is no longer usable.
-    Blocked { written: usize, blocked: Duration },
+    /// Nothing is in hand to send.
+    NoFrame,
     /// A send was begun and never reported, so how much of the frame reached
     /// the wire is unknown. Not resumable and not retryable: the only honest
     /// disposition is to end the connection, because nothing can establish
     /// where the event stopped.
     Interrupted,
+    /// A frame is still owed bytes, and something asked for a different one.
+    ///
+    /// Refused rather than accepted, because the wire already holds the
+    /// beginning of an event: writing another frame now would put a second
+    /// event's opening bytes inside the first one's body, and an X11 client
+    /// has no way to notice that or recover from it.
+    Incomplete { sent: usize, len: usize },
+    /// This recipient did not take the rest of the frame within the limit.
+    ///
+    /// Carries how much of the frame went out, because that decides what can
+    /// be done next and nothing else establishes it. Anything other than zero
+    /// means the wire holds part of an event.
+    Blocked { written: usize, blocked: Duration },
     /// The send failed for a reason of its own.
     Io(std::io::Error),
 }
 
-/// What one delivery has already put on the wire, and how long it has waited.
-///
-/// Owner-bound on purpose. The offset is what the socket has accepted of the
-/// frame in hand, and a local holding it is lost to an unwind while the bytes
-/// it describes are already gone -- leaving the wire in a state nothing can
-/// name. Whoever owns the delivery owns this, across every fallible send and
-/// every wait.
-///
-/// One of these belongs to exactly one delivery. Waiting is a fact about a
-/// recipient and a delivery together, so an accumulator shared between them
-/// would let an earlier stall be spent against a later deadline, and a
-/// delivery could be declared blocked on time it never waited.
 /// How much of the frame in hand is on the wire.
 ///
 /// Three states rather than a count, because between handing bytes to the
@@ -70,51 +69,95 @@ enum X11FrameSendFailure {
 enum X11OrderedSendProgress {
     /// This many bytes of the frame have been accepted, and that is known.
     Sent(usize),
-    /// A send was begun from this offset and never reported. Whether any of it
-    /// reached the wire is unknown, and nothing can establish it afterwards --
-    /// the socket does not remember and the recipient cannot be asked. The
-    /// frame is not resumable from here and the connection is no longer
-    /// describable.
+    /// A send was begun from this offset and never reported.
     Unknown { from: usize },
 }
 
+/// The frame itself, held for as long as any of it is still owed.
+///
+/// The bytes are owned here rather than borrowed from a caller. An offset into
+/// somebody else's slice says how far through *something* the wire is, and the
+/// next call can arrive with different bytes behind the same number -- which
+/// would send the tail of one event as though it were the tail of another.
+/// Owning them is what makes the offset mean anything.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
-struct X11OrderedSendState {
+struct X11OrderedFrame {
+    bytes: Vec<u8>,
     progress: X11OrderedSendProgress,
+}
+
+/// What one delivery has in flight, and how long it has waited.
+///
+/// Owner-bound on purpose, and it owns the frame rather than a position in
+/// one. Bytes handed to the kernel are gone whatever happens next, so the
+/// thing that records them has to outlive every fallible send and every wait,
+/// and it has to be the same bytes each time.
+///
+/// One of these belongs to exactly one delivery. Waiting is a fact about a
+/// recipient and a delivery together, so an accumulator shared between them
+/// would let an earlier stall be spent against a later deadline.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Default)]
+struct X11OrderedSendState {
+    frame: Option<X11OrderedFrame>,
     blocked: Duration,
 }
 
 #[cfg(unix)]
-impl Default for X11OrderedSendState {
-    fn default() -> Self {
-        Self {
-            progress: X11OrderedSendProgress::Sent(0),
-            blocked: Duration::ZERO,
-        }
-    }
-}
-
-#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
 impl X11OrderedSendState {
-    /// Begin another frame of the SAME delivery.
+    /// Take the next frame of this delivery, if the last one is finished.
     ///
-    /// The offset starts again because a new frame has had nothing accepted;
-    /// the waiting does not, because it is this delivery's and it has already
-    /// happened.
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn begin_frame(&mut self) {
-        self.progress = X11OrderedSendProgress::Sent(0);
+    /// Refuses while anything is still owed. A frame that has had bytes
+    /// accepted cannot be abandoned -- those bytes are an event's beginning
+    /// and the recipient is waiting for the rest of it -- and a frame whose
+    /// send never reported cannot be left behind either, because what the wire
+    /// holds is unknown and a following frame would be appended to something
+    /// nobody can describe.
+    ///
+    /// There is no way to declare a frame finished. Finished means every byte
+    /// of the frame this state owns was accepted, which only sending can
+    /// establish.
+    fn begin_frame(&mut self, bytes: Vec<u8>) -> Result<(), X11FrameSendFailure> {
+        match self
+            .frame
+            .as_ref()
+            .map(|frame| (frame.progress, frame.bytes.len()))
+        {
+            Some((X11OrderedSendProgress::Unknown { .. }, _)) => {
+                return Err(X11FrameSendFailure::Interrupted);
+            }
+            Some((X11OrderedSendProgress::Sent(sent), len)) if sent < len => {
+                return Err(X11FrameSendFailure::Incomplete { sent, len });
+            }
+            None | Some(_) => {}
+        }
+        self.frame = Some(X11OrderedFrame {
+            bytes,
+            progress: X11OrderedSendProgress::Sent(0),
+        });
+        Ok(())
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     fn blocked(&self) -> Duration {
         self.blocked
     }
+
+    /// Whether everything the frame in hand owes has been accepted.
+    ///
+    /// Derived from what was sent, never set. A flag a caller could raise
+    /// would be a claim about the wire made by something that cannot see it.
+    fn frame_complete(&self) -> bool {
+        self.frame
+            .as_ref()
+            .is_some_and(|frame| frame.progress == X11OrderedSendProgress::Sent(frame.bytes.len()))
+    }
 }
 
-/// Send what is left of one frame without blocking the shared socket.
+/// Send what is left of the frame in hand without blocking the shared socket.
 ///
 /// Every send is non-blocking for this call only: the flags are per-call, so
 /// nothing about the socket changes and no other writer sharing it is
@@ -129,43 +172,47 @@ impl X11OrderedSendState {
 /// its bytes.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
-fn send_frame_bounded(
+fn send_pending_frame(
     socket: &UnixStream,
-    frame: &[u8],
     state: &mut X11OrderedSendState,
 ) -> Result<(), X11FrameSendFailure> {
     loop {
-        let X11OrderedSendProgress::Sent(offset) = state.progress else {
+        let blocked_so_far = state.blocked;
+        let Some(frame) = state.frame.as_mut() else {
+            return Err(X11FrameSendFailure::NoFrame);
+        };
+        let X11OrderedSendProgress::Sent(offset) = frame.progress else {
             // A previous send never reported. Resuming would send from an
             // offset that may already be behind what the wire took, putting an
             // event's middle after its own middle.
             return Err(X11FrameSendFailure::Interrupted);
         };
-        if offset >= frame.len() {
+        if offset >= frame.bytes.len() {
             return Ok(());
         }
         // Marked before the bytes can leave, not after they are counted. A
         // marker written afterwards says nothing about a call that did not
         // return, and this is the one interval where the wire can be ahead of
         // everything that describes it.
-        state.progress = X11OrderedSendProgress::Unknown { from: offset };
-        match rustix::net::send(
+        frame.progress = X11OrderedSendProgress::Unknown { from: offset };
+        let attempt = rustix::net::send(
             socket,
-            &frame[offset..],
+            &frame.bytes[offset..],
             rustix::net::SendFlags::DONTWAIT | rustix::net::SendFlags::NOSIGNAL,
-        ) {
+        );
+        match attempt {
             Ok(0) => {
-                state.progress = X11OrderedSendProgress::Sent(offset);
+                frame.progress = X11OrderedSendProgress::Sent(offset);
                 return Err(X11FrameSendFailure::Io(std::io::Error::new(
                     std::io::ErrorKind::WriteZero,
                     "X11 ordered writer made no progress on a frame",
                 )));
             }
             // The send reported, so what it took is known again.
-            Ok(count) => state.progress = X11OrderedSendProgress::Sent(offset + count),
+            Ok(count) => frame.progress = X11OrderedSendProgress::Sent(offset + count),
             Err(rustix::io::Errno::AGAIN) => {
                 // Nothing left, so the offset is what it was.
-                state.progress = X11OrderedSendProgress::Sent(offset);
+                frame.progress = X11OrderedSendProgress::Sent(offset);
                 // The socket would have blocked, which is what opens a waiting
                 // interval. What is added is the interval that actually
                 // elapsed, not the slice that was asked for: a wait can end
@@ -180,7 +227,7 @@ fn send_frame_bounded(
                     tv_nsec: i64::from(X_AUTHORITY_ORDERED_BLOCKED_SLICE.subsec_nanos()),
                 };
                 let _ = rustix::event::poll(&mut watched, Some(&slice));
-                state.blocked += waited.elapsed();
+                state.blocked = blocked_so_far + waited.elapsed();
                 if state.blocked >= X_AUTHORITY_ORDERED_BLOCKED_LIMIT {
                     return Err(X11FrameSendFailure::Blocked {
                         written: offset,
@@ -189,10 +236,10 @@ fn send_frame_bounded(
                 }
             }
             Err(rustix::io::Errno::INTR) => {
-                state.progress = X11OrderedSendProgress::Sent(offset);
+                frame.progress = X11OrderedSendProgress::Sent(offset);
             }
             Err(error) => {
-                state.progress = X11OrderedSendProgress::Sent(offset);
+                frame.progress = X11OrderedSendProgress::Sent(offset);
                 return Err(X11FrameSendFailure::Io(std::io::Error::from(error)));
             }
         }
@@ -200,8 +247,6 @@ fn send_frame_bounded(
 }
 
 /// Read one frame's failure into the writer's own vocabulary.
-///
-/// Waiting on the ordered writer with the rest of this file.
 ///
 /// A recipient that would not take its bytes is a failed recipient, not a
 /// failed server. Sending it through the ordinary peer-write reading would
@@ -211,15 +256,23 @@ fn send_frame_bounded(
 #[cfg_attr(not(test), allow(dead_code))]
 fn x11_ordered_frame_error(context: &str, failure: X11FrameSendFailure) -> X11SetupSocketError {
     match failure {
+        X11FrameSendFailure::NoFrame => {
+            X11SetupSocketError::new(format!("{context}: nothing was in hand to send"))
+        }
+        X11FrameSendFailure::Interrupted => X11SetupSocketError::client_failure(format!(
+            "{context}: a send never reported, so what reached this recipient is unknown"
+        )),
+        X11FrameSendFailure::Incomplete { sent, len } => {
+            X11SetupSocketError::client_failure(format!(
+                "{context}: {sent} of {len} bytes of the previous frame are still owed"
+            ))
+        }
         X11FrameSendFailure::Blocked { written, blocked } => {
             X11SetupSocketError::client_failure(format!(
                 "{context}: recipient took {written} bytes of the frame and then nothing for \
                  {blocked:?}"
             ))
         }
-        X11FrameSendFailure::Interrupted => X11SetupSocketError::client_failure(format!(
-            "{context}: a send never reported, so what reached this recipient is unknown"
-        )),
         X11FrameSendFailure::Io(error) => x11_peer_write_error(context, error),
     }
 }

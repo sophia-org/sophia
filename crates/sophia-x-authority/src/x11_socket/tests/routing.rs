@@ -16352,37 +16352,28 @@ fn a_send_counts_only_what_it_waited_on_this_recipient() {
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
     let mut state = X11OrderedSendState::default();
 
-    // A recipient that is taking its bytes costs no waiting, and a send that
-    // never waited must contribute nothing to a deadline.
-    send_frame_bounded(&writer, &[7u8; 32], &mut state).expect("a healthy send");
-    assert_eq!(
-        state.progress,
-        X11OrderedSendProgress::Sent(32),
-        "the whole frame went out, and that is known"
-    );
+    // A recipient that is taking its bytes costs no waiting.
+    state.begin_frame(vec![7u8; 32]).expect("nothing owed yet");
+    send_pending_frame(&writer, &mut state).expect("a healthy send");
+    assert!(state.frame_complete(), "the whole frame went out");
     assert_eq!(
         state.blocked(),
         Duration::ZERO,
         "nothing waited, so nothing is owed to a deadline"
     );
 
-    // Nobody reads now. The buffer fills and the sends start waiting on a
-    // recipient that is taking nothing. Seeded close to the limit rather than
-    // waiting out the whole policy: what is under test is that real waiting
-    // accumulates onto what this delivery already waited, and trips the bound.
-    state.begin_frame();
-    assert_eq!(
-        state.progress,
-        X11OrderedSendProgress::Sent(0),
-        "a new frame has had nothing accepted"
-    );
+    // Nobody reads now. Seeded close to the limit rather than waiting out the
+    // whole policy: what is under test is that real waiting accumulates onto
+    // what this delivery already waited, and trips the bound.
     state.blocked = X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(60);
-    let frame = vec![9u8; 1 << 20];
     let failure = loop {
-        match send_frame_bounded(&writer, &frame, &mut state) {
-            Ok(()) => {
-                state.begin_frame();
-            }
+        if state.frame_complete() {
+            state
+                .begin_frame(vec![9u8; 1 << 16])
+                .expect("the last frame finished");
+        }
+        match send_pending_frame(&writer, &mut state) {
+            Ok(()) => continue,
             Err(failure) => break failure,
         }
     };
@@ -16393,46 +16384,129 @@ fn a_send_counts_only_what_it_waited_on_this_recipient() {
         blocked >= X_AUTHORITY_ORDERED_BLOCKED_LIMIT,
         "the bound is reached by measured waiting: {blocked:?}"
     );
+    assert_eq!(blocked, state.blocked(), "the owner's accumulator is the one added to");
+    assert!(written > 0 && !state.frame_complete(), "it stopped part way");
+    drop(reader);
+}
+
+#[test]
+fn a_frame_still_owed_bytes_cannot_be_abandoned() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    // Seeded close to the limit so the stall is reached without waiting out
+    // the whole policy.
+    let mut state = X11OrderedSendState {
+        blocked: X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(60),
+        ..X11OrderedSendState::default()
+    };
+
+    // Fill the buffer so a large frame stops part way through.
+    loop {
+        if state.frame_complete() || state.frame.is_none() {
+            state.begin_frame(vec![1u8; 1 << 16]).expect("nothing owed");
+        }
+        if send_pending_frame(&writer, &mut state).is_err() {
+            break;
+        }
+    }
+    assert!(!state.frame_complete(), "a frame is still owed bytes");
+
+    // Those bytes are an event's beginning and the recipient is waiting for
+    // the rest of it. Writing a different frame now would put a second event's
+    // opening bytes inside the first one's body, which an X11 client has no
+    // way to notice.
+    let refused = state
+        .begin_frame(vec![2u8; 32])
+        .expect_err("a partly sent frame cannot be walked away from");
+    let X11FrameSendFailure::Incomplete { sent, len } = refused else {
+        panic!("refused for being incomplete")
+    };
+    assert!(sent > 0 && sent < len);
+    drop(reader);
+}
+
+#[test]
+fn a_send_that_never_reported_blocks_everything_after_it() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    let mut state = X11OrderedSendState::default();
+    state.begin_frame(vec![4u8; 16]).expect("nothing owed yet");
+    send_pending_frame(&writer, &mut state).expect("a healthy send");
+
+    // The state a send leaves if it is interrupted between handing bytes to
+    // the kernel and recording that it did.
+    state
+        .frame
+        .as_mut()
+        .expect("a frame in hand")
+        .progress = X11OrderedSendProgress::Unknown { from: 8 };
+
+    // It cannot be resumed: resuming from the offset before the send would
+    // put an event's middle after its own middle.
+    let failure = send_pending_frame(&writer, &mut state)
+        .expect_err("an unreported send is not a resumable one");
+    assert!(matches!(failure, X11FrameSendFailure::Interrupted));
+
+    // And it cannot be stepped over either. A following frame would be
+    // appended to something nobody can describe, so the unknown is not
+    // something a new frame may clear.
+    let refused = state
+        .begin_frame(vec![5u8; 32])
+        .expect_err("an unknown wire position is not a finished frame");
+    assert!(matches!(refused, X11FrameSendFailure::Interrupted));
     assert_eq!(
-        blocked,
-        state.blocked(),
-        "and the owner's accumulator is the one that was added to"
+        state.frame.as_ref().expect("still held").progress,
+        X11OrderedSendProgress::Unknown { from: 8 },
+        "and it stays unknown rather than being restored to something believable"
     );
 
-    // The offset is the owner's, not the call's. What the socket accepted
-    // before it stopped taking bytes is still recorded, which is the only
-    // thing that can say whether the wire holds part of an event.
-    assert_eq!(
-        X11OrderedSendProgress::Sent(written),
-        state.progress,
-        "what went out is owned, not reported from a local the call could lose"
+    let error = x11_ordered_frame_error("failed to write an ordered event", failure);
+    assert!(error.client_failure && !error.service_shutdown);
+    drop(reader);
+}
+
+#[test]
+fn the_frame_a_resume_continues_is_the_one_it_began() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    let mut state = X11OrderedSendState::default();
+
+    // The frame is the state's, not a slice a caller brings back each time.
+    // There is no call that could offer different bytes behind the same
+    // offset, which is what would send the tail of one event as though it
+    // were the tail of another.
+    state.begin_frame(vec![0xAB; 64]).expect("nothing owed yet");
+    send_pending_frame(&writer, &mut state).expect("a healthy send");
+    assert!(state.frame_complete());
+    let mut seen = [0u8; 64];
+    std::io::Read::read_exact(&mut &reader, &mut seen).expect("the frame");
+    assert!(
+        seen.iter().all(|byte| *byte == 0xAB),
+        "the recipient received the frame that was begun, whole"
     );
-    assert!(written > 0, "a filled buffer took some of it first");
-    assert!(written < frame.len(), "and then stopped short");
+
+    // And completion is derived from what was sent rather than declared: a
+    // fresh frame is not complete until its own bytes have gone.
+    state.begin_frame(vec![0xCD; 8]).expect("the last one finished");
+    assert!(!state.frame_complete(), "nothing of this one has gone yet");
     drop(reader);
 }
 
 #[test]
 fn the_socket_every_writer_shares_is_left_alone() {
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
-    // The ordered path must not reach the recipient by changing a socket that
-    // the control and protocol writers hold too. A per-call flag affects the
-    // one send; a timeout or a mode is the socket's, and every other writer
-    // would inherit it without the resumable ownership this path relies on.
+    // The ordered path must not reach its recipient by changing a socket the
+    // control and protocol writers hold too. A per-call flag affects the one
+    // send; a timeout or a mode belongs to the socket, and every other writer
+    // would inherit it without the frame custody this path relies on.
     assert!(
         writer.write_timeout().expect("a readable socket").is_none(),
         "no send timeout is installed on the shared socket"
     );
     let mut state = X11OrderedSendState::default();
-    send_frame_bounded(&writer, &[3u8; 16], &mut state).expect("a healthy send");
+    state.begin_frame(vec![3u8; 16]).expect("nothing owed yet");
+    send_pending_frame(&writer, &mut state).expect("a healthy send");
     assert!(
         writer.write_timeout().expect("a readable socket").is_none(),
         "and sending did not install one either"
     );
-    // Still blocking, which is what every other writer on this socket expects.
-    // A blocking send returns only when it has taken the bytes, so a socket
-    // left in non-blocking mode would give them a WouldBlock they have no
-    // resumable offset to answer with.
     assert!(
         !rustix::fs::fcntl_getfl(&writer)
             .expect("a readable descriptor")
@@ -16447,60 +16521,24 @@ fn a_departed_recipient_is_a_failed_recipient_not_a_failed_server() {
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
     drop(reader);
     let mut state = X11OrderedSendState::default();
+    state.begin_frame(vec![1u8; 32]).expect("nothing owed yet");
 
-    // Sending to a peer that has gone. The send carries NOSIGNAL, so this
-    // returns an error rather than killing the process with SIGPIPE -- a
-    // writer that died here would take every other client's service with it.
-    let failure = send_frame_bounded(&writer, &[1u8; 32], &mut state)
+    // The send carries NOSIGNAL, so a peer that has gone gives an error rather
+    // than killing the process with SIGPIPE -- a writer that died here would
+    // take every other client's service with it.
+    let failure = send_pending_frame(&writer, &mut state)
         .expect_err("a departed peer cannot take bytes");
-    assert!(
-        matches!(failure, X11FrameSendFailure::Io(_)),
-        "a peer that has gone is an io failure, not a recipient that is merely slow"
-    );
+    assert!(matches!(failure, X11FrameSendFailure::Io(_)));
 
     // And the reading of it keeps the failure with the connection. The
     // ordinary peer-write reading gives anything unrecognised the fatal class,
-    // so a departed recipient must be recognised as one or one client's exit
-    // ends the service for all of them.
+    // so one client's exit would otherwise end the service for all of them.
     let error = x11_ordered_frame_error("failed to write an ordered event", failure);
     assert!(
         error.client_disconnect || error.client_failure,
         "the failure belongs to this connection"
     );
-    assert!(
-        !error.service_shutdown,
-        "and not to the service"
-    );
-}
-
-#[test]
-fn a_send_that_never_reported_is_not_resumed() {
-    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
-    let mut state = X11OrderedSendState::default();
-    send_frame_bounded(&writer, &[4u8; 16], &mut state).expect("a healthy send");
-
-    // The state a send leaves behind if it is interrupted between handing
-    // bytes to the kernel and recording that it did. The bytes may be on the
-    // wire; nothing afterwards can establish whether they are, because the
-    // socket does not remember and the recipient cannot be asked.
-    state.progress = X11OrderedSendProgress::Unknown { from: 16 };
-    let failure = send_frame_bounded(&writer, &[5u8; 16], &mut state)
-        .expect_err("an unreported send is not a resumable one");
-    assert!(
-        matches!(failure, X11FrameSendFailure::Interrupted),
-        "refused for what it is: resuming from the offset before the send \
-         would put an event's middle after its own middle, and retrying the \
-         frame would send bytes the wire may already hold"
-    );
-
-    // It stays unknown. A refusal that quietly restored a believable offset
-    // would be the replay this refusal exists to prevent.
-    assert_eq!(state.progress, X11OrderedSendProgress::Unknown { from: 16 });
-
-    // And it belongs to the connection, not the service.
-    let error = x11_ordered_frame_error("failed to write an ordered event", failure);
-    assert!(error.client_failure && !error.service_shutdown);
-    drop(reader);
+    assert!(!error.service_shutdown, "and not to the service");
 }
 
 #[test]
