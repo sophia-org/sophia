@@ -391,10 +391,17 @@ fn native_gbm_renderer_worker_defers_then_fails_closed_without_blocking_owner() 
     );
     assert!(exporter.pending_frame());
 
-    let completed = (0..10_000).find_map(|_| {
-        std::thread::yield_now();
+    let deadline = std::time::Instant::now() + SETTLE;
+    let completed = std::iter::repeat_with(|| ()).find_map(|()| {
+        std::thread::sleep(std::time::Duration::from_millis(1));
         let export = exporter.export_rendered_scanout_buffer(target);
-        (export.status != super::LiveRendererScanoutBufferExportStatus::Pending).then_some(export)
+        if export.status != super::LiveRendererScanoutBufferExportStatus::Pending
+            || std::time::Instant::now() >= deadline
+        {
+            Some(export)
+        } else {
+            None
+        }
     });
     let completed = completed.expect("unavailable worker should complete without owner blocking");
 
