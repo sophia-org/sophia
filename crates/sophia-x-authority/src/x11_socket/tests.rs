@@ -1170,5 +1170,6 @@ include!("tests/private_applied_focus.rs");
 
 include!("tests/private_native.rs");
 include!("tests/private_xkb_selection.rs");
+include!("tests/private_keyboard_preparation.rs");
 
 include!("tests/ordered_codec.rs");

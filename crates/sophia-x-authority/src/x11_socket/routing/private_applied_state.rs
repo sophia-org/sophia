@@ -39,7 +39,7 @@ impl PrivateTraversalBudget {
 #[cfg(unix)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(not(test), allow(dead_code))]
-enum PrivateAppliedRefusal {
+pub(crate) enum PrivateAppliedRefusal {
     Unpublished,
     Interrupted,
     IdentityExhausted,

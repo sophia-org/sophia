@@ -7,6 +7,8 @@ use crate::XResourceId;
 include!("input_authority/pointer_query.rs");
 include!("input_authority/ordered_pointer.rs");
 include!("input_authority/ordered_keyboard.rs");
+#[cfg(unix)]
+include!("input_authority/ordered_keyboard_press.rs");
 
 pub const X_ANY_MODIFIER: u16 = 0x8000;
 

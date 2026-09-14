@@ -1569,3 +1569,33 @@ Scoped input validation: 1200 passed, zero failed, one existing ignored in
 42 suites; strict clippy, fmt, layout and diff pass. Native key effects, passive
 eligibility, key/StateNotify encoding, StateOnly/thaw and full terminal settlement
 remain open. No hardware, Session/content change, master movement or enablement.
+
+
+### M3 guarded keyboard preparation (2026-09-14)
+
+The keyboard source now retains applied focus and the exact bound selection
+state inside an exclusive native preparation. An existing stamped activation
+wins before passive policy. New passive selection follows the root-most
+matching focus ancestry, or a descendant containing the authority's actual
+pointer observation. This follows the [X11 GrabKey contract](https://xorg.freedesktop.org/archive/X11R7.7/doc/xproto/x11protocol.html#GrabKey);
+registration order is not ancestry. Unknown pointer/topology, unviewable focus,
+ambiguous same-window policy, interrupted publication and traversal overflow
+refuse before activation. Frozen logical keyboard input remains refused pending
+the ordered StateOnly/thaw join. Ordinary activate_key behavior is unchanged.
+
+Preparation reserves a checked stamp without applying the grab. Its topology
+borrows and exclusive authority borrow remain held until commit or abandonment;
+commit allocates nothing and publishes only after the actual grab/freeze fields.
+The preview exposes a reserved name, not an applied activation. No keyboard
+implicit grab is invented. The existing 64-link and 4096-work private traversal
+policies bound this path too; they are refusal limits, not X protocol limits.
+
+Ten source-component controls use actual focus effects and retained selections;
+they are not producer/consumer or writer evidence. Eight compiled archive
+mutations cover active ownership, ancestor priority, pointer containment, frozen
+and unpublished refusal, ambiguity, mutation during preparation, and bounded
+scanning. The full input suites passed 1210 tests with one existing ignored test.
+Native key Hold ownership, recovery binding, common aggregate application, XKB
+effects, immutable key emission, native cleanup and recipient/debt settlement
+are still required before Gate B can pass. No key admission, default enablement,
+Session edit, master move or hardware run is claimed.
