@@ -16,6 +16,27 @@
 /// the private operation type was kept out of the public surface to avoid. It
 /// becomes public when there is an owner outside this crate to give it to, and
 /// what that owner needs decides what it says rather than what is convenient
+/// What one bounded step of the order did.
+///
+/// Separate from the item it carries because two of these are facts about the
+/// order rather than about an item: nothing was waiting, or nothing may run
+/// yet. A caller told only "no item" could not tell those apart, and they call
+/// for opposite handling -- one means idle, the other means an obligation is
+/// outstanding ahead of everything else.
+#[cfg(unix)]
+enum PrivateOrderedStep {
+    /// The order had nothing waiting.
+    Idle,
+    /// The order is blocked behind an earlier operation whose disposition is
+    /// not established. Nothing was taken.
+    Blocked(crate::ReadySequence),
+    /// One item was taken and decided.
+    Decided(PrivateOrderedItem),
+    /// One item was taken that this path does not execute. The order is
+    /// blocked behind it now.
+    Parked(PrivateOrderedItem),
+}
+
 /// to expose now.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
@@ -71,27 +92,36 @@ enum PrivateOrderedItem {
 
 #[cfg(unix)]
 impl PrivateXServerFrontend {
-    /// Run one turn of the shared order through the ordered path.
+    /// Take one item from the order, mark it, and execute it.
     ///
-    /// Work is taken from the order and the queue guard is released before
-    /// common is acquired, so no path from the queue to common exists. Each
-    /// item carries the reservation made for it before it was published, and
-    /// that reservation becomes the custody the transaction runs against --
-    /// which is what ties the thing executed to the thing the order accepted,
-    /// rather than to a payload supplied alongside it.
+    /// Bounded to a single dequeue because that is what can be accounted for.
+    /// A call that drained until the order was empty could be charged one
+    /// start for an unbounded amount of work, and a watchdog mark placed after
+    /// it would describe work that had already finished rather than work in
+    /// progress.
     ///
-    /// Bounded by what the queue can hold rather than by when producers stop,
-    /// for the same reason the ordinary turn is: draining until empty lets a
-    /// producer that keeps replenishing hold the turn open.
+    /// `mark` runs immediately after the item is taken and before common is
+    /// acquired: the item is in hand, so the mark names the work actually
+    /// being attempted, and it precedes the guard rather than following the
+    /// attempt. It must not take common itself -- it runs above that guard in
+    /// the rank, and reaching for it here would invert the order this
+    /// placement exists to respect.
+    ///
+    /// The item is taken and the queue guard released before common is
+    /// acquired, so no path from the queue to common exists. The reservation
+    /// made for this work before it was published becomes the custody the
+    /// transaction runs against, which is what ties the thing executed to the
+    /// thing the order accepted rather than to a payload supplied alongside
+    /// it.
     ///
     /// Nothing is emitted here and nothing is settled here. What comes back is
     /// owned: a decision with its custody, a refusal with the custody and the
     /// work it was for, or an operation this path does not run.
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn route_pending_ordered(
+    fn step_once(
         &mut self,
         keyboards: &mut PrivateKeyboards,
-    ) -> Result<Vec<PrivateOrderedItem>, XServerFrontendRouteError> {
+        mark: &mut dyn FnMut(crate::ReadySequence),
+    ) -> Result<PrivateOrderedStep, XServerFrontendRouteError> {
         // An item left owned by an interrupted turn blocks the order. Storing
         // it before one call protects it from that call and from nothing else:
         // a later turn that dequeued into the same slot would overwrite the
@@ -107,80 +137,109 @@ impl PrivateXServerFrontend {
         // next one overtake exactly the operation it stopped for.
         if let Some(sequence) = self.parked_barrier {
             // Still blocked. Holding the operation and having established what
-            // becomes of it are different things, so this survives the operation
-            // being handed to an owner: an owner that took it and then dropped
-            // it established nothing, and running later input at that point is
-            // exactly the overtaking the park prevents.
-            return Ok(vec![PrivateOrderedItem::Parked { sequence }]);
+            // becomes of it are different things, so this survives the
+            // operation being handed to an owner: an owner that took it and
+            // then dropped it established nothing, and running later input at
+            // that point is exactly the overtaking the park prevents.
+            return Ok(PrivateOrderedStep::Blocked(sequence));
         }
+        let next = match self.admission.take_next() {
+            Ok(next) => next,
+            Err(()) => return Err(XServerFrontendRouteError::RegistryPoisoned),
+        };
+        let Some((sequence, _class, operation)) = next else {
+            return Ok(PrivateOrderedStep::Idle);
+        };
+        // In hand, and common not yet taken.
+        mark(sequence);
+        let PrivateOperation::RoutedInput(mut envelope) = operation else {
+            // An operation this path does not execute. Parked in place, and
+            // the order is blocked: later input must not apply past an earlier
+            // operation that has neither run nor been cancelled.
+            self.parked = Some((sequence, operation));
+            self.parked_barrier = Some(sequence);
+            return Ok(PrivateOrderedStep::Parked(PrivateOrderedItem::Parked {
+                sequence,
+            }));
+        };
+        let Some(reservation) = envelope.reservation.take() else {
+            self.parked = Some((sequence, PrivateOperation::RoutedInput(envelope)));
+            self.parked_barrier = Some(sequence);
+            return Ok(PrivateOrderedStep::Parked(PrivateOrderedItem::Parked {
+                sequence,
+            }));
+        };
+        // The reservation made for this exact work before it was published
+        // becomes the custody it runs against.
+        let custody = reservation.accepted();
+        let route = envelope.route;
+        // Owned before the execution, not after it. The item has left the
+        // order and nothing else holds it, so a failure or an unwind inside
+        // execution would otherwise take the custody and the work with the
+        // frame. Its phase is the custody's own: never entered, entered and
+        // unknown, or settled.
+        self.terminal.current = Some(PrivateOrderedItem::Refused {
+            sequence,
+            refusal: PrivateExecutionRefusal::NotAttempted,
+            custody,
+            route,
+        });
+        let outcome = self.run_current(keyboards);
+        let Some(PrivateOrderedItem::Refused {
+            sequence,
+            custody,
+            route,
+            ..
+        }) = self.terminal.current.take()
+        else {
+            // Execution reads the current item and never replaces it, so what
+            // comes back is what was placed. Anything else means the slot was
+            // written by something that does not own it, and continuing would
+            // decide an outcome for work this step cannot name.
+            return Err(XServerFrontendRouteError::OrderedItemUnresolved);
+        };
+        Ok(PrivateOrderedStep::Decided(match outcome {
+            Ok(run) => PrivateOrderedItem::Ran {
+                sequence,
+                run,
+                custody,
+                route,
+            },
+            Err(refusal) => PrivateOrderedItem::Refused {
+                sequence,
+                refusal,
+                custody,
+                route,
+            },
+        }))
+    }
+
+    /// Step until the service budget is spent or the order stops offering work.
+    ///
+    /// The unaccounted caller: it drives the same step a runner does, without
+    /// a budget to charge or a watchdog to mark. Bounded by what the queue can
+    /// hold rather than by when producers stop, for the same reason the
+    /// ordinary turn is: draining until empty lets a producer that keeps
+    /// replenishing hold the turn open. A runner that must account for each
+    /// decision calls `step_once` itself rather than this.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn route_pending_ordered(
+        &mut self,
+        keyboards: &mut PrivateKeyboards,
+    ) -> Result<Vec<PrivateOrderedItem>, XServerFrontendRouteError> {
         let budget = self.service_budget;
         while self.terminal.turn.len() < budget {
-            let next = match self.admission.take_next() {
-                Ok(next) => next,
-                Err(()) => {
-                    // Everything already taken out of the order stays owned
-                    // here rather than going with the frame. Returning results
-                    // only on success would drop the work of every earlier
-                    // iteration on the failure of a later one.
-                    return Err(XServerFrontendRouteError::RegistryPoisoned);
+            match self.step_once(keyboards, &mut |_| {})? {
+                PrivateOrderedStep::Idle => break,
+                PrivateOrderedStep::Blocked(sequence) => {
+                    self.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
+                    break;
                 }
-            };
-            let Some((sequence, _class, operation)) = next else {
-                break;
-            };
-            let PrivateOperation::RoutedInput(mut envelope) = operation else {
-                // An operation this path does not execute. Parked in place,
-                // and the turn ends: later input must not apply past an
-                // earlier operation that has neither run nor been cancelled.
-                self.parked = Some((sequence, operation));
-                self.parked_barrier = Some(sequence);
-                self.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
-                break;
-            };
-            let Some(reservation) = envelope.reservation.take() else {
-                self.parked = Some((sequence, PrivateOperation::RoutedInput(envelope)));
-                self.parked_barrier = Some(sequence);
-                self.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
-                break;
-            };
-            // The reservation made for this exact work before it was published
-            // becomes the custody it runs against.
-            let custody = reservation.accepted();
-            let route = envelope.route;
-            // Owned before the execution, not after it. The item has left the
-            // order and nothing else holds it, so a failure or an unwind
-            // inside execution would otherwise take the custody and the work
-            // with the frame. Its phase is the custody's own: never entered,
-            // entered and unknown, or settled.
-            self.terminal.current = Some(PrivateOrderedItem::Refused {
-                sequence,
-                refusal: PrivateExecutionRefusal::NotAttempted,
-                custody,
-                route,
-            });
-            let outcome = self.run_current(keyboards);
-            let Some(PrivateOrderedItem::Refused {
-                sequence,
-                custody,
-                route,
-                ..
-            }) = self.terminal.current.take()
-            else {
-                break;
-            };
-            match outcome {
-                Ok(run) => self.terminal.turn.push(PrivateOrderedItem::Ran {
-                    sequence,
-                    run,
-                    custody,
-                    route,
-                }),
-                Err(refusal) => self.terminal.turn.push(PrivateOrderedItem::Refused {
-                    sequence,
-                    refusal,
-                    custody,
-                    route,
-                }),
+                PrivateOrderedStep::Parked(item) => {
+                    self.terminal.turn.push(item);
+                    break;
+                }
+                PrivateOrderedStep::Decided(item) => self.terminal.turn.push(item),
             }
         }
         Ok(std::mem::take(&mut self.terminal.turn))

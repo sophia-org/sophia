@@ -15847,3 +15847,220 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     drop(fixture.channels);
     drop(fixture.durable);
 }
+
+#[test]
+fn one_step_takes_one_item_and_marks_it_before_common() {
+    let client = XServerFrontendClientId(1301);
+    let surface = SurfaceId::new(1301, 1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    // A second producer, so two items can wait at once: one grant holds one
+    // completion cell, and the first request keeps it until it is observed.
+    let second = fixture
+        .private
+        .ingress_for(client, DeviceId::from_raw(2))
+        .expect("a second ingress");
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(13011),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    second
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(13012),
+            273,
+            true,
+        ))
+        .expect("the order to accept it");
+
+    // Cloned rather than reached through the frontend, which the step borrows
+    // mutably while the mark runs.
+    let common = Arc::clone(&fixture.private.authority().common);
+    let recovery = fixture.private.broker.registry.input_recovery.clone();
+    let first_delivery = XAuthorityInputDeliveryId::from_raw(13011);
+    let mut marked = Vec::new();
+    let step = {
+        let mut mark = |sequence: crate::ReadySequence| {
+            // Common is not held: the mark sits above that guard in the rank
+            // and reaching for it here would invert the order.
+            assert!(
+                common.try_lock().is_ok(),
+                "the mark runs outside common"
+            );
+            // And the work is not merely un-guarded but un-attempted. This is
+            // what distinguishes a mark placed before the effect from one
+            // placed after the execution returned, where common is also free:
+            // the ledger has not moved for this delivery yet.
+            let held = recovery
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            assert!(
+                !held
+                    .tickets
+                    .get(&first_delivery)
+                    .expect("tracked")
+                    .may_have_applied,
+                "the mark names work that has not been attempted"
+            );
+            drop(held);
+            marked.push(sequence);
+        };
+        fixture
+            .private
+            .step_once(&mut fixture.keyboards, &mut mark)
+            .expect("a readable order")
+    };
+    let PrivateOrderedStep::Decided(first) = step else {
+        panic!("one item decided")
+    };
+    assert_eq!(marked.len(), 1, "one step marks exactly one item");
+    let PrivateOrderedItem::Ran { sequence, .. } = first else {
+        panic!("the press ran")
+    };
+    assert_eq!(
+        marked[0], sequence,
+        "and marks the item it actually took, not one it was about to"
+    );
+
+    // The second is still waiting: a step does not drain what it was not
+    // charged for.
+    let mut second_marked = Vec::new();
+    let step = fixture
+        .private
+        .step_once(&mut fixture.keyboards, &mut |sequence| {
+            second_marked.push(sequence)
+        })
+        .expect("a readable order");
+    assert!(matches!(step, PrivateOrderedStep::Decided(_)));
+    assert_eq!(second_marked.len(), 1);
+    assert_ne!(second_marked[0], marked[0], "a different item");
+
+    // And now the order is empty, which is its own answer rather than a
+    // failure to find work.
+    assert!(matches!(
+        fixture
+            .private
+            .step_once(&mut fixture.keyboards, &mut |_| panic!("nothing to mark"))
+            .expect("a readable order"),
+        PrivateOrderedStep::Idle
+    ));
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_blocked_order_takes_nothing_and_marks_nothing() {
+    let client = XServerFrontendClientId(1302);
+    let surface = SurfaceId::new(1302, 1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    // A control command is an operation this path does not execute, so the
+    // order parks behind it.
+    fixture
+        .private
+        .control_producer()
+        .submit(configure(client, surface, 13021))
+        .expect("the order to accept it");
+    let step = fixture
+        .private
+        .step_once(&mut fixture.keyboards, &mut |_| {})
+        .expect("a readable order");
+    assert!(matches!(step, PrivateOrderedStep::Parked(_)));
+
+    // Blocked is not idle. A runner told only "no item" would charge a start
+    // and mark a watchdog for work it could never have run, and would keep
+    // doing so for as long as the barrier stood.
+    let step = fixture
+        .private
+        .step_once(&mut fixture.keyboards, &mut |_| {
+            panic!("nothing may be taken while the order is blocked")
+        })
+        .expect("a readable order");
+    assert!(
+        matches!(step, PrivateOrderedStep::Blocked(_)),
+        "the barrier is reported as itself, not as an empty order"
+    );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
+    let client = XServerFrontendClientId(1303);
+    let surface = SurfaceId::new(1303, 1);
+    let namespace = NamespaceId::from_raw(client.raw());
+    let delivery = XAuthorityInputDeliveryId::from_raw(1303);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    // A grab this client owns, which is what cleanup has to remove.
+    fixture
+        .private
+        .broker
+        .registry
+        .input_authority
+        .lock()
+        .expect("the grab state")
+        .grab_pointer(
+            namespace,
+            crate::XActiveInputGrab {
+                owner: client.raw(),
+                window: XResourceId::new(0x201303, 1),
+                owner_events: false,
+                pointer_mode: 1,
+                keyboard_mode: 1,
+                event_mask: u16::MAX,
+                xi_event_mask: [0; 8],
+                xi_event_mask_words: 0,
+                route_lease: None,
+            },
+        )
+        .expect("the grab to take");
+
+    // A press that applies, so its delivery can no longer be revoked.
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards)
+        .expect("a readable order");
+    assert!(fixture.private.deliver_turn(turn)[0].enqueued);
+
+    // The sweep revokes the connection and publishes nothing for the delivery,
+    // because saying it was withdrawn would contradict the effect.
+    let revoked = fixture
+        .private
+        .broker
+        .registry
+        .input_recovery
+        .recover(std::time::Instant::now(), true)
+        .expect("the ledger to be readable");
+    assert!(revoked.is_empty(), "nothing reported revoked that was not");
+    assert!(fixture.deliveries.try_recv().is_err());
+
+    // The connection was still taken down, so what it owned still has to go.
+    // Reading cleanup off the published list would skip exactly this case and
+    // leave a grab installed for a client whose socket is gone.
+    assert!(
+        fixture
+            .private
+            .broker
+            .registry
+            .input_authority
+            .lock()
+            .expect("the grab state")
+            .pointer_grab(namespace)
+            .is_none(),
+        "the revoked connection's grab is gone even though its delivery \
+         published nothing"
+    );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}

@@ -676,8 +676,20 @@ impl InputRecovery {
             })
             .map(|entry| entry.ticket)
             .collect();
+        // Whose connection this sweep actually revoked. Collected as it
+        // happens, because what has to be cleaned up follows from the
+        // connection having been taken down, not from which receipts managed
+        // to publish. A delivery whose cancellation was suppressed publishes
+        // nothing and still leaves a revoked connection behind it, and reading
+        // cleanup off the published list would skip exactly that case --
+        // leaving this client's grabs and selections installed after its
+        // socket is gone.
+        let mut revoked: Vec<XServerFrontendClientId> = Vec::new();
         for ticket in &expired {
             if let Some(client) = ticket.client {
+                if !revoked.contains(&client) {
+                    revoked.push(client);
+                }
                 // What the sweep is, not what the path is called. A forced
                 // sweep revokes the epoch; a deadline sweep reports that no
                 // outcome arrived in time. Both reach a bound ticket through
@@ -720,10 +732,8 @@ impl InputRecovery {
             .authority
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-        for ticket in &expired {
-            if let Some(client) = ticket.client {
-                authority.cleanup_owner(client.raw());
-            }
+        for client in revoked {
+            authority.cleanup_owner(client.raw());
         }
         Ok(expired)
     }
