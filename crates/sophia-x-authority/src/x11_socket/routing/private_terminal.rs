@@ -22,6 +22,14 @@
 /// retained inventory produces no report and is still a step that happened,
 /// so a caller that read "no report" as "no work" would charge nothing for
 /// work it did.
+/// How many recording visits pass before dispatch is given a turn, when both
+/// are owed.
+///
+/// Small, because delivery debt that is already native is waiting on nothing
+/// but a turn.
+#[cfg(unix)]
+const PRIVATE_NATIVE_CLASS_INTERVAL: u8 = 2;
+
 /// How many delivery steps native work waits before it is given a turn of its
 /// own, while deliveries are still ready.
 ///
@@ -44,6 +52,10 @@ enum PrivateDeliveryStep {
     Dispatched {
         #[cfg_attr(not(test), allow(dead_code))]
         enqueued: bool,
+        /// True when the visit went to giving an attempt back rather than
+        /// making one. Counted apart: relinquishing is not delivering.
+        #[cfg_attr(not(test), allow(dead_code))]
+        relinquished: bool,
     },
     /// One proof-recording visit was spent on one chosen release.
     ///
@@ -471,210 +483,6 @@ struct PrivateDelivered {
 
 #[cfg(unix)]
 impl PrivateXServerFrontend {
-    /// Take one terminal step, if one is possible.
-    ///
-    /// At most one entry, chosen from work this instance already owns and
-    /// moved only between places it owns, so nothing accepted is ever held
-    /// outside the inventory. What comes back is a scalar: a report can be
-    /// owned by a caller once its entry has been disposed of, the entry itself
-    /// cannot.
-    ///
-    /// `start` is offered after the entry is chosen and before anything is
-    /// observed, sent or guarded. An empty turn and a head nobody can describe
-    /// cost nothing, because neither is a step; everything else is one, and a
-    /// refusal leaves the work exactly where it already was.
-    ///
-    /// Advancing is not settling. A refusal moved into retained inventory
-    /// consumed a real step and produced no report, and neither that nor a
-    /// report itself says a recipient received anything.
-    /// Claim one delivery attempt and hand its capsule to the recipient.
-    ///
-    /// ONE RELEASE, ONE ATTEMPT, and the two ends are joined here because
-    /// nothing else holds both: the ledger names a debt by its incarnation
-    /// and a receipt arrives naming a delivery. The ledger chooses which debt
-    /// gets the turn; this only supplies the delivery for the one chosen.
-    ///
-    /// THE ORDER IS THE POINT.
-    ///   1. the destination slot is prepared before anything is taken, so an
-    ///      emission never leaves its hold with nowhere to be;
-    ///   2. the attempt and the phase are written down BEFORE the handover,
-    ///      because an attempt nobody recorded is one nothing can finish, and
-    ///      a handover nobody marked is one an interruption makes invisible;
-    ///   3. a refused queue returns the exact capsule and it goes straight
-    ///      back into the slot with nothing fallible in between.
-    fn attempt_one_delivery(&mut self) -> Option<bool> {
-        let index = self
-            .terminal
-            .settling
-            .iter()
-            .position(PrivateSettlingRelease::owes_delivery_attempt)?;
-
-        // (1) PREPARE THE SLOT. Taking the emission is the last thing done
-        // here, and only once there is somewhere for it to land.
-        if self.terminal.settling[index].pending.is_none() {
-            let Some(emission) = self.terminal.settling[index]
-                .native_mut()
-                .and_then(private_native::Hold::take_release_emission)
-            else {
-                return Some(false);
-            };
-            let release = &mut self.terminal.settling[index];
-            match XAuthorityOrderedDelivery::from_emission(emission) {
-                Ok(capsule) => {
-                    release.pending = Some(PrivatePendingDelivery::Capsule(capsule));
-                    release.dispatch = PrivateDispatchPhase::Pending;
-                }
-                Err((cause, emission)) => {
-                    // Retained rather than dropped. It cannot be wrapped now,
-                    // and it is still the only copy of an event that was
-                    // decided at a moment which has passed.
-                    release.pending = Some(PrivatePendingDelivery::Unwrapped { emission, cause });
-                    release.dispatch = PrivateDispatchPhase::Unwrappable;
-                    return Some(false);
-                }
-            }
-        }
-        if !matches!(
-            self.terminal.settling[index].pending,
-            Some(PrivatePendingDelivery::Capsule(_))
-        ) {
-            return Some(false);
-        }
-
-        // The cursor is a position, not inventory, and the ledger advances it
-        // whether or not it finds a debt. Written back either way.
-        let mut cursor = self.terminal.attempt_cursor;
-        let claimed = self
-            .authority()
-            .under_common_as_origin(|authority, issuer| {
-                authority.claim_next_attempt(issuer, &mut cursor)
-            });
-        self.terminal.attempt_cursor = cursor;
-        let claim = match claimed {
-            Ok(Ok(Some(claim))) => claim,
-            Ok(Ok(None)) | Ok(Err(_)) | Err(_) => return Some(false),
-        };
-        // FROM HERE AN ATTEMPT IS RESERVED, and every way out gives it back
-        // with neither bit, which retains the debt for a fair retry.
-        if self.terminal.settling[index].incarnation() != claim.hold {
-            // The ledger chose a debt this record does not answer for. Its
-            // answer stands; this executor simply cannot serve it now.
-            self.give_back_attempt(claim.token);
-            return Some(false);
-        }
-        let recipient = self.terminal.settling[index].reached().client();
-        // The sender is cloned and the clients guard released before anything
-        // takes common again. Holding it across the give-back would take
-        // common beneath clients, which is the forbidden direction.
-        let sender = {
-            let Ok(clients) = self.broker.registry.clients.lock() else {
-                self.give_back_attempt(claim.token);
-                return Some(false);
-            };
-            match clients.get(&recipient) {
-                Some(senders) => senders.ordered.clone(),
-                None => {
-                    drop(clients);
-                    self.give_back_attempt(claim.token);
-                    return Some(false);
-                }
-            }
-        };
-
-        // (2) WRITTEN DOWN BEFORE THE HANDOVER. If this thread never returns
-        // from the send, the record already says an attempt is out and the
-        // handover was begun; the empty slot afterwards is not read as
-        // "nothing was taken".
-        let release = &mut self.terminal.settling[index];
-        release.attempt = Some(claim.token);
-        release.dispatch = PrivateDispatchPhase::Indeterminate;
-        let Some(PrivatePendingDelivery::Capsule(capsule)) = release.pending.take() else {
-            unreachable!("checked to be a capsule above")
-        };
-        // (3) NOTHING FALLIBLE BETWEEN THE REFUSAL AND THE SLOT.
-        match sender.try_send(capsule) {
-            Ok(()) => {
-                // Only the receipt obligation is kept. No replayable copy of
-                // the event stays here: it is on the queue, and a second copy
-                // would be a second event nobody asked for.
-                release.dispatch = PrivateDispatchPhase::Enqueued;
-                Some(true)
-            }
-            Err(std::sync::mpsc::TrySendError::Full(capsule)) => {
-                // KNOWN NOT ENQUEUED. The same capsule is offered again later
-                // -- the bytes and the identity are the ones the release
-                // decided, and nothing re-encodes or reselects anything.
-                release.pending = Some(PrivatePendingDelivery::Capsule(capsule));
-                release.dispatch = PrivateDispatchPhase::Pending;
-                release.attempt = None;
-                self.give_back_attempt(claim.token);
-                Some(false)
-            }
-            Err(std::sync::mpsc::TrySendError::Disconnected(capsule)) => {
-                release.pending = Some(PrivatePendingDelivery::Capsule(capsule));
-                release.dispatch = PrivateDispatchPhase::Pending;
-                release.attempt = None;
-                self.give_back_attempt(claim.token);
-                Some(false)
-            }
-        }
-    }
-
-    /// Return a reserved attempt with neither bit set.
-    ///
-    /// The debt stays exactly as owed as it was. This says only that this
-    /// attempt did not happen, which is what the ledger's fair retry is for.
-    fn give_back_attempt(&self, token: sophia_input_authority::AttemptToken) {
-        let _ = self.authority().under_common_as_origin(|authority, issuer| {
-            authority.finish_attempt(
-                issuer,
-                token,
-                sophia_input_authority::SettlementBit::default(),
-            )
-        });
-    }
-
-    /// Whether any release is currently owed a recording visit.
-    ///
-    /// Asked before the step is charged, so an idle turn with nothing owed
-    /// stays idle and costs nothing. Choosing the entry is still the visit's
-    /// own job -- this only says whether there is one to choose.
-    fn owes_native_recording(&self) -> bool {
-        self.terminal.settling.iter().any(|release| {
-            release.owes_native_recording() || release.owes_delivery_attempt()
-        })
-    }
-
-    /// Spend one proof-recording visit on one chosen release.
-    ///
-    /// ONE ENTRY, ONE ATTEMPT. The cursor is retained across visits so they
-    /// move through the releases that owe a recording rather than returning
-    /// to whichever is first; a visit that swept the whole vector would do
-    /// unbounded work and would make recording a side effect of something
-    /// else rather than work the service can be asked for on its own.
-    ///
-    /// Returns None when nothing owes a recording, so an idle turn stays
-    /// idle. The RELEASE IS NEVER REPLAYED here: the effect happened once and
-    /// what is retried is only the recording of its proof.
-    fn record_one_native(&mut self) -> Option<bool> {
-        let settling = &mut self.terminal.settling;
-        if settling.is_empty() {
-            return None;
-        }
-        let cursor = &mut self.terminal.native_recording_cursor;
-        for _ in 0..settling.len() {
-            if *cursor >= settling.len() {
-                *cursor = 0;
-            }
-            let chosen = *cursor;
-            *cursor = cursor.saturating_add(1);
-            if settling[chosen].owes_native_recording() {
-                return Some(settling[chosen].record_native_once());
-            }
-        }
-        None
-    }
-
     /// The charge and watch hook takes an optional sequence because not every
     /// terminal step is an ordered entry. A proof-recording visit is real
     /// work and must be admitted and watched like any other, and it has no
@@ -711,14 +519,45 @@ impl PrivateXServerFrontend {
             // step, and before anything takes common.
             start(None, std::time::Instant::now())?;
             self.terminal.native_turn_debt = 0;
-            // Recording first, because the ledger refuses to claim an
-            // attempt until the native half is in. Asking in the other order
-            // would spend the visit discovering that.
+            // An attempt whose give-back never landed is answered first. It
+            // is the ledger's slot, not this executor's, and holding one
+            // while claiming another is how a bounded pool runs out.
+            if let Some(relinquished) = self.relinquish_one_attempt() {
+                return Ok(PrivateDeliveryStep::Dispatched {
+                    enqueued: false,
+                    relinquished,
+                });
+            }
+            // ARBITRATED, NOT RANKED. Recording has to come first for any ONE
+            // release, because the ledger refuses an attempt until that
+            // release's native half is in. Preferring it across ALL releases
+            // is a different thing: a stream of new proofs would then starve
+            // delivery debt that is already native and waiting. The debt
+            // counter gives dispatch its turn.
+            let dispatch_due =
+                self.terminal.native_class_debt >= PRIVATE_NATIVE_CLASS_INTERVAL;
+            if dispatch_due
+                && let Some(enqueued) = self.attempt_one_delivery()
+            {
+                self.terminal.native_class_debt = 0;
+                return Ok(PrivateDeliveryStep::Dispatched {
+                    enqueued,
+                    relinquished: false,
+                });
+            }
             if let Some(recorded) = self.record_one_native() {
+                self.terminal.native_class_debt =
+                    self.terminal.native_class_debt.saturating_add(1);
                 return Ok(PrivateDeliveryStep::Recorded { recorded });
             }
             return Ok(match self.attempt_one_delivery() {
-                Some(enqueued) => PrivateDeliveryStep::Dispatched { enqueued },
+                Some(enqueued) => {
+                    self.terminal.native_class_debt = 0;
+                    PrivateDeliveryStep::Dispatched {
+                        enqueued,
+                        relinquished: false,
+                    }
+                }
                 None => PrivateDeliveryStep::Idle,
             });
         }

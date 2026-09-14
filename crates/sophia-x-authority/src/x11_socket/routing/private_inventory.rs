@@ -61,6 +61,22 @@ struct PrivateTerminalInventory {
     /// and that is not a rare interleaving -- it is what a busy pointer looks
     /// like.
     native_turn_debt: u8,
+    /// Attempts claimed from the ledger and not yet placed or given back.
+    ///
+    /// INVENTORY-OWNED THE MOMENT THE LEDGER GRANTS ONE. A token held only in
+    /// a local is one an unwind takes with it, leaving the ledger holding a
+    /// slot for a delivery nobody will make and nobody can relinquish. An
+    /// entry leaves here only when it has been placed on the record it serves,
+    /// or when the ledger has CONFIRMED the give-back.
+    attempts_outstanding: Vec<sophia_input_authority::AttemptToken>,
+    /// How many recording visits have passed since dispatch last had a turn.
+    ///
+    /// Recording must come first for any ONE release, because the ledger
+    /// refuses an attempt until that release's native half is in. Preferring
+    /// it across ALL releases is a different thing and starves delivery debt
+    /// that is already native: these are two classes of terminal work, and
+    /// they are arbitrated rather than ranked.
+    native_class_debt: u8,
     /// The ledger's own fair cursor for claiming delivery attempts.
     ///
     /// Retained for the same reason as the recording cursor, and kept apart
@@ -112,6 +128,8 @@ impl PrivateTerminalInventory {
             native_pending: None,
             native_recording_cursor: 0,
             attempt_cursor: 0,
+            attempts_outstanding: Vec::new(),
+            native_class_debt: 0,
             native_turn_debt: 0,
             settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             current: None,
@@ -180,6 +198,8 @@ impl PrivateTerminalInventory {
                 native_pending: None,
                 native_recording_cursor: 0,
                 attempt_cursor: 0,
+                attempts_outstanding: Vec::new(),
+                native_class_debt: 0,
                 native_turn_debt: 0,
                 settling: Vec::new(),
                 current: None,

@@ -12779,6 +12779,83 @@ fn settling_slot_is_empty(release: &PrivateSettlingRelease) -> bool {
 }
 
 #[test]
+fn a_release_that_cannot_build_does_not_hide_the_ones_behind_it() {
+    // Choosing the record before asking the ledger meant one release that can
+    // never produce a capsule sat at the front and returned every visit
+    // before the ledger's cursor moved. Everything behind it was hidden for
+    // ever. The ledger selects now, so its cursor is what carries the visit
+    // past a release this executor cannot serve.
+    let client = XServerFrontendClientId(2461);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    // Two independent holds, so two releases owing two deliveries.
+    for (delivery, button, pressed) in [
+        (2461u64, 272u32, true),
+        (2462, 272, false),
+        (2463, 273, true),
+        (2464, 273, false),
+    ] {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                button,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.terminal.delivering.extend(turn);
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("the entry delivers");
+    }
+    assert_eq!(private.terminal.settling.len(), 2, "two releases are owed");
+
+    // The first can never produce a capsule: its event is taken away, which
+    // is what an unwrappable or already-consumed emission amounts to here.
+    let stolen = private.terminal.settling[0]
+        .native_mut()
+        .and_then(private_native::Hold::take_release_emission);
+    assert!(stolen.is_some(), "the first release did have an event to lose");
+    drop(stolen);
+
+    // Drive terminal visits. The first release can never be served; the
+    // second must still get there.
+    for _ in 0..24 {
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("a terminal step");
+    }
+
+    assert_eq!(
+        private.terminal.settling[1].dispatch(),
+        PrivateDispatchPhase::Enqueued,
+        "the release behind the unservable one still reached its recipient"
+    );
+    assert!(
+        private.terminal.settling[1].attempt().is_some(),
+        "and it is named by the attempt it was delivered under"
+    );
+}
+
+#[test]
 fn an_interrupted_handover_is_not_retried_just_because_its_slot_is_empty() {
     // An empty pending slot means one of two opposite things: nothing was
     // taken yet, or a handover began and never reported. Only the phase tells

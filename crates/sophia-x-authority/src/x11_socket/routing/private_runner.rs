@@ -61,6 +61,11 @@ pub struct PrivateRunnerProgress {
     /// Separate from `recorded` and from `settled`: enqueueing is not a
     /// receipt, and a receipt is not the whole debt.
     pub dispatched: usize,
+    /// How many claimed attempts were given back to the ledger this turn.
+    ///
+    /// Counted apart from `dispatched`: giving a slot back is not delivering,
+    /// and a turn spent doing it made progress of a different kind.
+    pub relinquished: usize,
     pub blocked: Option<crate::ReadySequence>,
     /// The service allowance stopped this turn. It will be checked again on
     /// the next owner-loop turn; waiting is not part of an operation.
@@ -492,9 +497,13 @@ impl PrivatePreparedRunner {
                             // terminal step it is: the work was chosen,
                             // charged and done, whether or not the recording
                             // it attempted went in.
-                            PrivateDeliveryStep::Dispatched { enqueued } => {
+                            PrivateDeliveryStep::Dispatched {
+                                enqueued,
+                                relinquished,
+                            } => {
                                 progress.terminal_steps += 1;
                                 progress.dispatched += usize::from(enqueued);
+                                progress.relinquished += usize::from(relinquished);
                                 if watch_failed {
                                     break;
                                 }

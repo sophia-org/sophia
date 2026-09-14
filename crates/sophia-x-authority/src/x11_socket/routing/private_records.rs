@@ -262,6 +262,11 @@ impl PrivateSettlingRelease {
             )
     }
 
+    /// Stop naming an attempt, once the ledger has confirmed it back.
+    fn clear_attempt(&mut self) {
+        self.attempt = None;
+    }
+
     fn native_mut(&mut self) -> Option<&mut private_native::Hold> {
         self.native.as_mut()
     }
