@@ -17141,3 +17141,118 @@ fn a_stalled_frame_is_resumed_rather_than_encoded_again() {
     );
     drop(reader);
 }
+
+#[test]
+fn a_stalled_recipient_holds_only_its_own_writer() {
+    // Two recipients, each with its own socket and its own writer, which is
+    // the arrangement this step is for. A takes nothing; B reads.
+    let (writer_a, reader_a) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    let (writer_b, reader_b) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    let (sender_a, queue_a) = sync_channel(1);
+    let (sender_b, queue_b) = sync_channel(1);
+    sender_a.send(ordered_capsule(1901)).expect("accepted");
+    sender_b.send(ordered_capsule(1902)).expect("accepted");
+
+    let blocking = Arc::new(AtomicBool::new(false));
+    let signal = blocking.clone();
+    let stalled = std::thread::spawn(move || {
+        // Fill A's buffer so its delivery cannot go out, seeded so the stall
+        // is reached without waiting out the whole policy.
+        let mut filling = X11OrderedSendState {
+            blocked: X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(200),
+            ..X11OrderedSendState::default()
+        };
+        let filler = vec![0u8; 1 << 16];
+        while {
+            if filling.frame_complete() {
+                filling.retire_frame().expect("it went");
+            }
+            if filling.frame.is_none() {
+                filling.begin_frame(filler.clone()).expect("nothing owed");
+            }
+            send_pending_frame(&writer_a, &mut filling).is_ok()
+        } {}
+
+        let mut in_flight = None;
+        take_ordered_delivery(&queue_a, &mut in_flight).expect("one waiting");
+        in_flight.as_mut().expect("taken").send.blocked =
+            X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(200);
+        signal.store(true, Ordering::Release);
+        let outcome =
+            write_one_ordered_frame(&writer_a, &mut in_flight, XByteOrder::LittleEndian, 1);
+        (outcome, in_flight, writer_a)
+    });
+
+    // Wait until A's writer is actually inside its blocking wait.
+    let limit = std::time::Instant::now() + Duration::from_secs(5);
+    while !blocking.load(Ordering::Acquire) && std::time::Instant::now() < limit {
+        std::thread::yield_now();
+    }
+    assert!(blocking.load(Ordering::Acquire), "A's writer is blocking");
+
+    // B's writer, on its own socket, is untouched by it.
+    let mut b_flight = None;
+    take_ordered_delivery(&queue_b, &mut b_flight).expect("one waiting");
+    let frames = b_flight
+        .as_ref()
+        .expect("taken")
+        .delivery()
+        .emission()
+        .frame_count();
+    for _ in 0..frames {
+        assert!(matches!(
+            write_one_ordered_frame(&writer_b, &mut b_flight, XByteOrder::LittleEndian, 1)
+                .expect("B is reading"),
+            X11OrderedWriteStep::Advanced { .. }
+        ));
+    }
+
+    // And so is the service runner, which shares nothing with either socket.
+    let client = XServerFrontendClientId(1903);
+    let surface = SurfaceId::new(1903, 1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(1903),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+        .expect("a readable order");
+    assert!(
+        fixture.private.deliver_turn(turn)[0].enqueued,
+        "the runner made progress while A's recipient took nothing"
+    );
+
+    // A's own writer is the only thing A held up, and what it was part way
+    // through is still its own.
+    let (outcome, in_flight, writer_a) = stalled.join().expect("A's writer returns");
+    assert!(matches!(
+        outcome,
+        Err(X11OrderedWriteFailure::Send(X11FrameSendFailure::Blocked { .. }))
+    ));
+    let held = in_flight.as_ref().expect("A still owns its delivery");
+    assert!(held.send.frame.is_some(), "with its frame still in hand");
+    assert_eq!(held.frame_index(), 0, "and not advanced past");
+
+    // The supervisor can take A's socket down while that partial frame is
+    // owned. What the wire took stays recorded: the connection is over, and
+    // nothing about it is retried or forgotten.
+    writer_a
+        .shutdown(std::net::Shutdown::Both)
+        .expect("the supervisor can end A");
+    assert!(
+        in_flight.as_ref().expect("still owned").send.frame.is_some(),
+        "shutting the socket down does not take the partial frame with it"
+    );
+    drop(reader_a);
+    drop(reader_b);
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}

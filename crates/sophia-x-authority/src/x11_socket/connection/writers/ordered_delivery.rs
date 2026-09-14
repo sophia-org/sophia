@@ -161,9 +161,10 @@ enum X11OrderedWriteFailure {
 /// other, and the fairness that a bounded frame count appears to give is not
 /// fairness in time.
 ///
-/// A shared dispatcher would need a different step -- one bounded attempt that
-/// reports progress or pending and returns -- rather than this one called more
-/// carefully.
+/// It belongs to a recipient-owned writer, one per connection, bounded by the
+/// configured client limit -- the arrangement the ordinary input writer already
+/// has. No thread per frame or per delivery, and the supervisor keeps its
+/// ability to shut the socket down while this waits.
 ///
 /// What the per-call bound does give is that the waiting a stalled recipient
 /// causes is charged to the delivery it belongs to, rather than to whatever
@@ -176,6 +177,14 @@ fn write_one_ordered_frame(
     byte_order: XByteOrder,
     sequence: u16,
 ) -> Result<X11OrderedWriteStep, X11OrderedWriteFailure> {
+    // The caller holds this socket's output guard for the whole of this call,
+    // and that is what keeps the wire serialized. A frame stops part way only
+    // when the blocking allowance is exhausted or a send never reported, and
+    // both of those end the connection -- so between calls there is never an
+    // incomplete frame for a control or protocol write to be interleaved
+    // into. Releasing the guard around a stalled frame would put another
+    // writer's bytes inside an event's body.
+
     let Some(held) = in_flight.as_mut() else {
         return Ok(X11OrderedWriteStep::Idle);
     };
