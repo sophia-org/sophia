@@ -81,13 +81,13 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
             true,
         ))
         .unwrap();
-    let first = runner.service_turn().unwrap();
+    let first = runner.service_turn(&control_watchdog()).unwrap();
     assert_eq!(first.taken, 1);
     assert_eq!(first.enqueued, 1);
     assert_eq!(first.observed, 1);
     assert_eq!(first.settled, 0);
     assert_eq!(channels.input.try_iter().count(), 1);
-    let second = runner.service_turn().unwrap();
+    let second = runner.service_turn(&control_watchdog()).unwrap();
     assert_eq!(second.taken, 0);
     assert_eq!(second.enqueued, 0);
 }
@@ -110,7 +110,7 @@ fn losing_a_prepared_runner_closes_its_producers_and_carries_its_hold() {
             true,
         ))
         .unwrap();
-    assert_eq!(runner.service_turn().unwrap().observed, 1);
+    assert_eq!(runner.service_turn(&control_watchdog()).unwrap().observed, 1);
     drop(runner);
     assert!(matches!(
         ingress.submit(button_to(

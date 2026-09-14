@@ -38,6 +38,21 @@ enum PrivateOrderedStep {
     /// it.
     #[cfg_attr(not(test), allow(dead_code))]
     Decided(crate::ReadySequence),
+    /// Taken, decided and stored, but the supervisor would not take the
+    /// finish. The work happened; that anything was still watching when it
+    /// returned did not.
+    ///
+    /// The sequence is here for the runner that reads it. No control in this
+    /// crate produces a latched finish: doing so needs the supervisor to fail
+    /// during an execution, which is its own timing rather than something a
+    /// caller can ask for. Allowed unconditionally for that reason rather
+    /// than left to look consumed.
+    #[allow(dead_code)]
+    DecidedUnwatched(crate::ReadySequence),
+    /// Taken but not run, because nothing would watch it. The work is owned
+    /// and un-attempted and the order is blocked on it.
+    #[cfg_attr(not(test), allow(dead_code))]
+    Unwatched(crate::ReadySequence),
     /// One item was taken that this path does not execute, and is held as the
     /// parked operation. The order is blocked behind it now.
     Parked(crate::ReadySequence),
@@ -126,7 +141,11 @@ impl PrivateXServerFrontend {
     fn step_once(
         &mut self,
         keyboards: &mut PrivateKeyboards,
-        mark: &mut dyn FnMut(crate::ReadySequence, std::time::Instant),
+        start: &mut dyn FnMut(
+            crate::ReadySequence,
+            std::time::Instant,
+        ) -> Result<(), XServerFrontendRouteError>,
+        watch: &private_watchdog::PrivateWatchdogOwner,
     ) -> Result<PrivateOrderedStep, XServerFrontendRouteError> {
         // An item left owned by an interrupted turn blocks the order. Storing
         // it before one call protects it from that call and from nothing else:
@@ -187,12 +206,28 @@ impl PrivateXServerFrontend {
                 Some(PrivateOrderedStep::Parked(sequence))
             }
         };
-        // In this instance's hands, and common not yet taken.
-        mark(sequence, taken_at);
+        // Offered every dequeue, including one that will only be parked:
+        // whether that counts as a start is the hook's policy and not this
+        // step's to assume. It can refuse, and a refusal here stops before the
+        // execution with the work still owned -- which is why it returns a
+        // result rather than being told after the fact.
+        start(sequence, taken_at)?;
+        // A parked operation is a dequeue with no execution after it, so
+        // there is nothing for a supervisor to watch and nothing that could
+        // fail to come back.
         if let Some(parked) = taken {
             return Ok(parked);
         }
-        let outcome = self.run_current(keyboards);
+        // In this instance's hands, and common not yet taken. The instant is
+        // the one read at the dequeue, so what the supervisor measures starts
+        // where the work left the order rather than where this call reached.
+        let Ok(mut watched) = watch.begin_dequeued(taken_at) else {
+            // Not run. The work stays owned and un-attempted, which is the
+            // same honest state an interrupted step leaves, and the order is
+            // blocked on it until something answers for it.
+            return Ok(PrivateOrderedStep::Unwatched(sequence));
+        };
+        let outcome = self.run_current(keyboards, &mut watched);
         let Some(PrivateOrderedItem::Refused {
             sequence,
             custody,
@@ -224,7 +259,16 @@ impl PrivateXServerFrontend {
                 route,
             },
         });
-        Ok(PrivateOrderedStep::Decided(sequence))
+        // Finished after the item is stored, never between taking it out and
+        // putting it back: a caller whose accounting failed in that gap would
+        // be the only holder of work the order had already given up.
+        match watched.finish() {
+            Ok(()) => Ok(PrivateOrderedStep::Decided(sequence)),
+            // The work ran and is recorded. What is not established is that
+            // anything was still watching when it returned, so the step says
+            // so rather than reporting an ordinary decision.
+            Err(_) => Ok(PrivateOrderedStep::DecidedUnwatched(sequence)),
+        }
     }
 
     /// Step until the service budget is spent or the order stops offering work.
@@ -239,16 +283,23 @@ impl PrivateXServerFrontend {
     fn route_pending_ordered(
         &mut self,
         keyboards: &mut PrivateKeyboards,
+        watch: &private_watchdog::PrivateWatchdogOwner,
     ) -> Result<Vec<PrivateOrderedItem>, XServerFrontendRouteError> {
         let budget = self.service_budget;
         while self.terminal.turn.len() < budget {
-            match self.step_once(keyboards, &mut |_, _| {})? {
+            match self.step_once(keyboards, &mut |_, _| Ok(()), watch)? {
                 PrivateOrderedStep::Idle => break,
                 PrivateOrderedStep::Blocked(sequence) | PrivateOrderedStep::Parked(sequence) => {
                     self.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
                     break;
                 }
-                PrivateOrderedStep::Decided(_) => {}
+                // Nothing here supervises, so a step that could not be
+                // watched ends the turn rather than being retried blind.
+                PrivateOrderedStep::Unwatched(sequence) => {
+                    self.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
+                    break;
+                }
+                PrivateOrderedStep::Decided(_) | PrivateOrderedStep::DecidedUnwatched(_) => {}
             }
         }
         Ok(std::mem::take(&mut self.terminal.turn))

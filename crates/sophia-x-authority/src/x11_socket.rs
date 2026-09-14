@@ -70,6 +70,7 @@ include!("x11_socket/routing/control_transition.rs");
 include!("x11_socket/routing/private_shutdown.rs");
 include!("x11_socket/routing/private_authority.rs");
 include!("x11_socket/routing/private_participant.rs");
+include!("x11_socket/routing/private_records.rs");
 include!("x11_socket/routing/private_execution.rs");
 include!("x11_socket/routing/private_runner.rs");
 include!("x11_socket/routing/private_applied_state.rs");
@@ -366,5 +367,7 @@ mod input_recovery_tests;
 #[cfg(unix)]
 #[path = "x11_socket/routing/private_watchdog.rs"]
 #[allow(dead_code)]
-// Independently tested supervisor; consumer/ingress wiring is the next integration.
+// The supervisor. The ordered step and the direct ordered run both take an
+// owner and hold a watched execution across the transaction; attaching a
+// transport and gating production on it is still the runner's to wire.
 mod private_watchdog;

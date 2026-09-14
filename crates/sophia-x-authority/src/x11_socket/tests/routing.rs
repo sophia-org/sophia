@@ -11389,7 +11389,7 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
     let mut drained = 0usize;
     loop {
         let ran = private
-            .route_pending_ordered(&mut keyboards)
+            .route_pending_ordered(&mut keyboards, &control_watchdog())
             .expect("a readable order")
             .len();
         if ran == 0 {
@@ -12245,7 +12245,9 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(701), 272, true),
             &pressed,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the press to run");
     let reached = run.reached.expect("a press decides where it went");
     assert_eq!(reached.client(), client, "it reached the route's client");
@@ -12274,7 +12276,9 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(703), 272, true),
             &joined,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the joining press to run");
     assert!(
         !run.first_press,
@@ -12298,7 +12302,9 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(702), 272, false),
             &released,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the release to run");
     let released_to = run.reached.expect("a delivering release names its hold");
     assert_eq!(
@@ -12351,7 +12357,7 @@ fn a_key_press_refuses_rather_than_delivering_on_queued_focus() {
         keycode: 30,
         pressed: true,
     };
-    let refused = private.run_ordered_input(&mut keyboards, &key, &custody);
+    let refused = private.run_ordered_input(&mut keyboards, &key, &custody, &control_watchdog());
     assert!(
         matches!(refused, Err(crate::PrivateExecutionRefusal::FocusNotApplied)),
         "the reason is the missing applied focus, not an authority error standing in for it, got {refused:?}"
@@ -12395,7 +12401,9 @@ fn another_instances_keyboard_history_cannot_drive_this_one() {
         &mut foreign,
         &button_to(surface, XAuthorityInputDeliveryId::from_raw(721), 272, true),
         &custody,
-    );
+    
+                &control_watchdog(),
+            );
     assert!(
         matches!(
             refused,
@@ -12446,7 +12454,9 @@ fn a_release_answers_its_hold_after_the_surface_is_gone() {
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(731), 272, true),
             &pressed,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the press to run");
     assert!(run.first_press);
     let _ = pressed.observe();
@@ -12468,7 +12478,9 @@ fn a_release_answers_its_hold_after_the_surface_is_gone() {
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(732), 272, false),
             &released,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the release to run with its target gone");
     let reached = run.reached.expect("the release names its hold");
     assert_eq!(reached.client(), client);
@@ -12498,7 +12510,9 @@ fn a_release_keeps_the_window_its_press_recorded() {
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(741), 272, true),
             &pressed,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the press to run");
     assert_eq!(run.reached.expect("a press decides").window(), window);
     let _ = pressed.observe();
@@ -12522,7 +12536,9 @@ fn a_release_keeps_the_window_its_press_recorded() {
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(742), 272, false),
             &released,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the release to run");
     let reached = run.reached.expect("the release names its hold");
     assert_eq!(
@@ -12550,7 +12566,9 @@ fn a_release_of_nothing_held_is_an_outcome_not_a_missing_target() {
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(751), 272, false),
             &released,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("an unheld release is a successful outcome");
     assert!(
         matches!(
@@ -12596,7 +12614,9 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(761), 272, true),
             &pressed,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the press to run");
     assert!(run.first_press);
     let _ = pressed.observe();
@@ -12612,7 +12632,9 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(762), 272, false),
             &released,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the release to run");
     let Some(XAuthorityInputEvent::Pointer(event)) = run.event else {
         panic!("a final release owes an event");
@@ -12647,7 +12669,9 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
         &mut keyboards,
         &button_to(surface, XAuthorityInputDeliveryId::from_raw(763), 272, true),
         &again,
-    );
+    
+                &control_watchdog(),
+            );
     assert!(
         matches!(
             barred,
@@ -12689,6 +12713,8 @@ fn a_release_with_a_survivor_leaves_the_projection_alone() {
                     true,
                 ),
                 &custody,
+            
+                &control_watchdog(),
             )
             .expect("the press to run");
         let _ = custody.observe();
@@ -12703,7 +12729,9 @@ fn a_release_with_a_survivor_leaves_the_projection_alone() {
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(773), 272, false),
             &released,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the release to run");
     match run.release.expect("a release outcome") {
         sophia_input_authority::ReleaseOutcome::SurvivorRemains => {
@@ -12741,7 +12769,9 @@ fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing(
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(781), 272, true),
             &pressed,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the press to run");
     let _ = pressed.observe();
 
@@ -12755,7 +12785,9 @@ fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing(
         &mut keyboards,
         &button_to(surface, XAuthorityInputDeliveryId::from_raw(782), 272, false),
         &released,
-    );
+    
+                &control_watchdog(),
+            );
     assert!(
         matches!(refused, Err(crate::PrivateExecutionRefusal::HoldPlanMissing)),
         "a hold that ended has a recipient; not knowing who is not the same as owing nobody, got {refused:?}"
@@ -12778,7 +12810,9 @@ fn a_release_refuses_when_its_seats_projection_is_gone() {
             &mut keyboards,
             &button_to(surface, XAuthorityInputDeliveryId::from_raw(791), 272, true),
             &pressed,
-        )
+        
+                &control_watchdog(),
+            )
         .expect("the press to run");
     let _ = pressed.observe();
 
@@ -12798,7 +12832,9 @@ fn a_release_refuses_when_its_seats_projection_is_gone() {
         &mut keyboards,
         &button_to(surface, XAuthorityInputDeliveryId::from_raw(792), 272, false),
         &released,
-    );
+    
+                &control_watchdog(),
+            );
     assert!(
         refused.is_err(),
         "retained state that has become unavailable is not a fresh clear history, got {refused:?}"
@@ -12837,7 +12873,7 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
         .expect("the order to accept it");
 
     let mut turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     assert_eq!(turn.len(), 1, "the order held exactly what was sent");
     let item = turn.remove(0);
@@ -12875,7 +12911,7 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
     // The order is empty now: the turn consumed it rather than copying it.
     assert!(
         private
-            .route_pending_ordered(&mut keyboards)
+            .route_pending_ordered(&mut keyboards, &control_watchdog())
             .expect("a readable order")
             .is_empty()
     );
@@ -12913,7 +12949,7 @@ fn a_consumer_refusal_hands_back_the_custody_it_was_accepted_with() {
     ingress.submit(key).expect("the order to accept it");
 
     let mut turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     assert_eq!(turn.len(), 1);
     let PrivateOrderedItem::Refused {
@@ -12981,7 +13017,7 @@ fn unreserved_work_in_the_order_is_handed_back_rather_than_run() {
 
     let mut private = private;
     let mut turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     assert_eq!(turn.len(), 1);
     let PrivateOrderedItem::Parked { sequence } = turn.remove(0) else {
@@ -12996,7 +13032,7 @@ fn unreserved_work_in_the_order_is_handed_back_rather_than_run() {
 
     // Still parked, so a later turn runs nothing rather than overtaking it.
     let again = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(
         matches!(again.as_slice(), [PrivateOrderedItem::Parked { .. }]),
@@ -13057,7 +13093,7 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
 
     let mut private = private;
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
 
     // The report being in order is not enough. The effect order is what
@@ -13075,7 +13111,7 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
     // A second turn does not overtake it either. Stopping for one turn would
     // only move the problem to the next.
     let again = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(matches!(
         again.as_slice(),
@@ -13091,7 +13127,7 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
     let (_, parked) = private.take_parked().expect("the parked control");
     assert!(matches!(parked, PrivateOperation::Control(_, _)));
     let after = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(
         matches!(after.as_slice(), [PrivateOrderedItem::Parked { .. }]),
@@ -13132,7 +13168,7 @@ fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
     // The ordered consumer takes a turn, which claims this order.
     assert!(
         private
-            .route_pending_ordered(&mut keyboards)
+            .route_pending_ordered(&mut keyboards, &control_watchdog())
             .expect("a readable order")
             .is_empty()
     );
@@ -13160,7 +13196,7 @@ fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
 
     // And the work is still there for the consumer that may run it.
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(
         matches!(turn.as_slice(), [PrivateOrderedItem::Ran { .. }]),
@@ -13199,7 +13235,7 @@ fn a_turn_that_fails_part_way_keeps_what_it_already_took() {
         ))
         .expect("the order to accept it");
     let parked = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     let [PrivateOrderedItem::Parked { sequence }] = parked.as_slice() else {
         panic!("unreserved work parks");
@@ -13228,7 +13264,7 @@ fn a_turn_that_fails_part_way_keeps_what_it_already_took() {
         .is_err()
     );
 
-    let failed = private.route_pending_ordered(&mut keyboards);
+    let failed = private.route_pending_ordered(&mut keyboards, &control_watchdog());
     assert!(failed.is_err(), "the turn could not read the order");
 
     // What it had already taken is still owned. Returning results only on
@@ -13287,7 +13323,7 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         ))
         .expect("the order to accept the press");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
@@ -13330,7 +13366,7 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         ))
         .expect("the order to accept the release");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
@@ -13365,7 +13401,7 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         ))
         .expect("the order to accept the second press");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     let [PrivateOrderedItem::Refused { refusal, .. }] = turn.as_slice() else {
         panic!("the second press is barred while the debt is open");
@@ -13412,7 +13448,7 @@ fn a_refusal_is_retained_by_delivery_rather_than_discarded() {
     ingress.submit(key).expect("the order to accept it");
 
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert!(
@@ -13478,7 +13514,7 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     let [PrivateOrderedItem::Ran { .. }] = turn.as_slice() else {
         panic!("the first item ran");
@@ -13512,7 +13548,7 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
             true,
         ))
         .expect("the order to accept it");
-    let blocked = private.route_pending_ordered(&mut keyboards);
+    let blocked = private.route_pending_ordered(&mut keyboards, &control_watchdog());
     assert!(
         matches!(
             blocked,
@@ -13568,7 +13604,7 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
             ))
             .expect("the order to accept it");
         let turn = private
-            .route_pending_ordered(keyboards)
+            .route_pending_ordered(keyboards, &control_watchdog())
             .expect("a readable order");
         private.deliver_turn(turn)
     };
@@ -13661,7 +13697,7 @@ fn a_parked_operation_is_handed_to_the_durable_owner_at_shutdown() {
         })
         .expect("the order to accept the control");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(matches!(
         turn.as_slice(),
@@ -13720,7 +13756,7 @@ fn an_enqueued_event_whose_outcome_is_unreadable_is_marked_as_already_sent() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
 
     // The authority becomes unreadable between the send and the observation.
@@ -13812,7 +13848,7 @@ fn a_parked_control_is_answered_exactly_once_after_shutdown() {
         })
         .expect("the order to accept the control");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(matches!(
         turn.as_slice(),
@@ -13899,7 +13935,7 @@ fn a_new_delivery_call_does_not_reset_an_interrupted_entry() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
 
     // Staged as an unwind inside the send leaves it: the entry is owned, and
@@ -13969,7 +14005,7 @@ fn an_enqueued_entry_is_observed_rather_than_sent_again() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
 
     // Staged as an interruption after the send and before the observation
@@ -14053,7 +14089,7 @@ fn a_parked_control_whose_registry_is_unreadable_is_kept_whole() {
         })
         .expect("the order to accept the control");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(matches!(
         turn.as_slice(),
@@ -14145,7 +14181,7 @@ fn what_an_instance_still_owes_reaches_the_durable_owner() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     let _delivered = private.deliver_turn(turn);
     assert_eq!(
@@ -14240,7 +14276,7 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert!(matches!(
@@ -14366,7 +14402,7 @@ fn instance_handing_over_a_retained_hold(
         ))
         .expect("the order to accept it");
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert!(matches!(
@@ -14528,7 +14564,7 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
     );
 
     let turn = private
-        .route_pending_ordered(&mut keyboards)
+        .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert!(
@@ -14575,6 +14611,17 @@ struct OrderedIngressFixture {
     channels: XServerFrontendClientRouteChannels,
     _acks: Receiver<XAuthorityClientControlAck>,
     deliveries: Receiver<XAuthorityClientInputDelivery>,
+}
+
+/// A sealed watchdog for a control that is not exercising the watch itself.
+///
+/// Real rather than absent: nothing runs unwatched, so a control that wants to
+/// exercise something else still has to supply a supervisor that will take the
+/// execution. The gate is dropped because these controls do not read it.
+fn control_watchdog() -> private_watchdog::PrivateWatchdogOwner {
+    let mut owner = private_watchdog::PrivateWatchdogOwner::prepare(0).expect("a watchdog");
+    owner.seal().expect("a sealed watchdog");
+    owner
 }
 
 fn ordered_ingress_fixture(
@@ -14659,7 +14706,7 @@ fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
 
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     let delivered = fixture.private.deliver_turn(turn);
     assert!(delivered[0].enqueued, "the press reached the client's queue");
@@ -14731,7 +14778,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
 
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn).is_empty());
     assert!(
@@ -14779,7 +14826,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
         .expect("the order to accept it");
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     let released = fixture.private.deliver_turn(turn);
     assert_eq!(
@@ -14827,7 +14874,7 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
         .expect("the order to accept it");
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn)[0].enqueued);
     assert_eq!(projected_buttons(&fixture.private, namespace, seat), 0x100);
@@ -14852,7 +14899,7 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
         .expect("the order to accept it");
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     let delivered = fixture.private.deliver_turn(turn);
 
@@ -14944,7 +14991,7 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
         .expect("the order to accept it");
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     let delivered = fixture.private.deliver_turn(turn);
     assert!(delivered[0].enqueued);
@@ -15007,7 +15054,7 @@ fn an_unreadable_ledger_is_not_a_delivery_that_ended() {
 
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn).is_empty());
     assert!(
@@ -15046,7 +15093,7 @@ fn held_button(fixture: &mut OrderedIngressFixture, surface: SurfaceId, delivery
         .expect("the order to accept it");
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn)[0].enqueued);
     assert_eq!(fixture.private.terminal.holds.len(), 1);
@@ -15082,7 +15129,7 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
 
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn).is_empty());
 
@@ -15146,7 +15193,7 @@ fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
 
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn).is_empty());
     assert!(
@@ -15300,7 +15347,7 @@ fn an_ordered_turn_gives_its_claim_back() {
         .expect("the order to accept it");
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn)[0].enqueued);
 
@@ -15352,7 +15399,7 @@ fn a_release_whose_delivery_another_execution_holds_applies_nothing() {
 
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn).is_empty());
     assert!(
@@ -15448,7 +15495,7 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
         .expect("the order to accept it");
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     let delivered = fixture.private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
@@ -15534,7 +15581,7 @@ fn a_refusal_before_the_effect_resolves_the_claim_as_having_applied_nothing() {
 
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn).is_empty());
     assert!(
@@ -15581,7 +15628,7 @@ fn a_cancellation_deferred_by_the_execution_itself_stands_when_nothing_applied()
 
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn).is_empty());
     assert!(
@@ -15728,7 +15775,7 @@ fn a_press_that_applied_cannot_be_revoked_afterwards() {
         .expect("the order to accept it");
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn)[0].enqueued);
     assert_eq!(
@@ -15796,7 +15843,7 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
         .expect("the order to accept it");
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn)[0].enqueued);
     assert_eq!(projected_buttons(&fixture.private, namespace, seat), 0);
@@ -15884,7 +15931,9 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     let first_delivery = XAuthorityInputDeliveryId::from_raw(13011);
     let mut marked = Vec::new();
     let step = {
-        let mut mark = |sequence: crate::ReadySequence, _taken_at: std::time::Instant| {
+        let mut mark = |sequence: crate::ReadySequence,
+                        _taken_at: std::time::Instant|
+         -> Result<(), XServerFrontendRouteError> {
             // Common is not held: the mark sits above that guard in the rank
             // and reaching for it here would invert the order.
             assert!(
@@ -15909,10 +15958,11 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
             );
             drop(held);
             marked.push(sequence);
+            Ok(())
         };
         fixture
             .private
-            .step_once(&mut fixture.keyboards, &mut mark)
+            .step_once(&mut fixture.keyboards, &mut mark, &control_watchdog())
             .expect("a readable order")
     };
     let PrivateOrderedStep::Decided(sequence) = step else {
@@ -15939,8 +15989,9 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     let step = fixture
         .private
         .step_once(&mut fixture.keyboards, &mut |sequence, _| {
-            second_marked.push(sequence)
-        })
+            second_marked.push(sequence);
+            Ok(())
+        }, &control_watchdog())
         .expect("a readable order");
     assert!(matches!(step, PrivateOrderedStep::Decided(_)));
     assert_eq!(second_marked.len(), 1);
@@ -15951,7 +16002,11 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     assert!(matches!(
         fixture
             .private
-            .step_once(&mut fixture.keyboards, &mut |_, _| panic!("nothing to mark"))
+            .step_once(
+                &mut fixture.keyboards,
+                &mut |_, _| panic!("nothing to mark"),
+                &control_watchdog(),
+            )
             .expect("a readable order"),
         PrivateOrderedStep::Idle
     ));
@@ -15974,7 +16029,7 @@ fn a_blocked_order_takes_nothing_and_marks_nothing() {
         .expect("the order to accept it");
     let step = fixture
         .private
-        .step_once(&mut fixture.keyboards, &mut |_, _| {})
+        .step_once(&mut fixture.keyboards, &mut |_, _| Ok(()), &control_watchdog())
         .expect("a readable order");
     assert!(matches!(step, PrivateOrderedStep::Parked(_)));
 
@@ -15983,9 +16038,11 @@ fn a_blocked_order_takes_nothing_and_marks_nothing() {
     // doing so for as long as the barrier stood.
     let step = fixture
         .private
-        .step_once(&mut fixture.keyboards, &mut |_, _| {
-            panic!("nothing may be taken while the order is blocked")
-        })
+        .step_once(
+            &mut fixture.keyboards,
+            &mut |_, _| panic!("nothing may be taken while the order is blocked"),
+            &control_watchdog(),
+        )
         .expect("a readable order");
     assert!(
         matches!(step, PrivateOrderedStep::Blocked(_)),
@@ -16034,7 +16091,7 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
         .expect("the order to accept it");
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn)[0].enqueued);
 
@@ -16089,9 +16146,11 @@ fn a_mark_that_panics_does_not_take_the_work_with_it() {
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = fixture
             .private
-            .step_once(&mut fixture.keyboards, &mut |_, _| {
-                panic!("accounting failed")
-            });
+            .step_once(
+                &mut fixture.keyboards,
+                &mut |_, _| panic!("accounting failed"),
+                &control_watchdog(),
+            );
     }));
     assert!(outcome.is_err(), "the mark panicked");
 
@@ -16123,7 +16182,7 @@ fn a_mark_that_panics_does_not_take_the_work_with_it() {
     assert!(matches!(
         fixture
             .private
-            .step_once(&mut fixture.keyboards, &mut |_, _| {}),
+            .step_once(&mut fixture.keyboards, &mut |_, _| Ok(()), &control_watchdog()),
         Err(XServerFrontendRouteError::OrderedItemUnresolved)
     ));
 
@@ -16181,7 +16240,7 @@ fn private_work_does_not_expire_because_it_waited() {
     // It still runs when its turn comes: retaining it is not shelving it.
     let turn = fixture
         .private
-        .route_pending_ordered(&mut fixture.keyboards)
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
         .expect("a readable order");
     assert!(fixture.private.deliver_turn(turn)[0].enqueued);
 
@@ -16207,3 +16266,83 @@ fn private_work_does_not_expire_because_it_waited() {
     drop(fixture.durable);
 }
 include!("review_private_deadline.rs");
+
+
+#[test]
+fn a_start_that_refuses_stops_before_the_effect() {
+    let client = XServerFrontendClientId(1501);
+    let surface = SurfaceId::new(1501, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(1501);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+
+    // Charging a start can refuse -- a budget is spent, and a spent budget is
+    // a real answer. It has to be able to say so rather than being told after
+    // the work has already run.
+    let refused = fixture.private.step_once(
+        &mut fixture.keyboards,
+        &mut |_, _| Err(XServerFrontendRouteError::OrderedItemUnresolved),
+        &control_watchdog(),
+    );
+    assert!(matches!(
+        refused,
+        Err(XServerFrontendRouteError::OrderedItemUnresolved)
+    ));
+
+    // Nothing was applied and nothing was lost: the work is this instance's,
+    // un-attempted, and the order is honestly blocked on it.
+    assert!(fixture.private.terminal.holds.is_empty());
+    assert!(matches!(
+        &fixture.private.terminal.current,
+        Some(PrivateOrderedItem::Refused {
+            refusal: PrivateExecutionRefusal::NotAttempted,
+            ..
+        })
+    ));
+    assert_eq!(claim_state(&fixture, delivery), (false, false));
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn nothing_runs_when_nothing_will_watch_it() {
+    let client = XServerFrontendClientId(1502);
+    let surface = SurfaceId::new(1502, 1);
+    let delivery = XAuthorityInputDeliveryId::from_raw(1502);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(surface, delivery, 272, true))
+        .expect("the order to accept it");
+
+    // A supervisor that has not been sealed will not take an execution. The
+    // watch exists for the case where a call does not come back, so running
+    // without one is starting exactly the case it was meant to catch with
+    // nothing left to catch it.
+    let unsealed = private_watchdog::PrivateWatchdogOwner::prepare(0).expect("a watchdog");
+    let step = fixture
+        .private
+        .step_once(&mut fixture.keyboards, &mut |_, _| Ok(()), &unsealed)
+        .expect("a readable order");
+    assert!(matches!(step, PrivateOrderedStep::Unwatched(_)));
+    assert!(fixture.private.terminal.holds.is_empty());
+    assert_eq!(
+        claim_state(&fixture, delivery),
+        (false, false),
+        "the ledger never moved for it"
+    );
+    assert!(matches!(
+        &fixture.private.terminal.current,
+        Some(PrivateOrderedItem::Refused {
+            refusal: PrivateExecutionRefusal::NotAttempted,
+            ..
+        })
+    ));
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
