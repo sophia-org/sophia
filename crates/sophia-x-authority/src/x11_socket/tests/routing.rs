@@ -16986,9 +16986,18 @@ fn two_frames_of_one_delivery_reach_the_wire_in_order_and_whole() {
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
 
     let emission = held.delivery().emission();
-    assert!(emission.frame_count() >= 1, "the fixture emits something");
-    // Two real encodings of this emission, distinguished the way the writer
-    // distinguishes them: by the transport sequence it supplies.
+    // This fixture's emission has one record, so these are two encodings of
+    // the same record with different transport sequences. That makes this a
+    // control over frame CUSTODY -- two frames taken, sent, retired and read
+    // back in order with nothing of the first carried into the second -- and
+    // not evidence that the writer walks distinct emission records. A
+    // multi-form emission is what would show that, and this fixture cannot
+    // produce one.
+    assert_eq!(
+        emission.frame_count(),
+        1,
+        "stated rather than assumed: one record, encoded twice"
+    );
     let first = emission
         .encode_frame(0, XByteOrder::LittleEndian, 1)
         .expect("a first frame");
