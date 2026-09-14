@@ -17271,3 +17271,29 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
     drop(fixture.channels);
     drop(fixture.durable);
 }
+
+
+#[test]
+fn a_request_carries_the_capability_it_was_reserved_under() {
+    let client = XServerFrontendClientId(2001);
+    let surface = SurfaceId::new(2001, 1);
+    let window = XResourceId::new(0x202001, 1);
+    let (private, _registration, role, _keyboards) = ordered_fixture(client, surface, window);
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let reserved = role.reserve(stamp, 1).expect("a reservation");
+
+    // The capability the reservation was issued with, and the one the custody
+    // answers with, are the same. A native operation checks that the
+    // capability and the permit name one source, and a capability read from
+    // the producer at execution time would be whatever it holds then rather
+    // than the one this request was accepted against -- which is the whole of
+    // what makes that check mean anything.
+    let expected = reserved.capability();
+    let custody = reserved.accepted();
+    assert_eq!(
+        custody.capability().source(),
+        expected.source(),
+        "the custody answers with the capability the request was reserved under"
+    );
+    let _ = custody.observe();
+}

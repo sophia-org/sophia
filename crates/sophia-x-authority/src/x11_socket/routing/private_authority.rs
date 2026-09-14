@@ -425,6 +425,7 @@ impl PrivateReservation {
             connection: self.connection,
             admission: self.admission,
             grant: self.grant,
+            capability: self.capability,
             observed: std::cell::Cell::new(false),
             phase: std::cell::Cell::new(PrivateRequestPhase::Unused),
         }
@@ -483,6 +484,13 @@ pub struct PrivateOutstandingRequest {
     admission: sophia_protocol::ClientAdmissionId,
     /// The grant that owns this request, for authorising its settlement.
     grant: sophia_input_authority::GrantId,
+    /// The capability this request was reserved under.
+    ///
+    /// Carried rather than looked up again at execution. A native operation
+    /// validates that the capability and the permit name the same source, and
+    /// a capability fetched later would be whatever the producer holds now
+    /// rather than the one this request was accepted against.
+    capability: sophia_input_authority::DeviceCapability,
     /// Whether the terminal outcome has been taken.
     ///
     /// Execution alone does not free the cell -- the completion has to be
@@ -514,6 +522,12 @@ enum PrivateRequestPhase {
 
 #[cfg(unix)]
 impl PrivateOutstandingRequest {
+    /// The capability this request was reserved under.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn capability(&self) -> sophia_input_authority::DeviceCapability {
+        self.capability
+    }
+
     /// The request this custody answers for. Crate-internal: naming it is not
     /// a right, holding this value is.
     fn token(&self) -> sophia_input_authority::RequestToken {
