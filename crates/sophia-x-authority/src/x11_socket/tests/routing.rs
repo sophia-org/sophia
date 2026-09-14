@@ -16348,44 +16348,118 @@ fn nothing_runs_when_nothing_will_watch_it() {
 }
 
 #[test]
-fn a_send_reports_the_time_it_actually_waited() {
-    let (mut writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
-    install_writer_blocked_accounting(&writer).expect("the accounting timeout");
-    let mut blocked = Duration::ZERO;
+fn a_send_counts_only_what_it_waited_on_this_recipient() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    let mut state = X11OrderedSendState::default();
 
-    // A recipient that is reading takes its frame immediately, and a send that
-    // did not wait must not be reported as one that did.
-    send_frame_accounted(&mut writer, &[7u8; 32], &mut blocked).expect("a healthy send");
+    // A recipient that is taking its bytes costs no waiting, and a send that
+    // never waited must contribute nothing to a deadline.
+    send_frame_bounded(&writer, &[7u8; 32], &mut state).expect("a healthy send");
+    assert_eq!(state.offset, 32, "the whole frame went out");
     assert_eq!(
-        blocked,
+        state.blocked(),
         Duration::ZERO,
-        "a send that never waited contributes nothing to a deadline"
+        "nothing waited, so nothing is owed to a deadline"
     );
 
-    // Now nobody reads. The socket buffer fills and the send starts waiting on
-    // a recipient that is not taking anything.
-    let frame = [9u8; 4096];
+    // Nobody reads now. The buffer fills and the sends start waiting on a
+    // recipient that is taking nothing. Seeded close to the limit rather than
+    // waiting out the whole policy: what is under test is that real waiting
+    // accumulates onto what this delivery already waited, and trips the bound.
+    state.begin_frame();
+    assert_eq!(state.offset, 0, "a new frame has had nothing accepted");
+    state.blocked = X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(60);
+    let frame = vec![9u8; 1 << 20];
     let failure = loop {
-        match send_frame_accounted(&mut writer, &frame, &mut blocked) {
-            Ok(()) => continue,
+        match send_frame_bounded(&writer, &frame, &mut state) {
+            Ok(()) => {
+                state.begin_frame();
+            }
             Err(failure) => break failure,
         }
     };
-    let X11FrameSendFailure::Blocked {
-        written: _,
-        blocked: waited,
-    } = failure
-    else {
-        panic!("a recipient that took nothing is the blocked case, not an io error")
+    let X11FrameSendFailure::Blocked { written, blocked } = failure else {
+        panic!("a recipient taking nothing is the blocked case, not an io error")
     };
-    // Measured, not assumed. What a deadline may be built from is time this
-    // send actually spent waiting on this recipient -- not how long the
-    // delivery had existed, how long it sat in a queue, or how long a lock was
-    // held.
     assert!(
-        waited >= Duration::from_secs(2),
-        "the limit is reached by accumulated waiting: {waited:?}"
+        blocked >= X_AUTHORITY_ORDERED_BLOCKED_LIMIT,
+        "the bound is reached by measured waiting: {blocked:?}"
     );
-    assert_eq!(waited, blocked, "and the caller's accumulator is the same one");
+    assert_eq!(
+        blocked,
+        state.blocked(),
+        "and the owner's accumulator is the one that was added to"
+    );
+
+    // The offset is the owner's, not the call's. What the socket accepted
+    // before it stopped taking bytes is still recorded, which is the only
+    // thing that can say whether the wire holds part of an event.
+    assert_eq!(
+        written, state.offset,
+        "what went out is owned, not reported from a local the call could lose"
+    );
+    assert!(written > 0, "a filled buffer took some of it first");
+    assert!(written < frame.len(), "and then stopped short");
     drop(reader);
+}
+
+#[test]
+fn the_socket_every_writer_shares_is_left_alone() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    // The ordered path must not reach the recipient by changing a socket that
+    // the control and protocol writers hold too. A per-call flag affects the
+    // one send; a timeout or a mode is the socket's, and every other writer
+    // would inherit it without the resumable ownership this path relies on.
+    assert!(
+        writer.write_timeout().expect("a readable socket").is_none(),
+        "no send timeout is installed on the shared socket"
+    );
+    let mut state = X11OrderedSendState::default();
+    send_frame_bounded(&writer, &[3u8; 16], &mut state).expect("a healthy send");
+    assert!(
+        writer.write_timeout().expect("a readable socket").is_none(),
+        "and sending did not install one either"
+    );
+    // Still blocking, which is what every other writer on this socket expects.
+    // A blocking send returns only when it has taken the bytes, so a socket
+    // left in non-blocking mode would give them a WouldBlock they have no
+    // resumable offset to answer with.
+    assert!(
+        !rustix::fs::fcntl_getfl(&writer)
+            .expect("a readable descriptor")
+            .contains(rustix::fs::OFlags::NONBLOCK),
+        "nor did it put the shared socket in non-blocking mode"
+    );
+    drop(reader);
+}
+
+#[test]
+fn a_departed_recipient_is_a_failed_recipient_not_a_failed_server() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    drop(reader);
+    let mut state = X11OrderedSendState::default();
+
+    // Sending to a peer that has gone. The send carries NOSIGNAL, so this
+    // returns an error rather than killing the process with SIGPIPE -- a
+    // writer that died here would take every other client's service with it.
+    let failure = send_frame_bounded(&writer, &[1u8; 32], &mut state)
+        .expect_err("a departed peer cannot take bytes");
+    assert!(
+        matches!(failure, X11FrameSendFailure::Io(_)),
+        "a peer that has gone is an io failure, not a recipient that is merely slow"
+    );
+
+    // And the reading of it keeps the failure with the connection. The
+    // ordinary peer-write reading gives anything unrecognised the fatal class,
+    // so a departed recipient must be recognised as one or one client's exit
+    // ends the service for all of them.
+    let error = x11_ordered_frame_error("failed to write an ordered event", failure);
+    assert!(
+        error.client_disconnect || error.client_failure,
+        "the failure belongs to this connection"
+    );
+    assert!(
+        !error.service_shutdown,
+        "and not to the service"
+    );
 }

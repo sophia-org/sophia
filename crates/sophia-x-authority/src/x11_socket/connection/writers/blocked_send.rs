@@ -1,120 +1,166 @@
-// Sending a frame, and how long the sending waited.
+// How long one recipient kept one delivery waiting.
 //
-// Split by subject because the subject is time, not content. What a writer
-// puts on the wire is decided elsewhere; this is only about a send that does
-// not complete promptly, which is the one thing a transport deadline may
-// honestly be built from.
+// Split by subject because the subject is time, not content. What goes on the
+// wire is decided elsewhere; this is only about a send that does not complete,
+// which is the one thing a transport deadline may honestly be built from.
 
-/// How long one send may spend waiting before the recipient is treated as
-/// unable to take it.
+// Exercised by controls and not yet by a writer: this is the measurement, and
+// the ordered path that will consume it is still being built. Marked rather
+// than wired early, because turning accumulated waiting into a delivery's
+// outcome is a separate decision from being able to measure it.
+/// How long one delivery may spend waiting on its recipient before that
+/// recipient is treated as unable to take it.
 ///
-/// A declared policy of this crate, not a fact about sockets or clients. It
-/// exists so that a writer blocked on a recipient has a bound at all; a
-/// recipient that cannot take a frame within it has stopped being a recipient,
-/// and the alternative is a writer that waits for one forever while everything
-/// behind it waits for the writer.
+/// A declared policy, not a fact about sockets or clients. A recipient that
+/// cannot take a frame within it has stopped being a recipient, and the
+/// alternative is a writer that waits for one forever while everything behind
+/// it waits for the writer.
 #[cfg(unix)]
-const X_AUTHORITY_WRITER_BLOCKED_LIMIT: Duration = Duration::from_secs(2);
+#[cfg_attr(not(test), allow(dead_code))]
+const X_AUTHORITY_ORDERED_BLOCKED_LIMIT: Duration = Duration::from_secs(6);
 
-/// How long each wait is allowed to last before the writer looks at the clock.
-///
-/// Small enough that the limit above is observed with some precision, large
-/// enough that an ordinary busy recipient is not woken constantly.
+/// How long one wait may last before the accumulated total is looked at again.
 #[cfg(unix)]
-const X_AUTHORITY_WRITER_BLOCKED_SLICE: Duration = Duration::from_millis(50);
+#[cfg_attr(not(test), allow(dead_code))]
+const X_AUTHORITY_ORDERED_BLOCKED_SLICE: Duration = Duration::from_millis(50);
 
 /// Why a frame did not reach the socket.
 #[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
 enum X11FrameSendFailure {
-    /// The recipient did not take the whole frame within the limit.
+    /// This recipient did not take the rest of the frame within the limit.
     ///
     /// Carries how much of the frame went out, because that decides what can
-    /// be done next and nothing else can establish it. Anything other than
-    /// zero means the wire holds part of an event: X11 has no way to describe
-    /// a partial event and no way to retract one, so the connection is no
-    /// longer usable and the only honest disposition is to end it.
+    /// be done next and nothing else establishes it. Anything other than zero
+    /// means the wire holds part of an event, which X11 can neither describe
+    /// nor retract, so the connection is no longer usable.
     Blocked { written: usize, blocked: Duration },
     /// The send failed for a reason of its own.
     Io(std::io::Error),
 }
 
-/// Write one whole frame, adding what it spends waiting to `blocked`.
+/// What one delivery has already put on the wire, and how long it has waited.
 ///
-/// Resumable by offset rather than retried from the start. A send that placed
-/// part of a frame cannot be repeated -- the bytes already gone are gone, and
-/// beginning again would put an event's opening bytes after its own middle.
+/// Owner-bound on purpose. The offset is what the socket has accepted of the
+/// frame in hand, and a local holding it is lost to an unwind while the bytes
+/// it describes are already gone -- leaving the wire in a state nothing can
+/// name. Whoever owns the delivery owns this, across every fallible send and
+/// every wait.
 ///
-/// What is counted is time this call actually waited on the recipient. That is
-/// the only measurement a transport deadline may be built from: how long a
-/// delivery has existed, how long it sat in a queue and how long a lock was
-/// held all describe something other than a recipient that will not take its
-/// bytes.
+/// One of these belongs to exactly one delivery. Waiting is a fact about a
+/// recipient and a delivery together, so an accumulator shared between them
+/// would let an earlier stall be spent against a later deadline, and a
+/// delivery could be declared blocked on time it never waited.
 #[cfg(unix)]
-fn send_frame_accounted(
-    stream: &mut UnixStream,
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Default)]
+struct X11OrderedSendState {
+    offset: usize,
+    blocked: Duration,
+}
+
+#[cfg(unix)]
+impl X11OrderedSendState {
+    /// Begin another frame of the SAME delivery.
+    ///
+    /// The offset starts again because a new frame has had nothing accepted;
+    /// the waiting does not, because it is this delivery's and it has already
+    /// happened.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn begin_frame(&mut self) {
+        self.offset = 0;
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn blocked(&self) -> Duration {
+        self.blocked
+    }
+}
+
+/// Send what is left of one frame without blocking the shared socket.
+///
+/// Every send is non-blocking for this call only: the flags are per-call, so
+/// nothing about the socket changes and no other writer sharing it is
+/// affected. A send that cannot proceed opens a waiting interval, and the
+/// waiting is measured rather than assumed -- an accepted count says the
+/// socket took bytes, never that taking them was instant.
+///
+/// What is counted is time spent waiting on this recipient for this delivery.
+/// That is the only measurement a transport deadline may be built from: how
+/// long a delivery has existed, how long it sat in a queue and how long a lock
+/// was held all describe something other than a recipient that will not take
+/// its bytes.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+fn send_frame_bounded(
+    socket: &UnixStream,
     frame: &[u8],
-    blocked: &mut Duration,
+    state: &mut X11OrderedSendState,
 ) -> Result<(), X11FrameSendFailure> {
-    let mut written = 0;
-    while written < frame.len() {
-        let waited = Instant::now();
-        match std::io::Write::write(stream, &frame[written..]) {
+    while state.offset < frame.len() {
+        match rustix::net::send(
+            socket,
+            &frame[state.offset..],
+            rustix::net::SendFlags::DONTWAIT | rustix::net::SendFlags::NOSIGNAL,
+        ) {
             Ok(0) => {
                 return Err(X11FrameSendFailure::Io(std::io::Error::new(
                     std::io::ErrorKind::WriteZero,
-                    "X11 writer made no progress on a frame",
+                    "X11 ordered writer made no progress on a frame",
                 )));
             }
-            Ok(count) => written += count,
-            // A wait that ended with nothing taken. The clock is read from
-            // before the call, so what is added is the waiting itself rather
-            // than an assumption about how long a slice lasts.
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) =>
-            {
-                *blocked += waited.elapsed();
-                if *blocked >= X_AUTHORITY_WRITER_BLOCKED_LIMIT {
+            // Recorded in the owned state before anything else can fail. These
+            // bytes are on the wire whatever happens next.
+            Ok(count) => state.offset += count,
+            Err(rustix::io::Errno::AGAIN) => {
+                // The socket would have blocked, which is what opens a waiting
+                // interval. What is added is the interval that actually
+                // elapsed, not the slice that was asked for: a wait can end
+                // early on readiness and a wait can overrun.
+                let waited = Instant::now();
+                let mut watched = [rustix::event::PollFd::new(
+                    socket,
+                    rustix::event::PollFlags::OUT,
+                )];
+                let slice = rustix::fs::Timespec {
+                    tv_sec: 0,
+                    tv_nsec: i64::from(X_AUTHORITY_ORDERED_BLOCKED_SLICE.subsec_nanos()),
+                };
+                let _ = rustix::event::poll(&mut watched, Some(&slice));
+                state.blocked += waited.elapsed();
+                if state.blocked >= X_AUTHORITY_ORDERED_BLOCKED_LIMIT {
                     return Err(X11FrameSendFailure::Blocked {
-                        written,
-                        blocked: *blocked,
+                        written: state.offset,
+                        blocked: state.blocked,
                     });
                 }
             }
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(X11FrameSendFailure::Io(error)),
+            Err(rustix::io::Errno::INTR) => {}
+            Err(error) => {
+                return Err(X11FrameSendFailure::Io(std::io::Error::from(error)));
+            }
         }
     }
     Ok(())
 }
 
-/// Give a stream the write timeout this accounting depends on.
-///
-/// Without it a send waits in the kernel with no way to observe that it is
-/// waiting, so nothing downstream can tell a recipient that is slow from one
-/// that will never take another byte. Installed by the writer on its own
-/// stream, once, before anything is sent.
-#[cfg(unix)]
-fn install_writer_blocked_accounting(stream: &UnixStream) -> std::io::Result<()> {
-    stream.set_write_timeout(Some(X_AUTHORITY_WRITER_BLOCKED_SLICE))
-}
-
 /// Read one frame's failure into the writer's own vocabulary.
+///
+/// Waiting on the ordered writer with the rest of this file.
 ///
 /// A recipient that would not take its bytes is a failed recipient, not a
 /// failed server. Sending it through the ordinary peer-write reading would
 /// give it the fatal class, and one client that stopped reading would end the
 /// service for every other.
 #[cfg(unix)]
-fn x11_writer_frame_error(context: &str, failure: X11FrameSendFailure) -> X11SetupSocketError {
+#[cfg_attr(not(test), allow(dead_code))]
+fn x11_ordered_frame_error(context: &str, failure: X11FrameSendFailure) -> X11SetupSocketError {
     match failure {
         X11FrameSendFailure::Blocked { written, blocked } => {
             X11SetupSocketError::client_failure(format!(
-                "{context}: recipient took {written} bytes of the frame and \
-                 then nothing for {blocked:?}"
+                "{context}: recipient took {written} bytes of the frame and then nothing for \
+                 {blocked:?}"
             ))
         }
         X11FrameSendFailure::Io(error) => x11_peer_write_error(context, error),

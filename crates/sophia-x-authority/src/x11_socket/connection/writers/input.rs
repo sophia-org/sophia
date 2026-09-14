@@ -55,18 +55,6 @@ fn spawn_x11_input_event_writer(
     let writer_stop = stop.clone();
     let thread = std::thread::spawn(move || {
         let _recovery_guard = X11InputWriterRecoveryGuard { receiver: &receiver, client };
-        // Before the first frame. Without it every send waits in the kernel
-        // with no way to observe that it is waiting, and nothing downstream
-        // can tell a slow recipient from one that will never take another
-        // byte.
-        if let Ok(installed) = stream.lock() {
-            install_writer_blocked_accounting(&installed).map_err(|error| {
-                X11SetupSocketError::new(format!(
-                    "failed to install X11 writer blocked accounting: {error}"
-                ))
-            })?;
-        }
-        let mut blocked = Duration::ZERO;
         let mut pointer_sent_to = None;
         while !writer_stop.load(Ordering::Acquire) {
             let (
@@ -507,8 +495,15 @@ fn spawn_x11_input_event_writer(
                 };
                 for bytes in xi_source_records.iter_mut().flatten() {
                     write_xi_u16(byte_order, &mut bytes[2..4], sequence);
-                    send_frame_accounted(&mut stream, bytes, &mut blocked)
-                        .map_err(|failure| x11_writer_frame_error("failed to write XI2 source event", failure))?;
+                    stream.write_all(bytes).map_err(|error| {
+                        if is_x11_client_disconnect(&error) {
+                            X11SetupSocketError::client_disconnect(format!(
+                                "X11 client disconnected while writing XI2 source event: {error}"
+                            ))
+                        } else {
+                            X11SetupSocketError::new(format!("failed to write XI2 source event: {error}"))
+                        }
+                    })?;
                 }
                 if let Some((previous, out_type, in_type)) = transition {
                     if let XAuthorityInputEvent::Pointer(pointer) = event {
@@ -518,7 +513,8 @@ fn spawn_x11_input_event_writer(
                         if let Some(previous) = previous
                             && selections.crossing_selected(previous, false)
                         {
-                            send_frame_accounted(&mut stream, &encode_x_client_event(
+                            stream
+                                .write_all(&encode_x_client_event(
                                     byte_order,
                                     XClientEvent::PointerCrossing {
                                         sequence,
@@ -535,11 +531,14 @@ fn spawn_x11_input_event_writer(
                                         mode: 0,
                                         focus: true,
                                     },
-                                ), &mut blocked)
-                        .map_err(|failure| x11_writer_frame_error("failed to write an X11 event", failure))?;
+                                ))
+                                .map_err(|error| {
+                                    x11_peer_write_error("failed to write X11 LeaveNotify event", error)
+                                })?;
                         }
                         if selections.crossing_selected(delivered_window, true) {
-                            send_frame_accounted(&mut stream, &encode_x_client_event(
+                            stream
+                                .write_all(&encode_x_client_event(
                                     byte_order,
                                     XClientEvent::PointerCrossing {
                                         sequence,
@@ -556,36 +555,53 @@ fn spawn_x11_input_event_writer(
                                         mode: 0,
                                         focus: true,
                                     },
-                                ), &mut blocked)
-                        .map_err(|failure| x11_writer_frame_error("failed to write an X11 event", failure))?;
+                                ))
+                                .map_err(|error| {
+                                    x11_peer_write_error("failed to write X11 EnterNotify event", error)
+                                })?;
                         }
                         drop(selections);
                     }
                     if let Some(previous) = previous
                         && xi_pointer_crossing_mask & (1 << out_type) != 0
                     {
-                        send_frame_accounted(&mut stream, &encode_xi_crossing_event(
+                        stream
+                            .write_all(&encode_xi_crossing_event(
                                 byte_order, sequence, out_type, event, previous,
-                            ), &mut blocked)
-                        .map_err(|failure| x11_writer_frame_error("failed to write an X11 event", failure))?;
+                            ))
+                            .map_err(|error| {
+                                x11_peer_write_error("failed to write XI2 leave/focus-out event", error)
+                            })?;
                     }
                     if xi_pointer_crossing_mask & (1 << in_type) != 0 {
-                        send_frame_accounted(&mut stream, &encode_xi_crossing_event(
+                        stream
+                            .write_all(&encode_xi_crossing_event(
                                 byte_order,
                                 sequence,
                                 in_type,
                                 event,
                                 delivered_window,
-                            ), &mut blocked)
-                        .map_err(|failure| x11_writer_frame_error("failed to write an X11 event", failure))?;
+                            ))
+                            .map_err(|error| {
+                                x11_peer_write_error("failed to write XI2 enter/focus-in event", error)
+                            })?;
                     }
                     if matches!(event, XAuthorityInputEvent::Pointer(_)) {
                         pointer_sent_to = Some(delivered_window);
                     }
                 }
                 if write_core_record {
-                    send_frame_accounted(&mut stream, &record, &mut blocked)
-                        .map_err(|failure| x11_writer_frame_error("failed to write X11 input event", failure))?;
+                    stream.write_all(&record).map_err(|error| {
+                        if is_x11_client_disconnect(&error) {
+                            X11SetupSocketError::client_disconnect(format!(
+                                "X11 client disconnected while writing input: {error}"
+                            ))
+                        } else {
+                            X11SetupSocketError::new(format!(
+                                "failed to write X11 input event: {error}"
+                            ))
+                        }
+                    })?;
                 }
                 if let (
                     Some(surface_window),
@@ -667,8 +683,9 @@ fn spawn_x11_input_event_writer(
                                 event_type: if key.pressed { 2 } else { 3 },
                             },
                         );
-                        send_frame_accounted(&mut stream, &state_notify, &mut blocked)
-                        .map_err(|failure| x11_writer_frame_error("failed to write an X11 event", failure))?;
+                        stream.write_all(&state_notify).map_err(|error| {
+                            x11_peer_write_error("failed to write XKB state notification", error)
+                        })?;
                     }
                 }
                 if let Some(event_type) = xi_event_type {
@@ -692,8 +709,9 @@ fn spawn_x11_input_event_writer(
                         delivery.event_y,
                         0,
                     );
-                    send_frame_accounted(&mut stream, &generic, &mut blocked)
-                        .map_err(|failure| x11_writer_frame_error("failed to write an X11 event", failure))?;
+                    stream.write_all(&generic).map_err(|error| {
+                        x11_peer_write_error("failed to write XI2 generic event", error)
+                    })?;
                 }
                 if let Some(event_type) = xi_emulated_button_type {
                     let delivery = xi_emulated_button_delivery.unwrap_or(X11XiPointerDelivery {
@@ -714,8 +732,9 @@ fn spawn_x11_input_event_writer(
                         delivery.event_y,
                         XI_POINTER_EMULATED,
                     );
-                    send_frame_accounted(&mut stream, &generic, &mut blocked)
-                        .map_err(|failure| x11_writer_frame_error("failed to write an X11 event", failure))?;
+                    stream.write_all(&generic).map_err(|error| {
+                        x11_peer_write_error("failed to write emulated XI2 wheel-button event", error)
+                    })?;
                 }
                 stream
                     .flush()
