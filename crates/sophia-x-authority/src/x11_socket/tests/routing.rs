@@ -16346,3 +16346,359 @@ fn nothing_runs_when_nothing_will_watch_it() {
     drop(fixture.channels);
     drop(fixture.durable);
 }
+
+#[test]
+fn a_send_counts_only_what_it_waited_on_this_recipient() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    let mut state = X11OrderedSendState::default();
+
+    // A recipient that is taking its bytes costs no waiting, and a send that
+    // never waited must contribute nothing to a deadline.
+    send_frame_bounded(&writer, &[7u8; 32], &mut state).expect("a healthy send");
+    assert_eq!(
+        state.progress,
+        X11OrderedSendProgress::Sent(32),
+        "the whole frame went out, and that is known"
+    );
+    assert_eq!(
+        state.blocked(),
+        Duration::ZERO,
+        "nothing waited, so nothing is owed to a deadline"
+    );
+
+    // Nobody reads now. The buffer fills and the sends start waiting on a
+    // recipient that is taking nothing. Seeded close to the limit rather than
+    // waiting out the whole policy: what is under test is that real waiting
+    // accumulates onto what this delivery already waited, and trips the bound.
+    state.begin_frame();
+    assert_eq!(
+        state.progress,
+        X11OrderedSendProgress::Sent(0),
+        "a new frame has had nothing accepted"
+    );
+    state.blocked = X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(60);
+    let frame = vec![9u8; 1 << 20];
+    let failure = loop {
+        match send_frame_bounded(&writer, &frame, &mut state) {
+            Ok(()) => {
+                state.begin_frame();
+            }
+            Err(failure) => break failure,
+        }
+    };
+    let X11FrameSendFailure::Blocked { written, blocked } = failure else {
+        panic!("a recipient taking nothing is the blocked case, not an io error")
+    };
+    assert!(
+        blocked >= X_AUTHORITY_ORDERED_BLOCKED_LIMIT,
+        "the bound is reached by measured waiting: {blocked:?}"
+    );
+    assert_eq!(
+        blocked,
+        state.blocked(),
+        "and the owner's accumulator is the one that was added to"
+    );
+
+    // The offset is the owner's, not the call's. What the socket accepted
+    // before it stopped taking bytes is still recorded, which is the only
+    // thing that can say whether the wire holds part of an event.
+    assert_eq!(
+        X11OrderedSendProgress::Sent(written),
+        state.progress,
+        "what went out is owned, not reported from a local the call could lose"
+    );
+    assert!(written > 0, "a filled buffer took some of it first");
+    assert!(written < frame.len(), "and then stopped short");
+    drop(reader);
+}
+
+#[test]
+fn the_socket_every_writer_shares_is_left_alone() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    // The ordered path must not reach the recipient by changing a socket that
+    // the control and protocol writers hold too. A per-call flag affects the
+    // one send; a timeout or a mode is the socket's, and every other writer
+    // would inherit it without the resumable ownership this path relies on.
+    assert!(
+        writer.write_timeout().expect("a readable socket").is_none(),
+        "no send timeout is installed on the shared socket"
+    );
+    let mut state = X11OrderedSendState::default();
+    send_frame_bounded(&writer, &[3u8; 16], &mut state).expect("a healthy send");
+    assert!(
+        writer.write_timeout().expect("a readable socket").is_none(),
+        "and sending did not install one either"
+    );
+    // Still blocking, which is what every other writer on this socket expects.
+    // A blocking send returns only when it has taken the bytes, so a socket
+    // left in non-blocking mode would give them a WouldBlock they have no
+    // resumable offset to answer with.
+    assert!(
+        !rustix::fs::fcntl_getfl(&writer)
+            .expect("a readable descriptor")
+            .contains(rustix::fs::OFlags::NONBLOCK),
+        "nor did it put the shared socket in non-blocking mode"
+    );
+    drop(reader);
+}
+
+#[test]
+fn a_departed_recipient_is_a_failed_recipient_not_a_failed_server() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    drop(reader);
+    let mut state = X11OrderedSendState::default();
+
+    // Sending to a peer that has gone. The send carries NOSIGNAL, so this
+    // returns an error rather than killing the process with SIGPIPE -- a
+    // writer that died here would take every other client's service with it.
+    let failure = send_frame_bounded(&writer, &[1u8; 32], &mut state)
+        .expect_err("a departed peer cannot take bytes");
+    assert!(
+        matches!(failure, X11FrameSendFailure::Io(_)),
+        "a peer that has gone is an io failure, not a recipient that is merely slow"
+    );
+
+    // And the reading of it keeps the failure with the connection. The
+    // ordinary peer-write reading gives anything unrecognised the fatal class,
+    // so a departed recipient must be recognised as one or one client's exit
+    // ends the service for all of them.
+    let error = x11_ordered_frame_error("failed to write an ordered event", failure);
+    assert!(
+        error.client_disconnect || error.client_failure,
+        "the failure belongs to this connection"
+    );
+    assert!(
+        !error.service_shutdown,
+        "and not to the service"
+    );
+}
+
+#[test]
+fn a_send_that_never_reported_is_not_resumed() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    let mut state = X11OrderedSendState::default();
+    send_frame_bounded(&writer, &[4u8; 16], &mut state).expect("a healthy send");
+
+    // The state a send leaves behind if it is interrupted between handing
+    // bytes to the kernel and recording that it did. The bytes may be on the
+    // wire; nothing afterwards can establish whether they are, because the
+    // socket does not remember and the recipient cannot be asked.
+    state.progress = X11OrderedSendProgress::Unknown { from: 16 };
+    let failure = send_frame_bounded(&writer, &[5u8; 16], &mut state)
+        .expect_err("an unreported send is not a resumable one");
+    assert!(
+        matches!(failure, X11FrameSendFailure::Interrupted),
+        "refused for what it is: resuming from the offset before the send \
+         would put an event's middle after its own middle, and retrying the \
+         frame would send bytes the wire may already hold"
+    );
+
+    // It stays unknown. A refusal that quietly restored a believable offset
+    // would be the replay this refusal exists to prevent.
+    assert_eq!(state.progress, X11OrderedSendProgress::Unknown { from: 16 });
+
+    // And it belongs to the connection, not the service.
+    let error = x11_ordered_frame_error("failed to write an ordered event", failure);
+    assert!(error.client_failure && !error.service_shutdown);
+    drop(reader);
+}
+
+#[test]
+fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
+    let client = XServerFrontendClientId(1601);
+    let surface = SurfaceId::new(1601, 1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    let second = fixture
+        .private
+        .ingress_for(client, DeviceId::from_raw(2))
+        .expect("a second ingress");
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(16011),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    second
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(16012),
+            273,
+            true,
+        ))
+        .expect("the order to accept it");
+    let watch = control_watchdog();
+    for _ in 0..2 {
+        fixture
+            .private
+            .step_once(&mut fixture.keyboards, &mut |_, _| Ok(()), &watch)
+            .expect("a readable order");
+    }
+    assert_eq!(fixture.private.terminal.turn.len(), 2);
+
+    // An empty order is not a step and costs nothing.
+    let charged = std::cell::RefCell::new(Vec::new());
+    let mut charge = |sequence: crate::ReadySequence, _: std::time::Instant| {
+        charged.borrow_mut().push(sequence);
+        Ok(())
+    };
+    let step = fixture.private.deliver_one(&mut charge).expect("a step");
+    let PrivateDeliveryStep::Advanced { sequence, report } = step else {
+        panic!("one entry disposed")
+    };
+    assert_eq!(
+        *charged.borrow(),
+        vec![sequence],
+        "charged once, for the entry taken"
+    );
+    assert!(report.expect("a disposed entry reports").enqueued);
+    assert_eq!(
+        fixture.private.terminal.turn.len(),
+        1,
+        "exactly one entry left the turn"
+    );
+
+    let step = fixture.private.deliver_one(&mut charge).expect("a step");
+    assert!(matches!(step, PrivateDeliveryStep::Advanced { .. }));
+    assert_eq!(charged.borrow().len(), 2);
+    assert_ne!(charged.borrow()[0], charged.borrow()[1], "a different entry");
+
+    // Nothing waiting is its own answer, and takes nothing.
+    let before = charged.borrow().len();
+    assert!(matches!(
+        fixture.private.deliver_one(&mut charge).expect("a step"),
+        PrivateDeliveryStep::Idle
+    ));
+    assert_eq!(charged.borrow().len(), before, "an empty turn is not a step");
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_head_nobody_can_describe_is_blocked_and_costs_nothing() {
+    let client = XServerFrontendClientId(1602);
+    let surface = SurfaceId::new(1602, 1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(1602),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    fixture
+        .private
+        .step_once(&mut fixture.keyboards, &mut |_, _| Ok(()), &control_watchdog())
+        .expect("a readable order");
+
+    // The phase an entry is left in when nobody can say whether its event
+    // reached the queue.
+    fixture.private.terminal.delivering.push(
+        fixture.private.terminal.turn.remove(0),
+    );
+    fixture.private.terminal.emission = PrivateEmissionPhase::Indeterminate;
+
+    let step = fixture
+        .private
+        .deliver_one(&mut |_, _| panic!("an entry nobody can describe is not a step"))
+        .expect("a readable step");
+    assert!(
+        matches!(step, PrivateDeliveryStep::Blocked(_)),
+        "reported as itself: an owner told the turn was empty would stop \
+         looking for the thing that is stuck"
+    );
+    assert_eq!(
+        fixture.private.terminal.delivering.len(),
+        1,
+        "and the entry is still exactly where it was"
+    );
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_refused_entry_advancing_is_a_step_with_nothing_to_report() {
+    let client = XServerFrontendClientId(1603);
+    let surface = SurfaceId::new(1603, 1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    // A control command is an operation the ordered path does not execute, so
+    // the order parks behind it.
+    fixture
+        .private
+        .control_producer()
+        .submit(configure(client, surface, 16031))
+        .expect("the order to accept it");
+    let turn = fixture
+        .private
+        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
+        .expect("a readable order");
+    fixture.private.terminal.delivering.extend(turn);
+
+    let mut charged = 0;
+    let step = fixture
+        .private
+        .deliver_one(&mut |_, _| {
+            charged += 1;
+            Ok(())
+        })
+        .expect("a step");
+    let PrivateDeliveryStep::Advanced { report, .. } = step else {
+        panic!("the entry advanced")
+    };
+    assert!(
+        report.is_none(),
+        "nothing was delivered, so there is nothing to report"
+    );
+    assert_eq!(
+        charged, 1,
+        "moving it to retained inventory was still a real step, and a caller \
+         reading no report as no work would charge nothing for work it did"
+    );
+    assert_eq!(fixture.private.terminal.undelivered.len(), 1);
+    drop(fixture.registration);
+    drop(fixture.channels);
+    drop(fixture.durable);
+}
+
+#[test]
+fn a_refused_charge_leaves_the_entry_where_it_was() {
+    let client = XServerFrontendClientId(1604);
+    let surface = SurfaceId::new(1604, 1);
+    let mut fixture = ordered_ingress_fixture(client, surface);
+    fixture
+        .ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(1604),
+            272,
+            true,
+        ))
+        .expect("the order to accept it");
+    fixture
+        .private
+        .step_once(&mut fixture.keyboards, &mut |_, _| Ok(()), &control_watchdog())
+        .expect("a readable order");
+
+    let refused = fixture
+        .private
+        .deliver_one(&mut |_, _| Err(XServerFrontendRouteError::OrderedItemUnresolved));
+    assert!(matches!(
+        refused,
+        Err(XServerFrontendRouteError::OrderedItemUnresolved)
+    ));
+    assert_eq!(
+        fixture.private.terminal.delivering.len(),
+        1,
+        "chosen and still owned: a refusal to charge is not a disposition"
+    );
+    assert!(fixture.private.terminal.undelivered.is_empty());
+    assert!(fixture.channels.input.try_recv().is_err(), "and nothing was sent");
+    drop(fixture.registration);
+    drop(fixture.durable);
+}
