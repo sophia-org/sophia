@@ -1547,3 +1547,25 @@ both were corrected without a debt row. Guarded passive eligibility, key emissio
 XKB continuity, StateOnly/thaw and native key settlement remain Gate B work.
 Gate A's writer/receipt/attempt integration remains separate and open. No hardware,
 Session/content change, master movement or enablement.
+
+### M3 actual XKB selection is part of the guarded view
+
+The successful XkbSelectEvents dispatch already holds the connection's exact
+selection guard. Its source update now captures notification details with the
+selection revision and updates the existing ordinary-writer atomic projection
+from the same decision. No new lock, constructor argument or ordinary writer
+branch is introduced. Resolved keyboard metadata retains that exact mask;
+later selection changes cannot alter an earlier decision. This is notification
+selection, not a keyboard-state transition or an emitted StateNotify.
+
+Three controls pass, including actual socket setup and XkbSelectEvents requests
+in both byte orders, partial detail updates, clear/select-all, and the frozen
+resolved value. Four disposable-source mutations compile and fail: restoring
+the old atomic-only dispatch, erasing the resolved mask, skipping the ordinary
+projection, and republishing an unreadable selection revision. The interruption
+state in that last control is staged, not an injected production interruption.
+
+Scoped input validation: 1200 passed, zero failed, one existing ignored in
+42 suites; strict clippy, fmt, layout and diff pass. Native key effects, passive
+eligibility, key/StateNotify encoding, StateOnly/thaw and full terminal settlement
+remain open. No hardware, Session/content change, master movement or enablement.

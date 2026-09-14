@@ -1840,19 +1840,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 })?;
                         }
                         if let Some((affect_which, clear, select_all, state)) = xkb_selection {
-                            let mut details = xkb_state_details.load(Ordering::Acquire);
-                            if clear & 4 != 0 {
-                                details = 0;
-                            }
-                            if select_all & 4 != 0 {
-                                details = u16::MAX;
-                            }
-                            if affect_which & 4 != 0
-                                && let Some((affect, selected)) = state
-                            {
-                                details = (details & !affect) | (selected & affect);
-                            }
-                            xkb_state_details.store(details, Ordering::Release);
+                            selections.select_xkb_state_notifications(
+                                &xkb_state_details, affect_which, clear, select_all, state,
+                            );
                         }
                     }
                     if queued_present

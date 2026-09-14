@@ -222,6 +222,23 @@ mod private_applied_state {
     }
 
     #[test]
+    fn resolved_keyboard_keeps_the_xkb_selection_it_actually_read() {
+        let (state, mut selections, authority) = fixture();
+        let ordinary = AtomicU16::new(0);
+        selections.update(root(), Some(3), None);
+        selections.select_xkb_state_notifications(&ordinary, 4, 0, 0, Some((1, 1)));
+        let first = state.view(XServerFrontendClientId::from_raw(7), &selections, &authority)
+            .unwrap().keyboard_for(root(), true).unwrap();
+        assert_eq!(first.xkb_state_details, 1);
+        selections.select_xkb_state_notifications(&ordinary, 4, 0, 0, Some((2, 2)));
+        let second = state.view(XServerFrontendClientId::from_raw(7), &selections, &authority)
+            .unwrap().keyboard_for(root(), true).unwrap();
+        assert_eq!(second.xkb_state_details, 3);
+        assert!(second.selection_revision > first.selection_revision);
+        assert_eq!(first.xkb_state_details, 1, "later selection cannot re-decide an earlier plan");
+    }
+
+    #[test]
     fn checked_hierarchy_accepts_sixty_four_links_and_refuses_sixty_five() {
         let mut selections = XCoreEventSelectionState::default();
         let mut parent = root();

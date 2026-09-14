@@ -66,6 +66,9 @@ struct XCoreEventSelectionState {
     // Bound only by private connection setup; ordinary clients do not use it.
     #[cfg_attr(not(test), allow(dead_code))]
     private_origin: Option<PrivateAppliedSelectionOrigin>,
+    // Actual XKB selection, captured under the same guard as core/XI routing.
+    // The ordinary writer's atomic is a projection of this source update.
+    xkb_state_details: u16,
     windows: BTreeMap<XResourceId, XCoreWindowEventSelection>,
     parents: BTreeMap<XResourceId, XResourceId>,
     geometries: BTreeMap<XResourceId, Rect>,
@@ -81,6 +84,7 @@ impl Default for XCoreEventSelectionState {
         Self {
             applied_revision: Some(1),
             private_origin: None,
+            xkb_state_details: 0,
             windows: BTreeMap::new(),
             parents: BTreeMap::new(),
             geometries: BTreeMap::new(),
@@ -100,6 +104,30 @@ impl XCoreEventSelectionState {
     const ENTER_WINDOW_MASK: u32 = 1 << 4;
     const LEAVE_WINDOW_MASK: u32 = 1 << 5;
     const FOCUS_CHANGE_MASK: u32 = 1 << 21;
+
+    fn select_xkb_state_notifications(
+        &mut self,
+        ordinary_projection: &AtomicU16,
+        affect_which: u16,
+        clear: u16,
+        select_all: u16,
+        state: Option<(u16, u16)>,
+    ) {
+        let revision = self.begin_applied_mutation();
+        let mut details = self.xkb_state_details;
+        if clear & 4 != 0 {
+            details = 0;
+        }
+        if select_all & 4 != 0 {
+            details = u16::MAX;
+        }
+        if affect_which & 4 != 0 && let Some((affect, selected)) = state {
+            details = (details & !affect) | (selected & affect);
+        }
+        self.xkb_state_details = details;
+        ordinary_projection.store(details, Ordering::Release);
+        self.finish_applied_mutation(revision);
+    }
 
     fn update(
         &mut self,
