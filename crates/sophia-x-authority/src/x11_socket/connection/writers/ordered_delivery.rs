@@ -105,3 +105,82 @@ fn take_ordered_delivery(
         Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(X11OrderedTakeRefusal::Closed),
     }
 }
+
+/// What one writing step did for the delivery in hand.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11OrderedWriteStep {
+    /// Nothing is in flight.
+    Idle,
+    /// One frame went out whole and was retired.
+    Advanced { frame: usize },
+    /// Every frame this delivery owed has gone.
+    ///
+    /// Says the bytes went, and nothing more. Whether the recipient received
+    /// them is the writer's own outcome to establish later, and whether the
+    /// delivery's debt is settled is a question neither this step nor a queue
+    /// can answer.
+    Wrote,
+}
+
+/// Why a writing step could not be taken.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug)]
+enum X11OrderedWriteFailure {
+    /// The frame could not be sent.
+    Send(X11FrameSendFailure),
+    /// The emission offered no frame at an index it said it had.
+    ///
+    /// Its own failure rather than a quiet completion: a delivery that stopped
+    /// early here would report itself written with an event missing, and the
+    /// count and the encoder disagreeing is a fact worth surfacing rather than
+    /// rounding off.
+    #[allow(dead_code)]
+    MissingFrame { frame: usize, of: usize },
+}
+
+/// Write one frame of the delivery in hand, resuming one already begun.
+///
+/// A frame is encoded only when none is in hand. A send that stopped part way
+/// left bytes on the wire and an offset that describes them, so encoding again
+/// would produce a second copy of the frame those bytes came from and resume
+/// into the middle of it.
+///
+/// One frame per call, so a writer serving several recipients cannot be held
+/// by one of them, and so the waiting a stalled recipient causes is charged to
+/// the delivery it belongs to rather than to whatever came after it.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+fn write_one_ordered_frame(
+    socket: &UnixStream,
+    in_flight: &mut Option<X11OrderedInFlight>,
+    byte_order: XByteOrder,
+    sequence: u16,
+) -> Result<X11OrderedWriteStep, X11OrderedWriteFailure> {
+    let Some(held) = in_flight.as_mut() else {
+        return Ok(X11OrderedWriteStep::Idle);
+    };
+    let frames = held.delivery().emission().frame_count();
+    if held.frame_index() >= frames {
+        return Ok(X11OrderedWriteStep::Wrote);
+    }
+    if held.send.frame.is_none() {
+        let frame = held
+            .delivery()
+            .emission()
+            .encode_frame(held.frame_index(), byte_order, sequence)
+            .ok_or(X11OrderedWriteFailure::MissingFrame {
+                frame: held.frame_index(),
+                of: frames,
+            })?;
+        held.send
+            .begin_frame(frame)
+            .map_err(X11OrderedWriteFailure::Send)?;
+    }
+    send_pending_frame(socket, &mut held.send).map_err(X11OrderedWriteFailure::Send)?;
+    let frame = held.frame_index();
+    held.advance_frame().map_err(X11OrderedWriteFailure::Send)?;
+    Ok(X11OrderedWriteStep::Advanced { frame })
+}

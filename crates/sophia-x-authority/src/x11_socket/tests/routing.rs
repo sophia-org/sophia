@@ -17034,3 +17034,110 @@ fn two_frames_of_one_delivery_reach_the_wire_in_order_and_whole() {
     );
     drop(reader);
 }
+
+#[test]
+fn a_delivery_is_written_one_frame_at_a_time_and_then_is_written() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    let (sender, queue) = sync_channel(1);
+    sender.send(ordered_capsule(1801)).expect("accepted");
+    let mut in_flight = None;
+
+    // Nothing in flight is its own answer.
+    assert_eq!(
+        write_one_ordered_frame(&writer, &mut in_flight, XByteOrder::LittleEndian, 1)
+            .expect("a step"),
+        X11OrderedWriteStep::Idle
+    );
+
+    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    let frames = in_flight
+        .as_ref()
+        .expect("taken")
+        .delivery()
+        .emission()
+        .frame_count();
+    for frame in 0..frames {
+        assert_eq!(
+            write_one_ordered_frame(&writer, &mut in_flight, XByteOrder::LittleEndian, 1)
+                .expect("a step"),
+            X11OrderedWriteStep::Advanced { frame },
+            "one frame per call, in order"
+        );
+    }
+
+    // Every frame this delivery owed has gone. That says the bytes went and
+    // nothing else: whether the recipient received them is the writer's own
+    // outcome to establish, and whether the debt is settled is a question
+    // neither this nor a queue can answer.
+    assert_eq!(
+        write_one_ordered_frame(&writer, &mut in_flight, XByteOrder::LittleEndian, 1)
+            .expect("a step"),
+        X11OrderedWriteStep::Wrote
+    );
+    drop(reader);
+}
+
+#[test]
+fn a_stalled_frame_is_resumed_rather_than_encoded_again() {
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
+    let (sender, queue) = sync_channel(1);
+    sender.send(ordered_capsule(1802)).expect("accepted");
+    let mut in_flight = None;
+    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+
+    // Fill the recipient's buffer so this delivery's frame cannot go out
+    // whole, and seed the accumulator so the stall is reached quickly.
+    let filler = vec![0u8; 1 << 16];
+    // Seeded so the filler gives up as soon as the buffer is full, rather
+    // than waiting out its own policy: what is being arranged here is a full
+    // recipient, not a measurement.
+    let mut filling = X11OrderedSendState {
+        blocked: X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(60),
+        ..X11OrderedSendState::default()
+    };
+    while {
+        if filling.frame_complete() {
+            filling.retire_frame().expect("it went");
+        }
+        if filling.frame.is_none() {
+            filling.begin_frame(filler.clone()).expect("nothing owed");
+        }
+        send_pending_frame(&writer, &mut filling).is_ok()
+    } {}
+
+    let held = in_flight.as_mut().expect("taken");
+    held.send.blocked = X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(60);
+    let stalled = write_one_ordered_frame(&writer, &mut in_flight, XByteOrder::LittleEndian, 7)
+        .expect_err("the recipient is taking nothing");
+    assert!(matches!(
+        stalled,
+        X11OrderedWriteFailure::Send(X11FrameSendFailure::Blocked { .. })
+    ));
+
+    // The frame stays in hand with what the wire took of it. A second call
+    // must resume that exact frame: encoding again would produce a second copy
+    // of the frame those bytes came from and continue into the middle of it.
+    let held = in_flight.as_mut().expect("still in flight");
+    assert!(held.send.frame.is_some(), "the frame is still in hand");
+    assert_eq!(held.frame_index(), 0, "and it has not been advanced past");
+
+    // The recipient starts reading and this delivery is asked again. The
+    // second call has to CONTINUE the frame in hand. A call that encoded again
+    // would be asking to begin a frame while one is still owed, and the frame
+    // custody refuses exactly that -- so a fresh encoding cannot even reach
+    // the socket, and what it would have produced is a second copy of the
+    // bytes the wire already holds part of.
+    held.send.blocked = Duration::ZERO;
+    let mut drained = vec![0u8; 1 << 20];
+    let _ = std::io::Read::read(&mut &reader, &mut drained).expect("the recipient reads");
+    let resumed = write_one_ordered_frame(&writer, &mut in_flight, XByteOrder::LittleEndian, 7)
+        .expect("the frame in hand is continued");
+    assert_eq!(
+        resumed,
+        X11OrderedWriteStep::Advanced { frame: 0 },
+        "continuing finished the frame that was already part way out; a call \
+         that encoded again would be asking to begin a frame while one is \
+         still owed, which the frame custody refuses outright"
+    );
+    drop(reader);
+}
