@@ -55,6 +55,7 @@ SOPHIA_DESKTOP_PROFILE="$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl" \
 SOPHIA_SESSION_STARTUP=none \
 SOPHIA_SESSION_WATCHDOG_SECONDS=20 \
 SOPHIA_DIAGNOSTIC_DIR="$EVIDENCE_DIR/session" \
+SOPHIA_UNTRUSTED_SESSION_OUTPUT_LOG="$EVIDENCE_DIR/session/untrusted-session-output.log" \
     "$ROOT_DIR/tools/run_sophia_session.sh"
 native_status=$?
 set -e

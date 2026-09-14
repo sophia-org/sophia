@@ -324,7 +324,7 @@ fn native_shell_gate_outcomes_survive_sanitization_without_client_payloads() {
         "sophia_live_shell_gpu schema=1 status=revoked grant_epoch=7",
         "sophia_live_shell_content schema=1 status=outputs facts_generation=3 outputs=2",
         "sophia_live_shell_content schema=1 status=presented output=2 candidate_generation=9 presentation_epoch=11 resident_bytes=24576 backing_bytes=24576",
-        "sophia_live_shell_content schema=1 status=transport_failed",
+        "sophia_live_shell_content schema=2 status=transport_failed stage=runtime",
     ] {
         assert_eq!(
             reduced_record(&format!(

@@ -712,6 +712,20 @@ fn shell_content_gate_field(record: &str, key: &str, value: &str) -> bool {
                 && value.bytes().all(|byte| byte.is_ascii_digit())
                 && value.parse::<u64>().is_ok()
         }
+        ("sophia_live_shell_content", "stage") => matches!(
+            value,
+            "idle"
+                | "resources"
+                | "outputs"
+                | "allocations"
+                | "demands"
+                | "candidates"
+                | "submission"
+                | "projection"
+                | "runtime"
+                | "prepared"
+                | "presentation"
+        ),
         _ => false,
     }
 }

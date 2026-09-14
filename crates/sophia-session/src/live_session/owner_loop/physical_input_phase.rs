@@ -1214,7 +1214,8 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     root,
                 ) {
                     crate::session_eprintln!(
-                        "sophia_live_shell_content schema=1 status=transport_failed reason={error}"
+                        "sophia_live_shell_content schema=2 status=transport_failed stage={} reason={error}",
+                        shell.content_service_stage(),
                     );
                     shell.recover_transport("content_failure")?;
                     revoke_shell_input = true;

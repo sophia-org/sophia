@@ -125,12 +125,22 @@ GUARD_LOG="$LOG_DIR/input-guard.log"
 RECOVERY_LOG="$LOG_DIR/recovery.log"
 SESSION_LOG="$LOG_DIR/session.log"
 LIFECYCLE_LOG="$LOG_DIR/lifecycle.log"
+UNTRUSTED_OUTPUT_LOG="${SOPHIA_UNTRUSTED_SESSION_OUTPUT_LOG:-}"
+if [[ -n "$UNTRUSTED_OUTPUT_LOG"
+    && "$UNTRUSTED_OUTPUT_LOG" != "$LOG_DIR/untrusted-session-output.log" ]]; then
+    echo "SOPHIA_UNTRUSTED_SESSION_OUTPUT_LOG must name untrusted-session-output.log in the diagnostic directory." >&2
+    exit 1
+fi
 mkdir -p "$LOG_DIR"
 chmod 700 "$LOG_DIR"
 sophia_session_rotate_log "$LIFECYCLE_LOG"
 sophia_session_rotate_log "$GUARD_LOG"
 sophia_session_rotate_log "$RECOVERY_LOG"
 sophia_session_rotate_log "$SESSION_LOG"
+if [[ -n "$UNTRUSTED_OUTPUT_LOG" ]]; then
+    : >"$UNTRUSTED_OUTPUT_LOG"
+    chmod 600 "$UNTRUSTED_OUTPUT_LOG"
+fi
 lifecycle_phase() {
     printf 'sophia_session_lifecycle schema=1 status=%s phase=%s installed=%s build=%s manual_service=%s runtime=%s vt=%s\n' \
         "$1" "$2" "$INSTALLED_SESSION" "$BUILD_SESSION" "$MANAGE_KEYD" \
@@ -1070,7 +1080,12 @@ python3 "$TTY_MODE_HELPER" graphics
 python3 "$TTY_MODE_HELPER" keyboard-off
 stty raw -echo
 lifecycle_phase entering graphics_takeover
-if [[ -n "${SOPHIA_DIAGNOSTIC_DIR:-}" || "${SOPHIA_DIAGNOSTICS_DISABLED:-false}" == true ]]; then
+if [[ -n "$UNTRUSTED_OUTPUT_LOG" ]]; then
+    # This opt-in file is outside the structured recorder and may contain
+    # arbitrary child text. Native investigation gates keep it private and
+    # never treat it as sanitized acceptance evidence.
+    setsid "${session_launch[@]}" >"$UNTRUSTED_OUTPUT_LOG" 2>&1 &
+elif [[ -n "${SOPHIA_DIAGNOSTIC_DIR:-}" || "${SOPHIA_DIAGNOSTICS_DISABLED:-false}" == true ]]; then
     # Only Sophia's approved evidence callback enters daily history. Arbitrary
     # application stdout/stderr must not become a metadata-disclosure channel.
     setsid "${session_launch[@]}" >/dev/null 2>&1 &

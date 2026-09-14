@@ -10,6 +10,7 @@ const INSTALLED_TRUECOLOR: &str = include_str!("../../../tools/installed/sophia-
 const INSTALLER: &str = include_str!("../../../tools/install_live_session.sh");
 const ACTIVATOR: &str = include_str!("../../../tools/activate_live_session_release.sh");
 const TTY_MODE_HELPER: &str = include_str!("../../../tools/sophia_tty_mode.py");
+const LOM_PANEL_GATE: &str = include_str!("../../../tools/run_current_lom_panel_gate_tty4.sh");
 
 fn unique_temp_dir(label: &str) -> std::path::PathBuf {
     let nonce = std::time::SystemTime::now()
@@ -37,6 +38,21 @@ fn graphical_takeover_disables_console_rendering_and_input_echo_after_guard_armi
     assert!(graphics < keyboard_off);
     assert!(keyboard_off < raw);
     assert!(raw < session);
+}
+
+#[test]
+fn lom_gate_keeps_unsanitized_child_output_private_and_explicit() {
+    assert!(SESSION_LAUNCHER.contains(
+        "SOPHIA_UNTRUSTED_SESSION_OUTPUT_LOG must name untrusted-session-output.log in the diagnostic directory."
+    ));
+    assert!(SESSION_LAUNCHER.contains("chmod 600 \"$UNTRUSTED_OUTPUT_LOG\""));
+    assert!(
+        SESSION_LAUNCHER
+            .contains("setsid \"${session_launch[@]}\" >\"$UNTRUSTED_OUTPUT_LOG\" 2>&1 &")
+    );
+    assert!(LOM_PANEL_GATE.contains(
+        "SOPHIA_UNTRUSTED_SESSION_OUTPUT_LOG=\"$EVIDENCE_DIR/session/untrusted-session-output.log\""
+    ));
 }
 
 #[test]

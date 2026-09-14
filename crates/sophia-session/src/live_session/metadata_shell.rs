@@ -304,6 +304,10 @@ impl LiveMetadataShell {
         )
     }
 
+    pub(super) const fn content_service_stage(&self) -> &'static str {
+        self.content.service_stage()
+    }
+
     pub(super) fn observe_content_presentation(
         &mut self,
         runtime: &sophia_backend_live::LiveProductionVisualRuntime,

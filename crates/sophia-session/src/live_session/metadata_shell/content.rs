@@ -13,6 +13,37 @@ use actions::ContentActionLedger;
 
 const DRM_FORMAT_ARGB8888: u32 = u32::from_le_bytes(*b"AR24");
 
+#[derive(Clone, Copy)]
+enum ContentServiceStage {
+    Idle,
+    Resources,
+    Outputs,
+    Allocations,
+    Demands,
+    Candidates,
+    Submission,
+    Projection,
+    Runtime,
+    Prepared,
+}
+
+impl ContentServiceStage {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Resources => "resources",
+            Self::Outputs => "outputs",
+            Self::Allocations => "allocations",
+            Self::Demands => "demands",
+            Self::Candidates => "candidates",
+            Self::Submission => "submission",
+            Self::Projection => "projection",
+            Self::Runtime => "runtime",
+            Self::Prepared => "prepared",
+        }
+    }
+}
+
 #[derive(Clone)]
 struct PendingPresentation {
     grant: sophia_protocol::ContentGrant,
@@ -40,6 +71,7 @@ pub(super) struct LiveContentSession {
     presented: BTreeMap<ContentOutputId, PresentedOutputContent>,
     actions: ContentActionLedger,
     started: std::time::Instant,
+    stage: ContentServiceStage,
 }
 
 impl LiveContentSession {
@@ -56,6 +88,7 @@ impl LiveContentSession {
             presented: BTreeMap::new(),
             actions: ContentActionLedger::default(),
             started: std::time::Instant::now(),
+            stage: ContentServiceStage::Idle,
         }
     }
 
@@ -90,6 +123,10 @@ impl LiveContentSession {
         self.requested
     }
 
+    pub(super) const fn service_stage(&self) -> &'static str {
+        self.stage.name()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn service(
         &mut self,
@@ -114,8 +151,11 @@ impl LiveContentSession {
             .values()
             .flat_map(|presented| presented.allocations.iter().copied())
             .collect::<Vec<_>>();
+        self.stage = ContentServiceStage::Resources;
         transport.service_content_resources(now)?;
+        self.stage = ContentServiceStage::Outputs;
         self.publish_outputs(transport, outputs, transaction)?;
+        self.stage = ContentServiceStage::Allocations;
         transport.service_content_allocation_requests(&presented_allocations, now)?;
         while let Some((_, request)) = transport.next_content_allocation_request() {
             if request.operation == 3 {
@@ -140,6 +180,7 @@ impl LiveContentSession {
             .iter()
             .map(|facts| facts.output)
             .collect::<Vec<_>>();
+        self.stage = ContentServiceStage::Demands;
         transport.service_content_demands(&content_outputs, &allocations)?;
         while let Some((_, demand)) = transport.next_content_demand() {
             let permit = self.next_permit_id;
@@ -157,22 +198,27 @@ impl LiveContentSession {
                 allocations: &allocations,
             })
             .collect::<Vec<_>>();
+        self.stage = ContentServiceStage::Candidates;
         transport.service_content_candidates(&contexts, now)?;
         let mut native_scanout = native_scanout;
         while let Some((output, generation)) = transport.next_content_submission() {
             if self.pending.iter().any(|pending| pending.output == output) {
                 break;
             }
+            self.stage = ContentServiceStage::Submission;
             let bundle = transport.begin_content_submission(output, generation, now)?;
             let descriptor = outputs
                 .iter()
                 .find(|descriptor| descriptor.id.raw() == output.id)
                 .copied()
                 .ok_or("content candidate targets a removed output")?;
+            self.stage = ContentServiceStage::Projection;
             let frame = project_render_bundle(&bundle, descriptor, output, &allocations)?;
             let bands = candidate_bands(&bundle, &allocations, output_bounds, root)?;
+            self.stage = ContentServiceStage::Runtime;
             runtime.set_shell_content(frame, scene, native_scanout.as_deref_mut())?;
             let grant = transport.content_grant().ok_or("content grant vanished")?;
+            self.stage = ContentServiceStage::Prepared;
             transport.content_prepared(grant, output, generation, 1, 1, now)?;
             let usage = transport.content_usage().unwrap_or_default();
             crate::session_println!(
@@ -199,6 +245,7 @@ impl LiveContentSession {
                 allocations: candidate_allocations,
             });
         }
+        self.stage = ContentServiceStage::Idle;
         Ok(())
     }
 
