@@ -464,11 +464,24 @@ impl PrivatePreparedRunner {
                         // a supervisor failure on native work is not lost to
                         // an absent sequence.
                         progress.watch_failed |= watch_failed;
-                        if watch_failed {
-                            break;
-                        }
+                        // ACCOUNTED FIRST, STOPPED AFTER. A supervisor that
+                        // failed on the way out does not unmake the step that
+                        // already happened: the visit was spent, the bit may
+                        // have gone in, the entry may have been disposed of.
+                        // Breaking before this match reported a turn in which
+                        // none of that occurred, which is a worse account of
+                        // the instance than the failure it was reacting to.
+                        //
+                        // An ADMISSION failure is different and stays
+                        // different: it arrives as Idle, because nothing was
+                        // taken, and nothing below counts a step for it.
                         match step {
-                            PrivateDeliveryStep::Idle => cleanup_idle = true,
+                            PrivateDeliveryStep::Idle => {
+                                if watch_failed {
+                                    break;
+                                }
+                                cleanup_idle = true;
+                            }
                             // A visit was spent, so this side of the service
                             // made progress and is not idle. Counted as the
                             // terminal step it is: the work was chosen,
@@ -477,6 +490,14 @@ impl PrivatePreparedRunner {
                             PrivateDeliveryStep::Recorded { recorded } => {
                                 progress.terminal_steps += 1;
                                 progress.recorded += usize::from(recorded);
+                                if watch_failed {
+                                    // Accounted and stopped. The side this
+                                    // turn would have preferred next is left
+                                    // as it was: a turn that ended in a
+                                    // supervisor failure decides nothing
+                                    // about what the next one should do.
+                                    break;
+                                }
                                 self.prefer_cleanup = false;
                                 if overran || unwatched.is_some() {
                                     break;
@@ -499,7 +520,7 @@ impl PrivatePreparedRunner {
                                     progress.settled += usize::from(delivered.debt_settled);
                                 }
                                 self.prefer_cleanup = false;
-                                if overran || unwatched.is_some() {
+                                if overran || watch_failed || unwatched.is_some() {
                                     break;
                                 }
                                 continue;
