@@ -61,6 +61,12 @@ struct PrivateTerminalInventory {
     /// and that is not a rare interleaving -- it is what a busy pointer looks
     /// like.
     native_turn_debt: u8,
+    /// The ledger's own fair cursor for claiming delivery attempts.
+    ///
+    /// Retained for the same reason as the recording cursor, and kept apart
+    /// from it: the ledger advances this one itself, over debts rather than
+    /// over this executor's records.
+    attempt_cursor: usize,
     /// Where the next proof-recording visit starts looking.
     ///
     /// Retained rather than restarted, so visits move through the releases
@@ -105,6 +111,7 @@ impl PrivateTerminalInventory {
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             native_pending: None,
             native_recording_cursor: 0,
+            attempt_cursor: 0,
             native_turn_debt: 0,
             settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             current: None,
@@ -172,6 +179,7 @@ impl PrivateTerminalInventory {
                 holds: Vec::new(),
                 native_pending: None,
                 native_recording_cursor: 0,
+                attempt_cursor: 0,
                 native_turn_debt: 0,
                 settling: Vec::new(),
                 current: None,

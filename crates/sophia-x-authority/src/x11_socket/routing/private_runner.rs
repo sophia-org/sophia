@@ -56,6 +56,11 @@ pub struct PrivateRunnerProgress {
     /// and a failure reported only as an absent name is a failure nobody is
     /// told about.
     pub watch_failed: bool,
+    /// How many delivery capsules reached a recipient's queue this turn.
+    ///
+    /// Separate from `recorded` and from `settled`: enqueueing is not a
+    /// receipt, and a receipt is not the whole debt.
+    pub dispatched: usize,
     pub blocked: Option<crate::ReadySequence>,
     /// The service allowance stopped this turn. It will be checked again on
     /// the next owner-loop turn; waiting is not part of an operation.
@@ -487,6 +492,18 @@ impl PrivatePreparedRunner {
                             // terminal step it is: the work was chosen,
                             // charged and done, whether or not the recording
                             // it attempted went in.
+                            PrivateDeliveryStep::Dispatched { enqueued } => {
+                                progress.terminal_steps += 1;
+                                progress.dispatched += usize::from(enqueued);
+                                if watch_failed {
+                                    break;
+                                }
+                                self.prefer_cleanup = false;
+                                if overran || unwatched.is_some() {
+                                    break;
+                                }
+                                continue;
+                            }
                             PrivateDeliveryStep::Recorded { recorded } => {
                                 progress.terminal_steps += 1;
                                 progress.recorded += usize::from(recorded);

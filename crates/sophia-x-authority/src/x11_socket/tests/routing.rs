@@ -12740,6 +12740,10 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
                     delivered += 1;
                     break;
                 }
+                // Once its proof is in, the same release owes a delivery
+                // attempt. That is more native work, and it takes its turn
+                // the same bounded way.
+                PrivateDeliveryStep::Dispatched { .. } => visits += 1,
                 PrivateDeliveryStep::Idle => panic!("traffic was ready, so no step is idle"),
                 PrivateDeliveryStep::Blocked(_) => panic!("no entry is indeterminate here"),
             }
@@ -12755,6 +12759,97 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
     assert!(
         private.terminal.settling[0].native_recorded(),
         "and the older proof was recorded rather than waiting behind traffic"
+    );
+}
+
+/// Stage what an interrupted handover leaves in a settling record: the capsule
+/// gone from the slot, and the phase saying the handover was begun.
+///
+/// Lives here rather than in the production module, where a cfg(test) helper
+/// is inline test code. It fabricates no delivery and forges no receipt -- it
+/// reproduces exactly the state an unwind between the take and the report
+/// would leave behind.
+fn stage_interrupted_handover(release: &mut PrivateSettlingRelease) {
+    release.pending = None;
+    release.dispatch = PrivateDispatchPhase::Indeterminate;
+}
+
+fn settling_slot_is_empty(release: &PrivateSettlingRelease) -> bool {
+    release.pending.is_none()
+}
+
+#[test]
+fn an_interrupted_handover_is_not_retried_just_because_its_slot_is_empty() {
+    // An empty pending slot means one of two opposite things: nothing was
+    // taken yet, or a handover began and never reported. Only the phase tells
+    // them apart, and retrying the second would send an event the recipient
+    // may already have. This fails closed.
+    let client = XServerFrontendClientId(2451);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    for (delivery, pressed) in [(2451u64, true), (2452u64, false)] {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                272,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.terminal.delivering.extend(turn);
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("the entry delivers");
+    }
+    assert_eq!(private.terminal.settling.len(), 1);
+
+    // Its proof goes in, which is what makes it eligible for an attempt.
+    assert!(matches!(
+        private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
+        PrivateDeliveryStep::Recorded { recorded: true }
+    ));
+
+    // Stage exactly what an interrupted handover leaves behind: the capsule
+    // gone from the slot and the phase saying the handover was begun. Nothing
+    // else about the record is touched.
+    stage_interrupted_handover(&mut private.terminal.settling[0]);
+    assert!(
+        settling_slot_is_empty(&private.terminal.settling[0]),
+        "the slot is empty, which is the trap this control is about"
+    );
+
+    // FAILS CLOSED. No attempt is made, and the turn reports nothing to do
+    // rather than inventing work from an absence.
+    assert!(matches!(
+        private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
+        PrivateDeliveryStep::Idle
+    ));
+    assert!(
+        private.terminal.settling[0].attempt().is_none(),
+        "no attempt was claimed for a delivery nobody can say was not received"
+    );
+    assert_eq!(
+        private.terminal.settling[0].dispatch(),
+        PrivateDispatchPhase::Indeterminate,
+        "and the phase still says so rather than being cleared by looking"
     );
 }
 
@@ -12845,6 +12940,20 @@ fn a_proof_recording_visit_is_charged_and_watched_like_any_other_step() {
         &[None],
         "and it asked to be charged first, naming no ordered entry because it \
          is not one"
+    );
+
+    // With the proof in, the same release owes a delivery attempt. It is
+    // native work too, and it charges under None for the same reason.
+    charged.borrow_mut().clear();
+    assert!(matches!(
+        private.deliver_one(&mut charge).expect("a step"),
+        PrivateDeliveryStep::Dispatched { .. }
+    ));
+    assert_eq!(
+        charged.borrow().as_slice(),
+        &[None],
+        "a delivery attempt is charged before it is made, naming no ordered \
+         entry because it is not one"
     );
 
     // With nothing left owed, an empty order is idle again and costs nothing.

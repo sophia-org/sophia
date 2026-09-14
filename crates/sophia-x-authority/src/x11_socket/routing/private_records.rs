@@ -67,6 +67,52 @@ impl PrivateReachedResources {
 #[cfg(unix)]
 const PRIVATE_NATIVE_RECORDING_ATTEMPTS: u8 = 3;
 
+/// What this release's delivery is currently doing.
+///
+/// FORWARD CUSTODY. Once an emission leaves its hold it never goes back; it
+/// travels on in this record instead, and this says where it has got to. The
+/// phase is what makes a retry safe or unsafe to take, and it is deliberately
+/// NOT derivable from whether the pending slot happens to be full.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateDispatchPhase {
+    /// Nothing has been taken from the hold yet.
+    Untaken,
+    /// Held here and KNOWN NOT TO BE on the recipient's queue.
+    ///
+    /// A queue that refused because it was full said exactly that, so the
+    /// same capsule is offered again later. Nothing is re-encoded, no target
+    /// is reselected and no new event is built: the bytes and the identity
+    /// are the ones the release decided.
+    Pending,
+    /// Handed over, and the handover never reported.
+    ///
+    /// NOT RETRIED. Nobody can say whether the recipient has it, and the
+    /// pending slot being empty is not evidence that it does not -- that
+    /// emptiness is exactly what an interrupted handoff looks like from here.
+    Indeterminate,
+    /// On the recipient's queue. What is owed from here is the receipt, and
+    /// no replayable copy of the event is kept.
+    Enqueued,
+    /// The emission could not be wrapped, and is retained with its cause.
+    Unwrappable,
+}
+
+/// What a release is holding on its way to a writer.
+#[cfg(unix)]
+enum PrivatePendingDelivery {
+    /// The capsule, exactly as it will be sent.
+    Capsule(XAuthorityOrderedDelivery),
+    /// An emission that could not be wrapped, kept with the refusal that
+    /// described it rather than dropped for being unusable at this moment.
+    Unwrapped {
+        #[allow(dead_code)]
+        emission: PrivateOrderedEmission,
+        #[allow(dead_code)]
+        cause: crate::XAuthorityOrderedAssemblyRefusal,
+    },
+}
+
 /// A release whose delivery has been decided and not yet handed on.
 ///
 /// Everything the delivery owes, kept together and bound to the hold it ends.
@@ -81,6 +127,20 @@ pub struct PrivateSettlingRelease {
     /// The identity a settlement is named against.
     incarnation: sophia_input_authority::HoldIncarnation,
     reached: PrivateReachedResources,
+    /// What this release is carrying towards a writer, and how far it has got.
+    ///
+    /// The slot is prepared before anything is taken from the hold, so there
+    /// is never a moment in which an emission has left its obligation and has
+    /// nowhere to be.
+    pending: Option<PrivatePendingDelivery>,
+    dispatch: PrivateDispatchPhase,
+    /// The attempt this release's delivery is being made under.
+    ///
+    /// Persisted BEFORE the handover, because a receipt arrives naming a
+    /// delivery while the debt is named by an incarnation, and this record is
+    /// the only thing holding both. An attempt reserved and not written down
+    /// is one nothing could finish.
+    attempt: Option<sophia_input_authority::AttemptToken>,
     /// The source obligation this release is still answering for.
     ///
     /// Carried rather than dropped with the record it came from. The hold
@@ -170,6 +230,40 @@ impl PrivateSettlingRelease {
     #[cfg_attr(not(test), allow(dead_code))]
     fn native_recorded(&self) -> bool {
         self.native_recorded
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn dispatch(&self) -> PrivateDispatchPhase {
+        self.dispatch
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn attempt(&self) -> Option<sophia_input_authority::AttemptToken> {
+        self.attempt
+    }
+
+    /// Whether a delivery attempt may be made for this release now.
+    ///
+    /// READ FROM THE PHASE, never from the slot. An empty slot means one of
+    /// two opposite things -- nothing taken yet, or a handover that never
+    /// reported -- and only the phase tells them apart. Deciding from the slot
+    /// would retry exactly the deliveries nobody can say were not already
+    /// received.
+    ///
+    /// The native half has to be in first, because the ledger refuses to
+    /// claim an attempt otherwise, and one attempt at a time, because a
+    /// second would be a second writer answering for the same event.
+    fn owes_delivery_attempt(&self) -> bool {
+        self.native_recorded
+            && self.attempt.is_none()
+            && matches!(
+                self.dispatch,
+                PrivateDispatchPhase::Untaken | PrivateDispatchPhase::Pending
+            )
+    }
+
+    fn native_mut(&mut self) -> Option<&mut private_native::Hold> {
+        self.native.as_mut()
     }
 
     /// Record the source's native bit for this release, if it is still owed.

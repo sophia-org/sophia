@@ -470,6 +470,9 @@ fn resolve_and_apply(
                             settling.push(PrivateSettlingRelease {
                                 incarnation: removed.incarnation,
                                 reached: removed.reached,
+                                pending: None,
+                                dispatch: PrivateDispatchPhase::Untaken,
+                                attempt: None,
                                 native: removed.native,
                                 unbuilt,
                                 native_recorded: false,
