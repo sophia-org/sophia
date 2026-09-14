@@ -16794,3 +16794,37 @@ fn a_refused_charge_leaves_the_entry_where_it_was() {
     drop(fixture.durable);
 }
 include!("private_lifecycle_integration.rs");
+
+
+#[test]
+fn a_failed_wait_is_not_a_recipient_that_blocked() {
+    // Producing a poll failure against a live owned socket is not something a
+    // control here can arrange, so what is exercised is the reading of it --
+    // which is where the conflation would do its damage.
+    let failure = X11FrameSendFailure::WaitFailed(std::io::Error::from(
+        std::io::ErrorKind::InvalidInput,
+    ));
+    let error = x11_ordered_frame_error("failed to write an ordered event", failure);
+
+    // Not a client failure. Nothing was established about this recipient: it
+    // was never asked and it never declined, so ending its connection on the
+    // strength of a broken syscall would blame the wrong party.
+    assert!(
+        !error.client_failure && !error.client_disconnect,
+        "a wait that could not be performed says nothing about the recipient"
+    );
+
+    // And it is kept apart from blocking in the type itself, which is what
+    // stops a deadline being built out of a failed wait.
+    let blocked = x11_ordered_frame_error(
+        "failed to write an ordered event",
+        X11FrameSendFailure::Blocked {
+            written: 8,
+            blocked: X_AUTHORITY_ORDERED_BLOCKED_LIMIT,
+        },
+    );
+    assert!(
+        blocked.client_failure,
+        "a recipient that would not take its bytes is the one that failed"
+    );
+}

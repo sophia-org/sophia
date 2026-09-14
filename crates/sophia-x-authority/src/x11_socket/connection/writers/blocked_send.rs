@@ -52,6 +52,13 @@ enum X11FrameSendFailure {
     /// be done next and nothing else establishes it. Anything other than zero
     /// means the wire holds part of an event.
     Blocked { written: usize, blocked: Duration },
+    /// Waiting for the recipient to become writable could not be performed.
+    ///
+    /// Nothing is established about the recipient by this: it was never asked
+    /// and it never declined. Kept apart from blocking so that a deadline is
+    /// never built out of a failed wait, and it is no more a settlement fact
+    /// than a deadline is.
+    WaitFailed(std::io::Error),
     /// The send failed for a reason of its own.
     Io(std::io::Error),
 }
@@ -226,8 +233,27 @@ fn send_pending_frame(
                     tv_sec: 0,
                     tv_nsec: i64::from(X_AUTHORITY_ORDERED_BLOCKED_SLICE.subsec_nanos()),
                 };
-                let _ = rustix::event::poll(&mut watched, Some(&slice));
-                state.blocked = blocked_so_far + waited.elapsed();
+                match rustix::event::poll(&mut watched, Some(&slice)) {
+                    // Readiness or the slice expiring. Either way this call
+                    // waited on the recipient, and that is what is counted.
+                    Ok(_) => state.blocked = blocked_so_far + waited.elapsed(),
+                    // A signal ended the wait early. Still waiting on the
+                    // recipient, just less of it than was asked for.
+                    Err(rustix::io::Errno::INTR) => {
+                        state.blocked = blocked_so_far + waited.elapsed();
+                    }
+                    // The wait itself failed. Time passed, but none of it is
+                    // evidence about this recipient: nothing was asked of it
+                    // and nothing declined. Counting it would build a deadline
+                    // out of a broken syscall, and the deadline is the one
+                    // thing here a settlement is not allowed to be inferred
+                    // from. The frame and its offset stay exactly as they are.
+                    Err(error) => {
+                        return Err(X11FrameSendFailure::WaitFailed(std::io::Error::from(
+                            error,
+                        )));
+                    }
+                }
                 if state.blocked >= X_AUTHORITY_ORDERED_BLOCKED_LIMIT {
                     return Err(X11FrameSendFailure::Blocked {
                         written: offset,
@@ -273,6 +299,9 @@ fn x11_ordered_frame_error(context: &str, failure: X11FrameSendFailure) -> X11Se
                  {blocked:?}"
             ))
         }
+        X11FrameSendFailure::WaitFailed(error) => X11SetupSocketError::new(format!(
+            "{context}: waiting for this recipient could not be performed: {error}"
+        )),
         X11FrameSendFailure::Io(error) => x11_peer_write_error(context, error),
     }
 }
