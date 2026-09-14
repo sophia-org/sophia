@@ -36,6 +36,11 @@ enum X11FrameSendFailure {
     /// means the wire holds part of an event, which X11 can neither describe
     /// nor retract, so the connection is no longer usable.
     Blocked { written: usize, blocked: Duration },
+    /// A send was begun and never reported, so how much of the frame reached
+    /// the wire is unknown. Not resumable and not retryable: the only honest
+    /// disposition is to end the connection, because nothing can establish
+    /// where the event stopped.
+    Interrupted,
     /// The send failed for a reason of its own.
     Io(std::io::Error),
 }
@@ -52,12 +57,43 @@ enum X11FrameSendFailure {
 /// recipient and a delivery together, so an accumulator shared between them
 /// would let an earlier stall be spent against a later deadline, and a
 /// delivery could be declared blocked on time it never waited.
+/// How much of the frame in hand is on the wire.
+///
+/// Three states rather than a count, because between handing bytes to the
+/// kernel and recording that they went there is an interval in which an
+/// interruption leaves the count behind and the bytes gone. A number alone
+/// cannot say that happened, and a resume that trusted it would send the same
+/// bytes twice.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11OrderedSendProgress {
+    /// This many bytes of the frame have been accepted, and that is known.
+    Sent(usize),
+    /// A send was begun from this offset and never reported. Whether any of it
+    /// reached the wire is unknown, and nothing can establish it afterwards --
+    /// the socket does not remember and the recipient cannot be asked. The
+    /// frame is not resumable from here and the connection is no longer
+    /// describable.
+    Unknown { from: usize },
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug)]
 struct X11OrderedSendState {
-    offset: usize,
+    progress: X11OrderedSendProgress,
     blocked: Duration,
+}
+
+#[cfg(unix)]
+impl Default for X11OrderedSendState {
+    fn default() -> Self {
+        Self {
+            progress: X11OrderedSendProgress::Sent(0),
+            blocked: Duration::ZERO,
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -69,7 +105,7 @@ impl X11OrderedSendState {
     /// happened.
     #[cfg_attr(not(test), allow(dead_code))]
     fn begin_frame(&mut self) {
-        self.offset = 0;
+        self.progress = X11OrderedSendProgress::Sent(0);
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -98,22 +134,38 @@ fn send_frame_bounded(
     frame: &[u8],
     state: &mut X11OrderedSendState,
 ) -> Result<(), X11FrameSendFailure> {
-    while state.offset < frame.len() {
+    loop {
+        let X11OrderedSendProgress::Sent(offset) = state.progress else {
+            // A previous send never reported. Resuming would send from an
+            // offset that may already be behind what the wire took, putting an
+            // event's middle after its own middle.
+            return Err(X11FrameSendFailure::Interrupted);
+        };
+        if offset >= frame.len() {
+            return Ok(());
+        }
+        // Marked before the bytes can leave, not after they are counted. A
+        // marker written afterwards says nothing about a call that did not
+        // return, and this is the one interval where the wire can be ahead of
+        // everything that describes it.
+        state.progress = X11OrderedSendProgress::Unknown { from: offset };
         match rustix::net::send(
             socket,
-            &frame[state.offset..],
+            &frame[offset..],
             rustix::net::SendFlags::DONTWAIT | rustix::net::SendFlags::NOSIGNAL,
         ) {
             Ok(0) => {
+                state.progress = X11OrderedSendProgress::Sent(offset);
                 return Err(X11FrameSendFailure::Io(std::io::Error::new(
                     std::io::ErrorKind::WriteZero,
                     "X11 ordered writer made no progress on a frame",
                 )));
             }
-            // Recorded in the owned state before anything else can fail. These
-            // bytes are on the wire whatever happens next.
-            Ok(count) => state.offset += count,
+            // The send reported, so what it took is known again.
+            Ok(count) => state.progress = X11OrderedSendProgress::Sent(offset + count),
             Err(rustix::io::Errno::AGAIN) => {
+                // Nothing left, so the offset is what it was.
+                state.progress = X11OrderedSendProgress::Sent(offset);
                 // The socket would have blocked, which is what opens a waiting
                 // interval. What is added is the interval that actually
                 // elapsed, not the slice that was asked for: a wait can end
@@ -131,18 +183,20 @@ fn send_frame_bounded(
                 state.blocked += waited.elapsed();
                 if state.blocked >= X_AUTHORITY_ORDERED_BLOCKED_LIMIT {
                     return Err(X11FrameSendFailure::Blocked {
-                        written: state.offset,
+                        written: offset,
                         blocked: state.blocked,
                     });
                 }
             }
-            Err(rustix::io::Errno::INTR) => {}
+            Err(rustix::io::Errno::INTR) => {
+                state.progress = X11OrderedSendProgress::Sent(offset);
+            }
             Err(error) => {
+                state.progress = X11OrderedSendProgress::Sent(offset);
                 return Err(X11FrameSendFailure::Io(std::io::Error::from(error)));
             }
         }
     }
-    Ok(())
 }
 
 /// Read one frame's failure into the writer's own vocabulary.
@@ -163,6 +217,9 @@ fn x11_ordered_frame_error(context: &str, failure: X11FrameSendFailure) -> X11Se
                  {blocked:?}"
             ))
         }
+        X11FrameSendFailure::Interrupted => X11SetupSocketError::client_failure(format!(
+            "{context}: a send never reported, so what reached this recipient is unknown"
+        )),
         X11FrameSendFailure::Io(error) => x11_peer_write_error(context, error),
     }
 }

@@ -16,6 +16,31 @@
 /// the private operation type was kept out of the public surface to avoid. It
 /// becomes public when there is an owner outside this crate to give it to, and
 /// what that owner needs decides what it says rather than what is convenient
+/// What one terminal step did.
+///
+/// A sequence and at most a report, never an entry. Advancing a refusal into
+/// retained inventory produces no report and is still a step that happened,
+/// so a caller that read "no report" as "no work" would charge nothing for
+/// work it did.
+#[cfg(unix)]
+enum PrivateDeliveryStep {
+    /// Nothing was waiting.
+    Idle,
+    /// The entry at the head cannot be described, so nothing may be done with
+    /// it. Not the same as nothing waiting.
+    ///
+    /// The sequence names the entry that is stuck, for a runner that has to
+    /// say which one. The wrapper in this file only needs to stop.
+    #[allow(dead_code)]
+    Blocked(crate::ReadySequence),
+    /// Exactly one entry was disposed of, transferred or observed.
+    Advanced {
+        #[cfg_attr(not(test), allow(dead_code))]
+        sequence: crate::ReadySequence,
+        report: Option<PrivateDelivered>,
+    },
+}
+
 /// What one bounded step of the order did.
 ///
 /// Carries a sequence and never an item. What was taken is stored in this
@@ -109,6 +134,22 @@ enum PrivateOrderedItem {
     /// parked is not accepting responsibility for what it is parked on, and
     /// the operation stays owned here until something takes it.
     Parked { sequence: crate::ReadySequence },
+}
+
+#[cfg(unix)]
+impl PrivateOrderedItem {
+    /// Where this item stood in the order.
+    ///
+    /// Every kind has one: what an item is does not change which position the
+    /// order gave it, and that position is what anything accounting for the
+    /// item names it by.
+    fn sequence(&self) -> crate::ReadySequence {
+        match self {
+            Self::Ran { sequence, .. }
+            | Self::Refused { sequence, .. }
+            | Self::Parked { sequence } => *sequence,
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -428,135 +469,195 @@ impl PrivateXServerFrontend {
     /// receipts, and a debt closed on any of those would be closed on
     /// something that did not happen.
     #[cfg_attr(not(test), allow(dead_code))]
-    fn deliver_turn(&mut self, items: Vec<PrivateOrderedItem>) -> Vec<PrivateDelivered> {
-        // Taken into storage this instance owns before anything is delivered.
-        // Iterating a parameter leaves every item not yet reached in a local,
-        // and those have already left the order -- an interruption part-way
-        // would destroy the ones behind the current one along with the custody
-        // they carry. Appended rather than assigned, so anything a previous
-        // interruption left here is still first in line.
-        self.terminal.delivering.extend(items);
-        let mut delivered = Vec::with_capacity(self.terminal.delivering.len());
-        // Removed only once its outcome has been decided, so the item being
-        // worked on is owned throughout rather than held in a local for the
-        // length of the attempt.
-        while !self.terminal.delivering.is_empty() {
-            // What may happen to the entry at the head depends on how far it
-            // already got. Starting a new call is not a disposition, and
-            // deciding that from scratch turns an event that may already be
-            // queued back into one that looks never attempted.
-            let resuming = self.terminal.emission;
-            match resuming {
-                // Nobody can say whether its event reached the queue. It may
-                // not be sent again and its receipt may not be inferred, and
-                // nothing here can establish either, so the order stops.
-                PrivateEmissionPhase::Indeterminate => break,
-                // Already on the client's queue. Only the observation is
-                // owed; sending again would deliver the same transition twice.
-                PrivateEmissionPhase::Enqueued => {}
-                // A fresh entry, or one whose send returned without the queue
-                // taking it.
-                PrivateEmissionPhase::NotOwed | PrivateEmissionPhase::NotEnqueued => {
-                    self.terminal.emission = PrivateEmissionPhase::NotOwed;
+    /// Take one terminal step, if one is possible.
+    ///
+    /// At most one entry, chosen from work this instance already owns and
+    /// moved only between places it owns, so nothing accepted is ever held
+    /// outside the inventory. What comes back is a scalar: a report can be
+    /// owned by a caller once its entry has been disposed of, the entry itself
+    /// cannot.
+    ///
+    /// `start` is offered after the entry is chosen and before anything is
+    /// observed, sent or guarded. An empty turn and a head nobody can describe
+    /// cost nothing, because neither is a step; everything else is one, and a
+    /// refusal leaves the work exactly where it already was.
+    ///
+    /// Advancing is not settling. A refusal moved into retained inventory
+    /// consumed a real step and produced no report, and neither that nor a
+    /// report itself says a recipient received anything.
+    fn deliver_one(
+        &mut self,
+        start: &mut dyn FnMut(
+            crate::ReadySequence,
+            std::time::Instant,
+        ) -> Result<(), XServerFrontendRouteError>,
+    ) -> Result<PrivateDeliveryStep, XServerFrontendRouteError> {
+        {
+            // Between two places this inventory owns, with nothing that can
+            // fail in between.
+            let PrivateTerminalInventory {
+                turn, delivering, ..
+            } = &mut self.terminal;
+            if delivering.is_empty() {
+                if turn.is_empty() {
+                    return Ok(PrivateDeliveryStep::Idle);
                 }
+                delivering.push(turn.remove(0));
             }
-            // Read from the entry rather than taken out of it. Removing it
-            // first put the obligation in a local, so the phase on this
-            // instance survived an unwind while the work it described did not.
-            let PrivateOrderedItem::Ran { sequence, run, .. } = &self.terminal.delivering[0] else {
-                let item = self.terminal.delivering.remove(0);
-                // A refusal attempted no emission, so nothing about a client's
-                // queue is owed or unknown for it.
-                self.terminal.undelivered.push(PrivateUndelivered {
-                    item,
-                    emission: PrivateEmissionPhase::NotOwed,
-                });
-                continue;
-            };
-            let (sequence, run) = (*sequence, *run);
-            let delivery = match &self.terminal.delivering[0] {
-                PrivateOrderedItem::Ran { route, .. } => route.delivery,
-                _ => None,
-            };
-            let enqueued = if resuming == PrivateEmissionPhase::Enqueued {
-                // Resumed after its send. Not sent again.
-                true
-            } else {
-                match (run.event, run.reached) {
-                    (Some(event), Some(reached)) => {
-                        // Written before the send, because a phase set after it
-                        // says nothing about a send that did not return.
-                        self.terminal.emission = PrivateEmissionPhase::Indeterminate;
-                        let sent = self.emit(reached, event, delivery).is_ok();
-                        self.terminal.emission = if sent {
-                            PrivateEmissionPhase::Enqueued
-                        } else {
-                            PrivateEmissionPhase::NotEnqueued
-                        };
-                        sent
-                    }
-                    _ => false,
+        }
+        // Read from the entry rather than taken out of it: choosing is not
+        // disposing, and a chosen entry held in a local is one an interruption
+        // would take with the frame.
+        let sequence = self.terminal.delivering[0].sequence();
+        if self.terminal.emission == PrivateEmissionPhase::Indeterminate {
+            // Nobody can say whether its event reached the queue. It may not be
+            // sent again and its receipt may not be inferred, and nothing here
+            // can establish either. Reported as itself rather than as an empty
+            // turn, because an owner told "nothing to do" would stop looking
+            // for the thing that is stuck.
+            return Ok(PrivateDeliveryStep::Blocked(sequence));
+        }
+        // Charged for the step about to happen, before any guard is taken and
+        // before anything is observed or sent. A refusal here leaves the entry
+        // owned and untouched.
+        start(sequence, std::time::Instant::now())?;
+        // What may happen to the entry at the head depends on how far it
+        // already got. Starting a new call is not a disposition, and
+        // deciding that from scratch turns an event that may already be
+        // queued back into one that looks never attempted.
+        let resuming = self.terminal.emission;
+        match resuming {
+            // Ruled out before the charge above, and answered the same way if
+            // it somehow stands here: a head nobody can describe is reported
+            // as blocked rather than worked on.
+            PrivateEmissionPhase::Indeterminate => {
+                return Ok(PrivateDeliveryStep::Blocked(sequence));
+            }
+            // Already on the client's queue. Only the observation is
+            // owed; sending again would deliver the same transition twice.
+            PrivateEmissionPhase::Enqueued => {}
+            // A fresh entry, or one whose send returned without the queue
+            // taking it.
+            PrivateEmissionPhase::NotOwed | PrivateEmissionPhase::NotEnqueued => {
+                self.terminal.emission = PrivateEmissionPhase::NotOwed;
+            }
+        }
+        // Read from the entry rather than taken out of it. Removing it
+        // first put the obligation in a local, so the phase on this
+        // instance survived an unwind while the work it described did not.
+        let PrivateOrderedItem::Ran { sequence, run, .. } = &self.terminal.delivering[0] else {
+            let item = self.terminal.delivering.remove(0);
+            // A refusal attempted no emission, so nothing about a client's
+            // queue is owed or unknown for it.
+            self.terminal.undelivered.push(PrivateUndelivered {
+                item,
+                emission: PrivateEmissionPhase::NotOwed,
+            });
+            return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
+        };
+        let (sequence, run) = (*sequence, *run);
+        let delivery = match &self.terminal.delivering[0] {
+            PrivateOrderedItem::Ran { route, .. } => route.delivery,
+            _ => None,
+        };
+        let enqueued = if resuming == PrivateEmissionPhase::Enqueued {
+            // Resumed after its send. Not sent again.
+            true
+        } else {
+            match (run.event, run.reached) {
+                (Some(event), Some(reached)) => {
+                    // Written before the send, because a phase set after it
+                    // says nothing about a send that did not return.
+                    self.terminal.emission = PrivateEmissionPhase::Indeterminate;
+                    let sent = self.emit(reached, event, delivery).is_ok();
+                    self.terminal.emission = if sent {
+                        PrivateEmissionPhase::Enqueued
+                    } else {
+                        PrivateEmissionPhase::NotEnqueued
+                    };
+                    sent
                 }
+                _ => false,
+            }
+        };
+        if run.owes_event && !enqueued {
+            // An event was owed and has not reached a queue. The entry is
+            // moved with the phase it reached, not before it was known.
+            let item = self.terminal.delivering.remove(0);
+            self.terminal.undelivered.push(PrivateUndelivered {
+                item,
+                emission: self.terminal.emission,
+            });
+            // The phase described that entry. With it gone the next one
+            // has not started, and carrying the phase forward would let it
+            // resume a send it never made.
+            self.terminal.emission = PrivateEmissionPhase::NotOwed;
+            return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
+        }
+        // Owing nobody an event is an outcome, not a failure to emit one.
+        // A press that joined a hold, and a release that found nothing
+        // held, both finished: their completion is taken here so the grant
+        // can reserve again.
+        //
+        // Taken exactly once, which is what frees the grant's cell. An
+        // observation that could not be made is kept apart from one that
+        // found nothing waiting: the first leaves the custody owed and the
+        // second does not.
+        let observed = {
+            let Self { terminal, .. } = self;
+            let PrivateTerminalInventory { delivering, .. } = terminal;
+            let PrivateOrderedItem::Ran { custody, .. } = &delivering[0] else {
+                unreachable!("checked above")
             };
-            if run.owes_event && !enqueued {
-                // An event was owed and has not reached a queue. The entry is
-                // moved with the phase it reached, not before it was known.
+            custody.observe()
+        };
+        let completion = match observed {
+            Ok(completion) => completion,
+            Err(_unreadable) => {
+                // Nothing was established about the outcome, so the only
+                // handle able to take it is retained rather than dropped.
+                // The emission phase travels with it: this event may
+                // already be on the client's queue, and a recovery owner
+                // that resent it would deliver the same transition twice.
                 let item = self.terminal.delivering.remove(0);
                 self.terminal.undelivered.push(PrivateUndelivered {
                     item,
                     emission: self.terminal.emission,
                 });
-                // The phase described that entry. With it gone the next one
-                // has not started, and carrying the phase forward would let it
-                // resume a send it never made.
                 self.terminal.emission = PrivateEmissionPhase::NotOwed;
-                continue;
+                return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
             }
-            // Owing nobody an event is an outcome, not a failure to emit one.
-            // A press that joined a hold, and a release that found nothing
-            // held, both finished: their completion is taken here so the grant
-            // can reserve again.
-            //
-            // Taken exactly once, which is what frees the grant's cell. An
-            // observation that could not be made is kept apart from one that
-            // found nothing waiting: the first leaves the custody owed and the
-            // second does not.
-            let observed = {
-                let Self { terminal, .. } = self;
-                let PrivateTerminalInventory { delivering, .. } = terminal;
-                let PrivateOrderedItem::Ran { custody, .. } = &delivering[0] else {
-                    unreachable!("checked above")
-                };
-                custody.observe()
-            };
-            let completion = match observed {
-                Ok(completion) => completion,
-                Err(_unreadable) => {
-                    // Nothing was established about the outcome, so the only
-                    // handle able to take it is retained rather than dropped.
-                    // The emission phase travels with it: this event may
-                    // already be on the client's queue, and a recovery owner
-                    // that resent it would deliver the same transition twice.
-                    let item = self.terminal.delivering.remove(0);
-                    self.terminal.undelivered.push(PrivateUndelivered {
-                        item,
-                        emission: self.terminal.emission,
-                    });
-                    self.terminal.emission = PrivateEmissionPhase::NotOwed;
-                    continue;
-                }
-            };
-            // Disposed, so the entry goes and the phase that described it goes
-            // with it.
-            let _resolved = self.terminal.delivering.remove(0);
-            self.terminal.emission = PrivateEmissionPhase::NotOwed;
-            delivered.push(PrivateDelivered {
+        };
+        // Disposed, so the entry goes and the phase that described it goes
+        // with it.
+        let _resolved = self.terminal.delivering.remove(0);
+        self.terminal.emission = PrivateEmissionPhase::NotOwed;
+        Ok(PrivateDeliveryStep::Advanced {
+            sequence,
+            report: Some(PrivateDelivered {
                 sequence,
                 enqueued,
                 completion,
                 debt_settled: false,
-            });
-            continue;
+            }),
+        })
+    }
+
+    /// Step until the order stops offering terminal work.
+    ///
+    /// The unaccounted caller, kept for what already reads a whole turn. A
+    /// runner that must charge each step calls `deliver_one` itself.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn deliver_turn(&mut self, items: Vec<PrivateOrderedItem>) -> Vec<PrivateDelivered> {
+        // Taken into storage this instance owns before anything is delivered.
+        // Appended rather than assigned, so anything a previous interruption
+        // left here is still first in line.
+        self.terminal.delivering.extend(items);
+        let mut delivered = Vec::with_capacity(self.terminal.delivering.len());
+        while let Ok(PrivateDeliveryStep::Advanced { report, .. }) =
+            self.deliver_one(&mut |_, _| Ok(()))
+        {
+            delivered.extend(report);
         }
         delivered
     }
