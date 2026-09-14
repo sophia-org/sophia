@@ -4,6 +4,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrivateRunnerRefusal {
     ProducerAlreadyExposed,
+    /// A prepared native origin cannot be replaced, even before the first turn.
+    AlreadyPrepared,
     Keyboard(PrivateKeyboardsRefusal),
     StateUnavailable,
 }
@@ -110,6 +112,9 @@ impl PrivateXServerFrontend {
         if self.ordered_runner {
             return Err((PrivateRunnerRefusal::ProducerAlreadyExposed, self));
         }
+        if self.native_owner.is_some() {
+            return Err((PrivateRunnerRefusal::AlreadyPrepared, self));
+        }
         // Installation takes common itself and binds the actual connection
         // projections before any producer can reserve against this runner.
         if self
@@ -140,6 +145,19 @@ impl PrivateXServerFrontend {
         if !matches!(prepared, Ok(Ok(()))) {
             return Err((PrivateRunnerRefusal::StateUnavailable, self));
         }
+        // Construct this before keyboard issuance and before the watchdog can
+        // admit producers. Until preparation succeeds no turn or hold can
+        // borrow it, so a later refusal may drop this unexposed construction.
+        // Installation below is the only assignment of the continuing origin.
+        let native_owner = match private_native::Owner::prepare(
+            &self.controller,
+            &self.broker.registry,
+            namespace,
+            seat,
+        ) {
+            Ok(owner) => owner,
+            Err(_) => return Err((PrivateRunnerRefusal::StateUnavailable, self)),
+        };
         let mut keyboards = match self.keyboards() {
             Ok(keyboards) => keyboards,
             Err(refusal) => return Err((PrivateRunnerRefusal::Keyboard(refusal), self)),
@@ -164,6 +182,7 @@ impl PrivateXServerFrontend {
         if self.admission.watch.set(gate).is_err() {
             return Err((PrivateRunnerRefusal::StateUnavailable, self));
         }
+        self.native_owner = Some(native_owner);
         let watch = self.pending_watch.take();
         Ok(PrivatePreparedRunner {
             watch,

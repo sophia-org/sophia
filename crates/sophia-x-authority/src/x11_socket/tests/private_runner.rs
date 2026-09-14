@@ -56,6 +56,7 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
     let client = XServerFrontendClientId::from_raw(9000);
     let seat = SeatId::from_raw(1);
     assert_eq!(runner.seat(), seat);
+    assert!(runner.frontend.as_ref().unwrap().native_owner.is_some());
     assert_eq!(runner.keyboards.modifiers(seat), Some(0));
     assert!(matches!(
         runner.frontend.as_ref().unwrap().keyboards(),
@@ -99,6 +100,52 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
     assert_eq!(second.enqueued, 0);
     assert_eq!(second.starts, 0);
     assert_eq!(second.terminal_steps, 0);
+}
+
+#[test]
+fn native_preparation_is_retained_and_a_second_runner_cannot_replace_it() {
+    let (mut runner, _durable, registration, _channels, _acks, _deliveries) =
+        prepared_runner_fixture();
+    let client = XServerFrontendClientId::from_raw(9000);
+    let namespace = runner.namespace();
+    let selections = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+    let private = runner.frontend.as_ref().unwrap();
+    private
+        .broker
+        .registry
+        .attach_connection_state(
+            &registration,
+            namespace,
+            selections,
+            Arc::new(AtomicU64::new(0)),
+        )
+        .unwrap();
+    let owner = private.native_owner.as_ref().unwrap().clone();
+    // The prepared origin accepts a witness from the actual registry under
+    // common and admission. A foreign instance with colliding names does not.
+    let (foreign, _foreign_durable, _foreign_registration, _foreign_channels,
+        _foreign_acks, _foreign_deliveries) = prepared_runner_fixture();
+    private.participant.under_boundary(|_, _, bindings| {
+        let clients = private.broker.registry.clients.lock().unwrap();
+        let witness = private.broker.registry
+            .applied_client(&clients, client, &bindings.bound[&client]).unwrap();
+        drop(owner.lock_for_connection(&witness).unwrap());
+        assert!(matches!(
+            foreign.frontend.as_ref().unwrap().native_owner.as_ref().unwrap()
+                .lock_for_connection(&witness),
+            Err(private_native::Refusal::ForeignOrigin)
+        ));
+    }).unwrap();
+    // No producer has escaped. Reaching this path must still refuse rather
+    // than replace the allocation cloned by the original execution owner.
+    let private = runner.frontend.take().unwrap();
+    let (cause, returned) = match private.prepare_runner(namespace) {
+        Ok(_) => panic!("second preparation replaced an existing native origin"),
+        Err(refused) => refused,
+    };
+    assert_eq!(cause, PrivateRunnerRefusal::AlreadyPrepared);
+    assert!(returned.native_owner.is_some());
+    runner.frontend = Some(returned);
 }
 
 #[test]
