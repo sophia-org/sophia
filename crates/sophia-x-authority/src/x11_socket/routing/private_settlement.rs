@@ -623,8 +623,27 @@ impl PrivateSettlementOwner {
                 held.outstanding.push(carried);
             }
         }
+        let mut lifecycle_readable = true;
+        // Clone a capability, never move the terminal inventory out of its
+        // durable owner. Common must not be acquired under the owner mutex:
+        // dropping connection custody may enter this owner from common.
+        let terminal_count = held.terminal.len();
+        for index in 0..terminal_count {
+            let lifecycle = held.terminal.get(index).map(|terminal| terminal.lifecycle.clone());
+            drop(held);
+            if let Some(lifecycle) = lifecycle
+                && lifecycle.drive(NonZeroUsize::new(1).unwrap()).is_err()
+            {
+                lifecycle_readable = false;
+            }
+            held = match self.inner.lock() {
+                Ok(held) => held,
+                Err(_) => return DriveProgress { readable: false, answered, reclaimed },
+            };
+        }
+        held.terminal.retain(|terminal| !terminal.is_empty());
         DriveProgress {
-            readable: true,
+            readable: lifecycle_readable,
             answered,
             reclaimed,
         }

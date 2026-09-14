@@ -199,7 +199,7 @@ impl XServerFrontendRouteRegistry {
         if !owner.ready.load(Ordering::Acquire) {
             return Err(PrivateAppliedRegistryRefusal::PreparationIncomplete);
         }
-        if admission.closed {
+        if admission.closed || admission.lifecycle.as_ref().is_some_and(|gate| !gate.is_open()) {
             return Err(PrivateAppliedRegistryRefusal::AdmissionClosed);
         }
         let entry = clients

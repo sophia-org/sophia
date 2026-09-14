@@ -194,6 +194,8 @@ impl XServerFrontendRouteBroker {
 /// leave a caller unable to try again with what it already had.
 #[cfg(unix)]
 pub struct PrivateFrontendParts {
+    /// Exact configured frontend admission bound, independent of input/grant limits.
+    pub max_concurrent_clients: NonZeroUsize,
     pub input_capacity: NonZeroUsize,
     pub control_acknowledgements: SyncSender<XAuthorityClientControlAck>,
     pub input_deliveries: std::sync::mpsc::Sender<XAuthorityClientInputDelivery>,
@@ -406,6 +408,11 @@ impl PrivateXServerFrontend {
         parts: PrivateFrontendParts,
         durable: &PrivateSettlementOwner,
     ) -> Result<Self, (AdmissionRefusal, PrivateFrontendParts)> {
+        // Prepared before taking parts or reserving durable credit.
+        let lifecycle_storage = match PrivateLifecycleOwner::prepare(parts.max_concurrent_clients) {
+            Ok(storage) => storage,
+            Err(_) => return Err((AdmissionRefusal::Saturated, parts)),
+        };
         // Before anything is exposed, and before the parts are taken apart.
         if let Err(refusal) = durable.reserve_failure_slot() {
             return Err((refusal, parts));
@@ -492,9 +499,14 @@ impl PrivateXServerFrontend {
             broker.registry.install_control_completion(completion.clone()),
             "a freshly built broker has no completion registry yet"
         );
+        let participant = PrivateAdmissionParticipant::new(controller.clone());
+        let lifecycle = PrivateLifecycleOwner::from_prepared(participant.clone(), broker.registry.input_authority.clone(), broker.registry.pointer_state.clone(), lifecycle_storage);
+        lifecycle.install().expect("new participant has no lifecycle owner");
+        broker.registry.input_recovery.lifecycle.set(lifecycle.clone()).unwrap_or_else(|_| panic!("new recovery has no lifecycle owner"));
         let terminal = PrivateTerminalInventory::with_capacity(
             broker.registry.clone(),
             controller.clone(),
+            lifecycle,
             capacity,
         );
         Ok(Self {
@@ -507,7 +519,7 @@ impl PrivateXServerFrontend {
             settled: false,
             failed: false,
             failure_slot_held: true,
-            participant: PrivateAdmissionParticipant::new(controller.clone()),
+            participant,
             controller,
             submit,
             keyboards_issued: std::sync::atomic::AtomicBool::new(false),
@@ -618,6 +630,9 @@ impl PrivateXServerFrontend {
             // as a question about admission.
             Err(PrivateAdmissionRefusal::Authority(error)) => {
                 Err(PrivateAuthorityRefusal::Authority(error))
+            }
+            Err(PrivateAdmissionRefusal::ClientRecordsExhausted) => {
+                Err(PrivateAuthorityRefusal::ClientRecordsExhausted)
             }
             Err(PrivateAdmissionRefusal::NotAdmitted)
             | Err(PrivateAdmissionRefusal::DifferentAdmission)

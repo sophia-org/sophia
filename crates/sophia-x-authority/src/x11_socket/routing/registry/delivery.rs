@@ -719,6 +719,9 @@ impl XServerFrontendRouteRegistry {
 #[cfg(unix)]
 impl Drop for XServerFrontendClientRouteRegistration {
     fn drop(&mut self) {
+        if let Ok(Some(lease)) = self.lifecycle.get_mut() {
+            lease.close();
+        }
         // Before the route senders go. What was mid-application when the
         // client's registration ended is not unexecuted and is not answered;
         // it is owed the cleanup it named, and saying so here is what keeps

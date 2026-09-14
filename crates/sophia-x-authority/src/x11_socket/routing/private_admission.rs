@@ -394,7 +394,8 @@ impl PrivateIngress {
                     return Err(match refusal {
                         // Busy, and worth retrying once whatever holds the
                         // resource lets go.
-                        PrivateAuthorityRefusal::Authority(
+                        PrivateAuthorityRefusal::ClientRecordsExhausted
+                        | PrivateAuthorityRefusal::Authority(
                             sophia_input_authority::RegistrationError::Capacity(
                                 sophia_input_authority::CapacityError::NoCompletionCell
                                 | sophia_input_authority::CapacityError::NoGrantSlot,

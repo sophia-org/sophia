@@ -3028,6 +3028,7 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
     // in which a handle could be taken from an ungated instance.
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3080,6 +3081,7 @@ fn the_private_host_delivers_each_admitted_input_exactly_once() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3128,6 +3130,7 @@ fn the_private_host_never_drains_raw_ingress() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3163,6 +3166,7 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3228,6 +3232,7 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
     // can be sent than one pass can admit.
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(16).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3285,6 +3290,7 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
     let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(2).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3356,6 +3362,7 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
     // which four are held for cleanup, so ordinary work has room for two.
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3415,6 +3422,7 @@ fn two_producer_classes_share_one_order() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(16).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3533,6 +3541,7 @@ fn a_send_that_returned_is_never_overtaken_by_one_that_started_later() {
     let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(16).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3594,6 +3603,7 @@ fn a_refused_control_comes_back_to_its_producer() {
     // Ordinary share of two at the smallest production size.
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3641,6 +3651,7 @@ fn producers_are_refused_once_their_consumer_is_gone() {
     let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3692,6 +3703,7 @@ fn an_unreachable_queue_is_not_reported_as_a_finished_one() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3746,6 +3758,7 @@ fn accepted_work_is_answered_when_its_consumer_goes_away() {
     let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3799,6 +3812,7 @@ fn one_turn_of_service_is_bounded_while_a_producer_keeps_refilling() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3858,6 +3872,7 @@ fn accepted_control_is_acknowledged_when_its_consumer_goes_away() {
     let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3911,6 +3926,7 @@ fn every_control_run_names_its_own_transaction() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -3967,6 +3983,7 @@ fn a_full_acknowledgement_channel_retains_the_obligation() {
     let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender.clone(),
             input_deliveries: delivery_sender,
@@ -4031,6 +4048,7 @@ fn an_unresolved_target_is_handed_back_rather_than_attributed() {
     let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -4071,6 +4089,7 @@ fn a_retained_handle_settles_once_the_channel_drains() {
     let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender.clone(),
             input_deliveries: delivery_sender,
@@ -4164,6 +4183,7 @@ fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
         let (authority, issuer, submit) = parts;
         let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: ack,
             input_deliveries: delivery,
@@ -4238,6 +4258,7 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
     let durable = crate::PrivateSettlementOwner::default();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender.clone(),
             input_deliveries: delivery_sender,
@@ -4326,6 +4347,7 @@ fn an_unreadable_queue_is_owned_by_something_that_outlives_it() {
     let durable = crate::PrivateSettlementOwner::default();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -4368,6 +4390,7 @@ fn review_settlement_queue(
     let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -4529,6 +4552,7 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
     let (delivery_sender, _delivery_receiver) = channel();
     let third = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: delivery_sender,
@@ -4586,6 +4610,7 @@ fn a_failed_instance_hands_over_its_queue_not_a_tally() {
     let durable = crate::PrivateSettlementOwner::default();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -4626,6 +4651,7 @@ fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
     let (delivery_sender, _delivery_receiver) = channel();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(2).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: delivery_sender,
@@ -4726,6 +4752,7 @@ fn a_failed_instances_queue_can_still_be_answered() {
     let (delivery_sender, _delivery_receiver) = channel();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -4800,6 +4827,7 @@ fn recovering_a_failed_queue_takes_the_completion_record_before_it_answers() {
     let (delivery_sender, _delivery_receiver) = channel();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -4883,6 +4911,7 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
 
     let first = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: delivery_sender,
@@ -4903,6 +4932,7 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: second_delivery,
@@ -4924,6 +4954,7 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: third_delivery,
@@ -4953,6 +4984,7 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     // from credits.
     let empty = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: delivery_sender,
@@ -4981,6 +5013,7 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: b_delivery,
@@ -5002,6 +5035,7 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: c_delivery,
@@ -5029,6 +5063,7 @@ fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
     let client = XServerFrontendClientId(251);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(2).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -5120,6 +5155,7 @@ fn review_terminal_recorded_then_observed_reclaims_exactly_once() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -5196,6 +5232,7 @@ fn review_terminal_unreadable_recovery_cannot_prove_live_delivery_settled() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -5250,6 +5287,7 @@ fn independent_terminal_kept_shutdown_handle_reclaims_late_completion_once() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -5316,6 +5354,7 @@ fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamat
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: control_ack_sender,
             input_deliveries: delivery_sender,
@@ -5641,6 +5680,7 @@ fn private_with_client(
     let (authority, issuer, submit) = private_authority();
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(8).unwrap(),
             control_acknowledgements: acknowledgements,
             input_deliveries: delivery_sender,
@@ -8672,7 +8712,7 @@ fn a_refused_cohort_leaves_no_query_owner_behind() {
             .query_namespace_active(namespace)
     };
     let owner =
-        X11QueryOwner::register(&state.runtime, namespace, client).expect("a readable runtime");
+        X11QueryOwner::register(&state.runtime, namespace, client, None).expect("a readable runtime");
     assert!(active(), "registering makes the namespace report an owner");
     drop(owner);
     assert!(
@@ -8732,7 +8772,7 @@ fn losing_a_connection_gives_up_its_writers_and_then_its_registration() {
             protocol: None,
             transport: std::os::unix::net::UnixStream::pair().unwrap().0,
         },
-        query_owner: X11QueryOwner::register(&state.runtime, namespace, client)
+        query_owner: X11QueryOwner::register(&state.runtime, namespace, client, None)
             .expect("a readable runtime"),
     };
     assert!(active(&state));
@@ -10900,6 +10940,7 @@ fn an_emptied_failed_record_cannot_release_a_second_instances_slot() {
     // was exposed and it holds it for its life.
     let live = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender.clone(),
             input_deliveries: delivery_sender.clone(),
@@ -10914,6 +10955,7 @@ fn an_emptied_failed_record_cannot_release_a_second_instances_slot() {
     let (failing_authority, failing_issuer, failing_submit) = private_authority();
     let failing = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -10979,6 +11021,7 @@ fn a_private_frontend_gates_the_authority_it_actually_owns() {
         .expect("an authority to name itself");
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -11082,8 +11125,8 @@ fn admit_role_client(
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a fresh client to register");
     private
-        .admission_participant()
-        .admit(client, admitted(client))
+        .broker.registry
+        .attach_private_lifecycle(&registration, admitted(client))
         .expect("a fresh client to be admitted to the boundary");
     registration
 }
@@ -11094,6 +11137,7 @@ fn private_for_roles() -> crate::PrivateXServerFrontend {
     let (authority, issuer, submit) = private_authority();
     crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -11321,6 +11365,7 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(1).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -11647,6 +11692,7 @@ fn a_revoked_admission_stops_a_later_execution() {
 
     // Readmitting does not revive it. A replacement admission is a different
     // admission, whatever the generation says.
+    lifecycle_drain(&private.terminal.lifecycle);
     private
         .admission_participant()
         .admit(
@@ -13654,6 +13700,7 @@ fn a_parked_operation_is_handed_to_the_durable_owner_at_shutdown() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -13806,6 +13853,7 @@ fn a_parked_control_is_answered_exactly_once_after_shutdown() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -14047,6 +14095,7 @@ fn a_parked_control_whose_registry_is_unreadable_is_kept_whole() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -14136,6 +14185,7 @@ fn what_an_instance_still_owes_reaches_the_durable_owner() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -14189,17 +14239,20 @@ fn what_an_instance_still_owes_reaches_the_durable_owner() {
         1,
         "the hold's plan is owed to whatever releases it"
     );
-    let owed = private.terminal.outstanding();
-    assert!(owed >= 1);
+    let owed = private.terminal.outstanding().expect("readable terminal inventory");
+    assert_eq!(owed, 2, "one held input and one live connection cleanup owner");
+    let lifecycle = private.terminal.lifecycle.clone();
+    assert_eq!(lifecycle.inventory().unwrap().open, 1);
 
     // Shutdown. The instance can no longer answer, so what it owes travels to
     // the handle rather than dying with it.
     let settlement = private.shutdown();
     assert_eq!(
-        settlement.terminal_outstanding(),
-        owed,
-        "the handle carries exactly what the instance owed"
+        settlement.terminal_outstanding().expect("readable terminal inventory"),
+        owed - 1,
+        "only the completed connection cleanup leaves; the held input remains owed"
     );
+    assert_eq!(lifecycle.inventory().unwrap(), PrivateLifecycleInventory::default());
     assert_eq!(
         durable.terminal_inventories().expect("a readable owner"),
         0,
@@ -14226,6 +14279,7 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -14291,7 +14345,7 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
     drop(registration);
     let settlement = private.shutdown();
     assert_eq!(
-        settlement.terminal_outstanding(),
+        settlement.terminal_outstanding().expect("readable terminal inventory"),
         1,
         "the hold is still owed"
     );
@@ -14359,6 +14413,7 @@ fn instance_handing_over_a_retained_hold(
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -14414,7 +14469,7 @@ fn instance_handing_over_a_retained_hold(
     drop(registration);
     let settlement = private.shutdown();
     assert_eq!(
-        settlement.terminal_outstanding(),
+        settlement.terminal_outstanding().expect("readable terminal inventory"),
         1,
         "the instance ends owing exactly the hold this control is about"
     );
@@ -14502,6 +14557,7 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -14594,7 +14650,10 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
     );
     // The request itself is still owed its observation, which is why the
     // refusal keeps custody rather than dropping it.
-    assert_eq!(private.shutdown().terminal_outstanding(), 1);
+    let mut settlement = private.shutdown();
+    assert_eq!(settlement.terminal_outstanding(), Some(2), "one refusal observation and one pending lifecycle cleanup");
+    for _ in 0..16 { settlement.retry(); }
+    assert_eq!(settlement.terminal_outstanding(), Some(1), "lifecycle cleanup leaves the original refusal observation owned");
 }
 
 /// One admitted client with a real ingress, kept whole.
@@ -14634,6 +14693,7 @@ fn ordered_ingress_fixture(
     let (authority, issuer, submit) = private_authority();
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: sender,
             input_deliveries: delivery_sender,
@@ -14650,8 +14710,8 @@ fn ordered_ingress_fixture(
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a fresh client to register");
     private
-        .admission_participant()
-        .admit(client, admitted(client))
+        .broker.registry
+        .attach_private_lifecycle(&registration, admitted(client))
         .expect("the boundary to admit");
     private
         .broker
@@ -14677,6 +14737,21 @@ fn ordered_ingress_fixture(
         _acks: acks,
         deliveries,
     }
+}
+
+// Keep source admission alive when a test disconnects its recipient. A
+// departed source is denied at the lifecycle gate before recipient binding.
+fn separate_ordered_sender(
+    fixture: &mut OrderedIngressFixture,
+    recipient: XServerFrontendClientId,
+) -> (XServerFrontendClientRouteRegistration, XServerFrontendClientRouteChannels) {
+    let sender = XServerFrontendClientId(recipient.raw() + 50_000);
+    let context = namespaced(sender, NamespaceId::from_raw(recipient.raw()));
+    let registry = &fixture.private.broker.registry;
+    let (registration, channels) = registry.register_client_with_admission(sender, Some(context)).unwrap();
+    registry.attach_private_lifecycle(&registration, context).unwrap();
+    fixture.ingress = fixture.private.ingress_for(sender, DeviceId::from_raw(2)).unwrap();
+    (registration, channels)
 }
 
 #[test]
@@ -14751,9 +14826,10 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     let surface = SurfaceId::new(993, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(993);
     let mut fixture = ordered_ingress_fixture(client, surface);
+    let (_sender_registration, _sender_channels) = separate_ordered_sender(&mut fixture, client);
 
-    // The connection is revoked first, so the delivery is current -- nothing
-    // has ended it -- and only binding it to its recipient can find out.
+    // The recipient closes first. The distinct submitter remains authorized,
+    // but the recipient gate refuses before binding or pressing the ledger.
     fixture
         .private
         .broker
@@ -14789,11 +14865,18 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     assert!(matches!(
         &fixture.private.terminal.undelivered[0].item,
         PrivateOrderedItem::Refused {
-            refusal: PrivateExecutionRefusal::DeliveryEnded,
+            refusal: PrivateExecutionRefusal::NotDecided(
+                sophia_input_authority::RequestCompletion::Refused(
+                    sophia_input_authority::RegistrationError::WrongConnection
+                )
+            ),
             ..
         }
     ));
     assert!(fixture.channels.input.try_recv().is_err());
+    assert_eq!(fixture.private.broker.registry.input_recovery.ticket(delivery).unwrap().client, None,
+        "recipient closure refuses before recovery binding, not through its cancellation path");
+    assert!(fixture.deliveries.try_recv().is_err());
 
     // The hold record above is this executor's own bookkeeping. What matters
     // is the authority's ledger, and it is reachable: this refusal entered the
@@ -14861,6 +14944,7 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
     let mut fixture = ordered_ingress_fixture(client, surface);
+    let (_sender_registration, _sender_channels) = separate_ordered_sender(&mut fixture, client);
 
     // A press that lands while the client is there.
     fixture
@@ -15160,7 +15244,7 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
     );
     // Not lost, either: the obligation is retained rather than discarded, and
     // whoever takes the inventory is the one that can still answer it.
-    assert!(fixture.private.shutdown().terminal_outstanding() >= 1);
+    assert!(fixture.private.shutdown().terminal_outstanding().expect("readable terminal inventory") >= 1);
     drop(fixture.registration);
     drop(fixture.channels);
     drop(fixture.durable);
@@ -15600,57 +15684,26 @@ fn a_refusal_before_the_effect_resolves_the_claim_as_having_applied_nothing() {
 }
 
 #[test]
-fn a_cancellation_deferred_by_the_execution_itself_stands_when_nothing_applied() {
+fn a_cancellation_deferred_by_binding_under_a_claim_stands_when_nothing_applied() {
+    // Recovery API composition, not the private consumer: that consumer now
+    // rejects a closing recipient before binding. A race after recipient
+    // validation still requires this claim/bind arbitration to remain correct.
     let client = XServerFrontendClientId(1102);
-    let surface = SurfaceId::new(1102, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(1102);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    // The recipient is already gone, so binding this delivery to it records a
-    // terminal outcome -- and binding happens inside the execution's own
-    // claim, so that record is deferred by the arbitration rather than
-    // published on the spot. No injection: the execution produces the
-    // cancellation it then has to resolve.
-    fixture
-        .private
-        .broker
-        .registry
-        .input_recovery
-        .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
-        .expect("the ledger to be readable");
-    fixture
-        .ingress
-        .submit(button_to(surface, delivery, 272, true))
-        .expect("the order to accept it");
-    assert!(
-        fixture.deliveries.try_recv().is_err(),
-        "nothing published before the turn"
-    );
-
-    let turn = fixture
-        .private
-        .route_pending_ordered(&mut fixture.keyboards, &control_watchdog())
-        .expect("a readable order");
-    assert!(fixture.private.deliver_turn(turn).is_empty());
-    assert!(
-        fixture.private.terminal.holds.is_empty(),
-        "binding refused before the ledger moved"
-    );
-    assert_eq!(claim_state(&fixture, delivery), (false, false));
-
-    // Nothing applied, so what the binding established stands.
-    let receipt = fixture
-        .deliveries
-        .try_recv()
-        .expect("the deferred outcome to be resolved once the claim gave way");
+    let (recovery, receipts) = claim_fixture(delivery);
+    recovery.register(client).unwrap();
+    recovery.disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected).unwrap();
+    assert_eq!(recovery.claim_execution(Some(delivery)), ExecutionClaim::Claimed);
+    assert!(!recovery.bind(Some(delivery), client).unwrap());
+    assert!(receipts.try_recv().is_err(), "the claim defers this exact binding cancellation");
+    assert_eq!(recovery.ticket(delivery).unwrap().client, Some(client));
+    recovery.resolve_claim(Some(delivery), false);
+    let receipt = receipts.try_recv().expect("no application means the deferred cancellation stands");
     assert_eq!(receipt.delivery, delivery);
     assert_eq!(receipt.client, client);
-    assert_eq!(
-        receipt.outcome,
-        XAuthorityInputDeliveryOutcome::ClientDisconnected
-    );
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
+    assert_eq!(receipt.outcome, XAuthorityInputDeliveryOutcome::ClientDisconnected);
+    recovery.resolve_claim(Some(delivery), false);
+    assert!(receipts.try_recv().is_err(), "resolution cannot publish twice");
 }
 
 #[test]
@@ -16188,7 +16241,7 @@ fn a_mark_that_panics_does_not_take_the_work_with_it() {
 
     // The obligation survives the instance, which is what retention is for.
     let settlement = fixture.private.shutdown();
-    assert!(settlement.terminal_outstanding() >= 1);
+    assert!(settlement.terminal_outstanding().expect("readable terminal inventory") >= 1);
     drop(settlement);
     assert_eq!(fixture.durable.terminal_inventories().expect("readable"), 1);
     drop(fixture.registration);
@@ -16740,3 +16793,4 @@ fn a_refused_charge_leaves_the_entry_where_it_was() {
     drop(fixture.registration);
     drop(fixture.durable);
 }
+include!("private_lifecycle_integration.rs");

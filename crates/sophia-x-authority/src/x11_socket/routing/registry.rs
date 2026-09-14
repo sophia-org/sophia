@@ -150,6 +150,7 @@ struct XServerFrontendClientRouteChannels {
 
 #[cfg(unix)]
 struct XServerFrontendClientRouteRegistration {
+    lifecycle: Mutex<Option<PrivateConnectionLifecycle>>,
     connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
     input_recovery: InputRecovery,
     client: XServerFrontendClientId,
@@ -347,6 +348,7 @@ impl XServerFrontendRouteRegistry {
         );
         Ok((
             XServerFrontendClientRouteRegistration {
+                lifecycle: Mutex::new(None),
                 connection_state,
                 input_recovery: self.input_recovery.clone(),
                 client,

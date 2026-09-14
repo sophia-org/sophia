@@ -66,7 +66,7 @@ impl PrivateSettlement {
         self.pending.is_empty()
             && self.outstanding.is_empty()
             && !self.queue_unreadable
-            && self.terminal_outstanding() == 0
+            && self.terminal_outstanding() == Some(0)
     }
 
     /// How many commands are waiting to be answered.
@@ -169,13 +169,14 @@ impl PrivateSettlement {
     /// answered stays pending rather than being counted off, so retrying twice
     /// does not answer anything twice.
     /// What this instance still owed when it closed, if anything.
-    pub fn terminal_outstanding(&self) -> usize {
+    pub fn terminal_outstanding(&self) -> Option<usize> {
         self.terminal
             .as_ref()
-            .map_or(0, PrivateTerminalInventory::outstanding)
+            .map_or(Some(0), PrivateTerminalInventory::outstanding)
     }
 
     pub fn retry(&mut self) -> usize {
+        if let Some(terminal) = &self.terminal { let _ = terminal.lifecycle.drive(NonZeroUsize::new(1).unwrap()); }
         self.park_interrupted();
         self.settle_pending()
     }

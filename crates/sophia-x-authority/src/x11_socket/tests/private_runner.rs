@@ -13,6 +13,7 @@ fn prepared_runner_fixture() -> (
     let (authority, issuer, submit) = private_authority();
     let private = PrivateXServerFrontend::new(
         PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
             input_capacity: NonZeroUsize::new(4).unwrap(),
             control_acknowledgements: ack_sender,
             input_deliveries: delivery_sender,

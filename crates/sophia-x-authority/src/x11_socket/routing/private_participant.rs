@@ -13,6 +13,7 @@
 #[cfg(unix)]
 #[derive(Debug, Clone)]
 struct PrivateAdmissionBinding {
+    lifecycle: Option<PrivateLifecycleGate>,
     admission: sophia_protocol::ClientAdmissionId,
     namespace: NamespaceId,
     generation: u64,
@@ -93,6 +94,7 @@ struct PrivateAdmissionBindings {
 pub struct PrivateAdmissionParticipant {
     controller: PrivateAuthorityController,
     bindings: Arc<Mutex<PrivateAdmissionBindings>>,
+    lifecycle: Arc<std::sync::OnceLock<std::sync::Weak<PrivateLifecycleCore>>>,
 }
 
 /// Why the participant refused.
@@ -113,6 +115,9 @@ pub enum PrivateAdmissionRefusal {
     /// before a grant is issued, so nothing exists that the binding could not
     /// then account for.
     GrantRecordsExhausted,
+    /// The configured frontend admission capacity still owns every lifecycle
+    /// record, including closures whose cleanup remains unresolved.
+    ClientRecordsExhausted,
     /// The authority refused, with its own reason kept.
     Authority(sophia_input_authority::RegistrationError),
     /// The boundary could not be reached.
@@ -125,6 +130,7 @@ impl PrivateAdmissionParticipant {
         Self {
             controller,
             bindings: Arc::new(Mutex::new(PrivateAdmissionBindings::default())),
+            lifecycle: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
@@ -164,16 +170,29 @@ impl PrivateAdmissionParticipant {
                 // identity answering to the new one.
                 return Err(PrivateAdmissionRefusal::AlreadyAdmitted);
             }
-            bindings.bound.insert(
-                client,
-                PrivateAdmissionBinding {
-                    admission: admission.client_id,
-                    namespace: admission.namespace.id,
-                    generation: admission.auth_provenance.session_generation,
-                    grants: Vec::with_capacity(PRIVATE_BINDING_GRANTS),
-                    closed: false,
-                },
-            );
+            let mut bound = PrivateAdmissionBinding {
+                lifecycle: None,
+                admission: admission.client_id,
+                namespace: admission.namespace.id,
+                generation: admission.auth_provenance.session_generation,
+                grants: Vec::with_capacity(PRIVATE_BINDING_GRANTS),
+                closed: false,
+            };
+            if let Some(owner) = self.lifecycle.get() {
+                let owner = owner.upgrade().ok_or(PrivateAdmissionRefusal::Unreachable)?;
+                // Refuse before publishing a binding. A full lifecycle table
+                // must not accumulate unbounded, closed admission records.
+                let gate = PrivateLifecycleOwner { inner: owner }
+                    .register_held(client, &bound)
+                    .map_err(|error| match error {
+                        PrivateLifecycleRefusal::Capacity => PrivateAdmissionRefusal::ClientRecordsExhausted,
+                        PrivateLifecycleRefusal::AlreadyOwned => PrivateAdmissionRefusal::AlreadyAdmitted,
+                        PrivateLifecycleRefusal::NotAdmitted => PrivateAdmissionRefusal::NotAdmitted,
+                        _ => PrivateAdmissionRefusal::Unreachable,
+                    })?;
+                bound.lifecycle = Some(gate);
+            }
+            bindings.bound.insert(client, bound);
             Ok(())
         })?
     }
@@ -284,7 +303,7 @@ impl PrivateAdmissionParticipant {
         device: sophia_protocol::DeviceId,
     ) -> Result<PrivateReservationRole, PrivateAdmissionRefusal> {
         self.under_boundary(|authority, issuer, bindings| {
-            let Some(bound) = bindings.bound.get(&client).filter(|bound| !bound.closed) else {
+            let Some(bound) = bindings.bound.get(&client).filter(|bound| !bound.closed && bound.lifecycle.as_ref().is_none_or(PrivateLifecycleGate::is_open)) else {
                 return Err(PrivateAdmissionRefusal::NotAdmitted);
             };
             let connection = sophia_input_authority::ConnectionIdentity {
@@ -363,7 +382,7 @@ impl PrivateAdmissionParticipant {
         PrivateAdmissionRefusal,
     > {
         self.under_boundary(|authority, issuer, bindings| {
-            let Some(bound) = bindings.bound.get(&client).filter(|bound| !bound.closed) else {
+            let Some(bound) = bindings.bound.get(&client).filter(|bound| !bound.closed && bound.lifecycle.as_ref().is_none_or(PrivateLifecycleGate::is_open)) else {
                 // Revoked, or never admitted here. Refused before any effect.
                 return Err(PrivateAdmissionRefusal::NotAdmitted);
             };
@@ -406,7 +425,7 @@ impl PrivateAdmissionBindings {
         &self,
         client: XServerFrontendClientId,
     ) -> Option<sophia_input_authority::Recipient> {
-        let bound = self.bound.get(&client).filter(|bound| !bound.closed)?;
+        let bound = self.bound.get(&client).filter(|bound| !bound.closed && bound.lifecycle.as_ref().is_none_or(PrivateLifecycleGate::is_open))?;
         Some(sophia_input_authority::Recipient {
             recipient: client.raw(),
             connection_generation: bound.generation,
@@ -436,6 +455,9 @@ fn close_and_retire(
         return PrivateRevocation::default();
     };
     let closed = usize::from(!bound.closed);
+    if let Some(gate) = &bound.lifecycle {
+        gate.close();
+    }
     bound.closed = true;
     let mut retired = 0usize;
     // Walked from the end so a grant that is removed does not shift the ones

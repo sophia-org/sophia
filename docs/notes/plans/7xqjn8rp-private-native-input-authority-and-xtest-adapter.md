@@ -95,6 +95,26 @@ remain implementation work until frozen and reviewed together with their
 production callers. Full headless and contained canonical gates follow these
 integration gates; none authorizes hardware, installation or default enablement.
 
+The connection lifecycle integration on `cffea7b8` now follows real setup and
+query-owner registration into an exact, bounded cleanup owner. Its limit is
+the configured maximum concurrent clients, independent of grants or input
+queue capacity. Closing a registration only requests closure; origin service
+performs grant retirement and X query/grab cleanup under common. The terminal
+inventory retains that owner even with no input holds, and an unreadable
+inventory reports unavailable rather than zero. It does not establish native
+hold reconciliation or recipient settlement. The frozen composed source passed
+1,125 input tests with one existing ignored test, fmt, clippy and layout.
+
+The lifecycle changes intentionally invalidate tests that submitted from the
+same connection they had already disconnected. Recipient-loss release controls
+now keep the submitting connection live and close only the recipient. Earlier
+recipient-gate refusal masks the old bind-after-press mutation; that coverage
+is not claimed preserved. A deferred bind-cancellation control is explicitly
+at the recovery primitive. Constructor allocations still occur before frontend
+exposure after some parts are consumed; this is not a fully fallible constructor
+or an allocation-free post-preparation guarantee. Owned watchdog/transport
+wiring, Session producer participation and Gate A remain open.
+
 ## Native identities, state and capacity
 
 The authority is bound to its instance and seat at construction. Session has
