@@ -1,6 +1,7 @@
 use super::*;
 
 mod content;
+mod retirement;
 use content::{content_binding_from_frame, presented_content_matches, same_content_binding};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -9,24 +10,6 @@ pub(super) struct LiveSurfaceProjectionMetadata {
 }
 
 impl LiveProductionVisualRuntime {
-    /// Coalesce compositor changes until the candidate that owns Present has
-    /// retired. A repaint can supersede its exact retirement proof even if it
-    /// reuses the candidate pixels, stranding surface admission indefinitely.
-    pub(super) fn queue_retained_projection(
-        &mut self,
-        scene: &LiveProductionCpuScene,
-        native: &mut LiveProductionNativeScanout,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        self.retained_projection_pending = true;
-        if self.native_publication_blocked() || !native.output_topology_allows_frame_service() {
-            return Ok(false);
-        }
-        let frames = self.retained_output_head_composition_frames(scene, native)?;
-        let queued = native.queue_retained_output_head_composition_frames(frames)?;
-        self.retained_projection_pending = false;
-        Ok(!queued.is_empty())
-    }
-
     /// Blocks ordinary and retained repaints while another frame owns retirement.
     /// Replacing that frame, even with identical pixels, would strand its proof.
     pub(super) fn native_publication_blocked(&self) -> bool {

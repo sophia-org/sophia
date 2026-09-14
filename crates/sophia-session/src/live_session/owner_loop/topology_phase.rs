@@ -98,6 +98,7 @@
     }
     if rebuild_requested {
         output_topology_retry_at = None;
+        pause_metadata_shell_presentation!("topology_rebuild");
         let mut renderer_handoff = suspended_renderer_images.take();
         if let (Some(runtime), Some(native)) = (runtime.as_mut(), native_scanout.as_mut()) {
             match runtime.suspend_native_scanout(native, &outputs, Duration::from_secs(2)) {

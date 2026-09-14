@@ -292,6 +292,39 @@ presented-content action was accepted. A successor attended run must show one
 stable grant, repeated generations on both outputs, and the exact action path;
 the source fix is not that evidence.
 
+The successor run at `.artifacts/lom-panel-native/20260914T012810Z` used Sophia
+`feca59c8` and Lom `fec727d`. No stale `ResourceBegin` remained, and both outputs
+again reached native presentation, confirming the grant-wide resource ordering
+repair. The shell still restarted: its first epoch timed out waiting for
+`ResourceReleased` after output 1 candidate 3 replaced candidate 1; its second
+epoch timed out waiting for `Presented` after output 2 candidate 4 was prepared.
+The first timeout has a deterministic lifecycle cause: the CPU framebuffer
+reuse cache retained the old output damage snapshot, and with it the old content
+resource lease, solely while waiting to recycle a busy composed allocation.
+The repair detaches source leases from that conservative damage baseline while
+keeping the copied framebuffer in the bounded reuse pool. The second timeout is
+not valid evidence of a presentation bug: the seat suspended 206 ms after
+candidate 4 was prepared because the operator left the test VT, and no native
+presentation was possible afterward. Source review did find an independent
+obligation gap: a byte-identical accepted shell candidate could be suppressed
+as an unchanged retained scene and never receive its distinct retirement. The
+repair tracks output-local shell candidate retirement debts so pixel equality
+cannot satisfy them. Headless controls prove old-resource release while the
+copied framebuffer remains in flight and distinguish fresh candidate retirement
+from ordinary identical-scene suppression. Review of the suspended candidate
+also exposed a lifecycle boundary: content service could acknowledge Prepared
+in the owner-loop pass that then quiesced native presentation, and a topology
+replacement could otherwise orphan an output-local retirement debt. VT and
+topology quiescence now revoke and pause the shell connection before detaching
+native ownership, clear retirement claims only after that revocation, and
+negotiate a fresh grant after an active native owner returns. Content intake is
+suppressed while the seat or native frame service is unavailable, and topology
+rebind refuses to discard any remaining claim for a removed output. A removed
+output regression pins that refusal and the explicit post-revocation cleanup.
+The next attended gate must remain on TTY4 until the command itself returns;
+native stability and workspace action delivery remain unaccepted until it
+passes without timeout or grant replacement.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

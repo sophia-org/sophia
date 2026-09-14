@@ -8,8 +8,9 @@ use sophia_backend_live::{
     LiveProductionRetainedSceneQueueStatus, LiveProductionScanoutContent,
     LiveProductionVisualRuntime, finish_live_production_native_suspend,
     live_production_mixed_layer_order, live_production_projection_requires_gpu_scanout,
-    live_production_retained_projection_admitted, live_production_retained_surface_order,
-    live_production_should_preserve_gpu_output, live_production_transactions_require_gpu_scanout,
+    live_production_retained_frame_requirement, live_production_retained_projection_admitted,
+    live_production_retained_surface_order, live_production_should_preserve_gpu_output,
+    live_production_transactions_require_gpu_scanout,
     reduce_live_production_abandoned_scanout_count, reduce_live_production_cpu_frame_queue,
     reduce_live_production_frame_defer, reduce_live_production_page_flip_watchdog,
     reduce_live_production_retained_frame_queue, reduce_live_production_retained_scene_queue,
@@ -555,6 +556,34 @@ fn software_present_queue_requires_fresh_retirement_for_identical_pixels() {
             "Present feedback cannot reuse an identical owned scene"
         );
     }
+}
+
+#[test]
+fn shell_content_retirement_is_output_local_and_cannot_reuse_identical_pixels() {
+    let presented = Some(LiveProductionScanoutContent::HeadComposition {
+        frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(1),
+        logical_content_checksum: 42,
+        nonzero_rgb_pixels: 1,
+    });
+    let required = live_production_retained_frame_requirement(true);
+    let ordinary = live_production_retained_frame_requirement(false);
+
+    assert_eq!(
+        required,
+        LiveProductionRetainedFrameQueueRequirement::FreshRetirement
+    );
+    assert_eq!(
+        ordinary,
+        LiveProductionRetainedFrameQueueRequirement::LatestScene
+    );
+    assert_eq!(
+        reduce_live_production_retained_frame_queue(required, None, None, None, presented, 42,),
+        LiveProductionRetainedSceneQueueStatus::Queue,
+    );
+    assert_eq!(
+        reduce_live_production_retained_frame_queue(ordinary, None, None, None, presented, 42,),
+        LiveProductionRetainedSceneQueueStatus::UnchangedPresented,
+    );
 }
 
 #[test]

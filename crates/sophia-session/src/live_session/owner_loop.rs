@@ -147,6 +147,18 @@ enum LiveOutputTopologyExecutionPhase {
     RollingBack,
 }
 
+fn owner_loop_shell_presentation_available(
+    seat_active: bool,
+    native_attached: bool,
+    topology_phase: Option<LiveOutputTopologyExecutionPhase>,
+) -> bool {
+    metadata_shell::shell_presentation_available(
+        seat_active,
+        native_attached,
+        topology_phase.is_none(),
+    )
+}
+
 #[derive(Clone, Debug)]
 struct LiveOutputTopologyExecution {
     effect: crate::live_output_authority::LiveOutputAuthorityEffect,
@@ -715,6 +727,30 @@ fn run_session_loop_inner(
                 observed_wm_restart_count = restart_count;
                 revoke_floating_pointer_interaction!("policy_restart");
                 revoke_chrome_captures!("policy_restart");
+            }
+        }};
+    }
+
+    macro_rules! settle_revoked_shell_content_claims {
+        ($shell:expr, $reason:expr) => {{
+            let settlement = $shell.settle_revoked_content_grants(runtime.as_mut());
+            if settlement.grants != 0 || settlement.retained != 0 {
+                crate::session_println!(
+                    "sophia_live_shell_content schema=3 status=claims_revoked reason={} grants={} claims={} retained={}",
+                    $reason,
+                    settlement.grants,
+                    settlement.claims,
+                    settlement.retained,
+                );
+            }
+        }};
+    }
+
+    macro_rules! pause_metadata_shell_presentation {
+        ($reason:literal) => {{
+            if let Some(shell) = metadata_shell.as_mut() {
+                let _ = shell.set_presentation_available(false, $reason)?;
+                settle_revoked_shell_content_claims!(shell, $reason);
             }
         }};
     }

@@ -401,6 +401,17 @@ pub enum LiveProductionRetainedFrameQueueRequirement {
     FreshRetirement,
 }
 
+/// Selects the queue contract for one output in a retained projection batch.
+pub const fn live_production_retained_frame_requirement(
+    retirement_required: bool,
+) -> LiveProductionRetainedFrameQueueRequirement {
+    if retirement_required {
+        LiveProductionRetainedFrameQueueRequirement::FreshRetirement
+    } else {
+        LiveProductionRetainedFrameQueueRequirement::LatestScene
+    }
+}
+
 pub fn reduce_live_production_retained_frame_queue(
     requirement: LiveProductionRetainedFrameQueueRequirement,
     pending: Option<LiveProductionScanoutContent>,

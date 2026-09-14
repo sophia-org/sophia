@@ -1,5 +1,101 @@
 use super::*;
+use crate::live_session::metadata_shell::{
+    RevokedContentGrantLedger, shell_presentation_available, shell_reconnect_allowed,
+};
 use std::collections::{BTreeMap, BTreeSet};
+
+#[test]
+fn shell_content_is_not_serviced_without_an_active_native_presentation_owner() {
+    assert!(shell_presentation_available(true, true, true));
+    assert!(!shell_presentation_available(false, true, true));
+    assert!(!shell_presentation_available(true, false, true));
+    assert!(!shell_presentation_available(true, true, false));
+    assert!(!shell_presentation_available(false, false, false));
+}
+
+#[test]
+fn explicit_recovery_cannot_reconnect_while_presentation_is_paused() {
+    assert!(!shell_reconnect_allowed(true));
+    assert!(shell_reconnect_allowed(false));
+}
+
+fn content_grant(connection_epoch: u64, content_grant_epoch: u64) -> sophia_protocol::ContentGrant {
+    sophia_protocol::ContentGrant {
+        connection_epoch,
+        content_grant_epoch,
+    }
+}
+
+#[test]
+fn revoked_content_grants_remain_owned_while_the_runtime_is_absent() {
+    let old = content_grant(4, 9);
+    let mut ledger = RevokedContentGrantLedger::default();
+    ledger.record(old).unwrap();
+
+    let settlement = ledger
+        .settle_with::<std::convert::Infallible>(None)
+        .unwrap();
+
+    assert_eq!(settlement.grants, 0);
+    assert_eq!(settlement.claims, 0);
+    assert_eq!(settlement.retained, 1);
+    assert_eq!(ledger.len(), 1);
+}
+
+#[test]
+fn revoked_content_grant_cleanup_resumes_after_an_interruption() {
+    let grants = [content_grant(4, 9), content_grant(5, 10)];
+    let mut ledger = RevokedContentGrantLedger::default();
+    for grant in grants {
+        ledger.record(grant).unwrap();
+    }
+    let mut attempts = 0;
+    let mut interrupt = |_grant| {
+        attempts += 1;
+        if attempts == 2 {
+            Err("interrupted")
+        } else {
+            Ok(1)
+        }
+    };
+
+    assert_eq!(ledger.settle_with(Some(&mut interrupt)), Err("interrupted"));
+    assert_eq!(ledger.len(), 1);
+
+    let mut completed = Vec::new();
+    let mut finish = |grant| {
+        completed.push(grant);
+        Ok::<_, std::convert::Infallible>(2)
+    };
+    let settlement = ledger.settle_with(Some(&mut finish)).unwrap();
+    assert_eq!(completed, vec![grants[1]]);
+    assert_eq!(settlement.grants, 1);
+    assert_eq!(settlement.claims, 2);
+    assert_eq!(settlement.retained, 0);
+}
+
+#[test]
+fn revoked_content_grant_cleanup_is_exact_across_replacement() {
+    let old = content_grant(4, 9);
+    let replacement = content_grant(5, 10);
+    let mut ledger = RevokedContentGrantLedger::default();
+    ledger.record(old).unwrap();
+    ledger.record(old).unwrap();
+    ledger.record(replacement).unwrap();
+    assert_eq!(ledger.len(), 2);
+
+    let mut observed = Vec::new();
+    let mut revoke = |grant| {
+        observed.push(grant);
+        Ok::<_, std::convert::Infallible>(usize::from(grant == old))
+    };
+    let settlement = ledger.settle_with(Some(&mut revoke)).unwrap();
+
+    assert_eq!(observed, vec![old, replacement]);
+    assert_eq!(settlement.grants, 2);
+    assert_eq!(settlement.claims, 1);
+    assert_eq!(settlement.retained, 0);
+}
 
 fn action(
     token: u64,

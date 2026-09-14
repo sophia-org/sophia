@@ -292,6 +292,10 @@ pub struct LiveProductionVisualRuntime {
     surface_outputs: BTreeMap<SurfaceId, OutputId>,
     geometry_routed_surfaces: BTreeSet<SurfaceId>,
     retained_projection_pending: bool,
+    /// Output-local shell candidates and the exact grant that owns each
+    /// physical retirement. Pixel equality or a replacement connection cannot
+    /// settle that protocol obligation.
+    retained_projection_retirements: BTreeMap<OutputId, sophia_protocol::ContentGrant>,
     translations: TranslationTimeline,
     translation_origin: Instant,
     translation_deadlines: BTreeMap<OutputId, Instant>,
@@ -418,6 +422,7 @@ impl LiveProductionVisualRuntime {
             surface_outputs: BTreeMap::new(),
             geometry_routed_surfaces: BTreeSet::new(),
             retained_projection_pending: false,
+            retained_projection_retirements: BTreeMap::new(),
             translations: TranslationTimeline::default(),
             translation_origin: Instant::now(),
             translation_deadlines: BTreeMap::new(),

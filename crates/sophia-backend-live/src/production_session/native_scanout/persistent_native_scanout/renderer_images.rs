@@ -873,10 +873,42 @@ impl LiveProductionNativeScanout {
         &mut self,
         batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
     ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
-        self.queue_retained_output_head_composition_frames_with_requirement(
+        self.queue_retained_output_head_composition_frames_requiring_retirement(
             batches,
-            LiveProductionRetainedFrameQueueRequirement::LatestScene,
+            &BTreeSet::new(),
         )
+    }
+
+    /// Queues an ordinary retained projection while preserving the distinct
+    /// retirement owed by an accepted shell content candidate.
+    ///
+    /// Other outputs keep latest-scene suppression. A candidate output must
+    /// cross a new native presentation even when its raster is byte-identical
+    /// to the one already displayed.
+    pub fn queue_retained_output_head_composition_frames_requiring_retirement(
+        &mut self,
+        batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
+        required_outputs: &BTreeSet<OutputId>,
+    ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        let batch_outputs = batches
+            .iter()
+            .map(|(output, _)| *output)
+            .collect::<BTreeSet<_>>();
+        if !required_outputs.is_subset(&batch_outputs) {
+            return Err("required retained retirement targets an absent output".into());
+        }
+        self.queue_retained_output_head_composition_frames_with_requirements(
+            batches,
+            required_outputs,
+        )
+    }
+
+    /// Whether every output with a protocol retirement debt can accept its
+    /// replacement without superseding another native frame.
+    pub fn retained_retirements_ready(&self, required_outputs: &BTreeSet<OutputId>) -> bool {
+        required_outputs
+            .iter()
+            .all(|output| self.frame_queue_ready(*output))
     }
 
     /// Queues one immutable software-Present cohort on every applicable
@@ -901,12 +933,28 @@ impl LiveProductionNativeScanout {
         batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
         requirement: LiveProductionRetainedFrameQueueRequirement,
     ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        let required_outputs = match requirement {
+            LiveProductionRetainedFrameQueueRequirement::LatestScene => BTreeSet::new(),
+            LiveProductionRetainedFrameQueueRequirement::FreshRetirement => {
+                batches.iter().map(|(output, _)| *output).collect()
+            }
+        };
+        self.queue_retained_output_head_composition_frames_with_requirements(
+            batches,
+            &required_outputs,
+        )
+    }
+
+    fn queue_retained_output_head_composition_frames_with_requirements(
+        &mut self,
+        batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
+        required_outputs: &BTreeSet<OutputId>,
+    ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
         if batches.is_empty() {
-            return match requirement {
-                LiveProductionRetainedFrameQueueRequirement::LatestScene => Ok(BTreeMap::new()),
-                LiveProductionRetainedFrameQueueRequirement::FreshRetirement => {
-                    Err("software Present has no applicable logical output".into())
-                }
+            return if required_outputs.is_empty() {
+                Ok(BTreeMap::new())
+            } else {
+                Err("required retained retirement has no applicable logical output".into())
             };
         }
         let mut outputs = BTreeSet::new();
@@ -915,11 +963,10 @@ impl LiveProductionNativeScanout {
             if !outputs.insert(*output) {
                 return Err("retained scene repeats a logical output cohort".into());
             }
-            if requirement == LiveProductionRetainedFrameQueueRequirement::FreshRetirement
-                && !self.frame_queue_ready(*output)
-            {
+            if required_outputs.contains(output) && !self.frame_queue_ready(*output) {
                 return Err(
-                    "software Present output cohort is not ready for a new generation".into(),
+                    "required retained retirement output cohort is not ready for a new generation"
+                        .into(),
                 );
             }
             let (_, checksum) = self.validate_head_composition_frames(*output, frames)?;
@@ -927,6 +974,8 @@ impl LiveProductionNativeScanout {
         }
         let mut queued = BTreeMap::new();
         for (output, frames) in batches {
+            let requirement =
+                live_production_retained_frame_requirement(required_outputs.contains(&output));
             if self.retained_frame_already_pending(
                 output,
                 checksums.get(&output).copied(),

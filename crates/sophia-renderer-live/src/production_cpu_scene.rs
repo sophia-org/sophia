@@ -503,7 +503,10 @@ impl LiveProductionCpuScene {
             return (Some(latest.bytes), Some(damage));
         }
 
-        self.retained_primary_frames.push(latest);
+        self.retained_primary_frames.push(RetainedPrimaryCpuFrame {
+            bytes: latest.bytes,
+            output_damage_snapshot: detach_content_sources(latest.output_damage_snapshot),
+        });
         let reusable = self
             .retained_primary_frames
             .iter()
@@ -784,6 +787,28 @@ impl LiveProductionCpuScene {
         }
         Ok(frames)
     }
+}
+
+/// Keeps conservative compositor damage identity without retaining immutable
+/// source pixels after they have been copied into a composed framebuffer.
+fn detach_content_sources(mut snapshot: OutputFrameDamageSnapshot) -> OutputFrameDamageSnapshot {
+    for command in &mut snapshot.compositor_display_list.commands {
+        let CompositorDisplayCommand::ContentImage(image) = command else {
+            continue;
+        };
+        *command = CompositorDisplayCommand::Rect(sophia_engine::CompositorRect {
+            opacity: 0,
+            node: image.node,
+            generation: image.generation,
+            geometry: image.geometry_px,
+            color: sophia_engine::CompositorRgb8 {
+                red: 0,
+                green: 0,
+                blue: 0,
+            },
+        });
+    }
+    snapshot
 }
 
 fn retained_primary_repaint_damage(

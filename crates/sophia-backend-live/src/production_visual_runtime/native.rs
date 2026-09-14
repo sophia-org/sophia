@@ -168,6 +168,13 @@ pub const fn reduce_live_production_abandoned_scanout_count(
 }
 
 impl LiveProductionVisualRuntime {
+    pub fn shell_content_presentation_available(
+        &self,
+        native_scanout: &LiveProductionNativeScanout,
+    ) -> bool {
+        !self.native_suspended && native_scanout.output_topology_allows_frame_service()
+    }
+
     pub fn retained_renderer_image_ids(&self) -> Vec<LiveRendererImageId> {
         let mut images = self
             .displayed_surfaces
@@ -505,6 +512,8 @@ impl LiveProductionVisualRuntime {
                 content: None,
             })
             .collect();
+        let retained_outputs = outputs.iter().map(|output| output.id).collect();
+        let _ = self.retain_shell_content_outputs(&retained_outputs)?;
         self.translations.settle();
         self.translation_deadlines.clear();
         native_scanout.set_translation_motion_active(false);

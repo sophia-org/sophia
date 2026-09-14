@@ -56,6 +56,7 @@
                     application_route_leases.control_epoch(),
                 );
                 physical_input.take();
+                pause_metadata_shell_presentation!("seat_release");
                 let quiesced = if let (Some(runtime), Some(native)) =
                     (runtime.as_mut(), native_scanout.as_mut())
                 {

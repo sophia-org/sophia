@@ -6,9 +6,11 @@ pub(crate) mod indicators;
 
 mod launcher;
 mod reference;
+mod revoked_content_grants;
 use launcher::LiveLauncherSession;
 mod tabs;
 use reference::LiveReferenceSession;
+pub(super) use revoked_content_grants::{RevokedContentGrantLedger, RevokedContentGrantSettlement};
 use tabs::LiveTabSession;
 
 /// A shell observation: which surface it names, on which output, at which
@@ -23,6 +25,18 @@ pub(super) enum LiveMetadataShellPoll {
 }
 
 const SHELL_RECONNECT_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+pub(super) const fn shell_presentation_available(
+    seat_active: bool,
+    native_attached: bool,
+    topology_settled: bool,
+) -> bool {
+    seat_active && native_attached && topology_settled
+}
+
+pub(super) const fn shell_reconnect_allowed(presentation_paused: bool) -> bool {
+    !presentation_paused
+}
 
 #[derive(Clone, Debug)]
 struct PendingShellPresentation {
@@ -98,6 +112,8 @@ pub(super) struct LiveMetadataShell {
     reservation_limit: Option<u16>,
     connected: bool,
     reconnect_at: Option<Instant>,
+    presentation_paused: bool,
+    revoked_content_grants: RevokedContentGrantLedger,
 }
 
 impl LiveMetadataShell {
@@ -181,6 +197,8 @@ impl LiveMetadataShell {
             reservation_limit: panel_thickness,
             connected: false,
             reconnect_at: None,
+            presentation_paused: false,
+            revoked_content_grants: RevokedContentGrantLedger::default(),
         };
         let (peer_pid, revision, connection_epoch) = shell.launch_and_negotiate()?;
         shell.connected = true;
@@ -191,6 +209,9 @@ impl LiveMetadataShell {
     }
 
     pub(super) fn poll(&mut self) -> Result<LiveMetadataShellPoll, Box<dyn std::error::Error>> {
+        if !shell_reconnect_allowed(self.presentation_paused) {
+            return Ok(LiveMetadataShellPoll::Unavailable);
+        }
         if self.connected {
             if self.supervisor.poll()?.is_none() {
                 return Ok(LiveMetadataShellPoll::Healthy);
@@ -207,12 +228,50 @@ impl LiveMetadataShell {
         self.reconnect_or_defer("retry")
     }
 
+    /// Keeps a shell connection from accepting obligations while native
+    /// presentation is unavailable. Revocation closes every accepted response
+    /// lifecycle on the old connection; resumption negotiates a fresh grant.
+    pub(super) fn set_presentation_available(
+        &mut self,
+        available: bool,
+        reason: &str,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if available {
+            if !self.presentation_paused {
+                return Ok(false);
+            }
+            self.presentation_paused = false;
+            self.reconnect_at = None;
+            crate::session_println!(
+                "sophia_live_metadata_shell schema=1 status=presentation_resumed reason={reason}"
+            );
+            return Ok(true);
+        }
+        if self.presentation_paused {
+            return Ok(false);
+        }
+        self.supervisor.terminate()?;
+        self.connected = false;
+        self.retire_connection_state(reason)?;
+        self.presentation_paused = true;
+        self.reconnect_at = None;
+        crate::session_println!(
+            "sophia_live_metadata_shell schema=1 status=presentation_paused reason={reason}"
+        );
+        Ok(true)
+    }
+
     pub(super) fn recover_transport(
         &mut self,
         reason: &str,
     ) -> Result<LiveMetadataShellPoll, Box<dyn std::error::Error>> {
         self.supervisor.terminate()?;
         self.connected = false;
+        if self.presentation_paused {
+            self.retire_connection_state(reason)?;
+            self.reconnect_at = None;
+            return Ok(LiveMetadataShellPoll::Unavailable);
+        }
         self.reconnect_or_defer(reason)
     }
 
@@ -775,6 +834,35 @@ impl LiveMetadataShell {
         &mut self,
         reason: &str,
     ) -> Result<LiveMetadataShellPoll, Box<dyn std::error::Error>> {
+        if !shell_reconnect_allowed(self.presentation_paused) {
+            return Ok(LiveMetadataShellPoll::Unavailable);
+        }
+        self.retire_connection_state(reason)?;
+        match self.launch_and_negotiate() {
+            Ok((peer_pid, revision, connection_epoch)) => {
+                self.connected = true;
+                self.reconnect_at = None;
+                crate::session_println!(
+                    "sophia_live_metadata_shell schema=1 status=reconnected protected=true peer_pid={peer_pid} revision={revision} connection_epoch={connection_epoch} reason={reason}"
+                );
+                Ok(LiveMetadataShellPoll::Reconnected { connection_epoch })
+            }
+            Err(error) => {
+                self.connected = false;
+                self.reconnect_at = Some(Instant::now() + SHELL_RECONNECT_RETRY_DELAY);
+                crate::session_eprintln!(
+                    "sophia_live_metadata_shell schema=1 status=unavailable reason={reason} retry_ms={} error={error}",
+                    SHELL_RECONNECT_RETRY_DELAY.as_millis(),
+                );
+                Ok(LiveMetadataShellPoll::Unavailable)
+            }
+        }
+    }
+
+    fn retire_connection_state(&mut self, reason: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(grant) = self.transport.content_grant() {
+            self.revoked_content_grants.record(grant)?;
+        }
         if let Err(error) = self.transport.disconnect() {
             crate::session_eprintln!(
                 "sophia_live_metadata_shell schema=1 status=disconnect_failed reason={reason} error={error}"
@@ -796,25 +884,25 @@ impl LiveMetadataShell {
         // coordination model rules out. A fresh epoch withdraws it by
         // presenting a candidate that reserves nothing.
         self.reservations.on_disconnect();
-        match self.launch_and_negotiate() {
-            Ok((peer_pid, revision, connection_epoch)) => {
-                self.connected = true;
-                self.reconnect_at = None;
-                crate::session_println!(
-                    "sophia_live_metadata_shell schema=1 status=reconnected protected=true peer_pid={peer_pid} revision={revision} connection_epoch={connection_epoch} reason={reason}"
-                );
-                Ok(LiveMetadataShellPoll::Reconnected { connection_epoch })
-            }
-            Err(error) => {
-                self.connected = false;
-                self.reconnect_at = Some(Instant::now() + SHELL_RECONNECT_RETRY_DELAY);
-                crate::session_eprintln!(
-                    "sophia_live_metadata_shell schema=1 status=unavailable reason={reason} retry_ms={} error={error}",
-                    SHELL_RECONNECT_RETRY_DELAY.as_millis(),
-                );
-                Ok(LiveMetadataShellPoll::Unavailable)
-            }
-        }
+        Ok(())
+    }
+
+    pub(super) fn settle_revoked_content_grants(
+        &mut self,
+        runtime: Option<&mut sophia_backend_live::LiveProductionVisualRuntime>,
+    ) -> RevokedContentGrantSettlement {
+        let Some(runtime) = runtime else {
+            return self
+                .revoked_content_grants
+                .settle_with::<std::convert::Infallible>(None)
+                .expect("an absent runtime cannot fail revocation");
+        };
+        let mut revoke = |grant| {
+            Ok::<_, std::convert::Infallible>(runtime.revoke_shell_content_retirement_claims(grant))
+        };
+        self.revoked_content_grants
+            .settle_with(Some(&mut revoke))
+            .expect("runtime content-claim revocation is infallible")
     }
 
     fn ensure_slot(&mut self, surface: SurfaceId) -> Result<u16, Box<dyn std::error::Error>> {

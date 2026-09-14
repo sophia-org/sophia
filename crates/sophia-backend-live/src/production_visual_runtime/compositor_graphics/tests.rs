@@ -4,6 +4,53 @@ use super::*;
 use std::sync::Arc;
 
 #[test]
+fn topology_replacement_cannot_orphan_a_shell_retirement_claim() {
+    let first = HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 640,
+            height: 480,
+        },
+        scale: 1,
+    };
+    let mut second = first;
+    second.id = OutputId::from_raw(2);
+    let mut runtime = LiveProductionVisualRuntime::new(&[first, second], None).expect("runtime");
+    let old_grant = sophia_protocol::ContentGrant {
+        connection_epoch: 7,
+        content_grant_epoch: 9,
+    };
+    let replacement_grant = sophia_protocol::ContentGrant {
+        connection_epoch: 8,
+        content_grant_epoch: 10,
+    };
+    runtime
+        .retained_projection_retirements
+        .insert(second.id, old_grant);
+    let retained = BTreeSet::from([first.id]);
+
+    assert_eq!(
+        runtime
+            .retain_shell_content_outputs(&retained)
+            .expect_err("a removed output must not silently lose its accepted obligation")
+            .to_string(),
+        "native topology replacement would orphan a shell content retirement claim"
+    );
+    assert_eq!(
+        runtime.revoke_shell_content_retirement_claims(replacement_grant),
+        0,
+        "a fresh connection cannot revoke an older connection's exact debt"
+    );
+    assert_eq!(runtime.revoke_shell_content_retirement_claims(old_grant), 1);
+    assert_eq!(
+        runtime
+            .retain_shell_content_outputs(&retained)
+            .expect("revoked connection has no remaining retirement obligation"),
+        0
+    );
+}
+
+#[test]
 fn in_flight_renderer_source_keeps_cpu_content_variants() {
     let surface = SurfaceId::new(7, 1);
     let cpu_handle = 4;

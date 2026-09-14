@@ -2,6 +2,7 @@ use super::super::{
     LiveOutputTopologyExecutionPhase, LiveOutputTopologyOwner, LiveOutputTopologyPhase,
     LiveOutputTopologyQuarantine, LiveOutputTopologyRebuild, OutputProofRollbackAfterApply,
     begin_output_topology_first_presentation_rollback, hardware_output_snapshot_is_stale,
+    owner_loop_shell_presentation_available,
 };
 use crate::live_session::desktop_profile_reload_effects;
 use sophia_protocol::{OutputId, Size, TransactionId};
@@ -245,6 +246,24 @@ fn policy_commit_advances_epoch_when_logical_shape_is_unchanged() {
     assert_eq!(owner.publication_generation, 2);
     owner.mark_published(4, false).unwrap();
     assert!(owner.observe_presentation(5));
+}
+
+#[test]
+fn shell_reconnect_waits_until_topology_execution_fully_clears() {
+    for phase in [
+        LiveOutputTopologyExecutionPhase::WaitingForQuiescence,
+        LiveOutputTopologyExecutionPhase::Preparing,
+        LiveOutputTopologyExecutionPhase::Applying,
+        LiveOutputTopologyExecutionPhase::AwaitingFirstPresentation,
+        LiveOutputTopologyExecutionPhase::Reconciling,
+        LiveOutputTopologyExecutionPhase::RollingBack,
+    ] {
+        assert!(
+            !owner_loop_shell_presentation_available(true, true, Some(phase)),
+            "native readiness during {phase:?} must not publish stale output facts"
+        );
+    }
+    assert!(owner_loop_shell_presentation_available(true, true, None));
 }
 
 #[test]

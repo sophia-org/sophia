@@ -1061,17 +1061,36 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             broker.poll()?;
             broker.drain_candidates(metadata_candidate_receiver)?;
         }
+        let native_shell_available = runtime.as_ref().zip(native_scanout.as_ref()).is_some_and(
+            |(runtime, native)| runtime.shell_content_presentation_available(native),
+        );
+        let shell_presentation_available = owner_loop_shell_presentation_available(
+            seat_state == sophia_backend_live::LiveSeatState::Active,
+            native_shell_available,
+            active_output_topology_preparation
+                .as_ref()
+                .map(|execution| execution.phase),
+        );
+        if shell_presentation_available {
+            if let Some(shell) = metadata_shell.as_mut() {
+                let _ = shell.set_presentation_available(true, "native_available")?;
+            }
+        } else {
+            pause_metadata_shell_presentation!("native_unavailable");
+        }
         if let Some(shell) = metadata_shell.as_mut() {
             shell.observe_outputs(&outputs)?;
             let reference_was_active=shell.reference_busy();
             let mut revoke_shell_input = false;
-            match shell.poll() {
-                Ok(LiveMetadataShellPoll::Healthy) => {}
+            let shell_operational = match shell.poll() {
+                Ok(LiveMetadataShellPoll::Healthy) => true,
                 Ok(LiveMetadataShellPoll::Reconnected { .. }) => {
                     revoke_shell_input = true;
+                    true
                 }
                 Ok(LiveMetadataShellPoll::Unavailable) => {
                     revoke_shell_input = true;
+                    false
                 }
                 Err(error) => {
                     crate::session_eprintln!(
@@ -1079,8 +1098,11 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     );
                     shell.recover_transport("poll_failure")?;
                     revoke_shell_input = true;
+                    false
                 }
-            }
+            };
+            settle_revoked_shell_content_claims!(shell, "transport_disconnect");
+            if shell_operational {
             if let (Some(runtime),Some(broker))=(runtime.as_mut(),metadata_broker.as_ref()) {
                 let service=(||->Result<(),Box<dyn std::error::Error>> {
                     if let Some((surface,shell_output,activation))=shell.poll_activation(broker)? {
@@ -1256,6 +1278,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     shell.recover_transport("content_presentation_failure")?;
                     revoke_shell_input = true;
                 }
+            }
             }
             if revoke_shell_input {
                 launcher_capture.present(None,0,&[],true);

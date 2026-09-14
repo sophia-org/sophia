@@ -769,83 +769,6 @@ impl LiveProductionVisualRuntime {
         Ok(true)
     }
 
-    /// Installs one complete shell content candidate and queues a retained
-    /// repaint. The prior candidate remains installed if native queueing fails.
-    pub fn set_shell_content(
-        &mut self,
-        frame: LiveShellContentFrame,
-        scene: &LiveProductionCpuScene,
-        native_scanout: Option<&mut LiveProductionNativeScanout>,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        if !frame.output.is_valid()
-            || frame.candidate_generation == 0
-            || frame.images.is_empty()
-            || frame.images.iter().any(|image| {
-                !matches!(
-                    image.node,
-                    CompositorNodeId::ShellContent {
-                        output,
-                        candidate,
-                        ..
-                    } if output == frame.output && candidate == frame.candidate_generation
-                )
-            })
-        {
-            return Err("shell content frame is malformed".into());
-        }
-        if self.shell_content.get(&frame.output) == Some(&frame) {
-            return Ok(false);
-        }
-        let output = frame.output;
-        let previous = self.shell_content.insert(output, frame);
-        if let Some(native_scanout) = native_scanout {
-            if let Err(error) = self.queue_retained_projection(scene, native_scanout) {
-                match previous {
-                    Some(previous) => {
-                        self.shell_content.insert(output, previous);
-                    }
-                    None => {
-                        self.shell_content.remove(&output);
-                    }
-                }
-                return Err(error);
-            }
-        } else {
-            self.publish_committed_input_layers();
-        }
-        Ok(true)
-    }
-
-    pub fn shell_content_presentation_epoch(
-        &self,
-        output: OutputId,
-        candidate_generation: u64,
-    ) -> Option<u64> {
-        let frame = self.shell_content.get(&output)?;
-        if frame.candidate_generation != candidate_generation {
-            return None;
-        }
-        let projection = self
-            .input_projections
-            .iter()
-            .find(|projection| projection.output == output)?;
-        let presented = self.tab_frames.get(&output).is_some_and(|display_list| {
-            let images = display_list.content_images().collect::<Vec<_>>();
-            !images.is_empty()
-                && images.iter().all(|image| {
-                    matches!(
-                        image.node,
-                        CompositorNodeId::ShellContent {
-                            output: image_output,
-                            candidate,
-                            ..
-                        } if image_output == output && candidate == candidate_generation
-                    )
-                })
-        });
-        presented.then_some(projection.epoch.max(1))
-    }
-
     /// Revokes input immediately without withdrawing already presented pixels.
     pub fn revoke_descriptor_overlay_interaction(&mut self) -> usize {
         self.descriptor_overlay_interactive = false;
@@ -979,4 +902,5 @@ impl LiveProductionVisualRuntime {
     }
 }
 
+mod shell_content;
 mod tests;
