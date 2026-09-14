@@ -148,9 +148,26 @@ enum X11OrderedWriteFailure {
 /// would produce a second copy of the frame those bytes came from and resume
 /// into the middle of it.
 ///
-/// One frame per call, so a writer serving several recipients cannot be held
-/// by one of them, and so the waiting a stalled recipient causes is charged to
-/// the delivery it belongs to rather than to whatever came after it.
+/// One frame per call bounds how many frames a call writes. It does NOT bound
+/// how long the call takes: sending waits for writability and keeps waiting,
+/// through as much of the six-second blocking allowance as one stalled
+/// recipient needs. A single call can therefore hold its thread for that whole
+/// allowance.
+///
+/// So this belongs to a writer serving one recipient, where blocking that long
+/// is the recipient's own problem and nobody else waits behind it. It must not
+/// be driven from the service runner or from any interval that schedules
+/// several recipients: one recipient that stopped reading would stall every
+/// other, and the fairness that a bounded frame count appears to give is not
+/// fairness in time.
+///
+/// A shared dispatcher would need a different step -- one bounded attempt that
+/// reports progress or pending and returns -- rather than this one called more
+/// carefully.
+///
+/// What the per-call bound does give is that the waiting a stalled recipient
+/// causes is charged to the delivery it belongs to, rather than to whatever
+/// came after it.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
 fn write_one_ordered_frame(
