@@ -1518,3 +1518,32 @@ Input-only serial checks: 1189 passed, zero failed, one existing ignored across
 composition controls, not production writer delivery or settlement. Gate A's
 native Hold/inventory, queue, receipt and attempt join remains open. No hardware,
 Session/content change, master movement or enablement.
+
+### M3 keyboard activation provenance at the actual producers
+
+Keyboard grab producers now publish a checked activation identity alongside
+their actual changes: explicit grab, passive activation, release/ungrab,
+security-epoch clearing and owner cleanup. Identical replacement and namespace
+recreation cannot revive an old name. Refused grabs preserve the current name;
+removing passive policy does not relabel its already active grab. Ordinary
+routing and effects are unchanged. Exhausted naming preserves ordinary behavior
+but makes private provenance unavailable, without wrapping or a replacement
+identity. The read-only record is not passive selection, key admission, XKB
+application or proof of retirement. The native owner must still bind the exact
+origin; names from independent authorities are not interchangeable.
+
+Eight source controls pass. A disposable-source probe interrupts actual
+GrabKeyboard replacement after the grab field changes and before publication:
+the surviving authority reports unavailable provenance. Removing only the
+write-ahead assignment compiles and fails that same control. Three further
+compiled mutations fail for reused identities, a counter reset during cleanup,
+and unknown read as absent. This proves the replacement placement; the ordinary
+staged interruption control alone does not. No test-only production hooks remain.
+
+Scoped serial input gates: 1197 passed, zero failed, one existing ignored across
+42 suites; strict clippy, fmt, layout and diff pass. Clippy caught a fixture
+initializer, and layout required moving the new controls into the test directory;
+both were corrected without a debt row. Guarded passive eligibility, key emission,
+XKB continuity, StateOnly/thaw and native key settlement remain Gate B work.
+Gate A's writer/receipt/attempt integration remains separate and open. No hardware,
+Session/content change, master movement or enablement.
