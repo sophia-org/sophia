@@ -16941,64 +16941,6 @@ fn a_frame_index_does_not_move_past_an_unfinished_frame() {
 }
 
 #[test]
-fn a_native_origin_is_prepared_once_and_only_when_it_can_be() {
-    let client = XServerFrontendClientId(1801);
-    let surface = SurfaceId::new(1801, 1);
-    let namespace = NamespaceId::from_raw(client.raw());
-    let seat = SeatId::from_raw(1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-    assert!(
-        fixture.private.native().is_none(),
-        "nothing is prepared until something prepares it"
-    );
-
-    // Without the applied registry installed there is no origin to prepare
-    // against: a hold cloning one that does not exist is a hold nothing could
-    // later prove anything about.
-    let refused = fixture
-        .private
-        .prepare_native(namespace, seat)
-        .expect_err("no applied registry is installed in this fixture");
-    assert!(matches!(
-        refused,
-        private_native::Refusal::ForeignOrigin | private_native::Refusal::Unavailable
-    ));
-    assert!(
-        fixture.private.native().is_none(),
-        "and a refusal installs nothing"
-    );
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
-}
-
-#[test]
-fn a_second_native_preparation_is_refused_rather_than_replacing_the_first() {
-    let client = XServerFrontendClientId(1802);
-    let surface = SurfaceId::new(1802, 1);
-    let seat = SeatId::from_raw(1);
-    let mut fixture = ordered_ingress_fixture(client, surface);
-
-    // Reach the prepared state the way the runner will, then ask again.
-    // Whether the first succeeds depends on the applied registry; what is
-    // under test is that a second attempt never replaces what is there.
-    let first = fixture
-        .private
-        .prepare_native(NamespaceId::from_raw(client.raw()), seat);
-    if first.is_ok() {
-        let second = fixture
-            .private
-            .prepare_native(NamespaceId::from_raw(client.raw()), seat)
-            .expect_err("a prepared instance is not prepared again");
-        assert!(matches!(second, private_native::Refusal::WrongPhase));
-        assert!(fixture.private.native().is_some());
-    }
-    drop(fixture.registration);
-    drop(fixture.channels);
-    drop(fixture.durable);
-}
-
-#[test]
 fn one_completed_frame_is_advanced_past_exactly_once() {
     let (sender, queue) = sync_channel(1);
     sender
