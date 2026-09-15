@@ -6,6 +6,10 @@ pub(super) struct KeyHold {
     pointer_tree: Option<RetainedPointerTree>,
     client: XServerFrontendClientId,
     generation: u64,
+    /// Exactly which endpoint this hold's events are owed to, taken once when
+    /// the obligation is installed and never refreshed. Same reason as the
+    /// pointer hold: a release answers the endpoint the key went down under.
+    endpoint: PrivateEndpointIdentity,
     input: Input,
     incarnation: Option<HoldIncarnation>,
     grant: GrantId,
@@ -39,6 +43,7 @@ impl KeyHold {
             selections: self.selections.clone(),
             client: self.client,
             generation: self.generation,
+            endpoint: self.endpoint.clone(),
             pointer_tree: self.pointer_tree.clone(),
         }
     }
@@ -363,6 +368,7 @@ impl BaseGuards<'_> {
             }),
             client: recipient.client,
             generation: recipient._admission.generation,
+            endpoint: recipient.endpoint.clone(),
             input,
             incarnation: None,
             grant: capability.grant(),

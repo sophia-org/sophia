@@ -75,6 +75,63 @@ enum X11OrderedTakeRefusal {
     /// would leave the first owed by nobody while its frames are still
     /// half-written.
     InFlight,
+    /// It was not minted for the endpoint this writer serves.
+    ///
+    /// FAILS CLOSED, BEFORE ANY BYTE. A frame written for another endpoint has
+    /// been read by the time anything could notice, so the comparison happens
+    /// at admission and nothing is encoded or written on a mismatch.
+    ForeignEndpoint,
+    /// A refused capsule is already held and has not been disposed of.
+    ///
+    /// Taking a second would overwrite the first, which is the one thing that
+    /// loses it: the queue no longer has it and nothing else has taken it.
+    RefusedHeld,
+}
+
+/// Why a capsule this writer holds may not be written.
+///
+/// A PRIVATE CAUSE, DELIBERATELY NOT A TERMINAL OUTCOME. What a mismatch
+/// establishes is only that THIS endpoint is not authorised to emit THIS
+/// capsule. It is not a flush, not a recipient ending, not a timeout and not a
+/// failed write -- and every terminal outcome available says one of those. A
+/// pre-effect cancellation is wrong too: the effect happened, which is why the
+/// capsule exists. So the capsule keeps its own finalizer and stays unanswered
+/// until something establishes a fact about the admission it came from.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11OrderedAdmissionRefusal {
+    /// The capsule names an endpoint this writer does not serve.
+    ForeignEndpoint,
+}
+
+/// A capsule this writer took and may not write.
+///
+/// Held whole: the original capsule, its finalizer, its frames and its
+/// identity are all still here, because the refusal is a fact about this
+/// writer's entitlement and not about the capsule. Nothing is re-encoded,
+/// re-addressed or given a replacement finalizer.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug)]
+struct X11OrderedRefusedDelivery {
+    delivery: XAuthorityOrderedDelivery,
+    cause: X11OrderedAdmissionRefusal,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+impl X11OrderedRefusedDelivery {
+    fn delivery(&self) -> &XAuthorityOrderedDelivery {
+        &self.delivery
+    }
+    fn cause(&self) -> X11OrderedAdmissionRefusal {
+        self.cause
+    }
+    /// Who these bytes were owed to, which is not this writer's endpoint.
+    fn client(&self) -> XServerFrontendClientId {
+        self.delivery.client()
+    }
 }
 
 /// Take the next ordered delivery straight into the writer's own storage.
@@ -87,19 +144,37 @@ enum X11OrderedTakeRefusal {
 #[cfg_attr(not(test), allow(dead_code))]
 fn take_ordered_delivery(
     queue: &Receiver<XAuthorityOrderedDelivery>,
+    served: &XAuthorityServedConnection,
     slot: &mut Option<X11OrderedInFlight>,
+    refused: &mut Option<X11OrderedRefusedDelivery>,
 ) -> Result<(), X11OrderedTakeRefusal> {
     if slot.is_some() {
         return Err(X11OrderedTakeRefusal::InFlight);
     }
+    if refused.is_some() {
+        return Err(X11OrderedTakeRefusal::RefusedHeld);
+    }
     match queue.try_recv() {
         Ok(delivery) => {
-            *slot = Some(X11OrderedInFlight {
-                delivery,
-                frame: 0,
-                send: X11OrderedSendState::default(),
-            });
-            Ok(())
+            // RECEIVED INTO THIS WRITER'S OWN STORAGE, THEN JUDGED BY
+            // BORROWING IT. Both destinations are storage this writer owns, so
+            // there is no moment where the queue has given the capsule up and
+            // nothing has taken responsibility for it -- and the capsule is
+            // never held in a local across the decision.
+            if served.admits(&delivery) {
+                *slot = Some(X11OrderedInFlight {
+                    delivery,
+                    frame: 0,
+                    send: X11OrderedSendState::default(),
+                });
+                Ok(())
+            } else {
+                *refused = Some(X11OrderedRefusedDelivery {
+                    delivery,
+                    cause: X11OrderedAdmissionRefusal::ForeignEndpoint,
+                });
+                Err(X11OrderedTakeRefusal::ForeignEndpoint)
+            }
         }
         Err(std::sync::mpsc::TryRecvError::Empty) => Err(X11OrderedTakeRefusal::Empty),
         Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(X11OrderedTakeRefusal::Closed),
@@ -252,6 +327,16 @@ enum X11OrderedServeStep {
         outcome: XAuthorityInputDeliveryOutcome,
         shutdown: bool,
     },
+    /// A capsule on this queue was not minted for the endpoint served.
+    ///
+    /// REPORTED AS ITSELF, not as Idle, Flushed or Ended. Nothing was encoded
+    /// or written, so nothing is owed on the wire and there is no
+    /// half-finished event to shut down around -- and the socket of the
+    /// endpoint this writer does serve is left alone, because it did nothing
+    /// wrong. The capsule stays owned by this writer with its cause, visible
+    /// as outstanding work, and unanswered: a writer that was never entitled
+    /// to these bytes is not the thing that decides any recipient's outcome.
+    AdmissionRefused(X11OrderedAdmissionRefusal),
 }
 
 /// Serve one step of one recipient's ordered queue.
@@ -272,15 +357,26 @@ enum X11OrderedServeStep {
 #[cfg_attr(not(test), allow(dead_code))]
 fn serve_one_ordered_delivery(
     socket: &UnixStream,
+    served: &XAuthorityServedConnection,
     in_flight: &mut Option<X11OrderedInFlight>,
+    refused: &mut Option<X11OrderedRefusedDelivery>,
     queue: &Receiver<XAuthorityOrderedDelivery>,
     byte_order: XByteOrder,
     sequence: u16,
 ) -> X11OrderedServeStep {
     if in_flight.is_none() {
-        match take_ordered_delivery(queue, in_flight) {
+        match take_ordered_delivery(queue, served, in_flight, refused) {
             Ok(()) => {}
             Err(X11OrderedTakeRefusal::Empty) => return X11OrderedServeStep::Idle,
+            Err(X11OrderedTakeRefusal::ForeignEndpoint)
+            | Err(X11OrderedTakeRefusal::RefusedHeld) => {
+                return X11OrderedServeStep::AdmissionRefused(
+                    refused
+                        .as_ref()
+                        .expect("a refusal leaves the capsule owned here")
+                        .cause(),
+                );
+            }
             Err(X11OrderedTakeRefusal::Closed) => {
                 // The producer is gone and nothing more will arrive. Nothing
                 // is owed on the wire, so this is an ending without a

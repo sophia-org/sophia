@@ -85,11 +85,30 @@ fn dispatch_custody(
     if !matches!(custody.pending, Some(PrivatePendingDelivery::Capsule(_))) {
         return false;
     }
+    // THE ROW THAT IS CHECKED IS THE ROW THIS GOES TO. The endpoint the
+    // capsule names is compared against the client-table entry under the same
+    // guard the sender is cloned from, so there is no window between deciding
+    // a row is the right one and taking the channel out of it. Validating one
+    // lookup and sending through a second is the shape this avoids.
+    //
+    // A capsule whose endpoint is not this entry is NOT sent and NOT taken: it
+    // stays in the custody that owns it, with its phase untouched, because a
+    // replacement registration is not a reason to hand another registration's
+    // work to it. What eventually becomes of such a capsule is retained
+    // disposition, which is open work and deliberately not decided here.
+    let endpoint = match custody.pending.as_ref() {
+        Some(PrivatePendingDelivery::Capsule(capsule)) => capsule.endpoint().clone(),
+        _ => return false,
+    };
     let sender = {
         let Ok(guard) = clients.lock() else {
             return false;
         };
-        let sender = guard.get(&recipient).map(|senders| senders.ordered.clone());
+        let sender = guard.get(&recipient).and_then(|senders| {
+            endpoint
+                .is_entry(recipient, senders)
+                .then(|| senders.ordered.clone())
+        });
         drop(guard);
         match sender {
             Some(sender) => sender,

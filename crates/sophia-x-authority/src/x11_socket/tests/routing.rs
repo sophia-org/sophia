@@ -19741,10 +19741,19 @@ fn a_failed_wait_is_not_a_recipient_that_blocked() {
 
 /// The writer fixture uses a real resolved source emission. These controls
 /// still prove writer custody, not production producer/consumer completion.
-fn ordered_capsule(delivery: u64) -> XAuthorityOrderedDelivery {
-    XAuthorityOrderedDelivery::from_emission(
-        private_native_tests::emission_for_writer_fixture(delivery),
-    ).unwrap()
+/// A capsule, and the endpoint of the registration that produced it.
+///
+/// The witness comes from the registration, never from the capsule: a writer
+/// whose expectation was read off the capsule would admit anything.
+fn capsule_and_endpoint(
+    delivery: u64,
+) -> (XAuthorityOrderedDelivery, PrivateEndpointIdentity) {
+    let (emission, endpoint) =
+        private_native_tests::emission_and_endpoint_for_writer_fixture(delivery);
+    (
+        XAuthorityOrderedDelivery::from_emission(emission).unwrap(),
+        endpoint,
+    )
 }
 
 #[test]
@@ -19755,7 +19764,7 @@ fn a_writer_answers_through_the_one_authority_that_owns_the_answer() {
     // the cell still said the first one. Two accounts of one delivery,
     // disagreeing. The finalizer adjudicates in one place, and this control
     // checks every account rather than the cell alone.
-    let (capsule, recovery, receipts) = answerable_capsule(17301);
+    let (capsule, endpoint, recovery, receipts) = answerable_capsule(17301);
     let delivery = capsule.delivery();
     let client = capsule.client();
     let cell = recovery
@@ -19766,11 +19775,21 @@ fn a_writer_answers_through_the_one_authority_that_owns_the_answer() {
     let (sender, queue) = sync_channel(4);
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     let mut in_flight = None;
+    let mut refused = None;
+    let served = XAuthorityServedConnection::retained(endpoint);
     sender.send(capsule).expect("the queue to accept it");
 
     assert!(cell.answer().is_none(), "nothing is answered before it is sent");
     for _ in 0..32 {
-        match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
+        match serve_one_ordered_delivery(
+            &socket,
+            &served,
+            &mut in_flight,
+            &mut refused,
+            &queue,
+            XByteOrder::LittleEndian,
+            7,
+        ) {
             X11OrderedServeStep::Advanced => {}
             X11OrderedServeStep::Flushed => break,
             other => panic!("a healthy recipient took its bytes: {other:?}"),
@@ -19800,18 +19819,35 @@ fn a_flushed_delivery_is_retired_once_so_the_next_one_can_be_served() {
     // flush for ever and nothing behind it would ever be served. BOTH capsules
     // carry real origin-bound finalizers and nothing here clears the slot:
     // the retirement this asserts is the one production performs.
-    let (first, _recovery_one, _receipts_one) = answerable_capsule(17201);
-    let (second, _recovery_two, _receipts_two) = answerable_capsule(17202);
+    // BOTH FROM ONE REGISTRATION. Two fixtures would be two endpoints whose
+    // numbers happen to agree, and this writer serves one endpoint.
+    let (first, second, endpoint, _recovery_one, _recovery_two, _receipts_one, _receipts_two) =
+        two_answerable_capsules(17201, 17202);
     let (sender, queue) = sync_channel(4);
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     let mut in_flight = None;
+    let mut refused = None;
+    let served = XAuthorityServedConnection::retained(endpoint);
+    assert_eq!(
+        second.recipient(),
+        first.recipient(),
+        "both are owed to the one connection this writer serves"
+    );
     sender.send(first).expect("the queue to accept the first");
     sender.send(second).expect("the queue to accept the second");
 
     let mut flushes = 0;
-    let mut served = Vec::new();
+    let mut delivered = Vec::new();
     for _ in 0..64 {
-        match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
+        match serve_one_ordered_delivery(
+            &socket,
+            &served,
+            &mut in_flight,
+            &mut refused,
+            &queue,
+            XByteOrder::LittleEndian,
+            7,
+        ) {
             X11OrderedServeStep::Advanced => {}
             X11OrderedServeStep::Flushed => flushes += 1,
             X11OrderedServeStep::Idle => break,
@@ -19819,13 +19855,13 @@ fn a_flushed_delivery_is_retired_once_so_the_next_one_can_be_served() {
         }
         if let Some(held) = in_flight.as_ref() {
             let id = held.delivery().delivery();
-            if served.last() != Some(&id) {
-                served.push(id);
+            if delivered.last() != Some(&id) {
+                delivered.push(id);
             }
         }
     }
     assert_eq!(flushes, 2, "each delivery flushed exactly once");
-    assert_eq!(served.len(), 2, "and the second was reached after the first");
+    assert_eq!(delivered.len(), 2, "and the second was reached after the first");
     assert!(in_flight.is_none(), "nothing is left held");
     drop(peer);
 }
@@ -19835,14 +19871,57 @@ fn a_flushed_delivery_is_retired_once_so_the_next_one_can_be_served() {
 ///
 /// Controls that built a completion out of thin air could not see whether the
 /// ledger agreed with the writer, because there was no ledger behind it.
+/// Two answerable capsules owed to ONE endpoint.
+fn two_answerable_capsules(
+    first: u64,
+    second: u64,
+) -> (
+    XAuthorityOrderedDelivery,
+    XAuthorityOrderedDelivery,
+    PrivateEndpointIdentity,
+    InputRecovery,
+    InputRecovery,
+    Receiver<XAuthorityClientInputDelivery>,
+    Receiver<XAuthorityClientInputDelivery>,
+) {
+    let (one, two, endpoint) =
+        private_native_tests::emissions_for_one_writer_fixture(first, second);
+    let answer = |emission| {
+        let mut capsule = XAuthorityOrderedDelivery::from_emission(emission).unwrap();
+        let id = capsule.delivery();
+        let client = capsule.client();
+        let (recovery, receipts) = claim_fixture(id);
+        let completion = recovery
+            .completion_for(id)
+            .expect("a readable ledger")
+            .expect("the admission minted its completion");
+        capsule.carry_finalizer(Arc::new(finalizer_from_held(
+            &recovery, &completion, id, client,
+        )));
+        (capsule, recovery, receipts)
+    };
+    let (capsule_one, recovery_one, receipts_one) = answer(one);
+    let (capsule_two, recovery_two, receipts_two) = answer(two);
+    (
+        capsule_one,
+        capsule_two,
+        endpoint,
+        recovery_one,
+        recovery_two,
+        receipts_one,
+        receipts_two,
+    )
+}
+
 fn answerable_capsule(
     delivery: u64,
 ) -> (
     XAuthorityOrderedDelivery,
+    PrivateEndpointIdentity,
     InputRecovery,
     Receiver<XAuthorityClientInputDelivery>,
 ) {
-    let mut capsule = ordered_capsule(delivery);
+    let (mut capsule, endpoint) = capsule_and_endpoint(delivery);
     let id = capsule.delivery();
     let client = capsule.client();
     let (recovery, receipts) = claim_fixture(id);
@@ -19853,7 +19932,7 @@ fn answerable_capsule(
     capsule.carry_finalizer(Arc::new(finalizer_from_held(
         &recovery, &completion, id, client,
     )));
-    (capsule, recovery, receipts)
+    (capsule, endpoint, recovery, receipts)
 }
 
 #[test]
@@ -19972,15 +20051,25 @@ fn a_rejected_offer_stays_refused_even_when_older_work_is_deferred() {
 fn serving_a_whole_delivery_reports_a_flush_and_nothing_more() {
     // A flush means every frame went and the answer was adjudicated. It does
     // not mean the recipient read them.
-    let (capsule, _recovery, _receipts) = answerable_capsule(17101);
+    let (capsule, endpoint, _recovery, _receipts) = answerable_capsule(17101);
     let (sender, queue) = sync_channel(4);
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     let mut in_flight = None;
+    let mut refused = None;
+    let served = XAuthorityServedConnection::retained(endpoint);
     sender.send(capsule).expect("the queue to accept it");
 
     let mut flushed = false;
     for _ in 0..16 {
-        match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
+        match serve_one_ordered_delivery(
+            &socket,
+            &served,
+            &mut in_flight,
+            &mut refused,
+            &queue,
+            XByteOrder::LittleEndian,
+            7,
+        ) {
             X11OrderedServeStep::Advanced => {}
             X11OrderedServeStep::Flushed => {
                 flushed = true;
@@ -20000,10 +20089,12 @@ fn a_recipient_that_will_not_take_its_bytes_ends_the_connection_before_returning
     // closed before this returns. A caller that released output
     // serialization after such a step without the socket being closed would
     // admit another writer into the body of a half-written event.
-    let capsule = ordered_capsule(17102);
+    let (capsule, endpoint) = capsule_and_endpoint(17102);
     let (sender, queue) = sync_channel(4);
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     let mut in_flight = None;
+    let mut refused = None;
+    let served = XAuthorityServedConnection::retained(endpoint);
     sender.send(capsule).expect("the queue to accept it");
 
     // A recipient that is gone: the send fails rather than blocking, which is
@@ -20012,7 +20103,15 @@ fn a_recipient_that_will_not_take_its_bytes_ends_the_connection_before_returning
 
     let mut ended = None;
     for _ in 0..16 {
-        match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
+        match serve_one_ordered_delivery(
+            &socket,
+            &served,
+            &mut in_flight,
+            &mut refused,
+            &queue,
+            XByteOrder::LittleEndian,
+            7,
+        ) {
             X11OrderedServeStep::Advanced | X11OrderedServeStep::Flushed => {}
             X11OrderedServeStep::Unanswered => {
                 // No finalizer on this capsule, so nothing adjudicates its
@@ -20025,6 +20124,9 @@ fn a_recipient_that_will_not_take_its_bytes_ends_the_connection_before_returning
                 break;
             }
             X11OrderedServeStep::Idle => break,
+            X11OrderedServeStep::AdmissionRefused(_) => {
+                panic!("this queue carries only what this connection is owed")
+            }
         }
     }
     let Some(X11OrderedServeStep::Ended { outcome, shutdown }) = ended else {
@@ -20047,22 +20149,29 @@ fn a_recipient_that_will_not_take_its_bytes_ends_the_connection_before_returning
 
 #[test]
 fn a_taken_delivery_lands_where_it_will_be_answered_for() {
-    let first = ordered_capsule(17011);
+    // Both from one registration: this control is about the slot, and a second
+    // registration's capsule would be refused before the slot was consulted.
+    let (one, two, endpoint) =
+        private_native_tests::emissions_for_one_writer_fixture(17011, 17012);
+    let first = XAuthorityOrderedDelivery::from_emission(one).unwrap();
+    let second = XAuthorityOrderedDelivery::from_emission(two).unwrap();
     let client = first.client();
+    let served = XAuthorityServedConnection::retained(endpoint);
     let (sender, queue) = sync_channel(4);
     let mut in_flight = None;
+    let mut refused = None;
 
     // Nothing waiting is its own answer, and takes nothing.
     assert_eq!(
-        take_ordered_delivery(&queue, &mut in_flight),
+        take_ordered_delivery(&queue, &served, &mut in_flight, &mut refused),
         Err(X11OrderedTakeRefusal::Empty)
     );
-    assert!(in_flight.is_none());
+    assert!(in_flight.is_none() && refused.is_none());
 
     sender
         .send(first)
         .expect("the queue to accept it");
-    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    take_ordered_delivery(&queue, &served, &mut in_flight, &mut refused).expect("one waiting");
     let held = in_flight.as_ref().expect("taken into storage");
     assert_eq!(held.delivery().client(), client);
     assert_eq!(
@@ -20077,11 +20186,13 @@ fn a_taken_delivery_lands_where_it_will_be_answered_for() {
     // answers for what it holds until that is finished, and taking another
     // would leave the first owed by nobody with its frames half-written.
     sender
-        .send(ordered_capsule(17012))
+        .send(second)
         .expect("the queue to accept it");
     assert_eq!(
-        take_ordered_delivery(&queue, &mut in_flight),
-        Err(X11OrderedTakeRefusal::InFlight)
+        take_ordered_delivery(&queue, &served, &mut in_flight, &mut refused),
+        Err(X11OrderedTakeRefusal::InFlight),
+        "the slot is answered before anything is received, so this never \
+         reaches the endpoint comparison"
     );
     assert_eq!(
         in_flight
@@ -20097,22 +20208,28 @@ fn a_taken_delivery_lands_where_it_will_be_answered_for() {
     // the other says nothing more is coming.
     drop(sender);
     in_flight = None;
-    take_ordered_delivery(&queue, &mut in_flight).expect("the queued one is still there");
+    take_ordered_delivery(&queue, &served, &mut in_flight, &mut refused)
+        .expect("the queued one is still there");
     in_flight = None;
     assert_eq!(
-        take_ordered_delivery(&queue, &mut in_flight),
+        take_ordered_delivery(&queue, &served, &mut in_flight, &mut refused),
         Err(X11OrderedTakeRefusal::Closed)
     );
+    assert!(refused.is_none(), "nothing here was for another connection");
 }
 
 #[test]
 fn a_frame_index_does_not_move_past_an_unfinished_frame() {
     let (sender, queue) = sync_channel(1);
+    let (capsule, endpoint) = capsule_and_endpoint(1702);
+    let served = XAuthorityServedConnection::retained(endpoint);
     sender
-        .send(ordered_capsule(1702))
+        .send(capsule)
         .expect("the queue to accept it");
     let mut in_flight = None;
-    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    let mut refused = None;
+    take_ordered_delivery(&queue, &served, &mut in_flight, &mut refused)
+        .expect("one waiting");
     let held = in_flight.as_mut().expect("taken");
 
     // No frame in hand at all is not a finished one.
@@ -20141,11 +20258,15 @@ fn a_frame_index_does_not_move_past_an_unfinished_frame() {
 #[test]
 fn one_completed_frame_is_advanced_past_exactly_once() {
     let (sender, queue) = sync_channel(1);
+    let (capsule, endpoint) = capsule_and_endpoint(1703);
+    let served = XAuthorityServedConnection::retained(endpoint);
     sender
-        .send(ordered_capsule(1703))
+        .send(capsule)
         .expect("the queue to accept it");
     let mut in_flight = None;
-    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    let mut refused = None;
+    take_ordered_delivery(&queue, &served, &mut in_flight, &mut refused)
+        .expect("one waiting");
     let held = in_flight.as_mut().expect("taken");
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
 
@@ -20175,11 +20296,15 @@ fn one_completed_frame_is_advanced_past_exactly_once() {
 #[test]
 fn two_frames_of_one_delivery_reach_the_wire_in_order_and_whole() {
     let (sender, queue) = sync_channel(1);
+    let (capsule, endpoint) = capsule_and_endpoint(1704);
+    let served = XAuthorityServedConnection::retained(endpoint);
     sender
-        .send(ordered_capsule(1704))
+        .send(capsule)
         .expect("the queue to accept it");
     let mut in_flight = None;
-    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    let mut refused = None;
+    take_ordered_delivery(&queue, &served, &mut in_flight, &mut refused)
+        .expect("one waiting");
     let held = in_flight.as_mut().expect("taken");
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
 
@@ -20237,7 +20362,9 @@ fn two_frames_of_one_delivery_reach_the_wire_in_order_and_whole() {
 fn a_delivery_is_written_one_frame_at_a_time_and_then_is_written() {
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
     let (sender, queue) = sync_channel(1);
-    sender.send(ordered_capsule(1801)).expect("accepted");
+    let (capsule, endpoint) = capsule_and_endpoint(1801);
+    let served = XAuthorityServedConnection::retained(endpoint);
+    sender.send(capsule).expect("accepted");
     let mut in_flight = None;
 
     // Nothing in flight is its own answer.
@@ -20247,7 +20374,9 @@ fn a_delivery_is_written_one_frame_at_a_time_and_then_is_written() {
         X11OrderedWriteStep::Idle
     );
 
-    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    let mut refused = None;
+    take_ordered_delivery(&queue, &served, &mut in_flight, &mut refused)
+        .expect("one waiting");
     let frames = in_flight
         .as_ref()
         .expect("taken")
@@ -20279,9 +20408,13 @@ fn a_delivery_is_written_one_frame_at_a_time_and_then_is_written() {
 fn a_stalled_frame_is_resumed_rather_than_encoded_again() {
     let (writer, reader) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
     let (sender, queue) = sync_channel(1);
-    sender.send(ordered_capsule(1802)).expect("accepted");
+    let (capsule, endpoint) = capsule_and_endpoint(1802);
+    let served = XAuthorityServedConnection::retained(endpoint);
+    sender.send(capsule).expect("accepted");
     let mut in_flight = None;
-    take_ordered_delivery(&queue, &mut in_flight).expect("one waiting");
+    let mut refused = None;
+    take_ordered_delivery(&queue, &served, &mut in_flight, &mut refused)
+        .expect("one waiting");
 
     // Fill the recipient's buffer so this delivery's frame cannot go out
     // whole, and seed the accumulator so the stall is reached quickly.
@@ -20354,8 +20487,12 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
     let (writer_b, reader_b) = std::os::unix::net::UnixStream::pair().expect("a socketpair");
     let (sender_a, queue_a) = sync_channel(1);
     let (sender_b, queue_b) = sync_channel(1);
-    sender_a.send(ordered_capsule(1901)).expect("accepted");
-    sender_b.send(ordered_capsule(1902)).expect("accepted");
+    let (capsule_a, endpoint_a) = capsule_and_endpoint(1901);
+    let (capsule_b, endpoint_b) = capsule_and_endpoint(1902);
+    let served_a = XAuthorityServedConnection::retained(endpoint_a);
+    let served_b = XAuthorityServedConnection::retained(endpoint_b);
+    sender_a.send(capsule_a).expect("accepted");
+    sender_b.send(capsule_b).expect("accepted");
 
     let reached = Arc::new(AtomicBool::new(false));
     let signal = reached.clone();
@@ -20376,7 +20513,9 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
         } {}
 
         let mut in_flight = None;
-        take_ordered_delivery(&queue_a, &mut in_flight).expect("one waiting");
+        let mut refused = None;
+        take_ordered_delivery(&queue_a, &served_a, &mut in_flight, &mut refused)
+            .expect("one waiting");
         in_flight.as_mut().expect("taken").send.blocked =
             X_AUTHORITY_ORDERED_BLOCKED_LIMIT - Duration::from_millis(200);
         // Set before the call, and it says only that: this writer is about to
@@ -20397,7 +20536,9 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
     // B's recipient reads, so B's delivery goes out whole -- and the bytes are
     // checked off the socket rather than inferred from the step's answer.
     let mut b_flight = None;
-    take_ordered_delivery(&queue_b, &mut b_flight).expect("one waiting");
+    let mut b_refused = None;
+    take_ordered_delivery(&queue_b, &served_b, &mut b_flight, &mut b_refused)
+        .expect("one waiting");
     let expected = {
         let held = b_flight.as_ref().expect("taken");
         let emission = held.delivery().emission();
@@ -21325,4 +21466,601 @@ fn an_instrument_takes_the_admission_asked_for_and_keeps_the_others() {
         "unrelated capsules are retained, not consumed by someone else's question"
     );
     assert!(cells.iter().all(|cell| cell.answer().is_none()));
+}
+
+#[test]
+fn a_capsule_for_another_connection_is_refused_before_any_byte_of_it_is_written() {
+    // STAGED, AND SAID SO. Nothing in the routing path puts one connection's
+    // capsule on another's queue today: dispatch looks the queue up by the
+    // recipient the capsule names. This is the check that has to exist before
+    // a per-connection loop is attached to that queue, because by the time a
+    // frame for the wrong connection is on a wire the recipient has read it.
+    //
+    // Both capsules are real: two genuinely admitted connections, each
+    // pressing through the source and building its own emission.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(7641));
+    attempt_run(&mut f, 76410, 272, true);
+
+    let other = XServerFrontendClientId(7642);
+    let other_window = XResourceId::new(0x307642, 1);
+    let (other_registration, _other_channels) = {
+        let p = f.runner.frontend.as_mut().unwrap();
+        let registry = &p.broker.registry;
+        let context = namespaced(other, f.namespace);
+        let (registration, channels) = registry
+            .register_client_with_admission(other, Some(context))
+            .unwrap();
+        registry.attach_private_lifecycle(&registration, context).unwrap();
+        let selected = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+        registry
+            .attach_connection_state(
+                &registration,
+                f.namespace,
+                selected.clone(),
+                Arc::new(AtomicU64::new(0)),
+            )
+            .unwrap();
+        {
+            let mut state = selected.lock().unwrap();
+            state.register(
+                other_window,
+                XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+                Rect { x: 0, y: 0, width: 200, height: 100 },
+            );
+            state.observe_mapped(other_window);
+            state.update(other_window, Some((1 << 2) | (1 << 3)), None);
+        }
+        let mut grabs = registry.input_authority.lock().unwrap();
+        grabs.ungrab_pointer(f.namespace, f.client.raw());
+        grabs
+            .grab_pointer(
+                f.namespace,
+                crate::XActiveInputGrab {
+                    owner: other.raw(),
+                    window: other_window,
+                    owner_events: false,
+                    pointer_mode: 1,
+                    keyboard_mode: 1,
+                    event_mask: u16::MAX,
+                    xi_event_mask: [0; 8],
+                    xi_event_mask_words: 0,
+                    route_lease: None,
+                },
+            )
+            .unwrap();
+        (registration, channels)
+    };
+    attempt_run(&mut f, 76412, 273, true);
+
+    // Each connection's own capsule, taken out of the record that owns it.
+    let p = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(p.terminal.holds.len(), 2);
+    assert_eq!(p.terminal.holds[0].reached.client(), f.client);
+    assert_eq!(p.terminal.holds[1].reached.client(), other);
+    let recovery = p.broker.registry.input_recovery.clone();
+    let mine = {
+        let record = &mut p.terminal.holds[0];
+        let emission = record.native.as_mut().unwrap().take_press_emission().unwrap();
+        PrivateXServerFrontend::stow_press_capsule(&mut record.custody, emission, &recovery, f.client);
+        let Some(PrivatePendingDelivery::Capsule(capsule)) = record.custody.pending.take() else {
+            panic!("the press built its own capsule")
+        };
+        capsule
+    };
+    let theirs = {
+        let record = &mut p.terminal.holds[1];
+        let emission = record.native.as_mut().unwrap().take_press_emission().unwrap();
+        PrivateXServerFrontend::stow_press_capsule(&mut record.custody, emission, &recovery, other);
+        let Some(PrivatePendingDelivery::Capsule(capsule)) = record.custody.pending.take() else {
+            panic!("the other press built its own capsule")
+        };
+        capsule
+    };
+    assert_ne!(
+        mine.recipient(),
+        theirs.recipient(),
+        "two connections, two identities"
+    );
+    let their_cell = theirs.finalizer().expect("carried").completion.clone();
+    let my_delivery = mine.delivery();
+
+    // A writer serving the first connection, and the other's capsule on its
+    // queue ahead of its own.
+    // The writer's expectation comes from the registration it serves, not from
+    // anything it is about to be asked to write.
+    let served = XAuthorityServedConnection::retained(
+        p.endpoint_for(f.client).expect("this connection's own endpoint"),
+    );
+    let (sender, queue) = sync_channel(4);
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let mut in_flight = None;
+    let mut refused = None;
+    sender.send(theirs).expect("the queue to accept it");
+    sender.send(mine).expect("the queue to accept it");
+
+    assert!(matches!(
+        serve_one_ordered_delivery(
+            &socket,
+            &served,
+            &mut in_flight,
+            &mut refused,
+            &queue,
+            XByteOrder::LittleEndian,
+            7,
+        ),
+        X11OrderedServeStep::AdmissionRefused(_)
+    ));
+
+    // NOTHING WENT ON THE WIRE. That is the whole point of checking at
+    // admission: a frame is read by the time anyone could regret it.
+    let mut byte = [0u8; 1];
+    assert!(
+        matches!(
+            (&peer).read(&mut byte),
+            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ),
+        "no byte of another connection's event reached this one"
+    );
+    assert!(in_flight.is_none(), "and it was never taken as work");
+
+    // It is retained rather than dropped -- the queue has already given it up
+    // -- and it is not answered here.
+    let held = refused.as_ref().expect("the capsule is owned by this writer");
+    assert_eq!(
+        held.cause(),
+        X11OrderedAdmissionRefusal::ForeignEndpoint,
+        "and it says exactly what was wrong: not a flush, not a failure to write"
+    );
+    assert_eq!(
+        held.delivery().delivery(),
+        XAuthorityInputDeliveryId::from_raw(76412)
+    );
+    assert_eq!(held.client(), other);
+    assert!(Arc::ptr_eq(
+        &their_cell,
+        &held.delivery().finalizer().expect("carried").completion
+    ));
+    assert!(
+        their_cell.answer().is_none(),
+        "a writer that was never entitled to it does not answer for it"
+    );
+
+    // And nothing behind it is served while it is held: taking another would
+    // overwrite the one thing that still owns this capsule.
+    assert!(matches!(
+        serve_one_ordered_delivery(
+            &socket,
+            &served,
+            &mut in_flight,
+            &mut refused,
+            &queue,
+            XByteOrder::LittleEndian,
+            7,
+        ),
+        X11OrderedServeStep::AdmissionRefused(_)
+    ));
+    assert_eq!(
+        refused
+            .as_ref()
+            .expect("still held")
+            .delivery()
+            .delivery(),
+        XAuthorityInputDeliveryId::from_raw(76412),
+        "the first is still the one held"
+    );
+    assert!(in_flight.is_none());
+
+    // Disposed of, and this connection's own capsule is admitted normally.
+    let _disposed = refused.take().expect("held");
+    assert!(matches!(
+        serve_one_ordered_delivery(
+            &socket,
+            &served,
+            &mut in_flight,
+            &mut refused,
+            &queue,
+            XByteOrder::LittleEndian,
+            7,
+        ),
+        X11OrderedServeStep::Advanced | X11OrderedServeStep::Flushed
+    ));
+    assert!(
+        refused.is_none(),
+        "its own capsule is not refused"
+    );
+    assert!(
+        in_flight
+            .as_ref()
+            .is_none_or(|held| held.delivery().delivery() == my_delivery),
+        "the connection's own event is what it serves"
+    );
+    drop(peer);
+    drop(other_registration);
+}
+
+/// An admission for this client with a chosen admission id and generation.
+fn admission_with(
+    client: XServerFrontendClientId,
+    admission: u64,
+    generation: u64,
+) -> sophia_protocol::ClientAdmissionContext {
+    sophia_protocol::ClientAdmissionContext::new(
+        sophia_protocol::ClientAdmissionId::from_raw(admission),
+        sophia_protocol::NamespaceContext::new(
+            NamespaceId::from_raw(client.raw()),
+            sophia_protocol::NamespaceProfile::Confined,
+            sophia_protocol::NamespaceCapabilities::NONE,
+        )
+        .unwrap(),
+        sophia_protocol::ClientAuthProvenance::new(
+            sophia_protocol::ClientAuthenticationMethod::PeerCredentials,
+            generation,
+        )
+        .unwrap(),
+    )
+    .unwrap()
+}
+
+/// Replace this client's registration and admission, and say what the
+/// replacement's exact endpoint is.
+///
+/// THE REGISTRATION/API SEAM, NOT AN ORDINARY RECONNECT. Nothing a client can
+/// drive replaces a live registration: register_client_with_admission refuses a
+/// duplicate, and admit refuses an already-bound client. This goes through the
+/// registry's and the participant's own replacement path -- revoke, drop the
+/// row, admit and register again -- because that is the seam an endpoint
+/// identity has to survive. It is not evidence that a reconnect misdelivers.
+fn replace_registration(
+    private: &mut crate::PrivateXServerFrontend,
+    client: XServerFrontendClientId,
+    replacement: sophia_protocol::ClientAdmissionContext,
+    previous: sophia_protocol::ClientAdmissionId,
+    original: XServerFrontendClientRouteRegistration,
+    original_channels: XServerFrontendClientRouteChannels,
+) -> (
+    XServerFrontendClientRouteRegistration,
+    XServerFrontendClientRouteChannels,
+    PrivateEndpointIdentity,
+) {
+    private
+        .participant
+        .revoke_admission(client, previous)
+        .expect("the admission this fixture made is the one it revokes");
+    // The first registration goes before the second exists. Its lifecycle
+    // record is what the boundary would otherwise still be holding, and the
+    // row it owns is what a replacement takes the place of.
+    drop(original_channels);
+    drop(original);
+    private
+        .broker
+        .registry
+        .clients
+        .lock()
+        .expect("a readable registry")
+        .remove(&client);
+    // The lifecycle owner still holds a record for the closed admission. It is
+    // released by the owner's own drive, not by dropping anything, so the
+    // replacement is admitted only after the first one has actually finished.
+    let lifecycle = private.terminal.lifecycle.clone();
+    for _ in 0..16 {
+        lifecycle
+            .drive(NonZeroUsize::new(1).unwrap())
+            .expect("a readable lifecycle owner");
+    }
+    private
+        .admission_participant()
+        .admit(client, replacement)
+        .expect("the boundary admits the replacement");
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(replacement))
+        .expect("a replacement registration");
+    // No attach_private_lifecycle here: with the owner already installed, the
+    // admit above registered the replacement's gate itself, and attaching a
+    // second one for the same client is refused as a duplicate.
+    let selected = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+    private
+        .broker
+        .registry
+        .attach_connection_state(
+            &registration,
+            replacement.namespace.id,
+            selected,
+            Arc::new(AtomicU64::new(0)),
+        )
+        .expect("the replacement's connection state");
+    let endpoint = private
+        .endpoint_for(client)
+        .expect("the replacement's own endpoint, from its own registration");
+    (registration, channels, endpoint)
+}
+
+/// One real source-built capsule, and a replacement registration for the same
+/// client that did not exist when it was built.
+fn capsule_then_replacement(
+    client: XServerFrontendClientId,
+    delivery: u64,
+    replacement: sophia_protocol::ClientAdmissionContext,
+) -> (
+    PrivatePreparedRunner,
+    PrivateSettlementOwner,
+    XAuthorityOrderedDelivery,
+    Arc<PrivateDeliveryCompletion>,
+    XServerFrontendClientRouteRegistration,
+    XServerFrontendClientRouteChannels,
+    PrivateEndpointIdentity,
+) {
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, delivery, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let recovery = private.broker.registry.input_recovery.clone();
+    let cell = admitted_cell(private, delivery);
+    let original = {
+        let record = &mut private.terminal.holds[0];
+        let emission = record.native.as_mut().unwrap().take_press_emission().unwrap();
+        PrivateXServerFrontend::stow_press_capsule(&mut record.custody, emission, &recovery, client);
+        let Some(PrivatePendingDelivery::Capsule(capsule)) = record.custody.pending.take() else {
+            panic!("the press built its own capsule")
+        };
+        capsule
+    };
+    assert!(Arc::ptr_eq(
+        &cell,
+        &original.finalizer().expect("carried").completion
+    ));
+    let PreparedOrderedFixture {
+        mut runner,
+        durable,
+        registration: original_registration,
+        channels: original_channels,
+        ..
+    } = f;
+    let private = runner.frontend.as_mut().unwrap();
+    let (registration, channels, endpoint) = replace_registration(
+        private,
+        client,
+        replacement,
+        admitted(client).client_id,
+        original_registration,
+        original_channels,
+    );
+    (
+        runner,
+        durable,
+        original,
+        cell,
+        registration,
+        channels,
+        endpoint,
+    )
+}
+
+#[test]
+fn a_capsule_from_a_replaced_admission_is_refused_though_every_number_agrees() {
+    // Same client, same session generation, a different admission. The tuple
+    // the ledger knows this connection by is identical on both sides, which is
+    // exactly why it cannot be what admission is decided on: the boundary
+    // itself treats a replacement admission inside one session as a different
+    // admission, and a delayed revoke naming the old one must not close the
+    // new one.
+    let client = XServerFrontendClientId(7651);
+    let replacement = admission_with(client, 76519, ROLE_SESSION_GENERATION);
+    let (runner, durable, original, cell, registration, channels, endpoint) =
+        capsule_then_replacement(client, 76510, replacement);
+    assert_eq!(
+        original.recipient(),
+        sophia_input_authority::ConnectionIdentity {
+            recipient: client.raw(),
+            connection_generation: ROLE_SESSION_GENERATION,
+        },
+        "the capsule's ledger identity"
+    );
+
+    // WHAT THE TEARDOWN ALREADY DID is recorded before the writer is asked,
+    // so what follows is attributed to the refusal and not to the revocation.
+    // Replacing an admission ends its outstanding deliveries -- that is the
+    // recovery answering for a connection that has gone -- and this control is
+    // about the writer, which must add nothing to it either way.
+    let answered_by_teardown = cell.answer();
+
+    // The replacement writer's expectation comes from its own registration.
+    let served = XAuthorityServedConnection::retained(endpoint);
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let (sender, queue) = sync_channel(4);
+    let mut in_flight = None;
+    let mut refused = None;
+    sender.send(original).expect("the queue to accept it");
+
+    assert!(matches!(
+        serve_one_ordered_delivery(
+            &socket,
+            &served,
+            &mut in_flight,
+            &mut refused,
+            &queue,
+            XByteOrder::LittleEndian,
+            7,
+        ),
+        X11OrderedServeStep::AdmissionRefused(X11OrderedAdmissionRefusal::ForeignEndpoint)
+    ));
+    let mut byte = [0u8; 1];
+    assert!(
+        matches!(
+            (&peer).read(&mut byte),
+            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ),
+        "not one byte of a replaced admission's event reached the replacement"
+    );
+    let held = refused.as_ref().expect("owned by this writer");
+    assert_eq!(
+        held.delivery().delivery(),
+        XAuthorityInputDeliveryId::from_raw(76510)
+    );
+    assert!(Arc::ptr_eq(
+        &cell,
+        &held.delivery().finalizer().expect("carried").completion
+    ));
+    assert_eq!(
+        cell.answer(),
+        answered_by_teardown,
+        "and the writer that never wrote for it changed nothing about its answer"
+    );
+    assert!(in_flight.is_none());
+    drop(peer);
+    drop(channels);
+    drop(registration);
+    drop(runner);
+    drop(durable);
+}
+
+#[test]
+fn a_capsule_from_a_replaced_registration_is_refused_though_the_admission_agrees_too() {
+    // The sharpest case: the replacement is admitted with THE SAME admission
+    // context -- same client, same admission id, same namespace, same session
+    // generation. Every number on both sides is equal. What differs is the
+    // registration, and that is the whole of what distinguishes them.
+    let client = XServerFrontendClientId(7661);
+    let (runner, durable, original, cell, registration, channels, endpoint) =
+        capsule_then_replacement(client, 76610, admitted(client));
+    assert_eq!(
+        original.recipient(),
+        sophia_input_authority::ConnectionIdentity {
+            recipient: client.raw(),
+            connection_generation: ROLE_SESSION_GENERATION,
+        }
+    );
+
+    let answered_by_teardown = cell.answer();
+    let served = XAuthorityServedConnection::retained(endpoint);
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let (sender, queue) = sync_channel(4);
+    let mut in_flight = None;
+    let mut refused = None;
+    sender.send(original).expect("the queue to accept it");
+
+    assert!(matches!(
+        serve_one_ordered_delivery(
+            &socket,
+            &served,
+            &mut in_flight,
+            &mut refused,
+            &queue,
+            XByteOrder::LittleEndian,
+            7,
+        ),
+        X11OrderedServeStep::AdmissionRefused(X11OrderedAdmissionRefusal::ForeignEndpoint)
+    ));
+    let mut byte = [0u8; 1];
+    assert!(
+        matches!(
+            (&peer).read(&mut byte),
+            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ),
+        "identical numbers are not an entitlement to these bytes"
+    );
+    assert!(
+        refused.is_some() && in_flight.is_none(),
+        "it is owned as refused work, not taken as work to do"
+    );
+    assert_eq!(
+        cell.answer(),
+        answered_by_teardown,
+        "and the refusal is not an answer"
+    );
+    drop(peer);
+    drop(channels);
+    drop(registration);
+    drop(runner);
+    drop(durable);
+}
+
+#[test]
+fn a_producer_does_not_send_an_old_capsule_through_a_replacement_entry() {
+    // THE OTHER HALF OF THE SEAM. The writer's check catches a capsule that
+    // reached the wrong queue; this catches one being put there. The row the
+    // endpoint is compared against is the row the sender is cloned from, under
+    // one guard, so there is no gap between deciding a row is right and taking
+    // its channel.
+    //
+    // Registration/API seam, as above: nothing a client drives replaces a live
+    // registration.
+    let client = XServerFrontendClientId(7681);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 76810, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 76810);
+
+    // The press has an event owed and a capsule built for it, still owned by
+    // the custody that made it.
+    let recovery = private.broker.registry.input_recovery.clone();
+    {
+        let record = &mut private.terminal.holds[0];
+        let emission = record.native.as_mut().unwrap().take_press_emission().unwrap();
+        PrivateXServerFrontend::stow_press_capsule(&mut record.custody, emission, &recovery, client);
+    }
+    assert_eq!(
+        private.terminal.holds[0].custody.dispatch,
+        PrivateDispatchPhase::Pending
+    );
+
+    let PreparedOrderedFixture {
+        mut runner,
+        durable,
+        registration: original_registration,
+        channels: original_channels,
+        ..
+    } = f;
+    let private = runner.frontend.as_mut().unwrap();
+    let (registration, channels, _endpoint) = replace_registration(
+        private,
+        client,
+        admitted(client),
+        admitted(client).client_id,
+        original_registration,
+        original_channels,
+    );
+    let answered_by_teardown = cell.answer();
+
+    // The replacement's row holds a different channel. Offering the old
+    // capsule must not put it there.
+    for _ in 0..8 {
+        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+    assert!(
+        channels.ordered.try_recv().is_err(),
+        "a replacement registration is not handed the work of the one it replaced"
+    );
+
+    // And the capsule stays exactly where it was, unsent and unanswered by
+    // this refusal.
+    let custody = &private.terminal.holds[0].custody;
+    assert_eq!(
+        custody.dispatch,
+        PrivateDispatchPhase::Pending,
+        "no handover was begun for it"
+    );
+    let Some(PrivatePendingDelivery::Capsule(held)) = custody.pending.as_ref() else {
+        panic!("the original capsule is still owned by the custody that built it")
+    };
+    assert_eq!(
+        held.delivery(),
+        XAuthorityInputDeliveryId::from_raw(76810)
+    );
+    assert!(Arc::ptr_eq(
+        &cell,
+        &held.finalizer().expect("carried").completion
+    ));
+    assert_eq!(
+        cell.answer(),
+        answered_by_teardown,
+        "and offering it to a row that is not its own answers nothing"
+    );
+    drop(channels);
+    drop(registration);
+    drop(runner);
+    drop(durable);
 }

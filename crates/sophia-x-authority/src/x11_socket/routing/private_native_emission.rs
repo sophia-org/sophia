@@ -52,6 +52,15 @@ impl PrivateOrderedEmission {
         self.incarnation
     }
 
+    /// Exactly which endpoint this emission was minted for.
+    ///
+    /// Not the same question as `connection`, which answers the ledger in the
+    /// ledger's own vocabulary. That one is a recipient and a session
+    /// generation; this one is the registration.
+    pub(crate) fn endpoint(&self) -> &PrivateEndpointIdentity {
+        self.connection.endpoint()
+    }
+
     pub(crate) fn connection(&self) -> sophia_input_authority::ConnectionIdentity {
         sophia_input_authority::ConnectionIdentity {
             recipient: self.connection.client.raw(),

@@ -57,6 +57,11 @@ struct PrivateAppliedClientRef<'a> {
     connection: &'a PrivateAppliedClientState,
     client: XServerFrontendClientId,
     _admission: &'a PrivateAdmissionBinding,
+    /// Exactly which endpoint this is, captured here because here is where the
+    /// two records that decide it are both held and have just been checked
+    /// against each other. Anything installed later that needs to say which
+    /// endpoint an obligation belongs to takes this rather than asking again.
+    endpoint: PrivateEndpointIdentity,
 }
 
 #[cfg(unix)]
@@ -250,6 +255,7 @@ impl XServerFrontendRouteRegistry {
             connection,
             client,
             _admission: admission,
+            endpoint: PrivateEndpointIdentity::captured(client, entry, admission),
         })
     }
 }

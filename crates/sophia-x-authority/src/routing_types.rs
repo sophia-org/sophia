@@ -600,6 +600,51 @@ pub(crate) struct XAuthorityOrderedDelivery {
     finalizer: Option<std::sync::Arc<crate::x11_socket::PrivateDeliveryFinalizer>>,
 }
 
+/// Exactly which connection a writer serves.
+///
+/// RETAINED AT WORKER ADMISSION, never resolved per delivery. A writer that
+/// looked its own identity up while serving would be comparing each capsule
+/// against whatever the registry says at that moment -- which is the same
+/// answer a stale capsule would already have been admitted by, so the
+/// comparison would establish nothing.
+///
+/// A newtype rather than the identity itself, so what "exactly this
+/// connection" means is decided in one place. Widening it later changes
+/// `retained` and `admits`, not the writer.
+#[cfg(unix)]
+#[derive(Clone, Debug)]
+#[allow(dead_code)] // The per-connection loop is not attached yet.
+pub(crate) struct XAuthorityServedConnection {
+    endpoint: crate::x11_socket::PrivateEndpointIdentity,
+}
+
+#[cfg(unix)]
+#[allow(dead_code)] // The per-connection loop is not attached yet.
+impl XAuthorityServedConnection {
+    /// The endpoint this writer was started for.
+    ///
+    /// Taken from the registration that created this writer's receiver, not
+    /// from a capsule and not from a later lookup by client id. A writer whose
+    /// expectation came from either would be checking a capsule against
+    /// something the capsule itself, or a replacement registration, decided.
+    pub(crate) fn retained(endpoint: crate::x11_socket::PrivateEndpointIdentity) -> Self {
+        Self { endpoint }
+    }
+
+    pub(crate) fn endpoint(&self) -> &crate::x11_socket::PrivateEndpointIdentity {
+        &self.endpoint
+    }
+
+    /// Whether this capsule was minted for exactly the endpoint served.
+    ///
+    /// Asked before any byte of it is encoded or written, because writing is
+    /// the thing that cannot be taken back: a frame put on a wire for another
+    /// endpoint has been read by the time anyone could notice.
+    pub(crate) fn admits(&self, delivery: &XAuthorityOrderedDelivery) -> bool {
+        self.endpoint.matches(delivery.endpoint())
+    }
+}
+
 #[cfg(unix)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum XAuthorityOrderedAssemblyRefusal {
@@ -657,6 +702,14 @@ impl XAuthorityOrderedDelivery {
     }
     pub(crate) fn recipient(&self) -> sophia_input_authority::ConnectionIdentity {
         self.emission.connection()
+    }
+    /// Exactly which endpoint these bytes are owed to.
+    ///
+    /// Source-derived and carried: no constructor here accepts one, so a
+    /// capsule cannot be given an identity by whoever is about to be checked
+    /// against it.
+    pub(crate) fn endpoint(&self) -> &crate::x11_socket::PrivateEndpointIdentity {
+        self.emission.endpoint()
     }
     pub(crate) fn emission(&self) -> &crate::x11_socket::PrivateOrderedEmission {
         &self.emission

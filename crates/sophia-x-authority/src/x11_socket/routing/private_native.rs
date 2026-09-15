@@ -263,6 +263,15 @@ mod private_native {
         selections: Arc<Mutex<XCoreEventSelectionState>>,
         client: XServerFrontendClientId,
         generation: u64,
+        /// Exactly which endpoint this hold's events are owed to.
+        ///
+        /// Taken once, when the obligation is installed, from the records that
+        /// were held and cross-checked at that moment. A release or a join
+        /// keeps THIS one and never refreshes it from whatever is bound now:
+        /// the events belong to the endpoint that was there when the button
+        /// went down, and a refreshed identity would let a replacement
+        /// registration inherit an emission it never asked for.
+        endpoint: PrivateEndpointIdentity,
         input: Input,
         incarnation: Option<HoldIncarnation>,
         grant: GrantId,
@@ -300,7 +309,18 @@ mod private_native {
         selections: Arc<Mutex<XCoreEventSelectionState>>,
         client: XServerFrontendClientId,
         generation: u64,
+        /// Carried unchanged from the hold, for the same reason the hold keeps
+        /// it: cleanup answers for the endpoint the work was accepted under.
+        endpoint: PrivateEndpointIdentity,
         pointer_tree: Option<RetainedPointerTree>,
+    }
+
+    impl RetainedConnection {
+        /// Exactly which endpoint this connection is, as it was when the
+        /// obligation was installed.
+        pub(super) fn endpoint(&self) -> &PrivateEndpointIdentity {
+            &self.endpoint
+        }
     }
 
     #[derive(Clone)]
@@ -316,6 +336,7 @@ mod private_native {
                 selections: self.selections.clone(),
                 client: self.client,
                 generation: self.generation,
+                endpoint: self.endpoint.clone(),
                 pointer_tree: None,
             }
         }
@@ -586,6 +607,7 @@ mod private_native {
                 selections: client.connection.selections.clone(),
                 client: client.client,
                 generation: client._admission.generation,
+                endpoint: client.endpoint.clone(),
                 input,
                 incarnation: None,
                 grant: capability.grant(),

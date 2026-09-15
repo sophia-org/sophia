@@ -252,6 +252,65 @@ fn joined_press_and_survivor_do_not_create_another_emission() {
 
 // A source-level fixture for the writer ownership controls. This builds a real
 // common/native press but does not claim PrivateIngress or terminal delivery.
+/// Two emissions from ONE registration.
+///
+/// A fixture per capsule gives two registrations whose numbers agree and whose
+/// endpoints do not, which is exactly what an endpoint check refuses. A
+/// control about one connection being served twice has to press twice on the
+/// same connection.
+pub(super) fn emissions_for_one_writer_fixture(
+    first: u64,
+    second: u64,
+) -> (
+    super::super::PrivateOrderedEmission,
+    super::super::PrivateOrderedEmission,
+    super::super::PrivateEndpointIdentity,
+) {
+    let fixture = Fixture::new();
+    let take = |delivery: u64, button: u32| {
+        let mut route = fixture.route(button, true);
+        route.delivery = Some(XAuthorityInputDeliveryId::from_raw(delivery));
+        let mut hold = None;
+        fixture
+            .press_route(&fixture.role, &route, &mut hold)
+            .unwrap();
+        hold.as_mut().unwrap().take_press_emission().unwrap()
+    };
+    let one = take(first, 272);
+    let two = take(second, 273);
+    let endpoint = fixture
+        .private
+        .endpoint_for(client())
+        .expect("the fixture's own registration");
+    (one, two, endpoint)
+}
+
+/// One emission, and the endpoint taken from the registration that produced
+/// it -- not from the emission.
+///
+/// A writer's expectation has to come from its own registration. Taking it
+/// from the capsule would let the thing being checked supply the answer.
+pub(super) fn emission_and_endpoint_for_writer_fixture(
+    delivery: u64,
+) -> (
+    super::super::PrivateOrderedEmission,
+    super::super::PrivateEndpointIdentity,
+) {
+    let fixture = Fixture::new();
+    let mut route = fixture.route(272, true);
+    route.delivery = Some(XAuthorityInputDeliveryId::from_raw(delivery));
+    let mut hold = None;
+    fixture
+        .press_route(&fixture.role, &route, &mut hold)
+        .unwrap();
+    let emission = hold.as_mut().unwrap().take_press_emission().unwrap();
+    let endpoint = fixture
+        .private
+        .endpoint_for(client())
+        .expect("the fixture's own registration");
+    (emission, endpoint)
+}
+
 pub(super) fn emission_for_writer_fixture(delivery: u64) -> super::super::PrivateOrderedEmission {
     let fixture = Fixture::new();
     let mut route = fixture.route(272, true);
