@@ -27,7 +27,6 @@
 #[cfg(unix)]
 const PRIVATE_HOLD_RECORDS: usize = sophia_input_authority::Capacity::PLANNED.input_slots();
 
-/// Why an ordered execution did not apply.
 #[cfg(unix)]
 impl PrivateXServerFrontend {
     /// Run the item this instance currently owns.
@@ -247,7 +246,10 @@ fn resolve_and_apply(
                             match registry.input_recovery.completion_for(delivery) {
                                 Ok(Some(cell)) => Some(cell),
                                 Ok(None) => {
-                                    notes.recovery_unavailable = true;
+                                    // Known to be absent: this delivery has no
+                                    // completion and never will, so its answer
+                                    // could not be matched to this debt.
+                                    notes.completion_missing = true;
                                     return Err(
                                         sophia_input_authority::RegistrationError::StaleRequest,
                                     );
@@ -832,6 +834,9 @@ fn execute_owned(
 
         // Before the rest: these say the work should not have been applied at
         // all, rather than that applying it went wrong.
+        if notes.completion_missing {
+            return Err(PrivateExecutionRefusal::CompletionMissing);
+        }
         if notes.recovery_unavailable {
             return Err(PrivateExecutionRefusal::RecoveryUnavailable);
         }

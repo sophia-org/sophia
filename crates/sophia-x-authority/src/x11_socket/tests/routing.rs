@@ -12962,9 +12962,16 @@ fn a_release_whose_answer_could_never_be_recognised_refuses_and_keeps_its_hold()
         &released,
         watch,
     );
+    // NAMED, not merely refused. A known-absent completion says this delivery
+    // will never be answerable; an unreadable ledger says nothing was
+    // established either way. Reporting both as RecoveryUnavailable discarded
+    // the difference at the boundary where it decides what to do next.
     assert!(
-        refused.is_err(),
-        "a release with no completion to answer it is refused"
+        matches!(
+            refused,
+            Err(crate::PrivateExecutionRefusal::CompletionMissing)
+        ),
+        "a release with no completion is refused under its own cause"
     );
 
     // AND THE OBLIGATION IS STILL HERE. Refusing before the effect is what

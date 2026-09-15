@@ -24,6 +24,8 @@ struct PrivateTransactionNotes<'a> {
     delivery_ended: bool,
     /// The ledger could not be read.
     recovery_unavailable: bool,
+    /// This delivery has no completion to answer it with.
+    completion_missing: bool,
     /// What the native source refused, when it refused.
     ///
     /// Carried out rather than renamed. The source tells a delivery that ended
@@ -60,6 +62,7 @@ impl<'a> PrivateTransactionNotes<'a> {
             records_exhausted: false,
             delivery_ended: false,
             recovery_unavailable: false,
+            completion_missing: false,
             native_refusal: None,
             may_have_applied,
         }
@@ -107,6 +110,7 @@ struct PrivateOrderedDecision {
 // does not. Moved here from the transition itself: this file is the
 // vocabulary a transition answers in, and a refusal is part of that answer.
 
+/// Why an ordered execution did not apply.
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PrivateExecutionRefusal {
@@ -163,6 +167,14 @@ pub(crate) enum PrivateExecutionRefusal {
     /// the work must not be applied: an effect for a delivery whose outcome
     /// is already reported would be an effect nobody is waiting for.
     DeliveryEnded,
+    /// This delivery has no completion, so its answer could never be matched
+    /// to the debt it belongs to.
+    ///
+    /// A KNOWN ABSENCE, told apart from an unreadable ledger: this one says
+    /// the delivery will never be answerable, the other says nothing was
+    /// established either way. Both refuse before the effect, and reporting
+    /// them under one cause discarded the distinction where it mattered.
+    CompletionMissing,
     /// The delivery ledger could not be read.
     ///
     /// Not the same as ended. Nothing is known about whether this delivery is
