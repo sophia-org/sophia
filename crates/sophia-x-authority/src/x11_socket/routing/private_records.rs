@@ -184,6 +184,16 @@ pub struct PrivateSettlingRelease {
     reached: PrivateReachedResources,
     /// What this release is carrying towards a writer, and how far it has got.
     custody: PrivateDeliveryCustody,
+    /// The custody of the PRESS this release ended, carried on.
+    ///
+    /// A DISTINCT INSTANCE, not a replacement. Ending the physical hold does
+    /// not answer the press event or transfer its delivery: the press and the
+    /// release are two events owed to the same recipient, each with its own
+    /// admission and its own handle. Dropping the press's with the hold record
+    /// left its delivery owed by nobody, with the answer reachable only
+    /// through owners outside this instance.
+    #[allow(dead_code)]
+    press_custody: Option<PrivateDeliveryCustody>,
     /// The source obligation this release is still answering for.
     ///
     /// Carried rather than dropped with the record it came from. The hold

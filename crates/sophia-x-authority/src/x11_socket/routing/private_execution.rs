@@ -61,6 +61,7 @@ impl PrivateXServerFrontend {
             holds,
             settling,
             native_pending,
+            pending_custody,
             ..
         } = terminal;
         let Some(PrivateOrderedItem::Refused { custody, route, .. }) = current.as_ref() else {
@@ -70,6 +71,7 @@ impl PrivateXServerFrontend {
             watched,
             native,
             native_pending,
+            pending_custody,
             controller,
             participant,
             broker,
@@ -132,12 +134,14 @@ impl PrivateXServerFrontend {
             holds,
             settling,
             native_pending,
+            pending_custody,
             ..
         } = terminal;
         let outcome = execute_owned(
             &mut watched,
             native,
             native_pending,
+            pending_custody,
             controller,
             participant,
             broker,
@@ -184,6 +188,7 @@ fn resolve_and_apply(
     capability: sophia_input_authority::DeviceCapability,
     native: &private_native::Owner,
     native_pending: &mut Option<private_native::Hold>,
+    pending_custody: &mut Option<PrivateDeliveryCustody>,
     notes: &mut PrivateTransactionNotes<'_>,
 ) -> Result<(), sophia_input_authority::RegistrationError> {
     let unavailable = sophia_input_authority::RegistrationError::RoutingUnavailable;
@@ -241,29 +246,26 @@ fn resolve_and_apply(
                     // delivery with no completion can never be answered and a
                     // ledger that could not be read establishes nothing; both
                     // refuse, and the hold stays exactly where it is.
-                    let completion = match route.delivery {
-                        Some(delivery) => {
-                            match registry.input_recovery.completion_for(delivery) {
-                                Ok(Some(cell)) => Some(cell),
-                                Ok(None) => {
-                                    // Known to be absent: this delivery has no
-                                    // completion and never will, so its answer
-                                    // could not be matched to this debt.
-                                    notes.completion_missing = true;
-                                    return Err(
-                                        sophia_input_authority::RegistrationError::StaleRequest,
-                                    );
-                                }
-                                Err(PrivateCompletionUnreadable) => {
-                                    notes.recovery_unavailable = true;
-                                    return Err(
-                                        sophia_input_authority::RegistrationError::StaleRequest,
-                                    );
-                                }
-                            }
-                        }
-                        None => None,
+                    let Some(release_delivery) = route.delivery else {
+                        notes.completion_missing = true;
+                        return Err(sophia_input_authority::RegistrationError::StaleRequest);
                     };
+                    match registry.input_recovery.completion_for(release_delivery) {
+                        // Installed before the source release for the same
+                        // reason the press's is: a local across that call is
+                        // one an interruption takes.
+                        Ok(Some(cell)) => {
+                            *pending_custody = Some(PrivateDeliveryCustody::new(Some(cell)));
+                        }
+                        Ok(None) => {
+                            notes.completion_missing = true;
+                            return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                        }
+                        Err(PrivateCompletionUnreadable) => {
+                            notes.recovery_unavailable = true;
+                            return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                        }
+                    }
                     // The exact connection the press retained. A release
                     // converts its coordinates against the geometry that
                     // connection still holds; the press's own numbers describe
@@ -371,7 +373,16 @@ fn resolve_and_apply(
                             settling.push(PrivateSettlingRelease {
                                 incarnation: removed.incarnation,
                                 reached: removed.reached,
-                                custody: PrivateDeliveryCustody::new(completion),
+                                custody: pending_custody
+                                    .take()
+                                    .expect("custody was installed before the effect"),
+                                // THE PRESS'S OWN CUSTODY, CARRIED ON. Ending
+                                // the physical hold does not answer the press
+                                // event or transfer its delivery: that is a
+                                // different event owed to the same recipient,
+                                // and it needs its own instance rather than
+                                // being replaced by this release's.
+                                press_custody: Some(removed.custody),
                                 native: removed.native,
                                 unbuilt,
                                 native_recorded: false,
@@ -585,20 +596,32 @@ fn resolve_and_apply(
             // Acquired before the effect, so a press that cannot have its
             // answer recognised refuses rather than applying one. Fail-closed
             // and named, exactly as the release path is.
-            let press_completion = match route.delivery {
-                Some(delivery) => match registry.input_recovery.completion_for(delivery) {
-                    Ok(Some(cell)) => Some(cell),
-                    Ok(None) => {
-                        notes.completion_missing = true;
-                        return Err(sophia_input_authority::RegistrationError::StaleRequest);
-                    }
-                    Err(PrivateCompletionUnreadable) => {
-                        notes.recovery_unavailable = true;
-                        return Err(sophia_input_authority::RegistrationError::StaleRequest);
-                    }
-                },
-                None => None,
+            // A private ordered event with no delivery identity could never
+            // have its answer recognised, so it is refused here rather than
+            // applied. Ordinary public routing keeps its own behaviour; this
+            // is the private boundary's policy for itself.
+            let Some(press_delivery) = route.delivery else {
+                notes.completion_missing = true;
+                return Err(sophia_input_authority::RegistrationError::StaleRequest);
             };
+            match registry.input_recovery.completion_for(press_delivery) {
+                // INSTALLED BEFORE THE EFFECT, into storage this instance
+                // already owns. Held in a local across the source call it
+                // would be taken by an interruption between the effect and the
+                // record, leaving the event that effect just owed with no
+                // handle able to answer it.
+                Ok(Some(cell)) => {
+                    *pending_custody = Some(PrivateDeliveryCustody::new(Some(cell)));
+                }
+                Ok(None) => {
+                    notes.completion_missing = true;
+                    return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                }
+                Err(PrivateCompletionUnreadable) => {
+                    notes.recovery_unavailable = true;
+                    return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                }
+            }
             notes
                 .watched
                 .applying()
@@ -687,7 +710,9 @@ fn resolve_and_apply(
                     // Acquired on the operation that created this debt, the
                     // same as a release's, and before the record that will own
                     // the obligation is anywhere but here.
-                    custody: PrivateDeliveryCustody::new(press_completion),
+                    custody: pending_custody
+                        .take()
+                        .expect("custody was installed before the effect"),
                     native: None,
                 });
                 holds.last_mut().expect("just pushed").native = native_pending.take();
@@ -747,6 +772,7 @@ fn execute_owned(
     watched: &mut private_watchdog::PrivateWatchedExecution,
     native: &private_native::Owner,
     native_pending: &mut Option<private_native::Hold>,
+    pending_custody: &mut Option<PrivateDeliveryCustody>,
     controller: &PrivateAuthorityController,
     participant: &PrivateAdmissionParticipant,
     broker: &XServerFrontendRouteBroker,
@@ -828,6 +854,7 @@ fn execute_owned(
                     custody.capability(),
                     native,
                     native_pending,
+                    pending_custody,
                     &mut notes,
                 )
             })

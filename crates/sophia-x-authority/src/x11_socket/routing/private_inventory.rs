@@ -73,6 +73,17 @@ struct PrivateTerminalInventory {
     /// Empty between operations. What lands here moves into the record for its
     /// hold as soon as that record exists, and nothing else reads it.
     native_pending: Option<private_native::Hold>,
+    /// Where a debt's custody is prepared before the effect that creates it.
+    ///
+    /// INSTANCE-OWNED BEFORE THE SOURCE IS ENTERED, for the same reason
+    /// native_pending is: an interruption between the effect and the record
+    /// would otherwise take with it the only handle that can answer the event
+    /// that effect just owed. It travels beside native_pending through a
+    /// refusal or an unwind, and moves into the record for its debt as soon as
+    /// that record exists.
+    ///
+    /// Empty between operations.
+    pending_custody: Option<PrivateDeliveryCustody>,
     /// Releases whose delivery was decided and whose debt is still open.
     settling: Vec<PrivateSettlingRelease>,
     /// How many terminal steps have gone to deliveries since native work last
@@ -153,6 +164,7 @@ impl PrivateTerminalInventory {
             lifecycle,
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             native_pending: None,
+            pending_custody: None,
             native_recording_cursor: 0,
             attempt_cursor: 0,
             attempt_custody: None,
@@ -228,6 +240,7 @@ impl PrivateTerminalInventory {
                 lifecycle: self.lifecycle.clone(),
                 holds: Vec::new(),
                 native_pending: None,
+                pending_custody: None,
                 native_recording_cursor: 0,
                 attempt_cursor: 0,
                 attempt_custody: None,

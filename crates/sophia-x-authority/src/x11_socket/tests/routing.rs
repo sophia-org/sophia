@@ -12899,6 +12899,99 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
 }
 
 #[test]
+fn a_final_release_carries_the_presss_own_custody_rather_than_replacing_it() {
+    // A press and a release are two events owed to the same recipient, each
+    // with its own admission and its own handle. Ending the physical hold
+    // answers neither and transfers neither, so a release that built fresh
+    // custody and dropped the record's left the press's delivery owed by
+    // nobody -- its answer reachable only through owners outside this
+    // instance.
+    let client = XServerFrontendClientId(2551);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2551),
+            272,
+            true,
+        ))
+        .expect("the order to accept the press");
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
+        .expect("a readable order");
+    private.terminal.delivering.extend(turn);
+    private
+        .deliver_one(&mut |_, _| Ok(()))
+        .expect("the press delivers");
+    let press_cell = private.terminal.holds[0]
+        .custody
+        .completion
+        .clone()
+        .expect("the press holds its own completion");
+
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2552),
+            272,
+            false,
+        ))
+        .expect("the order to accept the release");
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
+        .expect("a readable order");
+    private.terminal.delivering.extend(turn);
+    private
+        .deliver_one(&mut |_, _| Ok(()))
+        .expect("the release delivers");
+
+    assert!(
+        private.terminal.holds.is_empty(),
+        "the physical hold ended"
+    );
+    assert_eq!(private.terminal.settling.len(), 1);
+
+    // BOTH CUSTODIES, DISTINCT. The release has its own, and the press's
+    // travelled on rather than being replaced by it.
+    let release_cell = private.terminal.settling[0]
+        .custody
+        .completion
+        .clone()
+        .expect("the release holds its own completion");
+    let carried = private.terminal.settling[0]
+        .press_custody
+        .as_ref()
+        .expect("the press's custody travelled with the release")
+        .completion
+        .clone()
+        .expect("and still holds the press's own completion");
+    assert!(
+        Arc::ptr_eq(&carried, &press_cell),
+        "the very completion the press was recorded with, not a replacement"
+    );
+    assert!(
+        !Arc::ptr_eq(&release_cell, &press_cell),
+        "and the release's is a different admission's, as it must be"
+    );
+}
+
+#[test]
 fn a_press_whose_answer_could_never_be_recognised_refuses_before_applying() {
     // Presses carry the same forward custody releases do, acquired on the
     // operation that creates the debt. A press that cannot get it refuses
