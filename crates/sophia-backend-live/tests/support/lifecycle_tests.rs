@@ -1,7 +1,9 @@
 //! Actual shell intake, Engine planning, lowered owners and native queue with
 //! simulated device facts/completions. This is not a KMS/driver proof.
 use super::*;
+#[path = "lifecycle_tests/resources.rs"]
 mod resources;
+#[path = "lifecycle_tests/target.rs"]
 mod target;
 use resources::*;
 use target::Target;

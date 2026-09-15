@@ -430,5 +430,9 @@ impl super::super::LiveMetadataShell {
 mod tests;
 
 #[cfg(test)]
-#[path = "actions/transport_tests.rs"]
+#[path = "../../../../tests/support/content_actions/transport_tests.rs"]
 mod transport_tests;
+
+#[cfg(test)]
+#[path = "../../../../tests/support/content_actions/client_roundtrip_tests.rs"]
+mod client_roundtrip_tests;

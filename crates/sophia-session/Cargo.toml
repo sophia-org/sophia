@@ -24,6 +24,7 @@ rustix = { version = "1.1", default-features = false, features = ["process", "ra
 x11rb = "0.13.1"
 
 [dev-dependencies]
+sophia-shell-client = { path = "../sophia-shell-client" }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features = ["gbm-platform"] }
 
 [features]

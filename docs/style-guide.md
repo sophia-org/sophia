@@ -140,6 +140,25 @@ These tests control preparation and frontend acknowledgements independently to
 exercise overtaken device generations without acquiring or removing real GPUs.
 The mount is recorded in the layout exceptions; no test bodies enter `src`.
 
+
+The shell lifecycle controls also need private-owner access. Their external
+`tests/support/lifecycle_tests.rs` and companion fixtures drive the production
+intake, lowering, owned queue, reservation, installer and custody with simulated
+copy/device completion. The production API requires native devices and cannot
+place the deterministic refusal, lagging-head and retained-consumer states.
+Test-only crate re-exports join these existing private owners without widening
+the release API. The runtime retirement-authority fixture similarly mounts
+externally to distinguish the persistent and transient custody paths.
+
+External transport-budget and client outbox/candidate fixtures need to inspect
+exact producer credits and partial-write ownership across refusal; the public
+socket API cannot select those internal transfer points. Session's external
+content-action fixtures join the real private socket, generic client and action
+ledger, using the shared WM admission boundary. These mounts and test-only
+re-exports are recorded individually in the layout exceptions. All fixture
+bodies remain under `tests/support`; their scope does not imply hardware or
+full owner-loop acceptance.
+
 ## TEA Policy Style
 
 Use TEA-style structure for policy components:

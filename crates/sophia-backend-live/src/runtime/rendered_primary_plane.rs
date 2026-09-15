@@ -414,5 +414,5 @@ where
 }
 
 #[cfg(all(test, feature = "libdrm-events"))]
-#[path = "retirement_authority_tests.rs"]
+#[path = "../../tests/support/retirement_authority_tests.rs"]
 mod retirement_authority_tests;

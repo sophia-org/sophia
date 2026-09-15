@@ -422,25 +422,15 @@ impl LiveWmSession {
         output: sophia_protocol::OutputId,
     ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
         let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
-        let published = public
-            .reducer
-            .indicator_publication()
-            .indicators
-            .iter()
-            .any(|indicator| indicator.output == output && indicator.action == Some(action));
-        if !published {
-            return Ok(LiveWmRequestAdmission::Duplicate);
-        }
-        let activation_serial = public.mint_transaction()?.raw();
-        let active_output = public.active_output;
-        Ok(public.queue_cause(LivePublicPolicyCause {
-            source: LiveWmProposalSource::Action(action),
-            cause: sophia_protocol::PolicyRequestCause::Action {
-                activation_serial,
-                action,
-            },
-            affected_outputs: public.all_outputs(active_output),
-        }))
+        LiveIndicatorAdmission {
+            publication: &public.reducer.indicator_publication(),
+            outputs: &public.outputs,
+            active_output: public.active_output,
+            next_transaction: &mut public.next_transaction,
+            queue: &mut public.queue,
+            in_flight_source: public.in_flight_source,
+            in_flight: public.in_flight_request.is_some(),
+        }.enqueue(action, output)
     }
 
     fn enqueue_action(

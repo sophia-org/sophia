@@ -449,6 +449,38 @@ is retained as a failure, not a pass. Scoped logs are under
 acceptance follows from these controls; frozen review and broader validation
 remain separate gates.
 
+
+The frozen mirror checkpoint `9ee3b6c834e873e3cbac09197325282ce227d3ff`
+received independent scoped source approval: 134 backend library tests and
+strict backend Clippy passed, and reservation, required-identical and
+queue-idle mutations each failed behaviorally. This does not broaden the
+simulated-copy/device evidence into worker/exporter/KMS acceptance.
+
+The next action checkpoint joins a real private socket, generic
+`ContentLifecycle`, paired ACK/indicator outbox, Session action ledger and the
+shared WM admission queue. Production now delegates publication validation,
+checked serial minting, output scoping and queue-capacity admission to the same
+borrowed owner used by the fixture. Both ACK-first and activation-first service
+orders pass; unpublished/wrong-output/capacity refusals preserve the queue.
+Prepared activates no targets, Action-before-Presented is rejected, and Cancel
+produces no ACK. Restoring an ACK prerequisite or bypassing publication checking
+makes the corresponding control fail after compilation.
+
+Presented and committed policy publication remain supplied fixture inputs;
+linking the WM queue result to the ledger is still performed by the fixture.
+The physical owner loop, admission outcome under backpressure, actual policy
+execution and subsequent matching presentation are not established by this
+checkpoint. Next: retain the exact indicator outcome after WM admission until
+FIFO transfer succeeds, without replaying the admitted cause.
+
+Private lifecycle and action fixture bodies now live in `tests/support`, with
+narrow owner-access mounts documented in the style guide and exceptions. The
+corrected device-hidden development wrapper generates a private loader cache
+and preflights its explicitly mounted `rg`; missing-cache and missing-tool
+attempts remain retained failures. Relocated affected-library validation passes
+591 tests with 13 ignored. These are scoped checks, not a canonical release or
+attended acceptance result. Logs: `.artifacts/shell-lifecycle-dev/client-wm-*`.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

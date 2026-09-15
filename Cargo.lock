@@ -1077,6 +1077,7 @@ dependencies = [
  "sophia-renderer-live",
  "sophia-renderer-native-egl",
  "sophia-runtime",
+ "sophia-shell-client",
  "sophia-wm-demo",
  "sophia-x-authority",
  "sophia-xshmfence",

@@ -17,6 +17,7 @@ mod authority;
 mod composition_target;
 mod compositor_graphics;
 #[cfg(test)]
+#[path = "../tests/support/lifecycle_tests.rs"]
 mod lifecycle_tests;
 use composition_target::NativeCompositionTarget;
 mod native;

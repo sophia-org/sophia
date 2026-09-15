@@ -1390,12 +1390,7 @@ impl LivePublicPolicyState {
     }
 
     fn mint_transaction(&mut self) -> Result<TransactionId, Box<dyn std::error::Error>> {
-        let transaction = TransactionId::from_raw(self.next_transaction);
-        self.next_transaction = self
-            .next_transaction
-            .checked_add(1)
-            .ok_or("public WM transaction identity exhausted")?;
-        Ok(transaction)
+        mint_public_policy_transaction(&mut self.next_transaction)
     }
 
     fn all_outputs(&self, active: sophia_protocol::OutputId) -> Vec<sophia_protocol::OutputId> {

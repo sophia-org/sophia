@@ -7,3 +7,13 @@ inline-tests crates/sophia-renderer-live/src/shared_pixmap/service.rs
 
 # External device-preparation race tests; rationale in docs/style-guide.md.
 inline-tests crates/sophia-session/src/live_session/render_devices.rs
+
+# External private-owner lifecycle fixtures; rationale in docs/style-guide.md.
+inline-tests crates/sophia-backend-live/src/production_session/native_scanout.rs
+inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/composition_queue.rs
+inline-tests crates/sophia-backend-live/src/production_visual_runtime.rs
+inline-tests crates/sophia-runtime/src/shell_transport/control_budget.rs
+inline-tests crates/sophia-runtime/src/shell_transport/outbox.rs
+inline-tests crates/sophia-session/src/live_session/metadata_shell/content/actions.rs
+inline-tests crates/sophia-shell-client/src/candidate.rs
+inline-tests crates/sophia-shell-client/src/outbox.rs
