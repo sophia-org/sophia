@@ -110,9 +110,9 @@ impl PrivateXServerFrontend {
         }
 
         let recipient = self.terminal.settling[index].reached().client();
-        let admission = self.terminal.settling[index]
+        let completion = self.terminal.settling[index]
             .delivery()
-            .and_then(|delivery| self.broker.registry.input_recovery.ticket(delivery));
+            .and_then(|delivery| self.broker.registry.input_recovery.completion_of(delivery));
         // The sender is cloned and the clients guard released before anything
         // takes common again. Holding it across a give-back would take common
         // beneath clients, which is the forbidden direction.
@@ -145,6 +145,13 @@ impl PrivateXServerFrontend {
         let release = &mut self.terminal.settling[index];
         release.attempt = Some(claim.token);
         release.dispatch = PrivateDispatchPhase::Indeterminate;
+        // CUSTODY OF THE ANSWER, TAKEN WITH THE ATTEMPT AND THE PHASE. Stored
+        // after a successful send it would be absent exactly when it is most
+        // needed: an enqueue followed by an interruption would leave a
+        // Dispatching record with no way to recognise its own receipt.
+        if let Some(cell) = completion {
+            release.hold_completion(cell);
+        }
         let Some(PrivatePendingDelivery::Capsule(capsule)) = release.pending.take() else {
             unreachable!("checked to be a capsule above")
         };
@@ -156,12 +163,6 @@ impl PrivateXServerFrontend {
                 // would be a second event nobody asked for. The token moves
                 // from outstanding onto the record it now serves.
                 release.dispatch = PrivateDispatchPhase::Enqueued;
-                if let Some(ticket) = admission {
-                    // The admission this delivery went out under, so a later
-                    // outcome can be checked against it rather than against a
-                    // delivery id that may since have been handed out again.
-                    release.record_admission(ticket);
-                }
                 self.terminal.attempt_custody = None;
                 Some(true)
             }
@@ -272,26 +273,13 @@ impl PrivateXServerFrontend {
     /// different admission, and an outcome published against that one answers
     /// somebody else's delivery.
     fn capture_available_outcomes(&mut self) {
-        let recovery = &self.broker.registry.input_recovery;
         for release in &mut self.terminal.settling {
             if release.attempt().is_none() || release.outcome_seen().is_some() {
                 continue;
             }
-            let Some(delivery) = release.delivery() else {
+            let Some(receipt) = release.completion_answer() else {
                 continue;
             };
-            let Some(ticket) = recovery.ticket(delivery) else {
-                continue;
-            };
-            if !release.admission_matches(&ticket) {
-                continue;
-            }
-            let Some(receipt) = recovery.terminal_outcome(delivery) else {
-                continue;
-            };
-            if receipt.client != release.reached().client() {
-                continue;
-            }
             release.record_outcome(receipt.outcome);
         }
     }
@@ -361,16 +349,9 @@ impl PrivateXServerFrontend {
     /// ticket it came from; so does one still sitting in recovery under this
     /// release's own admission.
     fn owes_receipt_settlement(&self) -> bool {
-        let recovery = &self.broker.registry.input_recovery;
         self.terminal.settling.iter().any(|release| {
             release.attempt().is_some()
-                && (release.outcome_seen().is_some()
-                    || release.delivery().is_some_and(|delivery| {
-                        recovery
-                            .ticket(delivery)
-                            .is_some_and(|ticket| release.admission_matches(&ticket))
-                            && recovery.terminal_outcome(delivery).is_some()
-                    }))
+                && (release.outcome_seen().is_some() || release.completion_answer().is_some())
         })
     }
 

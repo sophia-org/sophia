@@ -473,7 +473,7 @@ fn resolve_and_apply(
                                 pending: None,
                                 dispatch: PrivateDispatchPhase::Untaken,
                                 attempt: None,
-                                admission: None,
+                                completion: None,
                                 outcome_seen: None,
                                 native: removed.native,
                                 unbuilt,

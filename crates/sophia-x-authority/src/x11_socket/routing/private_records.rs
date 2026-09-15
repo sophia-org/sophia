@@ -173,16 +173,19 @@ pub struct PrivateSettlingRelease {
     /// later finds an empty slot.
     #[cfg_attr(not(test), allow(dead_code))]
     unbuilt: Option<PrivateAppliedRefusal>,
-    /// The admission this release's delivery was dispatched under.
+    /// Custody of this delivery's completion, taken before the handover.
     ///
-    /// A receipt carries a client and a delivery id, and neither is identity:
-    /// an id can be pruned and handed out again, and the same client can then
-    /// publish an outcome for a different incarnation entirely. Recording the
-    /// ticket at dispatch is what lets a later outcome be checked against the
-    /// admission it belongs to rather than merely against the number it
-    /// reuses.
-    #[cfg_attr(not(test), allow(dead_code))]
-    admission: Option<XAuthorityInputDeliveryTicket>,
+    /// THE CELL IS THE IDENTITY. A delivery id can be pruned and handed out
+    /// again, and the same client can then publish an outcome under that
+    /// number for a different incarnation; an id, a timestamp and an epoch are
+    /// what a caller supplied, not what an origin minted. This cell is minted
+    /// by the ledger at admission, so holding it is holding the completion of
+    /// that exact admission and of no other.
+    ///
+    /// Held rather than looked up. The ordinary observer prunes the ticket the
+    /// moment it consumes the outcome, and a reader that went back for its
+    /// answer would find it gone.
+    completion: Option<Arc<PrivateDeliveryCompletion>>,
     /// The writer's own answer for this release's delivery, once it has one.
     ///
     /// Preserved separately from what it settled. "Nothing was settled" and
@@ -292,30 +295,24 @@ impl PrivateSettlingRelease {
             )
     }
 
-    /// Take custody of the admission this delivery was dispatched under.
-    fn record_admission(&mut self, ticket: XAuthorityInputDeliveryTicket) {
-        self.admission = Some(ticket);
+    /// Take custody of this delivery's completion.
+    fn hold_completion(&mut self, cell: Arc<PrivateDeliveryCompletion>) {
+        self.completion = Some(cell);
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
-    fn admission(&self) -> Option<XAuthorityInputDeliveryTicket> {
-        self.admission
+    fn completion(&self) -> Option<&Arc<PrivateDeliveryCompletion>> {
+        self.completion.as_ref()
     }
 
-    /// Whether a ticket now in recovery is the same admission this release
-    /// was dispatched under.
+    /// This delivery's answer, if its completion has one.
     ///
-    /// Compared on what identifies an admission rather than on the id it was
-    /// given: a pruned id handed out again produces a different admission
-    /// moment and a different control epoch, and an outcome published against
-    /// that one answers a different delivery than this release made.
-    fn admission_matches(&self, ticket: &XAuthorityInputDeliveryTicket) -> bool {
-        self.admission.is_some_and(|held| {
-            held.delivery == ticket.delivery
-                && held.admitted_at == ticket.admitted_at
-                && held.control_epoch == ticket.control_epoch
-                && held.client == ticket.client
-        })
+    /// One read of one cell. There is no ticket to validate and no second
+    /// lookup to pair with it, so there is no interval in which the delivery
+    /// could be pruned and re-admitted between establishing identity and
+    /// reading the outcome.
+    fn completion_answer(&self) -> Option<XAuthorityClientInputDelivery> {
+        self.completion.as_ref()?.answer()
     }
 
     /// Keep the writer's own answer, whatever it settled.

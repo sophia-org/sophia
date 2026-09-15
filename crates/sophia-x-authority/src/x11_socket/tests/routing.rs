@@ -12855,6 +12855,88 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
 }
 
 #[test]
+fn custody_of_the_answer_is_taken_before_the_handover_not_after_it_succeeds() {
+    // Stored after a successful send, custody would be absent exactly when it
+    // matters most: an enqueue followed by an interruption leaves a record
+    // that began a handover and cannot recognise its own receipt. A send that
+    // fails is the reachable case with the same shape -- the handover was
+    // attempted, so the answer must already be held.
+    let client = XServerFrontendClientId(2511);
+    let PreparedOrderedFixture {
+        mut runner,
+        ingress,
+        registration,
+        channels,
+        durable,
+        surface,
+        window: _window,
+        selections: _selections,
+        client: _client,
+        namespace: _namespace,
+        deliveries: _deliveries,
+        _acks,
+    } = prepared_ordered_fixture(client);
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = &mut runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    for (delivery, pressed) in [(2511u64, true), (2512u64, false)] {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                272,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.terminal.delivering.extend(turn);
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("the entry delivers");
+    }
+    // Record the proof, so the release becomes eligible for an attempt.
+    for _ in 0..4 {
+        private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+        if private.terminal.settling[0].native_recorded() {
+            break;
+        }
+    }
+    assert!(private.terminal.settling[0].native_recorded());
+
+    // The recipient's queue goes, while its routes stay. The sender is still
+    // found, so the handover is attempted -- and refused.
+    drop(channels);
+
+    let step = private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+    assert!(
+        matches!(
+            step,
+            PrivateDeliveryStep::Dispatched {
+                enqueued: false,
+                ..
+            }
+        ),
+        "the handover was attempted and refused"
+    );
+    assert!(
+        private.terminal.settling[0].completion().is_some(),
+        "custody of the answer was taken before the send, so a handover that \
+         failed still leaves the record able to recognise its own receipt"
+    );
+    drop(registration);
+    drop(durable);
+    drop(_acks);
+}
+
+#[test]
 fn a_reused_delivery_id_does_not_settle_the_debt_that_had_it_before() {
     // A delivery id can be pruned and handed out again. The same client can
     // then publish an outcome under that number for a different incarnation
@@ -12899,23 +12981,66 @@ fn a_reused_delivery_id_does_not_settle_the_debt_that_had_it_before() {
     for _ in 0..12 {
         private.deliver_one(&mut |_, _| Ok(())).expect("a step");
     }
-    let held = private.terminal.settling[0]
-        .admission()
-        .expect("the release recorded the admission it went out under");
-
-    // A different admission carrying the same id and the same client. This is
-    // what a reused number looks like from here.
-    let reused = XAuthorityInputDeliveryTicket {
-        control_epoch: held.control_epoch + 1,
-        ..held
-    };
+    let delivery = private.terminal.settling[0]
+        .delivery()
+        .expect("the release knows its delivery");
     assert!(
-        !private.terminal.settling[0].admission_matches(&reused),
-        "a later admission under the same id and client is not this release's"
+        private.terminal.settling[0].completion().is_some(),
+        "custody of this admission's completion was taken before the handover"
     );
+
+    // The delivery is answered and an ordinary observer consumes it, which
+    // prunes the ticket and frees the id. Then the SAME id is admitted again
+    // for different work by the same client.
+    let recovery = &private.broker.registry.input_recovery;
+    recovery
+        .finish(
+            client,
+            Some(delivery),
+            XAuthorityInputDeliveryOutcome::WriteFailed,
+        )
+        .expect("the first admission is answered");
+    assert_eq!(
+        private.terminal.settling[0]
+            .completion_answer()
+            .map(|receipt| receipt.outcome),
+        Some(XAuthorityInputDeliveryOutcome::WriteFailed),
+        "the held cell carries its own admission's answer"
+    );
+    recovery.observe(XAuthorityClientInputDelivery {
+        client,
+        delivery,
+        outcome: XAuthorityInputDeliveryOutcome::WriteFailed,
+    });
+
+    // A fresh admission under the reused number. IT GETS ITS OWN CELL, which
+    // is what makes the number harmless: the old holder's answer can never be
+    // written by later work, whether or not that work is answered first.
+    let reused = button_to(surface, delivery, 274, true);
     assert!(
-        private.terminal.settling[0].admission_matches(&held),
-        "and its own admission still is"
+        recovery.admit(&reused, 0, std::time::Instant::now()),
+        "the pruned id is available again, which is the situation being guarded"
+    );
+    let fresh = recovery
+        .completion_of(delivery)
+        .expect("the new admission minted its own completion");
+    let held = private.terminal.settling[0]
+        .completion()
+        .expect("the release still holds its own");
+    assert!(
+        !Arc::ptr_eq(&fresh, held),
+        "a reused delivery id mints a new completion rather than handing back \
+         the one an earlier admission is still answered through"
+    );
+    recovery
+        .finish(client, Some(delivery), XAuthorityInputDeliveryOutcome::Flushed)
+        .expect("the new admission is answered");
+    assert_eq!(
+        private.terminal.settling[0]
+            .completion_answer()
+            .map(|receipt| receipt.outcome),
+        Some(XAuthorityInputDeliveryOutcome::WriteFailed),
+        "and the older debt still reads its own answer, not the newer one"
     );
 }
 
@@ -18006,6 +18131,78 @@ fn ordered_capsule(delivery: u64) -> XAuthorityOrderedDelivery {
     XAuthorityOrderedDelivery::from_emission(
         private_native_tests::emission_for_writer_fixture(delivery),
     ).unwrap()
+}
+
+#[test]
+fn serving_a_whole_delivery_reports_a_flush_and_nothing_more() {
+    // A flush means every frame went. It does not mean the recipient read
+    // them, and this control asserts what the step claims rather than what a
+    // reader might hope it claims.
+    let capsule = ordered_capsule(17101);
+    let (sender, queue) = sync_channel(4);
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    let mut in_flight = None;
+    sender.send(capsule).expect("the queue to accept it");
+
+    let mut flushed = false;
+    for _ in 0..16 {
+        match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
+            X11OrderedServeStep::Advanced => {}
+            X11OrderedServeStep::Flushed => {
+                flushed = true;
+                break;
+            }
+            other => panic!("a healthy recipient took its bytes: {other:?}"),
+        }
+    }
+    assert!(flushed, "every frame of the delivery went out");
+    drop(peer);
+}
+
+#[test]
+fn a_recipient_that_will_not_take_its_bytes_ends_the_connection_before_returning() {
+    // THE OBLIGATION write_one_ordered_frame REFUSES TO DISCHARGE. Every
+    // failure leaves a frame owed or its extent unknown, so the socket is
+    // closed before this returns. A caller that released output
+    // serialization after such a step without the socket being closed would
+    // admit another writer into the body of a half-written event.
+    let capsule = ordered_capsule(17102);
+    let (sender, queue) = sync_channel(4);
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    let mut in_flight = None;
+    sender.send(capsule).expect("the queue to accept it");
+
+    // A recipient that is gone: the send fails rather than blocking, which is
+    // the failure this control can reach deterministically.
+    drop(peer);
+
+    let mut ended = None;
+    for _ in 0..16 {
+        match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
+            X11OrderedServeStep::Advanced | X11OrderedServeStep::Flushed => {}
+            step @ X11OrderedServeStep::Ended { .. } => {
+                ended = Some(step);
+                break;
+            }
+            X11OrderedServeStep::Idle => break,
+        }
+    }
+    let Some(X11OrderedServeStep::Ended { outcome, shutdown }) = ended else {
+        // A departed peer may accept the bytes into a closed socket's buffer
+        // on some kernels; if it did, this control has nothing to say and
+        // says so rather than asserting something it did not observe.
+        return;
+    };
+    assert_eq!(
+        outcome,
+        XAuthorityInputDeliveryOutcome::WriteFailed,
+        "a send that failed is a writer fact, not a recipient settlement"
+    );
+    assert!(
+        shutdown,
+        "and the connection was ended before this returned, not left for a \
+         caller to remember"
+    );
 }
 
 #[test]

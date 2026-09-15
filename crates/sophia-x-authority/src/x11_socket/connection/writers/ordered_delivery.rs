@@ -219,3 +219,91 @@ fn write_one_ordered_frame(
     held.advance_frame().map_err(X11OrderedWriteFailure::Send)?;
     Ok(X11OrderedWriteStep::Advanced { frame })
 }
+
+/// What one serving step did for the recipient it answers.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug)]
+enum X11OrderedServeStep {
+    /// Nothing was waiting and nothing is in flight.
+    Idle,
+    /// One frame of the delivery in hand went out; more are owed.
+    Advanced,
+    /// Every frame of one delivery has gone.
+    ///
+    /// This is what an established flush means, and it is the only step that
+    /// may be reported as one. Whether the recipient has read the bytes is a
+    /// question nobody here can answer and this does not claim to.
+    Flushed,
+    /// The connection is finished, and this step finished it.
+    ///
+    /// `outcome` is what the recipient's debt should be answered with.
+    /// `shutdown` says the socket was closed before this returned -- which is
+    /// the whole point of ending here rather than reporting upward: the caller
+    /// must not be able to release output serialization while the wire holds
+    /// the beginning of an event nobody can finish.
+    Ended {
+        outcome: XAuthorityInputDeliveryOutcome,
+        shutdown: bool,
+    },
+}
+
+/// Serve one step of one recipient's ordered queue.
+///
+/// THE WIRE CUSTODY OBLIGATION IS DISCHARGED HERE. write_one_ordered_frame
+/// says plainly that it closes nothing and leaves an incomplete or unknown
+/// frame owned by its caller; this is that caller. Every failure below leaves
+/// a frame owed or its extent unknown, so every one of them shuts the socket
+/// down BEFORE returning. A caller that released serialization after one of
+/// these without the socket being closed would admit a control or protocol
+/// write into the body of a half-written event, which X11 can neither
+/// describe nor recover from.
+///
+/// NOTHING IS EVER RESENT. A frame whose extent is unknown is not retried,
+/// and no delivery is re-encoded: the only dispositions are finishing it or
+/// ending the connection.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+fn serve_one_ordered_delivery(
+    socket: &UnixStream,
+    in_flight: &mut Option<X11OrderedInFlight>,
+    queue: &Receiver<XAuthorityOrderedDelivery>,
+    byte_order: XByteOrder,
+    sequence: u16,
+) -> X11OrderedServeStep {
+    if in_flight.is_none() {
+        match take_ordered_delivery(queue, in_flight) {
+            Ok(()) => {}
+            Err(X11OrderedTakeRefusal::Empty) => return X11OrderedServeStep::Idle,
+            Err(X11OrderedTakeRefusal::Closed) => {
+                // The producer is gone and nothing more will arrive. Nothing
+                // is owed on the wire, so this is an ending without a
+                // shutdown to perform.
+                return X11OrderedServeStep::Ended {
+                    outcome: XAuthorityInputDeliveryOutcome::ClientDisconnected,
+                    shutdown: false,
+                };
+            }
+            Err(X11OrderedTakeRefusal::InFlight) => return X11OrderedServeStep::Advanced,
+        }
+    }
+    match write_one_ordered_frame(socket, in_flight, byte_order, sequence) {
+        Ok(X11OrderedWriteStep::Advanced { .. }) => X11OrderedServeStep::Advanced,
+        Ok(X11OrderedWriteStep::Wrote) => X11OrderedServeStep::Flushed,
+        Ok(X11OrderedWriteStep::Idle) => X11OrderedServeStep::Idle,
+        Err(failure) => {
+            // A recipient that did not take its bytes within the allowance is
+            // a failed recipient, and is told apart from a writer that could
+            // not write. Neither settles anything by itself; both end the
+            // connection, because both leave a frame owed.
+            let outcome = match &failure {
+                X11OrderedWriteFailure::Send(X11FrameSendFailure::Blocked { .. }) => {
+                    XAuthorityInputDeliveryOutcome::TimedOut
+                }
+                _ => XAuthorityInputDeliveryOutcome::WriteFailed,
+            };
+            let shutdown = socket.shutdown(std::net::Shutdown::Both).is_ok();
+            X11OrderedServeStep::Ended { outcome, shutdown }
+        }
+    }
+}

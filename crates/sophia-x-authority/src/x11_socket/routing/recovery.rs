@@ -14,10 +14,44 @@ pub struct XAuthorityInputDeliveryTicket {
     pub client: Option<XServerFrontendClientId>,
 }
 
+/// The one place a delivery's terminal outcome is ever written.
+///
+/// MINTED BY THIS LEDGER AT ADMISSION, before anything can be accepted for the
+/// delivery it belongs to. A holder of this cell holds the completion of that
+/// exact admission and of no other: a delivery id that is pruned and admitted
+/// again gets a NEW cell, so an old holder can never see the new admission's
+/// answer however the number is reused.
+///
+/// Shared rather than copied out. The ordinary observer prunes the ticket as
+/// soon as it consumes the outcome, and a reader that had to go back to the
+/// ticket for its answer would find the answer gone. Anyone who took custody
+/// of this cell keeps the answer whether or not the ticket still exists.
+///
+/// Written once. A second answer for one admission is a contradiction rather
+/// than an update, and the first one stands.
+#[cfg(unix)]
+#[derive(Debug, Default)]
+struct PrivateDeliveryCompletion {
+    outcome: std::sync::OnceLock<XAuthorityClientInputDelivery>,
+}
+
+#[cfg(unix)]
+impl PrivateDeliveryCompletion {
+    fn publish(&self, receipt: XAuthorityClientInputDelivery) {
+        let _ = self.outcome.set(receipt);
+    }
+
+    fn answer(&self) -> Option<XAuthorityClientInputDelivery> {
+        self.outcome.get().copied()
+    }
+}
+
 #[cfg(unix)]
 struct TrackedInputDelivery {
     ticket: XAuthorityInputDeliveryTicket,
     terminal: Option<XAuthorityClientInputDelivery>,
+    /// This admission's completion, shared with whoever took custody of it.
+    completion: Arc<PrivateDeliveryCompletion>,
     observed: bool,
     routing_finished: bool,
     /// An execution holds this delivery and its effect may already be under
@@ -240,6 +274,7 @@ impl InputRecovery {
                     client: None,
                 },
                 terminal: None,
+                completion: Arc::new(PrivateDeliveryCompletion::default()),
                 observed: false,
                 routing_finished: false,
             },
@@ -272,17 +307,18 @@ impl InputRecovery {
         }
     }
 
-    /// The terminal outcome published for one delivery, if one has been.
+    /// Take custody of one admission's completion.
     ///
-    /// Read rather than consumed: the outcome is the writer's answer and this
-    /// executor is one reader of it, not its owner. Reading it settles
-    /// nothing by itself -- what a receipt proves is decided where the debt
-    /// it belongs to is known.
-    fn terminal_outcome(
+    /// ONE ATOMIC OPERATION. The cell IS the admission's identity, so there is
+    /// no pairing of a validated ticket with an outcome read afterwards and no
+    /// window in which the delivery is pruned and re-admitted between the two.
+    /// A holder of this cell can never be answered by a later admission that
+    /// happens to reuse the number.
+    fn completion_of(
         &self,
         id: XAuthorityInputDeliveryId,
-    ) -> Option<XAuthorityClientInputDelivery> {
-        self.state.lock().ok()?.tickets.get(&id)?.terminal
+    ) -> Option<Arc<PrivateDeliveryCompletion>> {
+        Some(Arc::clone(&self.state.lock().ok()?.tickets.get(&id)?.completion))
     }
 
     fn ticket(&self, id: XAuthorityInputDeliveryId) -> Option<XAuthorityInputDeliveryTicket> {
@@ -505,6 +541,10 @@ impl InputRecovery {
                 return;
             }
             entry.terminal = Some(receipt);
+            // Into the cell in the same breath, under the same lock. Whoever
+            // took custody of this admission's completion has the answer from
+            // here on, whether or not the ticket survives the next observer.
+            entry.completion.publish(receipt);
         }
         if let Some(sender) = &self.sender {
             let _ = sender.send(receipt);
