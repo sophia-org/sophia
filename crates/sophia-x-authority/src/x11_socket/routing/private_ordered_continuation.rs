@@ -229,6 +229,70 @@ impl PrivateOrderedContinuation {
 
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+impl PrivateOrderedContinuation {
+    /// Whether this connection owes nothing further.
+    ///
+    /// EVERY PART OF IT, not just an empty queue. A drained queue with an
+    /// admission the authority would not take, a capsule belonging to another
+    /// endpoint, or a wire whose ending was never established is a connection
+    /// that still owes something -- and returning its place then would hand the
+    /// capacity out against work that exists.
+    ///
+    /// A queue that is merely quiet says nothing: producers may still hold
+    /// senders for it, so only their being gone counts.
+    /// One bounded step of whatever this continuation still owes.
+    ///
+    /// A serving owner closes; a setup that never got one has nothing to drive
+    /// and is waiting only for its producers to go.
+    fn visit(&mut self) {
+        let Self::Serving(owner) = self else {
+            return;
+        };
+        if owner.closing().is_none()
+            && owner
+                .begin_close(X11OrderedCloseCause::SupervisorStopped)
+                .is_err()
+        {
+            // Termination is not established, so nothing is offered. The
+            // reason is on the owner and the place stays taken.
+            return;
+        }
+        owner.advance_close(XByteOrder::LittleEndian, 0);
+    }
+
+    fn settled(&self) -> bool {
+        match self {
+            // Nothing was ever served for it, so what it owes is whatever it
+            // accepted. It is settled only once that queue can never deliver
+            // again and holds nothing.
+            Self::Setup { .. } => {
+                matches!(
+                    self.queue().try_recv(),
+                    Err(std::sync::mpsc::TryRecvError::Disconnected)
+                )
+            }
+            Self::Serving(owner) => {
+                owner.retained_unanswered().is_empty()
+                    && owner.retained_foreign().is_empty()
+                    && owner.in_flight().is_none()
+                    && owner.refused().is_none()
+                    && !owner.unterminated
+                    && owner
+                        .closing()
+                        .is_some_and(|closing| {
+                            closing.termination == X11OrderedTermination::Established
+                        })
+                    && matches!(
+                        owner.queue.try_recv(),
+                        Err(std::sync::mpsc::TryRecvError::Disconnected)
+                    )
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
 impl PrivateSettlementOwner {
     /// Borrow one retained continuation, if the place holds one.
     ///
@@ -240,6 +304,92 @@ impl PrivateSettlementOwner {
     /// The aggregate lock is NOT held across that work. Its order here is
     /// settlement before anything the close touches, and holding it while a
     /// close waits on output serialization would invert that.
+    /// Give one bounded visit to each retained continuation in turn.
+    ///
+    /// FAIR, so one connection that cannot progress does not consume every
+    /// visit. The cursor is retained, so the next call starts after the one
+    /// served last rather than at the front -- a blocked record at the front
+    /// would otherwise take the whole budget every time.
+    ///
+    /// The store is not held across a visit. Each record is found under it,
+    /// the lock is released, and the record is driven in its own storage.
+    ///
+    /// A PLACE COMES BACK ONLY WHEN ITS WORK IS GONE. Not when its queue falls
+    /// quiet -- producers may still hold senders -- and not when it drains with
+    /// an admission still unanswered, a capsule belonging to elsewhere, or a
+    /// wire whose ending was never established.
+    fn drive_ordered_continuations(&self, visits: usize) -> usize {
+        let mut driven = 0usize;
+        for _ in 0..visits {
+            let (index, record) = {
+                let mut held = self.records_even_if_poisoned();
+                let places = held.continuations.len();
+                if places == 0 {
+                    return driven;
+                }
+                let mut found = None;
+                for step in 0..places {
+                    let index = (held.continuation_cursor + step) % places;
+                    if let PrivateOrderedContinuationPlace::Taken(record) =
+                        &held.continuations[index]
+                    {
+                        found = Some((index, record.clone()));
+                        break;
+                    }
+                }
+                held.continuation_cursor = found
+                    .as_ref()
+                    .map_or(held.continuation_cursor, |(index, _)| (index + 1) % places);
+                match found {
+                    Some(found) => found,
+                    None => return driven,
+                }
+            };
+            // Driven with the store released.
+            let settled = {
+                let mut record = record
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let Some(continuation) = record.as_mut() else {
+                    // Reserved but never handed anything over. Nothing to
+                    // drive, and not this drive's business to reclaim.
+                    continue;
+                };
+                continuation.visit();
+                continuation.settled()
+            };
+            driven += 1;
+            if settled {
+                self.return_ordered_continuation(index, &record);
+            }
+        }
+        driven
+    }
+
+    /// Give a place back, once the work in it is gone.
+    fn return_ordered_continuation(
+        &self,
+        index: usize,
+        record: &Arc<Mutex<Option<PrivateOrderedContinuation>>>,
+    ) {
+        let mut held = self.records_even_if_poisoned();
+        let PrivateOrderedContinuationPlace::Taken(place) = &held.continuations[index] else {
+            return;
+        };
+        if !Arc::ptr_eq(place, record) {
+            // The place has moved on to another connection since this visit
+            // began. Returning it now would take somebody else's.
+            //
+            // No control reaches this: it needs a place to be returned and
+            // re-reserved between one visit finding a record and that visit
+            // finishing with it. Kept because returning another connection's
+            // place is the worse failure, and recorded as unwitnessed.
+            return;
+        }
+        held.continuations[index] = PrivateOrderedContinuationPlace::Free;
+        held.continuation_slots = held.continuation_slots.saturating_sub(1);
+    }
+
     fn with_ordered_continuation<R>(
         &self,
         index: usize,

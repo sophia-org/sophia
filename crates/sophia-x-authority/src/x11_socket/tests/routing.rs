@@ -24904,10 +24904,15 @@ fn reading_the_store_does_not_take_a_record_beneath_it() {
     );
     let reporting = durable.clone();
     let reader = std::thread::spawn(move || reporting.continuations_retained());
+    // The sleep does NOT establish that the reader reached the record lock --
+    // a descheduled thread may not have started. What this half asserts is the
+    // weaker fact that the store stays available while a reader is outstanding
+    // and the record is held; the stronger claim about that exact interval is
+    // not established here.
     std::thread::sleep(Duration::from_millis(100));
     assert!(
         durable.inner.try_lock().is_ok(),
-        "and a reader waiting on a record does not hold the store while it waits"
+        "the store stays available while a reader is outstanding"
     );
     drop(blocker);
     assert_eq!(
@@ -24987,4 +24992,78 @@ fn an_unreadable_retained_record_is_not_reported_as_absent() {
         Some(1),
         "and its place is still taken"
     );
+}
+
+#[test]
+fn a_quiet_continuation_keeps_its_place_and_does_not_starve_the_others() {
+    // A place comes back when its work is gone, not when its queue falls
+    // quiet: producers may still hold senders for it. And one record that
+    // cannot progress must not take every visit, or the rest are never driven.
+    let first = XServerFrontendClientId(8011);
+    let second = XServerFrontendClientId(8012);
+    let one = prepared_ordered_fixture(first);
+    let two = prepared_ordered_fixture(second);
+    // A sender for the first is kept alive, so its queue is quiet rather than
+    // finished. The second's producers go.
+    let live_sender = one
+        .runner
+        .frontend
+        .as_ref()
+        .unwrap()
+        .broker
+        .registry
+        .clients
+        .lock()
+        .unwrap()
+        .get(&first)
+        .expect("its row")
+        .ordered
+        .clone();
+
+    let durable = PrivateSettlementOwner::with_capacities(4, 4);
+    let mut places = Vec::new();
+    for fixture in [one, two] {
+        let slot = durable
+            .reserve_ordered_continuation()
+            .expect("a place, reserved before exposure");
+        let PreparedOrderedFixture { channels, .. } = fixture;
+        let mut source = Some(PrivateOrderedContinuation::Setup {
+            accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
+            refusal: X11OrderedServingRefusal::TransportUnavailable,
+        });
+        slot.install(&mut source);
+        places.push(());
+    }
+    assert_eq!(durable.continuations_reserved(), Some(2));
+    assert_eq!(durable.continuations_retained(), Some(2));
+
+    // EVERY RECORD GETS A VISIT. The first cannot finish -- a sender for it is
+    // still held -- and that must not stop the second being reached.
+    let driven = durable.drive_ordered_continuations(4);
+    assert_eq!(driven, 4, "each visit reached a record");
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "the one whose producers are gone gave its place back"
+    );
+    assert_eq!(durable.continuations_retained(), Some(1));
+
+    // The quiet one keeps its place for as long as anything can still send.
+    for _ in 0..4 {
+        durable.drive_ordered_continuations(2);
+    }
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "a quiet queue is not a finished one while a sender is held"
+    );
+    drop(live_sender);
+    durable.drive_ordered_continuations(2);
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(0),
+        "and it comes back once nothing can send to it"
+    );
+    assert_eq!(durable.continuations_retained(), Some(0));
+    let _ = places;
 }

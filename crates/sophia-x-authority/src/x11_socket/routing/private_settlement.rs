@@ -79,6 +79,11 @@ struct AbandonedSettlements {
     continuation_slots: usize,
     /// How many places may be taken at once.
     continuation_capacity: usize,
+    /// Where the next round of visits starts.
+    ///
+    /// Retained so a record that cannot progress does not take every visit:
+    /// the next call begins after the one served last, not at the front.
+    continuation_cursor: usize,
     /// Places whose holder went without disposing of them.
     ///
     /// Counted rather than reclaimed. Handing the capacity out again would
@@ -247,6 +252,7 @@ impl PrivateSettlementOwner {
                 continuations: Vec::new(),
                 continuation_slots: 0,
                 continuation_capacity: 0,
+                continuation_cursor: 0,
                 continuations_abandoned: 0,
                 reserved: 0,
                 capacity,
