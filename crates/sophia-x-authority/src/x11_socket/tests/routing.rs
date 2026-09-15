@@ -12817,12 +12817,12 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
 /// reproduces exactly the state an unwind between the take and the report
 /// would leave behind.
 fn stage_interrupted_handover(release: &mut PrivateSettlingRelease) {
-    release.pending = None;
-    release.dispatch = PrivateDispatchPhase::Indeterminate;
+    release.custody.pending = None;
+    release.custody.dispatch = PrivateDispatchPhase::Indeterminate;
 }
 
 fn settling_slot_is_empty(release: &PrivateSettlingRelease) -> bool {
-    release.pending.is_none()
+    release.custody.pending.is_none()
 }
 
 #[test]
@@ -12895,6 +12895,55 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
     assert!(
         private.terminal.settling[0].attempt().is_none(),
         "and the attempt was finished against it"
+    );
+}
+
+#[test]
+fn a_press_whose_answer_could_never_be_recognised_refuses_before_applying() {
+    // Presses carry the same forward custody releases do, acquired on the
+    // operation that creates the debt. A press that cannot get it refuses
+    // before the effect rather than applying one whose answer nothing could
+    // ever match to it.
+    let client = XServerFrontendClientId(2541);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, .. } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let pressed = role.reserve(stamp, 1).expect("a reservation").accepted();
+    // Never admitted, so no completion was ever minted for it.
+    let refused = private.run_ordered_input(
+        keyboards,
+        &button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2599),
+            272,
+            true,
+        ),
+        &pressed,
+        watch,
+    );
+    assert!(
+        matches!(
+            refused,
+            Err(crate::PrivateExecutionRefusal::CompletionMissing)
+        ),
+        "a press with no completion is refused under its own cause"
+    );
+    assert!(
+        private.terminal.holds.is_empty(),
+        "and nothing was applied: no hold, no obligation, nothing owed"
     );
 }
 
@@ -14100,7 +14149,11 @@ fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing(
     private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(781), 272, true),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(781), 272, true);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &pressed,
         
                 watch,
@@ -14116,7 +14169,11 @@ fn a_ledger_owed_release_without_its_plan_refuses_rather_than_reporting_nothing(
     let released = role.reserve(stamp, 2).expect("a reservation").accepted();
     let refused = private.run_ordered_input(
         keyboards,
-        &button_to(surface, XAuthorityInputDeliveryId::from_raw(782), 272, false),
+        &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(782), 272, false);
+                admit_for_direct_run(private, &route);
+                route
+            },
         &released,
     
                 watch,

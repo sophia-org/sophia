@@ -121,6 +121,53 @@ enum PrivatePendingDelivery {
     },
 }
 
+/// What one decided event carries on its way to a writer, and how far it has
+/// got.
+///
+/// ONE THING, held by whatever owes the event. A press and a release owe their
+/// recipients the same kind of obligation -- an event that was decided, a
+/// handle to answer it through, an attempt it is being made under, and a
+/// phase saying where it has reached -- and keeping two copies of that shape
+/// invited them to drift apart exactly where they must not.
+#[cfg(unix)]
+struct PrivateDeliveryCustody {
+    /// The slot is prepared before anything is taken from the hold, so there
+    /// is never a moment in which an emission has left its obligation and has
+    /// nowhere to be.
+    pending: Option<PrivatePendingDelivery>,
+    dispatch: PrivateDispatchPhase,
+    /// The attempt this delivery is being made under.
+    ///
+    /// Persisted BEFORE the handover, because a receipt arrives naming a
+    /// delivery while the debt is named by an incarnation, and the record that
+    /// holds both is the only thing that can join them.
+    attempt: Option<sophia_input_authority::AttemptToken>,
+    /// Custody of this delivery's completion, taken on the operation that
+    /// created the debt.
+    ///
+    /// THE CELL IS THE IDENTITY. An id, a timestamp and an epoch are what a
+    /// caller supplied; this is what the ledger minted, so holding it is
+    /// holding the completion of that exact admission and of no other.
+    completion: Option<Arc<PrivateDeliveryCompletion>>,
+    /// The writer's own answer, once there is one, kept apart from what it
+    /// settled.
+    outcome_seen: Option<XAuthorityInputDeliveryOutcome>,
+}
+
+#[cfg(unix)]
+impl PrivateDeliveryCustody {
+    /// Begin custody for a debt, holding the completion it was created with.
+    fn new(completion: Option<Arc<PrivateDeliveryCompletion>>) -> Self {
+        Self {
+            pending: None,
+            dispatch: PrivateDispatchPhase::Untaken,
+            attempt: None,
+            completion,
+            outcome_seen: None,
+        }
+    }
+}
+
 /// A release whose delivery has been decided and not yet handed on.
 ///
 /// Everything the delivery owes, kept together and bound to the hold it ends.
@@ -136,19 +183,7 @@ pub struct PrivateSettlingRelease {
     incarnation: sophia_input_authority::HoldIncarnation,
     reached: PrivateReachedResources,
     /// What this release is carrying towards a writer, and how far it has got.
-    ///
-    /// The slot is prepared before anything is taken from the hold, so there
-    /// is never a moment in which an emission has left its obligation and has
-    /// nowhere to be.
-    pending: Option<PrivatePendingDelivery>,
-    dispatch: PrivateDispatchPhase,
-    /// The attempt this release's delivery is being made under.
-    ///
-    /// Persisted BEFORE the handover, because a receipt arrives naming a
-    /// delivery while the debt is named by an incarnation, and this record is
-    /// the only thing holding both. An attempt reserved and not written down
-    /// is one nothing could finish.
-    attempt: Option<sophia_input_authority::AttemptToken>,
+    custody: PrivateDeliveryCustody,
     /// The source obligation this release is still answering for.
     ///
     /// Carried rather than dropped with the record it came from. The hold
@@ -173,26 +208,6 @@ pub struct PrivateSettlingRelease {
     /// later finds an empty slot.
     #[cfg_attr(not(test), allow(dead_code))]
     unbuilt: Option<PrivateAppliedRefusal>,
-    /// Custody of this delivery's completion, taken before the handover.
-    ///
-    /// THE CELL IS THE IDENTITY. A delivery id can be pruned and handed out
-    /// again, and the same client can then publish an outcome under that
-    /// number for a different incarnation; an id, a timestamp and an epoch are
-    /// what a caller supplied, not what an origin minted. This cell is minted
-    /// by the ledger at admission, so holding it is holding the completion of
-    /// that exact admission and of no other.
-    ///
-    /// Held rather than looked up. The ordinary observer prunes the ticket the
-    /// moment it consumes the outcome, and a reader that went back for its
-    /// answer would find it gone.
-    completion: Option<Arc<PrivateDeliveryCompletion>>,
-    /// The writer's own answer for this release's delivery, once it has one.
-    ///
-    /// Preserved separately from what it settled. "Nothing was settled" and
-    /// "settled because the recipient was gone" are different facts, and a
-    /// reader with only the settlement bits cannot tell them apart.
-    #[cfg_attr(not(test), allow(dead_code))]
-    outcome_seen: Option<XAuthorityInputDeliveryOutcome>,
     /// Whether the source's own native bit has been recorded for this release.
     native_recorded: bool,
     /// What the last recording attempt refused with, if one did.
@@ -262,17 +277,17 @@ impl PrivateSettlingRelease {
 
     #[cfg_attr(not(test), allow(dead_code))]
     fn outcome_seen(&self) -> Option<XAuthorityInputDeliveryOutcome> {
-        self.outcome_seen
+        self.custody.outcome_seen
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
     fn dispatch(&self) -> PrivateDispatchPhase {
-        self.dispatch
+        self.custody.dispatch
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
     fn attempt(&self) -> Option<sophia_input_authority::AttemptToken> {
-        self.attempt
+        self.custody.attempt
     }
 
     /// Whether a delivery attempt may be made for this release now.
@@ -288,16 +303,16 @@ impl PrivateSettlingRelease {
     /// second would be a second writer answering for the same event.
     fn owes_delivery_attempt(&self) -> bool {
         self.native_recorded
-            && self.attempt.is_none()
+            && self.custody.attempt.is_none()
             && matches!(
-                self.dispatch,
+                self.custody.dispatch,
                 PrivateDispatchPhase::Untaken | PrivateDispatchPhase::Pending
             )
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
     fn completion(&self) -> Option<&Arc<PrivateDeliveryCompletion>> {
-        self.completion.as_ref()
+        self.custody.completion.as_ref()
     }
 
     /// This delivery's answer, if its completion has one.
@@ -307,23 +322,23 @@ impl PrivateSettlingRelease {
     /// could be pruned and re-admitted between establishing identity and
     /// reading the outcome.
     fn completion_answer(&self) -> Option<XAuthorityClientInputDelivery> {
-        self.completion.as_ref()?.answer()
+        self.custody.completion.as_ref()?.answer()
     }
 
     /// Keep the writer's own answer, whatever it settled.
     fn record_outcome(&mut self, outcome: XAuthorityInputDeliveryOutcome) {
-        self.outcome_seen = Some(outcome);
+        self.custody.outcome_seen = Some(outcome);
     }
 
     /// Mark this release's event as one that must never be sent again.
     fn mark_unrepeatable(&mut self) {
-        self.pending = None;
-        self.dispatch = PrivateDispatchPhase::Unrepeatable;
+        self.custody.pending = None;
+        self.custody.dispatch = PrivateDispatchPhase::Unrepeatable;
     }
 
     /// Stop naming an attempt, once the ledger has confirmed it back.
     fn clear_attempt(&mut self) {
-        self.attempt = None;
+        self.custody.attempt = None;
     }
 
     fn native_mut(&mut self) -> Option<&mut private_native::Hold> {
@@ -429,6 +444,19 @@ struct PrivateHoldRecord {
     /// debt recorded as a number is a debt nothing can later answer for.
     incarnation: sophia_input_authority::HoldIncarnation,
     reached: PrivateReachedResources,
+    /// What this press owes its recipient, and how far it has got.
+    ///
+    /// The same custody a release carries. A press owes an event just as a
+    /// release does, and giving it a different shape is how the two paths
+    /// drifted apart in the first place.
+    ///
+    /// NOT YET DRIVEN. The acquisition is live -- a press whose answer could
+    /// never be recognised refuses because of it -- and what has not landed is
+    /// the dispatch that reads the rest. It is taken now rather than when that
+    /// arrives, because acquiring late is the defect this shape exists to
+    /// prevent.
+    #[allow(dead_code)]
+    custody: PrivateDeliveryCustody,
     /// The native obligation this press began.
     ///
     /// Carried whole rather than copied out of, because it is the only thing

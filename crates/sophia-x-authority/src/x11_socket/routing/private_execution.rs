@@ -371,18 +371,7 @@ fn resolve_and_apply(
                             settling.push(PrivateSettlingRelease {
                                 incarnation: removed.incarnation,
                                 reached: removed.reached,
-                                pending: None,
-                                dispatch: PrivateDispatchPhase::Untaken,
-                                attempt: None,
-                                // ACQUIRED HERE, on the accepted operation
-                                // that created this debt, while the delivery
-                                // that carries it is still the one this
-                                // release was decided for. Acquiring it later
-                                // meant looking the delivery up again by its
-                                // id, and an id is exactly what a prune and a
-                                // re-admission make unreliable.
-                                completion,
-                                outcome_seen: None,
+                                custody: PrivateDeliveryCustody::new(completion),
                                 native: removed.native,
                                 unbuilt,
                                 native_recorded: false,
@@ -593,6 +582,23 @@ fn resolve_and_apply(
                 route_lease: route.route_lease,
             };
 
+            // Acquired before the effect, so a press that cannot have its
+            // answer recognised refuses rather than applying one. Fail-closed
+            // and named, exactly as the release path is.
+            let press_completion = match route.delivery {
+                Some(delivery) => match registry.input_recovery.completion_for(delivery) {
+                    Ok(Some(cell)) => Some(cell),
+                    Ok(None) => {
+                        notes.completion_missing = true;
+                        return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                    }
+                    Err(PrivateCompletionUnreadable) => {
+                        notes.recovery_unavailable = true;
+                        return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                    }
+                },
+                None => None,
+            };
             notes
                 .watched
                 .applying()
@@ -678,6 +684,10 @@ fn resolve_and_apply(
                 holds.push(PrivateHoldRecord {
                     incarnation,
                     reached,
+                    // Acquired on the operation that created this debt, the
+                    // same as a release's, and before the record that will own
+                    // the obligation is anywhere but here.
+                    custody: PrivateDeliveryCustody::new(press_completion),
                     native: None,
                 });
                 holds.last_mut().expect("just pushed").native = native_pending.take();

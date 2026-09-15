@@ -90,7 +90,7 @@ impl PrivateXServerFrontend {
         });
         // The destination slot is prepared before anything is taken from the
         // hold, so an emission never leaves its obligation with nowhere to be.
-        if self.terminal.settling[index].pending.is_none() {
+        if self.terminal.settling[index].custody.pending.is_none() {
             let taken = self.terminal.settling[index]
                 .native_mut()
                 .and_then(private_native::Hold::take_release_emission);
@@ -109,22 +109,22 @@ impl PrivateXServerFrontend {
                     if let Some(finalizer) = finalizer.take() {
                         capsule.carry_finalizer(std::sync::Arc::new(finalizer));
                     }
-                    release.pending = Some(PrivatePendingDelivery::Capsule(capsule));
-                    release.dispatch = PrivateDispatchPhase::Pending;
+                    release.custody.pending = Some(PrivatePendingDelivery::Capsule(capsule));
+                    release.custody.dispatch = PrivateDispatchPhase::Pending;
                 }
                 Err((cause, emission)) => {
                     // Retained rather than dropped. It cannot be wrapped now,
                     // and it is still the only copy of an event decided at a
                     // moment that has passed.
-                    release.pending = Some(PrivatePendingDelivery::Unwrapped { emission, cause });
-                    release.dispatch = PrivateDispatchPhase::Unwrappable;
+                    release.custody.pending = Some(PrivatePendingDelivery::Unwrapped { emission, cause });
+                    release.custody.dispatch = PrivateDispatchPhase::Unwrappable;
                     self.relinquish_outstanding_attempt(claim.token);
                     return Some(false);
                 }
             }
         }
         if !matches!(
-            self.terminal.settling[index].pending,
+            self.terminal.settling[index].custody.pending,
             Some(PrivatePendingDelivery::Capsule(_))
         ) {
             self.relinquish_outstanding_attempt(claim.token);
@@ -173,15 +173,15 @@ impl PrivateXServerFrontend {
             custody.phase = PrivateAttemptPhase::Dispatching;
         }
         let release = &mut self.terminal.settling[index];
-        release.attempt = Some(claim.token);
-        release.dispatch = PrivateDispatchPhase::Indeterminate;
+        release.custody.attempt = Some(claim.token);
+        release.custody.dispatch = PrivateDispatchPhase::Indeterminate;
         // The handle this release has carried since it was recorded is the one
         // that answers it. Nothing refreshes it here.
         debug_assert!(
             release.completion().is_some(),
             "custody was checked before the handover began"
         );
-        let Some(PrivatePendingDelivery::Capsule(capsule)) = release.pending.take() else {
+        let Some(PrivatePendingDelivery::Capsule(capsule)) = release.custody.pending.take() else {
             unreachable!("checked to be a capsule above")
         };
         // NOTHING FALLIBLE BETWEEN THE REFUSAL AND THE SLOT.
@@ -191,7 +191,7 @@ impl PrivateXServerFrontend {
                 // stays here: the event is on the queue, and a second copy
                 // would be a second event nobody asked for. The token moves
                 // from outstanding onto the record it now serves.
-                release.dispatch = PrivateDispatchPhase::Enqueued;
+                release.custody.dispatch = PrivateDispatchPhase::Enqueued;
                 self.terminal.attempt_custody = None;
                 Some(true)
             }
@@ -199,8 +199,8 @@ impl PrivateXServerFrontend {
                 // KNOWN NOT ENQUEUED. The same capsule is offered again later:
                 // the bytes and the identity are the ones the release decided,
                 // and nothing re-encodes or reselects anything.
-                release.pending = Some(PrivatePendingDelivery::Capsule(capsule));
-                release.dispatch = PrivateDispatchPhase::Pending;
+                release.custody.pending = Some(PrivatePendingDelivery::Capsule(capsule));
+                release.custody.dispatch = PrivateDispatchPhase::Pending;
                 // KNOWN NOT ENQUEUED, so this attempt is an unused reservation
                 // again and may be given back. The record stops naming it only
                 // once the ledger confirms.
@@ -209,8 +209,8 @@ impl PrivateXServerFrontend {
                 Some(false)
             }
             Err(std::sync::mpsc::TrySendError::Disconnected(capsule)) => {
-                release.pending = Some(PrivatePendingDelivery::Capsule(capsule));
-                release.dispatch = PrivateDispatchPhase::Pending;
+                release.custody.pending = Some(PrivatePendingDelivery::Capsule(capsule));
+                release.custody.dispatch = PrivateDispatchPhase::Pending;
                 self.mark_attempt_unplaced();
                 self.relinquish_outstanding_attempt(claim.token);
                 Some(false)
