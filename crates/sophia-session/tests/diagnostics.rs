@@ -666,6 +666,7 @@ fn shell_action_causal_fields_are_scoped_and_bounded() {
         "sophia_shell_action_policy schema=1 policy_connection_epoch=10 activation_serial=9 action=8 transaction=11 request_id=12 indicator_generation=13 outcome=Committed",
         "sophia_shell_native_binding schema=1 connection_epoch=1 content_grant_epoch=2 output=3 candidate_generation=4 native_owner=5 native_frame=6 head=7 target_generation=8 heads=2 mode_refresh_millihz=60000",
         "sophia_shell_native_completion schema=1 output=3 native_owner=5 native_frame=6 heads=2 monotonic_usec=12345 timestamp_source=kernel missing_kernel_timestamp=0",
+        "sophia_shell_content_shutdown schema=1 status=retained connection_epoch=1 content_grant_epoch=2 monotonic_usec=200000 workers_joined=1 settled_candidates=1 active_epochs=0 retired_epochs=1 candidates=0 resources=1 resource_ids=1 transfers=0 allocations=0 permits=0 demands=0 staging_bytes=0 resident_bytes=8 retiring_bytes=0 backing_bytes=8 reserved_resident_bytes=0 reserved_bytes=8 reserved_backing_bytes=8 response_records=0 response_bytes=0 input_records=0 input_bytes=0",
     ] {
         assert_eq!(
             reduced_record(&format!("{record} title=secret x=123 payload=456")),
@@ -682,6 +683,7 @@ fn shell_action_causal_fields_are_scoped_and_bounded() {
         "sophia_shell_native_completion event_id=1 monotonic_usec=18446744073709551616",
         "sophia_shell_native_binding native_frame=-1 native_owner=secret",
         "sophia_shell_native_completion timestamp_source=secret missing_kernel_timestamp=2",
+        "sophia_shell_content_shutdown status=pretend response_bytes=-1 input_records=18446744073709551616 payload=secret",
     ] {
         assert_eq!(
             reduced_record(record).as_deref(),

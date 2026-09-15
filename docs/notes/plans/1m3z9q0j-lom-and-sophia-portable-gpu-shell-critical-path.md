@@ -610,6 +610,27 @@ selection only: observed cadence, VRR behavior and driver health are separate
 from the mode's nominal rate. Synthetic transcript and recorder controls do not
 establish any native hardware rate.
 
+The final-shutdown follow-up closes shell admission before native draining.
+After the owner loop and its runtime/CPU scene have ended successfully, Session
+requires quiescent native custody and explicitly joins the current exporters'
+and mirror groups' renderer workers within two seconds. Only then does it drop
+the remaining native owner, settle exact submitted identities in disconnected
+stores, collect actual consumers and emit the final accounting snapshot.
+Worker destruction alone was insufficient: its existing nonblocking fallback
+can retain an unfinished thread in the bounded worker registry. The explicit
+join covers current owned workers, not a global claim about historical workers
+or driver allocations. Failure and timeout retain unqualified shutdown status.
+
+Device-hidden controls cover real thread completion, a blocked payload
+destructor with an independently progressing neighbor, repeated join/panic
+results, live-epoch refusal, exact disconnected settlement and an independently
+held pixel consumer. Mutations reporting an unfinished thread as joined,
+skipping the candidate terminal and discarding retained consumers each fail
+their intended control. These compose shutdown boundaries; they do not execute
+KMS teardown or establish a normal native exit. Reconnect-time settlement remains
+separate. The launcher still needs bounded normal exit, workload/plateau checks
+and strict verification of this final snapshot before attended readiness.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

@@ -46,6 +46,40 @@ impl ContentEpoch {
 }
 
 impl ContentEpochPool {
+    /// Final backend shutdown, never connection replacement. Return a live
+    /// epoch's backend untouched. Otherwise end the transferred backend owner
+    /// before settling exact disconnected submissions; independent consumers
+    /// remain charged and observable until their own release and collection.
+    /// The caller must already have finished backend work, including joining
+    /// any threads whose destructor would otherwise detach them. Dropping an
+    /// arbitrary backend value alone does not establish that precondition.
+    pub fn finish_after_backend_drop<B>(&mut self, backend: B) -> Result<usize, B> {
+        if self.active.is_some() {
+            return Err(backend);
+        }
+        drop(backend);
+        let settled = self.finish_retired_submissions();
+        self.collect();
+        Ok(settled)
+    }
+
+    /// Caller has ended its backend work. Visit the exact identities still
+    /// owned here rather than taking a second cleanup inventory. This emits no
+    /// record to a dead peer and does not manufacture release of held pixels.
+    fn finish_retired_submissions(&mut self) -> usize {
+        let mut count = 0;
+        for epoch in &mut self.retired {
+            while let Some((output, generation)) = epoch.candidates.first_submitted_identity() {
+                epoch
+                    .candidates
+                    .renderer_failed(output, generation)
+                    .expect("the unchanged retired store owns this exact submitted identity");
+                count += 1;
+            }
+        }
+        count
+    }
+
     /// Observe the actual active and retained stores without collecting owners,
     /// allocating a shadow table, or converting credit into a release claim.
     pub fn accounting(&self) -> super::ContentEpochAccounting {

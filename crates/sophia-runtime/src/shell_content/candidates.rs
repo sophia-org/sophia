@@ -136,6 +136,12 @@ pub struct ContentCandidateStore {
 }
 
 impl ContentCandidateStore {
+    pub(crate) fn first_submitted_identity(&self) -> Option<(ContentOutputId, u64)> {
+        self.submitted
+            .first_key_value()
+            .map(|(output, candidate)| (*output, candidate.begin.candidate_generation))
+    }
+
     pub(crate) fn add_accounting(&self, value: &mut super::ContentEpochAccounting) {
         value.candidates += self.assemblies.len() + self.pending.len() + self.submitted.len();
         value.permits += self.permits.len();

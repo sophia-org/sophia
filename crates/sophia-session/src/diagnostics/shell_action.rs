@@ -9,6 +9,7 @@ pub(super) fn record(name: &str) -> bool {
             | "sophia_shell_native_binding"
             | "sophia_shell_native_completion"
             | "sophia_shell_indicator_state"
+            | "sophia_shell_content_shutdown"
     )
 }
 
@@ -18,6 +19,35 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
         && value.parse::<u64>().is_ok();
     match (record, key) {
         (_, "schema") => value == "1",
+        ("sophia_shell_content_shutdown", "status") => matches!(value, "quiescent" | "retained"),
+        ("sophia_shell_content_shutdown", "workers_joined") => matches!(value, "0" | "1"),
+        (
+            "sophia_shell_content_shutdown",
+            "connection_epoch"
+            | "content_grant_epoch"
+            | "settled_candidates"
+            | "monotonic_usec"
+            | "active_epochs"
+            | "retired_epochs"
+            | "candidates"
+            | "resources"
+            | "resource_ids"
+            | "transfers"
+            | "allocations"
+            | "permits"
+            | "demands"
+            | "staging_bytes"
+            | "resident_bytes"
+            | "retiring_bytes"
+            | "backing_bytes"
+            | "reserved_resident_bytes"
+            | "reserved_bytes"
+            | "reserved_backing_bytes"
+            | "response_records"
+            | "response_bytes"
+            | "input_records"
+            | "input_bytes",
+        ) => number,
         ("sophia_shell_native_completion", "missing_kernel_timestamp") => {
             matches!(value, "0" | "1")
         }

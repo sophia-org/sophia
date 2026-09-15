@@ -1144,6 +1144,16 @@ pub(crate) fn run_persistent_xterm_session(
     if let Err(error) = xauthority.remove() {
         outer_cleanup_failures.push(format!("X authority cleanup failed: {error}"));
     }
+    // The successful loop has completed native detach/cleanup and dropped its
+    // actual Engine/runtime/CPU-scene owners. Finish the remaining native owner
+    // while the disconnected shell's accounting store is still alive.
+    if session_error.is_none()
+        && outer_cleanup_failures.is_empty()
+        && let Some(shell) = metadata_shell.as_mut()
+        && let Err(error) = shell.finish_content_shutdown(&mut native_scanout)
+    {
+        outer_cleanup_failures.push(format!("shell content final cleanup failed: {error}"));
+    }
     if outer_cleanup_failures.is_empty() {
         crate::session_println!(
             "sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed"

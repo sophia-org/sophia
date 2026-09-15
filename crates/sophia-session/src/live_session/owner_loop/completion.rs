@@ -39,6 +39,14 @@
     } = metrics;
 
     let mut cleanup_failures = terminal_client_cleanup_failures;
+    // No new shell work may enter while the native drain below is running.
+    // Keep the transport/epoch owner outside this loop for final accounting.
+    if let Some(shell) = metadata_shell.as_mut() {
+        if let Err(error) = shell.stop_for_session_shutdown() {
+            cleanup_failures.push(format!("shell admission shutdown failed: {error}"));
+        }
+        settle_revoked_shell_content_claims!(shell, "session_shutdown");
+    }
     let mut fatal_cleanup = SessionFatalCleanupEvidence {
         frontend_intake_stopped: terminal_client_intake_stopped,
         native_cleanup_required: native_scanout.is_some(),

@@ -48,6 +48,7 @@ mod persistent_native_scanout {
     };
     mod renderer_handoff;
     mod renderer_images;
+    mod shutdown;
     mod state;
     mod topology;
     pub use cursor::project_native_cursor_logical_viewport;

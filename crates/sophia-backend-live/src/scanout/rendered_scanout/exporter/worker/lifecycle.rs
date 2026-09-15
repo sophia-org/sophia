@@ -114,6 +114,7 @@ impl WorkerReservation {
         Ok(WorkerThread {
             thread: Some(thread),
             reservation: Some(self),
+            joined: None,
         })
     }
 
@@ -182,6 +183,26 @@ impl OutputClaim {
 pub(super) struct WorkerThread {
     thread: Option<JoinHandle<()>>,
     reservation: Option<WorkerReservation>,
+    joined: Option<bool>,
+}
+
+impl WorkerThread {
+    /// Join only a thread already reported finished. Preserve a panic outcome
+    /// across repeated polls; releasing the registration is not proof of success.
+    pub fn poll_join(&mut self) -> io::Result<bool> {
+        if self.joined.is_none() {
+            if !self.thread.as_ref().is_some_and(JoinHandle::is_finished) {
+                return Ok(false);
+            }
+            self.joined = Some(self.thread.take().expect("finished thread").join().is_ok());
+            drop(self.reservation.take());
+        }
+        match self.joined {
+            Some(true) => Ok(true),
+            Some(false) => Err(io::Error::other("renderer worker panicked during shutdown")),
+            None => unreachable!("join outcome was recorded"),
+        }
+    }
 }
 
 impl Drop for WorkerThread {

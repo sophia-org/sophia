@@ -23,6 +23,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 mod lifecycle;
+mod shutdown;
 use lifecycle::{DeviceIdentity, OutputClaim, WorkerControl, WorkerRegistry, WorkerThread};
 
 const WORKER_COMMAND_CAPACITY: usize = 32;
@@ -155,7 +156,7 @@ impl Drop for NativeGbmRendererWorkerScanoutLease {
 /// reference goes.
 pub struct NativeGbmRendererWorkerCore {
     command_sender: SyncSender<WorkerCommand>,
-    _thread: WorkerThread,
+    _thread: std::sync::Mutex<WorkerThread>,
     control: Arc<WorkerControl>,
     inventory_replacement: std::sync::Mutex<Option<Receiver<io::Result<u64>>>>,
     release_enqueue_failures: Arc<AtomicUsize>,
@@ -202,7 +203,7 @@ impl NativeGbmRendererWorkerCore {
         })?;
         Ok(Arc::new(Self {
             command_sender,
-            _thread: thread,
+            _thread: std::sync::Mutex::new(thread),
             control,
             inventory_replacement: std::sync::Mutex::new(None),
             release_enqueue_failures: Arc::new(AtomicUsize::new(0)),

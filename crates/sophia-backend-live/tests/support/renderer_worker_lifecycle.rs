@@ -1,6 +1,7 @@
 // Included by the existing worker-private test module.
 
 use crate::LiveRenderedScanoutBufferExporter;
+use std::time::Instant;
 
 #[test]
 fn a_detach_cannot_remove_a_replacement_or_another_output() {
@@ -121,7 +122,7 @@ fn dropping_a_full_queue_facade_and_core_does_not_wait_for_a_stalled_worker() {
         .unwrap();
     let core = std::sync::Arc::new(super::NativeGbmRendererWorkerCore {
         command_sender: commands,
-        _thread: thread,
+        _thread: std::sync::Mutex::new(thread),
         control,
         inventory_replacement: std::sync::Mutex::new(None),
         release_enqueue_failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
@@ -176,7 +177,7 @@ fn inventory_test_core(
         .unwrap();
     let core = std::sync::Arc::new(super::NativeGbmRendererWorkerCore {
         command_sender: commands,
-        _thread: thread,
+        _thread: std::sync::Mutex::new(thread),
         control: std::sync::Arc::new(super::WorkerControl::default()),
         inventory_replacement: std::sync::Mutex::new(None),
         release_enqueue_failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
@@ -250,6 +251,24 @@ fn inventory_replacement_allows_one_pending_exact_generation() {
     );
     assert_eq!(core.poll_image_import_device_replacement().unwrap(), None);
     resume.send(()).unwrap();
+}
+
+#[test]
+fn explicit_core_shutdown_survives_full_wakeup_and_reports_only_joined_completion() {
+    let (core, receive, resume) = inventory_test_core(1);
+    assert!(core.poll_shutdown().is_err());
+    core.command_sender.try_send(WorkerCommand::Shutdown).unwrap();
+    core.request_shutdown();
+    assert!(core.control.is_shutdown());
+    assert!(!core.poll_shutdown().unwrap());
+    resume.send(()).unwrap();
+    let deadline = Instant::now() + SETTLE;
+    while !core.poll_shutdown().unwrap() {
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert!(core.poll_shutdown().unwrap());
+    assert!(matches!(receive.try_recv(), Ok(WorkerCommand::Shutdown)));
 }
 
 #[test]
@@ -357,7 +376,7 @@ fn missing_device_exporter()
         .unwrap();
     let core = std::sync::Arc::new(super::NativeGbmRendererWorkerCore {
         command_sender: commands,
-        _thread: thread,
+        _thread: std::sync::Mutex::new(thread),
         control,
         inventory_replacement: std::sync::Mutex::new(None),
         release_enqueue_failures: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
@@ -368,6 +387,19 @@ fn missing_device_exporter()
     exporter.attach_shared_worker(&core);
     assert!(exporter.renderer_image_owner_initialized());
     exporter
+}
+
+#[test]
+fn explicit_exporter_shutdown_joins_the_actual_no_device_worker() {
+    let exporter = missing_device_exporter();
+    assert!(exporter.poll_worker_shutdown().is_err());
+    exporter.request_worker_shutdown();
+    let deadline = Instant::now() + SETTLE;
+    while !exporter.poll_worker_shutdown().unwrap() {
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert!(exporter.poll_worker_shutdown().unwrap());
 }
 
 #[test]

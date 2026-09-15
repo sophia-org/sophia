@@ -192,3 +192,79 @@ fn output_detach_is_exact_and_survives_a_full_wakeup_queue() {
     assert!(!neighbour.is_detached());
     receive.recv().unwrap();
 }
+
+#[test]
+fn explicit_join_waits_for_real_payload_destruction_without_blocking_a_neighbor() {
+    struct Payload {
+        entered: mpsc::SyncSender<()>,
+        resume: mpsc::Receiver<()>,
+        dropped: Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl Drop for Payload {
+        fn drop(&mut self) {
+            self.entered.send(()).unwrap();
+            self.resume.recv_timeout(DEADLINE * 4).unwrap();
+            self.dropped
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+    let registry = Arc::new(WorkerRegistry::default());
+    let (entered, wait) = mpsc::sync_channel(1);
+    let (resume, gate) = mpsc::sync_channel(1);
+    let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let payload = Payload {
+        entered,
+        resume: gate,
+        dropped: Arc::clone(&dropped),
+    };
+    let mut worker = registry
+        .reserve(device(17))
+        .unwrap()
+        .start(|| thread::Builder::new().spawn(move || drop(payload)))
+        .unwrap();
+    wait.recv_timeout(DEADLINE).unwrap();
+    assert!(!worker.poll_join().unwrap());
+    assert!(!dropped.load(std::sync::atomic::Ordering::Acquire));
+    let mut neighbor = registry
+        .reserve(device(18))
+        .unwrap()
+        .start(|| thread::Builder::new().spawn(|| {}))
+        .unwrap();
+    let deadline = Instant::now() + DEADLINE;
+    while !neighbor.poll_join().unwrap() {
+        assert!(Instant::now() < deadline);
+        thread::yield_now();
+    }
+    assert!(!worker.poll_join().unwrap());
+    resume.send(()).unwrap();
+    while !worker.poll_join().unwrap() {
+        assert!(Instant::now() < deadline);
+        thread::yield_now();
+    }
+    assert!(dropped.load(std::sync::atomic::Ordering::Acquire));
+    assert!(worker.poll_join().unwrap());
+    assert!(neighbor.poll_join().unwrap());
+}
+
+#[test]
+fn joined_panic_remains_a_failure_on_every_poll() {
+    let registry = Arc::new(WorkerRegistry::default());
+    let mut worker = registry
+        .reserve(device(19))
+        .unwrap()
+        .start(|| thread::Builder::new().spawn(|| panic!("injected worker panic")))
+        .unwrap();
+    let deadline = Instant::now() + DEADLINE;
+    loop {
+        match worker.poll_join() {
+            Err(_) => break,
+            Ok(false) => {
+                assert!(Instant::now() < deadline);
+                thread::yield_now();
+            }
+            Ok(true) => panic!("thread panic was reported as clean completion"),
+        }
+    }
+    assert!(worker.poll_join().is_err());
+    assert!(worker.poll_join().is_err());
+}

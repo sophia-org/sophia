@@ -41,6 +41,30 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn final_collection_refuses_a_live_socket_even_without_a_content_epoch() {
+    let mut fixture = Fixture::new(7);
+    let transport = &mut fixture.transport;
+    let owner = Box::new([41u8; 8]);
+    let address = owner.as_ptr();
+    let owner = transport
+        .finish_content_after_backend_drop(owner)
+        .unwrap_err();
+    assert_eq!(owner.as_ptr(), address);
+    transport.disconnect().unwrap();
+    let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+    transport.stream = Some(socket);
+    let owner = transport
+        .finish_content_after_backend_drop(owner)
+        .unwrap_err();
+    assert_eq!(owner.as_ptr(), address);
+    assert!(transport.stream.is_some());
+    transport.disconnect().unwrap();
+    let report = transport.finish_content_after_backend_drop(owner).unwrap();
+    assert_eq!(report.settled_candidates, 0);
+    assert!(report.accounting.quiescent());
+}
+
+#[test]
 fn all_store_credits_and_fifo_frames_share_one_capacity() {
     let mut fixture = Fixture::new(7);
     let transport = &mut fixture.transport;

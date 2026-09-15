@@ -1,6 +1,9 @@
 use sophia_protocol::*;
 use sophia_runtime::*;
 
+#[path = "support/content_shutdown.rs"]
+mod shutdown;
+
 fn grant() -> ContentGrant {
     ContentGrant {
         connection_epoch: 7,

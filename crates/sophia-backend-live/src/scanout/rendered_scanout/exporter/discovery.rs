@@ -1,3 +1,5 @@
+#[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
+mod shutdown;
 mod worker_export;
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
