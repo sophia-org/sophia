@@ -66,6 +66,11 @@ pub struct PrivateRunnerProgress {
     /// Counted apart from `dispatched`: giving a slot back is not delivering,
     /// and a turn spent doing it made progress of a different kind.
     pub relinquished: usize,
+    /// How many recipient halves were settled on established proof this turn.
+    ///
+    /// Only a flush or a terminated connection counts. A write that failed and
+    /// a wait that ran out establish nothing and are counted nowhere.
+    pub recipient_settled: usize,
     pub blocked: Option<crate::ReadySequence>,
     /// The service allowance stopped this turn. It will be checked again on
     /// the next owner-loop turn; waiting is not part of an operation.
@@ -497,6 +502,33 @@ impl PrivatePreparedRunner {
                             // terminal step it is: the work was chosen,
                             // charged and done, whether or not the recording
                             // it attempted went in.
+                            // Only confirmed facts are counted. An
+                            // unanswered ledger changed nothing and is not a
+                            // settlement, a return, or a delivery.
+                            PrivateDeliveryStep::Receipt { step } => {
+                                progress.terminal_steps += 1;
+                                match step {
+                                    PrivateReceiptStep::Settled { debt_settled } => {
+                                        progress.recipient_settled += 1;
+                                        // The whole debt closing is the
+                                        // ledger's fact and is reported as
+                                        // the settlement it is.
+                                        progress.settled += usize::from(debt_settled);
+                                    }
+                                    PrivateReceiptStep::ReturnedUnsettled => {
+                                        progress.relinquished += 1;
+                                    }
+                                    PrivateReceiptStep::Unanswered => {}
+                                }
+                                if watch_failed {
+                                    break;
+                                }
+                                self.prefer_cleanup = false;
+                                if overran || unwatched.is_some() {
+                                    break;
+                                }
+                                continue;
+                            }
                             PrivateDeliveryStep::Dispatched {
                                 enqueued,
                                 relinquished,

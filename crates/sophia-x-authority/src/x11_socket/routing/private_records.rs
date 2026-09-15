@@ -173,6 +173,16 @@ pub struct PrivateSettlingRelease {
     /// later finds an empty slot.
     #[cfg_attr(not(test), allow(dead_code))]
     unbuilt: Option<PrivateAppliedRefusal>,
+    /// The admission this release's delivery was dispatched under.
+    ///
+    /// A receipt carries a client and a delivery id, and neither is identity:
+    /// an id can be pruned and handed out again, and the same client can then
+    /// publish an outcome for a different incarnation entirely. Recording the
+    /// ticket at dispatch is what lets a later outcome be checked against the
+    /// admission it belongs to rather than merely against the number it
+    /// reuses.
+    #[cfg_attr(not(test), allow(dead_code))]
+    admission: Option<XAuthorityInputDeliveryTicket>,
     /// The writer's own answer for this release's delivery, once it has one.
     ///
     /// Preserved separately from what it settled. "Nothing was settled" and
@@ -280,6 +290,32 @@ impl PrivateSettlingRelease {
                 self.dispatch,
                 PrivateDispatchPhase::Untaken | PrivateDispatchPhase::Pending
             )
+    }
+
+    /// Take custody of the admission this delivery was dispatched under.
+    fn record_admission(&mut self, ticket: XAuthorityInputDeliveryTicket) {
+        self.admission = Some(ticket);
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn admission(&self) -> Option<XAuthorityInputDeliveryTicket> {
+        self.admission
+    }
+
+    /// Whether a ticket now in recovery is the same admission this release
+    /// was dispatched under.
+    ///
+    /// Compared on what identifies an admission rather than on the id it was
+    /// given: a pruned id handed out again produces a different admission
+    /// moment and a different control epoch, and an outcome published against
+    /// that one answers a different delivery than this release made.
+    fn admission_matches(&self, ticket: &XAuthorityInputDeliveryTicket) -> bool {
+        self.admission.is_some_and(|held| {
+            held.delivery == ticket.delivery
+                && held.admitted_at == ticket.admitted_at
+                && held.control_epoch == ticket.control_epoch
+                && held.client == ticket.client
+        })
     }
 
     /// Keep the writer's own answer, whatever it settled.

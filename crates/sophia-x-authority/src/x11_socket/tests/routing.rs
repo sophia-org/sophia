@@ -12744,6 +12744,9 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
                 // attempt. That is more native work, and it takes its turn
                 // the same bounded way.
                 PrivateDeliveryStep::Dispatched { .. } => visits += 1,
+                PrivateDeliveryStep::Receipt { .. } => {
+                    panic!("no receipt has been published in this control")
+                }
                 PrivateDeliveryStep::Idle => panic!("traffic was ready, so no step is idle"),
                 PrivateDeliveryStep::Blocked(_) => panic!("no entry is indeterminate here"),
             }
@@ -12776,6 +12779,144 @@ fn stage_interrupted_handover(release: &mut PrivateSettlingRelease) {
 
 fn settling_slot_is_empty(release: &PrivateSettlingRelease) -> bool {
     release.pending.is_none()
+}
+
+#[test]
+fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
+    // Recovery drops a routing-finished ticket the moment an ordinary
+    // observer consumes it, and that ticket is the only place the outcome
+    // lives. A join that read it only when it was ready to settle would find
+    // the attempt still out and its answer already gone.
+    let client = XServerFrontendClientId(2491);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    for (delivery, pressed) in [(2491u64, true), (2492u64, false)] {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                272,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.terminal.delivering.extend(turn);
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("the entry delivers");
+    }
+    for _ in 0..12 {
+        private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+    }
+    assert_eq!(
+        private.terminal.settling[0].dispatch(),
+        PrivateDispatchPhase::Enqueued
+    );
+    let delivery = private.terminal.settling[0]
+        .delivery()
+        .expect("the release knows its delivery");
+
+    // The writer answers, and an ORDINARY OBSERVER consumes it -- which is
+    // what prunes the ticket.
+    let recovery = &private.broker.registry.input_recovery;
+    recovery
+        .finish(client, Some(delivery), XAuthorityInputDeliveryOutcome::Flushed)
+        .expect("the answer is published");
+
+    // One visit, so the terminal side takes custody of the outcome.
+    private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+
+    assert_eq!(
+        private.terminal.settling[0].outcome_seen(),
+        Some(XAuthorityInputDeliveryOutcome::Flushed),
+        "the outcome is owned here, not merely readable over there"
+    );
+    assert!(
+        private.terminal.settling[0].attempt().is_none(),
+        "and the attempt was finished against it"
+    );
+}
+
+#[test]
+fn a_reused_delivery_id_does_not_settle_the_debt_that_had_it_before() {
+    // A delivery id can be pruned and handed out again. The same client can
+    // then publish an outcome under that number for a different incarnation
+    // entirely, and matching on client and id alone would let it answer a
+    // debt it has nothing to do with. Same client is the demonstrated case,
+    // so a wrong-client check is not the protection.
+    let client = XServerFrontendClientId(2501);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    for (delivery, pressed) in [(2501u64, true), (2502u64, false)] {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                272,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.terminal.delivering.extend(turn);
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("the entry delivers");
+    }
+    for _ in 0..12 {
+        private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+    }
+    let held = private.terminal.settling[0]
+        .admission()
+        .expect("the release recorded the admission it went out under");
+
+    // A different admission carrying the same id and the same client. This is
+    // what a reused number looks like from here.
+    let reused = XAuthorityInputDeliveryTicket {
+        control_epoch: held.control_epoch + 1,
+        ..held
+    };
+    assert!(
+        !private.terminal.settling[0].admission_matches(&reused),
+        "a later admission under the same id and client is not this release's"
+    );
+    assert!(
+        private.terminal.settling[0].admission_matches(&held),
+        "and its own admission still is"
+    );
 }
 
 #[test]

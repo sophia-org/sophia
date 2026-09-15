@@ -39,6 +39,30 @@ const PRIVATE_NATIVE_CLASS_INTERVAL: u8 = 2;
 #[cfg(unix)]
 const PRIVATE_NATIVE_TURN_INTERVAL: u8 = 4;
 
+/// What answering one receipt established.
+///
+/// Three different facts, counted apart. Reporting a refused ledger answer as
+/// a return counted something that had not happened.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateReceiptStep {
+    /// The recipient's half is settled, on an established flush or a
+    /// terminated connection.
+    ///
+    /// `debt_settled` is the ledger's own answer about the WHOLE debt, not a
+    /// second opinion formed here. Discarding it lost a fact that had
+    /// actually happened: a turn that closed a debt reported closing none.
+    Settled {
+        #[cfg_attr(not(test), allow(dead_code))]
+        debt_settled: bool,
+    },
+    /// The attempt was returned with neither bit and the event will not be
+    /// sent again. The debt stays owed.
+    ReturnedUnsettled,
+    /// The ledger did not answer. Nothing changed and nothing is counted.
+    Unanswered,
+}
+
 #[cfg(unix)]
 enum PrivateDeliveryStep {
     /// Nothing was waiting, and nothing owed a recording either.
@@ -56,6 +80,11 @@ enum PrivateDeliveryStep {
         /// making one. Counted apart: relinquishing is not delivering.
         #[cfg_attr(not(test), allow(dead_code))]
         relinquished: bool,
+    },
+    /// One receipt was answered against the debt it belongs to.
+    Receipt {
+        #[cfg_attr(not(test), allow(dead_code))]
+        step: PrivateReceiptStep,
     },
     /// One proof-recording visit was spent on one chosen release.
     ///
@@ -494,6 +523,19 @@ impl PrivateXServerFrontend {
             std::time::Instant,
         ) -> Result<(), XServerFrontendRouteError>,
     ) -> Result<PrivateDeliveryStep, XServerFrontendRouteError> {
+        // A WAITING RECEIPT COMES FIRST, ahead of deliveries and ahead of the
+        // arbitration below. This is not a preference between kinds of work:
+        // an answered receipt is the only thing that releases an attempt whose
+        // handover already happened, and while one is held every other claim
+        // on this frontend is refused. Leaving it behind ordinary traffic
+        // would let the whole instance wait on a fact already in hand.
+        if self.owes_receipt_settlement() {
+            start(None, std::time::Instant::now())?;
+            if let Some(step) = self.settle_one_receipt() {
+                return Ok(PrivateDeliveryStep::Receipt { step });
+            }
+        }
+
         // THE CHOICE BETWEEN TWO KINDS OF WORK, made before either is taken.
         //
         // Deliveries keep their order and their head; nothing here reorders
@@ -519,15 +561,6 @@ impl PrivateXServerFrontend {
             // step, and before anything takes common.
             start(None, std::time::Instant::now())?;
             self.terminal.native_turn_debt = 0;
-            // A receipt that has arrived is answered before anything else.
-            // It is the only thing that can release an attempt whose handover
-            // already happened, and everything else waits behind that slot.
-            if let Some(settled) = self.settle_one_receipt() {
-                return Ok(PrivateDeliveryStep::Dispatched {
-                    enqueued: false,
-                    relinquished: !settled,
-                });
-            }
             // An attempt whose give-back never landed is answered next. It
             // is the ledger's slot, not this executor's, and holding one
             // while claiming another is how a bounded pool runs out.

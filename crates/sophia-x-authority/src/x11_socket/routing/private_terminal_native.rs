@@ -110,6 +110,9 @@ impl PrivateXServerFrontend {
         }
 
         let recipient = self.terminal.settling[index].reached().client();
+        let admission = self.terminal.settling[index]
+            .delivery()
+            .and_then(|delivery| self.broker.registry.input_recovery.ticket(delivery));
         // The sender is cloned and the clients guard released before anything
         // takes common again. Holding it across a give-back would take common
         // beneath clients, which is the forbidden direction.
@@ -153,6 +156,12 @@ impl PrivateXServerFrontend {
                 // would be a second event nobody asked for. The token moves
                 // from outstanding onto the record it now serves.
                 release.dispatch = PrivateDispatchPhase::Enqueued;
+                if let Some(ticket) = admission {
+                    // The admission this delivery went out under, so a later
+                    // outcome can be checked against it rather than against a
+                    // delivery id that may since have been handed out again.
+                    release.record_admission(ticket);
+                }
                 self.terminal.attempt_custody = None;
                 Some(true)
             }
@@ -195,22 +204,23 @@ impl PrivateXServerFrontend {
     /// to Pending; it is marked unrepeatable and never rebuilt. The debt may
     /// then never settle, which is the honest outcome and better than a
     /// duplicate nobody can detect.
-    fn settle_one_receipt(&mut self) -> Option<bool> {
-        let recovery = &self.broker.registry.input_recovery;
-        let found = self.terminal.settling.iter().enumerate().find_map(|(index, release)| {
-            let token = release.attempt()?;
-            let delivery = release.delivery()?;
-            let receipt = recovery.terminal_outcome(delivery)?;
-            Some((index, token, receipt))
-        });
-        let (index, token, receipt) = found?;
-        // A receipt for a client this release never reached says nothing
-        // about this release. Answered as no receipt at all rather than as
-        // one, so nothing settles on somebody else's outcome.
-        if receipt.client != self.terminal.settling[index].reached().client() {
-            return Some(false);
-        }
-        let settlement = match receipt.outcome {
+    fn settle_one_receipt(&mut self) -> Option<PrivateReceiptStep> {
+        // TAKE CUSTODY OF THE OUTCOME BEFORE ANYTHING CAN ERASE IT. Recovery
+        // prunes a routing-finished ticket the moment an ordinary observer
+        // consumes it, and that ticket is the only place the outcome lives.
+        // A join that read it only when it was ready to settle could find the
+        // attempt still out and its answer already gone.
+        self.capture_available_outcomes();
+        let found = self
+            .terminal
+            .settling
+            .iter()
+            .enumerate()
+            .find_map(|(index, release)| {
+                Some((index, release.attempt()?, release.outcome_seen()?))
+            });
+        let (index, token, outcome) = found?;
+        let settlement = match outcome {
             // The writer established that the bytes went, or that the
             // recipient is gone. Both answer the recipient's half.
             XAuthorityInputDeliveryOutcome::Flushed
@@ -227,10 +237,15 @@ impl PrivateXServerFrontend {
         let answered = self.authority().under_common_as_origin(|authority, issuer| {
             authority.finish_attempt(issuer, token, settlement)
         });
+        // The ledger's own answer about the whole debt, kept rather than
+        // thrown away with the Result layers it arrived in.
+        let debt_settled = matches!(answered, Ok(Ok(true)));
         if !matches!(answered, Ok(Ok(_))) {
-            // The ledger did not answer. Nothing is recorded here either: the
-            // attempt is still out and this receipt will be read again.
-            return Some(false);
+            // THE LEDGER DID NOT ANSWER. Nothing here changes: the attempt is
+            // still out, the outcome is still owned, and a later visit tries
+            // again. Reporting this as a return would count a fact that has
+            // not happened.
+            return Some(PrivateReceiptStep::Unanswered);
         }
         if self
             .terminal
@@ -240,13 +255,45 @@ impl PrivateXServerFrontend {
             self.terminal.attempt_custody = None;
         }
         let release = &mut self.terminal.settling[index];
-        release.record_outcome(receipt.outcome);
         release.clear_attempt();
-        if !settlement.recipient_settled {
-            // Possibly part-written, so never sent again.
-            release.mark_unrepeatable();
+        if settlement.recipient_settled {
+            return Some(PrivateReceiptStep::Settled { debt_settled });
         }
-        Some(settlement.recipient_settled)
+        // Possibly part-written, so never sent again.
+        release.mark_unrepeatable();
+        Some(PrivateReceiptStep::ReturnedUnsettled)
+    }
+
+    /// Bring every outcome recovery currently holds for this executor's
+    /// dispatched releases into the records that own them.
+    ///
+    /// Checked against the admission each release was dispatched under, not
+    /// against the delivery id alone. A pruned id handed out again carries a
+    /// different admission, and an outcome published against that one answers
+    /// somebody else's delivery.
+    fn capture_available_outcomes(&mut self) {
+        let recovery = &self.broker.registry.input_recovery;
+        for release in &mut self.terminal.settling {
+            if release.attempt().is_none() || release.outcome_seen().is_some() {
+                continue;
+            }
+            let Some(delivery) = release.delivery() else {
+                continue;
+            };
+            let Some(ticket) = recovery.ticket(delivery) else {
+                continue;
+            };
+            if !release.admission_matches(&ticket) {
+                continue;
+            }
+            let Some(receipt) = recovery.terminal_outcome(delivery) else {
+                continue;
+            };
+            if receipt.client != release.reached().client() {
+                continue;
+            }
+            release.record_outcome(receipt.outcome);
+        }
     }
 
     /// Give one claimed attempt back with neither settlement bit.
@@ -309,13 +356,21 @@ impl PrivateXServerFrontend {
     }
 
     /// Whether a receipt is waiting to be answered against its debt.
+    ///
+    /// An outcome already owned counts, because recovery may have pruned the
+    /// ticket it came from; so does one still sitting in recovery under this
+    /// release's own admission.
     fn owes_receipt_settlement(&self) -> bool {
         let recovery = &self.broker.registry.input_recovery;
         self.terminal.settling.iter().any(|release| {
             release.attempt().is_some()
-                && release
-                    .delivery()
-                    .is_some_and(|delivery| recovery.terminal_outcome(delivery).is_some())
+                && (release.outcome_seen().is_some()
+                    || release.delivery().is_some_and(|delivery| {
+                        recovery
+                            .ticket(delivery)
+                            .is_some_and(|ticket| release.admission_matches(&ticket))
+                            && recovery.terminal_outcome(delivery).is_some()
+                    }))
         })
     }
 
