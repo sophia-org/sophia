@@ -57,6 +57,7 @@ impl RetainedLayoutCandidate {
         self.expire(now);
         let candidate = self.candidate.as_ref()?;
         (candidate.fallback.is_none()
+            && fallback.native == candidate.source.original.native
             && fallback.trace == candidate.source.original.trace
             && fallback.direct_scanout
                 == Some(DirectScanoutVerdict::CompositionRequired("refused")))
@@ -70,6 +71,7 @@ impl RetainedLayoutCandidate {
             return false;
         };
         if candidate.fallback.is_some()
+            || fallback.native != candidate.source.original.native
             || fallback.trace != candidate.source.original.trace
             || fallback.direct_scanout != Some(DirectScanoutVerdict::CompositionRequired("refused"))
         {

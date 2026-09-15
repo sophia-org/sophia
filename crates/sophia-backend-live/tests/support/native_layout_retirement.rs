@@ -23,6 +23,7 @@ fn witness() -> crate::LiveScanoutLayoutWitness {
     crate::LiveScanoutLayoutWitness {
         source_image: sophia_renderer_live::LiveRendererImageId::from_raw(91),
         alternative: crate::LiveRendererFrameCorrelation {
+            native: None,
             request: None,
             trace: Some(sophia_renderer_live::LiveCompositionTrace {
                 output: context().output,

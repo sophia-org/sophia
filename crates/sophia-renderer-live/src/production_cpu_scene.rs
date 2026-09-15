@@ -1,7 +1,7 @@
 use sophia_engine::{
     CompositorDisplayCommand, CompositorDisplayList, HeadlessOutput, OutputFrameDamageSnapshot,
-    OutputRepaintPlan, OutputRepaintPolicy, detach_output_frame_content_sources,
-    output_frame_damage, output_frame_damage_snapshot, plan_output_repaint,
+    OutputRepaintPlan, OutputRepaintPolicy, output_frame_damage, output_frame_damage_snapshot,
+    plan_output_repaint,
 };
 use sophia_protocol::{BufferSource, CommittedSurfaceState, Point, Rect, Region, Size, SurfaceId};
 
@@ -505,9 +505,7 @@ impl LiveProductionCpuScene {
 
         self.retained_primary_frames.push(RetainedPrimaryCpuFrame {
             bytes: latest.bytes,
-            output_damage_snapshot: detach_output_frame_content_sources(
-                latest.output_damage_snapshot,
-            ),
+            output_damage_snapshot: latest.output_damage_snapshot,
         });
         let reusable = self
             .retained_primary_frames

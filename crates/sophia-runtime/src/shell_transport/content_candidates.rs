@@ -21,6 +21,9 @@ impl ShellSessionTransport {
             .ok_or(ShellTransportError::MissingCapability)?;
         let mut processed = 0;
         while processed < limits.max_frames_per_service_tick as usize {
+            if !self.control_capacity_available(1) {
+                break;
+            }
             if self
                 .output
                 .len()
@@ -78,6 +81,9 @@ impl ShellSessionTransport {
         {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
+        if !self.control_capacity_available(2) {
+            return Err(ShellTransportError::ContentQueueSaturated);
+        }
         self.content_epochs
             .active_candidates_mut()
             .ok_or(ShellTransportError::MissingCapability)?
@@ -107,6 +113,9 @@ impl ShellSessionTransport {
         {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
+        if !self.control_capacity_available(3) {
+            return Err(ShellTransportError::ContentQueueSaturated);
+        }
         self.content_epochs
             .active_candidates_mut()
             .ok_or(ShellTransportError::MissingCapability)?
@@ -132,6 +141,9 @@ impl ShellSessionTransport {
         self.flush_content_candidate_events()?;
         let mut processed = 0;
         while processed < limits.max_frames_per_service_tick as usize {
+            if !self.control_capacity_available(0) {
+                break;
+            }
             if self
                 .output
                 .len()
@@ -261,9 +273,16 @@ impl ShellSessionTransport {
     }
 
     pub fn next_content_submission(&self) -> Option<(ContentOutputId, u64)> {
+        self.next_content_submission_for(|_| true)
+    }
+
+    pub fn next_content_submission_for(
+        &self,
+        available: impl FnMut(ContentOutputId) -> bool,
+    ) -> Option<(ContentOutputId, u64)> {
         self.content_epochs
             .active_candidates()
-            .and_then(|candidates| candidates.next_pending_candidate())
+            .and_then(|candidates| candidates.next_pending_candidate_for(available))
     }
 
     pub fn content_prepared(
@@ -276,6 +295,12 @@ impl ShellSessionTransport {
         now_msec: u64,
     ) -> Result<(), ShellTransportError> {
         let connected = self.content_grant == Some(grant);
+        // The already-owned response credit must still fit before the native
+        // result changes reducer state. No I/O occurs during the subsequent
+        // credit-to-FIFO transfer, so backpressure cannot strand a retry.
+        if connected && !self.control_capacity_available(0) {
+            return Err(ShellTransportError::ContentQueueSaturated);
+        }
         self.content_epochs
             .candidates_mut(grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -302,6 +327,12 @@ impl ShellSessionTransport {
         wm_commit_generation: u64,
     ) -> Result<(), ShellTransportError> {
         let connected = self.content_grant == Some(grant);
+        // The already-owned response credit must still fit before the native
+        // result changes reducer state. No I/O occurs during the subsequent
+        // credit-to-FIFO transfer, so backpressure cannot strand a retry.
+        if connected && !self.control_capacity_available(0) {
+            return Err(ShellTransportError::ContentQueueSaturated);
+        }
         self.content_epochs
             .candidates_mut(grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -326,6 +357,12 @@ impl ShellSessionTransport {
         candidate_generation: u64,
     ) -> Result<(), ShellTransportError> {
         let connected = self.content_grant == Some(grant);
+        // The already-owned response credit must still fit before the native
+        // result changes reducer state. No I/O occurs during the subsequent
+        // credit-to-FIFO transfer, so backpressure cannot strand a retry.
+        if connected && !self.control_capacity_available(0) {
+            return Err(ShellTransportError::ContentQueueSaturated);
+        }
         self.content_epochs
             .candidates_mut(grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -396,11 +433,16 @@ impl ShellSessionTransport {
             let Some(event) = event else {
                 return Ok(());
             };
-            self.send_content_record(event.transaction, &event.record)?;
-            self.content_epochs
-                .active_candidates_mut()
-                .expect("event came from active candidate owner")
-                .take_event();
+            let (frame, control) =
+                self.prepare_content_frame(event.transaction, &event.record, true)?;
+            let Some(store) = self.content_epochs.active_candidates_mut() else {
+                return Err(ShellTransportError::MissingCapability);
+            };
+            if store.pending_event() != Some(&event) {
+                return Err(ShellTransportError::WrongContentRecord);
+            }
+            self.output.push(frame, control);
+            store.take_event();
         }
     }
 }

@@ -203,12 +203,23 @@ ReceiveShellAck ==
     /\ ~ackReceived
     /\ ackReceived' = TRUE
     /\ ackSettled' = SettleAckAtReceipt
+    /\ UNCHANGED
+        <<shellEpoch, nextGeneration, prepared, presented, interactionLive,
+          contactDown, capture, pressedIdentity, invalidCause,
+          captureHistory, actionHistory, applicationReleases, pendingEvent,
+          eventIdentity, wmRequested, wmAdmitted, wmTerminal, accepted>>
+
+\* Session content/actions.rs indicator_admission: effect admission is
+\* independently authorized and does not require receipt of ContentActionAck.
+RequestWmActivation ==
+    /\ pendingEvent
+    /\ ~wmRequested
     /\ wmRequested' = TRUE
     /\ UNCHANGED
         <<shellEpoch, nextGeneration, prepared, presented, interactionLive,
           contactDown, capture, pressedIdentity, invalidCause,
           captureHistory, actionHistory, applicationReleases, pendingEvent,
-          eventIdentity, wmAdmitted, wmTerminal, accepted>>
+          eventIdentity, ackReceived, ackSettled, wmAdmitted, wmTerminal, accepted>>
 
 AdmitWmActivation ==
     /\ wmRequested
@@ -258,6 +269,7 @@ Next ==
     \/ ReplaceShell
     \/ Release
     \/ ReceiveShellAck
+    \/ RequestWmActivation
     \/ AdmitWmActivation
     \/ RefuseWmAdmission
     \/ \E outcome \in {"accepted", "rejected"} :

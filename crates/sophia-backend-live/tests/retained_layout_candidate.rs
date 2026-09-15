@@ -7,6 +7,9 @@ mod layout_candidate;
 
 use correlation::{LiveRendererFrameCorrelation, LiveRendererWorkerRequestId};
 use layout_candidate::RetainedLayoutCandidate;
+#[path = "../src/scanout/rendered_scanout/exporter/native_identity.rs"]
+mod native_identity;
+use native_identity::{LiveNativeFrameIdentity, NativeFrameOwner};
 use sophia_engine::{DirectScanoutVerdict, RenderHeadId};
 use sophia_protocol::{DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888, OutputId, Size};
 use sophia_renderer_live::{
@@ -25,6 +28,7 @@ const SIZE: Size = Size {
 
 fn original() -> LiveRendererFrameCorrelation {
     LiveRendererFrameCorrelation {
+        native: None,
         request: None,
         trace: Some(LiveCompositionTrace {
             output: OutputId::from_raw(1),
@@ -37,6 +41,7 @@ fn original() -> LiveRendererFrameCorrelation {
 
 fn fallback(request: Option<u64>) -> LiveRendererFrameCorrelation {
     LiveRendererFrameCorrelation {
+        native: None,
         request: request.map(LiveRendererWorkerRequestId),
         direct_scanout: Some(DirectScanoutVerdict::CompositionRequired("refused")),
         ..original()
@@ -122,6 +127,7 @@ fn unknown_or_ineligible_originals_never_retain_an_allocation() {
             ..original()
         },
         LiveRendererFrameCorrelation {
+            native: None,
             request: Some(LiveRendererWorkerRequestId(1)),
             ..original()
         },
@@ -322,5 +328,66 @@ fn output_format_preference_belongs_to_the_unbound_fallback_and_expires() {
         Some(DRM_FORMAT_ARGB8888)
     );
     assert_eq!(candidate.output_format(fallback(None), now + LIMIT), None);
+    assert_released(&mut peer);
+}
+
+#[test]
+fn equal_scene_trace_does_not_authorize_another_native_frames_fallback() {
+    let now = Instant::now();
+    let owner = NativeFrameOwner::new();
+    let output = OutputId::from_raw(1);
+    let head = RenderHeadId::from_raw(2);
+    let exact = owner.frame(output, head, 3, 4);
+    assert_eq!(
+        (
+            exact.output(),
+            exact.head(),
+            exact.target_generation(),
+            exact.frame()
+        ),
+        (output, head, 3, 4)
+    );
+    let (buffer, mut peer) = source();
+    let mut candidate = RetainedLayoutCandidate::default();
+    assert!(candidate.capture(
+        buffer,
+        LiveRendererFrameCorrelation {
+            native: Some(exact),
+            ..original()
+        },
+        now,
+        now + LIMIT
+    ));
+    for native in [
+        None,
+        Some(NativeFrameOwner::new().frame(output, head, 3, 4)),
+        Some(owner.frame(OutputId::from_raw(9), head, 3, 4)),
+        Some(owner.frame(output, RenderHeadId::from_raw(9), 3, 4)),
+        Some(owner.frame(output, head, 9, 4)),
+        Some(owner.frame(output, head, 3, 9)),
+    ] {
+        let wrong = LiveRendererFrameCorrelation {
+            native,
+            ..fallback(Some(10))
+        };
+        assert_eq!(candidate.output_format(wrong, now), None);
+        assert!(!candidate.bind(wrong, now));
+        assert_retained(&mut peer);
+    }
+    let matching = LiveRendererFrameCorrelation {
+        native: Some(exact),
+        ..fallback(Some(10))
+    };
+    assert_eq!(
+        candidate.output_format(matching, now),
+        Some(DRM_FORMAT_ARGB8888)
+    );
+    assert!(candidate.bind(matching, now));
+    let retained = candidate
+        .take(matching, descriptor(DRM_FORMAT_ARGB8888), now)
+        .unwrap();
+    assert_eq!(retained.original.native, Some(exact));
+    assert_retained(&mut peer);
+    drop(retained);
     assert_released(&mut peer);
 }

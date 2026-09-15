@@ -68,7 +68,7 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
         {
             return false;
         }
-        let (Some(frame), Some(target), Some(formats)) = (
+        let (Some((frame, native)), Some(target), Some(formats)) = (
             &self.direct_fallback,
             self.last_target,
             &self.layout_probe.formats,
@@ -92,6 +92,7 @@ impl<R: RenderDeviceDiscoveryBackend> NativeGbmRenderedScanoutBufferDiscoveryExp
             return false;
         }
         let original = LiveRendererFrameCorrelation {
+            native: *native,
             request: None,
             trace: frame.trace,
             direct_scanout: Some(frame.direct_scanout),

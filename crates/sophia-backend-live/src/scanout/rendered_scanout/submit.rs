@@ -205,6 +205,7 @@ where
             .cleanup
             .map(|primary_plane| LiveRenderedPrimaryPlaneScanoutCleanup {
                 scanout_buffer: prepared.scanout_buffer,
+                correlation: prepared.correlation,
                 primary_plane,
             }),
     }

@@ -35,6 +35,7 @@ fn observation(framebuffer: u64, errno: Option<i32>) -> LibdrmNativeAtomicTestRe
 
 fn report() -> LiveScanoutLayoutProbeReport {
     let alternative = crate::LiveRendererFrameCorrelation {
+        native: None,
         request: None,
         trace: Some(sophia_renderer_live::LiveCompositionTrace {
             output: sophia_protocol::OutputId::from_raw(1),
@@ -195,6 +196,45 @@ fn framebuffer_refusal_needs_an_equivalent_fresh_success_and_exact_committing_re
                     descriptor,
                     mutated.evidence().unwrap()
                 )
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn layout_comparison_requires_the_same_native_frame_on_both_sources() {
+    let mut report = report();
+    let owner = crate::NativeFrameOwner::new();
+    let output = sophia_protocol::OutputId::from_raw(1);
+    let head = sophia_engine::RenderHeadId::from_raw(2);
+    let exact = owner.frame(output, head, 3, 4);
+    report.original.native = Some(exact);
+    report.alternative.native = Some(exact);
+    let mut descriptor = LiveRendererScanoutBufferDescriptor::new(
+        sophia_protocol::Size {
+            width: 4,
+            height: 4,
+        },
+        16,
+        report.format,
+        15,
+    );
+    descriptor.modifier = Some(0);
+    let current = request(15, 9).evidence().unwrap();
+    assert!(
+        report
+            .witness_for_current(Some(report.alternative), descriptor, current)
+            .is_some()
+    );
+    for native in [
+        None,
+        Some(crate::NativeFrameOwner::new().frame(output, head, 3, 4)),
+        Some(owner.frame(output, head, 3, 5)),
+    ] {
+        report.original.native = native;
+        assert!(
+            report
+                .witness_for_current(Some(report.alternative), descriptor, current)
                 .is_none()
         );
     }

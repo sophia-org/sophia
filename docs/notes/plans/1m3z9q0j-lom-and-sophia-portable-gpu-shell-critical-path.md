@@ -344,6 +344,53 @@ not turn the failed run into acceptance. A new attended run must show the old
 resource release, no `ResourceRetiring` timeout, a stable grant and continued
 presentation on both outputs.
 
+#### In-progress generic lifecycle repair
+
+The implementation checkpoint adds a shared owned native batch queue. All
+outputs are validated before queue admission; a later-output refusal returns
+the offered frame owners and preserves the previous queue. A queued frame
+that owes a distinct retirement cannot be replaced by a newer ordinary repaint.
+That obligation follows its native content through pending, rendering and
+submission. Ordinary repaint service skips a protected output and retains its
+repaint request while other outputs progress. Retained head plans also keep
+their logical checksum, so unchanged outputs avoid redundant work; equal pixels
+never waive a new candidate's distinct retirement.
+
+Device-hidden integration now drives actual `set_shell_content`, retained
+projection, Engine planning/lowering, the owned queue, pending Mixed frames,
+output frame history and persistent scanout custody. Worker copy, framebuffer
+cleanup and flip completion are simulated. A 1,000-cycle two-output control
+keeps CPU and worker history caches alive, captures 2,000 Engine activations,
+holds one real old byte consumer while newer work proceeds, and observes one
+exact release when that consumer ends. Its four resource IDs stay within 96
+source bytes between uploads and 128 bytes during upload overlap; owned resource
+credits reach zero after teardown with historical metadata still alive. These
+are fixture bounds, not production GPU residency or latency measurements.
+
+Session action cancellation retains its response credit beyond the deadline
+until the FIFO owns Cancel. Cancel requires no acknowledgement and cannot
+retract an admitted WM effect. A private socket control exercises the actual
+ledger-to-FIFO transfer. Candidate selection also skips outputs waiting for
+presentation rather than hiding another output's ready candidate behind them.
+
+Development evidence is retained in
+`.artifacts/shell-lifecycle-dev/native-batch-progress.json`. The mutation controls
+restore early resource release, lost retirement protection, equal-pixel
+retirement suppression and premature cancellation collection; each must fail
+its corresponding regression. These results do not close t098/t100: the
+mirrored native adapter and full Session/FIFO/WM/client chain still need joined
+integration coverage, followed by frozen-source review and a device-hidden
+canonical gate. No new hardware run, native acceptance or release promotion
+is implied.
+
+Checkpoint validation: affected library tests passed (backend 130, runtime 8,
+Session 440 with 13 ignored, shell-client 4), as did strict Clippy on backend,
+runtime and Session libraries/tests and formatting. Eight production-queue
+controls include reconnect reuse of candidate numbers: an old grant's pixels
+cannot establish a new grant's Presented identity. A pending same-grant frame
+keeps the exact previous presented targets until its own retirement. These are
+scoped device-hidden development checks, not a current-source canonical pass.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

@@ -288,7 +288,7 @@ pub fn lower_head_composition_plan_with_caches(
                             stride: content.image.stride,
                             format: content.image.format,
                             generation: content.image.generation,
-                            bytes: content.image.resource.shared_bytes(),
+                            bytes: content.image.resource.clone().into(),
                         },
                         placement: LiveCompositionPlacement {
                             target: content.geometry,

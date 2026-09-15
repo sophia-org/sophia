@@ -127,7 +127,7 @@ where
                     self.dmabuf_frame_export_attempts.saturating_add(1);
                 PendingRenderedFrameKind::DmaBuf
             }
-            PendingRenderedFrame::Mixed(_) => {
+            PendingRenderedFrame::Mixed(..) => {
                 self.mixed_frame_export_attempts =
                     self.mixed_frame_export_attempts.saturating_add(1);
                 PendingRenderedFrameKind::Mixed

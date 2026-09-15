@@ -11,14 +11,13 @@ gbm = { version = "0.18.0", optional = true, default-features = false }
 parley = { version = "=0.11.1", default-features = false, features = ["std"] }
 rustix.workspace = true
 sophia-engine = { path = "../sophia-engine" }
+sophia-runtime = { path = "../sophia-runtime" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", optional = true }
 sophia-xshmfence = { path = "../sophia-xshmfence" }
 vello_cpu = { version = "=0.2.0", default-features = false, features = ["std", "text", "u8_pipeline"] }
 xcursor.workspace = true
 
-[dev-dependencies]
-sophia-runtime = { path = "../sophia-runtime" }
 
 [features]
 default = []

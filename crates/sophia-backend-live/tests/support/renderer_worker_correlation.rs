@@ -23,7 +23,7 @@ fn mixed_job(generation: u64) -> super::PendingRenderedFrame {
         }),
         direct_scanout: sophia_engine::DirectScanoutVerdict::Eligible,
         ..Default::default()
-    })
+    }, None)
 }
 
 fn submit_mixed_job(
@@ -34,13 +34,21 @@ fn submit_mixed_job(
     super::LiveRendererFrameCorrelation,
     super::PendingRenderedFrame,
 ) {
+    submit_owned_job(facade, commands, mixed_job(generation))
+}
+
+fn submit_owned_job(
+    facade: &mut super::NativeGbmRendererWorker,
+    commands: &Receiver<WorkerCommand>,
+    frame: super::PendingRenderedFrame,
+) -> (super::LiveRendererFrameCorrelation, super::PendingRenderedFrame) {
     facade
         .submit(
             LiveGbmEglFrameTargetRecord::new(Size {
                 width: 16,
                 height: 16,
             }),
-            mixed_job(generation),
+            frame,
             Vec::new(),
             None,
         )
@@ -378,7 +386,7 @@ fn exporter_latest_wins_does_not_relabel_an_earlier_completed_lease() {
         width: 16,
         height: 16,
     });
-    let super::PendingRenderedFrame::Mixed(first) = mixed_job(60) else {
+    let super::PendingRenderedFrame::Mixed(first, _) = mixed_job(60) else {
         unreachable!()
     };
     exporter.set_pending_mixed_frame(first);
@@ -396,7 +404,7 @@ fn exporter_latest_wins_does_not_relabel_an_earlier_completed_lease() {
     };
     let accepted = super::frame_correlation(&frame, Some(request_id));
     assert_eq!(exporter.rendering_frame_correlation(), Some(accepted));
-    let super::PendingRenderedFrame::Mixed(newer) = mixed_job(61) else {
+    let super::PendingRenderedFrame::Mixed(newer, _) = mixed_job(61) else {
         unreachable!()
     };
     exporter.set_pending_mixed_frame(newer);
@@ -541,5 +549,60 @@ fn output_format_requests_cross_the_worker_boundary_without_relabeling() {
             if lease_id == expected_lease && slot_token == expected_slot)
         );
         assert_eq!(facade.in_flight_correlation(), None);
+    }
+}
+
+
+fn native_job(identity: crate::LiveNativeFrameIdentity) -> super::PendingRenderedFrame {
+    let super::PendingRenderedFrame::Mixed(frame, _) = mixed_job(41) else { unreachable!() };
+    super::PendingRenderedFrame::Mixed(frame, Some(identity))
+}
+
+#[test]
+fn native_identity_survives_identical_pixels_pending_and_same_frame_retry() {
+    let owner = crate::NativeFrameOwner::new();
+    let output = sophia_protocol::OutputId::from_raw(7);
+    let head = sophia_engine::RenderHeadId::from_raw(17);
+    let a = owner.frame(output, head, 1, 1);
+    let b = owner.frame(output, head, 1, 2);
+    let (mut facade, commands, results) = correlated_facade();
+    let (first, frame) = submit_owned_job(&mut facade, &commands, native_job(a));
+    let pending = native_job(b);
+    assert_eq!(first.trace, super::frame_correlation(&pending, None).trace);
+    assert_ne!(first.native, super::frame_correlation(&pending, None).native);
+    results.send(correlated_result(first, WorkerOutcome::Deferred(frame))).unwrap();
+    let super::WorkerPoll::Deferred(frame) = facade.poll() else { panic!("deferred owner missing") };
+    let (retry, _) = submit_owned_job(&mut facade, &commands, frame);
+    assert_eq!(retry.native, Some(a));
+    assert_ne!(retry.request, first.request);
+    results.send(correlated_result(retry, exported_outcome())).unwrap();
+    let super::WorkerPoll::Exported(lease) = facade.poll() else { panic!("exact retry missing") };
+    assert_eq!(lease.correlation().native, Some(a));
+    drop(lease);
+    assert!(matches!(commands.recv().unwrap(), WorkerCommand::Release { .. }));
+    let (next, _) = submit_owned_job(&mut facade, &commands, pending);
+    assert_eq!(next.native, Some(b));
+    assert_eq!(next.trace, retry.trace);
+}
+
+#[test]
+fn wrong_head_or_reconstructed_native_owner_cannot_complete_the_current_job() {
+    let owner = crate::NativeFrameOwner::new();
+    let output = sophia_protocol::OutputId::from_raw(7);
+    let head = sophia_engine::RenderHeadId::from_raw(17);
+    let current = owner.frame(output, head, 1, 1);
+    for wrong in [
+        owner.frame(output, sophia_engine::RenderHeadId::from_raw(18), 1, 1),
+        crate::NativeFrameOwner::new().frame(output, head, 1, 1),
+        owner.frame(output, head, 2, 1),
+    ] {
+        let (mut facade, commands, results) = correlated_facade();
+        let (mut result, _) = submit_owned_job(&mut facade, &commands, native_job(current));
+        result.native = Some(wrong);
+        results.send(correlated_result(result, exported_outcome())).unwrap();
+        assert!(matches!(facade.poll(), super::WorkerPoll::Failed(
+            super::LiveRendererScanoutBufferExportDetail::WorkerDisconnected
+        )));
+        assert!(facade.quarantined);
     }
 }

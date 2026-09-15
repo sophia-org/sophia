@@ -76,6 +76,24 @@ pub struct ContentAllocationStore {
 }
 
 impl ContentAllocationStore {
+    pub(crate) fn queued_bulk_occupancy(&self) -> (usize, usize) {
+        self.events
+            .iter()
+            .filter_map(|event| match &event.record {
+                ShellContentRecord::OutputFacts(facts) => {
+                    Some(sophia_protocol::SOPHIA_IPC_HEADER_LEN + 32 + 40 * facts.outputs.len())
+                }
+                _ => None,
+            })
+            .fold((0, 0), |(records, bytes), frame| {
+                (records + 1, bytes + frame)
+            })
+    }
+
+    pub(crate) fn control_occupancy(&self) -> usize {
+        self.events.len() + self.response_credits
+    }
+
     pub fn new(limits: ContentLimits) -> Result<Self, ContentAllocationError> {
         limits
             .validate()

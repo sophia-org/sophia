@@ -9,10 +9,7 @@ pub(crate) struct LiveRenderedPrimaryPlaneRuntimeAdapter<'a, D, E> {
     pub(crate) scanout_target: LiveKmsScanoutTargetStatus,
     pub(crate) output_size: Option<Size>,
     pub(crate) target: Option<LiveGbmEglFrameTargetRecord>,
-    pub(crate) rendered_primary_plane_scanout_submission:
-        &'a mut Option<BoxedRenderedPrimaryPlaneScanoutSubmission>,
-    pub(crate) rendered_primary_plane_scanout_cleanup:
-        &'a mut Option<BoxedRenderedPrimaryPlaneScanoutCleanup>,
+    pub(crate) custody: &'a mut crate::PersistentScanoutCustody,
     pub(crate) rendered_primary_plane_runtime_scanout_state: &'a mut Option<RuntimeScanoutState>,
     pub(crate) rendered_primary_plane_scanout_in_flight_ticks: &'a mut u64,
     pub(crate) submitted_after_page_flip_serial: Option<u64>,
@@ -76,8 +73,7 @@ where
             self.scanout_target,
             self.output_size,
             self.target,
-            self.rendered_primary_plane_scanout_submission,
-            self.rendered_primary_plane_scanout_cleanup,
+            self.custody,
             self.rendered_primary_plane_runtime_scanout_state,
             self.rendered_primary_plane_scanout_in_flight_ticks,
             self.submitted_after_page_flip_serial,

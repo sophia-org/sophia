@@ -1057,6 +1057,12 @@ fn shell_content_lowers_exact_pixels_and_keeps_the_resource_until_frame_retireme
             },
         },
     ));
+    let history = sophia_engine::head_output_damage_snapshot(&plan);
+    let mut presented_history =
+        sophia_engine::OutputFramePresentationState::new(history.output).unwrap();
+    presented_history.queue(history.clone()).unwrap();
+    presented_history.mark_submitted().unwrap();
+    presented_history.mark_presented().unwrap();
     let lowered = lower_head_composition_plan(
         &plan,
         &[LiveOwnedHeadCompositionSource {
@@ -1096,11 +1102,37 @@ fn shell_content_lowers_exact_pixels_and_keeps_the_resource_until_frame_retireme
     store.collect();
     assert!(store.take_event().is_none());
 
+    // A queued/upload consumer may retain only the bytes, after dropping the
+    // frame metadata. That consumer must still keep the resource accounted.
+    let bytes_consumer = buffer.bytes.clone();
     drop(lowered);
+    store.collect();
+    assert!(store.take_event().is_none());
+    assert_eq!(store.usage().retiring, 32);
+    assert_eq!(&bytes_consumer[..], &[0x7f; 32]);
+    drop(bytes_consumer);
     store.collect();
     assert!(matches!(
         store.take_event().map(|event| event.record),
         Some(ShellContentRecord::ResourceReleased(released))
             if released.resource == description.resource
     ));
+    // Presentation/input and damage facts survive resource retirement, with
+    // exact identity intact and no lease hiding in the retained state.
+    assert_eq!(
+        presented_history
+            .presented()
+            .unwrap()
+            .compositor_display_list,
+        history.compositor_display_list
+    );
+    let identity = history
+        .compositor_display_list
+        .content_images()
+        .next()
+        .unwrap();
+    assert_eq!(identity.resource, description);
+    assert_eq!(store.usage().backing, 0);
+    store.collect();
+    assert!(store.take_event().is_none());
 }

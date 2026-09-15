@@ -716,3 +716,48 @@ fn a_demand_cannot_invent_an_output_or_cancel_the_wrong_standing_request() {
         .unwrap();
     assert!(candidates.next_demand().is_none());
 }
+
+#[test]
+fn a_waiting_output_does_not_hide_another_outputs_complete_candidate() {
+    let (mut candidates, mut resources) = stores();
+    upload(&mut resources, 1);
+    let allocations = [allocation()];
+    assemble(&mut candidates, &resources, 1, &allocations);
+    let mut other_allocation = allocation();
+    other_allocation.output = second_output();
+    candidates
+        .grant_permit(tx(14), second_output(), 2, 2, 4)
+        .unwrap();
+    let mut other_begin = begin(2);
+    other_begin.output = second_output();
+    candidates.begin(tx(15), other_begin, 5).unwrap();
+    candidates
+        .chunk(tx(16), chunk(2, resource_id(1)), 6)
+        .unwrap();
+    candidates
+        .end(
+            tx(17),
+            end(2),
+            ContentCandidateContext {
+                output: second_output(),
+                facts_generation: 6,
+                interaction_generation: 8,
+                allocations: &[other_allocation],
+            },
+            &resources,
+            7,
+        )
+        .unwrap();
+    assert_eq!(candidates.next_pending_candidate(), Some((output(), 1)));
+    assert_eq!(
+        candidates.next_pending_candidate_for(|candidate| candidate != output()),
+        Some((second_output(), 2))
+    );
+    assert_eq!(candidates.next_pending_candidate_for(|_| false), None);
+    assert_eq!(candidates.pending_candidate_count(), 2);
+    assert_eq!(
+        candidates.next_pending_candidate(),
+        Some((output(), 1)),
+        "skipping did not consume the waiting owner"
+    );
+}

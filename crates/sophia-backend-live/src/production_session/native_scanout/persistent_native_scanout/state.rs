@@ -354,6 +354,8 @@ pub enum LiveProductionScanoutContent {
     },
     RetainedMixed {
         frame: LiveProductionNativeFrameId,
+        requires_retirement: bool,
+        logical_content_checksum: Option<u64>,
         nonzero_rgb_pixels: usize,
     },
     HeadComposition {
@@ -368,6 +370,17 @@ impl LiveProductionScanoutContent {
     ///
     /// Present-backed variants carry client pixels rather than a composed scene,
     /// so they report none and are never treated as interchangeable.
+    pub(crate) const fn requires_retirement(self) -> bool {
+        matches!(
+            self,
+            Self::MixedPresent { .. }
+                | Self::RetainedMixed {
+                    requires_retirement: true,
+                    ..
+                }
+        )
+    }
+
     pub const fn logical_checksum(self) -> Option<u64> {
         match self {
             Self::Cpu { checksum, .. } => Some(checksum),
@@ -375,7 +388,11 @@ impl LiveProductionScanoutContent {
                 logical_content_checksum,
                 ..
             } => Some(logical_content_checksum),
-            Self::MixedPresent { .. } | Self::RetainedMixed { .. } => None,
+            Self::RetainedMixed {
+                logical_content_checksum,
+                ..
+            } => logical_content_checksum,
+            Self::MixedPresent { .. } => None,
         }
     }
 }
@@ -515,8 +532,15 @@ impl LiveProductionScanoutContent {
                 transaction,
                 nonzero_rgb_pixels,
             },
-            Self::RetainedMixed { frame, .. } => Self::RetainedMixed {
+            Self::RetainedMixed {
                 frame,
+                requires_retirement,
+                logical_content_checksum,
+                ..
+            } => Self::RetainedMixed {
+                frame,
+                requires_retirement,
+                logical_content_checksum,
                 nonzero_rgb_pixels,
             },
             Self::HeadComposition {

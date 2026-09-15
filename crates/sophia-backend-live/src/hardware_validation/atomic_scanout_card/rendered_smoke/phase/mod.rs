@@ -275,6 +275,7 @@ impl RealAtomicScanoutPageFlipSession {
             submit,
             submission: Some(LiveRenderedPrimaryPlaneScanoutSubmission {
                 scanout_buffer: owned_buffer,
+                correlation: export.correlation,
                 primary_plane: submission,
                 submitted_after_page_flip_serial: None,
                 layout_witness: None,

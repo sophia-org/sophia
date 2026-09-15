@@ -489,7 +489,9 @@ macro_rules! drain_physical_input {
             }
             if let Some(shell) = metadata_shell.as_mut() {
                 for target in report.content_activations.iter().cloned() {
-                    if shell.issue_content_activation(target)?.is_none() {
+                    if runtime.as_ref().is_none() || shell.issue_content_activation(
+                        target, runtime.as_ref().expect("runtime was checked above")
+                    )?.is_none() {
                         crate::session_eprintln!(
                             "sophia_live_shell_content schema=1 status=input_rejected reason=capacity"
                         );

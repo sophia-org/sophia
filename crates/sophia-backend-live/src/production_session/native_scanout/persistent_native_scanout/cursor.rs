@@ -256,7 +256,7 @@ impl LiveProductionNativeScanout {
             crate::HardwareCursorPath::AtomicPlane,
             true,
             self.heads[index].submitted_at.is_some()
-                || self.heads[index].scanout_submission.is_some(),
+                || self.heads[index].scanout_custody.submitted().is_some(),
         );
         match crate::plan_cursor_commit(
             crate::HardwareCursorPath::AtomicPlane,
@@ -373,7 +373,7 @@ impl LiveProductionNativeScanout {
                 crate::HardwareCursorPath::AtomicPlane,
                 true,
                 self.heads[index].submitted_at.is_some()
-                    || self.heads[index].scanout_submission.is_some(),
+                    || self.heads[index].scanout_custody.submitted().is_some(),
             );
             match crate::plan_cursor_commit(
                 crate::HardwareCursorPath::AtomicPlane,

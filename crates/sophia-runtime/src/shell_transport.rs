@@ -30,6 +30,8 @@ mod content_admission;
 mod content_allocations;
 mod content_candidates;
 mod content_resources;
+mod control_budget;
+mod outbox;
 pub use content_admission::ShellContentAdmissionPolicy;
 
 const SHELL_IO_TIMEOUT: Duration = Duration::from_secs(5);
@@ -100,7 +102,8 @@ pub struct ShellSessionTransport {
     capabilities: u64,
     peer_closed: bool,
     input: Vec<u8>,
-    output: VecDeque<u8>,
+    output: outbox::ShellOutbox,
+    action_cancellations: Vec<sophia_protocol::ContentAction>,
     inbox: VecDeque<Vec<u8>>,
     connection_epoch: u64,
     last_content_grant_epoch: u64,
@@ -137,7 +140,8 @@ impl ShellSessionTransport {
             capabilities: 0,
             peer_closed: false,
             input: Vec::new(),
-            output: VecDeque::new(),
+            output: outbox::ShellOutbox::default(),
+            action_cancellations: Vec::with_capacity(16),
             inbox: VecDeque::new(),
             connection_epoch: 0,
             last_content_grant_epoch: 0,
@@ -350,6 +354,7 @@ impl ShellSessionTransport {
         self.peer_closed = false;
         self.input.clear();
         self.output.clear();
+        self.action_cancellations.clear();
         self.inbox.clear();
         self.capabilities = capabilities;
         self.stream = Some(stream);
@@ -560,6 +565,7 @@ impl ShellSessionTransport {
         self.stream = None;
         self.input.clear();
         self.output.clear();
+        self.action_cancellations.clear();
         self.inbox.clear();
         self.requested_candidate = None;
         self.pending_candidate = None;
@@ -648,69 +654,78 @@ impl ShellSessionTransport {
             .stream
             .as_mut()
             .ok_or(ShellTransportError::NotConnected)?;
+        let mut remaining = 256 * 1024;
         for _ in 0..64 {
-            if self.output.is_empty() {
+            if remaining == 0 || self.output.is_empty() {
                 break;
             }
-            let (bytes, _) = self.output.as_slices();
-            match stream.write(bytes) {
+            let bytes = self.output.front();
+            match stream.write(&bytes[..bytes.len().min(remaining)]) {
                 Ok(0) => return Err(ShellTransportError::NotConnected),
                 Ok(n) => {
-                    self.output.drain(..n);
+                    self.output.written(n);
+                    remaining -= n;
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(e) => return Err(ShellTransportError::Io(e.to_string())),
             }
         }
         for _ in 0..64 {
+            Self::decode_buffered_input(&mut self.input, &mut self.inbox)?;
+            let limit = self
+                .content_limits
+                .as_ref()
+                .map_or(2 * 1024 * 1024, |limits| {
+                    limits.max_input_queue_bytes as usize
+                });
+            let retained = self.input.len() + self.inbox.iter().map(Vec::len).sum::<usize>();
+            let available = limit.saturating_sub(retained);
+            if available == 0 || self.inbox.len() == 64 {
+                break;
+            }
             let mut bytes = [0u8; 4096];
-            match stream.read(&mut bytes) {
+            let available = available.min(bytes.len());
+            match stream.read(&mut bytes[..available]) {
                 Ok(0) => {
                     self.peer_closed = true;
                     break;
                 }
-                Ok(n) => {
-                    let limit = self
-                        .content_limits
-                        .as_ref()
-                        .map_or(2 * 1024 * 1024, |limits| {
-                            limits.max_input_queue_bytes as usize
-                        });
-                    if self.input.len().saturating_add(n) > limit {
-                        return Err(ShellTransportError::ContentQueueSaturated);
-                    }
-                    self.input.extend_from_slice(&bytes[..n]);
-                }
+                Ok(n) => self.input.extend_from_slice(&bytes[..n]),
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(e) => return Err(ShellTransportError::Io(e.to_string())),
             }
-            while self.input.len() >= SOPHIA_IPC_HEADER_LEN {
-                let n = u32::from_le_bytes(self.input[16..20].try_into().unwrap()) as usize;
-                if n > SOPHIA_IPC_MAX_PAYLOAD_LEN {
-                    return Err(ShellTransportError::Codec(IpcCodecError::PayloadTooLarge(
-                        n,
-                    )));
-                }
-                let n = n + SOPHIA_IPC_HEADER_LEN;
-                if self.input.len() < n {
-                    break;
-                }
-                if self.inbox.len() >= 64 {
-                    return Err(ShellTransportError::ActivationQueueSaturated);
-                }
-                let frame = self.input.drain(..n).collect::<Vec<_>>();
-                sophia_protocol::decode_frame(&frame)?;
-                self.inbox.push_back(frame);
+        }
+        Self::decode_buffered_input(&mut self.input, &mut self.inbox)?;
+        Ok(())
+    }
+
+    fn decode_buffered_input(
+        input: &mut Vec<u8>,
+        inbox: &mut VecDeque<Vec<u8>>,
+    ) -> Result<(), ShellTransportError> {
+        while input.len() >= SOPHIA_IPC_HEADER_LEN && inbox.len() < 64 {
+            let payload = u32::from_le_bytes(input[16..20].try_into().unwrap()) as usize;
+            if payload > SOPHIA_IPC_MAX_PAYLOAD_LEN {
+                return Err(ShellTransportError::Codec(IpcCodecError::PayloadTooLarge(
+                    payload,
+                )));
             }
+            let length = SOPHIA_IPC_HEADER_LEN + payload;
+            if input.len() < length {
+                break;
+            }
+            let frame = input.drain(..length).collect::<Vec<_>>();
+            sophia_protocol::decode_frame(&frame)?;
+            inbox.push_back(frame);
         }
         Ok(())
     }
 
     pub fn send_async(&mut self, frame: Vec<u8>) -> Result<(), ShellTransportError> {
-        if self.output.len() + frame.len() > 2 * 1024 * 1024 {
+        if !self.bulk_capacity_available(frame.len()) {
             return Err(ShellTransportError::ActivationQueueSaturated);
         }
-        self.output.extend(frame);
+        self.output.push(frame, false);
         self.poll_io()
     }
 

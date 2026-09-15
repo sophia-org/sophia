@@ -265,9 +265,9 @@ impl LiveProductionVisualRuntime {
             .collect()
     }
 
-    pub(super) fn compose_native_head_frames_from_sources(
+    pub(super) fn compose_native_head_frames_from_sources<T: NativeCompositionTarget>(
         &self,
-        native_scanout: &LiveProductionNativeScanout,
+        native_scanout: &T,
         output: OutputId,
         committed: &[CommittedSurfaceState],
         display_list: CompositorDisplayList,
@@ -289,7 +289,7 @@ impl LiveProductionVisualRuntime {
             display_list,
             None,
         )?;
-        let targets = native_scanout.head_render_targets(output);
+        let targets = native_scanout.head_targets(output);
         let plans = sophia_engine::build_output_head_plans(&snapshot, &targets)?;
         if plans.len() != targets.len() {
             return Err("head composition planner returned partial target coverage".into());
@@ -319,14 +319,12 @@ impl LiveProductionVisualRuntime {
 
     /// The in-flight submission's transaction, when that submission put a
     /// client's buffer on the plane directly.
-    fn in_flight_direct(
+    fn in_flight_direct<T: NativeCompositionTarget>(
         &self,
-        native_scanout: &LiveProductionNativeScanout,
+        native_scanout: &T,
     ) -> Option<TransactionId> {
         native_scanout
-            .heads
-            .iter()
-            .any(|head| head.submitted_direct)
+            .has_in_flight_direct()
             .then(|| self.present_scheduler.in_flight_transaction())
             .flatten()
     }
@@ -450,9 +448,11 @@ impl LiveProductionVisualRuntime {
         })
     }
 
-    pub(super) fn retained_output_head_composition_frames_from_sources(
+    pub(super) fn retained_output_head_composition_frames_from_sources<
+        T: NativeCompositionTarget,
+    >(
         &self,
-        native_scanout: &LiveProductionNativeScanout,
+        native_scanout: &T,
         source_set: &LiveProductionRetainedCompositionSourceSet,
     ) -> Result<HeadCompositionFramesByOutput, Box<dyn std::error::Error>> {
         self.outputs
@@ -479,10 +479,10 @@ impl LiveProductionVisualRuntime {
             .collect()
     }
 
-    pub(super) fn retained_output_head_composition_frames(
+    pub(super) fn retained_output_head_composition_frames<T: NativeCompositionTarget>(
         &self,
         scene: &LiveProductionCpuScene,
-        native_scanout: &LiveProductionNativeScanout,
+        native_scanout: &T,
     ) -> Result<HeadCompositionFramesByOutput, Box<dyn std::error::Error>> {
         let source_set =
             self.retained_composition_source_set(scene, self.in_flight_direct(native_scanout))?;
@@ -725,9 +725,15 @@ impl LiveProductionVisualRuntime {
             });
         }
         bars.iter().all(|bar| {
+            let expected: sophia_engine::CompositorDamageList =
+                sophia_engine::CompositorDisplayList {
+                    output: bar.output,
+                    commands: bar.commands.clone(),
+                }
+                .into();
             self.tab_frames
                 .get(&bar.output)
-                .is_some_and(|frame| bar.commands.iter().all(|c| frame.commands.contains(c)))
+                .is_some_and(|frame| expected.commands.iter().all(|c| frame.commands.contains(c)))
         })
     }
 

@@ -80,6 +80,6 @@ pub fn solid_color_buffer(color: CompositorRgb8) -> LiveSharedCpuBufferSource {
         stride: 4,
         format: LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888,
         generation: 1,
-        bytes: Arc::new(vec![color.blue, color.green, color.red, 255]),
+        bytes: Arc::new(vec![color.blue, color.green, color.red, 255]).into(),
     }
 }

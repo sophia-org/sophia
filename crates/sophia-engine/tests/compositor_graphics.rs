@@ -453,12 +453,17 @@ fn presentation_state_advances_only_after_accepted_submit_and_page_flip() {
     presentation.mark_submitted().unwrap();
     assert!(presentation.presented().is_none());
     let first_presented = presentation.mark_presented().unwrap();
-    assert_eq!(first_presented.snapshot.compositor_display_list, first_list);
+    assert_eq!(
+        first_presented.snapshot.compositor_display_list,
+        first_list.clone().into()
+    );
     assert_eq!(
         presentation
             .presented()
             .map(|snapshot| &snapshot.compositor_display_list),
-        Some(&first_list)
+        Some(&sophia_engine::CompositorDamageList::from(
+            first_list.clone()
+        ))
     );
 
     assert_eq!(
@@ -474,7 +479,7 @@ fn presentation_state_advances_only_after_accepted_submit_and_page_flip() {
     let second_presented = presentation.mark_presented().unwrap();
     assert_eq!(
         second_presented.snapshot.compositor_display_list,
-        second_list
+        sophia_engine::CompositorDamageList::from(second_list.clone())
     );
     assert_eq!(second_presented.damage.rects.len(), 8);
 }
@@ -590,7 +595,9 @@ fn failed_and_superseded_pending_lists_do_not_advance_or_corrupt_damage_baseline
         presentation
             .presented()
             .map(|snapshot| &snapshot.compositor_display_list),
-        Some(&first_list)
+        Some(&sophia_engine::CompositorDamageList::from(
+            first_list.clone()
+        ))
     );
 
     presentation
@@ -613,7 +620,9 @@ fn failed_and_superseded_pending_lists_do_not_advance_or_corrupt_damage_baseline
         presentation
             .presented()
             .map(|snapshot| &snapshot.compositor_display_list),
-        Some(&first_list)
+        Some(&sophia_engine::CompositorDamageList::from(
+            first_list.clone()
+        ))
     );
 
     let wrong_output = surface_chrome_display_list(
@@ -703,7 +712,9 @@ fn pending_list_uses_the_in_flight_submission_as_its_damage_baseline() {
         presentation
             .presented()
             .map(|snapshot| &snapshot.compositor_display_list),
-        Some(&second_list)
+        Some(&sophia_engine::CompositorDamageList::from(
+            second_list.clone()
+        ))
     );
     presentation.mark_submitted().unwrap();
     presentation.mark_presented().unwrap();
@@ -711,7 +722,9 @@ fn pending_list_uses_the_in_flight_submission_as_its_damage_baseline() {
         presentation
             .presented()
             .map(|snapshot| &snapshot.compositor_display_list),
-        Some(&first_list)
+        Some(&sophia_engine::CompositorDamageList::from(
+            first_list.clone()
+        ))
     );
 }
 

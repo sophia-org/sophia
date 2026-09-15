@@ -171,7 +171,7 @@ fn cpu_backdrop() -> LiveSharedCpuBufferSource {
         stride: (width * 4) as u32,
         format: 0x3432_5258,
         generation: 1,
-        bytes: Arc::new(bytes),
+        bytes: Arc::new(bytes).into(),
     }
 }
 

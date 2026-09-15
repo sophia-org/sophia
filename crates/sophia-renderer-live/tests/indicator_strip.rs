@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use sophia_engine::{
     CompositorNodeId, HeadCompositorIndicatorStrip, IndicatorChromeHitTarget, IndicatorChromeStrip,
 };
@@ -97,10 +95,13 @@ fn included_font_raster_is_deterministic_xrgb_and_contains_semantic_markers() {
 fn cache_reuses_exact_semantics_and_evicts_without_invalidating_frames() {
     let mut cache = IndicatorStripRasterCache::default();
     let first = cache.raster_for(&strip(1)).unwrap();
-    let shared_pixels = Arc::clone(&first.bytes);
+    let shared_pixels = first.bytes.clone();
     let repeated = cache.raster_for(&strip(1)).unwrap();
     assert_eq!(first.handle, repeated.handle);
-    assert!(Arc::ptr_eq(&first.bytes, &repeated.bytes));
+    assert!(std::ptr::eq(
+        first.bytes.as_slice(),
+        repeated.bytes.as_slice()
+    ));
 
     for generation in 2..=u64::try_from(INDICATOR_STRIP_CACHE_MAX_ENTRIES + 2).unwrap() {
         cache.raster_for(&strip(generation)).unwrap();
@@ -132,5 +133,8 @@ fn output_focus_accents_the_label_without_a_detached_marker() {
         );
     }
     let cached = cache.raster_for(&focused_strip).unwrap();
-    assert!(Arc::ptr_eq(&focused.bytes, &cached.bytes));
+    assert!(std::ptr::eq(
+        focused.bytes.as_slice(),
+        cached.bytes.as_slice()
+    ));
 }

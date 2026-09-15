@@ -1,5 +1,11 @@
 #[cfg(feature = "libdrm-events")]
 mod correlation;
+#[cfg(feature = "libdrm-events")]
+mod native_identity;
+#[cfg(feature = "libdrm-events")]
+pub use native_identity::LiveNativeFrameIdentity;
+#[cfg(feature = "libdrm-events")]
+pub(crate) use native_identity::NativeFrameOwner;
 mod direct;
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod discovery;

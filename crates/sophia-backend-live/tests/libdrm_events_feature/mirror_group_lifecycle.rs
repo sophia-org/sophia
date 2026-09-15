@@ -109,6 +109,8 @@ fn ordinary_successor_waits_until_the_primary_owns_a_present_generation() {
             Some(present),
             None,
             Some(LiveProductionScanoutContent::RetainedMixed {
+ logical_content_checksum: None,
+ requires_retirement: false,
                 frame: present,
                 nonzero_rgb_pixels: 0,
             })
@@ -186,10 +188,14 @@ fn renderer_work_keeps_its_generation_identity_during_coalescing() {
     let current = LiveProductionNativeFrameId::from_raw(41);
     let next = LiveProductionNativeFrameId::from_raw(42);
     let current_content = LiveProductionScanoutContent::RetainedMixed {
+ logical_content_checksum: None,
+ requires_retirement: false,
         frame: current,
         nonzero_rgb_pixels: 10,
     };
     let next_content = LiveProductionScanoutContent::RetainedMixed {
+ logical_content_checksum: None,
+ requires_retirement: false,
         frame: next,
         nonzero_rgb_pixels: 11,
     };
@@ -236,6 +242,8 @@ fn renderer_start_captures_content_even_without_a_submit_report() {
 fn renderer_start_refuses_missing_or_competing_content_identity() {
     let frame = LiveProductionNativeFrameId::from_raw(41);
     let content = LiveProductionScanoutContent::RetainedMixed {
+ logical_content_checksum: None,
+ requires_retirement: false,
         frame,
         nonzero_rgb_pixels: 0,
     };

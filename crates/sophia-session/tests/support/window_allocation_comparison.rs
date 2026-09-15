@@ -97,6 +97,7 @@ impl ComparisonFixture {
                     witness: LiveScanoutLayoutWitness {
                         source_image: renderer_image_for_present(transaction),
                         alternative: LiveRendererFrameCorrelation {
+                            native: None,
                             request: None,
                             trace: Some(LiveCompositionTrace {
                                 output,

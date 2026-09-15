@@ -120,6 +120,7 @@ impl LiveScanoutLayoutProbeReport {
         if current != alternative_request
             || correlation != Some(self.alternative)
             || self.original.trace.is_none()
+            || self.original.native != self.alternative.native
             || self.original.trace != self.alternative.trace
             || self.original.direct_scanout != Some(sophia_engine::DirectScanoutVerdict::Eligible)
             || self.alternative.direct_scanout
@@ -216,6 +217,7 @@ where
                 *modifier == sophia_protocol::DRM_FORMAT_MOD_INVALID || *modifier == u64::MAX
             })
         || original.trace.is_none()
+        || original.native != completed.native
         || original.trace != completed.trace
         || completed.direct_scanout
             != Some(sophia_engine::DirectScanoutVerdict::CompositionRequired(
@@ -253,6 +255,7 @@ where
                 .cleanup
                 .map(|primary_plane| LiveRenderedPrimaryPlaneScanoutCleanup {
                     scanout_buffer: source.scanout_buffer,
+                    correlation: source.correlation,
                     primary_plane,
                 });
         LiveScanoutLayoutComparison::from(tests)

@@ -461,7 +461,7 @@ fn worker_slot_damage_history_does_not_own_copied_shell_pixels() {
                     resource: resources.lease(grant, resource).unwrap(),
                 },
             )],
-        },
+        }.into(),
         software_cursor: None,
     };
     let mut damage = WorkerSlotDamage::with_enabled(true);

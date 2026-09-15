@@ -1,11 +1,7 @@
+use super::composition_queue::{
+    LiveProductionQueuedMirrorGeneration, LiveProductionQueuedMirrorHeadFrame,
+};
 use super::*;
-
-pub(super) struct LiveProductionQueuedMirrorGeneration {
-    output: OutputId,
-    pub(super) frame: LiveProductionNativeFrameId,
-    logical_content_checksum: Option<u64>,
-    heads: Vec<LiveProductionQueuedMirrorHeadFrame>,
-}
 
 #[derive(Debug)]
 pub struct LiveProductionHeadCompositionFrame {
@@ -121,14 +117,15 @@ pub fn validate_live_head_composition_frame_batch(
 }
 
 #[derive(Clone, Copy)]
-enum LiveProductionHeadCompositionContent {
+pub(crate) enum LiveProductionHeadCompositionContent {
     Scene,
     MixedPresent(TransactionId),
     Retained,
+    RetainedFresh,
 }
 
 impl LiveProductionHeadCompositionContent {
-    fn scanout_content(
+    pub(crate) fn scanout_content(
         self,
         frame: LiveProductionNativeFrameId,
         logical_content_checksum: u64,
@@ -144,43 +141,13 @@ impl LiveProductionHeadCompositionContent {
                 transaction,
                 nonzero_rgb_pixels: 0,
             },
-            Self::Retained => LiveProductionScanoutContent::RetainedMixed {
+            Self::Retained | Self::RetainedFresh => LiveProductionScanoutContent::RetainedMixed {
+                logical_content_checksum: Some(logical_content_checksum),
+                requires_retirement: false,
                 frame,
                 nonzero_rgb_pixels: 0,
             },
         }
-    }
-}
-
-struct LiveProductionQueuedMirrorHeadFrame {
-    head_index: usize,
-    content: LiveProductionScanoutContent,
-    frame: crate::LiveOwnedMixedCompositionFrame,
-    output_damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
-    cpu_nonzero_pixel_bytes: usize,
-}
-
-impl LiveProductionQueuedMirrorGeneration {
-    fn source(&self) -> &'static str {
-        match self.heads.first().map(|head| head.content) {
-            Some(LiveProductionScanoutContent::Cpu { .. }) => "cpu",
-            Some(LiveProductionScanoutContent::MixedPresent { .. }) => "mixed_present",
-            Some(LiveProductionScanoutContent::RetainedMixed { .. }) => "retained_mixed",
-            Some(LiveProductionScanoutContent::HeadComposition { .. }) => "head_composition",
-            None => "empty",
-        }
-    }
-
-    pub(super) fn cpu_checksum(&self) -> Option<u64> {
-        match self.heads.first().map(|head| head.content) {
-            Some(LiveProductionScanoutContent::Cpu { checksum, .. }) => Some(checksum),
-            _ => None,
-        }
-    }
-
-    fn logical_checksum(&self) -> Option<u64> {
-        self.logical_content_checksum
-            .or_else(|| self.cpu_checksum())
     }
 }
 
@@ -278,55 +245,109 @@ impl LiveProductionNativeScanout {
         &mut self,
         generation: LiveProductionQueuedMirrorGeneration,
         status: &'static str,
-    ) -> Result<(), &'static str> {
-        if generation.heads.is_empty()
-            || generation
+    ) -> Result<(), (&'static str, LiveProductionQueuedMirrorGeneration)> {
+        // Validation borrows the whole generation. A refused handoff returns
+        // its actual pixel owners, not only a reason or a reconstructible ID.
+        let preparation = (|| {
+            if generation.heads.is_empty()
+                || generation
+                    .heads
+                    .iter()
+                    .any(|head| head.content.frame() != generation.frame)
+            {
+                return Err("mirror generation has invalid or mismatched frame identity");
+            }
+            let expected = self.head_indices(generation.output);
+            let actual = generation
                 .heads
                 .iter()
-                .any(|head| head.content.frame() != generation.frame)
-        {
-            return Err("mirror generation has invalid or mismatched frame identity");
-        }
-        let expected = self.head_indices(generation.output);
-        let actual = generation
-            .heads
-            .iter()
-            .map(|head| head.head_index)
-            .collect::<Vec<_>>();
-        if expected != actual {
-            return Err("mirror generation does not cover every physical head exactly once");
-        }
-        let lifecycle = self
-            .output_lifecycles
-            .get_mut(&generation.output)
-            .ok_or("mirror generation targets an unregistered output")?;
-        let initialized = lifecycle.initialized();
-        let primary = lifecycle.primary_head();
-        if initialized
-            && lifecycle.begin(generation.frame) != LiveProductionMirrorGroupBegin::Started
-        {
-            return Err("mirror generation could not reserve its lifecycle");
-        }
-        if initialized {
-            let cohort = sophia_engine::OutputPresentationCohort::new(
-                generation.output,
-                generation.frame.raw(),
-                primary,
-                expected.iter().map(|index| self.heads[*index].head),
-            )
-            .ok_or("mirror generation could not create its presentation cohort")?;
+                .map(|head| head.head_index)
+                .collect::<Vec<_>>();
+            if expected != actual {
+                return Err("mirror generation does not cover every physical head exactly once");
+            }
+            if generation.heads.iter().any(|queued| {
+                queued.identity
+                    != self.native_frame_identity(
+                        queued.head_index,
+                        generation.output,
+                        generation.frame,
+                    )
+            }) {
+                return Err("mirror generation does not name the current native targets");
+            }
+            if generation.heads.iter().any(|queued| {
+                let head = &self.heads[queued.head_index];
+                head.prepared_scanout.is_some() && !head.scanout_custody.can_cancel_prepared()
+            }) {
+                return Err("mirror generation waits for prepared-owner cleanup capacity");
+            }
+            if expected.iter().any(|index| {
+                let head = &self.heads[*index];
+                [
+                    head.pending_content,
+                    head.rendering_content,
+                    head.submitted_content,
+                ]
+                .into_iter()
+                .flatten()
+                .any(|old| old.requires_retirement() && old.frame() != generation.frame)
+            }) {
+                return Err("composition installation waits for an existing distinct retirement");
+            }
+            if expected.len() == 1 {
+                return Ok(None);
+            }
+            let lifecycle = self
+                .output_lifecycles
+                .get(&generation.output)
+                .ok_or("mirror generation targets an unregistered output")?;
+            let cohort = if lifecycle.initialized() {
+                Some(
+                    sophia_engine::OutputPresentationCohort::new(
+                        generation.output,
+                        generation.frame.raw(),
+                        lifecycle.primary_head(),
+                        expected.iter().map(|index| self.heads[*index].head),
+                    )
+                    .ok_or("mirror generation could not create its presentation cohort")?,
+                )
+            } else {
+                None
+            };
+            Ok(cohort)
+        })();
+        let cohort = match preparation {
+            Ok(cohort) => cohort,
+            Err(reason) => return Err((reason, generation)),
+        };
+        if let Some(cohort) = cohort {
+            let lifecycle = self
+                .output_lifecycles
+                .get_mut(&generation.output)
+                .expect("output validated before reservation");
+            if lifecycle.begin(generation.frame) != LiveProductionMirrorGroupBegin::Started {
+                return Err((
+                    "mirror generation could not reserve its lifecycle",
+                    generation,
+                ));
+            }
             self.output_cohorts
                 .insert((generation.output, generation.frame), cohort);
         }
         let source = generation.source();
         let checksum = generation.logical_checksum();
+        let mirrored = generation.heads.len() > 1;
         for queued in generation.heads {
             if let Some(old_frame) = self.heads[queued.head_index]
                 .prepared_group_frame
                 .filter(|old| *old != generation.frame)
                 && let Some(prepared) = self.heads[queued.head_index].prepared_scanout.take()
             {
-                self.cancel_prepared_head_owner(queued.head_index, prepared);
+                assert!(
+                    self.cancel_prepared_head_owner(queued.head_index, prepared),
+                    "cleanup capacity checked before generation transfer"
+                );
                 if let Some(cohort) = self.output_cohorts.get_mut(&(generation.output, old_frame)) {
                     let _ = cohort.mark_skipped(self.heads[queued.head_index].head);
                 }
@@ -339,6 +360,7 @@ impl LiveProductionNativeScanout {
             {
                 let _ = cohort.mark_skipped(self.heads[queued.head_index].head);
             }
+            let identity = queued.identity;
             let (head, exporter) = self.head_and_exporter(queued.head_index, generation.output);
             if let Some(checksum) = checksum {
                 head.last_checksum = checksum;
@@ -352,9 +374,11 @@ impl LiveProductionNativeScanout {
             // exporter at all -- whatever that exporter was enabled with, and
             // whichever order a head joined the group in.
             let mut frame = queued.frame;
-            frame.direct_scanout =
-                sophia_engine::DirectScanoutVerdict::CompositionRequired("mirror_cohort");
-            exporter.set_pending_mixed_frame(frame);
+            if mirrored {
+                frame.direct_scanout =
+                    sophia_engine::DirectScanoutVerdict::CompositionRequired("mirror_cohort");
+            }
+            exporter.set_pending_identified_mixed_frame(frame, Some(identity));
         }
         tracing::info!(
             "sophia_live_mirror_generation schema=2 status={} output={} frame={} source={} logical_content_checksum={}",
@@ -373,42 +397,54 @@ impl LiveProductionNativeScanout {
     ) -> Result<(), &'static str> {
         let output = generation.output;
         let frame = generation.frame;
-        let lifecycle = self
-            .output_lifecycles
-            .get(&output)
-            .ok_or("mirror generation targets an unregistered output")?;
+        let Some(lifecycle) = self.output_lifecycles.get(&output) else {
+            self.deferred_mirror_generations
+                .retain_refused(generation)
+                .map_err(|_unaccepted| "composition queue retains an earlier retirement")?;
+            return Err("mirror generation targets an unregistered output");
+        };
         let previous = lifecycle.active_frame();
         let primary_owned = lifecycle
             .logically_submitted_frame()
             .or_else(|| lifecycle.displayed_frame(lifecycle.primary_head()));
         let active_content =
             previous.and_then(|frame| self.mirror_generation_content(output, frame));
-        if reduce_live_production_mirror_generation_queue(previous, primary_owned, active_content)
-            == LiveProductionMirrorGenerationQueue::DeferUntilPrimarySubmission
-        {
-            let replaced = self
-                .deferred_mirror_generations
-                .insert(output, generation)
-                .map(|generation| generation.frame);
-            tracing::trace!(
-                "sophia_live_mirror_pacing schema=1 status=deferred output={} frame={} blocked_by={} replaced={}",
-                output.raw(),
-                frame.raw(),
-                previous
-                    .expect("deferred generation has an active predecessor")
-                    .raw(),
-                replaced.map_or_else(|| "none".to_owned(), |frame| frame.raw().to_string()),
-            );
-            return Ok(());
-        }
-        self.install_mirror_generation(
+        let generation = match self.deferred_mirror_generations.offer(
+            generation,
+            previous,
+            primary_owned,
+            active_content,
+        ) {
+            composition_queue::DeferredCompositionOffer::Install(generation) => generation,
+            composition_queue::DeferredCompositionOffer::Refused(_unaccepted) => {
+                return Err("composition queue retains an earlier retirement");
+            }
+            composition_queue::DeferredCompositionOffer::Deferred { replaced } => {
+                tracing::trace!(
+                    "sophia_live_mirror_pacing schema=1 status=deferred output={} frame={} blocked_by={} replaced={}",
+                    output.raw(),
+                    frame.raw(),
+                    previous
+                        .expect("deferred generation has an active predecessor")
+                        .raw(),
+                    replaced.map_or_else(|| "none".to_owned(), |frame| frame.raw().to_string()),
+                );
+                return Ok(());
+            }
+        };
+        if let Err((reason, generation)) = self.install_mirror_generation(
             generation,
             if previous.is_some() {
                 "coalesced"
             } else {
                 "installed"
             },
-        )?;
+        ) {
+            self.deferred_mirror_generations
+                .retain_refused(generation)
+                .map_err(|_unaccepted| "composition queue retains an earlier retirement")?;
+            return Err(reason);
+        }
         if let Some(previous) = previous {
             tracing::trace!(
                 "sophia_live_mirror_pacing schema=1 status=newest_ready output={} frame={} previous={}",
@@ -424,16 +460,30 @@ impl LiveProductionNativeScanout {
         &mut self,
         output: OutputId,
     ) -> Result<bool, &'static str> {
-        let Some(generation) = self.deferred_mirror_generations.remove(&output) else {
+        if !self.deferred_mirror_generations.pending(output) {
+            return Ok(false);
+        }
+        let Some(lifecycle) = self.output_lifecycles.get(&output) else {
+            return Err("queued composition targets an unregistered output");
+        };
+        if self.installed_retirement_protected(output) {
+            return Ok(false);
+        }
+        let active = lifecycle.active_frame();
+        let primary_owned = lifecycle
+            .logically_submitted_frame()
+            .or_else(|| lifecycle.displayed_frame(lifecycle.primary_head()));
+        let active_content = active.and_then(|frame| self.mirror_generation_content(output, frame));
+        let Some(generation) = self.deferred_mirror_generations.take_ready(
+            output,
+            active,
+            primary_owned,
+            active_content,
+        ) else {
             return Ok(false);
         };
-        let frame = generation.frame;
         self.queue_mirror_generation(generation)?;
-        Ok(self
-            .output_lifecycles
-            .get(&output)
-            .and_then(LiveProductionMirrorGroupLifecycle::active_frame)
-            == Some(frame))
+        Ok(true)
     }
 
     pub fn queue_present_cpu_frame(
@@ -453,6 +503,7 @@ impl LiveProductionNativeScanout {
             return Err("native output already has pending frame work");
         }
         let frame_id = self.allocate_frame_id();
+        let identity = self.native_frame_identity(index, output, frame_id);
         let (head, exporter) = self.head_and_exporter(index, output);
         head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
         head.last_checksum = frame.checksum;
@@ -461,10 +512,11 @@ impl LiveProductionNativeScanout {
             frame: frame_id,
             checksum: frame.checksum,
         });
-        exporter.set_pending_cpu_frame_with_damage(
+        exporter.set_pending_identified_cpu_frame(
             frame.frame,
             frame.checksum,
             frame.output_damage_snapshot,
+            Some(identity),
         );
         Ok(frame_id)
     }
@@ -481,6 +533,7 @@ impl LiveProductionNativeScanout {
         };
         if indices.len() == 1 {
             let frame_id = self.allocate_frame_id();
+            let identity = self.native_frame_identity(index, output, frame_id);
             let (head, exporter) = self.head_and_exporter(index, output);
             let pending_before = exporter.pending_frame();
             let worker_in_flight = exporter.worker_in_flight();
@@ -497,7 +550,7 @@ impl LiveProductionNativeScanout {
                 nonzero_rgb_pixels: 0,
             });
             head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
-            exporter.set_pending_mixed_frame(frame);
+            exporter.set_pending_identified_mixed_frame(frame, Some(identity));
             tracing::debug!(
                 "sophia_live_retained_projection schema=1 status=native_queued output={} frame={} pending_before={} worker_in_flight={}",
                 head.output.id.raw(),
@@ -528,6 +581,7 @@ impl LiveProductionNativeScanout {
             .zip(projected)
             .map(|(head_index, frame)| LiveProductionQueuedMirrorHeadFrame {
                 head_index,
+                identity: self.native_frame_identity(head_index, output, frame_id),
                 output_damage_snapshot: frame.output_damage_snapshot.clone(),
                 content: LiveProductionScanoutContent::MixedPresent {
                     frame: frame_id,
@@ -610,7 +664,7 @@ impl LiveProductionNativeScanout {
             stride: frame.frame.stride,
             format: frame.frame.format,
             generation: frame_id.raw(),
-            bytes: std::sync::Arc::clone(&frame.frame.bytes),
+            bytes: std::sync::Arc::clone(&frame.frame.bytes).into(),
         };
         let heads = heads
             .into_iter()
@@ -635,6 +689,7 @@ impl LiveProductionNativeScanout {
                 };
                 LiveProductionQueuedMirrorHeadFrame {
                     head_index,
+                    identity: self.native_frame_identity(head_index, output, frame_id),
                     content: LiveProductionScanoutContent::Cpu {
                         frame: frame_id,
                         checksum: frame.checksum,
@@ -676,6 +731,7 @@ impl LiveProductionNativeScanout {
         };
         if indices.len() == 1 {
             let frame_id = self.allocate_frame_id();
+            let identity = self.native_frame_identity(index, output, frame_id);
             let (head, exporter) = self.head_and_exporter(index, output);
             if let Some(superseded) = head.pending_content {
                 tracing::warn!(
@@ -684,11 +740,13 @@ impl LiveProductionNativeScanout {
                 );
             }
             head.pending_content = Some(LiveProductionScanoutContent::RetainedMixed {
+                logical_content_checksum: None,
+                requires_retirement: false,
                 frame: frame_id,
                 nonzero_rgb_pixels: 0,
             });
             head.queue_output_damage_snapshot(frame.output_damage_snapshot.clone());
-            exporter.set_pending_mixed_frame(frame);
+            exporter.set_pending_identified_mixed_frame(frame, Some(identity));
             return Ok(frame_id);
         }
         let source = self.heads[index].output.size;
@@ -709,8 +767,11 @@ impl LiveProductionNativeScanout {
             .zip(projected)
             .map(|(head_index, frame)| LiveProductionQueuedMirrorHeadFrame {
                 head_index,
+                identity: self.native_frame_identity(head_index, output, frame_id),
                 output_damage_snapshot: frame.output_damage_snapshot.clone(),
                 content: LiveProductionScanoutContent::RetainedMixed {
+                    logical_content_checksum: None,
+                    requires_retirement: false,
                     frame: frame_id,
                     nonzero_rgb_pixels: 0,
                 },
@@ -765,7 +826,7 @@ impl LiveProductionNativeScanout {
             .is_some()
             || indices.iter().any(|index| {
                 self.heads[*index].pending_content.is_some()
-                    || self.heads[*index].displayed_scanout.is_some()
+                    || self.heads[*index].scanout_custody.displayed().is_some()
                     || self.exporters[*index].pending_frame()
             })
         {
@@ -797,6 +858,7 @@ impl LiveProductionNativeScanout {
                 damage.output.size.height,
                 checksum,
             );
+            let identity = self.native_frame_identity(head_index, output, frame_id);
             let (head, exporter) = self.head_and_exporter(head_index, output);
             head.last_checksum = checksum;
             head.pending_content = Some(LiveProductionScanoutContent::HeadComposition {
@@ -805,7 +867,7 @@ impl LiveProductionNativeScanout {
                 nonzero_rgb_pixels: 0,
             });
             head.queue_output_damage_snapshot(prepared.frame.output_damage_snapshot.clone());
-            exporter.set_pending_mixed_frame(prepared.frame);
+            exporter.set_pending_identified_mixed_frame(prepared.frame, Some(identity));
         }
         Ok(frame_id)
     }
@@ -835,26 +897,12 @@ impl LiveProductionNativeScanout {
         if batches.is_empty() {
             return Err("Present has no applicable logical output".into());
         }
-        let mut outputs = BTreeSet::new();
-        for (output, frames) in &batches {
-            if !outputs.insert(*output) {
-                return Err("Present repeats a logical output cohort".into());
-            }
-            if !self.frame_queue_ready(*output) {
-                return Err("Present output cohort is not ready for a new generation".into());
-            }
-            self.validate_head_composition_frames(*output, frames)?;
-        }
-        let mut queued = BTreeMap::new();
-        for (output, frames) in batches {
-            let frame = self.queue_head_composition_frames_with_content(
-                output,
-                frames,
-                LiveProductionHeadCompositionContent::MixedPresent(transaction),
-            )?;
-            queued.insert(output, frame);
-        }
-        Ok(queued)
+        let required = batches.iter().map(|(output, _)| *output).collect();
+        self.prepare_and_admit_head_batch(
+            batches,
+            &required,
+            LiveProductionHeadCompositionContent::MixedPresent(transaction),
+        )
     }
 
     pub fn queue_retained_head_composition_frames(
@@ -906,9 +954,34 @@ impl LiveProductionNativeScanout {
     /// Whether every output with a protocol retirement debt can accept its
     /// replacement without superseding another native frame.
     pub fn retained_retirements_ready(&self, required_outputs: &BTreeSet<OutputId>) -> bool {
-        required_outputs
+        required_outputs.iter().all(|output| {
+            self.frame_queue_ready(*output) && !self.output_retirement_protected(*output)
+        })
+    }
+
+    pub(super) fn output_retirement_protected(&self, output: OutputId) -> bool {
+        self.deferred_mirror_generations.protected(output)
+            || self.installed_retirement_protected(output)
+    }
+
+    fn installed_retirement_protected(&self, output: OutputId) -> bool {
+        self.head_indices(output).iter().any(|index| {
+            let head = &self.heads[*index];
+            [
+                head.pending_content,
+                head.rendering_content,
+                head.submitted_content,
+            ]
+            .into_iter()
+            .flatten()
+            .any(LiveProductionScanoutContent::requires_retirement)
+        })
+    }
+
+    pub(crate) fn retained_repaint_deferred(&self) -> bool {
+        self.logical_outputs
             .iter()
-            .all(|output| self.frame_queue_ready(*output))
+            .any(|output| self.output_retirement_protected(output.id))
     }
 
     /// Queues one immutable software-Present cohort on every applicable
@@ -950,94 +1023,11 @@ impl LiveProductionNativeScanout {
         batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
         required_outputs: &BTreeSet<OutputId>,
     ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
-        if batches.is_empty() {
-            return if required_outputs.is_empty() {
-                Ok(BTreeMap::new())
-            } else {
-                Err("required retained retirement has no applicable logical output".into())
-            };
-        }
-        let mut outputs = BTreeSet::new();
-        let mut checksums = BTreeMap::new();
-        for (output, frames) in &batches {
-            if !outputs.insert(*output) {
-                return Err("retained scene repeats a logical output cohort".into());
-            }
-            if required_outputs.contains(output) && !self.frame_queue_ready(*output) {
-                return Err(
-                    "required retained retirement output cohort is not ready for a new generation"
-                        .into(),
-                );
-            }
-            let (_, checksum) = self.validate_head_composition_frames(*output, frames)?;
-            checksums.insert(*output, checksum);
-        }
-        let mut queued = BTreeMap::new();
-        for (output, frames) in batches {
-            let requirement =
-                live_production_retained_frame_requirement(required_outputs.contains(&output));
-            if self.retained_frame_already_pending(
-                output,
-                checksums.get(&output).copied(),
-                requirement,
-            ) {
-                continue;
-            }
-            let frame = self.queue_head_composition_frames_with_content(
-                output,
-                frames,
-                LiveProductionHeadCompositionContent::Retained,
-            )?;
-            queued.insert(output, frame);
-        }
-        Ok(queued)
-    }
-
-    /// Whether this output already owns the same newest logical scene.
-    ///
-    /// Queueing would render and submit a copy of pixels already pending,
-    /// rendering, submitted, or displayed. Retained composition is
-    /// edge-triggered with no re-arm, so the newest owned content is the
-    /// authoritative comparison. A different newer frame still queues even if
-    /// an older displayed frame has the requested checksum.
-    ///
-    /// Mirror cohorts are never suppressed. Their pending content is arbitrated
-    /// by mirror generation rather than held per head, and their queue lines are
-    /// promotion evidence.
-    fn retained_frame_already_pending(
-        &self,
-        output: OutputId,
-        checksum: Option<u64>,
-        requirement: LiveProductionRetainedFrameQueueRequirement,
-    ) -> bool {
-        let Some(checksum) = checksum else {
-            return false;
-        };
-        let indices = self.head_indices(output);
-        if indices.len() != 1 {
-            return false;
-        }
-        let Some(head) = indices.first().and_then(|index| self.heads.get(*index)) else {
-            return false;
-        };
-        let decision = reduce_live_production_retained_frame_queue(
-            requirement,
-            head.pending_content,
-            head.rendering_content,
-            head.submitted_content,
-            head.presented_content,
-            checksum,
-        );
-        if decision != LiveProductionRetainedSceneQueueStatus::Queue {
-            tracing::debug!(
-                output = output.raw(),
-                logical_content_checksum = checksum,
-                ?requirement,
-                status = ?decision,
-                "retained scene already owned by this output"
-            );
-        }
-        decision != LiveProductionRetainedSceneQueueStatus::Queue
+        self.prepare_and_admit_head_batch(
+            batches,
+            required_outputs,
+            LiveProductionHeadCompositionContent::Retained,
+        )
     }
 
     fn queue_head_composition_frames_with_content(
@@ -1046,63 +1036,17 @@ impl LiveProductionNativeScanout {
         frames: Vec<LiveProductionHeadCompositionFrame>,
         content: LiveProductionHeadCompositionContent,
     ) -> Result<LiveProductionNativeFrameId, Box<dyn std::error::Error>> {
-        let (indices, checksum) = self.validate_head_composition_frames(output, &frames)?;
-        let frame_id = self.allocate_frame_id();
-        for prepared in &frames {
-            let damage = prepared
-                .frame
-                .output_damage_snapshot
-                .as_ref()
-                .expect("head damage validated above");
-            tracing::info!(
-                "sophia_live_head_composition_queue schema=1 status=queued output={} head={} frame={} scene_generation={} target_generation={} mapping={} width={} height={} logical_content_checksum={} source=head_plan",
-                output.raw(),
-                prepared.head.raw(),
-                frame_id.raw(),
-                prepared.scene_generation,
-                prepared.target_generation,
-                prepared.mapping.reduced_name(),
-                damage.output.size.width,
-                damage.output.size.height,
-                checksum,
-            );
-        }
-        if indices.len() == 1 {
-            let index = indices[0];
-            let prepared = frames.into_iter().next().expect("one frame checked above");
-            let (head, exporter) = self.head_and_exporter(index, output);
-            head.last_checksum = checksum;
-            head.pending_content = Some(content.scanout_content(frame_id, checksum));
-            head.queue_output_damage_snapshot(prepared.frame.output_damage_snapshot.clone());
-            exporter.set_pending_mixed_frame(prepared.frame);
-            return Ok(frame_id);
-        }
-        let mut by_head = frames
-            .into_iter()
-            .map(|frame| (frame.head, frame))
-            .collect::<BTreeMap<_, _>>();
-        let heads = indices
-            .into_iter()
-            .map(|head_index| {
-                let prepared = by_head
-                    .remove(&self.heads[head_index].head)
-                    .expect("head coverage checked above");
-                LiveProductionQueuedMirrorHeadFrame {
-                    head_index,
-                    output_damage_snapshot: prepared.frame.output_damage_snapshot.clone(),
-                    content: content.scanout_content(frame_id, checksum),
-                    frame: prepared.frame,
-                    cpu_nonzero_pixel_bytes: 0,
-                }
-            })
-            .collect();
-        self.queue_mirror_generation(LiveProductionQueuedMirrorGeneration {
-            output,
-            frame: frame_id,
-            logical_content_checksum: Some(checksum),
-            heads,
-        })?;
-        Ok(frame_id)
+        // Explicit single-output callers historically enqueue a fresh frame,
+        // including latest-scene replacement while a worker is busy.
+        let content = match content {
+            LiveProductionHeadCompositionContent::Retained => {
+                LiveProductionHeadCompositionContent::RetainedFresh
+            }
+            other => other,
+        };
+        let admitted =
+            self.prepare_and_admit_head_batch(vec![(output, frames)], &BTreeSet::new(), content)?;
+        Ok(admitted[&output])
     }
 
     fn validate_head_composition_frames(

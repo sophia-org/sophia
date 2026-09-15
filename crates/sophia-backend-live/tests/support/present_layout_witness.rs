@@ -91,6 +91,7 @@ fn retirement() -> LiveProductionNativeFrameRetirement {
             witness: LiveScanoutLayoutWitness {
                 source_image: renderer_image_for_present(TRANSACTION),
                 alternative: LiveRendererFrameCorrelation {
+                    native: None,
                     request: None,
                     trace: Some(LiveCompositionTrace {
                         output: OUTPUT,

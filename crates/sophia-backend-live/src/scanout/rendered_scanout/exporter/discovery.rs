@@ -18,14 +18,18 @@ use sophia_renderer_live::{
 };
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
-pub(super) enum PendingRenderedFrame {
+pub(crate) enum PendingRenderedFrame {
     Cpu {
+        native: Option<super::LiveNativeFrameIdentity>,
         frame: LiveCpuComposedFrame,
         checksum: u64,
         damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
     },
     DmaBuf(sophia_renderer_live::LiveOwnedDmaBufFrame),
-    Mixed(sophia_renderer_live::LiveOwnedMixedCompositionFrame),
+    Mixed(
+        sophia_renderer_live::LiveOwnedMixedCompositionFrame,
+        Option<super::LiveNativeFrameIdentity>,
+    ),
 }
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
@@ -80,7 +84,10 @@ where
     /// the driver refuses does not lose its frame: the composed form is still
     /// here, and `fall_back_from_direct` reinstalls it as pending with its
     /// proof cleared, so the retry composes instead of refusing again.
-    pub(super) direct_fallback: Option<sophia_renderer_live::LiveOwnedMixedCompositionFrame>,
+    pub(super) direct_fallback: Option<(
+        sophia_renderer_live::LiveOwnedMixedCompositionFrame,
+        Option<super::LiveNativeFrameIdentity>,
+    )>,
     /// Whether the driver has already accepted a direct commit in this
     /// eligibility episode.
     ///
@@ -393,7 +400,18 @@ where
         checksum: u64,
         damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
     ) {
+        self.set_pending_identified_cpu_frame(frame, checksum, damage_snapshot, None);
+    }
+
+    pub(crate) fn set_pending_identified_cpu_frame(
+        &mut self,
+        frame: LiveCpuComposedFrame,
+        checksum: u64,
+        damage_snapshot: Option<sophia_engine::OutputFrameDamageSnapshot>,
+        native: Option<super::LiveNativeFrameIdentity>,
+    ) {
         self.replace_pending_frame(PendingRenderedFrame::Cpu {
+            native,
             frame,
             checksum,
             damage_snapshot,
@@ -449,6 +467,14 @@ where
         &mut self,
         frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame,
     ) {
+        self.set_pending_identified_mixed_frame(frame, None);
+    }
+
+    pub(crate) fn set_pending_identified_mixed_frame(
+        &mut self,
+        frame: sophia_renderer_live::LiveOwnedMixedCompositionFrame,
+        native: Option<super::LiveNativeFrameIdentity>,
+    ) {
         // Counted here because this is the one place a lowered frame reaches
         // an exporter, and because zeros in the direct-scanout counters cannot
         // say whether the path is off, the scene was never eligible, or the
@@ -459,7 +485,7 @@ where
         self.direct_scanout_verdicts[frame.direct_scanout.reduced_index()] =
             self.direct_scanout_verdicts[frame.direct_scanout.reduced_index()].saturating_add(1);
         self.report_direct_scanout_geometry_refusal(&frame);
-        self.replace_pending_frame(PendingRenderedFrame::Mixed(frame));
+        self.replace_pending_frame(PendingRenderedFrame::Mixed(frame, native));
     }
 
     /// Whether this output has said what its geometry refusal measured.
@@ -476,7 +502,7 @@ where
     }
 
     pub const fn pending_mixed_frame(&self) -> bool {
-        matches!(self.pending_frame, Some(PendingRenderedFrame::Mixed(_)))
+        matches!(self.pending_frame, Some(PendingRenderedFrame::Mixed(..)))
     }
 
     pub const fn pending_frame(&self) -> bool {
@@ -680,6 +706,10 @@ where
             self.direct_cpu_bootstrap_armed = false;
             self.direct_cpu_bootstrap_attempts =
                 self.direct_cpu_bootstrap_attempts.saturating_add(1);
+            let correlation = self
+                .pending_frame
+                .as_ref()
+                .map(|frame| super::worker::frame_correlation(frame, None));
             let report = match self.pending_frame.take() {
                 Some(PendingRenderedFrame::Cpu {
                     frame, checksum, ..
@@ -719,7 +749,8 @@ where
                 report.detail,
                 descriptor,
                 report.buffer.map(NativeGbmRenderedScanoutOwner::Inline),
-            );
+            )
+            .with_correlation(correlation);
         }
 
         // The direct path, ahead of both the worker and the inline context
@@ -778,7 +809,7 @@ where
                 .bind(correlation, std::time::Instant::now());
         }
         let report = match frame {
-            Some(PendingRenderedFrame::Mixed(frame)) => {
+            Some(PendingRenderedFrame::Mixed(frame, _)) => {
                 self.mixed_frame_export_attempts =
                     self.mixed_frame_export_attempts.saturating_add(1);
                 match context.export_owned_mixed_frame(

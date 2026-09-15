@@ -4,6 +4,27 @@ use std::collections::BTreeSet;
 
 pub const LIVE_RENDERED_OUTPUT_CAPACITY: usize = 16;
 
+/// Supplied by the native owner before servicing completion, never inferred
+/// from the submitted payload. Native(None) deliberately authorizes no presentation; head-loss cleanup is separate.
+#[cfg(feature = "libdrm-events")]
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) enum RenderedRetirementAuthority {
+    #[default]
+    Legacy,
+    Native(Option<crate::LiveNativeFrameIdentity>),
+}
+
+#[cfg(feature = "libdrm-events")]
+impl RenderedRetirementAuthority {
+    pub(crate) fn permits(self, actual: Option<crate::LiveNativeFrameIdentity>) -> bool {
+        match self {
+            Self::Legacy => actual.is_none(),
+            Self::Native(Some(expected)) => actual == Some(expected),
+            Self::Native(None) => false,
+        }
+    }
+}
+
 pub struct LiveRenderedOutputState {
     pub(crate) output: OutputId,
     pub(crate) output_size: Option<Size>,
@@ -47,16 +68,11 @@ pub struct LiveRenderedOutputState {
     #[cfg(feature = "libdrm-events")]
     pub(crate) lost_heads: BTreeSet<u32>,
     #[cfg(feature = "libdrm-events")]
-    pub(crate) rendered_primary_plane_scanout_submission:
-        Option<BoxedRenderedPrimaryPlaneScanoutSubmission>,
+    pub(crate) scanout_custody: crate::PersistentScanoutCustody,
     #[cfg(feature = "libdrm-events")]
-    pub(crate) rendered_primary_plane_displayed_submission:
-        Option<BoxedRenderedPrimaryPlaneScanoutSubmission>,
+    pub(crate) retirement_authority: RenderedRetirementAuthority,
     #[cfg(feature = "libdrm-events")]
     pub(crate) retain_rendered_primary_plane_displayed_submission: bool,
-    #[cfg(feature = "libdrm-events")]
-    pub(crate) rendered_primary_plane_scanout_cleanup:
-        Option<BoxedRenderedPrimaryPlaneScanoutCleanup>,
     #[cfg(feature = "libdrm-events")]
     pub(crate) rendered_primary_plane_runtime_scanout_state: Option<RuntimeScanoutState>,
     #[cfg(feature = "libdrm-events")]
@@ -101,13 +117,11 @@ impl LiveRenderedOutputState {
             #[cfg(feature = "libdrm-events")]
             lost_heads: BTreeSet::new(),
             #[cfg(feature = "libdrm-events")]
-            rendered_primary_plane_scanout_submission: None,
+            scanout_custody: crate::PersistentScanoutCustody::default(),
             #[cfg(feature = "libdrm-events")]
-            rendered_primary_plane_displayed_submission: None,
+            retirement_authority: RenderedRetirementAuthority::Legacy,
             #[cfg(feature = "libdrm-events")]
             retain_rendered_primary_plane_displayed_submission: false,
-            #[cfg(feature = "libdrm-events")]
-            rendered_primary_plane_scanout_cleanup: None,
             #[cfg(feature = "libdrm-events")]
             rendered_primary_plane_runtime_scanout_state: None,
             #[cfg(feature = "libdrm-events")]
@@ -131,12 +145,12 @@ impl LiveRenderedOutputState {
 
     #[cfg(feature = "libdrm-events")]
     pub fn in_flight(&self) -> bool {
-        self.rendered_primary_plane_scanout_submission.is_some()
+        self.scanout_custody.submitted().is_some()
     }
 
     #[cfg(feature = "libdrm-events")]
     pub fn cleanup_pending(&self) -> bool {
-        self.rendered_primary_plane_scanout_cleanup.is_some()
+        self.scanout_custody.cleanup_pending()
     }
 
     /// The head this output is addressed through, which is its first.

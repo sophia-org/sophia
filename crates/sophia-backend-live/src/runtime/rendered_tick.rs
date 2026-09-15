@@ -40,10 +40,7 @@ where
         let output_size = state.output_size;
         let native_selection = state.native_selection();
         let scanout_target = state.kms_scanout_target.status;
-        let rendered_primary_plane_scanout_submission =
-            &mut state.rendered_primary_plane_scanout_submission;
-        let rendered_primary_plane_scanout_cleanup =
-            &mut state.rendered_primary_plane_scanout_cleanup;
+        let custody = &mut state.scanout_custody;
         let rendered_primary_plane_runtime_scanout_state =
             &mut state.rendered_primary_plane_runtime_scanout_state;
         let rendered_primary_plane_scanout_in_flight_ticks =
@@ -69,8 +66,7 @@ where
                     scanout_target,
                     output_size,
                     target,
-                    rendered_primary_plane_scanout_submission,
-                    rendered_primary_plane_scanout_cleanup,
+                    custody,
                     rendered_primary_plane_runtime_scanout_state,
                     rendered_primary_plane_scanout_in_flight_ticks,
                     submitted_after_page_flip_serial,

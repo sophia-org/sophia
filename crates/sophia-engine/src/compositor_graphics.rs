@@ -106,68 +106,27 @@ pub struct CompositorIndicatorStrip {
     pub strip: IndicatorChromeStrip,
 }
 
-/// One immutable shell resource placed in output-local physical pixels.
-/// The lease is carried through every native frame clone so resource release
-/// cannot precede the last scanout reference.
-#[derive(Clone)]
-pub struct CompositorContentImage {
-    pub node: CompositorNodeId,
-    pub generation: u64,
-    pub output_size_px: Size,
-    pub geometry_px: Rect,
-    pub size_px: Size,
-    pub stride: u32,
-    pub format: u32,
-    pub resource: sophia_runtime::ContentResourceLease,
-}
-
-impl core::fmt::Debug for CompositorContentImage {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("CompositorContentImage")
-            .field("node", &self.node)
-            .field("generation", &self.generation)
-            .field("output_size_px", &self.output_size_px)
-            .field("geometry_px", &self.geometry_px)
-            .field("size_px", &self.size_px)
-            .field("stride", &self.stride)
-            .field("format", &self.format)
-            .finish_non_exhaustive()
-    }
-}
-
-impl PartialEq for CompositorContentImage {
-    fn eq(&self, other: &Self) -> bool {
-        self.node == other.node
-            && self.generation == other.generation
-            && self.output_size_px == other.output_size_px
-            && self.geometry_px == other.geometry_px
-            && self.size_px == other.size_px
-            && self.stride == other.stride
-            && self.format == other.format
-            && self.resource.description() == other.resource.description()
-    }
-}
-
-impl Eq for CompositorContentImage {}
+#[path = "compositor_graphics/content_identity.rs"]
+mod content_identity;
+pub use content_identity::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CompositorDisplayCommand {
+pub enum CompositorDisplayCommand<C = CompositorContentImage> {
     Surface { surface: SurfaceId },
     Border(CompositorBorder),
     Rect(CompositorRect),
     Text(CompositorText),
     IndicatorStrip(CompositorIndicatorStrip),
-    ContentImage(CompositorContentImage),
+    ContentImage(C),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CompositorDisplayList {
+pub struct CompositorDisplayList<C = CompositorContentImage> {
     pub output: OutputId,
-    pub commands: Vec<CompositorDisplayCommand>,
+    pub commands: Vec<CompositorDisplayCommand<C>>,
 }
 
-impl CompositorDisplayList {
+impl<C> CompositorDisplayList<C> {
     pub fn empty(output: OutputId) -> Self {
         Self {
             output,
@@ -219,7 +178,7 @@ impl CompositorDisplayList {
         })
     }
 
-    pub fn content_images(&self) -> impl Iterator<Item = &CompositorContentImage> + '_ {
+    pub fn content_images(&self) -> impl Iterator<Item = &C> + '_ {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::ContentImage(image) => Some(image),
             _ => None,
@@ -227,8 +186,8 @@ impl CompositorDisplayList {
     }
 }
 
-pub(crate) fn compositor_display_list_structure_is_valid(
-    display_list: &CompositorDisplayList,
+pub(crate) fn compositor_display_list_structure_is_valid<C: CompositorContentMetadata>(
+    display_list: &CompositorDisplayList<C>,
 ) -> bool {
     if display_list.commands.len() > MAX_COMPOSITOR_DISPLAY_COMMANDS {
         return false;
@@ -251,6 +210,7 @@ pub(crate) fn compositor_display_list_structure_is_valid(
         }
         CompositorDisplayCommand::IndicatorStrip(strip) => nodes.insert(strip.node),
         CompositorDisplayCommand::ContentImage(image) => {
+            let image = image.content_identity();
             image.generation != 0
                 && image.output_size_px.width > 0
                 && image.output_size_px.height > 0
@@ -263,7 +223,7 @@ pub(crate) fn compositor_display_list_structure_is_valid(
                         .and_then(|width| width.checked_mul(4))
                         .unwrap_or(0)
                 && image.format == sophia_renderer_live_format_argb8888()
-                && image.resource.bytes().len()
+                && image.source_bytes
                     == usize::try_from(image.stride)
                         .ok()
                         .and_then(|stride| {
@@ -527,7 +487,7 @@ impl OutputFramePresentationState {
         let compositor_baseline = baseline.map(|baseline| &baseline.compositor_display_list);
         let compositor_damage = compositor_baseline.map_or_else(
             || {
-                let empty = CompositorDisplayList::empty(self.output.id);
+                let empty = CompositorDamageList::empty(self.output.id);
                 compositor_display_list_damage(&empty, &snapshot.compositor_display_list)
             },
             |baseline| compositor_display_list_damage(baseline, &snapshot.compositor_display_list),
@@ -893,9 +853,12 @@ pub fn surface_chrome_display_list_for_surfaces(
 /// Stable nodes with an unchanged generation, geometry, and color contribute
 /// no damage. Changed and removed nodes damage their old extents; changed and
 /// created nodes damage their new extents.
-pub fn compositor_display_list_damage(
-    previous: &CompositorDisplayList,
-    current: &CompositorDisplayList,
+pub fn compositor_display_list_damage<
+    A: CompositorContentMetadata,
+    B: CompositorContentMetadata,
+>(
+    previous: &CompositorDisplayList<A>,
+    current: &CompositorDisplayList<B>,
 ) -> Region {
     let previous_borders = previous
         .borders()
@@ -1000,11 +963,17 @@ pub fn compositor_display_list_damage(
     }
     let previous_images = previous
         .content_images()
-        .map(|image| (image.node, image))
+        .map(|image| {
+            let image = image.content_identity();
+            (image.node, image)
+        })
         .collect::<BTreeMap<_, _>>();
     let current_images = current
         .content_images()
-        .map(|image| (image.node, image))
+        .map(|image| {
+            let image = image.content_identity();
+            (image.node, image)
+        })
         .collect::<BTreeMap<_, _>>();
     for node in previous_images
         .keys()

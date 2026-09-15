@@ -64,13 +64,6 @@ impl ContentResourceLease {
     pub fn description(&self) -> &ContentResourceBegin {
         &self.0.description
     }
-
-    /// Shares the immutable accepted allocation with a renderer frame.
-    /// This is a refcount bump: no second pixel allocation escapes the
-    /// connection's resident-resource accounting.
-    pub fn shared_bytes(&self) -> Arc<Vec<u8>> {
-        Arc::clone(&self.0.bytes)
-    }
 }
 
 pub struct ContentResourceStore {
@@ -88,6 +81,31 @@ pub struct ContentResourceStore {
 }
 
 impl ContentResourceStore {
+    pub(crate) fn additional_response_credit(&self, record: &ShellContentRecord) -> usize {
+        match record {
+            ShellContentRecord::ResourceBegin(_) => 3,
+            ShellContentRecord::ResourceChunk(value) => {
+                usize::from(!self.transfers.contains_key(&value.resource))
+            }
+            ShellContentRecord::ResourceEnd(value) => {
+                usize::from(!self.transfers.contains_key(&value.resource))
+            }
+            ShellContentRecord::ResourceCancel(value) => {
+                usize::from(!self.transfers.contains_key(&value.resource))
+            }
+            ShellContentRecord::ResourceRetire(value) => usize::from(
+                self.accepted
+                    .get(&value.resource)
+                    .is_none_or(|resource| resource.retiring),
+            ),
+            _ => 1,
+        }
+    }
+
+    pub(crate) fn control_occupancy(&self) -> usize {
+        self.events.len() + self.response_credits
+    }
+
     pub fn new(limits: ContentLimits) -> Result<Self, ContentStoreError> {
         limits
             .validate()

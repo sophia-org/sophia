@@ -4,22 +4,20 @@ pub(super) fn presented_content_matches(
     presented: &OutputFrameDamageSnapshot,
     frame: &LiveShellContentFrame,
 ) -> bool {
-    let images = presented
-        .compositor_display_list
-        .content_images()
-        .collect::<Vec<_>>();
+    presented_content_list_matches(&presented.compositor_display_list, frame)
+}
+
+pub(in crate::production_visual_runtime) fn presented_content_list_matches(
+    display_list: &CompositorDamageList,
+    frame: &LiveShellContentFrame,
+) -> bool {
+    let images = display_list.content_images().collect::<Vec<_>>();
     !images.is_empty()
         && images.len() == frame.images.len()
-        && images.iter().all(|image| {
-            matches!(
-                image.node,
-                sophia_engine::CompositorNodeId::ShellContent {
-                    output,
-                    candidate,
-                    ..
-                } if output == frame.output && candidate == frame.candidate_generation
-            )
-        })
+        && images
+            .into_iter()
+            .zip(&frame.images)
+            .all(|(presented, current)| *presented == current.content_identity())
 }
 
 pub(super) fn content_binding_from_frame(
@@ -61,4 +59,29 @@ pub(super) fn same_content_binding(
         }
         _ => false,
     }
+}
+
+/// Keep the old interaction snapshot while another candidate of the SAME grant
+/// waits for its physical retirement. A reconnected grant cannot inherit it.
+pub(super) fn retain_presented_content_binding(
+    presented: &OutputFrameDamageSnapshot,
+    current: &LiveShellContentFrame,
+    previous: Option<&sophia_engine::PresentedContentBinding>,
+) -> Option<sophia_engine::PresentedContentBinding> {
+    let previous = previous?;
+    if previous.output != current.content_output {
+        return None;
+    }
+    let mut images = presented
+        .compositor_display_list
+        .content_images()
+        .peekable();
+    images.peek()?;
+    images
+        .all(|image| {
+            image.resource.grant == current.grant
+                && matches!(image.node, CompositorNodeId::ShellContent { output, candidate, .. }
+                if output == current.output && candidate == previous.candidate_generation)
+        })
+        .then(|| previous.clone())
 }

@@ -6,6 +6,16 @@ mod persistent_native_scanout {
     use std::collections::{BTreeMap, BTreeSet};
     use std::time::{Duration, Instant};
 
+    mod composition_admission;
+    #[cfg(test)]
+    pub(crate) use composition_admission::{
+        NativeCompositionOutput, prepare_native_composition_batch,
+    };
+    #[cfg(test)]
+    pub(crate) use composition_queue::DeferredNativeCompositions;
+    #[cfg(test)]
+    pub(crate) use renderer_images::LiveProductionHeadCompositionContent;
+    mod composition_queue;
     mod cursor;
     mod frame_damage;
     mod layout_probe;
@@ -108,8 +118,7 @@ mod persistent_native_scanout {
         >,
         /// Latest ordinary successor held behind a Present generation until
         /// the primary head owns that Present in KMS.
-        deferred_mirror_generations:
-            BTreeMap<OutputId, renderer_images::LiveProductionQueuedMirrorGeneration>,
+        deferred_mirror_generations: composition_queue::DeferredNativeCompositions,
         /// Candidate and rollback owners for one live output-topology effect.
         /// Ordinary frame scheduling is quarantined while this is present.
         output_topology_preparation: Option<LiveProductionNativeTopologyPreparation>,
@@ -122,6 +131,7 @@ mod persistent_native_scanout {
         )>,
         /// The only place a head's card, connector, and CRTC identity lives.
         pub head_table: crate::LiveProductionNativeHeadTable,
+        native_frame_owner: crate::NativeFrameOwner,
         next_frame_id: u64,
         next_head_candidate_id: u64,
         pub production_page_flips: crate::LiveProductionPageFlipTracker,
@@ -338,16 +348,13 @@ mod persistent_native_scanout {
         /// This physical head's synchronously displayed baseline. Single-head
         /// outputs keep that owner in the logical runtime; mirror groups transfer
         /// every connector's owner here after initialization.
-        pub(crate) displayed_scanout: Option<crate::BoxedRenderedPrimaryPlaneScanoutSubmission>,
+        pub(crate) scanout_custody: crate::PersistentScanoutCustody,
         pub(crate) displayed_group_frame: Option<LiveProductionNativeFrameId>,
-        pub(crate) scanout_submission: Option<crate::BoxedRenderedPrimaryPlaneScanoutSubmission>,
         pub(crate) prepared_scanout: Option<
             crate::LivePreparedRenderedPrimaryPlaneScanout<crate::NativeGbmRenderedScanoutOwner>,
         >,
         pub(crate) prepared_group_frame: Option<LiveProductionNativeFrameId>,
         pub(crate) prepared_worker_was_in_flight: bool,
-        pub(crate) scanout_cleanup: Option<crate::BoxedRenderedPrimaryPlaneScanoutCleanup>,
-        pub(crate) scanout_cleanup_group_frame: Option<LiveProductionNativeFrameId>,
         pub(crate) scanout_in_flight_ticks: u64,
         pub(crate) last_callback_serial: Option<u64>,
         pub(crate) submitted_group_frame: Option<LiveProductionNativeFrameId>,
@@ -845,14 +852,11 @@ mod persistent_native_scanout {
                         committed_cursor: None,
                         cursor_properties: None,
                         prepared_cursor_ride: None,
-                        displayed_scanout: None,
+                        scanout_custody: crate::PersistentScanoutCustody::default(),
                         displayed_group_frame: None,
-                        scanout_submission: None,
                         prepared_scanout: None,
                         prepared_group_frame: None,
                         prepared_worker_was_in_flight: false,
-                        scanout_cleanup: None,
-                        scanout_cleanup_group_frame: None,
                         scanout_in_flight_ticks: 0,
                         last_callback_serial: None,
                         submitted_group_frame: None,
@@ -951,10 +955,12 @@ mod persistent_native_scanout {
                 render_devices: render_devices::LiveRenderDeviceState::new(),
                 output_lifecycles,
                 output_cohorts: BTreeMap::new(),
-                deferred_mirror_generations: BTreeMap::new(),
+                deferred_mirror_generations: composition_queue::DeferredNativeCompositions::default(
+                ),
                 output_topology_preparation: None,
                 output_topology_cleanup: Vec::new(),
                 head_table,
+                native_frame_owner: crate::NativeFrameOwner::new(),
                 next_frame_id: 1,
                 next_head_candidate_id: 1,
                 production_page_flips,
@@ -1108,6 +1114,29 @@ mod persistent_native_scanout {
                 *counts.entry(head.output.id).or_default() += 1;
             }
             counts.into_iter().collect()
+        }
+
+        fn native_frame_identity(
+            &self,
+            index: usize,
+            output: OutputId,
+            frame: LiveProductionNativeFrameId,
+        ) -> crate::LiveNativeFrameIdentity {
+            let head = &self.heads[index];
+            self.native_frame_owner
+                .frame(output, head.head, head.target_generation, frame.raw())
+        }
+
+        fn arm_singleton_retirement(
+            &self,
+            index: usize,
+            output: OutputId,
+            runtime: &mut crate::LiveBackendRuntimeAssembly,
+        ) {
+            let expected = self.heads[index]
+                .submitted_content
+                .map(|content| self.native_frame_identity(index, output, content.frame()));
+            runtime.set_native_retirement_witness(output, expected);
         }
 
         fn allocate_frame_id(&mut self) -> LiveProductionNativeFrameId {
@@ -1338,6 +1367,7 @@ mod persistent_native_scanout {
                         .into(),
                 );
             }
+            self.activate_deferred_mirror_generation(output)?;
             if self.head_indices(output).len() > 1 {
                 let report = self.run_mirror_group_scene_tick(output, runtime, input)?;
                 if self.mirror_poison_drained(output) {
@@ -1354,6 +1384,7 @@ mod persistent_native_scanout {
                 self.retire_ready_and_retry_cleanup(output, runtime)?;
                 return Ok(runtime.run_tick(input)?);
             }
+            self.arm_singleton_retirement(index, output, runtime);
             self.prepare_layout_probe_turn(index);
             let group = self.heads[index].group;
             // Arm the cursor to ride this frame's commit, when one is
@@ -1436,31 +1467,32 @@ mod persistent_native_scanout {
                 use crate::LiveTrackedRenderedPrimaryPlaneScanoutSubmitStatus as Status;
                 match submit.status {
                     Status::SubmittedWaitingForPageFlip => {
-                        let pending_before = self.heads[index].pending_content;
-                        let rendering_before = self.heads[index].rendering_content;
-                        let content = if worker_was_in_flight {
-                            self.heads[index].rendering_content.take()
-                        } else {
-                            self.heads[index].pending_content.take()
-                        };
-                        if content.is_none() {
-                            return Err(format!(
-                                "accepted native submission lost its content identity: \
-output={} selected_slot={} worker_was_in_flight={} worker_is_in_flight={} \
-pending_before={pending_before:?} rendering_before={rendering_before:?} exporter_pending={}",
-                                output.raw(),
-                                if worker_was_in_flight {
-                                    "rendering"
-                                } else {
-                                    "pending"
-                                },
-                                worker_was_in_flight,
-                                worker_is_in_flight,
-                                self.exporter(output)
-                                    .is_some_and(|exporter| exporter.pending_frame()),
-                            )
-                            .into());
+                        let identity = runtime
+                            .submitted_rendered_frame_correlation(output)
+                            .and_then(|correlation| correlation.native)
+                            .ok_or("accepted native submission has no captured native identity")?;
+                        let native_frame = LiveProductionNativeFrameId::from_raw(identity.frame());
+                        if identity != self.native_frame_identity(index, output, native_frame) {
+                            return Err(
+                                "accepted native submission belongs to another owner/head/target"
+                                    .into(),
+                            );
                         }
+                        let head = &mut self.heads[index];
+                        let selected_rendering = head
+                            .rendering_content
+                            .is_some_and(|content| content.frame() == native_frame);
+                        let selected_pending = head
+                            .pending_content
+                            .is_some_and(|content| content.frame() == native_frame);
+                        if selected_rendering == selected_pending {
+                            return Err("accepted native submission must name exactly one retained content owner".into());
+                        }
+                        let content = if selected_rendering {
+                            head.rendering_content.take()
+                        } else {
+                            head.pending_content.take()
+                        };
                         // This is the head's pixel proof, not a measurement of
                         // this frame: a readback costs a whole framebuffer, so
                         // a renderer context takes a bounded number of them and
@@ -1474,7 +1506,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                                 }),
                             )
                         });
-                        if worker_was_in_flight
+                        if selected_rendering
                             && self.heads[index].output_frames.rendering().is_some()
                         {
                             self.heads[index]
@@ -1485,7 +1517,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                                         "compositor display-list worker promotion failed: {error}"
                                     )
                                 })?;
-                        } else if !worker_was_in_flight
+                        } else if !selected_rendering
                             && self.heads[index].output_frames.pending().is_some()
                         {
                             self.heads[index]
@@ -1706,8 +1738,8 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                     completion
                 } else {
                     match self.heads[head_index]
-                        .scanout_submission
-                        .as_ref()
+                        .scanout_custody
+                        .submitted()
                         .map(crate::LiveRenderedPrimaryPlaneScanoutSubmission::completion_fence_status)
                         .transpose()
                     {
@@ -1767,7 +1799,14 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                     ));
                     continue;
                 };
-                let Some(mut submission) = self.heads[head_index].scanout_submission.take() else {
+                let Some(frame) = self.heads[head_index].submitted_group_frame else {
+                    errors.push(format!(
+                        "mirror head {} callback has no logical generation",
+                        callback.head.raw()
+                    ));
+                    continue;
+                };
+                let Some(submission) = self.heads[head_index].scanout_custody.submitted() else {
                     errors.push(format!(
                         "mirror head {} callback has no physical submission",
                         callback.head.raw()
@@ -1778,10 +1817,42 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                     .last_callback_serial
                     .is_some_and(|serial| callback.frame_serial <= serial)
                 {
-                    self.heads[head_index].scanout_submission = Some(submission);
                     self.callback_rejected = self.callback_rejected.saturating_add(1);
                     continue;
                 }
+                let expected = self.native_frame_identity(head_index, output, frame);
+                if submission.correlation().and_then(|value| value.native) != Some(expected) {
+                    errors.push(format!(
+                        "mirror head {} submission identity does not match its current generation",
+                        callback.head.raw()
+                    ));
+                    continue;
+                }
+                let group = self.heads[head_index].group;
+                let presented = self.heads[head_index].scanout_custody.present(
+                    self.groups[group].session.card(),
+                    &crate::LivePageFlipCallbackReport {
+                        decision: crate::LivePageFlipCallbackDecision::Accepted,
+                        event: crate::LivePageFlipEvent {
+                            status: crate::LivePageFlipEventStatus::Presented,
+                            frame_serial: Some(callback.frame_serial),
+                        },
+                    },
+                    Some(expected),
+                );
+                let crate::PersistentFlipOutcome::Presented {
+                    correlation,
+                    previous_cleanup,
+                    ..
+                } = presented
+                else {
+                    errors.push(format!(
+                        "mirror head {} retained unprocessed completion: {presented:?}",
+                        callback.head.raw()
+                    ));
+                    continue;
+                };
+                debug_assert_eq!(correlation.and_then(|value| value.native), Some(expected));
                 self.heads[head_index].last_callback_serial = Some(callback.frame_serial);
                 let callback_ust = self.completion_ust_usec(
                     output,
@@ -1809,35 +1880,17 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                 // requires a single-head plan shape -- so this is recorded
                 // as composed rather than asked.
                 self.cost.record_submit_to_flip(false, submit_to_page_flip);
-                let Some(frame) = self.heads[head_index].submitted_group_frame.take() else {
-                    errors.push(format!(
-                        "mirror head {} callback has no logical generation",
-                        callback.head.raw()
-                    ));
-                    continue;
-                };
-                submission.clear_completion_fence();
-                let previous_frame = self.heads[head_index].displayed_group_frame.replace(frame);
-                if let Some(previous) = self.heads[head_index].displayed_scanout.replace(submission)
+                self.heads[head_index].submitted_group_frame = None;
+                self.heads[head_index].displayed_group_frame = Some(frame);
+                if let Some(cleanup) = previous_cleanup
+                    && cleanup.released
+                    && let Some(identity) = cleanup.correlation.and_then(|value| value.native)
+                    && let Some(cohort) = self.output_cohorts.get_mut(&(
+                        identity.output(),
+                        LiveProductionNativeFrameId::from_raw(identity.frame()),
+                    ))
                 {
-                    let crate::LiveRenderedPrimaryPlaneScanoutSubmission {
-                        scanout_buffer,
-                        primary_plane,
-                        ..
-                    } = previous;
-                    let retired = primary_plane.retire(self.card(head_index));
-                    if let Some(primary_plane) = retired.cleanup {
-                        self.heads[head_index].scanout_cleanup =
-                            Some(crate::LiveRenderedPrimaryPlaneScanoutCleanup {
-                                scanout_buffer,
-                                primary_plane,
-                            });
-                        self.heads[head_index].scanout_cleanup_group_frame = previous_frame;
-                    } else if let Some(previous_frame) = previous_frame
-                        && let Some(cohort) = self.output_cohorts.get_mut(&(output, previous_frame))
-                    {
-                        let _ = cohort.mark_cleanup_complete(callback.head);
-                    }
+                    let _ = cohort.mark_cleanup_complete(identity.head());
                 }
                 self.heads[head_index].submitted_at = None;
                 self.heads[head_index].scanout_in_flight_ticks = 0;
@@ -2015,28 +2068,26 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
             // Cleanup is ownership work, not scheduling. Always visit every
             // head, even when callback processing above found an error.
             for head_index in indices.iter().copied() {
-                if let Some(cleanup) = self.heads[head_index].scanout_cleanup.take() {
-                    let retried = crate::retry_rendered_primary_plane_scanout_cleanup(
-                        self.card(head_index),
-                        cleanup,
-                    );
-                    self.heads[head_index].scanout_cleanup = retried.cleanup;
-                    if self.heads[head_index].scanout_cleanup.is_some() {
+                let group = self.heads[head_index].group;
+                if let Some(result) = self.heads[head_index]
+                    .scanout_custody
+                    .retry_cleanup(self.groups[group].session.card())
+                {
+                    if !result.released {
                         self.retire_failures = self.retire_failures.saturating_add(1);
-                    } else if let Some(cleanup_frame) =
-                        self.heads[head_index].scanout_cleanup_group_frame.take()
-                        && let Some(cohort) = self.output_cohorts.get_mut(&(output, cleanup_frame))
+                    } else if let Some(identity) = result.correlation.and_then(|value| value.native)
+                        && let Some(cohort) = self.output_cohorts.get_mut(&(
+                            identity.output(),
+                            LiveProductionNativeFrameId::from_raw(identity.frame()),
+                        ))
                     {
-                        let transition = cohort.mark_cleanup_complete(self.heads[head_index].head);
+                        let transition = cohort.mark_cleanup_complete(identity.head());
                         if !matches!(
                             transition,
                             sophia_engine::OutputPresentationTransition::Accepted
                                 | sophia_engine::OutputPresentationTransition::PhaseReady
                         ) {
-                            errors.push(format!(
-                                "mirror head {} entered invalid retried cleanup transition {transition:?}",
-                                self.heads[head_index].head.raw(),
-                            ));
+                            errors.push(format!("mirror head {} entered invalid retried cleanup transition {transition:?}", identity.head().raw()));
                         }
                     }
                 }
@@ -2168,12 +2219,12 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                     continue;
                 }
                 let head_id = self.heads[head_index].head;
-                if self.heads[head_index].scanout_submission.is_some() {
+                if self.heads[head_index].scanout_custody.submitted().is_some() {
                     self.heads[head_index].scanout_in_flight_ticks = self.heads[head_index]
                         .scanout_in_flight_ticks
                         .saturating_add(1);
                 }
-                if self.heads[head_index].scanout_cleanup.is_some() {
+                if self.heads[head_index].scanout_custody.cleanup_pending() {
                     continue;
                 }
                 let already_prepared = self.heads[head_index].prepared_scanout.is_some();
@@ -2204,11 +2255,23 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                 let selection = self.heads[head_index].selection;
                 let size = self.heads[head_index].output.size;
                 let head_group = self.heads[head_index].group;
+                let expected_identity =
+                    self.native_frame_identity(head_index, output, logical_frame);
+                if let Some(prepared) = self.heads[head_index].prepared_scanout.as_ref()
+                    && prepared.correlation().and_then(|value| value.native)
+                        != Some(expected_identity)
+                {
+                    return Err(
+                        "prepared mirror owner does not match its current head/generation".into(),
+                    );
+                }
                 let submit = if let Some(prepared) = self.heads[head_index].prepared_scanout.take()
                 {
                     if logical_frame != newest_frame {
                         let worker_owned = self.heads[head_index].prepared_worker_was_in_flight;
-                        self.cancel_prepared_head_owner(head_index, prepared);
+                        if !self.cancel_prepared_head_owner(head_index, prepared) {
+                            continue;
+                        }
                         if worker_owned {
                             self.heads[head_index].rendering_content = None;
                             self.heads[head_index].output_frames.discard_rendering();
@@ -2219,8 +2282,8 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                         }
                         continue;
                     }
-                    if self.heads[head_index].scanout_submission.is_some()
-                        || self.heads[head_index].scanout_cleanup.is_some()
+                    if self.heads[head_index].scanout_custody.submitted().is_some()
+                        || self.heads[head_index].scanout_custody.cleanup_pending()
                     {
                         self.heads[head_index].prepared_scanout = Some(prepared);
                         continue;
@@ -2238,21 +2301,25 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                         prepared,
                     );
                     if let Some(submission) = result.submission.take() {
-                        self.heads[head_index].scanout_submission = Some(
-                            submission
-                                .with_submitted_after_page_flip_serial(
-                                    self.heads[head_index].last_callback_serial,
-                                )
-                                .map_scanout_buffer(|owner| {
-                                    Box::new(owner) as Box<dyn std::any::Any>
-                                }),
-                        );
+                        let callback_baseline = self.heads[head_index].last_callback_serial;
+                        self.heads[head_index]
+                            .scanout_custody
+                            .accept_submission(
+                                submission
+                                    .with_submitted_after_page_flip_serial(callback_baseline)
+                                    .map_scanout_buffer(|owner| {
+                                        Box::new(owner) as Box<dyn std::any::Any>
+                                    }),
+                            )
+                            .expect("mirror submission capacity checked before device call");
                     }
                     if let Some(cleanup) = result.cleanup.take() {
-                        self.heads[head_index].scanout_cleanup =
-                            Some(cleanup.map_scanout_buffer(|owner| {
+                        self.heads[head_index]
+                            .scanout_custody
+                            .accept_cleanup(cleanup.map_scanout_buffer(|owner| {
                                 Box::new(owner) as Box<dyn std::any::Any>
-                            }));
+                            }))
+                            .expect("mirror cleanup capacity checked before device call");
                     }
                     mirror_tracked_submit_report(&result, size)
                 } else {
@@ -2296,14 +2363,26 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                     };
                     let report = mirror_tracked_prepare_report(&prepare, size);
                     if let Some(cleanup) = prepare.cleanup.take() {
-                        self.heads[head_index].scanout_cleanup =
-                            Some(cleanup.map_scanout_buffer(|owner| {
+                        self.heads[head_index]
+                            .scanout_custody
+                            .accept_cleanup(cleanup.map_scanout_buffer(|owner| {
                                 Box::new(owner) as Box<dyn std::any::Any>
-                            }));
+                            }))
+                            .expect("mirror cleanup capacity checked before device call");
                     }
                     if let Some(prepared) = prepare.prepared.take() {
-                        if logical_frame != newest_frame {
+                        if prepared.correlation().and_then(|value| value.native)
+                            != Some(expected_identity)
+                        {
                             self.cancel_prepared_head_owner(head_index, prepared);
+                            return Err(
+                                "renderer prepared a different mirror frame identity".into()
+                            );
+                        }
+                        if logical_frame != newest_frame {
+                            if !self.cancel_prepared_head_owner(head_index, prepared) {
+                                continue;
+                            }
                             if worker_was_in_flight {
                                 self.heads[head_index].rendering_content = None;
                                 self.heads[head_index].output_frames.discard_rendering();
@@ -2641,8 +2720,8 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                         format!(
                             "head={} kms={} cleanup={} worker={} pending={:?} rendering={:?} newest={:?}",
                             head.head.raw(),
-                            head.scanout_submission.is_some(),
-                            head.scanout_cleanup.is_some(),
+                            head.scanout_custody.submitted().is_some(),
+                            head.scanout_custody.cleanup_pending(),
                             self.exporters[*index].worker_in_flight(),
                             head.pending_content.map(LiveProductionScanoutContent::frame),
                             head.rendering_content.map(LiveProductionScanoutContent::frame),
@@ -2673,7 +2752,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
             }
             tick.rendered_primary_plane_scanout_cleanup_pending = indices
                 .iter()
-                .any(|index| self.heads[*index].scanout_cleanup.is_some());
+                .any(|index| self.heads[*index].scanout_custody.cleanup_pending());
             tick.rendered_primary_plane_scanout_in_flight_ticks = self
                 .heads
                 .iter()
@@ -2719,6 +2798,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
             }
             let index = self.primary_head(output)?;
             let group = self.heads[index].group;
+            self.arm_singleton_retirement(index, output, runtime);
             let mut callbacks = crate::LivePageFlipCallbackQueueReport::with_accepted_capacity(1);
             let completion = self.heads[index]
                 .pending_callback
@@ -2811,22 +2891,25 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
             prepared: crate::LivePreparedRenderedPrimaryPlaneScanout<
                 crate::NativeGbmRenderedScanoutOwner,
             >,
-        ) {
+        ) -> bool {
             let group = self.heads[head_index].group;
-            let result = crate::cancel_prepared_rendered_primary_plane_scanout(
-                self.groups[group].session.card(),
-                prepared,
-            );
-            if let Some(cleanup) = result.cleanup {
-                self.heads[head_index].scanout_cleanup = Some(
-                    cleanup.map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
-                );
+            match self.heads[head_index]
+                .scanout_custody
+                .cancel_prepared(self.groups[group].session.card(), prepared)
+            {
+                Ok(result) => {
+                    if !result.released {
+                        self.retire_failures = self.retire_failures.saturating_add(1);
+                    }
+                    self.heads[head_index].prepared_group_frame = None;
+                    self.heads[head_index].prepared_worker_was_in_flight = false;
+                    true
+                }
+                Err(prepared) => {
+                    self.heads[head_index].prepared_scanout = Some(prepared);
+                    false
+                }
             }
-            if result.destroy != crate::LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed {
-                self.retire_failures = self.retire_failures.saturating_add(1);
-            }
-            self.heads[head_index].prepared_group_frame = None;
-            self.heads[head_index].prepared_worker_was_in_flight = false;
         }
 
         pub fn release_displayed_output(
@@ -2851,29 +2934,16 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                 if let Some(prepared) = self.heads[head_index].prepared_scanout.take() {
                     self.cancel_prepared_head_owner(head_index, prepared);
                 }
-                if let Some(displayed) = self.heads[head_index].displayed_scanout.take() {
-                    let crate::LiveRenderedPrimaryPlaneScanoutSubmission {
-                        scanout_buffer,
-                        primary_plane,
-                        ..
-                    } = displayed;
-                    let released = primary_plane.retire(self.card(head_index));
-                    if let Some(primary_plane) = released.cleanup {
-                        self.heads[head_index].scanout_cleanup =
-                            Some(crate::LiveRenderedPrimaryPlaneScanoutCleanup {
-                                scanout_buffer,
-                                primary_plane,
-                            });
-                    }
-                }
-                if let Some(cleanup) = self.heads[head_index].scanout_cleanup.take() {
-                    let retried = crate::retry_rendered_primary_plane_scanout_cleanup(
-                        self.card(head_index),
-                        cleanup,
-                    );
-                    self.heads[head_index].scanout_cleanup = retried.cleanup;
-                }
-                if self.heads[head_index].scanout_cleanup.is_some() {
+                let group = self.heads[head_index].group;
+                let custody = &mut self.heads[head_index].scanout_custody;
+                let blocked = custody
+                    .retire_displayed(self.groups[group].session.card())
+                    .is_err();
+                custody.retry_cleanup(self.groups[group].session.card());
+                if blocked
+                    || custody.cleanup_pending()
+                    || self.heads[head_index].prepared_scanout.is_some()
+                {
                     mirror_cleanup_pending = true;
                 }
             }
@@ -2888,7 +2958,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                 .into());
             }
             trace_live_native_lifecycle("displayed_scanout_owner_released");
-            self.deferred_mirror_generations.remove(&output);
+            self.deferred_mirror_generations.revoke_output(output);
             for ((cohort_output, frame), _) in self
                 .output_cohorts
                 .iter()
@@ -2904,7 +2974,6 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                 .retain(|(cohort_output, _), _| *cohort_output != output);
             for head_index in self.head_indices(output) {
                 self.heads[head_index].displayed_group_frame = None;
-                self.heads[head_index].scanout_cleanup_group_frame = None;
             }
             Ok(())
         }
@@ -2915,8 +2984,9 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                 let Some(prepared) = self.heads[head_index].prepared_scanout.take() else {
                     continue;
                 };
-                self.cancel_prepared_head_owner(head_index, prepared);
-                cancelled = cancelled.saturating_add(1);
+                if self.cancel_prepared_head_owner(head_index, prepared) {
+                    cancelled = cancelled.saturating_add(1);
+                }
             }
             if cancelled > 0 {
                 for cohort in
@@ -3554,6 +3624,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                 return status;
             }
             let frame_id = self.allocate_frame_id();
+            let identity = self.native_frame_identity(index, output, frame_id);
             let (head, exporter) = self.head_and_exporter(index, output);
             head.pending_nonzero_pixel_bytes = frame.nonzero_pixel_bytes;
             head.last_checksum = frame.checksum;
@@ -3562,10 +3633,11 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                 frame: frame_id,
                 checksum: frame.checksum,
             });
-            exporter.set_pending_cpu_frame_with_damage(
+            exporter.set_pending_identified_cpu_frame(
                 frame.frame,
                 frame.checksum,
                 frame.output_damage_snapshot,
+                Some(identity),
             );
             status
         }
@@ -3608,14 +3680,14 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
         pub fn output_in_flight(&self, output: OutputId) -> bool {
             self.head_indices(output)
                 .into_iter()
-                .any(|index| self.heads[index].scanout_submission.is_some())
+                .any(|index| self.heads[index].scanout_custody.submitted().is_some())
         }
 
         /// Whether any head of this output still owes resource cleanup.
         pub fn output_cleanup_pending(&self, output: OutputId) -> bool {
             self.head_indices(output)
                 .into_iter()
-                .any(|index| self.heads[index].scanout_cleanup.is_some())
+                .any(|index| self.heads[index].scanout_custody.cleanup_pending())
                 || self.output_topology_cleanup.iter().any(|(head, _)| {
                     self.head_index_for_head(*head)
                         .is_some_and(|index| self.heads[index].output.id == output)
@@ -3624,13 +3696,14 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
 
         pub fn pending_frame(&self, output: OutputId) -> bool {
             let mirror = self.head_indices(output).len() > 1;
-            self.head_indices(output).into_iter().any(|index| {
-                self.exporters[index].pending_frame()
-                    || self.heads[index].prepared_scanout.is_some()
-                    || self.heads[index].pending_content.is_some()
-                    || self.heads[index].rendering_content.is_some()
-                    || (!mirror && self.heads[index].scanout_submission.is_some())
-            })
+            self.deferred_mirror_generations.pending(output)
+                || self.head_indices(output).into_iter().any(|index| {
+                    self.exporters[index].pending_frame()
+                        || self.heads[index].prepared_scanout.is_some()
+                        || self.heads[index].pending_content.is_some()
+                        || self.heads[index].rendering_content.is_some()
+                        || (!mirror && self.heads[index].scanout_custody.submitted().is_some())
+                })
         }
 
         pub fn is_mirror_output(&self, output: OutputId) -> bool {
@@ -3639,12 +3712,12 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
 
         pub fn primary_scanout_in_flight(&self, output: OutputId) -> bool {
             self.primary_head_index(output)
-                .is_some_and(|index| self.heads[index].scanout_submission.is_some())
+                .is_some_and(|index| self.heads[index].scanout_custody.submitted().is_some())
         }
 
         pub fn primary_cleanup_pending(&self, output: OutputId) -> bool {
             self.primary_head_index(output)
-                .is_some_and(|index| self.heads[index].scanout_cleanup.is_some())
+                .is_some_and(|index| self.heads[index].scanout_custody.cleanup_pending())
         }
 
         pub fn frame_queue_ready(&self, output: OutputId) -> bool {
@@ -3659,13 +3732,13 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
         pub fn scanout_in_flight(&self, output: OutputId) -> bool {
             self.head_indices(output)
                 .into_iter()
-                .any(|index| self.heads[index].scanout_submission.is_some())
+                .any(|index| self.heads[index].scanout_custody.submitted().is_some())
         }
 
         pub fn scanout_cleanup_pending(&self, output: OutputId) -> bool {
             self.head_indices(output)
                 .into_iter()
-                .any(|index| self.heads[index].scanout_cleanup.is_some())
+                .any(|index| self.heads[index].scanout_custody.cleanup_pending())
         }
 
         pub fn mirror_generation_failed(&self, output: OutputId) -> bool {
@@ -3683,7 +3756,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
         pub fn any_head_scanout_in_flight(&self) -> bool {
             self.heads
                 .iter()
-                .any(|head| head.scanout_submission.is_some())
+                .any(|head| head.scanout_custody.submitted().is_some())
         }
 
         /// Heads holding a KMS submission the kernel has not retired.
@@ -3706,7 +3779,10 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
         pub fn any_head_cleanup_pending(&self) -> bool {
             !self.output_topology_cleanup.is_empty()
                 || self.layout_probe_cleanup_pending()
-                || self.heads.iter().any(|head| head.scanout_cleanup.is_some())
+                || self
+                    .heads
+                    .iter()
+                    .any(|head| head.scanout_custody.cleanup_pending())
         }
 
         pub fn submitted_content(&self, output: OutputId) -> Option<LiveProductionScanoutContent> {
@@ -3764,11 +3840,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
             output: OutputId,
             frame: LiveProductionNativeFrameId,
         ) -> bool {
-            if self
-                .deferred_mirror_generations
-                .get(&output)
-                .is_some_and(|generation| generation.frame == frame)
-            {
+            if self.deferred_mirror_generations.owns(output, frame) {
                 return true;
             }
             if self
@@ -3969,6 +4041,12 @@ pub use persistent_native_scanout::{
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 pub(crate) use persistent_native_scanout::LiveProductionNativeRetirementContent;
+
+#[cfg(all(test, feature = "libdrm-events", feature = "gbm-probe"))]
+pub(crate) use persistent_native_scanout::{
+    DeferredNativeCompositions, LiveProductionHeadCompositionContent, NativeCompositionOutput,
+    prepare_native_composition_batch,
+};
 
 #[derive(Debug)]
 pub struct LiveNativeMixedDiagnosticComplete {

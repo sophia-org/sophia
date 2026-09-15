@@ -23,11 +23,36 @@ where
     ) -> std::io::Result<LibdrmNativeCompletionFenceStatus> {
         self.outputs
             .get(output)
-            .and_then(|state| state.rendered_primary_plane_scanout_submission.as_ref())
+            .and_then(|state| state.scanout_custody.submitted())
             .map_or(
                 Ok(LibdrmNativeCompletionFenceStatus::Unsupported),
                 LiveRenderedPrimaryPlaneScanoutSubmission::completion_fence_status,
             )
+    }
+
+    /// Arm from the current native head before callback intake or retirement.
+    /// Absence invalidates authority; it never restores the legacy path.
+    pub(crate) fn set_native_retirement_witness(
+        &mut self,
+        output: OutputId,
+        expected: Option<crate::LiveNativeFrameIdentity>,
+    ) {
+        let state = self
+            .outputs
+            .get_mut(output)
+            .expect("registered native output");
+        state.retirement_authority = RenderedRetirementAuthority::Native(expected);
+    }
+
+    pub(crate) fn submitted_rendered_frame_correlation(
+        &self,
+        output: OutputId,
+    ) -> Option<crate::LiveRendererFrameCorrelation> {
+        self.outputs
+            .get(output)?
+            .scanout_custody
+            .submitted()?
+            .correlation()
     }
 
     pub fn rendered_primary_plane_scanout_cleanup_pending(&self) -> bool {
@@ -42,7 +67,8 @@ where
 
     pub fn rendered_primary_plane_scanout_displayed(&self) -> bool {
         self.primary_output_state()
-            .rendered_primary_plane_displayed_submission
+            .scanout_custody
+            .displayed()
             .is_some()
     }
 
@@ -59,34 +85,22 @@ where
     {
         let state = self.primary_output_state_mut();
         state.retain_rendered_primary_plane_displayed_submission = false;
-        let Some(displayed) = state.rendered_primary_plane_displayed_submission.take() else {
-            return LiveTrackedRenderedPrimaryPlaneScanoutCleanupReport {
-                status: LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::NoCleanupPending,
-                destroy: None,
-                cleanup_pending: state.cleanup_pending(),
-            };
-        };
-        let LiveRenderedPrimaryPlaneScanoutSubmission {
-            scanout_buffer,
-            primary_plane,
-            ..
-        } = displayed;
-        let retired = primary_plane.retire(device);
-        let destroy = retired.status;
-        if let Some(primary_plane) = retired.cleanup {
-            state.rendered_primary_plane_scanout_cleanup =
-                Some(LiveRenderedPrimaryPlaneScanoutCleanup {
-                    scanout_buffer,
-                    primary_plane,
-                });
-        }
+        let outcome = state.scanout_custody.retire_displayed(device);
+        let destroy = outcome
+            .as_ref()
+            .ok()
+            .and_then(|result| result.as_ref())
+            .map(|result| result.destroy);
         LiveTrackedRenderedPrimaryPlaneScanoutCleanupReport {
-            status: if state.cleanup_pending() {
-                LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanupFailed
-            } else {
-                LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanedUp
+            status: match outcome {
+                Err(()) => LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanupFailed,
+                Ok(Some(result)) if !result.released => {
+                    LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanupFailed
+                }
+                Ok(Some(_)) => LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanedUp,
+                Ok(None) => LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::NoCleanupPending,
             },
-            destroy: Some(destroy),
+            destroy,
             cleanup_pending: state.cleanup_pending(),
         }
     }
@@ -111,6 +125,10 @@ where
     /// Attempts to adopt a synchronously displayed owner without losing it on
     /// rejection. Startup has already mutated KMS when this transfer occurs, so
     /// the rejected affine owner must remain available to explicit teardown.
+    #[expect(
+        clippy::result_large_err,
+        reason = "rejected adoption must return the existing displayed owner without allocation after KMS commit"
+    )]
     pub(crate) fn try_adopt_presented_rendered_primary_plane_scanout<Owner>(
         &mut self,
         submission: LiveRenderedPrimaryPlaneScanoutSubmission<Owner>,
@@ -120,14 +138,16 @@ where
     {
         let state = self.primary_output_state_mut();
         if !state.retain_rendered_primary_plane_displayed_submission
-            || state.rendered_primary_plane_displayed_submission.is_some()
-            || state.rendered_primary_plane_scanout_submission.is_some()
-            || state.rendered_primary_plane_scanout_cleanup.is_some()
+            || state.scanout_custody.displayed().is_some()
+            || state.scanout_custody.submitted().is_some()
+            || state.scanout_custody.cleanup_pending()
         {
             return Err(submission);
         }
-        state.rendered_primary_plane_displayed_submission =
-            Some(submission.map_scanout_buffer(|owner| Box::new(owner) as Box<dyn Any>));
+        state
+            .scanout_custody
+            .adopt_displayed(submission.map_scanout_buffer(|owner| Box::new(owner) as Box<dyn Any>))
+            .expect("adoption checked before owner transfer");
         Ok(())
     }
 
@@ -216,8 +236,7 @@ where
             state.kms_scanout_target.status,
             state.output_size,
             state.gbm_egl_frame_target,
-            &mut state.rendered_primary_plane_scanout_submission,
-            &mut state.rendered_primary_plane_scanout_cleanup,
+            &mut state.scanout_custody,
             &mut state.rendered_primary_plane_runtime_scanout_state,
             &mut state.rendered_primary_plane_scanout_in_flight_ticks,
             state.page_flip_callback_intake.last_frame_serial(),
@@ -291,161 +310,72 @@ fn retire_tracked_output_after_page_flip<D>(
 where
     D: LibdrmNativePrimaryPlaneResourceDevice,
 {
-    let Some(mut submission) = state.rendered_primary_plane_scanout_submission.take() else {
-        return LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
-            status: LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::NoSubmission,
-            layout_witness: None,
-            destroy: None,
-            runtime_scanout_state: None,
-            in_flight: false,
-            in_flight_ticks: 0,
-            cleanup_pending: state.cleanup_pending(),
-        };
-    };
-
-    // A group that lost a head never presented, so a survivor's flip cannot retire
-    // the submission as displayed. The model settles such a generation `removed`
-    // and releases only once the remaining heads have drained, which is what
-    // retiring the resources here rather than promoting them does.
-    if state.lost_a_head() {
-        let LiveRenderedPrimaryPlaneScanoutSubmission {
-            scanout_buffer,
-            primary_plane,
-            ..
-        } = submission;
-        let retired = primary_plane.retire(device);
-        let destroy = retired.status;
-        if let Some(primary_plane) = retired.cleanup {
-            state.rendered_primary_plane_scanout_cleanup =
-                Some(LiveRenderedPrimaryPlaneScanoutCleanup {
-                    scanout_buffer,
-                    primary_plane,
-                });
-        }
-        state.rendered_primary_plane_scanout_in_flight_ticks = 0;
-        state.rendered_primary_plane_runtime_scanout_state = Some(RuntimeScanoutState::Rejected);
-        state
-            .pending_runtime_scanout_states
-            .push_back(RuntimeScanoutState::Rejected);
-        return LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
-            status: LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::HeadLost,
-            layout_witness: None,
-            destroy: Some(destroy),
-            runtime_scanout_state: Some(RuntimeScanoutState::Rejected),
-            in_flight: state.in_flight(),
-            in_flight_ticks: 0,
-            cleanup_pending: state.cleanup_pending(),
-        };
-    }
-
-    if !state.retain_rendered_primary_plane_displayed_submission {
-        let retired =
-            retire_rendered_primary_plane_scanout_after_page_flip(device, submission, callback);
-        let runtime_scanout_state = retired.runtime_scanout_state();
-        if let Some(submission) = retired.submission {
-            state.rendered_primary_plane_scanout_submission = Some(submission);
-        } else {
-            state.rendered_primary_plane_scanout_in_flight_ticks = 0;
-        }
-        if let Some(cleanup) = retired.cleanup {
-            state.rendered_primary_plane_scanout_cleanup = Some(cleanup);
-        }
-        if let Some(runtime_scanout_state) = runtime_scanout_state {
-            state.rendered_primary_plane_runtime_scanout_state = Some(runtime_scanout_state);
+    use crate::PersistentFlipOutcome;
+    use LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus as Status;
+    let (status, layout_witness, destroy, runtime_scanout_state) =
+        if state.scanout_custody.submitted().is_none() {
+            (Status::NoSubmission, None, None, None)
+        } else if state.lost_a_head() {
+            let result = state
+                .scanout_custody
+                .discard_submitted(device)
+                .expect("submission checked");
+            (
+                Status::HeadLost,
+                None,
+                Some(result.destroy),
+                Some(RuntimeScanoutState::Rejected),
+            )
+        } else if !state.retirement_authority.permits(
             state
-                .pending_runtime_scanout_states
-                .push_back(runtime_scanout_state);
-        }
-        return LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
-            status: retired.status.into(),
-            layout_witness: retired.layout_witness,
-            destroy: retired.destroy,
-            runtime_scanout_state,
-            in_flight: state.in_flight(),
-            in_flight_ticks: state.rendered_primary_plane_scanout_in_flight_ticks,
-            cleanup_pending: state.cleanup_pending(),
-        };
-    }
-
-    let waiting_for_newer_page_flip = callback.decision != LivePageFlipCallbackDecision::Accepted
-        || callback.event.status != LivePageFlipEventStatus::Presented
-        || submission
-            .submitted_after_page_flip_serial
-            .is_some_and(|baseline| match callback.event.frame_serial {
-                Some(serial) => serial <= baseline,
-                None => true,
-            });
-    if waiting_for_newer_page_flip {
-        state.rendered_primary_plane_scanout_submission = Some(submission);
-        return LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
-            status: LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip,
-            layout_witness: None,
-            destroy: None,
-            runtime_scanout_state: None,
-            in_flight: true,
-            in_flight_ticks: state.rendered_primary_plane_scanout_in_flight_ticks,
-            cleanup_pending: state.cleanup_pending(),
-        };
-    }
-
-    state.rendered_primary_plane_scanout_in_flight_ticks = 0;
-    let layout_witness = submission.layout_witness();
-    submission.clear_completion_fence();
-    let previous = state
-        .rendered_primary_plane_displayed_submission
-        .replace(submission);
-    let (status, destroy) = match previous {
-        None => (
-            LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip,
-            None,
-        ),
-        Some(previous) => {
-            let LiveRenderedPrimaryPlaneScanoutSubmission {
-                scanout_buffer,
-                primary_plane,
-                ..
-            } = previous;
-            let retired = primary_plane.retire(device);
-            if retired.status == LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed {
-                (
-                    LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip,
-                    Some(retired.status),
-                )
-            } else {
-                if let Some(primary_plane) = retired.cleanup {
-                    state.rendered_primary_plane_scanout_cleanup =
-                        Some(LiveRenderedPrimaryPlaneScanoutCleanup {
-                            scanout_buffer,
-                            primary_plane,
-                        });
+                .scanout_custody
+                .submitted()
+                .and_then(|owner| owner.correlation())
+                .and_then(|frame| frame.native),
+        ) {
+            (Status::WaitingForAcceptedPageFlip, None, None, None)
+        } else if !state.retain_rendered_primary_plane_displayed_submission {
+            let result = state
+                .scanout_custody
+                .retire_transient(device, callback)
+                .expect("submission checked");
+            (
+                result.status.into(),
+                result.layout_witness,
+                result.destroy,
+                result.runtime_scanout_state(),
+            )
+        } else {
+            let expected = match state.retirement_authority {
+                RenderedRetirementAuthority::Legacy => None,
+                RenderedRetirementAuthority::Native(expected) => expected,
+            };
+            match state.scanout_custody.present(device, callback, expected) {
+                PersistentFlipOutcome::NoSubmission => (Status::NoSubmission, None, None, None),
+                PersistentFlipOutcome::Waiting | PersistentFlipOutcome::IdentityMismatch => {
+                    (Status::WaitingForAcceptedPageFlip, None, None, None)
                 }
-                (
-                    LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::ResourceRetireFailed,
-                    Some(retired.status),
-                )
+                PersistentFlipOutcome::Presented {
+                    layout_witness,
+                    previous_cleanup,
+                    ..
+                } => (
+                    Status::RetiredAfterPageFlip,
+                    layout_witness,
+                    previous_cleanup.map(|result| result.destroy),
+                    Some(RuntimeScanoutState::Retired),
+                ),
             }
-        }
-    };
-    let runtime_scanout_state = Some(match status {
-        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip => {
-            RuntimeScanoutState::Retired
-        }
-        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::ResourceRetireFailed => {
-            RuntimeScanoutState::Rejected
-        }
-        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::HeadLost
-        | LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::NoSubmission
-        | LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::WaitingForAcceptedPageFlip => {
-            unreachable!("terminal retire statuses are constructed above")
-        }
-    });
-    if let Some(runtime_scanout_state) = runtime_scanout_state {
-        state.rendered_primary_plane_runtime_scanout_state = Some(runtime_scanout_state);
+        };
+    if !state.in_flight() {
+        state.rendered_primary_plane_scanout_in_flight_ticks = 0;
+    }
+    if let Some(runtime_state) = runtime_scanout_state {
+        state.rendered_primary_plane_runtime_scanout_state = Some(runtime_state);
         state
             .pending_runtime_scanout_states
-            .push_back(runtime_scanout_state);
+            .push_back(runtime_state);
     }
-
     LiveTrackedRenderedPrimaryPlaneScanoutRetireReport {
         status,
         layout_witness,
@@ -465,25 +395,24 @@ fn retry_tracked_output_cleanup<D>(
 where
     D: LibdrmNativePrimaryPlaneResourceDevice,
 {
-    let Some(cleanup) = state.rendered_primary_plane_scanout_cleanup.take() else {
+    let Some(result) = state.scanout_custody.retry_cleanup(device) else {
         return LiveTrackedRenderedPrimaryPlaneScanoutCleanupReport {
             status: LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::NoCleanupPending,
             destroy: None,
             cleanup_pending: false,
         };
     };
-    let retried = retry_rendered_primary_plane_scanout_cleanup(device, cleanup);
-    let status = if retried.cleanup.is_some() {
-        LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanupFailed
-    } else {
-        LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanedUp
-    };
-    if let Some(cleanup) = retried.cleanup {
-        state.rendered_primary_plane_scanout_cleanup = Some(cleanup);
-    }
     LiveTrackedRenderedPrimaryPlaneScanoutCleanupReport {
-        status,
-        destroy: Some(retried.destroy),
+        status: if !result.released {
+            LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanupFailed
+        } else {
+            LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus::CleanedUp
+        },
+        destroy: Some(result.destroy),
         cleanup_pending: state.cleanup_pending(),
     }
 }
+
+#[cfg(all(test, feature = "libdrm-events"))]
+#[path = "retirement_authority_tests.rs"]
+mod retirement_authority_tests;

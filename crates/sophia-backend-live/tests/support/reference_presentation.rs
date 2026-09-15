@@ -38,7 +38,8 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
         CompositorDisplayList {
             output: output.id,
             commands: vec![panel(4)],
-        },
+        }
+        .into(),
     );
     runtime.replace_presented_input_projection(
         0,
@@ -58,7 +59,8 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
         CompositorDisplayList {
             output: output.id,
             commands: vec![panel(5)],
-        },
+        }
+        .into(),
     );
     runtime.replace_presented_input_projection(
         0,

@@ -14,7 +14,11 @@ type CpuCycleOutcome = (
 );
 
 mod authority;
+mod composition_target;
 mod compositor_graphics;
+#[cfg(test)]
+mod lifecycle_tests;
+use composition_target::NativeCompositionTarget;
 mod native;
 mod ownership;
 mod present;
@@ -308,7 +312,7 @@ pub struct LiveProductionVisualRuntime {
     descriptor_overlay_interactive: bool,
     shell_content: BTreeMap<OutputId, LiveShellContentFrame>,
     tab_bars: Vec<sophia_engine::TabBarProjection>,
-    tab_frames: BTreeMap<OutputId, CompositorDisplayList>,
+    tab_frames: BTreeMap<OutputId, sophia_engine::CompositorDamageList>,
     pending_focus_ring_observation: Option<LiveFocusRingObservation>,
     last_focus_ring_observation: Option<LiveFocusRingObservation>,
     pending_chrome_set_observation: Option<LiveChromeSetObservation>,

@@ -55,6 +55,9 @@ struct PendingPresentation {
 
 #[derive(Clone, Debug, Default)]
 struct PresentedOutputContent {
+    grant: sophia_protocol::ContentGrant,
+    candidate_generation: u64,
+    presentation_epoch: u64,
     bands: Vec<sophia_protocol::OutputReservation>,
     allocations: Vec<(sophia_protocol::ContentAllocationId, u64)>,
 }
@@ -201,10 +204,9 @@ impl LiveContentSession {
         self.stage = ContentServiceStage::Candidates;
         transport.service_content_candidates(&contexts, now)?;
         let mut native_scanout = native_scanout;
-        while let Some((output, generation)) = transport.next_content_submission() {
-            if self.pending.iter().any(|pending| pending.output == output) {
-                break;
-            }
+        while let Some((output, generation)) = transport.next_content_submission_for(|output| {
+            !self.pending.iter().any(|pending| pending.output == output)
+        }) {
             self.stage = ContentServiceStage::Submission;
             let bundle = transport.begin_content_submission(output, generation, now)?;
             let descriptor = outputs
@@ -269,15 +271,20 @@ impl LiveContentSession {
         else {
             return Ok(false);
         };
-        let pending = self.pending.remove(index);
-        transport.content_presented(
+        let pending = &self.pending[index];
+        let publication = transport.content_presented(
             pending.grant,
             pending.output,
             pending.candidate_generation,
             epoch,
             1,
             1,
-        )?;
+        );
+        if publication == Err(ShellTransportError::ContentQueueSaturated) {
+            return Ok(false);
+        }
+        publication?;
+        let pending = self.pending.remove(index);
         let usage = transport.content_usage().unwrap_or_default();
         crate::session_println!(
             "sophia_live_shell_content schema=1 status=presented output={} candidate_generation={} presentation_epoch={} staging_bytes={} resident_bytes={} retiring_bytes={} backing_bytes={}",
@@ -292,6 +299,9 @@ impl LiveContentSession {
         self.presented.insert(
             pending.output,
             PresentedOutputContent {
+                grant: pending.grant,
+                candidate_generation: pending.candidate_generation,
+                presentation_epoch: epoch,
                 bands: pending.bands,
                 allocations: pending
                     .allocations

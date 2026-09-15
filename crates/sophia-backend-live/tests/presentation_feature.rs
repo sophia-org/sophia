@@ -317,7 +317,7 @@ fn mixed_frame_clone_shares_immutable_cpu_pixels() {
                 stride: 16,
                 format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
                 generation: 23,
-                bytes: std::sync::Arc::clone(&pixels),
+                bytes: std::sync::Arc::clone(&pixels).into(),
             },
             placement: LiveCompositionPlacement {
                 target: Rect {
@@ -348,7 +348,10 @@ fn mixed_frame_clone_shares_immutable_cpu_pixels() {
         panic!("cloned CPU layer changed representation");
     };
 
-    assert!(std::sync::Arc::ptr_eq(&original.bytes, &cloned.bytes));
+    assert!(std::ptr::eq(
+        original.bytes.as_slice(),
+        cloned.bytes.as_slice()
+    ));
     assert_eq!(original.handle, cloned.handle);
     assert_eq!(original.generation, cloned.generation);
 }

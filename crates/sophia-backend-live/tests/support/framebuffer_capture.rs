@@ -38,6 +38,7 @@ fn framebuffer_capture_comes_from_the_actual_submit_failure_and_owns_the_source(
         let mut exporter = exporter();
         let (frame, mut peer) = frame();
         let original = LiveRendererFrameCorrelation {
+            native: None,
             request: None,
             trace: frame.trace,
             direct_scanout: Some(frame.direct_scanout),

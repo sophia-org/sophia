@@ -31,6 +31,7 @@ where
 
     let LiveRenderedPrimaryPlaneScanoutSubmission {
         scanout_buffer,
+        correlation,
         primary_plane,
         submitted_after_page_flip_serial,
         layout_witness,
@@ -45,6 +46,7 @@ where
             layout_witness: None,
             submission: Some(LiveRenderedPrimaryPlaneScanoutSubmission {
                 scanout_buffer,
+                correlation,
                 primary_plane,
                 submitted_after_page_flip_serial,
                 layout_witness,
@@ -61,6 +63,7 @@ where
             submission: None,
             cleanup: Some(LiveRenderedPrimaryPlaneScanoutCleanup {
                 scanout_buffer,
+                correlation,
                 primary_plane,
             }),
         };
@@ -96,6 +99,7 @@ where
         .cleanup
         .map(|primary_plane| LiveRenderedPrimaryPlaneScanoutCleanup {
             scanout_buffer: owner,
+            correlation: cleanup.correlation,
             primary_plane,
         });
 

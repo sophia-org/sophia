@@ -136,6 +136,10 @@ pub struct ContentCandidateStore {
 }
 
 impl ContentCandidateStore {
+    pub(crate) fn control_occupancy(&self) -> usize {
+        self.events.len() + self.response_credits
+    }
+
     pub fn new(limits: ContentLimits) -> Result<Self, ContentCandidateError> {
         limits
             .validate()
@@ -170,10 +174,18 @@ impl ContentCandidateStore {
     }
 
     pub fn next_pending_candidate(&self) -> Option<(ContentOutputId, u64)> {
-        self.pending
-            .iter()
-            .next()
-            .map(|(output, candidate)| (*output, candidate.begin.candidate_generation))
+        self.next_pending_candidate_for(|_| true)
+    }
+
+    /// Read-only selection skips temporarily unavailable outputs without
+    /// consuming or superseding their exact pending candidate.
+    pub fn next_pending_candidate_for(
+        &self,
+        mut available: impl FnMut(ContentOutputId) -> bool,
+    ) -> Option<(ContentOutputId, u64)> {
+        self.pending.iter().find_map(|(output, candidate)| {
+            available(*output).then_some((*output, candidate.begin.candidate_generation))
+        })
     }
 
     pub fn submitted_candidate_count(&self) -> usize {

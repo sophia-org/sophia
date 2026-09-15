@@ -288,7 +288,7 @@ impl IndicatorStripRasterCache {
             stride: u32::from(width) * 4,
             format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
             generation: strip.generation.max(1),
-            bytes: Arc::new(bytes),
+            bytes: Arc::new(bytes).into(),
         })
     }
 

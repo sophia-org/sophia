@@ -3,6 +3,11 @@
 //! This crate owns framing and bounded socket queues. It grants no authority,
 //! renders no pixels and opens no X11 or Wayland connection.
 
+mod candidate;
+mod lifecycle;
+mod outbox;
+pub use lifecycle::*;
+
 use std::collections::VecDeque;
 use std::io::{Read as _, Write as _};
 use std::os::unix::net::UnixStream;
@@ -38,6 +43,7 @@ pub enum ShellClientError {
     Io(String),
     Codec(IpcCodecError),
     AdmissionRefused(ContentAdmissionRefused),
+    Lifecycle(ContentLifecycleError),
     UnsupportedRevision,
     MissingCapability,
     WrongDirection,
@@ -64,7 +70,7 @@ pub struct ShellConnection {
     stream: UnixStream,
     welcome: ShellV1ServerWelcome,
     input: Vec<u8>,
-    output: VecDeque<u8>,
+    output: outbox::ClientOutbox,
     inbox: VecDeque<Vec<u8>>,
     peer_closed: bool,
 }
@@ -119,7 +125,7 @@ impl ShellConnection {
             stream,
             welcome,
             input: Vec::new(),
-            output: VecDeque::new(),
+            output: outbox::ClientOutbox::default(),
             inbox: VecDeque::new(),
             peer_closed: false,
         })
@@ -139,15 +145,81 @@ impl ShellConnection {
         transaction: TransactionId,
         record: &ShellContentRecord,
     ) -> Result<(), ShellClientError> {
+        self.enqueue_content(transaction, record)?;
+        self.poll_io()
+    }
+
+    /// Transfer one record to the bounded outbox without doing socket I/O.
+    /// Saturation leaves ownership with the caller for a later service turn.
+    pub fn enqueue_content(
+        &mut self,
+        transaction: TransactionId,
+        record: &ShellContentRecord,
+    ) -> Result<(), ShellClientError> {
         if !client_record(record) {
             return Err(ShellClientError::WrongDirection);
         }
         let frame = encode_shell_content_frame(transaction, record)?;
-        if self.output.len().saturating_add(frame.len()) > MAX_QUEUED_BYTES {
-            return Err(ShellClientError::QueueSaturated);
+        self.output.enqueue(
+            vec![frame],
+            matches!(record, ShellContentRecord::ActionAck(_)),
+        )
+    }
+
+    /// Atomically own a bounded group of bulk content records (for example a
+    /// complete candidate). Refusal transfers none of the frames.
+    pub fn enqueue_content_group(
+        &mut self,
+        transaction: TransactionId,
+        records: &[ShellContentRecord],
+    ) -> Result<(), ShellClientError> {
+        self.output
+            .enqueue(encode_content_group(transaction, records)?, false)
+    }
+
+    /// Own a complete candidate and its exact lifecycle metadata together.
+    /// Refusal changes neither the candidate watermark nor the outbound FIFO.
+    /// This method performs no socket I/O and activates no input targets.
+    pub fn enqueue_candidate(
+        &mut self,
+        lifecycle: &mut ContentLifecycle,
+        transaction: TransactionId,
+        records: &[ShellContentRecord],
+    ) -> Result<(), ShellClientError> {
+        let frames = encode_content_group(transaction, records)?;
+        let metadata = candidate::metadata(transaction, records)?;
+        self.output.enqueue_after(frames, false, || {
+            lifecycle
+                .register(metadata)
+                .map_err(ShellClientError::Lifecycle)
+        })
+    }
+
+    /// Atomically own both ACK and indicator request before committing a UI
+    /// effect. No socket I/O follows admission; partial writes retain both.
+    pub fn enqueue_indicator_action_response(
+        &mut self,
+        transaction: TransactionId,
+        ack: &sophia_protocol::ContentActionAck,
+        activation: Option<(TransactionId, &ShellIndicatorActivation)>,
+    ) -> Result<(), ShellClientError> {
+        let mut frames = vec![encode_shell_content_frame(
+            transaction,
+            &ShellContentRecord::ActionAck(ack.clone()),
+        )?];
+        if let Some((transaction, activation)) = activation {
+            if ack.disposition != 1
+                || ack.event_id != activation.event_id
+                || ack.grant.connection_epoch != activation.connection_epoch
+                || ack.output.id != activation.output.raw()
+                || ack.target_id != activation.indicator
+                || ack.action_id != activation.action
+            {
+                return Err(ShellClientError::WrongDirection);
+            }
+            frames.push(encode_shell_indicator_activation(transaction, activation)?);
         }
-        self.output.extend(frame);
-        self.poll_io()
+        self.output.enqueue(frames, true)
     }
 
     /// Take the oldest session-to-client content record while retaining other
@@ -156,6 +228,13 @@ impl ShellConnection {
         &mut self,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellClientError> {
         self.poll_io()?;
+        self.take_content()
+    }
+
+    /// Drain one already-buffered observation without additional socket I/O.
+    pub fn take_content(
+        &mut self,
+    ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellClientError> {
         let at = self.inbox.iter().position(|frame| {
             decode_frame(frame).is_ok_and(|(header, _)| content_kind(header.message_kind))
         });
@@ -179,6 +258,13 @@ impl ShellConnection {
         &mut self,
     ) -> Result<Option<(TransactionId, ShellIndicatorSnapshot)>, ShellClientError> {
         self.poll_io()?;
+        self.take_indicators()
+    }
+
+    /// Drain one already-buffered observation without additional socket I/O.
+    pub fn take_indicators(
+        &mut self,
+    ) -> Result<Option<(TransactionId, ShellIndicatorSnapshot)>, ShellClientError> {
         let Some(begin) = self.inbox.iter().position(|frame| {
             decode_frame(frame).is_ok_and(|(header, _)| {
                 header.message_kind == IpcMessageKind::ShellIndicatorsBegin
@@ -231,10 +317,7 @@ impl ShellConnection {
         activation: &ShellIndicatorActivation,
     ) -> Result<(), ShellClientError> {
         let frame = encode_shell_indicator_activation(transaction, activation)?;
-        if self.output.len().saturating_add(frame.len()) > MAX_QUEUED_BYTES {
-            return Err(ShellClientError::QueueSaturated);
-        }
-        self.output.extend(frame);
+        self.output.enqueue(vec![frame], false)?;
         self.poll_io()
     }
 
@@ -243,6 +326,13 @@ impl ShellConnection {
         &mut self,
     ) -> Result<Option<(TransactionId, ShellIndicatorActivationOutcome)>, ShellClientError> {
         self.poll_io()?;
+        self.take_indicator_activation_outcome()
+    }
+
+    /// Drain one already-buffered observation without additional socket I/O.
+    pub fn take_indicator_activation_outcome(
+        &mut self,
+    ) -> Result<Option<(TransactionId, ShellIndicatorActivationOutcome)>, ShellClientError> {
         let at = self.inbox.iter().position(|frame| {
             decode_frame(frame).is_ok_and(|(header, _)| {
                 header.message_kind == IpcMessageKind::ShellIndicatorActivateOutcome
@@ -261,25 +351,37 @@ impl ShellConnection {
     }
 
     /// Bounded nonblocking progress. A queue limit is a protocol failure, not
-    /// permission to discard an accepted outcome.
+    /// permission to discard an accepted outcome. Each call reads and writes
+    /// at most 256 KiB in at most 64 syscalls per direction.
     pub fn poll_io(&mut self) -> Result<(), ShellClientError> {
+        let mut remaining = 256 * 1024;
         for _ in 0..64 {
-            if self.output.is_empty() {
+            if remaining == 0 {
                 break;
             }
-            let (bytes, _) = self.output.as_slices();
-            match self.stream.write(bytes) {
+            let Some(bytes) = self.output.front() else {
+                break;
+            };
+            match self.stream.write(&bytes[..bytes.len().min(remaining)]) {
                 Ok(0) => return Err(ShellClientError::PeerClosed),
                 Ok(written) => {
-                    self.output.drain(..written);
+                    self.output.written(written);
+                    remaining -= written;
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(error) => return Err(io_error(error)),
             }
         }
         for _ in 0..64 {
+            self.decode_input()?;
+            let retained = self.input.len() + self.inbox.iter().map(Vec::len).sum::<usize>();
+            let available = MAX_QUEUED_BYTES.saturating_sub(retained);
+            if available == 0 || self.inbox.len() == MAX_QUEUED_FRAMES {
+                break;
+            }
             let mut bytes = [0u8; 4096];
-            match self.stream.read(&mut bytes) {
+            let available = available.min(bytes.len());
+            match self.stream.read(&mut bytes[..available]) {
                 Ok(0) => {
                     self.peer_closed = true;
                     break;
@@ -294,7 +396,7 @@ impl ShellConnection {
     }
 
     fn decode_input(&mut self) -> Result<(), ShellClientError> {
-        while self.input.len() >= SOPHIA_IPC_HEADER_LEN {
+        while self.input.len() >= SOPHIA_IPC_HEADER_LEN && self.inbox.len() < MAX_QUEUED_FRAMES {
             let payload = u32::from_le_bytes(self.input[16..20].try_into().unwrap()) as usize;
             if payload > SOPHIA_IPC_MAX_PAYLOAD_LEN {
                 return Err(ShellClientError::Codec(IpcCodecError::PayloadTooLarge(
@@ -304,9 +406,6 @@ impl ShellConnection {
             let frame_len = SOPHIA_IPC_HEADER_LEN + payload;
             if self.input.len() < frame_len {
                 break;
-            }
-            if self.inbox.len() >= MAX_QUEUED_FRAMES {
-                return Err(ShellClientError::QueueSaturated);
             }
             let frame = self.input.drain(..frame_len).collect::<Vec<_>>();
             decode_frame(&frame)?;
@@ -376,4 +475,27 @@ fn read_frame(stream: &mut UnixStream) -> Result<Vec<u8>, ShellClientError> {
         .map_err(io_error)?;
     decode_frame(&frame)?;
     Ok(frame)
+}
+
+fn encode_content_group(
+    transaction: TransactionId,
+    records: &[ShellContentRecord],
+) -> Result<Vec<Vec<u8>>, ShellClientError> {
+    if records.is_empty() || records.len() > MAX_QUEUED_FRAMES / 2 {
+        return Err(ShellClientError::QueueSaturated);
+    }
+    let mut frames = Vec::with_capacity(records.len());
+    let mut bytes = 0usize;
+    for record in records {
+        if !client_record(record) {
+            return Err(ShellClientError::WrongDirection);
+        }
+        let frame = encode_shell_content_frame(transaction, record)?;
+        bytes = bytes.saturating_add(frame.len());
+        if bytes > MAX_QUEUED_BYTES {
+            return Err(ShellClientError::QueueSaturated);
+        }
+        frames.push(frame);
+    }
+    Ok(frames)
 }

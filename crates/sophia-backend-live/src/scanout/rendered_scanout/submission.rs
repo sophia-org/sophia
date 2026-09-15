@@ -7,6 +7,7 @@ use std::any::Any;
 #[derive(Debug)]
 pub struct LiveRenderedPrimaryPlaneScanoutSubmission<Owner> {
     pub(crate) scanout_buffer: Owner,
+    pub(crate) correlation: Option<crate::LiveRendererFrameCorrelation>,
     pub(crate) primary_plane: LibdrmNativePrimaryPlaneScanoutSubmission,
     pub(crate) submitted_after_page_flip_serial: Option<u64>,
     pub(crate) layout_witness: Option<super::LiveScanoutLayoutWitness>,
@@ -16,6 +17,10 @@ pub struct LiveRenderedPrimaryPlaneScanoutSubmission<Owner> {
 impl<Owner> LiveRenderedPrimaryPlaneScanoutSubmission<Owner> {
     pub const fn layout_witness(&self) -> Option<super::LiveScanoutLayoutWitness> {
         self.layout_witness
+    }
+
+    pub const fn correlation(&self) -> Option<crate::LiveRendererFrameCorrelation> {
+        self.correlation
     }
 
     pub fn into_scanout_buffer(self) -> Owner {
@@ -35,6 +40,7 @@ impl<Owner> LiveRenderedPrimaryPlaneScanoutSubmission<Owner> {
     ) -> LiveRenderedPrimaryPlaneScanoutSubmission<Next> {
         LiveRenderedPrimaryPlaneScanoutSubmission {
             scanout_buffer: map(self.scanout_buffer),
+            correlation: self.correlation,
             primary_plane: self.primary_plane,
             submitted_after_page_flip_serial: self.submitted_after_page_flip_serial,
             layout_witness: self.layout_witness,
@@ -58,11 +64,16 @@ pub(crate) type BoxedRenderedPrimaryPlaneScanoutSubmission =
 #[derive(Debug)]
 pub struct LiveRenderedPrimaryPlaneScanoutCleanup<Owner> {
     pub(crate) scanout_buffer: Owner,
+    pub(crate) correlation: Option<crate::LiveRendererFrameCorrelation>,
     pub(crate) primary_plane: LibdrmNativePrimaryPlaneResourceCleanup,
 }
 
 #[cfg(feature = "libdrm-events")]
 impl<Owner> LiveRenderedPrimaryPlaneScanoutCleanup<Owner> {
+    pub const fn correlation(&self) -> Option<crate::LiveRendererFrameCorrelation> {
+        self.correlation
+    }
+
     pub fn into_scanout_buffer(self) -> Owner {
         self.scanout_buffer
     }
@@ -73,6 +84,7 @@ impl<Owner> LiveRenderedPrimaryPlaneScanoutCleanup<Owner> {
     ) -> LiveRenderedPrimaryPlaneScanoutCleanup<Next> {
         LiveRenderedPrimaryPlaneScanoutCleanup {
             scanout_buffer: map(self.scanout_buffer),
+            correlation: self.correlation,
             primary_plane: self.primary_plane,
         }
     }

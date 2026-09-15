@@ -2,7 +2,11 @@ use super::*;
 
 mod content;
 mod retirement;
-use content::{content_binding_from_frame, presented_content_matches, same_content_binding};
+pub(super) use content::presented_content_list_matches;
+use content::{
+    content_binding_from_frame, presented_content_matches, retain_presented_content_binding,
+    same_content_binding,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct LiveSurfaceProjectionMetadata {
@@ -85,7 +89,7 @@ impl LiveProductionVisualRuntime {
                     &self.presentation_order,
                 )
             {
-                self.tab_frames.insert(output, list);
+                self.tab_frames.insert(output, list.into());
             }
             let (descriptor_targets, descriptor_occlusion) = direct_descriptor_projection(
                 self.descriptor_overlay.as_ref(),
@@ -114,15 +118,15 @@ impl LiveProductionVisualRuntime {
     /// Publishes only pixels whose native frame has crossed an accepted page
     /// flip. Each output keeps its own snapshot and semantic epoch so one
     /// head's retirement cannot publish or invalidate another head's input.
-    pub(super) fn publish_presented_input_layers(
+    pub(super) fn publish_presented_input_layers<T: NativeCompositionTarget>(
         &mut self,
-        native_scanout: &LiveProductionNativeScanout,
+        native_scanout: &T,
     ) {
         for index in 0..self.outputs.output_count() {
             let Some(output) = self.outputs.output_id(index) else {
                 continue;
             };
-            if let Some(frame) = native_scanout.presented_output_frame(output) {
+            if let Some(frame) = native_scanout.presented_frame(output) {
                 self.tab_frames
                     .insert(output, frame.compositor_display_list.clone());
             } else {
@@ -136,7 +140,7 @@ impl LiveProductionVisualRuntime {
                 descriptor_occlusion,
                 content,
                 presented_scene_surfaces,
-            ) = native_scanout.presented_output_frame(output).map_or_else(
+            ) = native_scanout.presented_frame(output).map_or_else(
                 || (Vec::new(), Vec::new(), None, Vec::new(), None, None, 0),
                 |presented| {
                     let logical_viewport =
@@ -161,8 +165,15 @@ impl LiveProductionVisualRuntime {
                         descriptor_targets,
                         descriptor_occlusion,
                         self.shell_content.get(&output).and_then(|frame| {
-                            presented_content_matches(presented, frame)
-                                .then(|| content_binding_from_frame(frame))
+                            if presented_content_matches(presented, frame) {
+                                Some(content_binding_from_frame(frame))
+                            } else {
+                                retain_presented_content_binding(
+                                    presented,
+                                    frame,
+                                    self.input_projections[index].content.as_ref(),
+                                )
+                            }
                         }),
                         presented.surfaces.len(),
                     )
@@ -910,7 +921,8 @@ mod tests {
             compositor_display_list: CompositorDisplayList {
                 output: output.id,
                 commands: vec![command],
-            },
+            }
+            .into(),
             software_cursor: None,
         };
 

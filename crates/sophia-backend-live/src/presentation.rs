@@ -353,7 +353,7 @@ impl LivePresentationResourceSession {
                     stride: background.stride,
                     format: background.format,
                     generation: 0,
-                    bytes: background.bytes,
+                    bytes: background.bytes.into(),
                 },
                 placement: LiveCompositionPlacement {
                     target: Rect {

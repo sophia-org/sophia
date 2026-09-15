@@ -210,7 +210,16 @@ fn accepted_presentation_keeps_witness_when_previous_owner_cleanup_fails() {
         .retire_tracked_rendered_primary_plane_scanout_after_page_flip(&device, &callback(2));
     assert_eq!(
         retired.status,
-        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::ResourceRetireFailed
+        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip
+    );
+    assert_eq!(
+        retired.runtime_scanout_state,
+        Some(sophia_engine::RuntimeScanoutState::Retired)
+    );
+    assert!(retired.destroy.is_some());
+    assert_ne!(
+        retired.destroy,
+        Some(LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed)
     );
     assert_eq!(retired.layout_witness, Some(expected()));
     assert!(retired.cleanup_pending);
@@ -284,5 +293,84 @@ fn untracked_presentation_reports_witness_even_when_its_resource_cleanup_fails()
         retry_rendered_primary_plane_scanout_cleanup(&device, cleanup)
             .cleanup
             .is_none()
+    );
+}
+
+#[test]
+fn cleanup_retries_release_a_healthy_successor_while_its_predecessor_stays_stuck() {
+    use sophia_backend_live::LiveTrackedRenderedPrimaryPlaneScanoutCleanupStatus as Cleanup;
+    let mut runtime =
+        assembly("fair-persistent-cleanup").with_persistent_rendered_primary_plane_scanout();
+    let device = Device::new(&[None, None]);
+    let mut first = Exporter::new();
+    first.source = None;
+    runtime.submit_and_track_rendered_primary_plane_scanout_with(&device, &mut first);
+    runtime.retire_tracked_rendered_primary_plane_scanout_after_page_flip(&device, &callback(1));
+    device.refuse_destroy.borrow_mut().insert(100);
+    let mut second = Exporter::new();
+    second.source = None;
+    runtime.submit_and_track_rendered_primary_plane_scanout_with(&device, &mut second);
+    let presented = runtime
+        .retire_tracked_rendered_primary_plane_scanout_after_page_flip(&device, &callback(2));
+    assert_eq!(
+        presented.status,
+        LiveTrackedRenderedPrimaryPlaneScanoutRetireStatus::RetiredAfterPageFlip
+    );
+    assert!(presented.cleanup_pending);
+    device.refuse_destroy.borrow_mut().insert(101);
+    assert_eq!(
+        runtime
+            .retire_displayed_rendered_primary_plane_scanout(&device)
+            .status,
+        Cleanup::CleanupFailed
+    );
+    device.refuse_destroy.borrow_mut().remove(&101);
+
+    let mut successful_with_remaining = 0;
+    for _ in 0..2 {
+        let outcome = runtime.retry_tracked_rendered_primary_plane_scanout_cleanup(&device);
+        assert!(outcome.cleanup_pending);
+        if outcome.status == Cleanup::CleanedUp {
+            successful_with_remaining += 1;
+            assert_eq!(
+                outcome.destroy,
+                Some(LibdrmNativePrimaryPlaneResourceDestroyStatus::Destroyed)
+            );
+        } else {
+            assert_eq!(outcome.status, Cleanup::CleanupFailed);
+        }
+    }
+    assert_eq!(
+        successful_with_remaining, 1,
+        "a stuck first owner must not starve the healthy second owner"
+    );
+    let count = |exporter: &Exporter| {
+        exporter
+            .dropped
+            .borrow()
+            .iter()
+            .filter(|id| **id == 1)
+            .count()
+    };
+    assert_eq!(count(&first), 0);
+    assert_eq!(count(&second), 1);
+    for _ in 0..4 {
+        let outcome = runtime.retry_tracked_rendered_primary_plane_scanout_cleanup(&device);
+        assert_eq!(outcome.status, Cleanup::CleanupFailed);
+        assert!(outcome.cleanup_pending);
+    }
+    assert_eq!(count(&first), 0);
+    assert_eq!(count(&second), 1);
+    device.refuse_destroy.borrow_mut().clear();
+    let outcome = runtime.retry_tracked_rendered_primary_plane_scanout_cleanup(&device);
+    assert_eq!(outcome.status, Cleanup::CleanedUp);
+    assert!(!outcome.cleanup_pending);
+    assert_eq!(count(&first), 1);
+    assert_eq!(count(&second), 1);
+    assert_eq!(
+        runtime
+            .retry_tracked_rendered_primary_plane_scanout_cleanup(&device)
+            .status,
+        Cleanup::NoCleanupPending
     );
 }

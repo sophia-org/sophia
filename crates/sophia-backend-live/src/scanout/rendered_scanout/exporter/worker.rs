@@ -36,11 +36,15 @@ pub(super) fn frame_correlation(
     frame: &PendingRenderedFrame,
     request: Option<LiveRendererWorkerRequestId>,
 ) -> LiveRendererFrameCorrelation {
-    let (trace, direct_scanout) = match frame {
-        PendingRenderedFrame::Mixed(frame) => (frame.trace, Some(frame.direct_scanout)),
-        _ => (None, None),
+    let (native, trace, direct_scanout) = match frame {
+        PendingRenderedFrame::Mixed(frame, native) => {
+            (*native, frame.trace, Some(frame.direct_scanout))
+        }
+        PendingRenderedFrame::Cpu { native, .. } => (*native, None, None),
+        PendingRenderedFrame::DmaBuf(_) => (None, None, None),
     };
     LiveRendererFrameCorrelation {
+        native,
         request,
         trace,
         direct_scanout,
@@ -925,7 +929,7 @@ fn pending_frame_kind_name(frame: &PendingRenderedFrame) -> &'static str {
     match frame {
         PendingRenderedFrame::Cpu { .. } => "cpu",
         PendingRenderedFrame::DmaBuf(_) => "dmabuf",
-        PendingRenderedFrame::Mixed(_) => "mixed",
+        PendingRenderedFrame::Mixed(..) => "mixed",
     }
 }
 

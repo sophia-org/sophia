@@ -49,13 +49,14 @@ where
         if !self.direct_scanout_enabled
             || !matches!(
                 self.pending_frame,
-                Some(PendingRenderedFrame::Mixed(ref frame)) if frame.direct_scanout.is_eligible()
+                Some(PendingRenderedFrame::Mixed(ref frame, _)) if frame.direct_scanout.is_eligible()
             )
         {
             return None;
         }
         {
-            let Some(PendingRenderedFrame::Mixed(mut frame)) = self.pending_frame.take() else {
+            let Some(PendingRenderedFrame::Mixed(mut frame, native)) = self.pending_frame.take()
+            else {
                 unreachable!("the match above admitted only an eligible mixed frame")
             };
             self.direct_scanout_attempts = self.direct_scanout_attempts.saturating_add(1);
@@ -68,6 +69,7 @@ where
                     self.record_direct_scanout_episode("exported", generation, "none");
                     let descriptor = buffer.descriptor;
                     let correlation = super::LiveRendererFrameCorrelation {
+                        native,
                         request: None,
                         trace: frame.trace,
                         direct_scanout: Some(frame.direct_scanout),
@@ -75,7 +77,7 @@ where
                     // Keep the composed form. Nothing has reached a screen yet
                     // -- the driver has not been asked -- and if it refuses,
                     // this is the frame that gets composed instead.
-                    self.direct_fallback = Some(frame);
+                    self.direct_fallback = Some((frame, native));
                     self.direct_scanout_tested = continuing_episode;
                     self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Exported);
                     return Some(
@@ -113,7 +115,7 @@ where
                     // and being refused for the same reason every frame.
                     frame.direct_scanout =
                         sophia_engine::DirectScanoutVerdict::CompositionRequired("refused");
-                    self.pending_frame = Some(PendingRenderedFrame::Mixed(frame));
+                    self.pending_frame = Some(PendingRenderedFrame::Mixed(frame, native));
                 }
             }
         }
@@ -184,7 +186,7 @@ where
     pub fn outstanding_direct_scene_generation(&self) -> Option<u64> {
         self.direct_fallback
             .as_ref()
-            .and_then(|frame| frame.trace)
+            .and_then(|(frame, _)| frame.trace)
             .map(|trace| trace.scene_generation)
     }
 
@@ -289,12 +291,12 @@ where
     /// becoming a loop, and what keeps it off the terminal submit-failure
     /// path entirely. See `PresentFlipOwnership.tla`, `CommitRefused`.
     pub fn fall_back_from_direct(&mut self) -> bool {
-        let Some(mut frame) = self.direct_fallback.take() else {
+        let Some((mut frame, native)) = self.direct_fallback.take() else {
             return false;
         };
         frame.direct_scanout = sophia_engine::DirectScanoutVerdict::CompositionRequired("refused");
         self.direct_scanout_fallbacks = self.direct_scanout_fallbacks.saturating_add(1);
-        self.requeue_pending_frame(PendingRenderedFrame::Mixed(frame));
+        self.requeue_pending_frame(PendingRenderedFrame::Mixed(frame, native));
         true
     }
 }

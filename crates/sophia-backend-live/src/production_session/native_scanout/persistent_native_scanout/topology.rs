@@ -1191,6 +1191,12 @@ impl LiveProductionNativeScanout {
         if indices.is_empty() {
             return Err("semantic startup requires at least one head".into());
         }
+        if indices.iter().any(|index| {
+            let custody = &self.heads[*index].scanout_custody;
+            !custody.can_adopt_displayed() || custody.cleanup_pending()
+        }) {
+            return Err("semantic startup found pre-existing native head custody".into());
+        }
         let singleton = indices.len() == 1;
         if singleton
             && (runtime.rendered_primary_plane_scanout_displayed()
@@ -1321,19 +1327,27 @@ impl LiveProductionNativeScanout {
                 if let Err(displayed) =
                     runtime.try_adopt_presented_rendered_primary_plane_scanout(displayed)
                 {
-                    self.heads[index].displayed_scanout = Some(
-                        displayed
-                            .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
-                    );
+                    self.heads[index]
+                        .scanout_custody
+                        .adopt_displayed(
+                            displayed.map_scanout_buffer(|owner| {
+                                Box::new(owner) as Box<dyn std::any::Any>
+                            }),
+                        )
+                        .expect("startup fallback custody prevalidated before commit");
                     adoption_errors.push(
                         "semantic singleton startup runtime rejected its displayed owner"
                             .to_owned(),
                     );
                 }
             } else {
-                self.heads[index].displayed_scanout = Some(
-                    displayed.map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
-                );
+                self.heads[index]
+                    .scanout_custody
+                    .adopt_displayed(
+                        displayed
+                            .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
+                    )
+                    .expect("startup head custody prevalidated before commit");
             }
             let exported_nonzero = self.exporters[index].composition_nonzero_rgb_pixels() > 0;
             if exported_nonzero {
@@ -1419,10 +1433,11 @@ impl LiveProductionNativeScanout {
             if let Some(cleanup) = cancelled.cleanup {
                 let cleanup =
                     cleanup.map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>);
-                if let Some(index) = self.head_index_for_head(head)
-                    && self.heads[index].scanout_cleanup.is_none()
-                {
-                    self.heads[index].scanout_cleanup = Some(cleanup);
+                if let Some(index) = self.head_index_for_head(head) {
+                    if let Err(cleanup) = self.heads[index].scanout_custody.accept_cleanup(cleanup)
+                    {
+                        self.output_topology_cleanup.push((head, cleanup));
+                    }
                 } else {
                     self.output_topology_cleanup.push((head, cleanup));
                 }
@@ -1603,9 +1618,9 @@ impl LiveProductionNativeScanout {
             && self.heads.iter().all(|head| {
                 head.rendering_content.is_none()
                     && head.submitted_content.is_none()
-                    && head.scanout_submission.is_none()
+                    && head.scanout_custody.submitted().is_none()
                     && head.prepared_scanout.is_none()
-                    && head.scanout_cleanup.is_none()
+                    && !head.scanout_custody.cleanup_pending()
             })
             && self
                 .exporters
@@ -1632,13 +1647,13 @@ impl LiveProductionNativeScanout {
             if head.submitted_content.is_some() {
                 return Some("head_submitted_content");
             }
-            if head.scanout_submission.is_some() {
+            if head.scanout_custody.submitted().is_some() {
                 return Some("head_scanout_submission");
             }
             if head.prepared_scanout.is_some() {
                 return Some("head_prepared_scanout");
             }
-            if head.scanout_cleanup.is_some() {
+            if head.scanout_custody.cleanup_pending() {
                 return Some("head_scanout_cleanup");
             }
         }
@@ -1662,9 +1677,9 @@ impl LiveProductionNativeScanout {
         let index = self.heads.iter().position(|head| {
             head.rendering_content.is_some()
                 || head.submitted_content.is_some()
-                || head.scanout_submission.is_some()
+                || head.scanout_custody.submitted().is_some()
                 || head.prepared_scanout.is_some()
-                || head.scanout_cleanup.is_some()
+                || head.scanout_custody.cleanup_pending()
         })?;
         let head = &self.heads[index];
         // Exporters are index-parallel with heads: both are built from one
@@ -1678,9 +1693,9 @@ impl LiveProductionNativeScanout {
             u8::from(head.pending_content.is_some()),
             u8::from(head.rendering_content.is_some()),
             u8::from(head.submitted_content.is_some()),
-            u8::from(head.scanout_submission.is_some()),
+            u8::from(head.scanout_custody.submitted().is_some()),
             u8::from(head.prepared_scanout.is_some()),
-            u8::from(head.scanout_cleanup.is_some()),
+            u8::from(head.scanout_custody.cleanup_pending()),
             exporter.map_or(2, |exporter| u8::from(exporter.pending_frame())),
             exporter.map_or(2, |exporter| u8::from(exporter.worker_in_flight())),
         ))
@@ -2439,6 +2454,12 @@ impl LiveProductionNativeScanout {
         }
 
         for install in &installed {
+            let custody = &self.heads[install.index].scanout_custody;
+            if custody.submitted().is_some() || !custody.can_retire_displayed() {
+                return Err(
+                    "topology adoption waits for submitted ownership and cleanup capacity".into(),
+                );
+            }
             if self.exporters[install.index].worker_in_flight() {
                 return Err("topology installation cannot replace active renderer work".into());
             }
@@ -2448,7 +2469,7 @@ impl LiveProductionNativeScanout {
         }
 
         for install in installed {
-            self.retire_topology_displayed_owner(install.index);
+            self.retire_topology_displayed_owner(install.index)?;
             let selected = if candidate {
                 state
                     .resources
@@ -2459,13 +2480,15 @@ impl LiveProductionNativeScanout {
                     .take_rollback(self.heads[install.index].head)
             }
             .expect("selected topology resources were prevalidated");
-            self.heads[install.index].displayed_scanout = match selected {
-                LiveProductionNativeTopologyCandidateResource::Enabled(owner) => Some(
-                    crate::adopt_prepared_rendered_topology_head_after_commit(owner)
-                        .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
-                ),
-                LiveProductionNativeTopologyCandidateResource::Disabled(_) => None,
-            };
+            if let LiveProductionNativeTopologyCandidateResource::Enabled(owner) = selected {
+                self.heads[install.index]
+                    .scanout_custody
+                    .adopt_displayed(
+                        crate::adopt_prepared_rendered_topology_head_after_commit(owner)
+                            .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn std::any::Any>),
+                    )
+                    .expect("topology adoption prevalidated before resource take");
+            }
             let head = &mut self.heads[install.index];
             head.enabled = install.enabled;
             head.selection = install.selection;
@@ -2504,25 +2527,11 @@ impl LiveProductionNativeScanout {
         Ok(logical_outputs)
     }
 
-    fn retire_topology_displayed_owner(&mut self, index: usize) {
-        let Some(previous) = self.heads[index].displayed_scanout.take() else {
-            return;
-        };
-        let crate::LiveRenderedPrimaryPlaneScanoutSubmission {
-            scanout_buffer,
-            primary_plane,
-            ..
-        } = previous;
-        let retired = primary_plane.retire(self.card(index));
-        if let Some(primary_plane) = retired.cleanup {
-            self.output_topology_cleanup.push((
-                self.heads[index].head,
-                crate::LiveRenderedPrimaryPlaneScanoutCleanup {
-                    scanout_buffer,
-                    primary_plane,
-                },
-            ));
-        }
+    fn retire_topology_displayed_owner(&mut self, index: usize) -> Result<(), &'static str> {
+        let group = self.heads[index].group;
+        self.heads[index].scanout_custody.retire_displayed(self.groups[group].session.card())
+            .map(|_| ())
+            .map_err(|()| "topology replacement retains displayed owner until cleanup capacity is available")
     }
 
     fn service_output_topology_preparation_inner(

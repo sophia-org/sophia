@@ -87,6 +87,8 @@ fn older_software_frame_may_retire_after_next_dma_frame_submits() {
     let retired = LiveProductionNativeFrameId::from_raw(30);
     let successor = LiveProductionNativeFrameId::from_raw(31);
     let software = LiveProductionScanoutContent::RetainedMixed {
+        logical_content_checksum: None,
+        requires_retirement: false,
         frame: retired,
         nonzero_rgb_pixels: 985,
     };

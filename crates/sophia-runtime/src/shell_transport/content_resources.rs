@@ -88,6 +88,29 @@ impl ShellSessionTransport {
         transaction: TransactionId,
         record: &ShellContentRecord,
     ) -> Result<(), ShellTransportError> {
+        if let ShellContentRecord::Action(action) = record {
+            return self.send_content_action(transaction, action);
+        }
+        self.queue_content_record(transaction, record, false)
+    }
+
+    pub(super) fn queue_content_record(
+        &mut self,
+        transaction: TransactionId,
+        record: &ShellContentRecord,
+        reserved: bool,
+    ) -> Result<(), ShellTransportError> {
+        let (frame, control) = self.prepare_content_frame(transaction, record, reserved)?;
+        self.output.push(frame, control);
+        Ok(())
+    }
+
+    pub(super) fn prepare_content_frame(
+        &self,
+        transaction: TransactionId,
+        record: &ShellContentRecord,
+        reserved: bool,
+    ) -> Result<(Vec<u8>, bool), ShellTransportError> {
         let grant = self
             .content_grant
             .ok_or(ShellTransportError::MissingCapability)?;
@@ -98,14 +121,18 @@ impl ShellSessionTransport {
             return Err(ShellTransportError::WrongContentGrant);
         }
         let frame = sophia_protocol::encode_shell_content_frame(transaction, record)?;
-        let limit = self
-            .content_limits
-            .as_ref()
-            .map_or(0, |limits| limits.max_output_queue_bytes as usize);
-        if self.output.len().saturating_add(frame.len()) > limit {
+        let bulk = matches!(
+            record,
+            ShellContentRecord::Limits(_) | ShellContentRecord::OutputFacts(_)
+        );
+        if (!bulk && frame.len() > super::control_budget::CONTROL_FRAME_BYTES)
+            || !self.frame_capacity_available(frame.len(), !bulk, reserved)
+        {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
-        self.send_async(frame)
+        // No socket I/O after ownership transfer. A later partial/failed write
+        // cannot make the producer recreate an already-owned response.
+        Ok((frame, !bulk))
     }
 
     fn poll_content_resource_record(
@@ -132,6 +159,16 @@ impl ShellSessionTransport {
         if content_admission::record_grant(&record) != self.content_grant {
             return Err(ShellTransportError::WrongContentGrant);
         }
+        let needed = self
+            .content_epochs
+            .active()
+            .ok_or(ShellTransportError::MissingCapability)?
+            .additional_response_credit(&record);
+        if !self.control_capacity_available(needed) {
+            self.inbox
+                .insert(at.expect("selected frame has an index"), frame);
+            return Ok(None);
+        }
         Ok(Some((transaction, record)))
     }
 
@@ -144,11 +181,18 @@ impl ShellSessionTransport {
             let Some(event) = event else {
                 return Ok(());
             };
-            self.send_content_record(event.transaction, &event.record)?;
-            self.content_epochs
-                .active_mut()
-                .expect("event came from the active content owner")
-                .take_event();
+            let (frame, control) =
+                self.prepare_content_frame(event.transaction, &event.record, true)?;
+            let Some(store) = self.content_epochs.active_mut() else {
+                return Err(ShellTransportError::MissingCapability);
+            };
+            // Validate custody before the only allocating operation (push).
+            // Afterwards pop_front is infallible and has no user drop code.
+            if store.pending_event() != Some(&event) {
+                return Err(ShellTransportError::WrongContentRecord);
+            }
+            self.output.push(frame, control);
+            store.take_event();
         }
     }
 }

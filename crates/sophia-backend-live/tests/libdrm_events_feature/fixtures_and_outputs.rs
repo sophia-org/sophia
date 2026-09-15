@@ -399,6 +399,8 @@ fn stable_present_requires_this_transaction_displayed_with_real_pixels() {
     // that a particular one was shown.
     assert!(!live_production_scanout_is_stable_present(
         Some(LiveProductionScanoutContent::RetainedMixed {
+ logical_content_checksum: None,
+ requires_retirement: false,
             frame: sophia_backend_live::LiveProductionNativeFrameId::from_raw(4),
             nonzero_rgb_pixels: 1,
         }),

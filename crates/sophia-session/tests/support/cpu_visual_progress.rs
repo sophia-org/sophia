@@ -61,6 +61,8 @@ fn mixed_retirement_cannot_inherit_a_stale_logical_checksum() {
     );
     assert_eq!(
         presented_logical_checksum(Some(LiveProductionScanoutContent::RetainedMixed {
+            logical_content_checksum: None,
+            requires_retirement: false,
             frame,
             nonzero_rgb_pixels: 1,
         })),

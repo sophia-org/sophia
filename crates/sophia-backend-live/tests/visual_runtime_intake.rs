@@ -604,11 +604,15 @@ fn mirror_content_identity_tracks_logical_pixels_not_head_local_metrics() {
     );
 
     let retained = LiveProductionScanoutContent::RetainedMixed {
+        logical_content_checksum: None,
+        requires_retirement: false,
         frame,
         nonzero_rgb_pixels: 10,
     };
     assert!(
         retained.same_logical_identity(LiveProductionScanoutContent::RetainedMixed {
+            logical_content_checksum: None,
+            requires_retirement: false,
             frame,
             nonzero_rgb_pixels: 20,
         })
@@ -753,6 +757,8 @@ fn only_logical_scene_content_can_own_a_cpu_progress_target() {
     );
     assert_eq!(
         LiveProductionScanoutContent::RetainedMixed {
+            logical_content_checksum: None,
+            requires_retirement: false,
             frame,
             nonzero_rgb_pixels: 1,
         }

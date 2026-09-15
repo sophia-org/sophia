@@ -100,6 +100,7 @@ fn render(commands: &SyncSender<WorkerCommand>, output: LiveRendererWorkerOutput
                 height: 1080,
             }),
             frame: super::PendingRenderedFrame::Cpu {
+                native: None,
                 frame: sophia_renderer_live::LiveCpuComposedFrame {
                     size: Size {
                         width: 1920,

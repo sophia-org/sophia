@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use sophia_engine::PresentedContentTarget;
 use sophia_protocol::{
     ContentAction, ContentActionAck, ContentReason, ShellIndicatorActivation, TransactionId,
@@ -35,11 +33,37 @@ struct PendingAction {
     cancel_sent: bool,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug)]
 pub(super) struct ContentActionLedger {
     next_event_id: u64,
     issued_high_water: u64,
-    live: BTreeMap<u64, PendingAction>,
+    live: Vec<PendingAction>,
+}
+
+// r5 advertises at most sixteen actions. Reserve once before a connection
+// can issue anything; neither issuance nor cancellation bookkeeping allocates.
+const ACTION_CAPACITY: usize = 16;
+
+impl Default for ContentActionLedger {
+    fn default() -> Self {
+        Self {
+            next_event_id: 1,
+            issued_high_water: 0,
+            live: Vec::with_capacity(ACTION_CAPACITY),
+        }
+    }
+}
+
+impl Clone for ContentActionLedger {
+    fn clone(&self) -> Self {
+        let mut copy = Self {
+            next_event_id: self.next_event_id,
+            issued_high_water: self.issued_high_water,
+            ..Self::default()
+        };
+        copy.live.extend(self.live.iter().cloned());
+        copy
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,6 +88,7 @@ impl ContentActionLedger {
         transport: &mut ShellSessionTransport,
     ) -> Result<Option<u64>, ShellTransportError> {
         if self.live.len() >= limits.max_pending_actions as usize
+            || self.live.len() >= self.live.capacity()
             || !transport.content_action_capacity_available()
         {
             return Ok(None);
@@ -79,17 +104,14 @@ impl ContentActionLedger {
         transport.send_content_action(transaction, &action)?;
         self.next_event_id = next;
         self.issued_high_water = event_id;
-        self.live.insert(
-            event_id,
-            PendingAction {
-                action,
-                target,
-                deadline_msec,
-                ack: AckState::Awaiting,
-                activation: ActivationState::Awaiting,
-                cancel_sent: false,
-            },
-        );
+        self.live.push(PendingAction {
+            action,
+            target,
+            deadline_msec,
+            ack: AckState::Awaiting,
+            activation: ActivationState::Awaiting,
+            cancel_sent: false,
+        });
         Ok(Some(event_id))
     }
 
@@ -105,25 +127,45 @@ impl ContentActionLedger {
                 break;
             };
             processed += 1;
-            let Some(pending) = self.live.get_mut(&ack.event_id) else {
-                continue;
-            };
-            if !ack_matches(&ack, &pending.action) || now_msec > pending.deadline_msec {
-                pending.ack = AckState::Rejected;
-                pending.activation = ActivationState::Rejected;
-                continue;
-            }
-            pending.ack = match ack.disposition {
-                ACK_CONSUMED => AckState::Consumed,
-                ACK_REJECTED_STALE => {
-                    pending.activation = ActivationState::Rejected;
-                    AckState::Rejected
-                }
-                _ => return Err(ShellTransportError::WrongContentRecord),
-            };
+            self.acknowledge(&ack, now_msec)?;
         }
         self.collect_terminal(now_msec);
+        transport.retain_content_action_reservations(|event| {
+            self.live
+                .iter()
+                .any(|pending| pending.action.event_id == event)
+        });
         Ok(processed)
+    }
+
+    fn acknowledge(
+        &mut self,
+        ack: &ContentActionAck,
+        now_msec: u64,
+    ) -> Result<(), ShellTransportError> {
+        let Some(pending) = self
+            .live
+            .iter_mut()
+            .find(|pending| pending.action.event_id == ack.event_id)
+        else {
+            return Ok(());
+        };
+        // An event number is only a lookup key. A different presented identity
+        // cannot reject or consume the real event, even when it arrives late.
+        if !ack_matches(ack, &pending.action)
+            || now_msec > pending.deadline_msec
+            || pending.ack != AckState::Awaiting
+        {
+            return Ok(());
+        }
+        pending.ack = match ack.disposition {
+            ACK_CONSUMED => AckState::Consumed,
+            ACK_REJECTED_STALE => AckState::Rejected,
+            _ => return Err(ShellTransportError::WrongContentRecord),
+        };
+        // Receipt and WM authority are orthogonal; neither ACK outcome can
+        // undo an effect already admitted by the WM owner.
+        Ok(())
     }
 
     pub(super) fn indicator_admission(
@@ -134,11 +176,15 @@ impl ContentActionLedger {
         if activation.event_id == 0 || activation.event_id > self.issued_high_water {
             return LinkedIndicatorAdmission::Stale;
         }
-        let Some(pending) = self.live.get(&activation.event_id) else {
+        let Some(pending) = self
+            .live
+            .iter()
+            .find(|pending| pending.action.event_id == activation.event_id)
+        else {
             return LinkedIndicatorAdmission::Stale;
         };
         if now_msec > pending.deadline_msec
-            || pending.ack != AckState::Consumed
+            || activation.connection_epoch != pending.action.grant.connection_epoch
             || pending.activation != ActivationState::Awaiting
             || activation.output.raw() != pending.action.output.id
             || activation.indicator != pending.action.target_id
@@ -150,52 +196,83 @@ impl ContentActionLedger {
     }
 
     pub(super) fn wm_admitted(&mut self, event_id: u64, now_msec: u64) {
-        if let Some(pending) = self.live.get_mut(&event_id) {
+        if let Some(pending) = self
+            .live
+            .iter_mut()
+            .find(|pending| pending.action.event_id == event_id)
+        {
             pending.activation = ActivationState::WmAdmitted;
         }
         self.collect_terminal(now_msec);
     }
 
     pub(super) fn wm_rejected(&mut self, event_id: u64, now_msec: u64) {
-        if let Some(pending) = self.live.get_mut(&event_id) {
+        if let Some(pending) = self
+            .live
+            .iter_mut()
+            .find(|pending| pending.action.event_id == event_id)
+            && pending.activation != ActivationState::WmAdmitted
+        {
             pending.activation = ActivationState::Rejected;
         }
         self.collect_terminal(now_msec);
     }
 
-    pub(super) fn cancel_stale(
+    /// Select one cancellation without transferring its obligation out of the
+    /// ledger. A refused enqueue can retry the same identity and reserved credit.
+    fn next_cancellation(
         &mut self,
         presented: &[sophia_engine::PresentedContentBinding],
         now_msec: u64,
-    ) -> Vec<ContentAction> {
-        let mut cancellations = Vec::new();
-        for pending in self.live.values_mut() {
-            if pending.activation == ActivationState::WmAdmitted
-                || presented.iter().any(|binding| {
-                    binding
-                        .targets
-                        .iter()
-                        .any(|target| target == &pending.target)
-                })
-            {
+    ) -> Option<usize> {
+        self.collect_terminal(now_msec);
+        for (index, pending) in self.live.iter_mut().enumerate() {
+            let expired = now_msec >= pending.deadline_msec;
+            let current = presented.iter().any(|binding| {
+                binding
+                    .targets
+                    .iter()
+                    .any(|target| target == &pending.target)
+            });
+            if !expired && (pending.activation == ActivationState::WmAdmitted || current) {
                 continue;
             }
             if pending.ack == AckState::Awaiting && !pending.cancel_sent {
-                cancellations.push(action_from_target(
-                    &pending.target,
-                    pending.action.event_id,
-                    ACTION_CANCEL,
-                ));
-                pending.cancel_sent = true;
+                return Some(index);
             }
+            if pending.activation != ActivationState::WmAdmitted {
+                pending.activation = ActivationState::Rejected;
+            }
+        }
+        None
+    }
+
+    fn queue_cancellation(
+        &mut self,
+        index: usize,
+        transaction: TransactionId,
+        transport: &mut ShellSessionTransport,
+    ) -> Result<(), ShellTransportError> {
+        let pending = &self.live[index];
+        let cancellation =
+            action_from_target(&pending.target, pending.action.event_id, ACTION_CANCEL);
+        transport.send_content_action(transaction, &cancellation)?;
+        // Index and ownership were validated before enqueue. No allocation,
+        // callback or fallible operation intervenes after FIFO ownership.
+        self.cancellation_queued(index);
+        Ok(())
+    }
+
+    fn cancellation_queued(&mut self, index: usize) {
+        let pending = &mut self.live[index];
+        pending.cancel_sent = true;
+        if pending.activation != ActivationState::WmAdmitted {
             pending.activation = ActivationState::Rejected;
         }
-        self.collect_terminal(now_msec);
-        cancellations
     }
 
     pub(super) fn expire(&mut self, now_msec: u64) {
-        for pending in self.live.values_mut() {
+        for pending in self.live.iter_mut() {
             if now_msec >= pending.deadline_msec
                 && pending.activation != ActivationState::WmAdmitted
             {
@@ -206,18 +283,16 @@ impl ContentActionLedger {
     }
 
     fn collect_terminal(&mut self, now_msec: u64) {
-        self.live.retain(|_, pending| {
-            if now_msec >= pending.deadline_msec {
+        self.live.retain(|pending| {
+            // Cancel itself has no ACK. Until its FIFO transfer, even an
+            // expired event still owns the reserved cancellation response.
+            if pending.cancel_sent {
                 return false;
             }
-            !matches!(
-                (pending.ack, pending.activation),
-                (AckState::Rejected, _)
-                    | (
-                        AckState::Consumed,
-                        ActivationState::WmAdmitted | ActivationState::Rejected
-                    )
-            )
+            if pending.ack == AckState::Awaiting {
+                return true;
+            }
+            now_msec < pending.deadline_msec && pending.activation == ActivationState::Awaiting
         });
     }
 }
@@ -256,8 +331,24 @@ impl super::super::LiveMetadataShell {
     pub(in crate::live_session) fn issue_content_activation(
         &mut self,
         target: PresentedContentTarget,
+        runtime: &sophia_backend_live::LiveProductionVisualRuntime,
     ) -> Result<Option<u64>, Box<dyn std::error::Error>> {
-        if !self.content.input_requested {
+        if !self.content.input_requested || self.transport.content_grant() != Some(target.grant) {
+            return Ok(None);
+        }
+        // Native retirement is the only source of Presented. Publish all
+        // bounded pending retirements before putting this Action on the FIFO.
+        while self.observe_content_presentation(runtime)? {}
+        if !self
+            .content
+            .presented
+            .get(&target.output)
+            .is_some_and(|published| {
+                published.grant == target.grant
+                    && published.candidate_generation == target.candidate_generation
+                    && published.presentation_epoch == target.presentation_epoch
+            })
+        {
             return Ok(None);
         }
         let now = self.content.now_msec();
@@ -289,14 +380,21 @@ impl super::super::LiveMetadataShell {
             .content
             .actions
             .service_acks(&mut self.transport, now, maximum)?;
-        let cancellations = self.content.actions.cancel_stale(presented, now);
-        for cancellation in cancellations {
+        while let Some(index) = self.content.actions.next_cancellation(presented, now) {
             let transaction = self.take_transaction()?;
-            self.transport
-                .send_content_action(transaction, &cancellation)?;
+            self.content
+                .actions
+                .queue_cancellation(index, transaction, &mut self.transport)?;
             processed = processed.saturating_add(1);
         }
         self.content.actions.expire(now);
+        self.transport.retain_content_action_reservations(|event| {
+            self.content
+                .actions
+                .live
+                .iter()
+                .any(|pending| pending.action.event_id == event)
+        });
         Ok(processed)
     }
 
@@ -330,3 +428,7 @@ impl super::super::LiveMetadataShell {
 
 #[path = "actions/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "actions/transport_tests.rs"]
+mod transport_tests;

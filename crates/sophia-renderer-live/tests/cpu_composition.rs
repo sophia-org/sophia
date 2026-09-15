@@ -37,7 +37,10 @@ fn shared_cpu_source_moves_pixels_once_and_clones_the_arc() {
 
     assert_eq!(source.bytes.as_ptr(), allocation);
     let cloned = source.clone();
-    assert!(Arc::ptr_eq(&source.bytes, &cloned.bytes));
+    assert!(std::ptr::eq(
+        source.bytes.as_slice(),
+        cloned.bytes.as_slice()
+    ));
     assert_eq!(source.handle, cloned.handle);
     assert_eq!(source.generation, cloned.generation);
 }
@@ -566,7 +569,9 @@ fn production_scene_keeps_display_list_attached_to_composed_primary_pixels() {
             .output_damage_snapshot
             .as_ref()
             .map(|snapshot| &snapshot.compositor_display_list),
-        Some(&display_list),
+        Some(&sophia_engine::CompositorDamageList::from(
+            display_list.clone()
+        )),
     );
 }
 

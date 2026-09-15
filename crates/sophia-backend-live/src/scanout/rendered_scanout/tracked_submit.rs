@@ -11,10 +11,7 @@ pub(crate) fn track_rendered_primary_plane_scanout_submit_from_target_and_select
     scanout_target: LiveKmsScanoutTargetStatus,
     output_size: Option<Size>,
     target: Option<LiveGbmEglFrameTargetRecord>,
-    rendered_primary_plane_scanout_submission: &mut Option<
-        BoxedRenderedPrimaryPlaneScanoutSubmission,
-    >,
-    rendered_primary_plane_scanout_cleanup: &mut Option<BoxedRenderedPrimaryPlaneScanoutCleanup>,
+    custody: &mut crate::PersistentScanoutCustody,
     rendered_primary_plane_runtime_scanout_state: &mut Option<RuntimeScanoutState>,
     rendered_primary_plane_scanout_in_flight_ticks: &mut u64,
     submitted_after_page_flip_serial: Option<u64>,
@@ -32,7 +29,7 @@ where
     E: LiveRenderedScanoutBufferExporter,
     E::Owner: LiveRenderedScanoutBufferPrimeSource + 'static,
 {
-    if rendered_primary_plane_scanout_submission.is_some() {
+    if custody.submitted().is_some() {
         *rendered_primary_plane_runtime_scanout_state = Some(RuntimeScanoutState::Deferred);
         push_pending_runtime_scanout_state(
             pending_runtime_scanout_states,
@@ -63,12 +60,12 @@ where
             runtime_scanout_state: Some(RuntimeScanoutState::Deferred),
             in_flight: true,
             in_flight_ticks: *rendered_primary_plane_scanout_in_flight_ticks,
-            cleanup_pending: rendered_primary_plane_scanout_cleanup.is_some(),
+            cleanup_pending: custody.cleanup_pending(),
             cursor_dropped: false,
         };
     }
 
-    if rendered_primary_plane_scanout_cleanup.is_some() {
+    if custody.cleanup_pending() {
         *rendered_primary_plane_runtime_scanout_state = Some(RuntimeScanoutState::Deferred);
         push_pending_runtime_scanout_state(
             pending_runtime_scanout_states,
@@ -116,16 +113,19 @@ where
     let runtime_scanout_state = Some(result.runtime_scanout_state());
 
     if let Some(submission) = result.submission.take() {
-        *rendered_primary_plane_scanout_submission = Some(
-            submission
-                .with_submitted_after_page_flip_serial(submitted_after_page_flip_serial)
-                .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn Any>),
-        );
+        custody
+            .accept_submission(
+                submission
+                    .with_submitted_after_page_flip_serial(submitted_after_page_flip_serial)
+                    .map_scanout_buffer(|owner| Box::new(owner) as Box<dyn Any>),
+            )
+            .expect("submission capacity checked before device call");
     }
     let cleanup_pending = result.cleanup.is_some();
     if let Some(cleanup) = result.cleanup.take() {
-        *rendered_primary_plane_scanout_cleanup =
-            Some(cleanup.map_scanout_buffer(|owner| Box::new(owner) as Box<dyn Any>));
+        custody
+            .accept_cleanup(cleanup.map_scanout_buffer(|owner| Box::new(owner) as Box<dyn Any>))
+            .expect("cleanup capacity checked before device call");
     }
     *rendered_primary_plane_scanout_in_flight_ticks = 0;
     *rendered_primary_plane_runtime_scanout_state = runtime_scanout_state;
@@ -158,7 +158,7 @@ where
         atomic_test: result.atomic_test,
         layout_witness: result.layout_witness,
         runtime_scanout_state,
-        in_flight: rendered_primary_plane_scanout_submission.is_some(),
+        in_flight: custody.submitted().is_some(),
         in_flight_ticks: *rendered_primary_plane_scanout_in_flight_ticks,
         cleanup_pending,
         cursor_dropped: result.cursor_dropped,

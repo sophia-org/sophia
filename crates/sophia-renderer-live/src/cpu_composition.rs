@@ -1,4 +1,6 @@
+mod pixel_storage;
 mod solid;
+pub use pixel_storage::LiveCpuPixelStorage;
 pub use solid::solid_color_buffer;
 use solid::{compose_solid_rect, compose_solid_rect_clipped};
 use std::sync::{Arc, OnceLock};
@@ -39,7 +41,7 @@ pub struct LiveSharedCpuBufferSource {
     pub stride: u32,
     pub format: u32,
     pub generation: u64,
-    pub bytes: Arc<Vec<u8>>,
+    pub bytes: LiveCpuPixelStorage,
 }
 
 impl From<LiveCpuBufferSource> for LiveSharedCpuBufferSource {
@@ -55,7 +57,7 @@ impl From<LiveCpuBufferSource> for LiveSharedCpuBufferSource {
             stride: buffer.stride,
             format: buffer.format,
             generation: buffer.generation,
-            bytes: buffer.bytes,
+            bytes: buffer.bytes.into(),
         }
     }
 }

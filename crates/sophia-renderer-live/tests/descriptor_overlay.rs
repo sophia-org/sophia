@@ -1,7 +1,5 @@
 #![cfg(feature = "gbm-probe")]
 
-use std::sync::Arc;
-
 use sophia_engine::{
     ChromeDescriptorTable, CompositorDisplayCommand, CompositorDisplayList, CompositorNodeId,
     CompositorRgb8, DescriptorOverlayCandidate, DescriptorOverlayEntry, DescriptorOverlayNodeRole,
@@ -221,7 +219,10 @@ fn bundled_text_raster_is_deterministic_bounded_and_safe_to_evict() {
     let first = first_cache.raster_for(&request).unwrap();
     let retained = first_cache.raster_for(&request).unwrap();
     assert_eq!(first.handle, retained.handle);
-    assert!(Arc::ptr_eq(&first.bytes, &retained.bytes));
+    assert!(std::ptr::eq(
+        first.bytes.as_slice(),
+        retained.bytes.as_slice()
+    ));
     assert!(first.bytes.chunks_exact(4).any(|pixel| pixel[3] != 0));
 
     let mut second_cache = CompositorTextRasterCache::default();
@@ -237,7 +238,7 @@ fn bundled_text_raster_is_deterministic_bounded_and_safe_to_evict() {
     assert_eq!(stats.entries, COMPOSITOR_TEXT_CACHE_MAX_ENTRIES);
     assert!(stats.evictions >= 2);
     assert!(stats.bytes <= sophia_renderer_live::COMPOSITOR_TEXT_CACHE_MAX_BYTES);
-    assert!(Arc::strong_count(&first.bytes) >= 1);
+    assert!(first.bytes.chunks_exact(4).any(|pixel| pixel[3] != 0));
 
     assert!(
         projection(1)

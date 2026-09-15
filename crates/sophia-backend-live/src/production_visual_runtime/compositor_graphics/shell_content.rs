@@ -9,6 +9,17 @@ impl LiveProductionVisualRuntime {
         scene: &LiveProductionCpuScene,
         native_scanout: Option<&mut LiveProductionNativeScanout>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        self.set_shell_content_on_target(frame, scene, native_scanout)
+    }
+
+    pub(in crate::production_visual_runtime) fn set_shell_content_on_target<
+        T: NativeCompositionTarget,
+    >(
+        &mut self,
+        frame: LiveShellContentFrame,
+        scene: &LiveProductionCpuScene,
+        native_scanout: Option<&mut T>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         if !frame.output.is_valid()
             || frame.candidate_generation == 0
             || frame.images.is_empty()
@@ -30,7 +41,7 @@ impl LiveProductionVisualRuntime {
         }
         let native_scanout = native_scanout
             .ok_or("shell content candidate cannot be accepted without native presentation")?;
-        if !self.shell_content_presentation_available(native_scanout) {
+        if self.native_suspended || !native_scanout.frame_service_available() {
             return Err(
                 "shell content candidate cannot be accepted while native presentation is quiesced"
                     .into(),
@@ -123,18 +134,10 @@ impl LiveProductionVisualRuntime {
             .iter()
             .find(|projection| projection.output == output)?;
         let presented = self.tab_frames.get(&output).is_some_and(|display_list| {
-            let images = display_list.content_images().collect::<Vec<_>>();
-            !images.is_empty()
-                && images.iter().all(|image| {
-                    matches!(
-                        image.node,
-                        CompositorNodeId::ShellContent {
-                            output: image_output,
-                            candidate,
-                            ..
-                        } if image_output == output && candidate == candidate_generation
-                    )
-                })
+            crate::production_visual_runtime::projection::presented_content_list_matches(
+                display_list,
+                frame,
+            )
         });
         presented.then_some(projection.epoch.max(1))
     }

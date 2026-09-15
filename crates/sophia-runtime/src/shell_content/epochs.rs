@@ -87,6 +87,20 @@ impl ContentEpochPool {
     pub fn reserved_backing_bytes(&self) -> u64 {
         self.reserved_live_backing + self.retired_backing_bytes()
     }
+    pub(crate) fn active_bulk_occupancy(&self) -> (usize, usize) {
+        self.active
+            .as_ref()
+            .map_or((0, 0), |epoch| epoch.allocations.queued_bulk_occupancy())
+    }
+
+    pub(crate) fn active_control_occupancy(&self) -> usize {
+        self.active.as_ref().map_or(0, |epoch| {
+            epoch.resources.control_occupancy()
+                + epoch.candidates.control_occupancy()
+                + epoch.allocations.control_occupancy()
+        })
+    }
+
     pub fn active_mut(&mut self) -> Option<&mut ContentResourceStore> {
         self.active.as_mut().map(|epoch| &mut epoch.resources)
     }

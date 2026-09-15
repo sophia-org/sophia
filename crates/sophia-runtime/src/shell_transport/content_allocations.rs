@@ -14,10 +14,11 @@ impl ShellSessionTransport {
         facts_generation: u64,
         outputs: Vec<ContentOutputFactsEntry>,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(
-            OUTPUT_FACTS_PREFIX_BYTES
-                .saturating_add(outputs.len().saturating_mul(OUTPUT_FACT_BYTES)),
-        )?;
+        let bytes = OUTPUT_FACTS_PREFIX_BYTES
+            .saturating_add(outputs.len().saturating_mul(OUTPUT_FACT_BYTES));
+        if !self.bulk_capacity_available(bytes) {
+            return Err(ShellTransportError::ContentQueueSaturated);
+        }
         self.content_epochs
             .active_allocations_mut()
             .ok_or(ShellTransportError::MissingCapability)?
@@ -37,7 +38,7 @@ impl ShellSessionTransport {
         let mut processed = 0;
         while processed < limits.max_frames_per_service_tick as usize {
             if self
-                .require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES)
+                .require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 1)
                 .is_err()
             {
                 break;
@@ -98,7 +99,7 @@ impl ShellSessionTransport {
         snapshot: ContentAllocationSnapshot,
         presented_parents: &[(ContentAllocationId, u64)],
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES)?;
+        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 0)?;
         self.content_epochs
             .active_allocations_mut()
             .ok_or(ShellTransportError::MissingCapability)?
@@ -111,7 +112,7 @@ impl ShellSessionTransport {
         request_id: u64,
         error: ContentAllocationError,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES)?;
+        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 0)?;
         self.content_epochs
             .active_allocations_mut()
             .ok_or(ShellTransportError::MissingCapability)?
@@ -123,7 +124,7 @@ impl ShellSessionTransport {
         &mut self,
         request_id: u64,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES)?;
+        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 0)?;
         self.content_epochs
             .active_allocations_mut()
             .ok_or(ShellTransportError::MissingCapability)?
@@ -137,7 +138,7 @@ impl ShellSessionTransport {
         allocation: ContentAllocationId,
         reason: ContentReason,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES)?;
+        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 1)?;
         self.content_epochs
             .active_allocations_mut()
             .ok_or(ShellTransportError::MissingCapability)?
@@ -146,7 +147,7 @@ impl ShellSessionTransport {
     }
 
     pub fn expire_content_allocations(&mut self, now_msec: u64) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES)?;
+        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 0)?;
         self.content_epochs
             .active_allocations_mut()
             .ok_or(ShellTransportError::MissingCapability)?
@@ -161,12 +162,18 @@ impl ShellSessionTransport {
             .unwrap_or_default()
     }
 
-    fn require_allocation_output_capacity(&self, bytes: usize) -> Result<(), ShellTransportError> {
+    fn require_allocation_output_capacity(
+        &self,
+        bytes: usize,
+        additional: usize,
+    ) -> Result<(), ShellTransportError> {
         let limits = self
             .content_limits
             .as_ref()
             .ok_or(ShellTransportError::MissingCapability)?;
-        if self.output.len().saturating_add(bytes) > limits.max_output_queue_bytes as usize {
+        if !self.control_capacity_available(additional)
+            || self.output.len().saturating_add(bytes) > limits.max_output_queue_bytes as usize
+        {
             Err(ShellTransportError::ContentQueueSaturated)
         } else {
             Ok(())
@@ -207,22 +214,16 @@ impl ShellSessionTransport {
             let Some(event) = event else {
                 return Ok(());
             };
-            let frame =
-                sophia_protocol::encode_shell_content_frame(event.transaction, &event.record)?;
-            if self.output.len().saturating_add(frame.len())
-                > self
-                    .content_limits
-                    .as_ref()
-                    .ok_or(ShellTransportError::MissingCapability)?
-                    .max_output_queue_bytes as usize
-            {
-                return Err(ShellTransportError::ContentQueueSaturated);
+            let (frame, control) =
+                self.prepare_content_frame(event.transaction, &event.record, true)?;
+            let Some(store) = self.content_epochs.active_allocations_mut() else {
+                return Err(ShellTransportError::MissingCapability);
+            };
+            if store.pending_event() != Some(&event) {
+                return Err(ShellTransportError::WrongContentRecord);
             }
-            self.output.extend(frame);
-            self.content_epochs
-                .active_allocations_mut()
-                .expect("event requires active allocations")
-                .take_event();
+            self.output.push(frame, control);
+            store.take_event();
         }
     }
 }

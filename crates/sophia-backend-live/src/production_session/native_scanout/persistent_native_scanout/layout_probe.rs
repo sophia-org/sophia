@@ -35,7 +35,7 @@ impl LiveProductionNativeScanout {
                 .filter(|head| head.group == group)
                 .all(|head| {
                     head.submitted_sequence.is_none()
-                        && head.scanout_submission.is_none()
+                        && head.scanout_custody.submitted().is_none()
                         && head.prepared_scanout.is_none()
                 })
             && self

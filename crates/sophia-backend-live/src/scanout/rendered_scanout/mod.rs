@@ -1,4 +1,8 @@
 mod backpressure;
+#[cfg(feature = "libdrm-events")]
+mod custody;
+#[cfg(feature = "libdrm-events")]
+pub(crate) use custody::*;
 mod exporter;
 #[cfg(feature = "libdrm-events")]
 mod layout_probe;

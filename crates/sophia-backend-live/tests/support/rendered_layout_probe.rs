@@ -304,6 +304,7 @@ impl LiveRenderedScanoutBufferExporter for Exporter {
 
 fn correlation(original: bool) -> LiveRendererFrameCorrelation {
     LiveRendererFrameCorrelation {
+        native: None,
         request: None,
         trace: Some(LiveCompositionTrace {
             output: OutputId::from_raw(1),

@@ -855,3 +855,30 @@ assumed. `InputDeliveryRecoveryNoDeadline.cfg` must fail delivery liveness;
 `InputDeliveryRecoveryEarlyBarrier.cfg` must violate `BarrierSound`.
 The brief and source mapping are in `input-delivery-recovery/`. This is bounded
 model checking, not a physical session or native-client trace acceptance.
+
+`ShellContentOutbox.tla` models the owned content response boundary for two
+outputs in one grant. `Accept` reserves producer credits; native completion makes
+the exact Presented response eligible but does not send it. `Transfer` corresponds
+to `prepare_content_frame`, producer validation, FIFO insertion and the subsequent
+infallible producer pop. Allocation/refusal before insertion is a stutter; peer
+loss settles the remaining inventory as lost, never delivered. The implementation
+has no fallible operation between successful FIFO insertion and producer removal.
+
+The model keeps complete frame charges through partial writes, includes bulk in
+the aggregate record and byte budget, and reserves both Action and Cancel before
+admission. A held resource consumer does not gate an otherwise admissible action.
+It abstracts fixed response envelopes to two units and one bulk frame to three;
+its five-record/twelve-unit bounds explore contention, not the negotiated numeric
+profile. Exact codec sizes and negotiated limits are Rust regression obligations.
+The model does not simulate GPU execution, toolkit state, complete reference
+counts, a reconnecting grant, or native latency; those remain separate evidence.
+No fairness or driver-progress guarantee is inferred from its safety checks.
+
+Five registered negative controls require their precise invariant failure:
+`DuplicateTransfer` -> `OneCustodian`, `EarlyCredit` ->
+`ChargedUntilLastByte`, `ActionOvertakes` -> `PresentedBeforeAction`,
+`BulkStealsCredit` -> `AggregateBudget`, and `ActionWaitsForRelease` ->
+`ReleaseDoesNotGateAction`. The last is an enabled-transition check, not a claim
+that a peer or GPU will make progress. `ShellPresentedContentAction` now models
+WM activation request separately from ACK receipt, matching the independently
+authorized production paths; its existing six controls remain required.

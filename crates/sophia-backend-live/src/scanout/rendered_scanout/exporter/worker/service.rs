@@ -423,6 +423,7 @@ where
             frame,
             checksum,
             damage_snapshot,
+            ..
         } => {
             let reused = state.free_cpu_buffers
                 .iter()
@@ -494,7 +495,7 @@ where
             ),
             None,
         ),
-        PendingRenderedFrame::Mixed(frame) => {
+        PendingRenderedFrame::Mixed(frame, _) => {
             // What the slot's buffer would owe at each age it might report. The
             // age is only knowable inside the render, so every answer travels
             // with the frame and the renderer picks the one that applies.

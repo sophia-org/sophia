@@ -6,7 +6,7 @@ use crate::prelude::*;
 pub struct LivePreparedRenderedPrimaryPlaneScanout<Owner> {
     pub(super) scanout_buffer: Owner,
     pub(super) primary_plane: LibdrmNativePrimaryPlanePreparedScanout,
-    correlation: Option<crate::LiveRendererFrameCorrelation>,
+    pub(super) correlation: Option<crate::LiveRendererFrameCorrelation>,
     pub(super) layout_probe: Option<Box<super::LiveScanoutLayoutProbeReport>>,
 }
 
@@ -22,10 +22,15 @@ impl<Owner> LivePreparedRenderedPrimaryPlaneScanout<Owner> {
 pub struct LivePreparedRenderedTopologyHead<Owner> {
     pub(super) scanout_buffer: Owner,
     primary_plane: LibdrmNativePrimaryPlanePreparedTopologyHead,
+    correlation: Option<crate::LiveRendererFrameCorrelation>,
 }
 
 #[cfg(feature = "libdrm-events")]
 impl<Owner> LivePreparedRenderedTopologyHead<Owner> {
+    pub const fn correlation(&self) -> Option<crate::LiveRendererFrameCorrelation> {
+        self.correlation
+    }
+
     pub const fn atomic_head(&self) -> LibdrmNativeAtomicHead {
         self.primary_plane.atomic_head()
     }
@@ -303,6 +308,7 @@ where
                 .take()
                 .map(|primary_plane| LiveRenderedPrimaryPlaneScanoutCleanup {
                     scanout_buffer: owner,
+                    correlation: export.correlation,
                     primary_plane,
                 }),
         ),
@@ -382,6 +388,7 @@ where
         Some(primary_plane) => (
             Some(LiveRenderedPrimaryPlaneScanoutSubmission {
                 scanout_buffer: prepared.scanout_buffer,
+                correlation: prepared.correlation,
                 primary_plane,
                 submitted_after_page_flip_serial: None,
                 layout_witness,
@@ -394,6 +401,7 @@ where
                 .cleanup
                 .map(|primary_plane| LiveRenderedPrimaryPlaneScanoutCleanup {
                     scanout_buffer: prepared.scanout_buffer,
+                    correlation: prepared.correlation,
                     primary_plane,
                 }),
         ),
@@ -456,6 +464,7 @@ pub fn prepare_rendered_topology_head_from_prepared_scanout<Owner>(
         };
     Ok(LivePreparedRenderedTopologyHead {
         scanout_buffer,
+        correlation,
         primary_plane,
     })
 }
@@ -466,6 +475,7 @@ pub fn adopt_prepared_rendered_topology_head_after_commit<Owner>(
 ) -> LiveRenderedPrimaryPlaneScanoutSubmission<Owner> {
     LiveRenderedPrimaryPlaneScanoutSubmission {
         scanout_buffer: prepared.scanout_buffer,
+        correlation: prepared.correlation,
         primary_plane: adopt_prepared_native_topology_head_after_commit(prepared.primary_plane),
         submitted_after_page_flip_serial: None,
         layout_witness: None,
@@ -487,6 +497,7 @@ where
             .cleanup
             .map(|primary_plane| LiveRenderedPrimaryPlaneScanoutCleanup {
                 scanout_buffer: prepared.scanout_buffer,
+                correlation: prepared.correlation,
                 primary_plane,
             }),
     }
@@ -507,6 +518,7 @@ where
             .cleanup
             .map(|primary_plane| LiveRenderedPrimaryPlaneScanoutCleanup {
                 scanout_buffer: prepared.scanout_buffer,
+                correlation: prepared.correlation,
                 primary_plane,
             }),
     }
