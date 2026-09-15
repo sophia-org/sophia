@@ -55,6 +55,9 @@ struct XAuthorityOrderedTransport {
     /// Ending a connection must not require the mutex a stalled write is
     /// holding -- that is exactly the case where ending it is what is needed.
     shutdown: UnixStream,
+    /// This connection's shared wire permission, so barring it stops every
+    /// writer of this socket rather than only this one.
+    wire: Arc<X11WirePermission>,
 }
 
 #[cfg(unix)]
@@ -75,6 +78,7 @@ impl XAuthorityOrderedTransport {
         registration: &XServerFrontendClientRouteRegistration,
         ordered: XAuthorityOrderedReceiver,
         output: &Arc<Mutex<UnixStream>>,
+        wire: &Arc<X11WirePermission>,
     ) -> Result<Self, (X11OrderedServingRefusal, XAuthorityOrderedReceiver)> {
         if !ordered.minted_by(registration) {
             return Err((X11OrderedServingRefusal::ForeignReceiver, ordered));
@@ -96,6 +100,7 @@ impl XAuthorityOrderedTransport {
             ordered,
             output: output.clone(),
             shutdown,
+            wire: wire.clone(),
         })
     }
 
@@ -226,6 +231,7 @@ struct X11OrderedServingOwner {
     queue: Receiver<XAuthorityOrderedDelivery>,
     output: Arc<Mutex<UnixStream>>,
     shutdown: UnixStream,
+    wire: Arc<X11WirePermission>,
     in_flight: Option<X11OrderedInFlight>,
     refused: Option<X11OrderedRefusedDelivery>,
     /// Set once this connection's wire could not be ended after a frame was
@@ -318,6 +324,7 @@ impl X11OrderedServingOwner {
             queue: transport.ordered.into_receiver(),
             output: transport.output,
             shutdown: transport.shutdown,
+            wire: transport.wire,
             in_flight: None,
             refused: None,
             unterminated: false,
@@ -334,16 +341,13 @@ impl X11OrderedServingOwner {
     /// end the wire itself, this ends it through the handle that needs no
     /// lock, before the guard goes.
     ///
-    /// PENDING, AND NOT YET TRUE OF THE CONNECTION. If that ending also fails,
-    /// the guard is released -- it cannot be held across a return -- and the
-    /// only thing stopping a later write is a latch private to THIS owner.
-    /// Every other writer of this socket shares the same Arc and does not read
-    /// it: the input, protocol and reply writers reach it through the
-    /// non-control helper, and control writes take the stream directly. So in
-    /// that one case serialization IS released while the wire holds the
-    /// beginning of an event nobody can finish. Closing it needs a permission
-    /// check under the shared serialization boundary that every post-exposure
-    /// writer observes, which does not exist yet.
+    /// If that ending also fails, the connection's shared wire permission is
+    /// barred BEFORE the guard is released, so nothing can take the socket
+    /// between the discovery and the bar. Every post-exposure writer of this
+    /// socket reads that permission under this same lock -- the input,
+    /// protocol and reply writers through the non-control helper, and control
+    /// writes through the same boundary -- so the wire is closed to all of
+    /// them, not only to this owner.
     fn serve_one(&mut self, byte_order: XByteOrder, sequence: u16) -> X11OrderedServeStep {
         if self.unterminated {
             return X11OrderedServeStep::Unterminated;
@@ -384,6 +388,14 @@ impl X11OrderedServingOwner {
             Ok(()) => true,
             Err(error) => error.kind() == std::io::ErrorKind::NotConnected,
         };
+        if !ended {
+            // BARRED WHILE SERIALIZATION IS STILL HELD, so no writer of this
+            // socket can take it between the discovery and the bar. It is the
+            // connection's own permission, read by every post-exposure writer
+            // under this same lock, not a latch private to this owner.
+            self.wire.bar();
+            self.unterminated = true;
+        }
         drop(socket);
         if ended {
             return X11OrderedServeStep::Ended {
@@ -391,7 +403,6 @@ impl X11OrderedServingOwner {
                 shutdown: true,
             };
         }
-        self.unterminated = true;
         X11OrderedServeStep::Unterminated
     }
 

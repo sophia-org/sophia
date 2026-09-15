@@ -222,6 +222,64 @@ impl Drop for X11ControlOutputPriority {
     }
 }
 
+/// Whether this connection's wire may still be written at all.
+///
+/// ONE PER CONNECTION, SHARED BY EVERY POST-EXPOSURE WRITER. A wire that holds
+/// the beginning of an event nobody can finish must not receive anything more:
+/// what follows would be read as the rest of that event, and X11 has no way to
+/// describe or recover from it. Whoever discovers that bars the wire here, and
+/// every writer of this socket sees it -- because a latch private to one
+/// writer fences only that writer, which is no fence at all.
+///
+/// Read under the output mutex, so the answer cannot change between being
+/// asked and the write it authorises.
+#[cfg(unix)]
+struct X11WirePermission {
+    barred: AtomicBool,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+impl X11WirePermission {
+    fn open() -> Self {
+        Self {
+            barred: AtomicBool::new(false),
+        }
+    }
+
+    /// Bar this wire for good. Nothing unbars it: the bytes on it stay there.
+    fn bar(&self) {
+        self.barred.store(true, Ordering::Release);
+    }
+
+    fn barred(&self) -> bool {
+        self.barred.load(Ordering::Acquire)
+    }
+}
+
+/// Take this connection's output for a write.
+///
+/// THE ONE BOUNDARY. Every post-exposure writer of this socket comes through
+/// here -- the input, protocol and reply writers by way of the non-control
+/// helper, and control writes directly -- so the permission is asked in the
+/// same place the serialization is taken, while holding it. Asking anywhere
+/// else would leave a window between the answer and the write.
+#[cfg(unix)]
+fn enter_x11_wire<'a>(
+    stream: &'a Arc<Mutex<UnixStream>>,
+    wire: &X11WirePermission,
+) -> Result<std::sync::MutexGuard<'a, UnixStream>, X11SetupSocketError> {
+    let guard = stream
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
+    if wire.barred() {
+        return Err(X11SetupSocketError::client_failure(
+            "X11 output wire holds an unfinished event and was barred",
+        ));
+    }
+    Ok(guard)
+}
+
 #[cfg(unix)]
 /// Wait for control output to finish, or for this writer to be told to stop.
 ///
@@ -251,6 +309,7 @@ fn wait_for_x11_control_output(control_pending: &AtomicUsize, stop: Option<&Atom
 #[cfg(unix)]
 fn lock_x11_non_control_output<'a>(
     stream: &'a Arc<Mutex<UnixStream>>,
+    wire: &X11WirePermission,
     control_pending: &AtomicUsize,
     stop: Option<&AtomicBool>,
 ) -> Result<Option<std::sync::MutexGuard<'a, UnixStream>>, X11SetupSocketError> {
@@ -258,9 +317,7 @@ fn lock_x11_non_control_output<'a>(
         if !wait_for_x11_control_output(control_pending, stop) {
             return Ok(None);
         }
-        let stream = stream
-            .lock()
-            .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
+        let stream = enter_x11_wire(stream, wire)?;
         // Recheck after acquisition: a control may have registered while this
         // writer was waiting on a request, input, or protocol-event write.
         if control_pending.load(Ordering::Acquire) == 0 {
@@ -278,6 +335,7 @@ fn lock_x11_non_control_output<'a>(
 fn spawn_x11_protocol_event_writer(
     stream: Arc<Mutex<UnixStream>>,
     output_control_pending: Arc<AtomicUsize>,
+    output_wire: Arc<X11WirePermission>,
     byte_order: XByteOrder,
     sequence: Arc<AtomicU16>,
     client: XServerFrontendClientId,
@@ -293,7 +351,12 @@ fn spawn_x11_protocol_event_writer(
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
             };
             let Some(mut stream) =
-                lock_x11_non_control_output(&stream, &output_control_pending, Some(&writer_stop))?
+                lock_x11_non_control_output(
+                    &stream,
+                    &output_wire,
+                    &output_control_pending,
+                    Some(&writer_stop),
+                )?
             else {
                 // Told to stop while waiting for control output. Nothing was
                 // written, so nothing is owed for this event.

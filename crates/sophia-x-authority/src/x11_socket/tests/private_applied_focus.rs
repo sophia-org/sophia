@@ -466,6 +466,7 @@ mod private_applied_focus {
         spawn_x11_control_writer(
             stream,
             priority,
+            Arc::new(X11WirePermission::open()),
             XByteOrder::LittleEndian,
             Arc::new(AtomicU16::new(1)),
             fixture.projection.clone(),
@@ -531,6 +532,7 @@ mod private_applied_focus {
             fixture.state.control_runtime_pending.clone(),
             stream.clone(),
             priority.clone(),
+            Arc::new(X11WirePermission::open()),
         )
         .unwrap();
         (output, pending.unwrap())

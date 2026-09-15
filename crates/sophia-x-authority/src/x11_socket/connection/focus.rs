@@ -115,6 +115,7 @@ struct X11PendingFocusPublication {
     control_runtime_pending: Arc<AtomicUsize>,
     output: Arc<Mutex<UnixStream>>,
     output_control_pending: Arc<AtomicUsize>,
+    output_wire: Arc<X11WirePermission>,
     revert_to: u8,
     records: Option<Vec<Vec<u8>>>,
     emission: X11CoreFocusEmission,
@@ -159,7 +160,12 @@ impl X11PendingFocusPublication {
                 // socket supplied by a later caller. This is the core request's
                 // actual output path, not a callback asserting another path sent.
                 let mut stream =
-                    lock_x11_non_control_output(&self.output, &self.output_control_pending, None)?
+                    lock_x11_non_control_output(
+                        &self.output,
+                        &self.output_wire,
+                        &self.output_control_pending,
+                        None,
+                    )?
                         .expect("uncancellable source output");
                 // Socket -> common is a bounded validation only. No reviewed
                 // private path takes this socket while holding common. Outer
@@ -586,15 +592,23 @@ fn x11_clear_focus_records(
 }
 
 #[cfg(unix)]
+/// Write control records for this connection.
+///
+/// THROUGH THE SAME BOUNDARY as every other post-exposure writer, so a barred
+/// wire stops control too: control is the writer with priority, not the writer
+/// permitted to follow a half-finished event.
+///
+/// It does NOT wait on the pending-control counter. That counter is what other
+/// writers yield to; making control wait on it would make control yield to
+/// itself.
 fn write_x11_control_records(
     stream: &Arc<Mutex<UnixStream>>,
+    wire: &X11WirePermission,
     byte_order: XByteOrder,
     sequence: &AtomicU16,
     records: Vec<Vec<u8>>,
 ) -> Result<(), X11SetupSocketError> {
-    let mut stream = stream
-        .lock()
-        .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
+    let mut stream = enter_x11_wire(stream, wire)?;
     let event_sequence = sequence.load(Ordering::Acquire);
     for mut record in records {
         write_xi_u16(byte_order, &mut record[2..4], event_sequence);
@@ -627,6 +641,7 @@ fn x11_dispatch_private_focus(
     control_runtime_pending: Arc<AtomicUsize>,
     output: Arc<Mutex<UnixStream>>,
     output_control_pending: Arc<AtomicUsize>,
+    output_wire: Arc<X11WirePermission>,
 ) -> Result<(XDispatchResult, Option<X11PendingFocusPublication>), X11SetupSocketError> {
     let claim = routing
         .reserve_private_focus(client, window)
@@ -658,6 +673,7 @@ fn x11_dispatch_private_focus(
                 control_runtime_pending,
                 output,
                 output_control_pending,
+                output_wire,
                 revert_to,
                 records: None,
                 emission: X11CoreFocusEmission::Waiting,

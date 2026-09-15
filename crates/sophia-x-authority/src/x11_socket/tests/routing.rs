@@ -1177,7 +1177,9 @@ fn pending_control_gets_the_next_output_lock() {
     let normal_order = order_sender.clone();
     let normal = std::thread::spawn(move || {
         normal_started_sender.send(()).expect("normal started");
-        let _guard = lock_x11_non_control_output(&normal_stream, &normal_pending, None)
+        let normal_wire = X11WirePermission::open();
+        let _guard =
+            lock_x11_non_control_output(&normal_stream, &normal_wire, &normal_pending, None)
             .expect("normal output lock");
         normal_order.send("normal").expect("normal order");
     });
@@ -6071,6 +6073,7 @@ fn a_control_writer_records_that_its_client_has_none_when_it_stops() {
     let writer = spawn_x11_control_writer(
         Arc::new(Mutex::new(writer_stream)),
         Arc::new(AtomicUsize::new(0)),
+        Arc::new(X11WirePermission::open()),
         XByteOrder::LittleEndian,
         Arc::new(AtomicU16::new(1)),
         Arc::new(AtomicU64::new(0)),
@@ -6494,6 +6497,7 @@ fn writer_start(
     let writer = spawn_x11_control_writer(
         Arc::new(Mutex::new(stream)),
         priority,
+        Arc::new(X11WirePermission::open()),
         XByteOrder::LittleEndian,
         Arc::new(AtomicU16::new(1)),
         Arc::new(AtomicU64::new(0)),
@@ -8046,6 +8050,7 @@ fn a_writer_parked_on_control_output_still_stops_when_told() {
     let writer = spawn_x11_protocol_event_writer(
         Arc::new(Mutex::new(stream)),
         pending.clone(),
+        Arc::new(X11WirePermission::open()),
         XByteOrder::LittleEndian,
         Arc::new(AtomicU16::new(1)),
         client,
@@ -8246,6 +8251,7 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
         X11InputWriterState {
             stream: Arc::new(Mutex::new(stream)),
             output_control_pending: pending.clone(),
+            output_wire: Arc::new(X11WirePermission::open()),
             byte_order: XByteOrder::LittleEndian,
             sequence: Arc::new(AtomicU16::new(1)),
             focused_surface_window: Arc::new(AtomicU64::new(window.local.raw())),
@@ -8583,6 +8589,7 @@ fn a_writer_blocked_in_a_write_is_still_joined() {
     let writer = spawn_x11_protocol_event_writer(
         Arc::new(Mutex::new(stream)),
         Arc::new(AtomicUsize::new(0)),
+        Arc::new(X11WirePermission::open()),
         XByteOrder::LittleEndian,
         Arc::new(AtomicU16::new(1)),
         client,
@@ -22290,8 +22297,9 @@ fn a_serving_owner_keeps_its_own_endpoint_when_its_registration_is_replaced() {
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_nonblocking(true).expect("a readable peer");
     let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
     let transport =
-        XAuthorityOrderedTransport::bind(&original_registration, original_channels.ordered, &output)
+        XAuthorityOrderedTransport::bind(&original_registration, original_channels.ordered, &output, &wire)
             .unwrap_or_else(|(refusal, _)| {
                 panic!("this connection's own receiver and output bind: {refusal:?}")
             });
@@ -22426,9 +22434,10 @@ fn a_serving_constructor_rejects_another_registrations_receiver() {
     assert!(!endpoint_a.matches(&endpoint_b));
     let (socket,_peer)=UnixStream::pair().unwrap();
     let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
     // The association is established where the transport is bound, so that is
     // where crossing two real connections is caught.
-    let bound = XAuthorityOrderedTransport::bind(&a.registration, b.channels.ordered, &output);
+    let bound = XAuthorityOrderedTransport::bind(&a.registration, b.channels.ordered, &output, &wire);
     assert!(
         bound.is_err(),
         "binding must reject B's original receiver when given registration A"
@@ -22441,7 +22450,7 @@ fn a_serving_constructor_rejects_another_registrations_receiver() {
     );
     // And the same refusal stands at the serving owner, for a transport that
     // was bound for a different registration.
-    let transport = XAuthorityOrderedTransport::bind(&b.registration, returned, &output)
+    let transport = XAuthorityOrderedTransport::bind(&b.registration, returned, &output, &wire)
         .unwrap_or_else(|_| panic!("B's own registration and B's own receiver bind"));
     let owner = X11OrderedServingOwner::for_registration(private, &a.registration, transport);
     assert!(
@@ -22485,8 +22494,9 @@ fn a_failed_serving_constructor_preserves_its_original_queued_capsule() {
     assert!(private.terminal.holds[0].native.is_some());
     let (socket,_peer)=UnixStream::pair().unwrap();
     let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
     assert!(finalizer.upgrade().is_some(),"revocation did not destroy the actual queued capsule immediately before construction");
-    let transport = XAuthorityOrderedTransport::bind(&f.registration, f.channels.ordered, &output)
+    let transport = XAuthorityOrderedTransport::bind(&f.registration, f.channels.ordered, &output, &wire)
         .unwrap_or_else(|_| panic!("this connection's own receiver and registration bind"));
     let returned=X11OrderedServingOwner::for_registration(private,&f.registration,transport);
     assert!(returned.is_err(),"the established endpoint refusal is returned");
@@ -22527,6 +22537,7 @@ fn serving_owner_for(
     socket: UnixStream,
 ) -> (X11OrderedServingOwner, Arc<Mutex<UnixStream>>) {
     let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
     let ordered = std::mem::replace(
         &mut f.channels.ordered,
         f.runner
@@ -22543,7 +22554,7 @@ fn serving_owner_for(
             .1
             .ordered,
     );
-    let transport = XAuthorityOrderedTransport::bind(&f.registration, ordered, &output)
+    let transport = XAuthorityOrderedTransport::bind(&f.registration, ordered, &output, &wire)
         .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
     let private = f.runner.frontend.as_ref().unwrap();
     let owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
@@ -23448,4 +23459,122 @@ fn a_close_stops_retrying_a_termination_that_keeps_refusing() {
         "and does not attempt past the bound"
     );
     assert!(cell.answer().is_none(), "still nothing offered");
+}
+
+#[test]
+fn a_barred_wire_stops_every_writer_of_that_socket_including_control() {
+    // A latch private to one writer fences only that writer. The permission is
+    // the connection's, read under the same serialization every post-exposure
+    // writer takes, so barring it closes the wire to all of them -- control
+    // included, because control is the writer with PRIORITY, not the writer
+    // allowed to follow the beginning of an event nobody can finish.
+    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = AtomicUsize::new(0);
+    let sequence = AtomicU16::new(1);
+
+    // Open: every path takes the wire.
+    assert!(
+        lock_x11_non_control_output(&output, &wire, &pending, None)
+            .expect("a readable output")
+            .is_some(),
+        "the non-control path writes while the wire is open"
+    );
+    write_x11_control_records(
+        &output,
+        &wire,
+        XByteOrder::LittleEndian,
+        &sequence,
+        vec![vec![0u8; 32]],
+    )
+    .expect("control writes while the wire is open");
+
+    wire.bar();
+
+    // Barred: every path refuses, and refuses for what it is.
+    let non_control = lock_x11_non_control_output(&output, &wire, &pending, None)
+        .expect_err("the non-control path is barred");
+    assert!(
+        non_control.client_failure,
+        "a wire holding an unfinished event is this client's failure, not the service's"
+    );
+    let control = write_x11_control_records(
+        &output,
+        &wire,
+        XByteOrder::LittleEndian,
+        &sequence,
+        vec![vec![0u8; 32]],
+    )
+    .expect_err("control is barred too");
+    assert!(control.client_failure);
+    assert!(
+        !control.service_shutdown,
+        "one connection's unusable wire does not end the service"
+    );
+
+    // And control never waits on its own pending counter: with a control
+    // registered as pending, the control path still reaches its refusal rather
+    // than spinning.
+    pending.store(1, Ordering::Release);
+    assert!(
+        write_x11_control_records(
+            &output,
+            &wire,
+            XByteOrder::LittleEndian,
+            &sequence,
+            vec![vec![0u8; 32]],
+        )
+        .is_err(),
+        "control does not yield to control"
+    );
+}
+
+#[test]
+fn a_serving_owner_holds_its_connections_permission_not_one_of_its_own() {
+    // What makes barring effective is that the owner holds the CONNECTION'S
+    // permission. The trigger -- a shutdown that refuses after a part-written
+    // frame -- is the branch this host gives me no honest way to reach, so
+    // what this pins is the wiring: bar through the owner's own handle and
+    // every writer of that socket is stopped.
+    let client = XServerFrontendClientId(7861);
+    let f = prepared_ordered_fixture(client);
+    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let transport =
+        XAuthorityOrderedTransport::bind(&f.registration, f.channels.ordered, &output, &wire)
+            .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    let private = f.runner.frontend.as_ref().unwrap();
+    let owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
+        .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
+
+    assert!(
+        Arc::ptr_eq(&owner.wire, &wire),
+        "the owner holds the connection's own permission, not a private latch"
+    );
+    let pending = AtomicUsize::new(0);
+    assert!(
+        lock_x11_non_control_output(&output, &wire, &pending, None)
+            .expect("a readable output")
+            .is_some()
+    );
+
+    // Barred through the handle the owner holds.
+    owner.wire.bar();
+    assert!(
+        lock_x11_non_control_output(&output, &wire, &pending, None).is_err(),
+        "barring through the owner stops the other writers of that socket"
+    );
+    assert!(
+        write_x11_control_records(
+            &output,
+            &wire,
+            XByteOrder::LittleEndian,
+            &AtomicU16::new(1),
+            vec![vec![0u8; 32]],
+        )
+        .is_err(),
+        "control included"
+    );
 }

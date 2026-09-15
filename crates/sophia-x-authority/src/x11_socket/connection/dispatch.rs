@@ -565,6 +565,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         X11SetupSocketError::new(format!("failed to clone X11 output socket: {error}"))
     })?));
     let output_control_pending = Arc::new(AtomicUsize::new(0));
+    // One per connection, beside the output it governs. Every post-exposure
+    // writer of this socket is given it, so a wire left holding the beginning
+    // of an event nobody can finish stops all of them and not just whoever
+    // discovered it.
+    let output_wire = Arc::new(X11WirePermission::open());
     let protocol_routing = client_routing.clone();
     let (route_registration, input_receiver, control_channels, protocol_receiver) =
         if let Some(routing) = client_routing {
@@ -667,6 +672,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 X11InputWriterState {
                     stream: output_stream.clone(),
                     output_control_pending: output_control_pending.clone(),
+                    output_wire: output_wire.clone(),
                     byte_order: setup.byte_order,
                     sequence: event_sequence.clone(),
                     focused_surface_window: focused_surface_window.clone(),
@@ -690,6 +696,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             spawn_x11_control_writer(
                 output_stream.clone(),
                 output_control_pending.clone(),
+                output_wire.clone(),
                 setup.byte_order,
                 event_sequence.clone(),
                 focused_surface_window.clone(),
@@ -715,6 +722,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             spawn_x11_protocol_event_writer(
                 output_stream.clone(),
                 output_control_pending.clone(),
+                output_wire.clone(),
                 setup.byte_order,
                 event_sequence.clone(),
                 client,
@@ -1355,7 +1363,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             let (focus, revert_to) = requested_input_focus.expect("focus guard");
                             let (output, pending) = x11_dispatch_private_focus(&mut runtime, dispatch_context, client,
                                 &focused_surface_window, private_focus_routing.expect("private owner"), focus, revert_to,
-                                state.runtime.clone(), state.control_runtime_pending.clone(), output_stream.clone(), output_control_pending.clone())?;
+                                state.runtime.clone(), state.control_runtime_pending.clone(), output_stream.clone(), output_control_pending.clone(), output_wire.clone())?;
                             pending_focus_publication = pending;
                             output
                         }
@@ -2531,6 +2539,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 // output finishing.
                 let mut output_stream = lock_x11_non_control_output(
                     &output_stream,
+                    &output_wire,
                     &output_control_pending,
                     None,
                 )?

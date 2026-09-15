@@ -56,6 +56,7 @@ impl Drop for X11ControlWriterSeal<'_> {
 fn spawn_x11_control_writer(
     stream: Arc<Mutex<UnixStream>>,
     output_control_pending: Arc<AtomicUsize>,
+    output_wire: Arc<X11WirePermission>,
     byte_order: XByteOrder,
     sequence: Arc<AtomicU16>,
     focused_surface_window: Arc<AtomicU64>,
@@ -170,6 +171,7 @@ fn spawn_x11_control_writer(
                     )?;
                     write_x11_control_records(
                         &stream,
+                        &output_wire,
                         byte_order,
                         &sequence,
                         records,
@@ -672,7 +674,7 @@ fn spawn_x11_control_writer(
             // partly happened and no acknowledgement follows. The completion
             // record stays in its applying phase rather than being closed as
             // unexecuted.
-            write_x11_control_records(&stream, byte_order, &sequence, records)?;
+            write_x11_control_records(&stream, &output_wire, byte_order, &sequence, records)?;
             channels.send_ack_for(
                 client,
                 XAuthorityControlAck {

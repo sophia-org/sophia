@@ -1,6 +1,7 @@
 struct X11InputWriterState {
     stream: Arc<Mutex<UnixStream>>,
     output_control_pending: Arc<AtomicUsize>,
+    output_wire: Arc<X11WirePermission>,
     byte_order: XByteOrder,
     sequence: Arc<AtomicU16>,
     focused_surface_window: Arc<AtomicU64>,
@@ -39,6 +40,7 @@ fn spawn_x11_input_event_writer(
     let X11InputWriterState {
         stream,
         output_control_pending,
+        output_wire,
         byte_order,
         sequence,
         focused_surface_window,
@@ -476,7 +478,12 @@ fn spawn_x11_input_event_writer(
             };
             let write_result = (|| -> Result<X11InputWriteOutcome, X11SetupSocketError> {
                 let Some(mut stream) =
-                    lock_x11_non_control_output(&stream, &output_control_pending, Some(&writer_stop))?
+                    lock_x11_non_control_output(
+                        &stream,
+                        &output_wire,
+                        &output_control_pending,
+                        Some(&writer_stop),
+                    )?
                 else {
                     return Ok(X11InputWriteOutcome::Cancelled);
                 };
