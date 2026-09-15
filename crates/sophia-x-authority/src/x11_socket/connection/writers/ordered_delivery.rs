@@ -227,6 +227,12 @@ fn write_one_ordered_frame(
 enum X11OrderedServeStep {
     /// Nothing was waiting and nothing is in flight.
     Idle,
+    /// Every frame went, and the answer could not be adjudicated.
+    ///
+    /// Custody is retained: this writer still owes this delivery an answer,
+    /// and giving the slot up would leave bytes the recipient has with nothing
+    /// owning the report of them.
+    Unanswered,
     /// One frame of the delivery in hand went out; more are owed.
     Advanced,
     /// Every frame of one delivery has gone.
@@ -290,22 +296,30 @@ fn serve_one_ordered_delivery(
     match write_one_ordered_frame(socket, in_flight, byte_order, sequence) {
         Ok(X11OrderedWriteStep::Advanced { .. }) => X11OrderedServeStep::Advanced,
         Ok(X11OrderedWriteStep::Wrote) => {
-            // RETIRED ONCE, HERE. Every frame has gone, so this delivery is
-            // finished and the slot must be given up before the next one can
-            // be taken -- left in place it would report the same flush for
-            // ever and no further delivery would ever be served.
+            // ANSWERED FIRST, RETIRED AFTER. Every frame has gone, and the
+            // delivery stays in custody across the answer: taking it out first
+            // put the finished capsule in a local across the publication, and
+            // an interruption there left the bytes read by the recipient with
+            // nothing owning the report of them.
             //
-            // The answer is published through the handle this capsule carried
-            // from the debt that owns it. Nothing looks a delivery id up at
-            // this point: by now the id may name a different admission.
-            let finished = in_flight.take().expect("a delivery was in flight");
-            if let Some(completion) = finished.delivery().completion() {
-                completion.publish(XAuthorityClientInputDelivery {
-                    client: finished.delivery().client(),
-                    delivery: finished.delivery().delivery(),
-                    outcome: XAuthorityInputDeliveryOutcome::Flushed,
+            // The answer goes through the finalizer this capsule carried from
+            // the debt that owns it, which adjudicates it in the one place
+            // that owns terminal outcomes. Nothing looks a delivery id up
+            // here: by now the id may name a different admission.
+            let answered = in_flight
+                .as_ref()
+                .and_then(|held| held.delivery().finalizer().cloned())
+                .is_some_and(|finalizer| {
+                    finalizer.finalize(XAuthorityInputDeliveryOutcome::Flushed)
                 });
+            if !answered {
+                // Nothing was adjudicated, so this delivery is still owed an
+                // answer and is still owed BY THIS WRITER. Custody stays.
+                return X11OrderedServeStep::Unanswered;
             }
+            // Confirmed, so the slot is given up. Once: the take is what makes
+            // a second report impossible.
+            let _finished = in_flight.take().expect("a delivery was in flight");
             X11OrderedServeStep::Flushed
         }
         Ok(X11OrderedWriteStep::Idle) => X11OrderedServeStep::Idle,
@@ -321,17 +335,15 @@ fn serve_one_ordered_delivery(
                 _ => XAuthorityInputDeliveryOutcome::WriteFailed,
             };
             let shutdown = socket.shutdown(std::net::Shutdown::Both).is_ok();
-            // Answered through the carried handle as well. A delivery that
-            // ended badly is still answered, and answered to the admission it
-            // belonged to.
-            if let Some(held) = in_flight.as_ref()
-                && let Some(completion) = held.delivery().completion()
+            // Answered through the carried finalizer as well, and while the
+            // delivery is still in custody. A delivery that ended badly is
+            // still answered, and answered to the admission it belonged to
+            // through the authority that owns the answer.
+            if let Some(finalizer) = in_flight
+                .as_ref()
+                .and_then(|held| held.delivery().finalizer().cloned())
             {
-                completion.publish(XAuthorityClientInputDelivery {
-                    client: held.delivery().client(),
-                    delivery: held.delivery().delivery(),
-                    outcome,
-                });
+                finalizer.finalize(outcome);
             }
             X11OrderedServeStep::Ended { outcome, shutdown }
         }

@@ -74,6 +74,15 @@ impl PrivateXServerFrontend {
             return Some(false);
         };
 
+        // Bound to the admission this release holds, not fetched by id.
+        let mut finalizer = self.terminal.settling[index]
+            .delivery()
+            .and_then(|delivery| {
+                self.broker
+                    .registry
+                    .input_recovery
+                    .finalizer_for(delivery, self.terminal.settling[index].reached().client())
+            });
         // The destination slot is prepared before anything is taken from the
         // hold, so an emission never leaves its obligation with nowhere to be.
         if self.terminal.settling[index].pending.is_none() {
@@ -87,11 +96,13 @@ impl PrivateXServerFrontend {
             let release = &mut self.terminal.settling[index];
             match XAuthorityOrderedDelivery::from_emission(emission) {
                 Ok(mut capsule) => {
-                    // The writer answers through the same handle this debt
-                    // holds, so both are answering one admission rather than
-                    // two lookups of one number.
-                    if let Some(cell) = release.completion() {
-                        capsule.carry_completion(std::sync::Arc::clone(cell));
+                    // The writer answers through a finalizer bound to this
+                    // debt's own admission, so both are answering one
+                    // admission rather than two lookups of one number -- and
+                    // the writer's answer goes through the ledger rather than
+                    // beside it.
+                    if let Some(finalizer) = finalizer.take() {
+                        capsule.carry_finalizer(std::sync::Arc::new(finalizer));
                     }
                     release.pending = Some(PrivatePendingDelivery::Capsule(capsule));
                     release.dispatch = PrivateDispatchPhase::Pending;

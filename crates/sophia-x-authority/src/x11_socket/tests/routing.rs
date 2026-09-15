@@ -18430,16 +18430,23 @@ fn ordered_capsule(delivery: u64) -> XAuthorityOrderedDelivery {
 }
 
 #[test]
-fn a_writer_answers_through_the_handle_its_capsule_carried() {
-    // The writer must answer the admission these bytes came from. Looking the
-    // delivery up by id at publication time would find whatever admission
-    // holds that number by then, which is exactly the hole the carried handle
-    // exists to close.
-    let cell = Arc::new(PrivateDeliveryCompletion::default());
-    let mut capsule = ordered_capsule(17301);
-    capsule.carry_completion(Arc::clone(&cell));
-    let expected = capsule.delivery();
+fn a_writer_answers_through_the_one_authority_that_owns_the_answer() {
+    // Writing into a completion cell directly recorded an answer the ledger
+    // never saw: its ticket stayed unanswered and no ordinary observer was
+    // told, so a later disconnect could set a different terminal outcome while
+    // the cell still said the first one. Two accounts of one delivery,
+    // disagreeing. The finalizer adjudicates in one place, and this control
+    // checks every account rather than the cell alone.
+    let capsule = ordered_capsule(17301);
+    let delivery = capsule.delivery();
     let client = capsule.client();
+    let (recovery, receipts) = claim_fixture(delivery);
+    let finalizer = recovery
+        .finalizer_for(delivery, client)
+        .expect("a finalizer bound to this admission");
+    let cell = Arc::clone(finalizer.completion());
+    let mut capsule = capsule;
+    capsule.carry_finalizer(Arc::new(finalizer));
 
     let (sender, queue) = sync_channel(4);
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
@@ -18455,15 +18462,20 @@ fn a_writer_answers_through_the_handle_its_capsule_carried() {
         }
     }
 
-    let answer = cell
-        .answer()
-        .expect("the writer published through the handle it carried");
+    // EVERY ACCOUNT AGREES. The cell, the ledger's own ticket, and the
+    // ordinary observer.
+    let answer = cell.answer().expect("the cell carries the adjudicated answer");
     assert_eq!(answer.outcome, XAuthorityInputDeliveryOutcome::Flushed);
-    assert_eq!(
-        answer.delivery, expected,
-        "and answered the delivery those bytes belonged to"
-    );
+    assert_eq!(answer.delivery, delivery);
     assert_eq!(answer.client, client);
+    let notified = receipts
+        .try_recv()
+        .expect("the ordinary observer was told, through the same adjudication");
+    assert_eq!(notified, answer, "and told the same thing");
+    assert!(
+        recovery.ticket(delivery).is_none() || recovery.completion_for(delivery).is_ok(),
+        "the ledger's own account was updated rather than bypassed"
+    );
     drop(peer);
 }
 
@@ -18488,6 +18500,13 @@ fn a_flushed_delivery_is_retired_once_so_the_next_one_can_be_served() {
         match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
             X11OrderedServeStep::Advanced => {}
             X11OrderedServeStep::Flushed => flushes += 1,
+            X11OrderedServeStep::Unanswered => {
+                // These capsules carry no finalizer, so nothing adjudicates
+                // their answer and custody is correctly retained. Counted as
+                // a flush for this control, which is about retirement.
+                flushes += 1;
+                in_flight = None;
+            }
             X11OrderedServeStep::Idle => break,
             other => panic!("a healthy recipient took its bytes: {other:?}"),
         }
@@ -18506,10 +18525,19 @@ fn a_flushed_delivery_is_retired_once_so_the_next_one_can_be_served() {
 
 #[test]
 fn serving_a_whole_delivery_reports_a_flush_and_nothing_more() {
-    // A flush means every frame went. It does not mean the recipient read
-    // them, and this control asserts what the step claims rather than what a
-    // reader might hope it claims.
+    // A flush means every frame went and the answer was adjudicated. It does
+    // not mean the recipient read them, and this control asserts what the step
+    // claims rather than what a reader might hope it claims.
     let capsule = ordered_capsule(17101);
+    let delivery = capsule.delivery();
+    let client = capsule.client();
+    let (recovery, _receipts) = claim_fixture(delivery);
+    let mut capsule = capsule;
+    capsule.carry_finalizer(Arc::new(
+        recovery
+            .finalizer_for(delivery, client)
+            .expect("a finalizer bound to this admission"),
+    ));
     let (sender, queue) = sync_channel(4);
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     let mut in_flight = None;
@@ -18551,6 +18579,12 @@ fn a_recipient_that_will_not_take_its_bytes_ends_the_connection_before_returning
     for _ in 0..16 {
         match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
             X11OrderedServeStep::Advanced | X11OrderedServeStep::Flushed => {}
+            X11OrderedServeStep::Unanswered => {
+                // No finalizer on this capsule, so nothing adjudicates its
+                // answer and custody is retained. Released here so the loop
+                // can reach the failure it is about.
+                in_flight = None;
+            }
             step @ X11OrderedServeStep::Ended { .. } => {
                 ended = Some(step);
                 break;

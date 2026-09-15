@@ -589,13 +589,15 @@ impl std::error::Error for XServerFrontendRouteError {}
 pub(crate) struct XAuthorityOrderedDelivery {
     delivery: crate::XAuthorityInputDeliveryId,
     emission: crate::x11_socket::PrivateOrderedEmission,
-    /// Where this delivery's writer publishes its answer.
+    /// How this delivery's writer answers it.
     ///
-    /// CARRIED, NOT LOOKED UP. The writer must answer the admission this
-    /// capsule came from, and a delivery id fetched again at publication time
-    /// would find whatever admission holds that number by then. The handle
-    /// travels with the bytes it belongs to.
-    completion: Option<std::sync::Arc<crate::x11_socket::PrivateDeliveryCompletion>>,
+    /// CARRIED, NOT LOOKED UP, and origin-bound. The writer answers the
+    /// admission these bytes came from, through the one authority that owns
+    /// the answer -- a delivery id fetched again at publication time would
+    /// find whatever admission holds that number by then, and writing into a
+    /// cell directly would leave the ledger's own account saying something
+    /// else.
+    finalizer: Option<std::sync::Arc<crate::x11_socket::PrivateDeliveryFinalizer>>,
 }
 
 #[cfg(unix)]
@@ -623,25 +625,25 @@ impl XAuthorityOrderedDelivery {
         Ok(Self {
             delivery,
             emission,
-            completion: None,
+            finalizer: None,
         })
     }
 
-    /// Give this capsule the completion its writer will answer through.
+    /// Give this capsule the finalizer its writer will answer through.
     ///
-    /// Taken from the debt that owns it, so the writer and the executor are
-    /// answering the same admission rather than two lookups of one number.
-    pub(crate) fn carry_completion(
+    /// Bound to the debt's own admission, so the writer and the executor are
+    /// answering one admission rather than two lookups of one number.
+    pub(crate) fn carry_finalizer(
         &mut self,
-        completion: std::sync::Arc<crate::x11_socket::PrivateDeliveryCompletion>,
+        finalizer: std::sync::Arc<crate::x11_socket::PrivateDeliveryFinalizer>,
     ) {
-        self.completion = Some(completion);
+        self.finalizer = Some(finalizer);
     }
 
-    pub(crate) fn completion(
+    pub(crate) fn finalizer(
         &self,
-    ) -> Option<&std::sync::Arc<crate::x11_socket::PrivateDeliveryCompletion>> {
-        self.completion.as_ref()
+    ) -> Option<&std::sync::Arc<crate::x11_socket::PrivateDeliveryFinalizer>> {
+        self.finalizer.as_ref()
     }
 
     pub(crate) fn client(&self) -> XServerFrontendClientId {

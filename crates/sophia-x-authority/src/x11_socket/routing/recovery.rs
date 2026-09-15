@@ -20,38 +20,6 @@ pub struct XAuthorityInputDeliveryTicket {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PrivateCompletionUnreadable;
 
-/// The one place a delivery's terminal outcome is ever written.
-///
-/// MINTED BY THIS LEDGER AT ADMISSION, before anything can be accepted for the
-/// delivery it belongs to. A holder of this cell holds the completion of that
-/// exact admission and of no other: a delivery id that is pruned and admitted
-/// again gets a NEW cell, so an old holder can never see the new admission's
-/// answer however the number is reused.
-///
-/// Shared rather than copied out. The ordinary observer prunes the ticket as
-/// soon as it consumes the outcome, and a reader that had to go back to the
-/// ticket for its answer would find the answer gone. Anyone who took custody
-/// of this cell keeps the answer whether or not the ticket still exists.
-///
-/// Written once. A second answer for one admission is a contradiction rather
-/// than an update, and the first one stands.
-#[cfg(unix)]
-#[derive(Debug, Default)]
-pub(crate) struct PrivateDeliveryCompletion {
-    outcome: std::sync::OnceLock<XAuthorityClientInputDelivery>,
-}
-
-#[cfg(unix)]
-impl PrivateDeliveryCompletion {
-    pub(crate) fn publish(&self, receipt: XAuthorityClientInputDelivery) {
-        let _ = self.outcome.set(receipt);
-    }
-
-    pub(crate) fn answer(&self) -> Option<XAuthorityClientInputDelivery> {
-        self.outcome.get().copied()
-    }
-}
-
 #[cfg(unix)]
 struct TrackedInputDelivery {
     ticket: XAuthorityInputDeliveryTicket,
@@ -320,6 +288,55 @@ impl InputRecovery {
     /// window in which the delivery is pruned and re-admitted between the two.
     /// A holder of this cell can never be answered by a later admission that
     /// happens to reuse the number.
+    /// Answer one delivery through the single terminal authority, against the
+    /// exact admission a holder still carries.
+    ///
+    /// The entry is found by id and then CHECKED against the carried
+    /// completion, so an id that now names a different admission is refused
+    /// rather than answered. Adjudication itself -- claim deferral, ordinary
+    /// notification, the ticket and the cell -- is the authority's, unchanged.
+    fn adjudicate_for_held(
+        &self,
+        completion: &Arc<PrivateDeliveryCompletion>,
+        client: XServerFrontendClientId,
+        delivery: XAuthorityInputDeliveryId,
+        outcome: XAuthorityInputDeliveryOutcome,
+    ) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        let Some(entry) = state.tickets.get(&delivery) else {
+            return false;
+        };
+        if !Arc::ptr_eq(&entry.completion, completion) {
+            return false;
+        }
+        self.terminal_locked(
+            &mut state,
+            XAuthorityClientInputDelivery {
+                client,
+                delivery,
+                outcome,
+            },
+        );
+        true
+    }
+
+    /// Bind a finalizer to one admission, for a writer to answer through.
+    fn finalizer_for(
+        &self,
+        delivery: XAuthorityInputDeliveryId,
+        client: XServerFrontendClientId,
+    ) -> Option<PrivateDeliveryFinalizer> {
+        let completion = self.completion_for(delivery).ok().flatten()?;
+        Some(PrivateDeliveryFinalizer {
+            recovery: self.clone(),
+            completion,
+            delivery,
+            client,
+        })
+    }
+
     /// The same custody, with an unreadable ledger told apart from a delivery
     /// that has none.
     ///
