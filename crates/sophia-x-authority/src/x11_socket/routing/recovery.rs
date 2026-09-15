@@ -281,13 +281,6 @@ impl InputRecovery {
         }
     }
 
-    /// Take custody of one admission's completion.
-    ///
-    /// ONE ATOMIC OPERATION. The cell IS the admission's identity, so there is
-    /// no pairing of a validated ticket with an outcome read afterwards and no
-    /// window in which the delivery is pruned and re-admitted between the two.
-    /// A holder of this cell can never be answered by a later admission that
-    /// happens to reuse the number.
     /// Answer one delivery through the single terminal authority, against the
     /// exact admission a holder still carries.
     ///
@@ -317,29 +310,22 @@ impl InputRecovery {
         if !Arc::ptr_eq(&entry.completion, completion) {
             return PrivateAdjudication::Refused;
         }
-        self.terminal_locked(
+        // WHAT THE AUTHORITY DID WITH THIS OFFER, from the branch that
+        // decided it. Reading the state afterwards could not tell this offer's
+        // fate from an older one's: a rejected answer looked deferred whenever
+        // any earlier receipt happened to be held on the same delivery.
+        match self.terminal_locked(
             &mut state,
             XAuthorityClientInputDelivery {
                 client,
                 delivery,
                 outcome,
             },
-        );
-        // WHAT THE AUTHORITY ACTUALLY DID. Reporting success because it was
-        // called said an answer had been recorded when it had been silently
-        // declined -- a wrong client, for one -- and left the caller believing
-        // a delivery was finished.
-        if completion.answer().is_some() {
-            return PrivateAdjudication::Answered;
+        ) {
+            PrivateTerminalDisposition::Recorded => PrivateAdjudication::Answered,
+            PrivateTerminalDisposition::Deferred => PrivateAdjudication::Deferred,
+            PrivateTerminalDisposition::Rejected => PrivateAdjudication::Refused,
         }
-        if state
-            .tickets
-            .get(&delivery)
-            .is_some_and(|entry| entry.deferred.is_some())
-        {
-            return PrivateAdjudication::Deferred;
-        }
-        PrivateAdjudication::Refused
     }
 
     /// The same custody, with an unreadable ledger told apart from a delivery
@@ -555,11 +541,17 @@ impl InputRecovery {
             .is_none_or(|entry| entry.terminal.is_none() && entry.ticket.client == Some(client))
     }
 
+    /// Adjudicate one offered answer, and say what became of THAT OFFER.
+    ///
+    /// The disposition is reported from the branch that decided it. Working it
+    /// out afterwards from the state left behind cannot tell this offer's fate
+    /// from somebody else's: a rejected answer looked accepted whenever any
+    /// older receipt happened to be deferred on the same delivery.
     fn terminal_locked(
         &self,
         state: &mut InputRecoveryState,
         receipt: XAuthorityClientInputDelivery,
-    ) {
+    ) -> PrivateTerminalDisposition {
         if let Some(entry) = state.tickets.get_mut(&receipt.delivery) {
             if entry.terminal.is_some()
                 || entry
@@ -567,7 +559,7 @@ impl InputRecovery {
                     .client
                     .is_some_and(|client| client != receipt.client)
             {
-                return;
+                return PrivateTerminalDisposition::Rejected;
             }
             if entry.may_have_applied && cancels_before_the_effect(receipt.outcome) {
                 // An effect may already have happened for this delivery.
@@ -575,7 +567,7 @@ impl InputRecovery {
                 // the claim exists to prevent, arriving after the claim rather
                 // than during it. The delivery stays owed an outcome, which
                 // its writer result or an established recipient fact answers.
-                return;
+                return PrivateTerminalDisposition::Rejected;
             }
             if entry.claimed {
                 // An execution holds this delivery and its effect may already
@@ -589,16 +581,24 @@ impl InputRecovery {
                 // arrival win, so a cancellation deferred early hid a writer
                 // result or a termination that arrived afterwards and was the
                 // better answer.
-                match entry.deferred.as_mut() {
-                    Some(held) if cancels_before_the_effect(held.receipt.outcome)
-                        && !cancels_before_the_effect(receipt.outcome) =>
+                return match entry.deferred.as_mut() {
+                    Some(held)
+                        if cancels_before_the_effect(held.receipt.outcome)
+                            && !cancels_before_the_effect(receipt.outcome) =>
                     {
                         *held = DeferredCancellation { receipt, bound };
+                        PrivateTerminalDisposition::Deferred
                     }
-                    Some(_) => {}
-                    None => entry.deferred = Some(DeferredCancellation { receipt, bound }),
-                }
-                return;
+                    // Something else is already held for this delivery and
+                    // keeps its place. THIS offer was not taken, and saying it
+                    // was deferred would report somebody else's fate as its
+                    // own.
+                    Some(_) => PrivateTerminalDisposition::Rejected,
+                    None => {
+                        entry.deferred = Some(DeferredCancellation { receipt, bound });
+                        PrivateTerminalDisposition::Deferred
+                    }
+                };
             }
             entry.terminal = Some(receipt);
             // Into the cell in the same breath, under the same lock. Whoever
@@ -609,6 +609,7 @@ impl InputRecovery {
         if let Some(sender) = &self.sender {
             let _ = sender.send(receipt);
         }
+        PrivateTerminalDisposition::Recorded
     }
 
     fn finish(

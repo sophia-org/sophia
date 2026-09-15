@@ -18592,6 +18592,65 @@ fn an_adjudication_reports_what_the_authority_did_with_it() {
 }
 
 #[test]
+fn a_rejected_offer_stays_refused_even_when_older_work_is_deferred() {
+    // Reading the state after the fact could not tell this offer's fate from
+    // somebody else's: with an earlier cancellation held under a claim, a
+    // wrong-client answer was reported as Deferred and a writer took that as
+    // permission to retire a delivery nothing had accepted.
+    let delivery = XAuthorityInputDeliveryId::from_raw(17501);
+    let client = XServerFrontendClientId(17501);
+    let other = XServerFrontendClientId(17502);
+    let (recovery, receipts) = claim_fixture(delivery);
+    recovery.register(client).unwrap();
+    assert!(recovery.bind(Some(delivery), client).unwrap());
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Claimed
+    );
+    // An earlier cancellation, held because the claim is out.
+    recovery
+        .finish(
+            client,
+            Some(delivery),
+            XAuthorityInputDeliveryOutcome::EpochRevoked,
+        )
+        .expect("the cancellation is offered");
+    assert!(
+        receipts.try_recv().is_err(),
+        "and held rather than published, because the claim is out"
+    );
+
+    let completion = recovery
+        .completion_for(delivery)
+        .expect("a readable ledger")
+        .expect("the admission's own completion");
+    let foreign = finalizer_from_held(&recovery, &completion, delivery, other);
+
+    // THE OFFER IS REJECTED, and the older held cancellation is not its fate.
+    assert_eq!(
+        foreign.finalize(XAuthorityInputDeliveryOutcome::Flushed),
+        PrivateAdjudication::Refused,
+        "a declined offer is refused, whatever else is held for this delivery"
+    );
+    assert!(
+        completion.answer().is_none(),
+        "and nothing was recorded for it"
+    );
+
+    // The older cancellation is still the one held, untouched by the offer.
+    recovery.resolve_claim(Some(delivery), false);
+    let published = receipts
+        .try_recv()
+        .expect("the held cancellation stands once the claim resolves");
+    assert_eq!(
+        published.outcome,
+        XAuthorityInputDeliveryOutcome::EpochRevoked,
+        "the rejected Flushed never displaced it"
+    );
+    assert_eq!(published.client, client);
+}
+
+#[test]
 fn serving_a_whole_delivery_reports_a_flush_and_nothing_more() {
     // A flush means every frame went and the answer was adjudicated. It does
     // not mean the recipient read them.

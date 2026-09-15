@@ -6,6 +6,19 @@
 // different reasons -- a new thing to know about a delivery is not a new way
 // to answer one.
 
+/// What became of one offered answer, said by the branch that decided it.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PrivateTerminalDisposition {
+    /// This answer was published.
+    Recorded,
+    /// THIS answer was held under a claim, to be decided when it resolves.
+    Deferred,
+    /// This answer was declined. Something else may be held for the same
+    /// delivery; that is not this offer's fate.
+    Rejected,
+}
+
 /// What the terminal authority did with an answer it was offered.
 ///
 /// A BOOLEAN COULD NOT SAY THIS. Returning true whenever the authority was
@@ -88,10 +101,10 @@ impl std::fmt::Debug for PrivateDeliveryFinalizer {
 impl PrivateDeliveryFinalizer {
     /// Answer this delivery, through the authority that owns the answer.
     ///
-    /// Returns whether that authority took it. False means nothing was
-    /// adjudicated -- the ledger could not be read, the admission is gone, or
-    /// the entry is no longer the one this finalizer was made for -- and the
-    /// caller still owes this delivery an answer.
+    /// Returns what the authority did with this offer. Only Refused leaves the
+    /// answer still owed -- the ledger could not be read, the admission is
+    /// gone with no answer, the entry is not the one this finalizer was made
+    /// for, or the offer was declined.
     pub(crate) fn finalize(&self, outcome: XAuthorityInputDeliveryOutcome) -> PrivateAdjudication {
         self.recovery
             .adjudicate_for_held(&self.completion, self.client, self.delivery, outcome)
