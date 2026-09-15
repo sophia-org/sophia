@@ -863,11 +863,44 @@ fn a_terminal_step_whose_watch_refuses_is_blocked_and_keeps_its_entry() {
     assert!(channels.ordered.try_recv().is_err(), "no output happened");
     assert!(deliveries.try_recv().is_err());
 
-    // A turn that ends in a supervisor failure schedules nothing more.
+    // A turn that ends in a supervisor failure schedules nothing more. Zero
+    // steps alone would also be what a turn that never got admitted looks
+    // like, so what the turn actually did is checked too: one admitted start,
+    // the same refusal, naming the same entry.
+    let before = runner.service.usage();
     let turn = runner.service_turn().unwrap();
     assert_eq!(
         turn.terminal_steps, 0,
         "the turn stops at the failure rather than taking another step"
     );
+    assert_eq!(
+        turn.starts, 1,
+        "and it did start once -- the refusal is the watch's, after admission"
+    );
+    assert_eq!(
+        runner.service.usage().cleanup_starts - before.cleanup_starts,
+        1,
+        "charged for that one visit and no other"
+    );
+    assert!(turn.watch_failed, "and it says why it stopped");
+    assert_eq!(turn.blocked, Some(sequence), "naming the entry that is stuck");
+    assert_eq!(turn.unwatched, Some(sequence));
+    assert_eq!(turn.taken, 0);
+    assert_eq!(turn.enqueued, 0);
+
+    // Still nothing done to it, after the turn as after the direct call.
+    let private = runner.frontend.as_ref().unwrap();
+    assert_eq!(
+        private.terminal.turn.len() + private.terminal.delivering.len(),
+        1,
+        "the item is still the inventory's"
+    );
+    assert_eq!(private.terminal.holds.len(), 1);
+    assert_eq!(
+        private.terminal.holds[0].custody.dispatch,
+        PrivateDispatchPhase::Untaken
+    );
+    assert!(cell.answer().is_none());
+    assert!(channels.ordered.try_recv().is_err(), "and no output happened");
     drop(held);
 }

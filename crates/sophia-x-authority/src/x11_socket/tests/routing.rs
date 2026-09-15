@@ -12265,53 +12265,91 @@ fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
     );
 }
 
-/// Whether the exact admitted event's own custody says its handover happened.
+/// The completion cell an admission minted, taken at the admission boundary.
 ///
-/// A private event no longer reaches a queue when its entry advances: the
-/// entry is disposed of there, and the handover happens afterwards from the
-/// custody the debt holds. Controls that asserted the old report follow the
-/// event to its real handover through this.
-///
-/// WHAT IS ALREADY DONE COUNTS. The handover may have happened in an earlier
-/// call -- deliver_turn drives terminal visits itself -- so the phase is read
-/// before any visit is driven here. Counting only NEW dispatches reported "no
-/// handover" for an event the recipient had already been given.
-///
-/// And it is this event's handover, not any. Returning true for whatever
-/// capsule a visit happened to accept passed controls whose own event was
-/// still owed.
-fn handed_over(
-    private: &mut crate::PrivateXServerFrontend,
+/// RETAINED THERE, NOT LOOKED UP LATER. A delivery id is a reusable number and
+/// its ticket is pruned once answered, so asking the recovery for the cell at
+/// assertion time can hand back a different admission's cell, or none -- and
+/// none is not evidence that nothing was handed over. Holding the cell from
+/// the start is what fixes which admission a control is talking about.
+fn admitted_cell(
+    private: &crate::PrivateXServerFrontend,
     delivery: u64,
-    steps: usize,
-) -> bool {
-    let id = XAuthorityInputDeliveryId::from_raw(delivery);
-    let Ok(Some(cell)) = private.broker.registry.input_recovery.completion_for(id) else {
-        return false;
-    };
-    for _ in 0..steps {
-        match handover_phase(private, &cell) {
-            Some(PrivateDispatchPhase::Enqueued) => return true,
-            // Nothing owns this admission's cell, so nothing owes it an event.
-            None => return false,
-            Some(_) => {}
-        }
-        match private.deliver_one(&mut |_, _| Ok(())) {
-            Ok(PrivateDeliveryStep::Idle) | Err(_) => break,
-            Ok(_) => {}
-        }
+) -> Arc<PrivateDeliveryCompletion> {
+    private
+        .broker
+        .registry
+        .input_recovery
+        .completion_for(XAuthorityInputDeliveryId::from_raw(delivery))
+        .expect("a readable recovery")
+        .expect("this admission minted a cell")
+}
+
+/// Capsules an instrument took off a recipient's ordered queue.
+///
+/// FIXTURE-OWNED, because reading a queue consumes it. Anything taken while
+/// looking for one admission's capsule is kept here rather than dropped: a
+/// control asking about one event must not destroy another event's evidence,
+/// and the capsules it did not ask for are still owed to whoever does.
+#[derive(Default)]
+struct OrderedInbox {
+    taken: Vec<XAuthorityOrderedDelivery>,
+}
+
+impl OrderedInbox {
+    fn collect(&mut self, queue: &Receiver<XAuthorityOrderedDelivery>) {
+        self.taken.extend(queue.try_iter());
     }
-    matches!(
-        handover_phase(private, &cell),
-        Some(PrivateDispatchPhase::Enqueued)
-    )
+
+    fn take_carrying(
+        &mut self,
+        expected: &Arc<PrivateDeliveryCompletion>,
+    ) -> Option<XAuthorityOrderedDelivery> {
+        let found = self.taken.iter().position(|capsule| {
+            capsule
+                .finalizer()
+                .is_some_and(|finalizer| Arc::ptr_eq(&finalizer.completion, expected))
+        })?;
+        Some(self.taken.remove(found))
+    }
+
+    /// The capsule this exact admission's recipient accepted, if it has one.
+    ///
+    /// WHAT IS ALREADY QUEUED COUNTS, and is looked at before any visit is
+    /// driven: a handover from an earlier call is still a handover, and asking
+    /// only for new ones reported nothing for an event the recipient had.
+    ///
+    /// Identity is the retained cell the capsule carries -- the one thing that
+    /// names this admission and nothing else. A driver failure is propagated
+    /// rather than answered as "no handover", because it establishes neither.
+    fn accepted(
+        &mut self,
+        private: &mut crate::PrivateXServerFrontend,
+        queue: &Receiver<XAuthorityOrderedDelivery>,
+        expected: &Arc<PrivateDeliveryCompletion>,
+        steps: usize,
+    ) -> Result<Option<XAuthorityOrderedDelivery>, XServerFrontendRouteError> {
+        for _ in 0..steps {
+            self.collect(queue);
+            if let Some(found) = self.take_carrying(expected) {
+                return Ok(Some(found));
+            }
+            if matches!(
+                private.deliver_one(&mut |_, _| Ok(()))?,
+                PrivateDeliveryStep::Idle
+            ) {
+                break;
+            }
+        }
+        self.collect(queue);
+        Ok(self.take_carrying(expected))
+    }
 }
 
 /// The handover phase of the custody that owns exactly this admission's cell.
 ///
-/// BY THE CELL THE ADMISSION MINTED, because a delivery id is a reusable
-/// number and a queue arrival is only proof that SOME event went. The cell is
-/// the one thing that names this event and nothing else.
+/// AN INTERNAL PHASE, for controls whose claim is about the phase itself. A
+/// claim about what a recipient accepted goes through the queue instead.
 fn handover_phase(
     private: &crate::PrivateXServerFrontend,
     cell: &Arc<PrivateDeliveryCompletion>,
@@ -14835,6 +14873,7 @@ fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
     let PreparedOrderedFixture {
         runner,
         ingress,
+        channels,
         surface,
         ..
     } = &mut fixture;
@@ -14846,6 +14885,7 @@ fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
         ..
     } = runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
 
     ingress
@@ -14856,11 +14896,20 @@ fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
             true,
         ))
         .expect("the order to accept the press");
+        let press_cell = admitted_cell(private, 2411);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 2411, 8), "the event reached its recipient's ordered queue");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the event reached its recipient's ordered queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(2411)
+    );
+    assert_eq!(capsule.client(), client);
     assert!(
         private.terminal.holds[0].native.is_some(),
         "the press left a source obligation on its record"
@@ -14874,6 +14923,7 @@ fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
             false,
         ))
         .expect("the order to accept the release");
+        let release_cell = admitted_cell(private, 2412);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
@@ -14883,7 +14933,15 @@ fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
         1,
         "the entry was disposed of and its own outcome reported"
     );
-    assert!(handed_over(private, 2412, 8), "the release owes its recipient an event");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &release_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the release owes its recipient an event");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(2412)
+    );
+    assert_eq!(capsule.client(), client);
     assert!(
         private.terminal.holds.is_empty(),
         "the hold ended, so its record is gone"
@@ -15719,6 +15777,7 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
     let window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     // Registered with channels held, so a delivered event has somewhere to go.
 
@@ -15731,12 +15790,21 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
             true,
         ))
         .expect("the order to accept the press");
+    let press_cell = admitted_cell(private, 861);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
-    assert!(handed_over(private, 861, 8), "the press was accepted onto the client's queue");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the press was accepted onto the client's queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(861)
+    );
+    assert_eq!(capsule.client(), client);
     assert!(
         matches!(
             delivered[0].completion,
@@ -15748,14 +15816,10 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         !delivered[0].debt_settled,
         "a press creates no release debt to close"
     );
-    let queued: Vec<_> = channels.ordered.try_iter().collect();
-    assert_eq!(queued.len(), 1, "the client received the press");
-    assert_eq!(
-        queued[0].delivery(),
-        XAuthorityInputDeliveryId::from_raw(861),
-        "answered against the delivery identity it was accepted with"
+    assert!(
+        inbox.taken.is_empty() && channels.ordered.try_recv().is_err(),
+        "and nothing else was put on that queue"
     );
-    assert_eq!(queued[0].client(), client);
     // The window is the source's own resolution, which the capsule carries in
     // its encoded frames rather than exposing as a field.
     assert_eq!(private.terminal.holds[0].reached.window(), window);
@@ -15772,12 +15836,21 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
             false,
         ))
         .expect("the order to accept the release");
+        let release_cell = admitted_cell(private, 862);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
-    assert!(handed_over(private, 862, 8), "the release was queued too");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &release_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the release was queued too");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(862)
+    );
+    assert_eq!(capsule.client(), client);
     assert!(
         delivered[0].sequence.raw() > 0,
         "each delivery names the place in the order it came from"
@@ -15787,13 +15860,10 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         "but no debt is closed by queuing: the recipient half is the writer's \
          outcome, and nothing here has observed one"
     );
-    let queued: Vec<_> = channels.ordered.try_iter().collect();
-    assert_eq!(queued.len(), 1, "the client received the release");
-    assert_eq!(
-        queued[0].delivery(),
-        XAuthorityInputDeliveryId::from_raw(862)
+    assert!(
+        inbox.taken.is_empty() && channels.ordered.try_recv().is_err(),
+        "and the release was the only thing behind it"
     );
-    assert_eq!(queued[0].client(), client);
     assert!(
         !private.terminal.settling.is_empty(),
         "so the continuation is retained, because the obligation is still open"
@@ -15965,13 +16035,16 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
 fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() {
     let client = XServerFrontendClientId(891);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, ingress, surface, window, .. } = &mut fixture;
+    let PreparedOrderedFixture { runner, ingress, channels, surface, window, .. } = &mut fixture;
     let surface = *surface;
     let _window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
 
+    // The cell is taken where the admission mints it, and travels out with the
+    // reports, so every claim below names the admission it came from.
     let run_one_submission = |private: &mut crate::PrivateXServerFrontend,
                                   keyboards: &mut crate::PrivateKeyboards,
                                   delivery: u64,
@@ -15984,27 +16057,42 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
                 pressed,
             ))
             .expect("the order to accept it");
+        let cell = admitted_cell(private, delivery);
         let turn = private
             .route_pending_ordered(keyboards, watch)
             .expect("a readable order");
-        private.deliver_turn(turn)
+        (private.deliver_turn(turn), cell)
     };
 
     // A press that begins the hold: an event is owed and delivered.
-    let delivered = run_one_submission(private, keyboards, 891, true);
+    let (delivered, press_cell) = run_one_submission(private, keyboards, 891, true);
     assert_eq!(delivered.len(), 1);
-    assert!(handed_over(private, 891, 8));
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the press reached its recipient");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(891)
+    );
+    assert_eq!(capsule.client(), client);
 
     // The same input pressed again joins the hold. It owes nobody an event,
     // which is an outcome rather than a failure to emit one -- so its
     // completion is taken and the grant's cell is freed.
-    let delivered = run_one_submission(private, keyboards, 892, true);
+    let (delivered, join_cell) = run_one_submission(private, keyboards, 892, true);
     assert_eq!(
         delivered.len(),
         1,
         "a join is reported as what happened, not retained for want of an event"
     );
-    assert!(!handed_over(private, 892, 4), "nobody was owed one");
+    assert!(
+        inbox
+            .accepted(private, &channels.ordered, &join_cell, 4)
+            .expect("a readable terminal step")
+            .is_none(),
+        "nobody was owed one"
+    );
     assert!(
         matches!(
             delivered[0].completion,
@@ -16020,9 +16108,17 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
     // Which means the hold this grant still owns can be released. Retaining
     // the join would have left the grant unable to reserve, holding a button
     // it could never let go of.
-    let delivered = run_one_submission(private, keyboards, 893, false);
+    let (delivered, release_cell) = run_one_submission(private, keyboards, 893, false);
     assert_eq!(delivered.len(), 1, "the release reserved and ran");
-    assert!(handed_over(private, 893, 8), "and it owed an event, which was queued");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &release_cell, 8)
+        .expect("a readable terminal step")
+        .expect("and it owed an event, which was queued");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(893)
+    );
+    assert_eq!(capsule.client(), client);
 }
 
 #[test]
@@ -16351,7 +16447,9 @@ fn an_accepted_handover_is_observed_rather_than_offered_again() {
     // queue owes only its outcome, and offering it again would deliver the
     // same transition twice with nothing downstream able to tell.
     for _ in 0..8 {
-        let _ = private.deliver_one(&mut |_, _| Ok(()));
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("a readable terminal step");
     }
     assert_eq!(
         channels.ordered.try_iter().count(),
@@ -17030,6 +17128,7 @@ fn a_join_leaves_the_source_obligation_alone_so_a_later_press_still_runs() {
     let PreparedOrderedFixture {
         runner,
         ingress,
+        channels,
         surface,
         ..
     } = &mut fixture;
@@ -17041,8 +17140,11 @@ fn a_join_leaves_the_source_obligation_alone_so_a_later_press_still_runs() {
         ..
     } = runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
 
+    // The cell is taken where the admission mints it and travels out with the
+    // reports, so every claim below names the admission it came from.
     let run = |private: &mut crate::PrivateXServerFrontend,
                    keyboards: &mut crate::PrivateKeyboards,
                    delivery: u64,
@@ -17055,30 +17157,39 @@ fn a_join_leaves_the_source_obligation_alone_so_a_later_press_still_runs() {
                 true,
             ))
             .expect("the order to accept it");
+        let cell = admitted_cell(private, delivery);
         let turn = private
             .route_pending_ordered(keyboards, watch)
             .expect("a readable order");
-        private.deliver_turn(turn)
+        (private.deliver_turn(turn), cell)
     };
 
-    let first = run(private, keyboards, 2401, 272);
+    let (first, first_cell) = run(private, keyboards, 2401, 272);
     assert_eq!(
         first.len(),
         1,
         "the press was disposed of and its own outcome reported"
     );
-    assert!(
-        handed_over(private, 2401, 8),
-        "the first press owes its recipient an event"
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &first_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the first press owes its recipient an event");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(2401)
     );
+    assert_eq!(capsule.client(), client);
     assert_eq!(private.terminal.holds.len(), 1);
 
     // The join. It owes nobody an event, and it must not leave a second
     // obligation behind it.
-    let joined = run(private, keyboards, 2402, 272);
+    let (joined, join_cell) = run(private, keyboards, 2402, 272);
     let _ = &joined;
     assert!(
-        !handed_over(private, 2402, 4),
+        inbox
+            .accepted(private, &channels.ordered, &join_cell, 4)
+            .expect("a readable terminal step")
+            .is_none(),
         "a join owes nobody an event: the button is already down"
     );
     assert_eq!(
@@ -17092,12 +17203,17 @@ fn a_join_leaves_the_source_obligation_alone_so_a_later_press_still_runs() {
     );
 
     // The press this blocker actually kills.
-    let third = run(private, keyboards, 2403, 273);
+    let (third, third_cell) = run(private, keyboards, 2403, 273);
     let _ = &third;
-    assert!(
-        handed_over(private, 2403, 8),
-        "a different button still presses: the join left no phase behind it"
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &third_cell, 8)
+        .expect("a readable terminal step")
+        .expect("a different button still presses: the join left no phase behind it");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(2403)
     );
+    assert_eq!(capsule.client(), client);
     assert_eq!(
         private.terminal.holds.len(),
         2,
@@ -17113,7 +17229,7 @@ fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
     let PreparedOrderedFixture {
         runner,
         ingress,
-        channels: _,
+        channels,
         deliveries,
         surface,
         ..
@@ -17126,6 +17242,7 @@ fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
         ..
     } = runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
 
     // Before the turn the ledger tracks the delivery with no recipient: it
@@ -17133,6 +17250,7 @@ fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
     ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
+    let press_cell = admitted_cell(private, 992);
     assert_eq!(
         private
             .broker
@@ -17153,7 +17271,15 @@ fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
         1,
         "the entry was disposed of and its own outcome reported"
     );
-    assert!(handed_over(private, 992, 8), "the press reached the client's queue");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the press reached the client's queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(992)
+    );
+    assert_eq!(capsule.client(), client);
     assert_eq!(
         private
             .broker
@@ -17202,6 +17328,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     } = prepared_ordered_fixture(client);
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     let (_sender_registration, _sender_channels) = separate_ordered_sender(private, &mut ingress, client);
 
@@ -17286,6 +17413,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
             false,
         ))
         .expect("the order to accept it");
+        let press_cell = admitted_cell(private, 9931);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
@@ -17296,7 +17424,13 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
         "the release finishes, because the ledger was never pressed"
     );
     let _ = &released;
-    assert!(!handed_over(private, 9931, 4), "and it owes nobody an event");
+    assert!(
+        inbox
+            .accepted(private, &channels.ordered, &press_cell, 4)
+            .expect("a readable terminal step")
+            .is_none(),
+        "and it owes nobody an event"
+    );
     assert!(
         !private
             .terminal
@@ -17333,6 +17467,7 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
     } = prepared_ordered_fixture(client);
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     let (_sender_registration, _sender_channels) = separate_ordered_sender(private, &mut ingress, client);
 
@@ -17345,11 +17480,20 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
             true,
         ))
         .expect("the order to accept it");
+        let press_cell = admitted_cell(private, 9941);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 9941, 8), "the event reached its recipient's ordered queue");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the event reached its recipient's ordered queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(9941)
+    );
+    assert_eq!(capsule.client(), client);
     assert_eq!(projected_buttons(private, namespace, seat), 0x100);
     assert_eq!(private.terminal.holds.len(), 1);
 
@@ -17383,6 +17527,7 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
             false,
         ))
         .expect("the order to accept it");
+        let release_cell = admitted_cell(private, 9942);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
@@ -17406,7 +17551,10 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
         "and the button this seat had down is up"
     );
     assert!(
-        !handed_over(private, 9942, 4),
+        inbox
+            .accepted(private, &channels.ordered, &release_cell, 4)
+            .expect("a readable terminal step")
+            .is_none(),
         "but nothing was enqueued for a client that is gone"
     );
     assert_eq!(
@@ -17520,6 +17668,8 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
     ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
+    let press_cell = admitted_cell(private, 995);
+    let mut inbox = OrderedInbox::default();
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
@@ -17529,11 +17679,16 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
         1,
         "the entry was disposed of and its own outcome reported"
     );
-    assert!(handed_over(private, 995, 8));
-    let to_owner: Vec<_> = owner_channels.ordered.try_iter().collect();
-    assert_eq!(to_owner.len(), 1, "the grab owner is the one that received it");
-    assert_eq!(to_owner[0].delivery(), delivery);
-    assert_eq!(to_owner[0].client(), owner);
+    let to_owner = inbox
+        .accepted(private, &owner_channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the grab owner is the one that received it");
+    assert_eq!(to_owner.delivery(), delivery);
+    assert_eq!(to_owner.client(), owner);
+    assert!(
+        inbox.taken.is_empty(),
+        "and nothing else was on the owner's queue"
+    );
     assert!(
         channels.ordered.try_recv().is_err(),
         "and the surface's own client did not"
@@ -17625,14 +17780,19 @@ fn an_unreadable_ledger_is_not_a_delivery_that_ended() {
 }
 
 /// A press that ran, leaving a hold and a button down.
+///
+/// The cell is taken where the admission mints it and handed back, so a caller
+/// can go on naming this exact admission after its ticket is answered.
 fn held_button(
     private: &mut crate::PrivateXServerFrontend,
     ingress: &crate::PrivateIngress,
     keyboards: &mut crate::PrivateKeyboards,
     watch: &private_watchdog::PrivateWatchdogOwner,
+    inbox: &mut OrderedInbox,
+    queue: &Receiver<XAuthorityOrderedDelivery>,
     surface: SurfaceId,
     delivery: u64,
-) {
+) -> (Arc<PrivateDeliveryCompletion>, XAuthorityOrderedDelivery) {
     ingress
         .submit(button_to(
             surface,
@@ -17641,12 +17801,21 @@ fn held_button(
             true,
         ))
         .expect("the order to accept it");
+    let cell = admitted_cell(private, delivery);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, delivery, 8), "the event reached its recipient's ordered queue");
+    let capsule = inbox
+        .accepted(private, queue, &cell, 8)
+        .expect("a readable terminal step")
+        .expect("the event reached its recipient's ordered queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(delivery)
+    );
     assert_eq!(private.terminal.holds.len(), 1);
+    (cell, capsule)
 }
 
 #[test]
@@ -17668,7 +17837,17 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
-    held_button(private, &ingress, keyboards, watch, surface, 9981);
+    let mut inbox = OrderedInbox::default();
+    let (_held_cell, _held_capsule) = held_button(
+        private,
+        &ingress,
+        keyboards,
+        watch,
+        &mut inbox,
+        &channels.ordered,
+        surface,
+        9981,
+    );
 
     // The release is accepted, and then its own delivery ends while it waits
     // its turn.
@@ -17752,7 +17931,17 @@ fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
-    held_button(private, &ingress, keyboards, watch, surface, 9991);
+    let mut inbox = OrderedInbox::default();
+    let (_held_cell, _held_capsule) = held_button(
+        private,
+        &ingress,
+        keyboards,
+        watch,
+        &mut inbox,
+        &channels.ordered,
+        surface,
+        9991,
+    );
 
     ingress
         .submit(button_to(
@@ -17937,15 +18126,25 @@ fn an_ordered_turn_gives_its_claim_back() {
         ..
     } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
+    let press_cell = admitted_cell(private, 1001);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 1001, 8), "the event reached its recipient's ordered queue");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the event reached its recipient's ordered queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(1001)
+    );
+    assert_eq!(capsule.client(), client);
 
     // Given back, so the delivery can still be cancelled. A claim nobody
     // resolves is not a delivery that is safe: it is one nothing can ever
@@ -17983,7 +18182,17 @@ fn a_release_whose_delivery_another_execution_holds_applies_nothing() {
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
-    held_button(private, &ingress, keyboards, watch, surface, 10021);
+    let mut inbox = OrderedInbox::default();
+    let (_held_cell, _held_capsule) = held_button(
+        private,
+        &ingress,
+        keyboards,
+        watch,
+        &mut inbox,
+        &channels.ordered,
+        surface,
+        10021,
+    );
 
     ingress
         .submit(button_to(surface, release, 272, false))
@@ -18048,7 +18257,17 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     let watch = watch.as_ref().expect("a sealed watch");
 
     // A press that reaches this client and starts a hold.
-    held_button(private, &ingress, keyboards, watch, surface, 10031);
+    let mut inbox = OrderedInbox::default();
+    let (_held_cell, _held_capsule) = held_button(
+        private,
+        &ingress,
+        keyboards,
+        watch,
+        &mut inbox,
+        &channels.ordered,
+        surface,
+        10031,
+    );
     assert_eq!(
         private
             .broker
@@ -18108,12 +18327,19 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     ingress
         .submit(button_to(surface, second, 272, true))
         .expect("the order to accept it");
+    let join_cell = admitted_cell(private, 10032);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
-    assert!(!handed_over(private, 10032, 4), "a join owes nobody an event: the button is already down");
+    assert!(
+        inbox
+            .accepted(private, &channels.ordered, &join_cell, 4)
+            .expect("a readable terminal step")
+            .is_none(),
+        "a join owes nobody an event: the button is already down"
+    );
     assert_eq!(
         private.terminal.holds.len(),
         1,
@@ -18392,15 +18618,25 @@ fn a_press_that_applied_cannot_be_revoked_afterwards() {
     } = prepared_ordered_fixture(client);
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
+    let press_cell = admitted_cell(private, 1203);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 1203, 8), "the event reached its recipient's ordered queue");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the event reached its recipient's ordered queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(1203)
+    );
+    assert_eq!(capsule.client(), client);
     assert_eq!(
         claim_state(private, delivery),
         (false, true),
@@ -18461,8 +18697,18 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     } = prepared_ordered_fixture(client);
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
-    held_button(private, &ingress, keyboards, watch, surface, 12011);
+    let (_held_cell, _held_capsule) = held_button(
+        private,
+        &ingress,
+        keyboards,
+        watch,
+        &mut inbox,
+        &channels.ordered,
+        surface,
+        12011,
+    );
 
     ingress
         .submit(button_to(
@@ -18472,11 +18718,20 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
             false,
         ))
         .expect("the order to accept it");
+        let press_cell = admitted_cell(private, 12012);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 12012, 8), "the event reached its recipient's ordered queue");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the event reached its recipient's ordered queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(12012)
+    );
+    assert_eq!(capsule.client(), client);
     assert_eq!(projected_buttons(private, namespace, seat), 0);
     assert_eq!(private.terminal.settling.len(), 1);
 
@@ -18736,6 +18991,7 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
     } = prepared_ordered_fixture(client);
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     // A grab this client owns, over the window it actually has. The
     // source resolves a grab through the owner's own selection state, so
@@ -18767,11 +19023,20 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
     ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
+    let press_cell = admitted_cell(private, 1303);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 1303, 8), "the event reached its recipient's ordered queue");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the event reached its recipient's ordered queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(1303)
+    );
+    assert_eq!(capsule.client(), client);
 
     // The sweep revokes the connection and publishes nothing for the delivery,
     // because saying it was withdrawn would contradict the effect.
@@ -18888,10 +19153,12 @@ fn private_work_does_not_expire_because_it_waited() {
     } = prepared_ordered_fixture(client);
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     ingress
         .submit(button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
+    let press_cell = admitted_cell(private, 1401);
 
     // Long past the legacy deadline, and nothing has been attempted for it --
     // so this is the age of a queue entry, not of a send. No writer has
@@ -18926,7 +19193,15 @@ fn private_work_does_not_expire_because_it_waited() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 1401, 8), "the event reached its recipient's ordered queue");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the event reached its recipient's ordered queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(1401)
+    );
+    assert_eq!(capsule.client(), client);
 
     // And a real cancellation still reaches it, because what was disabled is
     // the age producer and not the sweep.
@@ -20166,6 +20441,7 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
     } = prepared_ordered_fixture(client);
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
+    let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     ingress
         .submit(button_to(
@@ -20175,11 +20451,20 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
             true,
         ))
         .expect("the order to accept it");
+        let press_cell = admitted_cell(private, 1903);
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 1903, 8), "the event reached its recipient's ordered queue");
+    let capsule = inbox
+        .accepted(private, &channels.ordered, &press_cell, 8)
+        .expect("a readable terminal step")
+        .expect("the event reached its recipient's ordered queue");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(1903)
+    );
+    assert_eq!(capsule.client(), client);
 
     // A's writer reports its own delivery blocked and still owns it. Whether
     // any of the frame reached the wire depends on how full the socket already
@@ -20559,6 +20844,51 @@ fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
         "the visits were real: {refused} refused dispatches, {idle} idle"
     );
     assert_eq!(seen_b,[XAuthorityInputDeliveryId::from_raw(76015)],"a genuinely Full older recipient must not consume every later live recipient's turn");
+
+    // AND THE RETAINED CAPSULE GOES ONCE, NOW THAT THERE IS ROOM. Draining A's
+    // four freed its slots; what was refused is offered again unchanged. The
+    // capsule is the one that was built before the refusal -- same completion,
+    // same recipient, same bytes -- because a refused queue is a handover that
+    // did not happen, not one to redo.
+    let mut inbox = OrderedInbox::default();
+    let retried = inbox
+        .accepted(p, &f.channels.ordered, &original, 8)
+        .expect("a readable terminal step")
+        .expect("the retained capsule is accepted once its recipient has room");
+    assert_eq!(
+        retried.delivery(),
+        XAuthorityInputDeliveryId::from_raw(76014)
+    );
+    assert_eq!(retried.client(), f.client);
+    assert!(Arc::ptr_eq(
+        &original,
+        &retried.finalizer().unwrap().completion
+    ));
+    assert_eq!(
+        order_pass_frames(&retried),
+        frames,
+        "the same encoded event, not one built again"
+    );
+    assert_eq!(
+        retried.emission().incarnation(),
+        incarnation,
+        "still named by the hold it came from"
+    );
+    assert!(
+        inbox.taken.is_empty(),
+        "and nothing else of A's was taken while finding it"
+    );
+
+    // Once. Further visits produce no duplicate for either recipient.
+    for _ in 0..8 {
+        let _ = p.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+    assert!(
+        f.channels.ordered.try_recv().is_err(),
+        "an accepted handover is not repeated after capacity opens"
+    );
+    assert!(other_channels.ordered.try_recv().is_err());
+    assert!(original.answer().is_none() && later.answer().is_none());
     drop(other_registration);
 }
 
@@ -20816,4 +21146,183 @@ fn an_exhausted_event_order_refuses_before_any_effect() {
         let (claimed,applied)={let s=recovery.state.lock().unwrap();let e=s.tickets.get(&id).unwrap();(e.claimed,e.may_have_applied)};
         assert!(!claimed && !applied);assert!(f.channels.ordered.try_recv().is_err());
     }
+}
+
+#[test]
+fn an_instrument_recognises_its_admission_after_the_ticket_is_pruned() {
+    // The helper used to ask the recovery for the cell when it was called, so
+    // an admission whose ticket had been answered and pruned read as one that
+    // was never handed over. The identity has to be fixed where the admission
+    // mints it, and a lookup that returns nothing is not evidence.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(7621));
+    attempt_run(&mut f, 76210, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let recovery = private.broker.registry.input_recovery.clone();
+    let id = XAuthorityInputDeliveryId::from_raw(76210);
+    let original = admitted_cell(private, 76210);
+    let mut inbox = OrderedInbox::default();
+
+    let capsule = inbox
+        .accepted(private, &f.channels.ordered, &original, 8)
+        .expect("a readable terminal step")
+        .expect("the actual recipient accepted the original capsule");
+    assert_eq!(capsule.delivery(), id);
+    assert_eq!(capsule.client(), f.client);
+    assert!(Arc::ptr_eq(
+        &original,
+        &capsule.finalizer().unwrap().completion
+    ));
+    assert_eq!(
+        handover_phase(private, &original),
+        Some(PrivateDispatchPhase::Enqueued)
+    );
+
+    // A real finish and an ordinary observation prune the ticket. Nothing
+    // about the handover changes: the capsule and the custody still carry the
+    // cell this admission minted.
+    recovery
+        .finish(f.client, Some(id), XAuthorityInputDeliveryOutcome::WriteFailed)
+        .unwrap();
+    let answer = original
+        .answer()
+        .expect("the original admission owns the established answer");
+    assert_eq!(answer.delivery, id);
+    assert_eq!(answer.outcome, XAuthorityInputDeliveryOutcome::WriteFailed);
+    assert!(
+        recovery.observe(answer),
+        "an ordinary observer consumes and prunes the exact answered ticket"
+    );
+    assert!(
+        recovery.completion_for(id).unwrap().is_none(),
+        "the lookup this instrument must not depend on is gone"
+    );
+
+    assert_eq!(
+        handover_phase(private, &original),
+        Some(PrivateDispatchPhase::Enqueued)
+    );
+    assert!(Arc::ptr_eq(
+        &original,
+        private.terminal.holds[0].custody.completion.as_ref().unwrap()
+    ));
+    assert!(Arc::ptr_eq(
+        &original,
+        &capsule.finalizer().unwrap().completion
+    ));
+
+    // And the retained capsule is still recognised as this admission's, with
+    // nothing replayed to find it again.
+    inbox.taken.push(capsule);
+    let found = inbox
+        .accepted(private, &f.channels.ordered, &original, 8)
+        .expect("a readable terminal step")
+        .expect("an instrument holding the admission's own cell still knows it");
+    assert_eq!(found.delivery(), id);
+    assert!(
+        f.channels.ordered.try_recv().is_err(),
+        "the actual accepted event is never replayed"
+    );
+}
+
+#[test]
+fn an_instrument_takes_the_admission_asked_for_and_keeps_the_others() {
+    // Three events owed to one recipient, asked for out of order. An
+    // instrument that returned whatever capsule it found first would answer
+    // every one of these with the press, and a control built on it would be
+    // asserting about an event it never named.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(7631));
+    let cells: Vec<_> = {
+        let mut cells = Vec::new();
+        for (id, button, pressed) in [(76310u64, 272u32, true), (76311, 272, false), (76312, 273, true)] {
+            f.ingress
+                .submit(button_to(
+                    f.surface,
+                    XAuthorityInputDeliveryId::from_raw(id),
+                    button,
+                    pressed,
+                ))
+                .unwrap();
+            let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut f.runner;
+            let private = frontend.as_mut().unwrap();
+            assert!(matches!(
+                private
+                    .step_once(keyboards, &mut |_, _| Ok(()), watch.as_ref().unwrap())
+                    .unwrap(),
+                PrivateOrderedStep::Decided(_)
+            ));
+            cells.push(admitted_cell(private, id));
+            let Some(PrivateOrderedItem::Ran { custody, .. }) = private.terminal.turn.pop() else {
+                panic!("an accepted request runs")
+            };
+            assert!(custody.observe().unwrap().is_some());
+        }
+        cells
+    };
+    let private = f.runner.frontend.as_mut().unwrap();
+
+    // THE BUDGET STOPS AT THE ANSWER. Nothing is queued yet, so visits have to
+    // be driven -- but only until this admission's capsule appears. Spending
+    // the rest would hand over events this question never mentioned, which a
+    // control asking about the first one has no business causing.
+    let mut inbox = OrderedInbox::default();
+    assert!(
+        f.channels.ordered.try_recv().is_err(),
+        "nothing has been handed over before this"
+    );
+    let first = inbox
+        .accepted(private, &f.channels.ordered, &cells[0], 8)
+        .expect("a readable terminal step")
+        .expect("the press is handed over and recognised");
+    assert_eq!(
+        first.delivery(),
+        XAuthorityInputDeliveryId::from_raw(76310)
+    );
+    assert_ne!(
+        handover_phase(private, &cells[2]),
+        Some(PrivateDispatchPhase::Enqueued),
+        "and the events nobody asked about are still owed"
+    );
+    assert!(
+        inbox.taken.is_empty(),
+        "nothing else was taken off that queue"
+    );
+
+    // Now let the rest go, so the whole stream is in hand.
+    for _ in 0..12 {
+        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+    inbox.collect(&f.channels.ordered);
+    assert_eq!(
+        inbox
+            .taken
+            .iter()
+            .map(XAuthorityOrderedDelivery::delivery)
+            .collect::<Vec<_>>(),
+        [76311, 76312].map(XAuthorityInputDeliveryId::from_raw),
+        "in their own order, with the one already taken out"
+    );
+
+    // ASKED FOR THE LAST ONE, out of order and with no budget at all.
+    let third = inbox
+        .accepted(private, &f.channels.ordered, &cells[2], 0)
+        .expect("a readable terminal step")
+        .expect("what is already queued counts without driving anything");
+    assert_eq!(
+        third.delivery(),
+        XAuthorityInputDeliveryId::from_raw(76312),
+        "the admission asked for, not the first capsule to hand"
+    );
+    assert!(Arc::ptr_eq(&cells[2], &third.finalizer().unwrap().completion));
+
+    // The one it was not asked about is kept.
+    assert_eq!(
+        inbox
+            .taken
+            .iter()
+            .map(XAuthorityOrderedDelivery::delivery)
+            .collect::<Vec<_>>(),
+        [76311].map(XAuthorityInputDeliveryId::from_raw),
+        "unrelated capsules are retained, not consumed by someone else's question"
+    );
+    assert!(cells.iter().all(|cell| cell.answer().is_none()));
 }

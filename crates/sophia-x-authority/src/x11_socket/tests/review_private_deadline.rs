@@ -27,7 +27,17 @@ fn review_private_deadline_enqueued_unwritten_work_keeps_socket_and_ticket() {
     let (mut socket, mut peer) = UnixStream::pair().unwrap();
     socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
     private.broker.registry.input_recovery.attach(client, socket.try_clone().unwrap()).unwrap();
-    held_button(private, ingress, keyboards, watch, surface, 6202);
+    let mut inbox = OrderedInbox::default();
+    let (_held_cell, held_capsule) = held_button(
+        private,
+        ingress,
+        keyboards,
+        watch,
+        &mut inbox,
+        &channels.ordered,
+        surface,
+        6202,
+    );
     let recovery = &private.broker.registry.input_recovery;
     let ticket = recovery.ticket(delivery).unwrap();
     assert_eq!(ticket.client, Some(client));
@@ -38,9 +48,12 @@ fn review_private_deadline_enqueued_unwritten_work_keeps_socket_and_ticket() {
     assert!(deliveries.try_recv().is_err());
     assert!(!recovery.state.lock().unwrap().connections.get(&client).unwrap().revoked);
     assert!(recovery.ticket(delivery).is_some());
-    let queued: Vec<_> = channels.ordered.try_iter().collect();
-    assert_eq!(queued.len(), 1, "queued event was retained");
-    assert_eq!(queued[0].delivery(), delivery);
+    assert_eq!(
+        held_capsule.delivery(),
+        delivery,
+        "queued event was retained"
+    );
+    assert!(inbox.taken.is_empty() && channels.ordered.try_recv().is_err());
     peer.write_all(b"p").unwrap();
     let mut byte = [0]; socket.read_exact(&mut byte).unwrap(); assert_eq!(byte, [b'p']);
 }
@@ -67,14 +80,24 @@ fn review_private_deadline_forced_bound_revoke_respects_an_applied_claim() {
     let surface = SurfaceId::new(6204, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(6204);
         let mut f = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, ingress, deliveries, .. } = &mut f;
+    let PreparedOrderedFixture { runner, ingress, channels, deliveries, .. } = &mut f;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
     let (mut socket, _peer) = UnixStream::pair().unwrap();
     socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
     private.broker.registry.input_recovery.attach(client, socket.try_clone().unwrap()).unwrap();
-    held_button(private, ingress, keyboards, watch, surface, 6204);
+    let mut inbox = OrderedInbox::default();
+    let (_held_cell, _held_capsule) = held_button(
+        private,
+        ingress,
+        keyboards,
+        watch,
+        &mut inbox,
+        &channels.ordered,
+        surface,
+        6204,
+    );
     let recovery = &private.broker.registry.input_recovery;
     assert_eq!(recovery.claim_execution(Some(delivery)), ExecutionClaim::Claimed);
     assert!(recovery.recover(Instant::now(), true).unwrap().is_empty());
