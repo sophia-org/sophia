@@ -46,6 +46,25 @@ impl ContentEpoch {
 }
 
 impl ContentEpochPool {
+    /// Observe the actual active and retained stores without collecting owners,
+    /// allocating a shadow table, or converting credit into a release claim.
+    pub fn accounting(&self) -> super::ContentEpochAccounting {
+        let mut value = super::ContentEpochAccounting {
+            grant: self.last_grant,
+            active_epochs: usize::from(self.active.is_some()),
+            retired_epochs: self.retired.len(),
+            reserved_bytes: self.reserved_bytes(),
+            reserved_backing_bytes: self.reserved_backing_bytes(),
+            ..Default::default()
+        };
+        for epoch in self.active.iter().chain(&self.retired) {
+            epoch.resources.add_accounting(&mut value);
+            epoch.candidates.add_accounting(&mut value);
+            epoch.allocations.add_accounting(&mut value);
+        }
+        value
+    }
+
     /// Metadata is independently bounded: even tiny pinned resources cannot
     /// retain arbitrarily many replay tables through reconnect churn.
     pub const MAX_RETIRED_EPOCHS: usize = 16;

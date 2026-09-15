@@ -76,6 +76,11 @@ pub struct ContentAllocationStore {
 }
 
 impl ContentAllocationStore {
+    pub(crate) fn add_accounting(&self, value: &mut super::ContentEpochAccounting) {
+        value.allocations += self.active.len() + self.pending.len();
+        value.response_records += self.control_occupancy();
+    }
+
     pub(crate) fn queued_bulk_occupancy(&self) -> (usize, usize) {
         self.events
             .iter()

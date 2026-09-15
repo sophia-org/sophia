@@ -25,6 +25,7 @@ use crate::{
     PolicyRoleEndpoint, PolicyRoleEndpointError, ProtectionDomainEvidence,
 };
 
+mod accounting;
 mod content_actions;
 mod content_admission;
 mod content_allocations;
@@ -33,6 +34,7 @@ mod content_resources;
 mod control_budget;
 mod indicator_responses;
 mod outbox;
+pub use accounting::ShellContentAccounting;
 pub use content_admission::ShellContentAdmissionPolicy;
 
 const SHELL_IO_TIMEOUT: Duration = Duration::from_secs(5);

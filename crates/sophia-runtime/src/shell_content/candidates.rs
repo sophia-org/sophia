@@ -136,6 +136,13 @@ pub struct ContentCandidateStore {
 }
 
 impl ContentCandidateStore {
+    pub(crate) fn add_accounting(&self, value: &mut super::ContentEpochAccounting) {
+        value.candidates += self.assemblies.len() + self.pending.len() + self.submitted.len();
+        value.permits += self.permits.len();
+        value.demands += self.demands.len();
+        value.response_records += self.control_occupancy();
+    }
+
     pub(crate) fn control_occupancy(&self) -> usize {
         self.events.len() + self.response_credits
     }

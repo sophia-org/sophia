@@ -143,11 +143,18 @@ fn admitted_resource_transfer_settles_and_releases_over_the_real_socket() {
         session
             .service_content_resources(start.elapsed().as_millis() as u64)
             .unwrap();
+        let accounting = session.content_accounting();
+        let limits = ContentLimits::prototype(session.content_grant().unwrap());
+        assert_eq!(accounting.epochs.active_epochs, 1);
+        assert!(accounting.response_records <= limits.max_control_records as usize);
+        assert!(accounting.response_bytes <= limits.max_output_queue_bytes as usize);
+        assert!(!accounting.quiescent());
         assert!(start.elapsed() < Duration::from_secs(2));
         std::thread::yield_now();
     }
     session.disconnect().unwrap();
     client.join().unwrap();
+    assert!(session.collect_content_accounting().quiescent());
 }
 
 #[test]

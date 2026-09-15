@@ -276,6 +276,11 @@ fn reconnect_reserves_global_credit_and_keeps_old_pixels_alive() {
     let old = store.lease(grant(), begin(1).resource).unwrap();
     pool.disconnect();
     assert_eq!(pool.retired_bytes(), 8);
+    let retired = pool.accounting();
+    assert_eq!(retired.active_epochs, 0);
+    assert_eq!(retired.retired_epochs, 1);
+    assert_eq!((retired.resources, retired.resource_ids), (1, 1));
+    assert!(!retired.quiescent());
     assert_eq!(pool.retired_backing_bytes(), 8);
     assert_eq!(
         pool.admit(ContentLimits::prototype(grant())),
@@ -286,6 +291,8 @@ fn reconnect_reserves_global_credit_and_keeps_old_pixels_alive() {
         content_grant_epoch: 4,
     };
     pool.admit(ContentLimits::prototype(next)).unwrap();
+    assert_eq!(pool.accounting().grant, next);
+    assert_eq!(pool.accounting().retired_epochs, 1);
     assert_eq!(pool.reserved_bytes(), 40 * 1024 * 1024 + 8);
     assert_eq!(pool.reserved_backing_bytes(), 32 * 1024 * 1024 + 8);
     assert_eq!(old.bytes(), chunk(1).bytes);
@@ -296,6 +303,45 @@ fn reconnect_reserves_global_credit_and_keeps_old_pixels_alive() {
     pool.disconnect();
     assert_eq!(pool.reserved_bytes(), 0);
     assert_eq!(pool.reserved_backing_bytes(), 0);
+    assert!(pool.accounting().quiescent());
+    assert_eq!(pool.accounting().grant, next);
+}
+
+#[test]
+fn inventory_reads_preserve_real_staging_and_last_consumer_custody() {
+    let mut pool = ContentEpochPool::new(64 * 1024 * 1024).unwrap();
+    assert!(pool.accounting().quiescent());
+    pool.admit(ContentLimits::prototype(grant())).unwrap();
+    pool.active_mut().unwrap().begin(tx(), begin(1), 0).unwrap();
+    let staged = pool.accounting();
+    assert_eq!(
+        (staged.transfers, staged.resources, staged.resource_ids),
+        (1, 0, 1)
+    );
+    assert_eq!(staged.memory.staging, 8);
+    assert_eq!(staged.memory.reserved_resident, 8);
+    assert!(staged.response_records > 0);
+    assert_eq!(pool.accounting(), staged); // Observation does not drain a response or collect.
+    let store = pool.active_mut().unwrap();
+    store.chunk(tx(), &chunk(1), 1).unwrap();
+    store.end(tx(), &end(1), 2).unwrap();
+    let consumer = store.lease(grant(), begin(1).resource).unwrap();
+    let live = pool.accounting();
+    assert_eq!(
+        (live.transfers, live.resources, live.resource_ids),
+        (0, 1, 1)
+    );
+    assert_eq!(live.memory.resident, 8);
+    assert_eq!(live.memory.backing, 8);
+    pool.disconnect();
+    let retained = pool.accounting();
+    assert_eq!(retained.reserved_bytes, 8);
+    assert!(!retained.quiescent());
+    drop(consumer);
+    assert_eq!(pool.accounting(), retained); // Ending a consumer is not a fabricated collection.
+    pool.collect();
+    assert!(pool.accounting().quiescent());
+    assert_eq!(pool.accounting().grant, grant());
 }
 
 #[test]

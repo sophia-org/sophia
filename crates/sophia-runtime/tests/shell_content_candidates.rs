@@ -566,16 +566,46 @@ fn disconnected_epoch_retains_submitted_candidate_until_renderer_retirement() {
 
     epochs.disconnect();
     assert_eq!(epochs.retired_bytes(), 8);
+    assert_eq!(epochs.accounting().candidates, 1);
+    assert!(!epochs.accounting().quiescent());
     let retired = epochs.candidates_mut(grant()).unwrap();
     retired.prepared(output(), 1, 2, 3, 5).unwrap();
     retired.presented(output(), 1, 4, 2, 3).unwrap();
     epochs.collect();
+    assert_eq!(epochs.accounting().candidates, 0);
     assert_eq!(epochs.retired_bytes(), 8);
 
     drop(render);
     epochs.collect();
     assert_eq!(epochs.retired_bytes(), 0);
     assert_eq!(epochs.reserved_bytes(), 0);
+    assert!(epochs.accounting().quiescent());
+}
+
+#[test]
+fn ending_the_copy_consumer_does_not_hide_an_unsettled_submitted_candidate() {
+    let limits = ContentLimits::prototype(grant());
+    let mut epochs = ContentEpochPool::new(limits.max_session_retiring_bytes).unwrap();
+    epochs.admit(limits).unwrap();
+    upload(epochs.active_mut().unwrap(), 1);
+    let (resources, candidates) = epochs.active_parts_mut().unwrap();
+    assemble(candidates, resources, 1, &[allocation()]);
+    let render = candidates.begin_submission(output(), 1, 4).unwrap();
+    epochs.disconnect();
+    drop(render);
+    epochs.collect();
+    let pending = epochs.accounting();
+    assert_eq!(pending.candidates, 1);
+    assert_eq!(pending.resources, 1);
+    assert_eq!(pending.reserved_bytes, 8);
+    assert!(!pending.quiescent());
+    epochs
+        .candidates_mut(grant())
+        .unwrap()
+        .renderer_failed(output(), 1)
+        .unwrap();
+    epochs.collect();
+    assert!(epochs.accounting().quiescent());
 }
 
 #[test]

@@ -79,6 +79,8 @@ fn indicator_request_waits_for_credit_then_transfers_it_through_final_byte() {
             t.output.written(t.output.front().len());
         }
         assert_eq!(t.take_indicator_request().unwrap(), Some((tx, activation)));
+        assert_eq!(t.content_accounting().response_records, 1);
+        assert_eq!(t.content_accounting().response_bytes, CONTROL_FRAME_BYTES);
         assert!(t.take_indicator_request().unwrap().is_none());
         if !content {
             for _ in 0..63 {
@@ -108,6 +110,9 @@ fn indicator_request_waits_for_credit_then_transfers_it_through_final_byte() {
         }
         assert_eq!(t.output.records(), 1);
         assert_eq!(t.output.controls(), 1);
+        let owned = t.content_accounting();
+        assert_eq!(owned.response_records, 1);
+        assert_eq!(owned.response_bytes, CONTROL_FRAME_BYTES);
         let (actual_tx, outcome) =
             decode_shell_indicator_activation_outcome(t.output.front()).unwrap();
         assert_eq!(actual_tx, tx);
@@ -125,6 +130,7 @@ fn indicator_request_waits_for_credit_then_transfers_it_through_final_byte() {
             .is_err()
         );
         t.output.written(1);
+        assert_eq!(t.content_accounting(), owned);
         assert_eq!(t.output.records(), 1);
         assert_eq!(t.output.controls(), 1);
         if content {
@@ -132,6 +138,8 @@ fn indicator_request_waits_for_credit_then_transfers_it_through_final_byte() {
         }
         t.output.written(t.output.front().len());
         assert_eq!((t.output.records(), t.output.controls()), (0, 0));
+        assert_eq!(t.content_accounting().response_records, 0);
+        assert_eq!(t.content_accounting().response_bytes, 0);
         assert!(!t.flush_indicator_response().unwrap());
     }
 }

@@ -583,6 +583,24 @@ fixtures are test inputs, not a recovered numerical operator approval. Workload
 limits must be fixed before the native attempt; the proposed numerical defaults
 are not yet ratified. t081/t098/t100 and the paired Lom acceptance stay open.
 
+The accounting follow-up reads the existing active/retired stores and transport
+inventory without a shadow registry or release claim. It reports resource IDs,
+transfers, candidates, allocations, demands, permits, storage/backing charges,
+reserved response records/bytes and retained input. A partial output write
+retains its whole record charge; observations neither drain responses nor
+collect owners. Explicit collection still depends on actual consumer release.
+These are protocol/storage charges, not process RSS or GPU residency.
+
+Device-hidden controls cover 37 resource/candidate/private-socket cases and 11
+runtime library cases, including unchanged accounting through enqueue refusal,
+credit transfer and partial write. Strict runtime Clippy and layout pass. One
+control deliberately ends the renderer's consumer while leaving its submitted
+candidate unresolved: the snapshot must remain non-quiescent. This does not
+prove normal Session shutdown resolves that obligation. Connecting bounded
+normal exit, exact terminal settlement and post-cleanup accounting remains
+required; a watchdog exit or destruction of the accounting owner is not evidence
+of successful reclamation. No canonical release or native acceptance is claimed.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

@@ -104,6 +104,10 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
         )
         .unwrap();
     assert_eq!(transport.content_epochs.active_control_occupancy(), 7);
+    let owned = transport.content_accounting();
+    assert_eq!(owned.response_records, 7);
+    assert_eq!(owned.epochs.transfers, 1);
+    assert_eq!(owned.epochs.permits, 1);
     assert!(transport.control_capacity_available(0));
     assert!(!transport.content_action_capacity_available());
     let event = transport
@@ -125,6 +129,7 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
     );
     assert_eq!(transport.content_epochs.active_control_occupancy(), 7);
     assert_eq!(transport.output.controls(), 0);
+    assert_eq!(transport.content_accounting(), owned);
     assert_eq!(
         transport.content_epochs.active().unwrap().pending_event(),
         Some(&event)
@@ -140,11 +145,20 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
     transport.content_epochs.active_mut().unwrap().take_event();
     assert_eq!(transport.content_epochs.active_control_occupancy(), 6);
     assert_eq!(transport.output.controls(), 1);
+    let transferred = transport.content_accounting();
+    assert_eq!(transferred.response_records, owned.response_records);
+    assert_eq!(transferred.response_bytes, owned.response_bytes);
     assert!(!transport.control_capacity_available(1));
     let frame_bytes = transport.output.front().len();
     transport.output.written(frame_bytes - 1);
+    assert_eq!(transport.content_accounting(), transferred);
     assert!(!transport.control_capacity_available(1));
     transport.output.written(1);
+    assert_eq!(transport.content_accounting().response_records, 6);
+    assert_eq!(
+        transport.content_accounting().response_bytes,
+        transferred.response_bytes - CONTROL_FRAME_BYTES
+    );
     assert!(transport.control_capacity_available(1));
     assert!(!transport.control_capacity_available(2));
 }
@@ -460,6 +474,9 @@ fn complete_inbox_frames_and_partial_input_share_the_advertised_byte_budget() {
     loop {
         transport.poll_io().unwrap();
         let retained = transport.input.len() + transport.inbox.iter().map(Vec::len).sum::<usize>();
+        let accounting = transport.content_accounting();
+        assert_eq!(accounting.input_bytes, retained);
+        assert_eq!(accounting.input_records, transport.inbox.len());
         assert!(retained <= limit);
         if retained == limit {
             break;

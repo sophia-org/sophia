@@ -81,6 +81,18 @@ pub struct ContentResourceStore {
 }
 
 impl ContentResourceStore {
+    pub(crate) fn add_accounting(&self, value: &mut super::ContentEpochAccounting) {
+        value.transfers += self.transfers.len();
+        value.resources += self.accepted.len();
+        value.resource_ids += self.high_water.len();
+        value.memory.staging += self.usage.staging;
+        value.memory.resident += self.usage.resident;
+        value.memory.retiring += self.usage.retiring;
+        value.memory.reserved_resident += self.usage.reserved_resident;
+        value.memory.backing += self.usage.backing;
+        value.response_records += self.control_occupancy();
+    }
+
     pub(crate) fn additional_response_credit(&self, record: &ShellContentRecord) -> usize {
         match record {
             ShellContentRecord::ResourceBegin(_) => 3,
