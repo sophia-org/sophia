@@ -289,7 +289,25 @@ fn serve_one_ordered_delivery(
     }
     match write_one_ordered_frame(socket, in_flight, byte_order, sequence) {
         Ok(X11OrderedWriteStep::Advanced { .. }) => X11OrderedServeStep::Advanced,
-        Ok(X11OrderedWriteStep::Wrote) => X11OrderedServeStep::Flushed,
+        Ok(X11OrderedWriteStep::Wrote) => {
+            // RETIRED ONCE, HERE. Every frame has gone, so this delivery is
+            // finished and the slot must be given up before the next one can
+            // be taken -- left in place it would report the same flush for
+            // ever and no further delivery would ever be served.
+            //
+            // The answer is published through the handle this capsule carried
+            // from the debt that owns it. Nothing looks a delivery id up at
+            // this point: by now the id may name a different admission.
+            let finished = in_flight.take().expect("a delivery was in flight");
+            if let Some(completion) = finished.delivery().completion() {
+                completion.publish(XAuthorityClientInputDelivery {
+                    client: finished.delivery().client(),
+                    delivery: finished.delivery().delivery(),
+                    outcome: XAuthorityInputDeliveryOutcome::Flushed,
+                });
+            }
+            X11OrderedServeStep::Flushed
+        }
         Ok(X11OrderedWriteStep::Idle) => X11OrderedServeStep::Idle,
         Err(failure) => {
             // A recipient that did not take its bytes within the allowance is
@@ -303,6 +321,18 @@ fn serve_one_ordered_delivery(
                 _ => XAuthorityInputDeliveryOutcome::WriteFailed,
             };
             let shutdown = socket.shutdown(std::net::Shutdown::Both).is_ok();
+            // Answered through the carried handle as well. A delivery that
+            // ended badly is still answered, and answered to the admission it
+            // belonged to.
+            if let Some(held) = in_flight.as_ref()
+                && let Some(completion) = held.delivery().completion()
+            {
+                completion.publish(XAuthorityClientInputDelivery {
+                    client: held.delivery().client(),
+                    delivery: held.delivery().delivery(),
+                    outcome,
+                });
+            }
             X11OrderedServeStep::Ended { outcome, shutdown }
         }
     }

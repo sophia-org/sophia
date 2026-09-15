@@ -589,6 +589,13 @@ impl std::error::Error for XServerFrontendRouteError {}
 pub(crate) struct XAuthorityOrderedDelivery {
     delivery: crate::XAuthorityInputDeliveryId,
     emission: crate::x11_socket::PrivateOrderedEmission,
+    /// Where this delivery's writer publishes its answer.
+    ///
+    /// CARRIED, NOT LOOKED UP. The writer must answer the admission this
+    /// capsule came from, and a delivery id fetched again at publication time
+    /// would find whatever admission holds that number by then. The handle
+    /// travels with the bytes it belongs to.
+    completion: Option<std::sync::Arc<crate::x11_socket::PrivateDeliveryCompletion>>,
 }
 
 #[cfg(unix)]
@@ -613,7 +620,28 @@ impl XAuthorityOrderedDelivery {
         let Some(delivery) = emission.delivery() else {
             return Err((XAuthorityOrderedAssemblyRefusal::DeliveryMissing, emission));
         };
-        Ok(Self { delivery, emission })
+        Ok(Self {
+            delivery,
+            emission,
+            completion: None,
+        })
+    }
+
+    /// Give this capsule the completion its writer will answer through.
+    ///
+    /// Taken from the debt that owns it, so the writer and the executor are
+    /// answering the same admission rather than two lookups of one number.
+    pub(crate) fn carry_completion(
+        &mut self,
+        completion: std::sync::Arc<crate::x11_socket::PrivateDeliveryCompletion>,
+    ) {
+        self.completion = Some(completion);
+    }
+
+    pub(crate) fn completion(
+        &self,
+    ) -> Option<&std::sync::Arc<crate::x11_socket::PrivateDeliveryCompletion>> {
+        self.completion.as_ref()
     }
 
     pub(crate) fn client(&self) -> XServerFrontendClientId {

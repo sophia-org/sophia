@@ -18430,6 +18430,81 @@ fn ordered_capsule(delivery: u64) -> XAuthorityOrderedDelivery {
 }
 
 #[test]
+fn a_writer_answers_through_the_handle_its_capsule_carried() {
+    // The writer must answer the admission these bytes came from. Looking the
+    // delivery up by id at publication time would find whatever admission
+    // holds that number by then, which is exactly the hole the carried handle
+    // exists to close.
+    let cell = Arc::new(PrivateDeliveryCompletion::default());
+    let mut capsule = ordered_capsule(17301);
+    capsule.carry_completion(Arc::clone(&cell));
+    let expected = capsule.delivery();
+    let client = capsule.client();
+
+    let (sender, queue) = sync_channel(4);
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    let mut in_flight = None;
+    sender.send(capsule).expect("the queue to accept it");
+
+    assert!(cell.answer().is_none(), "nothing is answered before it is sent");
+    for _ in 0..32 {
+        match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
+            X11OrderedServeStep::Advanced => {}
+            X11OrderedServeStep::Flushed => break,
+            other => panic!("a healthy recipient took its bytes: {other:?}"),
+        }
+    }
+
+    let answer = cell
+        .answer()
+        .expect("the writer published through the handle it carried");
+    assert_eq!(answer.outcome, XAuthorityInputDeliveryOutcome::Flushed);
+    assert_eq!(
+        answer.delivery, expected,
+        "and answered the delivery those bytes belonged to"
+    );
+    assert_eq!(answer.client, client);
+    drop(peer);
+}
+
+#[test]
+fn a_flushed_delivery_is_retired_once_so_the_next_one_can_be_served() {
+    // Reporting a flush without giving the slot up would report that same
+    // flush for ever, and no further delivery would ever be taken. One
+    // delivery, one flush, then the next.
+    let (sender, queue) = sync_channel(4);
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    let mut in_flight = None;
+    sender
+        .send(ordered_capsule(17201))
+        .expect("the queue to accept the first");
+    sender
+        .send(ordered_capsule(17202))
+        .expect("the queue to accept the second");
+
+    let mut flushes = 0;
+    let mut served = Vec::new();
+    for _ in 0..64 {
+        match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
+            X11OrderedServeStep::Advanced => {}
+            X11OrderedServeStep::Flushed => flushes += 1,
+            X11OrderedServeStep::Idle => break,
+            other => panic!("a healthy recipient took its bytes: {other:?}"),
+        }
+        if let Some(held) = in_flight.as_ref() {
+            let id = held.delivery().delivery();
+            if served.last() != Some(&id) {
+                served.push(id);
+            }
+        }
+    }
+    assert_eq!(flushes, 2, "each delivery flushed exactly once");
+    assert_eq!(served.len(), 2, "and the second was reached after the first");
+    assert!(in_flight.is_none(), "nothing is left held");
+    drop(peer);
+}
+
+#[test]
 fn serving_a_whole_delivery_reports_a_flush_and_nothing_more() {
     // A flush means every frame went. It does not mean the recipient read
     // them, and this control asserts what the step claims rather than what a

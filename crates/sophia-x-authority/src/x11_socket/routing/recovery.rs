@@ -37,17 +37,17 @@ struct PrivateCompletionUnreadable;
 /// than an update, and the first one stands.
 #[cfg(unix)]
 #[derive(Debug, Default)]
-struct PrivateDeliveryCompletion {
+pub(crate) struct PrivateDeliveryCompletion {
     outcome: std::sync::OnceLock<XAuthorityClientInputDelivery>,
 }
 
 #[cfg(unix)]
 impl PrivateDeliveryCompletion {
-    fn publish(&self, receipt: XAuthorityClientInputDelivery) {
+    pub(crate) fn publish(&self, receipt: XAuthorityClientInputDelivery) {
         let _ = self.outcome.set(receipt);
     }
 
-    fn answer(&self) -> Option<XAuthorityClientInputDelivery> {
+    pub(crate) fn answer(&self) -> Option<XAuthorityClientInputDelivery> {
         self.outcome.get().copied()
     }
 }

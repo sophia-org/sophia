@@ -86,7 +86,13 @@ impl PrivateXServerFrontend {
             };
             let release = &mut self.terminal.settling[index];
             match XAuthorityOrderedDelivery::from_emission(emission) {
-                Ok(capsule) => {
+                Ok(mut capsule) => {
+                    // The writer answers through the same handle this debt
+                    // holds, so both are answering one admission rather than
+                    // two lookups of one number.
+                    if let Some(cell) = release.completion() {
+                        capsule.carry_completion(std::sync::Arc::clone(cell));
+                    }
                     release.pending = Some(PrivatePendingDelivery::Capsule(capsule));
                     release.dispatch = PrivateDispatchPhase::Pending;
                 }
