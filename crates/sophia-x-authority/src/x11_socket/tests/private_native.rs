@@ -966,4 +966,5 @@ mod private_native_tests {
     include!("private_native_sibling.rs");
     include!("private_native_emission.rs");
     include!("private_native_binding.rs");
+    include!("private_native_keyboard.rs");
 }

@@ -199,6 +199,29 @@ pub(crate) enum XkbPhysicalKeyState {
     InvalidKey,
 }
 
+/// Components read from one actual XKB state, before or after an ordered edge.
+/// Kept separate from the effective modifier mask: a lock is not a held key.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct XkbOrderedState {
+    components: [u32; 13],
+}
+
+impl XkbOrderedState {
+    pub(crate) fn components(self) -> [u32; 13] {
+        self.components
+    }
+
+    pub(crate) fn changed_from(self, before: Self) -> u16 {
+        self.components
+            .iter()
+            .zip(before.components)
+            .enumerate()
+            .fold(0, |mask, (index, (after, before))| {
+                mask | (u16::from(*after != before) << index)
+            })
+    }
+}
+
 impl core::fmt::Debug for XkbKeyboardState {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
@@ -265,6 +288,36 @@ impl XkbKeyboardState {
 
     pub fn modifier_mask(&self) -> u16 {
         u16::try_from(self.state.serialize_mods(xkb::STATE_MODS_EFFECTIVE) & 0xff).unwrap_or(0)
+    }
+
+    /// No mutation or allocation. An interrupted physical history does not
+    /// acquire a fresh claim of currentness merely by serializing modifiers.
+    pub(crate) fn ordered_state(&self) -> Option<XkbOrderedState> {
+        self.physical_known.then(|| {
+            // The X11 modifier domain is the eight real modifier bits.
+            // Sophia's wire contract has an empty group compatibility map
+            // and zero InternalMods/IgnoreLockMods (and no setters for them).
+            // Under that contract all five derived modifier states equal
+            // effective modifiers. They still have distinct change bits.
+            let effective = self.state.serialize_mods(xkb::STATE_MODS_EFFECTIVE) & 0xff;
+            XkbOrderedState {
+                components: [
+                    effective,
+                    self.state.serialize_mods(xkb::STATE_MODS_DEPRESSED) & 0xff,
+                    self.state.serialize_mods(xkb::STATE_MODS_LATCHED) & 0xff,
+                    self.state.serialize_mods(xkb::STATE_MODS_LOCKED) & 0xff,
+                    self.state.serialize_layout(xkb::STATE_LAYOUT_EFFECTIVE),
+                    self.state.serialize_layout(xkb::STATE_LAYOUT_DEPRESSED),
+                    self.state.serialize_layout(xkb::STATE_LAYOUT_LATCHED),
+                    self.state.serialize_layout(xkb::STATE_LAYOUT_LOCKED),
+                    effective,
+                    effective,
+                    effective,
+                    effective,
+                    effective,
+                ],
+            }
+        })
     }
 }
 
