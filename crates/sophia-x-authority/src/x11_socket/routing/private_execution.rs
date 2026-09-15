@@ -473,7 +473,18 @@ fn resolve_and_apply(
                                 pending: None,
                                 dispatch: PrivateDispatchPhase::Untaken,
                                 attempt: None,
-                                completion: None,
+                                // ACQUIRED HERE, on the accepted operation
+                                // that created this debt, while the delivery
+                                // that carries it is still the one this
+                                // release was decided for. Acquiring it later
+                                // meant looking the delivery up again by its
+                                // id, and an id is exactly what a prune and a
+                                // re-admission make unreliable.
+                                completion: route
+                                    .delivery
+                                    .and_then(|delivery| {
+                                        registry.input_recovery.completion_of(delivery)
+                                    }),
                                 outcome_seen: None,
                                 native: removed.native,
                                 unbuilt,

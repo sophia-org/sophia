@@ -12855,6 +12855,102 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
 }
 
 #[test]
+fn a_release_holds_the_completion_of_the_admission_it_was_recorded_for() {
+    // Acquiring the handle at dispatch meant looking the delivery up by id
+    // again. By then the original ticket may have been pruned -- leaving no
+    // handle at all -- or the id re-admitted, leaving the replacement's
+    // handle on the older debt. Taken when the release is recorded, neither
+    // is reachable.
+    let client = XServerFrontendClientId(2521);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    for (delivery, pressed) in [(2521u64, true), (2522u64, false)] {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                272,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.terminal.delivering.extend(turn);
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("the entry delivers");
+    }
+    assert_eq!(private.terminal.settling.len(), 1);
+
+    // BEFORE ANY TERMINAL VISIT. The handle is already held, because it was
+    // taken on the operation that created this debt.
+    let held = private.terminal.settling[0]
+        .completion()
+        .expect("the release holds its own completion from the moment it exists")
+        .clone();
+    let delivery = private.terminal.settling[0]
+        .delivery()
+        .expect("the release knows its delivery");
+
+    // The original ticket is answered and pruned, then the id is admitted
+    // again -- the two situations that defeated a dispatch-time lookup.
+    let recovery = &private.broker.registry.input_recovery;
+    recovery
+        .finish(client, Some(delivery), XAuthorityInputDeliveryOutcome::Flushed)
+        .expect("the original admission is answered");
+    recovery.observe(XAuthorityClientInputDelivery {
+        client,
+        delivery,
+        outcome: XAuthorityInputDeliveryOutcome::Flushed,
+    });
+    let reused = button_to(surface, delivery, 274, true);
+    let readmitted = recovery.admit(&reused, 0, std::time::Instant::now());
+
+    // Still its own, and still answering with its own outcome.
+    assert!(
+        Arc::ptr_eq(
+            private.terminal.settling[0]
+                .completion()
+                .expect("still held"),
+            &held
+        ),
+        "nothing refreshed the handle, so a re-admission did not replace it"
+    );
+    if readmitted {
+        let fresh = recovery
+            .completion_of(delivery)
+            .expect("the re-admission minted its own");
+        assert!(
+            !Arc::ptr_eq(&fresh, &held),
+            "and the replacement is a different completion entirely"
+        );
+    }
+    assert_eq!(
+        private.terminal.settling[0]
+            .completion_answer()
+            .map(|receipt| receipt.outcome),
+        Some(XAuthorityInputDeliveryOutcome::Flushed),
+        "the debt reads the answer of the admission it was recorded for"
+    );
+}
+
+#[test]
 fn custody_of_the_answer_is_taken_before_the_handover_not_after_it_succeeds() {
     // Stored after a successful send, custody would be absent exactly when it
     // matters most: an enqueue followed by an interruption leaves a record
@@ -16892,6 +16988,41 @@ fn a_refusal_before_the_effect_resolves_the_claim_as_having_applied_nothing() {
     drop(fixture.registration);
     drop(fixture.channels);
     drop(fixture.durable);
+}
+
+#[test]
+fn an_established_fact_is_reported_even_when_something_may_have_applied() {
+    // A cancellation deferred under a claim is dropped when an effect may
+    // have happened, and rightly: it says the delivery did not happen and the
+    // effect contradicts it. An established fact is not that. A terminated
+    // connection is not undone by an effect having occurred, and returning on
+    // the same check left such a delivery deferred and then discarded --
+    // answered to nobody, ever.
+    let client = XServerFrontendClientId(1103);
+    let delivery = XAuthorityInputDeliveryId::from_raw(1103);
+    let (recovery, receipts) = claim_fixture(delivery);
+    recovery.register(client).unwrap();
+    assert_eq!(recovery.claim_execution(Some(delivery)), ExecutionClaim::Claimed);
+    assert!(recovery.bind(Some(delivery), client).unwrap());
+
+    // The recipient's connection ends while the claim is held.
+    recovery
+        .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
+        .unwrap();
+    assert!(
+        receipts.try_recv().is_err(),
+        "held while the claim is out, like any other outcome"
+    );
+
+    // The claim resolves having MAYBE APPLIED. A cancellation would be
+    // dropped here; this is not a cancellation.
+    recovery.resolve_claim(Some(delivery), true);
+    let receipt = receipts
+        .try_recv()
+        .expect("an established termination is still reported");
+    assert_eq!(receipt.delivery, delivery);
+    assert_eq!(receipt.client, client);
+    assert_eq!(receipt.outcome, XAuthorityInputDeliveryOutcome::ClientDisconnected);
 }
 
 #[test]

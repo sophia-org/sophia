@@ -110,9 +110,17 @@ impl PrivateXServerFrontend {
         }
 
         let recipient = self.terminal.settling[index].reached().client();
-        let completion = self.terminal.settling[index]
-            .delivery()
-            .and_then(|delivery| self.broker.registry.input_recovery.completion_of(delivery));
+        // NO LOOKUP HERE. The handle was taken when this release was recorded
+        // and is carried whole; fetching it again by delivery id would accept
+        // whatever admission holds that number now, and on a retry it would
+        // overwrite a correct handle with a replacement one.
+        if self.terminal.settling[index].completion().is_none() {
+            // Custody that is missing cannot be enqueued past. A delivery
+            // handed over with no way to recognise its own answer is one whose
+            // attempt nothing can ever finish.
+            self.relinquish_outstanding_attempt(claim.token);
+            return Some(false);
+        }
         // The sender is cloned and the clients guard released before anything
         // takes common again. Holding it across a give-back would take common
         // beneath clients, which is the forbidden direction.
@@ -145,13 +153,12 @@ impl PrivateXServerFrontend {
         let release = &mut self.terminal.settling[index];
         release.attempt = Some(claim.token);
         release.dispatch = PrivateDispatchPhase::Indeterminate;
-        // CUSTODY OF THE ANSWER, TAKEN WITH THE ATTEMPT AND THE PHASE. Stored
-        // after a successful send it would be absent exactly when it is most
-        // needed: an enqueue followed by an interruption would leave a
-        // Dispatching record with no way to recognise its own receipt.
-        if let Some(cell) = completion {
-            release.hold_completion(cell);
-        }
+        // The handle this release has carried since it was recorded is the one
+        // that answers it. Nothing refreshes it here.
+        debug_assert!(
+            release.completion().is_some(),
+            "custody was checked before the handover began"
+        );
         let Some(PrivatePendingDelivery::Capsule(capsule)) = release.pending.take() else {
             unreachable!("checked to be a capsule above")
         };

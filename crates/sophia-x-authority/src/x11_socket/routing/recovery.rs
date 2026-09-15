@@ -416,12 +416,23 @@ impl InputRecovery {
         // Accumulated, not assigned. What this execution did is added to what
         // the delivery has been through.
         entry.may_have_applied |= may_have_applied;
-        if entry.may_have_applied {
-            // An effect may have happened, so a cancellation cannot become
+        if entry.may_have_applied
+            && entry
+                .deferred
+                .as_ref()
+                .is_none_or(|held| cancels_before_the_effect(held.receipt.outcome))
+        {
+            // An effect may have happened, so a CANCELLATION cannot become
             // this delivery's outcome -- not now and not after a later claim
             // that happens to apply nothing. It is kept rather than dropped
             // because it remains a record of what was attempted, and the
             // publication path above refuses it on the same fact.
+            //
+            // An ESTABLISHED fact is not refused here. A writer result or a
+            // terminated connection is not contradicted by an effect having
+            // happened, and returning on it left such a delivery deferred
+            // under a claim and then dropped for having maybe applied --
+            // answered to nobody, ever.
             return;
         }
         let Some(deferred) = entry.deferred.take() else {
@@ -533,11 +544,22 @@ impl InputRecovery {
                 // have happened. Publishing now would tell everyone waiting
                 // that it ended, and the effect would then contradict that.
                 // Held until the claim resolves, which is where it is decided
-                // whether this cancellation had anything to contradict.
+                // whether this had anything to contradict.
                 let bound = entry.ticket.client;
-                entry
-                    .deferred
-                    .get_or_insert(DeferredCancellation { receipt, bound });
+                // An ESTABLISHED fact replaces a held cancellation rather than
+                // queueing behind it. get_or_insert alone let the first
+                // arrival win, so a cancellation deferred early hid a writer
+                // result or a termination that arrived afterwards and was the
+                // better answer.
+                match entry.deferred.as_mut() {
+                    Some(held) if cancels_before_the_effect(held.receipt.outcome)
+                        && !cancels_before_the_effect(receipt.outcome) =>
+                    {
+                        *held = DeferredCancellation { receipt, bound };
+                    }
+                    Some(_) => {}
+                    None => entry.deferred = Some(DeferredCancellation { receipt, bound }),
+                }
                 return;
             }
             entry.terminal = Some(receipt);

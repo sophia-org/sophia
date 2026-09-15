@@ -295,11 +295,6 @@ impl PrivateSettlingRelease {
             )
     }
 
-    /// Take custody of this delivery's completion.
-    fn hold_completion(&mut self, cell: Arc<PrivateDeliveryCompletion>) {
-        self.completion = Some(cell);
-    }
-
     #[cfg_attr(not(test), allow(dead_code))]
     fn completion(&self) -> Option<&Arc<PrivateDeliveryCompletion>> {
         self.completion.as_ref()
