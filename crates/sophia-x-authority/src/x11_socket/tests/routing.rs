@@ -22284,10 +22284,11 @@ fn a_serving_owner_keeps_its_own_endpoint_when_its_registration_is_replaced() {
     // and owns them from here on.
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_nonblocking(true).expect("a readable peer");
+    let output = Arc::new(Mutex::new(socket));
     let transport =
-        XAuthorityOrderedTransport::bind(&original_registration, original_channels.ordered, socket)
-            .unwrap_or_else(|(refusal, _, _)| {
-                panic!("this connection's own receiver and stream bind: {refusal:?}")
+        XAuthorityOrderedTransport::bind(&original_registration, original_channels.ordered, &output)
+            .unwrap_or_else(|(refusal, _)| {
+                panic!("this connection's own receiver and output bind: {refusal:?}")
             });
     let mut owner =
         X11OrderedServingOwner::for_registration(private, &original_registration, transport)
@@ -22419,14 +22420,15 @@ fn a_serving_constructor_rejects_another_registrations_receiver() {
     let endpoint_b=b.runner.frontend.as_ref().unwrap().endpoint_for(&b.registration).unwrap();
     assert!(!endpoint_a.matches(&endpoint_b));
     let (socket,_peer)=UnixStream::pair().unwrap();
+    let output = Arc::new(Mutex::new(socket));
     // The association is established where the transport is bound, so that is
     // where crossing two real connections is caught.
-    let bound = XAuthorityOrderedTransport::bind(&a.registration, b.channels.ordered, socket);
+    let bound = XAuthorityOrderedTransport::bind(&a.registration, b.channels.ordered, &output);
     assert!(
         bound.is_err(),
         "binding must reject B's original receiver when given registration A"
     );
-    let (refusal, returned, socket) = bound.err().expect("refused");
+    let (refusal, returned) = bound.err().expect("refused");
     assert_eq!(refusal, X11OrderedServingRefusal::ForeignReceiver);
     assert!(
         returned.minted_by(&b.registration),
@@ -22434,7 +22436,7 @@ fn a_serving_constructor_rejects_another_registrations_receiver() {
     );
     // And the same refusal stands at the serving owner, for a transport that
     // was bound for a different registration.
-    let transport = XAuthorityOrderedTransport::bind(&b.registration, returned, socket)
+    let transport = XAuthorityOrderedTransport::bind(&b.registration, returned, &output)
         .unwrap_or_else(|_| panic!("B's own registration and B's own receiver bind"));
     let owner = X11OrderedServingOwner::for_registration(private, &a.registration, transport);
     assert!(
@@ -22477,8 +22479,9 @@ fn a_failed_serving_constructor_preserves_its_original_queued_capsule() {
     assert_eq!(private.terminal.holds[0].custody.dispatch,PrivateDispatchPhase::Enqueued);
     assert!(private.terminal.holds[0].native.is_some());
     let (socket,_peer)=UnixStream::pair().unwrap();
+    let output = Arc::new(Mutex::new(socket));
     assert!(finalizer.upgrade().is_some(),"revocation did not destroy the actual queued capsule immediately before construction");
-    let transport = XAuthorityOrderedTransport::bind(&f.registration, f.channels.ordered, socket)
+    let transport = XAuthorityOrderedTransport::bind(&f.registration, f.channels.ordered, &output)
         .unwrap_or_else(|_| panic!("this connection's own receiver and registration bind"));
     let returned=X11OrderedServingOwner::for_registration(private,&f.registration,transport);
     assert!(returned.is_err(),"the established endpoint refusal is returned");
@@ -22489,4 +22492,297 @@ fn a_failed_serving_constructor_preserves_its_original_queued_capsule() {
     assert!(private.terminal.holds[0].native.is_some());
     assert!(payload_still_owned,"a refused constructor must return or durably retain its accepted receiver/capsule resources, not drop them through ?");
     drop(sender);
+}
+
+/// A serving owner for this fixture's own connection, with its output.
+fn serving_owner_for(
+    f: &mut PreparedOrderedFixture,
+    socket: UnixStream,
+) -> (X11OrderedServingOwner, Arc<Mutex<UnixStream>>) {
+    let output = Arc::new(Mutex::new(socket));
+    let ordered = std::mem::replace(
+        &mut f.channels.ordered,
+        f.runner
+            .frontend
+            .as_ref()
+            .unwrap()
+            .broker
+            .registry
+            .register_client_with_admission(
+                XServerFrontendClientId(f.client.raw() + 500_000),
+                Some(admitted(XServerFrontendClientId(f.client.raw() + 500_000))),
+            )
+            .expect("a spare registration to borrow a receiver from")
+            .1
+            .ordered,
+    );
+    let transport = XAuthorityOrderedTransport::bind(&f.registration, ordered, &output)
+        .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    let private = f.runner.frontend.as_ref().unwrap();
+    let owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
+        .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
+    (owner, output)
+}
+
+#[test]
+fn a_close_adjudicates_the_queued_admission_before_letting_its_payload_go() {
+    // (a) The disposition is an answer this close established through the
+    // capsule's own finalizer, not a client-wide sweep and not a drop whose
+    // consequences someone else is assumed to clean up.
+    let client = XServerFrontendClientId(7731);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 77310, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 77310);
+    for _ in 0..8 {
+        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+    assert!(cell.answer().is_none(), "nothing has answered it yet");
+
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    let (owner, _output) = serving_owner_for(&mut f, socket);
+    let closed = owner.close(XAuthorityInputDeliveryOutcome::ClientDisconnected);
+    let X11OrderedClose::Ended {
+        answered,
+        already,
+        deferred,
+        unanswered,
+        refused,
+    } = closed
+    else {
+        panic!("a socket pair ends")
+    };
+    assert_eq!(
+        answered + already + deferred,
+        1,
+        "the queued admission was offered an outcome, not discarded"
+    );
+    assert!(unanswered.is_empty() && refused.is_none());
+    assert_eq!(
+        cell.answer().map(|answer| answer.outcome),
+        Some(XAuthorityInputDeliveryOutcome::ClientDisconnected),
+        "and the answer is on the admission's own completion"
+    );
+    // The socket really ended. Read with a deadline: a connection that was
+    // never ended would leave this waiting for a peer that is still there,
+    // and a control that hangs says nothing.
+    peer.set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("a deadline on the peer");
+    let mut byte = [0u8; 1];
+    assert_eq!(
+        (&peer).read(&mut byte).ok(),
+        Some(0),
+        "the peer sees the connection ended"
+    );
+}
+
+#[test]
+fn a_close_ends_the_socket_without_the_output_lock_it_may_be_stalled_under() {
+    // (e) Ending a connection must not need the mutex a stalled write holds --
+    // that is exactly when ending it is what is needed. The lock is held here
+    // for the whole close.
+    let client = XServerFrontendClientId(7741);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 77410, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 77410);
+    for _ in 0..8 {
+        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    let (owner, output) = serving_owner_for(&mut f, socket);
+    let held = output.lock().expect("the connection's own output");
+    let closed = owner.close(XAuthorityInputDeliveryOutcome::ClientDisconnected);
+    let X11OrderedClose::Ended {
+        answered,
+        already,
+        deferred,
+        unanswered,
+        ..
+    } = closed
+    else {
+        panic!("the socket ends even with output serialization held")
+    };
+    assert_eq!(
+        answered + already + deferred,
+        1,
+        "and what it held was still offered an outcome"
+    );
+    assert!(unanswered.is_empty());
+    assert!(cell.answer().is_some());
+    peer.set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("a deadline on the peer");
+    let mut byte = [0u8; 1];
+    assert_eq!(
+        (&peer).read(&mut byte).ok(),
+        Some(0),
+        "the peer sees it ended while the output lock was never released"
+    );
+    drop(held);
+}
+
+#[test]
+fn a_close_under_a_held_claim_transfers_a_deferral_rather_than_an_answer() {
+    // (c) A deferral is the authority taking reporting responsibility under a
+    // claim it holds. Counting it as an answer would tell a caller the
+    // admission was settled when what actually happened is that someone else
+    // now owes the report.
+    let client = XServerFrontendClientId(7761);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 77610, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 77610);
+    let recovery = private.broker.registry.input_recovery.clone();
+    for _ in 0..8 {
+        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    // A real execution claim on this exact delivery, taken the ordinary way.
+    let delivery = XAuthorityInputDeliveryId::from_raw(77610);
+    assert_eq!(
+        recovery.claim_execution(Some(delivery)),
+        ExecutionClaim::Claimed,
+        "the claim this control needs is the ledger's own"
+    );
+
+    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
+    let (owner, _output) = serving_owner_for(&mut f, socket);
+    let closed = owner.close(XAuthorityInputDeliveryOutcome::ClientDisconnected);
+    let X11OrderedClose::Ended {
+        answered,
+        already,
+        deferred,
+        unanswered,
+        ..
+    } = closed
+    else {
+        panic!("a socket pair ends")
+    };
+    assert!(unanswered.is_empty(), "the offer was taken, in one form or another");
+    assert_eq!(
+        (answered, already, deferred),
+        (0, 0, 1),
+        "and it was taken as a deferral, counted as itself"
+    );
+    assert!(
+        cell.answer().is_none(),
+        "a deferral is not a published answer: the claim still owes the report"
+    );
+}
+
+#[test]
+fn a_close_does_not_answer_a_capsule_belonging_to_another_endpoint() {
+    // (d) This socket ending says nothing about another endpoint's recipient,
+    // so a refused capsule is carried out still held rather than answered.
+    let client = XServerFrontendClientId(7751);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 77510, 272, true);
+
+    let other = XServerFrontendClientId(7752);
+    let other_window = XResourceId::new(0x307752, 1);
+    let (other_registration, _other_channels) = {
+        let p = f.runner.frontend.as_mut().unwrap();
+        let registry = &p.broker.registry;
+        let context = namespaced(other, f.namespace);
+        let (registration, channels) = registry
+            .register_client_with_admission(other, Some(context))
+            .unwrap();
+        registry.attach_private_lifecycle(&registration, context).unwrap();
+        let selected = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+        registry
+            .attach_connection_state(
+                &registration,
+                f.namespace,
+                selected.clone(),
+                Arc::new(AtomicU64::new(0)),
+            )
+            .unwrap();
+        {
+            let mut state = selected.lock().unwrap();
+            state.register(
+                other_window,
+                XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+                Rect { x: 0, y: 0, width: 200, height: 100 },
+            );
+            state.observe_mapped(other_window);
+            state.update(other_window, Some((1 << 2) | (1 << 3)), None);
+        }
+        let mut grabs = registry.input_authority.lock().unwrap();
+        grabs.ungrab_pointer(f.namespace, f.client.raw());
+        grabs
+            .grab_pointer(
+                f.namespace,
+                crate::XActiveInputGrab {
+                    owner: other.raw(),
+                    window: other_window,
+                    owner_events: false,
+                    pointer_mode: 1,
+                    keyboard_mode: 1,
+                    event_mask: u16::MAX,
+                    xi_event_mask: [0; 8],
+                    xi_event_mask_words: 0,
+                    route_lease: None,
+                },
+            )
+            .unwrap();
+        (registration, channels)
+    };
+    attempt_run(&mut f, 77512, 273, true);
+
+    let private = f.runner.frontend.as_mut().unwrap();
+    let recovery = private.broker.registry.input_recovery.clone();
+    let foreign_cell = admitted_cell(private, 77512);
+    let foreign = {
+        let record = private
+            .terminal
+            .holds
+            .iter_mut()
+            .find(|record| record.reached.client() == other)
+            .expect("the other connection's own press");
+        let emission = record.native.as_mut().unwrap().take_press_emission().unwrap();
+        PrivateXServerFrontend::stow_press_capsule(&mut record.custody, emission, &recovery, other);
+        let Some(PrivatePendingDelivery::Capsule(capsule)) = record.custody.pending.take() else {
+            panic!("it built its own capsule")
+        };
+        capsule
+    };
+    let sender = private
+        .broker
+        .registry
+        .clients
+        .lock()
+        .unwrap()
+        .get(&client)
+        .expect("this connection's row")
+        .ordered
+        .clone();
+
+    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    sender.send(foreign).expect("onto this owner's queue");
+    assert!(matches!(
+        owner.serve_one(XByteOrder::LittleEndian, 7),
+        X11OrderedServeStep::AdmissionRefused(X11OrderedAdmissionRefusal::ForeignEndpoint)
+    ));
+
+    let closed = owner.close(XAuthorityInputDeliveryOutcome::ClientDisconnected);
+    let X11OrderedClose::Ended { refused, .. } = closed else {
+        panic!("a socket pair ends")
+    };
+    let held = refused.expect("the foreign capsule leaves still held");
+    assert_eq!(
+        held.delivery().delivery(),
+        XAuthorityInputDeliveryId::from_raw(77512)
+    );
+    assert_eq!(
+        held.cause(),
+        Some(X11OrderedAdmissionRefusal::ForeignEndpoint),
+        "and still says why it was never this connection's to write"
+    );
+    assert!(
+        foreign_cell.answer().is_none(),
+        "closing this socket is not evidence about another endpoint's recipient"
+    );
+    drop(other_registration);
 }

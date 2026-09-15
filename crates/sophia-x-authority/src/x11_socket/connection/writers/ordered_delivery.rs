@@ -362,6 +362,9 @@ enum X11OrderedServeStep {
 enum X11OrderedServingRefusal {
     /// The receiver was minted by a different registration.
     ForeignReceiver,
+    /// The connection's own output could not supply a second handle, so this
+    /// binding could be made but never ended.
+    TransportUnavailable,
     /// The registration names no endpoint: it is not admitted, or it is no
     /// longer the row this client currently has.
     Unadmitted(PrivateAdmissionRefusal),
@@ -386,29 +389,106 @@ enum X11OrderedServingRefusal {
 #[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 struct XAuthorityOrderedTransport {
     ordered: XAuthorityOrderedReceiver,
-    socket: UnixStream,
+    /// This connection's actual serialized output.
+    ///
+    /// The one every other writer for this connection already goes through. A
+    /// private descriptor of our own would write beside them rather than among
+    /// them, which is what serialization is for.
+    output: Arc<Mutex<UnixStream>>,
+    /// A handle on the same connection that does not go through that lock.
+    ///
+    /// Ending a connection must not require the mutex a stalled write is
+    /// holding -- that is exactly the case where ending it is what is needed.
+    shutdown: UnixStream,
 }
 
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 impl XAuthorityOrderedTransport {
-    /// Bind this connection's queue to this connection's stream.
+    /// Bind this connection's queue to this connection's own output.
     ///
-    /// Refusing hands both back: the receiver may already hold accepted events
-    /// and the socket is a live connection, and a binding that failed is not a
-    /// licence to destroy either.
-    #[allow(clippy::result_large_err)] // The resources travel out whole rather than being dropped.
+    /// NO SOCKET IS ACCEPTED HERE. Taking one would be taking a caller's word
+    /// for which connection it belongs to, which is the thing that cannot be
+    /// checked. Both handles are derived from the connection's own serialized
+    /// output instead, so what this binds is the queue a registration minted
+    /// to the stream that registration was made for.
+    ///
+    /// Refusing hands the receiver back: it may already hold accepted events,
+    /// and a binding that failed is not a licence to destroy them.
+    #[allow(clippy::result_large_err)] // The receiver travels out rather than being dropped.
     fn bind(
         registration: &XServerFrontendClientRouteRegistration,
         ordered: XAuthorityOrderedReceiver,
-        socket: UnixStream,
-    ) -> Result<Self, (X11OrderedServingRefusal, XAuthorityOrderedReceiver, UnixStream)> {
+        output: &Arc<Mutex<UnixStream>>,
+    ) -> Result<Self, (X11OrderedServingRefusal, XAuthorityOrderedReceiver)> {
         if !ordered.minted_by(registration) {
-            return Err((X11OrderedServingRefusal::ForeignReceiver, ordered, socket));
+            return Err((X11OrderedServingRefusal::ForeignReceiver, ordered));
         }
-        Ok(Self { ordered, socket })
+        // Taken before anything is owned, so a descriptor that cannot be had
+        // refuses the binding rather than producing one that could never be
+        // ended.
+        let shutdown = match output.lock() {
+            Ok(guard) => match guard.try_clone() {
+                Ok(handle) => handle,
+                Err(_) => {
+                    drop(guard);
+                    return Err((X11OrderedServingRefusal::TransportUnavailable, ordered));
+                }
+            },
+            Err(_) => return Err((X11OrderedServingRefusal::TransportUnavailable, ordered)),
+        };
+        Ok(Self {
+            ordered,
+            output: output.clone(),
+            shutdown,
+        })
     }
 
+}
+
+/// What ending one connection's ordered output established.
+///
+/// Whatever could not be answered leaves in this, so a caller that still owes
+/// something is holding it rather than having lost it. Storage for that is
+/// reserved as the close runs; nothing is exposed and then found to have
+/// nowhere to go.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
+enum X11OrderedClose {
+    /// The socket could not be ended, so nothing was offered for anything.
+    ///
+    /// The owner comes back whole. Answering on the strength of a termination
+    /// that did not happen would be inventing the fact the outcome rests on.
+    ///
+    /// NOTHING WITNESSES THIS BRANCH. Producing a real shutdown failure needs
+    /// a descriptor in a state no control here reaches honestly: an already
+    /// ended socket reports NotConnected, which this treats as ended. It is
+    /// kept because the alternative is answering for admissions after a close
+    /// that did not happen, and it is recorded as unwitnessed rather than
+    /// described as covered.
+    #[allow(dead_code)]
+    Unterminated {
+        cause: std::io::ErrorKind,
+        retained: Box<X11OrderedServingOwner>,
+    },
+    /// The socket was ended and every held admission was offered an outcome.
+    Ended {
+        /// Answers this close established.
+        answered: usize,
+        /// Admissions the authority had already answered.
+        already: usize,
+        /// Offers the authority took reporting responsibility for under a
+        /// claim it holds. Counted apart, because a deferral is not an answer
+        /// and a caller that treated it as one would stop looking.
+        deferred: usize,
+        /// Admissions the authority would not take an offer for. Still owed,
+        /// still owned, and still carrying their own finalizers.
+        unanswered: Vec<XAuthorityOrderedDelivery>,
+        /// A capsule refused for belonging to another endpoint, if one was
+        /// held. This socket ending is not evidence about its recipient, so it
+        /// is neither offered an outcome nor discarded.
+        refused: Option<Box<X11OrderedRefusedDelivery>>,
+    },
 }
 
 /// One connection's ordered output, owned together.
@@ -424,7 +504,8 @@ impl XAuthorityOrderedTransport {
 struct X11OrderedServingOwner {
     served: XAuthorityServedConnection,
     queue: Receiver<XAuthorityOrderedDelivery>,
-    socket: UnixStream,
+    output: Arc<Mutex<UnixStream>>,
+    shutdown: UnixStream,
     in_flight: Option<X11OrderedInFlight>,
     refused: Option<X11OrderedRefusedDelivery>,
 }
@@ -434,11 +515,14 @@ struct X11OrderedServingOwner {
 impl X11OrderedServingOwner {
     /// Bind this connection's output to the registration that created it.
     ///
-    /// ONE VALUE, ALREADY BOUND. This takes the transport minted at connection
-    /// setup rather than a queue and a socket a caller pairs up here: the
-    /// receiver's provenance was asked there, against the registration, and
-    /// the socket came from the same accepted connection. Nothing about the
-    /// association is asserted at this boundary.
+    /// ONE VALUE, ALREADY BOUND. This takes a bound transport rather than a
+    /// queue and a socket a caller pairs up here. The receiver's provenance
+    /// was asked when it was bound, against the registration; both output
+    /// handles were derived there from the connection's own serialized output
+    /// rather than supplied. Nothing about the association is asserted at this
+    /// boundary -- though until connection setup is the caller that binds,
+    /// which it is not yet, the connection whose output that was is whichever
+    /// one the binder held.
     ///
     /// The identity is captured from the registration held here, not looked up
     /// by the client id it happens to carry, so a writer started for one
@@ -469,15 +553,26 @@ impl X11OrderedServingOwner {
         Ok(Self {
             served: XAuthorityServedConnection::retained(endpoint),
             queue: transport.ordered.into_receiver(),
-            socket: transport.socket,
+            output: transport.output,
+            shutdown: transport.shutdown,
             in_flight: None,
             refused: None,
         })
     }
 
+    /// Serve one step, writing through this connection's own serialization.
+    ///
+    /// The output lock is taken for the write and released with it, so a step
+    /// that ends up owing a frame owes it with nothing held; ending the
+    /// connection never has to wait on this.
     fn serve_one(&mut self, byte_order: XByteOrder, sequence: u16) -> X11OrderedServeStep {
+        let Ok(socket) = self.output.lock() else {
+            // The connection's own output is unusable. Nothing was taken and
+            // nothing was written; this is not a disposition of anything.
+            return X11OrderedServeStep::Idle;
+        };
         serve_one_ordered_delivery(
-            &self.socket,
+            &socket,
             &self.served,
             &mut self.in_flight,
             &mut self.refused,
@@ -485,6 +580,77 @@ impl X11OrderedServingOwner {
             byte_order,
             sequence,
         )
+    }
+
+    /// End this connection's ordered output and answer for what it holds.
+    ///
+    /// ADMISSION STOPS FIRST, because this consumes the owner: nothing more
+    /// can be taken off the queue after it is called. THE SOCKET IS ENDED
+    /// NEXT, through the handle that does not need the output lock -- a write
+    /// stalled under that lock is precisely when ending has to work. Only then
+    /// are the admissions this owner holds offered an outcome.
+    ///
+    /// EVERY ANSWER GOES THROUGH THE CARRIED FINALIZER, one admission at a
+    /// time. This does not tell the recovery to answer everything for a client
+    /// number: that selects by a number, and the whole point of the endpoint
+    /// work is that a number is not an admission. A capsule refused for
+    /// belonging to another endpoint is NOT answered here at all -- this
+    /// socket ending says nothing about its recipient -- and travels out still
+    /// held, with its cause.
+    ///
+    /// WHAT THE AUTHORITY ACCEPTS IS WHAT IS CONSUMED. Answered and
+    /// AlreadyAnswered are finished. Deferred means the authority has taken
+    /// reporting responsibility under a claim it holds; it is counted as
+    /// itself and never as a recorded answer. Refused means nothing was taken,
+    /// so the capsule stays owned and comes back out. A failed shutdown does
+    /// the same: custody is kept, with its cause, rather than being discarded
+    /// on the strength of a close that did not happen.
+    fn close(mut self, outcome: XAuthorityInputDeliveryOutcome) -> X11OrderedClose {
+        let ended = match self.shutdown.shutdown(Shutdown::Both) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotConnected => Ok(()),
+            Err(error) => Err(error),
+        };
+        if let Err(error) = ended {
+            // Termination is not established, so nothing is offered and
+            // nothing is given up. The owner leaves whole.
+            return X11OrderedClose::Unterminated {
+                cause: error.kind(),
+                retained: Box::new(self),
+            };
+        }
+        let mut answered = 0usize;
+        let mut already = 0usize;
+        let mut deferred = 0usize;
+        let mut unanswered = Vec::new();
+        // What this owner holds, then what is still queued for it. The
+        // foreign-endpoint slot is deliberately not among them.
+        let held = self
+            .in_flight
+            .take()
+            .map(|held| held.delivery)
+            .into_iter()
+            .chain(std::iter::from_fn(|| self.queue.try_recv().ok()));
+        for capsule in held {
+            let Some(finalizer) = capsule.finalizer() else {
+                // Nothing carries its answer, so nothing here can give it one.
+                unanswered.push(capsule);
+                continue;
+            };
+            match finalizer.finalize(outcome) {
+                PrivateAdjudication::Answered => answered += 1,
+                PrivateAdjudication::AlreadyAnswered => already += 1,
+                PrivateAdjudication::Deferred => deferred += 1,
+                PrivateAdjudication::Refused => unanswered.push(capsule),
+            }
+        }
+        X11OrderedClose::Ended {
+            answered,
+            already,
+            deferred,
+            unanswered,
+            refused: self.refused.take().map(Box::new),
+        }
     }
 
     fn in_flight(&self) -> Option<&X11OrderedInFlight> {
