@@ -180,6 +180,12 @@ struct XAuthorityOrderedReceiver {
     receiver: Receiver<XAuthorityOrderedDelivery>,
     /// The connection-state cell this registration is, by pointer.
     registration: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+    /// How many this queue can hold at once.
+    ///
+    /// Carried because a holder of the receiver cannot ask a channel its
+    /// capacity, and anything that must reserve room for what this queue can
+    /// deliver has to know the number rather than pick one.
+    capacity: usize,
 }
 
 #[cfg(unix)]
@@ -193,6 +199,10 @@ impl XAuthorityOrderedReceiver {
     /// Give up the receiver itself, once its provenance has been established.
     fn into_receiver(self) -> Receiver<XAuthorityOrderedDelivery> {
         self.receiver
+    }
+
+    fn capacity(&self) -> usize {
+        self.capacity
     }
 }
 
@@ -439,6 +449,7 @@ impl XServerFrontendRouteRegistry {
                 ordered: XAuthorityOrderedReceiver {
                     receiver: ordered,
                     registration: ordered_witness,
+                    capacity: self.per_client_input_capacity.get(),
                 },
             },
         ))

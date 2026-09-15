@@ -20128,8 +20128,9 @@ fn a_recipient_that_will_not_take_its_bytes_ends_the_connection_before_returning
                 panic!("this queue carries only what this connection is owed")
             }
             X11OrderedServeStep::TransportUnavailable
-            | X11OrderedServeStep::Unterminated => {
-                panic!("this connection's transport is a live socket pair")
+            | X11OrderedServeStep::Unterminated
+            | X11OrderedServeStep::Closing => {
+                panic!("this connection is live and serving, not closing")
             }
         }
     }
@@ -22582,7 +22583,7 @@ fn a_close_adjudicates_the_queued_admission_before_letting_its_payload_go() {
         (closing.answered, closing.already, closing.deferred),
         (1, 0, 0)
     );
-    assert!(closing.unanswered.is_empty() && closing.foreign.is_empty());
+    assert!(owner.retained_unanswered().is_empty() && owner.retained_foreign().is_empty());
     assert_eq!(
         cell.answer().map(|answer| answer.outcome),
         Some(XAuthorityInputDeliveryOutcome::ClientDisconnected),
@@ -22625,7 +22626,7 @@ fn a_close_ends_the_socket_without_the_output_lock_it_may_be_stalled_under() {
         (1, 0, 0),
         "and what it held was still offered an outcome: {steps:?}"
     );
-    assert!(closing.unanswered.is_empty());
+    assert!(owner.retained_unanswered().is_empty());
     assert!(cell.answer().is_some());
     peer.set_read_timeout(Some(Duration::from_secs(2)))
         .expect("a deadline on the peer");
@@ -22667,7 +22668,7 @@ fn a_close_under_a_held_claim_transfers_a_deferral_rather_than_an_answer() {
     let steps = close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
     let closing = owner.closing().expect("a close in progress");
     assert!(
-        closing.unanswered.is_empty(),
+        owner.retained_unanswered().is_empty(),
         "the offer was taken, in one form or another: {steps:?}"
     );
     assert_eq!(
@@ -22786,7 +22787,7 @@ fn a_close_does_not_answer_a_capsule_belonging_to_another_endpoint() {
         (0, 0, 0),
         "nothing of another endpoint's was answered by this close"
     );
-    let [held] = closing.foreign.as_slice() else {
+    let [held] = owner.retained_foreign() else {
         panic!("the foreign capsule is retained by the close")
     };
     assert_eq!(
@@ -22877,8 +22878,8 @@ fn a_close_retains_the_exact_capsule_when_the_authority_cannot_answer() {
         (closing.answered, closing.already, closing.deferred),
         (0, 0, 0)
     );
-    assert!(closing.foreign.is_empty());
-    let [retained] = closing.unanswered.as_slice() else {
+    assert!(owner.retained_foreign().is_empty());
+    let [retained] = owner.retained_unanswered() else {
         panic!("the exact capsule is retained")
     };
     assert_eq!(
@@ -23074,4 +23075,233 @@ fn an_unusable_output_is_not_reported_as_an_empty_queue() {
         cell.answer().is_none(),
         "a transport that could not be taken answers for nobody"
     );
+}
+
+#[test]
+fn a_started_close_cannot_be_served_normally_again() {
+    // Serving after a close has begun consumed the queued event and wrote at a
+    // socket the close had already shut down, publishing WriteFailed through
+    // the real finalizer -- a failure manufactured by a forbidden write,
+    // recorded ahead of the ending the close was establishing. Two owners of
+    // one admission is the whole problem.
+    let client = XServerFrontendClientId(7821);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 78210, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 78210);
+    for _ in 0..8 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, _peer) = UnixStream::pair().unwrap();
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    owner
+        .begin_close(X11OrderedCloseCause::ConnectionEnded)
+        .expect("a socket pair ends");
+
+    assert!(
+        matches!(
+            owner.serve_one(XByteOrder::LittleEndian, 7),
+            X11OrderedServeStep::Closing
+        ),
+        "ordinary serving is over from the moment a close begins"
+    );
+    assert!(
+        owner.in_flight().is_none(),
+        "and it took nothing off the queue"
+    );
+    assert!(
+        cell.answer().is_none(),
+        "nothing was published by a write that must not have happened"
+    );
+
+    // The close itself is what answers it, and with the outcome a close knows.
+    let steps = close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
+    assert_eq!(
+        cell.answer().map(|answer| answer.outcome),
+        Some(XAuthorityInputDeliveryOutcome::ClientDisconnected),
+        "{steps:?}"
+    );
+}
+
+#[test]
+fn a_close_reports_backpressure_rather_than_retaining_past_its_bound() {
+    // Retention has to come from what is being retained. Growing the store
+    // while holding custody is not reservation: it is finding out at the worst
+    // moment that there was no room.
+    let client = XServerFrontendClientId(7831);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 78310, 272, true);
+
+    let other = XServerFrontendClientId(7832);
+    let other_window = XResourceId::new(0x307832, 1);
+    let (other_registration, _other_channels) = {
+        let p = f.runner.frontend.as_mut().unwrap();
+        let registry = &p.broker.registry;
+        let context = namespaced(other, f.namespace);
+        let (registration, channels) = registry
+            .register_client_with_admission(other, Some(context))
+            .unwrap();
+        registry.attach_private_lifecycle(&registration, context).unwrap();
+        let selected = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+        registry
+            .attach_connection_state(
+                &registration,
+                f.namespace,
+                selected.clone(),
+                Arc::new(AtomicU64::new(0)),
+            )
+            .unwrap();
+        {
+            let mut state = selected.lock().unwrap();
+            state.register(
+                other_window,
+                XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+                Rect { x: 0, y: 0, width: 200, height: 100 },
+            );
+            state.observe_mapped(other_window);
+            state.update(other_window, Some((1 << 2) | (1 << 3)), None);
+        }
+        let mut grabs = registry.input_authority.lock().unwrap();
+        grabs.ungrab_pointer(f.namespace, f.client.raw());
+        grabs
+            .grab_pointer(
+                f.namespace,
+                crate::XActiveInputGrab {
+                    owner: other.raw(),
+                    window: other_window,
+                    owner_events: false,
+                    pointer_mode: 1,
+                    keyboard_mode: 1,
+                    event_mask: u16::MAX,
+                    xi_event_mask: [0; 8],
+                    xi_event_mask_words: 0,
+                    route_lease: None,
+                },
+            )
+            .unwrap();
+        (registration, channels)
+    };
+
+    // Real foreign capsules, built one at a time by the source, deliberately
+    // put on this connection's queue. Same staged wrong-queue boundary as the
+    // other foreign controls; not a claim that the producer misroutes.
+    let sender = {
+        let private = f.runner.frontend.as_ref().unwrap();
+        private
+            .broker
+            .registry
+            .clients
+            .lock()
+            .unwrap()
+            .get(&client)
+            .expect("this connection's row")
+            .ordered
+            .clone()
+    };
+    let mut built = Vec::new();
+    for index in 0..9u64 {
+        // A distinct button each time: the same one joins the hold that exists
+        // rather than beginning another, and this needs separate admissions.
+        let delivery = 78320 + index;
+        let button = 273 + u32::try_from(index).expect("small");
+        f.ingress
+            .submit(button_to(
+                f.surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                button,
+                true,
+            ))
+            .unwrap();
+        {
+            let PrivatePreparedRunner {
+                frontend,
+                keyboards,
+                watch,
+                ..
+            } = &mut f.runner;
+            let private = frontend.as_mut().unwrap();
+            private
+                .step_once(keyboards, &mut |_, _| Ok(()), watch.as_ref().unwrap())
+                .unwrap();
+            let Some(PrivateOrderedItem::Ran { custody, .. }) = private.terminal.turn.pop() else {
+                // The source will not accept another press here. However many
+                // were built is what this control has to work with.
+                break;
+            };
+            assert!(custody.observe().unwrap().is_some());
+        }
+        let private = f.runner.frontend.as_mut().unwrap();
+        let recovery = private.broker.registry.input_recovery.clone();
+        let cell = admitted_cell(private, delivery);
+        let record = private
+            .terminal
+            .holds
+            .iter_mut()
+            .find(|record| {
+                record
+                    .custody
+                    .completion
+                    .as_ref()
+                    .is_some_and(|held| Arc::ptr_eq(held, &cell))
+            })
+            .expect("this admission's own hold");
+        assert_eq!(record.reached.client(), other, "owed to the other endpoint");
+        let emission = record
+            .native
+            .as_mut()
+            .unwrap()
+            .take_press_emission()
+            .expect("its own press emission");
+        PrivateXServerFrontend::stow_press_capsule(&mut record.custody, emission, &recovery, other);
+        let Some(PrivatePendingDelivery::Capsule(capsule)) = record.custody.pending.take() else {
+            panic!("it built its own capsule")
+        };
+        built.push(capsule);
+    }
+    let bound = {
+        let private = f.runner.frontend.as_ref().unwrap();
+        private.broker.registry.per_client_input_capacity.get()
+    };
+    assert_eq!(
+        built.len(),
+        bound,
+        "enough real foreign capsules to reach the bound exactly"
+    );
+
+    let (socket, _peer) = UnixStream::pair().unwrap();
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    assert_eq!(owner.retention, bound, "retention is the queue's own capacity");
+    owner
+        .begin_close(X11OrderedCloseCause::ConnectionEnded)
+        .expect("a socket pair ends");
+
+    // One at a time, each classified and retained, right up to the bound.
+    let mut retained = 0usize;
+    for capsule in built {
+        sender.try_send(capsule).expect("onto this connection's queue");
+        assert_eq!(
+            owner.advance_close(XByteOrder::LittleEndian, 7),
+            X11OrderedCloseStep::Foreign,
+            "another endpoint's capsule is classified and retained, never offered"
+        );
+        retained += 1;
+    }
+    assert_eq!(retained, bound);
+    assert_eq!(owner.retained_foreign().len(), bound);
+
+    // AT THE BOUND, NOT PAST IT. The next visit reports backpressure without
+    // receiving anything, and the store is still exactly what was reserved.
+    assert_eq!(
+        owner.advance_close(XByteOrder::LittleEndian, 7),
+        X11OrderedCloseStep::Backpressure,
+        "retention at its bound is backpressure, not a bigger store"
+    );
+    assert_eq!(owner.retained_foreign().len(), bound, "nothing more was taken");
+    assert_eq!(
+        owner.retention_capacity(),
+        (bound, bound),
+        "and neither store ever grew to make room"
+    );
+    drop(other_registration);
 }

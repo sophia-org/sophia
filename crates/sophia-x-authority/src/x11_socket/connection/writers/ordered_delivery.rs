@@ -365,6 +365,8 @@ enum X11OrderedServeStep {
     /// because anything written would follow a half-finished frame. Custody of
     /// whatever is held stays with this owner.
     Unterminated,
+    /// A close has begun, so ordinary serving no longer applies here.
+    Closing,
 }
 
 /// Why a connection's ordered output could not be bound.
@@ -491,6 +493,13 @@ enum X11OrderedCloseCause {
 struct X11OrderedClosing {
     /// Why, for whoever reads this afterwards. Never published.
     cause: X11OrderedCloseCause,
+    /// Whether this close actually ended the wire.
+    ///
+    /// A close that could not is still a close: ordinary serving is excluded
+    /// from the moment it begins, because the alternative is a later write
+    /// manufacturing a failure the completion records ahead of the ending this
+    /// was trying to establish.
+    terminated: bool,
     /// Answers this close established.
     answered: usize,
     /// Admissions the authority had already answered.
@@ -499,13 +508,6 @@ struct X11OrderedClosing {
     /// holds. Counted apart: a deferral is not a published answer, and a
     /// caller that treated it as one would stop looking.
     deferred: usize,
-    /// Admissions the authority would not take an offer for. Still owed, still
-    /// owned, still carrying their own finalizers.
-    unanswered: Vec<XAuthorityOrderedDelivery>,
-    /// Capsules that reached this queue owed to another endpoint. This socket
-    /// ending is not evidence about their recipients, so they are neither
-    /// offered an outcome nor discarded.
-    foreign: Vec<X11OrderedRefusedDelivery>,
 }
 
 /// What one bounded step of a close did.
@@ -519,6 +521,12 @@ enum X11OrderedCloseStep {
     Adjudicated(PrivateAdjudication),
     /// One capsule was owed to another endpoint and is retained unanswered.
     Foreign,
+    /// Nothing can be received: what is retained is already at its bound.
+    ///
+    /// The queue and the slots are kept as they are, and this says so, because
+    /// taking one more with nowhere to put it is how accepted work is lost.
+    /// Someone has to take the retention on before this can go further.
+    Backpressure,
     /// Nothing more is waiting RIGHT NOW.
     ///
     /// Not "the producer has stopped": senders for this queue may still be
@@ -551,14 +559,25 @@ struct X11OrderedServingOwner {
     /// on the wire are the beginning of an event nobody can finish.
     unterminated: bool,
     closing: Option<X11OrderedClosing>,
+    /// How many capsules this owner may retain beyond the ones in its slots.
+    ///
+    /// The queue's own capacity, because that is the most it can be holding at
+    /// any moment, and a retention policy has to come from the thing being
+    /// retained rather than a number someone liked. Anything past it is
+    /// backpressure for whoever takes this continuation on, not a bigger Vec.
+    retention: usize,
+    /// Admissions the authority would not take an offer for. Still owed, still
+    /// owned, still carrying their own finalizers.
+    ///
+    /// Reserved when this owner is built, while construction can still refuse
+    /// and hand its inputs back -- not when a close begins, by which point the
+    /// wire may already be ended and there is nowhere to give anything back to.
+    unanswered: Vec<XAuthorityOrderedDelivery>,
+    /// Capsules that reached this queue owed to another endpoint. This socket
+    /// ending is not evidence about their recipients, so they are neither
+    /// offered an outcome nor discarded.
+    foreign: Vec<X11OrderedRefusedDelivery>,
 }
-
-/// How much a close keeps room for before it accepts anything.
-///
-/// Reserved when the owner is built, so a close never allocates while it is
-/// holding custody it has nowhere to put.
-#[cfg(unix)]
-const X11_ORDERED_CLOSE_RESERVE: usize = 8;
 
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
@@ -600,6 +619,10 @@ impl X11OrderedServingOwner {
                 return Err((X11OrderedServingRefusal::Unadmitted(refusal), transport));
             }
         };
+        // Taken before the receiver is consumed, and the retention it implies
+        // reserved before this owner exists: a close must never be the moment
+        // room is first asked for.
+        let retention = transport.ordered.capacity();
         Ok(Self {
             served: XAuthorityServedConnection::retained(endpoint),
             queue: transport.ordered.into_receiver(),
@@ -609,6 +632,9 @@ impl X11OrderedServingOwner {
             refused: None,
             unterminated: false,
             closing: None,
+            retention,
+            unanswered: Vec::with_capacity(retention),
+            foreign: Vec::with_capacity(retention),
         })
     }
 
@@ -623,6 +649,15 @@ impl X11OrderedServingOwner {
     fn serve_one(&mut self, byte_order: XByteOrder, sequence: u16) -> X11OrderedServeStep {
         if self.unterminated {
             return X11OrderedServeStep::Unterminated;
+        }
+        if self.closing.is_some() {
+            // ORDINARY SERVING IS OVER. Once a close has begun -- whether or
+            // not it managed to end the wire -- receiving, encoding or sending
+            // here would drive this admission from two places at once, and a
+            // write attempted on a socket the close shut down records a
+            // failure in the completion cell ahead of the ending the close was
+            // establishing. Two owners of one admission is the whole problem.
+            return X11OrderedServeStep::Closing;
         }
         let Ok(socket) = self.output.lock() else {
             // Nothing was taken and nothing was written. An unusable transport
@@ -683,25 +718,29 @@ impl X11OrderedServingOwner {
         if self.closing.is_some() {
             return Ok(());
         }
+        // RECORDED BEFORE THE FALLIBLE PART, and never unrecorded. Serving is
+        // excluded from this instant, so a shutdown that refuses cannot leave
+        // ordinary writing eligible on a connection somebody has decided to
+        // end.
+        self.closing = Some(X11OrderedClosing {
+            cause,
+            terminated: false,
+            answered: 0,
+            already: 0,
+            deferred: 0,
+        });
         match self.shutdown.shutdown(Shutdown::Both) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotConnected => {}
             Err(error) => return Err(error.kind()),
         }
-        let mut closing = X11OrderedClosing {
-            cause,
-            answered: 0,
-            already: 0,
-            deferred: 0,
-            unanswered: Vec::with_capacity(X11_ORDERED_CLOSE_RESERVE),
-            foreign: Vec::with_capacity(X11_ORDERED_CLOSE_RESERVE),
-        };
-        // A capsule already classified as another endpoint's moves into the
-        // close's own keeping, still unanswered.
+        self.closing.as_mut().expect("just recorded").terminated = true;
+        // A capsule already classified as another endpoint's moves into this
+        // owner's keeping, still unanswered. Room for it was reserved when the
+        // owner was built.
         if let Some(refused) = self.refused.take() {
-            closing.foreign.push(refused);
+            self.foreign.push(refused);
         }
-        self.closing = Some(closing);
         Ok(())
     }
 
@@ -724,26 +763,25 @@ impl X11OrderedServingOwner {
         }
         // The one this owner was already serving comes first: it is this
         // endpoint's by construction, and it is owed an answer before anything
-        // still waiting behind it.
-        if let Some(held) = self.in_flight.take() {
-            return self.adjudicate_closing(held.delivery);
+        // still waiting behind it. It is adjudicated WHERE IT LIES.
+        if self.in_flight.is_some() {
+            return self.adjudicate_in_flight();
+        }
+        // ROOM BEFORE CUSTODY. Nothing is received while what is already
+        // retained is at its bound: a capsule taken with nowhere to put it is
+        // one that gets lost at the next refusal.
+        if self.unanswered.len() + self.foreign.len() >= self.retention {
+            return X11OrderedCloseStep::Backpressure;
         }
         // Received into this owner's own slots and classified there, by the
         // same admission the serving path uses.
         match take_ordered_delivery(&self.queue, &self.served, &mut self.in_flight, &mut self.refused)
         {
-            Ok(()) => {
-                let held = self.in_flight.take().expect("admitted into the slot");
-                self.adjudicate_closing(held.delivery)
-            }
+            Ok(()) => self.adjudicate_in_flight(),
             Err(X11OrderedTakeRefusal::ForeignEndpoint)
             | Err(X11OrderedTakeRefusal::RefusedHeld) => {
                 let refused = self.refused.take().expect("a refusal leaves it owned");
-                self.closing
-                    .as_mut()
-                    .expect("closing")
-                    .foreign
-                    .push(refused);
+                self.foreign.push(refused);
                 X11OrderedCloseStep::Foreign
             }
             Err(X11OrderedTakeRefusal::InFlight) => X11OrderedCloseStep::Quiet,
@@ -752,24 +790,64 @@ impl X11OrderedServingOwner {
         }
     }
 
-    /// Offer one admitted capsule the only outcome a close establishes.
-    fn adjudicate_closing(&mut self, capsule: XAuthorityOrderedDelivery) -> X11OrderedCloseStep {
-        let closing = self.closing.as_mut().expect("closing");
-        let Some(finalizer) = capsule.finalizer().cloned() else {
-            // Nothing carries its answer, so nothing here can give it one.
-            closing.unanswered.push(capsule);
+    /// Offer the in-flight admission the only outcome a close establishes.
+    ///
+    /// ADJUDICATED BY BORROWING THE SLOT IT LIES IN. Taking it out first put
+    /// the capsule in a local across the publication, and an interruption
+    /// there left the admission owned by nobody -- its finalizer gone with the
+    /// frame, its cell unanswered, and no record that it had ever existed. It
+    /// is consumed only once the authority has returned a disposition, and
+    /// then moved straight into storage reserved before it arrived.
+    ///
+    /// The in-flight frame and offset travel with it while the report is owed,
+    /// because how far its bytes got is part of what is still unknown about it.
+    fn adjudicate_in_flight(&mut self) -> X11OrderedCloseStep {
+        let Some(held) = self.in_flight.as_ref() else {
+            return X11OrderedCloseStep::Quiet;
+        };
+        let Some(finalizer) = held.delivery().finalizer().cloned() else {
+            // Nothing carries its answer, so nothing here can give it one. It
+            // moves between two places this owner already owns.
+            let held = self.in_flight.take().expect("borrowed just above");
+            self.unanswered.push(held.delivery);
             return X11OrderedCloseStep::Adjudicated(PrivateAdjudication::Refused);
         };
         // The connection to this recipient ended. That is the whole of what a
-        // close knows about it.
+        // close knows about it. The capsule stays in its slot across this.
         let adjudication = finalizer.finalize(XAuthorityInputDeliveryOutcome::ClientDisconnected);
+        let closing = self.closing.as_mut().expect("closing");
         match adjudication {
             PrivateAdjudication::Answered => closing.answered += 1,
             PrivateAdjudication::AlreadyAnswered => closing.already += 1,
             PrivateAdjudication::Deferred => closing.deferred += 1,
-            PrivateAdjudication::Refused => closing.unanswered.push(capsule),
+            PrivateAdjudication::Refused => {
+                // Nothing was taken, so nothing is consumed. It moves from one
+                // owned place to another with nothing fallible in between.
+                let held = self.in_flight.take().expect("still in its slot");
+                self.unanswered.push(held.delivery);
+                return X11OrderedCloseStep::Adjudicated(adjudication);
+            }
         }
+        // Answered, already answered or deferred: the authority has it, so the
+        // slot is given up.
+        let _consumed = self.in_flight.take().expect("still in its slot");
         X11OrderedCloseStep::Adjudicated(adjudication)
+    }
+
+    fn retained_unanswered(&self) -> &[XAuthorityOrderedDelivery] {
+        &self.unanswered
+    }
+
+    fn retained_foreign(&self) -> &[X11OrderedRefusedDelivery] {
+        &self.foreign
+    }
+
+    /// How much room the retention stores actually hold.
+    ///
+    /// Read so a control can require that reservation was reservation: a store
+    /// that grew while holding custody never had the room it claimed.
+    fn retention_capacity(&self) -> (usize, usize) {
+        (self.unanswered.capacity(), self.foreign.capacity())
     }
 
     fn closing(&self) -> Option<&X11OrderedClosing> {
