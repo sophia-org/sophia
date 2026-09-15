@@ -82,10 +82,19 @@ struct PrivateTerminalInventory {
     /// refusal or an unwind, and moves into the record for its debt as soon as
     /// that record exists.
     ///
-    /// Empty between operations that completed. A refusal which left the
-    /// source holding context leaves this held too, attached to that same
-    /// continuation, and the next operation is refused rather than allowed to
-    /// replace it.
+    /// EMPTIED BY AN EXPLICIT TRANSFER OR DISPOSITION, not by an operation
+    /// merely finishing. It is filled on exactly two paths -- the press that
+    /// begins a hold, and the release of a hold this executor records -- and
+    /// leaves on one of three: moved into the record for its debt, disposed of
+    /// when the result is known to owe no event, or retained when a refusal
+    /// left the source holding context.
+    ///
+    /// A join and a release of no recorded hold never touch it.
+    ///
+    /// While it is retained the next operation on those two paths is refused
+    /// rather than allowed to replace it. Disposal for a retained custody --
+    /// one belonging to a continuation whose fate is still unknown -- is not
+    /// written yet.
     pending_custody: Option<PrivateDeliveryCustody>,
     /// Releases whose delivery was decided and whose debt is still open.
     settling: Vec<PrivateSettlingRelease>,

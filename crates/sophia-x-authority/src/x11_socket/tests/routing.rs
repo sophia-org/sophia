@@ -12899,6 +12899,81 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
 }
 
 #[test]
+fn a_completed_operation_leaves_no_custody_behind_for_the_next_one() {
+    // The slot is emptied by an explicit transfer or disposition. A press and
+    // a release that complete move their custody into the record for their
+    // debt, so nothing is left to refuse the operation after them.
+    //
+    // WHAT THIS DOES NOT REACH: the no-event results, NotHeld and
+    // SurvivorRemains, with a record present. A join adopts the hold rather
+    // than adding a holder, so a release here always reports DeliverTo and
+    // this fixture cannot produce the other two. Their disposal is written and
+    // is NOT proved by this control.
+    let client = XServerFrontendClientId(2571);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture { runner, surface, .. } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+
+    let button = |private: &mut crate::PrivateXServerFrontend,
+                  keyboards: &mut crate::PrivateKeyboards,
+                  slot: u64,
+                  delivery: u64,
+                  pressed: bool| {
+        let custody = role.reserve(stamp, slot).expect("a reservation").accepted();
+        let run = private.run_ordered_input(
+            keyboards,
+            &{
+                let route = button_to(
+                    surface,
+                    XAuthorityInputDeliveryId::from_raw(delivery),
+                    272,
+                    pressed,
+                );
+                admit_for_direct_run(private, &route);
+                route
+            },
+            &custody,
+            watch,
+        );
+        let _ = custody.observe();
+        run
+    };
+
+    button(private, keyboards, 1, 2571, true).expect("the press to run");
+    assert!(
+        private.terminal.pending_custody.is_none(),
+        "a completed press moved its custody into its record"
+    );
+    button(private, keyboards, 2, 2572, false).expect("the release to run");
+    assert!(
+        private.terminal.pending_custody.is_none(),
+        "and a completed release moved its own"
+    );
+
+    // So the next operation is not refused for something left behind.
+    let next = button(private, keyboards, 3, 2573, true);
+    assert!(
+        !matches!(
+            next,
+            Err(crate::PrivateExecutionRefusal::CustodyRetained)
+        ),
+        "nothing was left held, so nothing is refused for holding it"
+    );
+}
+
+#[test]
 fn a_retained_custody_refuses_the_next_operation_rather_than_being_replaced() {
     // A refusal that leaves the source holding context leaves this custody
     // attached to that same continuation. Assigning over it would drop the

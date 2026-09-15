@@ -416,6 +416,18 @@ fn resolve_and_apply(
                         // this apart from a delivery whose event went unbuilt.
                         sophia_input_authority::ReleaseOutcome::NotHeld
                         | sophia_input_authority::ReleaseOutcome::SurvivorRemains => {
+                            // A KNOWN NO-EVENT RESULT, DISPOSED OF EXPLICITLY.
+                            // The aggregate owes nobody an event, so this
+                            // executor will never deliver one for the custody
+                            // it prepared and holding it would refuse every
+                            // later operation for work that is finished.
+                            //
+                            // What this claims is only that: no event is owed
+                            // from here. It says nothing about whether the
+                            // delivery is answered -- its ticket is still the
+                            // ledger's, and the ordinary path still owns
+                            // whatever becomes of it.
+                            *pending_custody = None;
                             notes.decided = Some(PrivateOrderedDecision {
                                 owes_event: false,
                                 reached: None,
