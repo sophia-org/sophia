@@ -4,14 +4,18 @@ This verifier checks the action-latency part of the planned two-output workload.
 It also requires the exact final content-shutdown accounting record.
 It is **not yet the complete attended gate**: it does not establish measured cadence,
 process/GPU memory plateau, session recovery, GPU grant correctness
-or healthy process lifetimes. Run those separate checks too. The current tty4
-launcher has not yet been upgraded to this workload.
+or healthy process lifetimes. Run those separate checks too. The tty4 launcher
+combines these checks with the separate native gate.
 
 The accepted workload shape is 60 seconds with 40 state-changing workspace
 actions, 20 per output. Warmup and numerical ACK/native latency limits must be
 written to a budget JSON file before the run. No historical numerical approval
-was recovered; the numbers in `tests/fixture.py` are test values, not such an
-approval. The budget file requires exactly these positive integer keys:
+was recovered. The checked-in `tools/fixtures/lom_workload_budgets.json` now
+declares the candidate defaults: 10-second warmup, ACK p95/max 50/100 ms and
+native p95/max 150/300 ms. They are workload gates, not driver guarantees.
+The launcher copies and hashes this file before any GPU proof or native launch;
+it cannot choose a budget retrospectively. The budget file requires exactly
+these positive integer keys:
 
 ```text
 warmup_usec, duration_usec, actions_per_output, output_count,

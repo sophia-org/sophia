@@ -1,0 +1,10 @@
+{
+  "warmup_usec": 10000000,
+  "duration_usec": 60000000,
+  "actions_per_output": 20,
+  "output_count": 2,
+  "ack_p95_usec": 50000,
+  "ack_max_usec": 100000,
+  "native_p95_usec": 150000,
+  "native_max_usec": 300000
+}

@@ -22,12 +22,23 @@ The separate `tools/run_current_lom_panel_gate_tty4.sh` is the native acceptance
 candidate. Run it only from tty4 after ending the graphical session, with
 `SOPHIA_LOM_NATIVE_GATE_ARM=1`. It builds from clean signed Sophia and Lom tips,
 first runs the protected GPU/content proof while Sophia does not own the display,
-then runs native presentation for twenty seconds. A failed prerequisite therefore
+then runs the 90-second normal-exit workload (110-second failure watchdog). A failed prerequisite therefore
 stops before graphics takeover and retains the client's boundary error. The native
 stage restores the TTY through the existing session harness and retains exact
 identities and structured session diagnostics. A machine-independent
 gate or isolated proof cannot establish that the bar was visible; the attended
 run still requires the operator to confirm its placement and appearance.
+
+Wait ten clock ticks after both bars appear, then make 20 state-changing workspace
+clicks per output within 60 seconds (40 total). No clicks during warmup or after
+the 40; wait for automatic exit. The checked-in candidate budget is ACK p95/max
+50/100 ms and exact native retirement p95/max 150/300 ms. These are predeclared
+workload acceptance values, not claims of historical approval or driver guarantees.
+The launcher copies/hashes budgets and profiles before GPU use, checks them again
+after proof and session, and refuses any reused evidence directory. It requires
+normal exit 0, existing strict health/recovery proof, complete causal outcomes,
+bounded in-run inventory and exact zero final content accounting. See
+[workload evidence](lom_workload/README.md) for scope and interpretation.
 
 ## Private GLX pixmap probe
 
