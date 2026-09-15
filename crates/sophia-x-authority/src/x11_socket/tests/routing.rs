@@ -22879,9 +22879,14 @@ fn a_close_retains_the_exact_capsule_when_the_authority_cannot_answer() {
         (0, 0, 0)
     );
     assert!(owner.retained_foreign().is_empty());
-    let [retained] = owner.retained_unanswered() else {
+    let [held] = owner.retained_unanswered() else {
         panic!("the exact capsule is retained")
     };
+    // The whole send state is kept, not the capsule alone: how far its bytes
+    // got is part of what is still unknown about it.
+    assert_eq!(held.frame_index(), 0);
+    assert_eq!(held.blocked(), Duration::ZERO);
+    let retained = held.delivery();
     assert_eq!(
         retained.delivery(),
         XAuthorityInputDeliveryId::from_raw(77810)
@@ -23304,4 +23309,143 @@ fn a_close_reports_backpressure_rather_than_retaining_past_its_bound() {
         "and neither store ever grew to make room"
     );
     drop(other_registration);
+}
+
+#[test]
+fn an_unterminated_close_publishes_nothing_and_a_real_retry_publishes_once() {
+    // A close that could not end its wire recorded the fact and then nothing
+    // read it: the driver tested only that a close existed, so it published
+    // ClientDisconnected for an admission whose connection was still carrying
+    // bytes. And asking again returned success because a close existed,
+    // acknowledging an ending nobody had attempted a second time.
+    //
+    // STAGED AT THE STATE, AND SAID SO. std on this host gives no way to make
+    // shutdown fail other than NotConnected, which is an ending; I tried an
+    // already-ended handle and it reports success, so a control built that way
+    // would silently exercise the happy path while looking like it covered
+    // both. The refused termination is written directly instead. The retry
+    // below is real: it calls the actual shutdown on the actual socket.
+    let client = XServerFrontendClientId(7841);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 78410, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 78410);
+    for _ in 0..8 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, _peer) = UnixStream::pair().unwrap();
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    owner
+        .begin_close(X11OrderedCloseCause::ConnectionEnded)
+        .expect("the first attempt ends this socket");
+    // Exactly what a refused shutdown leaves: the close is recorded, serving is
+    // excluded, and termination is not a fact.
+    {
+        let closing = owner.closing.as_mut().expect("closing");
+        closing.termination =
+            X11OrderedTermination::Refused(std::io::ErrorKind::PermissionDenied);
+        closing.attempts = 1;
+    }
+
+    // NOTHING DERIVED FROM AN ENDING THAT DID NOT HAPPEN.
+    assert!(
+        matches!(
+            owner.advance_close(XByteOrder::LittleEndian, 7),
+            X11OrderedCloseStep::TerminationUnconfirmed(std::io::ErrorKind::PermissionDenied)
+        ),
+        "the driver refuses to offer anything"
+    );
+    assert!(
+        matches!(
+            owner.adjudicate_in_flight(),
+            X11OrderedCloseStep::TerminationUnconfirmed(std::io::ErrorKind::PermissionDenied)
+        ),
+        "and so does the offer itself, so a later caller cannot go round the driver"
+    );
+    assert!(
+        cell.answer().is_none(),
+        "an ending that did not happen answers nobody"
+    );
+    assert!(
+        owner.in_flight().is_none(),
+        "and nothing was received under an unconfirmed close"
+    );
+    // Serving stays excluded throughout.
+    assert!(matches!(
+        owner.serve_one(XByteOrder::LittleEndian, 7),
+        X11OrderedServeStep::Closing
+    ));
+
+    // A REPEATED REQUEST IS A REAL RETRY. It calls the actual shutdown again,
+    // keeps the original cause, and succeeds here.
+    owner
+        .begin_close(X11OrderedCloseCause::SupervisorStopped)
+        .expect("the retry ends the wire");
+    let closing = owner.closing().expect("closing");
+    assert_eq!(
+        closing.termination,
+        X11OrderedTermination::Established,
+        "and only that authorises anything"
+    );
+    assert_eq!(
+        closing.cause,
+        X11OrderedCloseCause::ConnectionEnded,
+        "the original close's identity is kept, not replaced by the retry's"
+    );
+    assert_eq!(closing.attempts, 2, "the retry was an attempt, not a lookup");
+
+    let steps = close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
+    assert_eq!(
+        cell.answer().map(|answer| answer.outcome),
+        Some(XAuthorityInputDeliveryOutcome::ClientDisconnected),
+        "{steps:?}"
+    );
+    let published = steps
+        .iter()
+        .filter(|step| {
+            matches!(
+                step,
+                X11OrderedCloseStep::Adjudicated(PrivateAdjudication::Answered)
+            )
+        })
+        .count();
+    assert_eq!(published, 1, "exactly one terminal publication: {steps:?}");
+}
+
+#[test]
+fn a_close_stops_retrying_a_termination_that_keeps_refusing() {
+    // The retry is bounded. A close that kept asking forever is one that never
+    // finishes, and whoever is waiting for this connection to end waits with
+    // it. Staged at the state, as above.
+    let client = XServerFrontendClientId(7851);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 78510, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 78510);
+    for _ in 0..8 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+    let (socket, _peer) = UnixStream::pair().unwrap();
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    owner
+        .begin_close(X11OrderedCloseCause::ConnectionEnded)
+        .expect("the first attempt ends this socket");
+    {
+        let closing = owner.closing.as_mut().expect("closing");
+        closing.termination =
+            X11OrderedTermination::Refused(std::io::ErrorKind::PermissionDenied);
+        closing.attempts = X11_ORDERED_CLOSE_ATTEMPTS;
+    }
+    assert_eq!(
+        owner.begin_close(X11OrderedCloseCause::ConnectionEnded),
+        Err(std::io::ErrorKind::PermissionDenied),
+        "past its bound it reports the unresolved termination rather than trying again"
+    );
+    assert_eq!(
+        owner.closing().expect("closing").attempts,
+        X11_ORDERED_CLOSE_ATTEMPTS,
+        "and does not attempt past the bound"
+    );
+    assert!(cell.answer().is_none(), "still nothing offered");
 }
