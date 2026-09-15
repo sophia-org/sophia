@@ -20127,6 +20127,10 @@ fn a_recipient_that_will_not_take_its_bytes_ends_the_connection_before_returning
             X11OrderedServeStep::AdmissionRefused(_) => {
                 panic!("this queue carries only what this connection is owed")
             }
+            X11OrderedServeStep::TransportUnavailable
+            | X11OrderedServeStep::Unterminated => {
+                panic!("this connection's transport is a live socket pair")
+            }
         }
     }
     let Some(X11OrderedServeStep::Ended { outcome, shutdown }) = ended else {
@@ -22494,6 +22498,28 @@ fn a_failed_serving_constructor_preserves_its_original_queued_capsule() {
     drop(sender);
 }
 
+/// Drive a close to quiescence in bounded visits, reporting what each did.
+fn close_to_quiet(
+    owner: &mut X11OrderedServingOwner,
+    cause: X11OrderedCloseCause,
+) -> Vec<X11OrderedCloseStep> {
+    owner
+        .begin_close(cause)
+        .unwrap_or_else(|kind| panic!("a socket pair ends: {kind:?}"));
+    let mut steps = Vec::new();
+    for _ in 0..32 {
+        let step = owner.advance_close(XByteOrder::LittleEndian, 7);
+        steps.push(step);
+        if matches!(
+            step,
+            X11OrderedCloseStep::Quiet | X11OrderedCloseStep::Drained
+        ) {
+            break;
+        }
+    }
+    steps
+}
+
 /// A serving owner for this fixture's own connection, with its output.
 fn serving_owner_for(
     f: &mut PreparedOrderedFixture,
@@ -22540,24 +22566,23 @@ fn a_close_adjudicates_the_queued_admission_before_letting_its_payload_go() {
     assert!(cell.answer().is_none(), "nothing has answered it yet");
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
-    let (owner, _output) = serving_owner_for(&mut f, socket);
-    let closed = owner.close(XAuthorityInputDeliveryOutcome::ClientDisconnected);
-    let X11OrderedClose::Ended {
-        answered,
-        already,
-        deferred,
-        unanswered,
-        refused,
-    } = closed
-    else {
-        panic!("a socket pair ends")
-    };
-    assert_eq!(
-        answered + already + deferred,
-        1,
-        "the queued admission was offered an outcome, not discarded"
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    let steps = close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
+    assert!(
+        matches!(
+            steps.first(),
+            Some(X11OrderedCloseStep::Adjudicated(
+                PrivateAdjudication::Answered
+            ))
+        ),
+        "the queued admission was offered an outcome, not discarded: {steps:?}"
     );
-    assert!(unanswered.is_empty() && refused.is_none());
+    let closing = owner.closing().expect("a close in progress");
+    assert_eq!(
+        (closing.answered, closing.already, closing.deferred),
+        (1, 0, 0)
+    );
+    assert!(closing.unanswered.is_empty() && closing.foreign.is_empty());
     assert_eq!(
         cell.answer().map(|answer| answer.outcome),
         Some(XAuthorityInputDeliveryOutcome::ClientDisconnected),
@@ -22591,25 +22616,16 @@ fn a_close_ends_the_socket_without_the_output_lock_it_may_be_stalled_under() {
     }
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
-    let (owner, output) = serving_owner_for(&mut f, socket);
+    let (mut owner, output) = serving_owner_for(&mut f, socket);
     let held = output.lock().expect("the connection's own output");
-    let closed = owner.close(XAuthorityInputDeliveryOutcome::ClientDisconnected);
-    let X11OrderedClose::Ended {
-        answered,
-        already,
-        deferred,
-        unanswered,
-        ..
-    } = closed
-    else {
-        panic!("the socket ends even with output serialization held")
-    };
+    let steps = close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
+    let closing = owner.closing().expect("a close in progress");
     assert_eq!(
-        answered + already + deferred,
-        1,
-        "and what it held was still offered an outcome"
+        (closing.answered, closing.already, closing.deferred),
+        (1, 0, 0),
+        "and what it held was still offered an outcome: {steps:?}"
     );
-    assert!(unanswered.is_empty());
+    assert!(closing.unanswered.is_empty());
     assert!(cell.answer().is_some());
     peer.set_read_timeout(Some(Duration::from_secs(2)))
         .expect("a deadline on the peer");
@@ -22647,21 +22663,15 @@ fn a_close_under_a_held_claim_transfers_a_deferral_rather_than_an_answer() {
     );
 
     let (socket, _peer) = UnixStream::pair().expect("a socket pair");
-    let (owner, _output) = serving_owner_for(&mut f, socket);
-    let closed = owner.close(XAuthorityInputDeliveryOutcome::ClientDisconnected);
-    let X11OrderedClose::Ended {
-        answered,
-        already,
-        deferred,
-        unanswered,
-        ..
-    } = closed
-    else {
-        panic!("a socket pair ends")
-    };
-    assert!(unanswered.is_empty(), "the offer was taken, in one form or another");
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    let steps = close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
+    let closing = owner.closing().expect("a close in progress");
+    assert!(
+        closing.unanswered.is_empty(),
+        "the offer was taken, in one form or another: {steps:?}"
+    );
     assert_eq!(
-        (answered, already, deferred),
+        (closing.answered, closing.already, closing.deferred),
         (0, 0, 1),
         "and it was taken as a deferral, counted as itself"
     );
@@ -22760,17 +22770,25 @@ fn a_close_does_not_answer_a_capsule_belonging_to_another_endpoint() {
 
     let (socket, _peer) = UnixStream::pair().expect("a socket pair");
     let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    // STILL QUEUED, NEVER SERVED. The close path has to ask the same admission
+    // question the serving path does: a capsule nobody classified is not this
+    // connection's to answer for just because it is on its queue.
     sender.send(foreign).expect("onto this owner's queue");
-    assert!(matches!(
-        owner.serve_one(XByteOrder::LittleEndian, 7),
-        X11OrderedServeStep::AdmissionRefused(X11OrderedAdmissionRefusal::ForeignEndpoint)
-    ));
 
-    let closed = owner.close(XAuthorityInputDeliveryOutcome::ClientDisconnected);
-    let X11OrderedClose::Ended { refused, .. } = closed else {
-        panic!("a socket pair ends")
+    let steps = close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
+    assert!(
+        steps.contains(&X11OrderedCloseStep::Foreign),
+        "the close classified it rather than offering for it: {steps:?}"
+    );
+    let closing = owner.closing().expect("a close in progress");
+    assert_eq!(
+        (closing.answered, closing.already, closing.deferred),
+        (0, 0, 0),
+        "nothing of another endpoint's was answered by this close"
+    );
+    let [held] = closing.foreign.as_slice() else {
+        panic!("the foreign capsule is retained by the close")
     };
-    let held = refused.expect("the foreign capsule leaves still held");
     assert_eq!(
         held.delivery().delivery(),
         XAuthorityInputDeliveryId::from_raw(77512)
@@ -22785,4 +22803,275 @@ fn a_close_does_not_answer_a_capsule_belonging_to_another_endpoint() {
         "closing this socket is not evidence about another endpoint's recipient"
     );
     drop(other_registration);
+}
+
+#[test]
+fn a_close_retains_the_exact_capsule_when_the_authority_cannot_answer() {
+    // The ordinary Refused branch: the authority takes nothing, so the close
+    // consumes nothing. The capsule stays whole -- same completion, same
+    // finalizer, same encoded bytes -- and its cell stays unanswered.
+    let client = XServerFrontendClientId(7781);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 77810, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 77810);
+    let recovery = private.broker.registry.input_recovery.clone();
+    let sender = private
+        .broker
+        .registry
+        .clients
+        .lock()
+        .unwrap()
+        .get(&client)
+        .unwrap()
+        .ordered
+        .clone();
+    for _ in 0..8 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+    assert!(cell.answer().is_none());
+
+    let (socket, peer) = UnixStream::pair().unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    let capsule = owner.queue.try_recv().expect("the actual queued source press");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(77810)
+    );
+    assert!(Arc::ptr_eq(&cell, &capsule.finalizer().unwrap().completion));
+    assert_eq!(Arc::strong_count(capsule.finalizer().unwrap()), 1);
+    let original_finalizer = Arc::downgrade(capsule.finalizer().unwrap());
+    let original_frames: Vec<Vec<u8>> = (0..capsule.emission().frame_count())
+        .map(|index| {
+            capsule
+                .emission()
+                .encode_frame(index, XByteOrder::LittleEndian, 7)
+                .unwrap()
+                .as_bytes()
+                .to_vec()
+        })
+        .collect();
+    assert!(!original_frames.is_empty());
+    sender.try_send(capsule).unwrap();
+
+    // The real mutex, poisoned without touching any ledger entry or outcome.
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = recovery.state.lock().unwrap();
+            panic!("intentional recovery-lock poison for returned-refusal fixture");
+        }))
+        .is_err()
+    );
+    assert!(recovery.state.is_poisoned());
+
+    let steps = close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
+    assert!(
+        steps.contains(&X11OrderedCloseStep::Adjudicated(
+            PrivateAdjudication::Refused
+        )),
+        "the authority took nothing: {steps:?}"
+    );
+    let closing = owner.closing().expect("a close in progress");
+    assert_eq!(
+        (closing.answered, closing.already, closing.deferred),
+        (0, 0, 0)
+    );
+    assert!(closing.foreign.is_empty());
+    let [retained] = closing.unanswered.as_slice() else {
+        panic!("the exact capsule is retained")
+    };
+    assert_eq!(
+        retained.delivery(),
+        XAuthorityInputDeliveryId::from_raw(77810)
+    );
+    assert!(Arc::ptr_eq(&cell, &retained.finalizer().unwrap().completion));
+    assert!(Arc::ptr_eq(
+        &original_finalizer.upgrade().unwrap(),
+        retained.finalizer().unwrap()
+    ));
+    let retained_frames: Vec<Vec<u8>> = (0..retained.emission().frame_count())
+        .map(|index| {
+            retained
+                .emission()
+                .encode_frame(index, XByteOrder::LittleEndian, 7)
+                .unwrap()
+                .as_bytes()
+                .to_vec()
+        })
+        .collect();
+    assert_eq!(retained_frames, original_frames);
+    assert!(cell.answer().is_none());
+    let mut byte = [0u8; 1];
+    assert_eq!((&peer).read(&mut byte).unwrap(), 0);
+}
+
+#[test]
+fn a_close_offers_the_end_of_a_connection_whatever_caused_it() {
+    // A caller used to name the terminal outcome, so a close could record a
+    // flush for bytes that were never written through a real finalizer. It
+    // passes a cause now, and the cause is diagnostic: whichever one it is,
+    // what the recipient is told is that the connection ended.
+    for cause in [
+        X11OrderedCloseCause::ConnectionEnded,
+        X11OrderedCloseCause::PreparationFailed,
+        X11OrderedCloseCause::SupervisorStopped,
+    ] {
+        let client = XServerFrontendClientId(7791);
+        let mut f = prepared_ordered_fixture(client);
+        attempt_run(&mut f, 77910, 272, true);
+        let private = f.runner.frontend.as_mut().unwrap();
+        let cell = admitted_cell(private, 77910);
+        for _ in 0..8 {
+            private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        }
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let (mut owner, _output) = serving_owner_for(&mut f, socket);
+        let _ = close_to_quiet(&mut owner, cause);
+        assert_eq!(
+            cell.answer().map(|answer| answer.outcome),
+            Some(XAuthorityInputDeliveryOutcome::ClientDisconnected),
+            "no cause names a flush, a timeout or a write failure: {cause:?}"
+        );
+        assert_eq!(
+            owner.closing().expect("closing").cause,
+            cause,
+            "the cause is kept for whoever reads it, and kept out of the answer"
+        );
+    }
+}
+
+#[test]
+fn a_quiet_close_keeps_its_receiver_until_the_producers_are_actually_gone() {
+    // An empty queue is not a stopped producer. While a sender for it is held
+    // anywhere, a later capsule can still arrive, so a close that treated
+    // Empty as the end would drop the receiver and lose whatever came next.
+    let client = XServerFrontendClientId(7801);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 78010, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 78010);
+    let sender = private
+        .broker
+        .registry
+        .clients
+        .lock()
+        .unwrap()
+        .get(&client)
+        .expect("this connection's row")
+        .ordered
+        .clone();
+    for _ in 0..8 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, _peer) = UnixStream::pair().unwrap();
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    let steps = close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
+    assert_eq!(
+        steps.last(),
+        Some(&X11OrderedCloseStep::Quiet),
+        "a held sender means quiet, not finished: {steps:?}"
+    );
+    assert!(cell.answer().is_some(), "and what was queued was answered");
+
+    // The receiver was kept, so something arriving afterwards is still this
+    // close's to account for rather than something it threw away.
+    let late = {
+        let private = f.runner.frontend.as_mut().unwrap();
+        let recovery = private.broker.registry.input_recovery.clone();
+        attempt_run(&mut f, 78012, 273, true);
+        let private = f.runner.frontend.as_mut().unwrap();
+        let record = private
+            .terminal
+            .holds
+            .iter_mut()
+            .find(|record| {
+                record
+                    .custody
+                    .completion
+                    .as_ref()
+                    .is_some_and(|held| held.answer().is_none())
+            })
+            .expect("the later press");
+        let emission = record.native.as_mut().unwrap().take_press_emission().unwrap();
+        PrivateXServerFrontend::stow_press_capsule(&mut record.custody, emission, &recovery, client);
+        let Some(PrivatePendingDelivery::Capsule(capsule)) = record.custody.pending.take() else {
+            panic!("it built its own capsule")
+        };
+        capsule
+    };
+    let late_cell = late.finalizer().expect("carried").completion.clone();
+    sender.send(late).expect("the retained receiver still has a queue");
+    assert!(matches!(
+        owner.advance_close(XByteOrder::LittleEndian, 7),
+        X11OrderedCloseStep::Adjudicated(_)
+    ));
+    assert!(
+        late_cell.answer().is_some(),
+        "a capsule that arrived after the close began is still accounted for"
+    );
+
+    // Only the producers actually going reports the end.
+    drop(sender);
+    f.runner
+        .frontend
+        .as_ref()
+        .unwrap()
+        .broker
+        .registry
+        .clients
+        .lock()
+        .unwrap()
+        .remove(&client);
+    assert_eq!(
+        owner.advance_close(XByteOrder::LittleEndian, 7),
+        X11OrderedCloseStep::Drained,
+        "with every sender gone, nothing further can arrive"
+    );
+}
+
+#[test]
+fn an_unusable_output_is_not_reported_as_an_empty_queue() {
+    // Idle says there was nothing to do. An output this connection cannot take
+    // says the opposite: something is owed and cannot be done. A caller told
+    // the first would stop asking.
+    let client = XServerFrontendClientId(7811);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 78110, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 78110);
+    for _ in 0..8 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, _peer) = UnixStream::pair().unwrap();
+    let (mut owner, output) = serving_owner_for(&mut f, socket);
+
+    // The real output mutex, poisoned without touching the socket or anything
+    // this connection owes.
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = output.lock().unwrap();
+            panic!("intentional output-lock poison for transport fixture");
+        }))
+        .is_err()
+    );
+    assert!(output.is_poisoned());
+
+    assert!(
+        matches!(
+            owner.serve_one(XByteOrder::LittleEndian, 7),
+            X11OrderedServeStep::TransportUnavailable
+        ),
+        "an unusable transport is its own answer"
+    );
+    assert!(
+        owner.in_flight().is_none() && owner.refused().is_none(),
+        "and nothing was received, written or disposed of"
+    );
+    assert!(
+        cell.answer().is_none(),
+        "a transport that could not be taken answers for nobody"
+    );
 }

@@ -351,6 +351,20 @@ enum X11OrderedServeStep {
     /// counts it as outstanding work or hands it to a durable owner -- that
     /// reporting does not exist, and the slot is the whole of where it lives.
     AdmissionRefused(X11OrderedAdmissionRefusal),
+    /// This connection's own output could not be taken.
+    ///
+    /// Nothing was received, written or disposed of. Told apart from Idle
+    /// because an empty queue and an unusable transport are opposite facts:
+    /// one says there is nothing to do, the other says something is owed and
+    /// cannot be done.
+    TransportUnavailable,
+    /// The wire holds the beginning of an event nobody can finish, and could
+    /// not be ended.
+    ///
+    /// The connection is latched here: nothing more is written through it,
+    /// because anything written would follow a half-finished frame. Custody of
+    /// whatever is held stays with this owner.
+    Unterminated,
 }
 
 /// Why a connection's ordered output could not be bound.
@@ -446,52 +460,76 @@ impl XAuthorityOrderedTransport {
 
 }
 
-/// What ending one connection's ordered output established.
+/// Why a connection's ordered output is being closed.
 ///
-/// Whatever could not be answered leaves in this, so a caller that still owes
-/// something is holding it rather than having lost it. Storage for that is
-/// reserved as the close runs; nothing is exposed and then found to have
-/// nowhere to go.
+/// DIAGNOSTIC ONLY, AND DELIBERATELY NOT AN OUTCOME. It never reaches the
+/// authority. What a close can establish about a recipient is that the
+/// connection to it ended; it cannot establish that anything was flushed, or
+/// that a measured wait ran out, and a caller that could name the terminal
+/// outcome could assert either of those by writing an enum.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
-enum X11OrderedClose {
-    /// The socket could not be ended, so nothing was offered for anything.
-    ///
-    /// The owner comes back whole. Answering on the strength of a termination
-    /// that did not happen would be inventing the fact the outcome rests on.
-    ///
-    /// NOTHING WITNESSES THIS BRANCH. Producing a real shutdown failure needs
-    /// a descriptor in a state no control here reaches honestly: an already
-    /// ended socket reports NotConnected, which this treats as ended. It is
-    /// kept because the alternative is answering for admissions after a close
-    /// that did not happen, and it is recorded as unwitnessed rather than
-    /// described as covered.
-    #[allow(dead_code)]
-    Unterminated {
-        cause: std::io::ErrorKind,
-        retained: Box<X11OrderedServingOwner>,
-    },
-    /// The socket was ended and every held admission was offered an outcome.
-    Ended {
-        /// Answers this close established.
-        answered: usize,
-        /// Admissions the authority had already answered.
-        already: usize,
-        /// Offers the authority took reporting responsibility for under a
-        /// claim it holds. Counted apart, because a deferral is not an answer
-        /// and a caller that treated it as one would stop looking.
-        deferred: usize,
-        /// Admissions the authority would not take an offer for. Still owed,
-        /// still owned, and still carrying their own finalizers.
-        unanswered: Vec<XAuthorityOrderedDelivery>,
-        /// A capsule refused for belonging to another endpoint, if one was
-        /// held. This socket ending is not evidence about its recipient, so it
-        /// is neither offered an outcome nor discarded.
-        refused: Option<Box<X11OrderedRefusedDelivery>>,
-    },
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11OrderedCloseCause {
+    /// The connection itself ended.
+    ConnectionEnded,
+    /// Preparation for this connection failed and what it had must be given up.
+    PreparationFailed,
+    /// The supervisor stopped this connection's service.
+    SupervisorStopped,
 }
 
-/// One connection's ordered output, owned together.
+/// A close in progress, retained by the owner that is closing.
+///
+/// EVERYTHING THE CLOSE HAS LEARNED LIVES HERE, beside the queue, the endpoint
+/// and the in-flight slot the owner still holds. A close that drained into a
+/// local and returned would lose whatever it had not finished the moment
+/// anything went wrong, and would read an empty queue as a producer that had
+/// stopped -- which it is not, while senders are still held elsewhere.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct X11OrderedClosing {
+    /// Why, for whoever reads this afterwards. Never published.
+    cause: X11OrderedCloseCause,
+    /// Answers this close established.
+    answered: usize,
+    /// Admissions the authority had already answered.
+    already: usize,
+    /// Offers the authority took reporting responsibility for under a claim it
+    /// holds. Counted apart: a deferral is not a published answer, and a
+    /// caller that treated it as one would stop looking.
+    deferred: usize,
+    /// Admissions the authority would not take an offer for. Still owed, still
+    /// owned, still carrying their own finalizers.
+    unanswered: Vec<XAuthorityOrderedDelivery>,
+    /// Capsules that reached this queue owed to another endpoint. This socket
+    /// ending is not evidence about their recipients, so they are neither
+    /// offered an outcome nor discarded.
+    foreign: Vec<X11OrderedRefusedDelivery>,
+}
+
+/// What one bounded step of a close did.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11OrderedCloseStep {
+    /// This close has not begun, so there is nothing to advance.
+    NotClosing,
+    /// One admission was offered an outcome and the authority took it.
+    Adjudicated(PrivateAdjudication),
+    /// One capsule was owed to another endpoint and is retained unanswered.
+    Foreign,
+    /// Nothing more is waiting RIGHT NOW.
+    ///
+    /// Not "the producer has stopped": senders for this queue may still be
+    /// held elsewhere, so the receiver is kept rather than treated as closed.
+    /// A caller that needs a real stop has to establish it, not infer it here.
+    Quiet,
+    /// The queue's producers are all gone, so nothing further can arrive.
+    Drained,
+}
+
+/// One connection's ordered output, owned together./// One connection's ordered output, owned together.
 ///
 /// THE ENDPOINT, THE QUEUE AND THE SOCKET ARE BOUND HERE. Passing them
 /// separately to a serving call let a caller supply any three: the writer's
@@ -508,7 +546,19 @@ struct X11OrderedServingOwner {
     shutdown: UnixStream,
     in_flight: Option<X11OrderedInFlight>,
     refused: Option<X11OrderedRefusedDelivery>,
+    /// Set once this connection's wire could not be ended after a frame was
+    /// left part-written. Nothing may be written through it again: the bytes
+    /// on the wire are the beginning of an event nobody can finish.
+    unterminated: bool,
+    closing: Option<X11OrderedClosing>,
 }
+
+/// How much a close keeps room for before it accepts anything.
+///
+/// Reserved when the owner is built, so a close never allocates while it is
+/// holding custody it has nowhere to put.
+#[cfg(unix)]
+const X11_ORDERED_CLOSE_RESERVE: usize = 8;
 
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
@@ -557,21 +607,30 @@ impl X11OrderedServingOwner {
             shutdown: transport.shutdown,
             in_flight: None,
             refused: None,
+            unterminated: false,
+            closing: None,
         })
     }
 
     /// Serve one step, writing through this connection's own serialization.
     ///
-    /// The output lock is taken for the write and released with it, so a step
-    /// that ends up owing a frame owes it with nothing held; ending the
-    /// connection never has to wait on this.
+    /// The output lock is taken for the write. It is NOT released while this
+    /// connection's wire holds the beginning of an event nobody can finish:
+    /// when the step below could not end the wire itself, this ends it through
+    /// the handle that needs no lock, before the guard goes. If even that
+    /// fails, the connection is latched unusable rather than handed back to a
+    /// caller who would write into a half-finished frame.
     fn serve_one(&mut self, byte_order: XByteOrder, sequence: u16) -> X11OrderedServeStep {
+        if self.unterminated {
+            return X11OrderedServeStep::Unterminated;
+        }
         let Ok(socket) = self.output.lock() else {
-            // The connection's own output is unusable. Nothing was taken and
-            // nothing was written; this is not a disposition of anything.
-            return X11OrderedServeStep::Idle;
+            // Nothing was taken and nothing was written. An unusable transport
+            // is its own answer, not an empty queue: reporting Idle would tell
+            // a caller there was nothing to do while output was still owed.
+            return X11OrderedServeStep::TransportUnavailable;
         };
-        serve_one_ordered_delivery(
+        let step = serve_one_ordered_delivery(
             &socket,
             &self.served,
             &mut self.in_flight,
@@ -579,78 +638,142 @@ impl X11OrderedServingOwner {
             &self.queue,
             byte_order,
             sequence,
-        )
+        );
+        let X11OrderedServeStep::Ended {
+            outcome,
+            shutdown: false,
+        } = step
+        else {
+            return step;
+        };
+        // Still holding serialization, which is the point.
+        let ended = match self.shutdown.shutdown(Shutdown::Both) {
+            Ok(()) => true,
+            Err(error) => error.kind() == std::io::ErrorKind::NotConnected,
+        };
+        drop(socket);
+        if ended {
+            return X11OrderedServeStep::Ended {
+                outcome,
+                shutdown: true,
+            };
+        }
+        self.unterminated = true;
+        X11OrderedServeStep::Unterminated
     }
 
-    /// End this connection's ordered output and answer for what it holds.
+    /// Begin ending this connection's ordered output.
     ///
-    /// ADMISSION STOPS FIRST, because this consumes the owner: nothing more
-    /// can be taken off the queue after it is called. THE SOCKET IS ENDED
-    /// NEXT, through the handle that does not need the output lock -- a write
-    /// stalled under that lock is precisely when ending has to work. Only then
-    /// are the admissions this owner holds offered an outcome.
+    /// THE OUTCOME IS NOT THE CALLER'S TO NAME. What a close establishes about
+    /// a recipient is that the connection to it ended, and that is the only
+    /// thing offered. A caller that could pass a terminal outcome could assert
+    /// a flush for bytes never written, or a measured timeout that was never
+    /// measured, through a real finalizer -- so it passes only a cause, which
+    /// is diagnostic and never reaches the authority.
     ///
-    /// EVERY ANSWER GOES THROUGH THE CARRIED FINALIZER, one admission at a
-    /// time. This does not tell the recovery to answer everything for a client
-    /// number: that selects by a number, and the whole point of the endpoint
-    /// work is that a number is not an admission. A capsule refused for
-    /// belonging to another endpoint is NOT answered here at all -- this
-    /// socket ending says nothing about its recipient -- and travels out still
-    /// held, with its cause.
+    /// ADMISSION STOPS AND THE WIRE ENDS FIRST. Nothing is offered until
+    /// termination is established, because termination is the fact the outcome
+    /// rests on. The socket is ended through the handle that does not need the
+    /// output lock: a write stalled under that lock is exactly when ending has
+    /// to work.
     ///
-    /// WHAT THE AUTHORITY ACCEPTS IS WHAT IS CONSUMED. Answered and
-    /// AlreadyAnswered are finished. Deferred means the authority has taken
-    /// reporting responsibility under a claim it holds; it is counted as
-    /// itself and never as a recorded answer. Refused means nothing was taken,
-    /// so the capsule stays owned and comes back out. A failed shutdown does
-    /// the same: custody is kept, with its cause, rather than being discarded
-    /// on the strength of a close that did not happen.
-    fn close(mut self, outcome: XAuthorityInputDeliveryOutcome) -> X11OrderedClose {
-        let ended = match self.shutdown.shutdown(Shutdown::Both) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotConnected => Ok(()),
-            Err(error) => Err(error),
+    /// Storage for what the close will hold is already reserved, so accepting
+    /// custody never waits on an allocation.
+    fn begin_close(&mut self, cause: X11OrderedCloseCause) -> Result<(), std::io::ErrorKind> {
+        if self.closing.is_some() {
+            return Ok(());
+        }
+        match self.shutdown.shutdown(Shutdown::Both) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotConnected => {}
+            Err(error) => return Err(error.kind()),
+        }
+        let mut closing = X11OrderedClosing {
+            cause,
+            answered: 0,
+            already: 0,
+            deferred: 0,
+            unanswered: Vec::with_capacity(X11_ORDERED_CLOSE_RESERVE),
+            foreign: Vec::with_capacity(X11_ORDERED_CLOSE_RESERVE),
         };
-        if let Err(error) = ended {
-            // Termination is not established, so nothing is offered and
-            // nothing is given up. The owner leaves whole.
-            return X11OrderedClose::Unterminated {
-                cause: error.kind(),
-                retained: Box::new(self),
-            };
+        // A capsule already classified as another endpoint's moves into the
+        // close's own keeping, still unanswered.
+        if let Some(refused) = self.refused.take() {
+            closing.foreign.push(refused);
         }
-        let mut answered = 0usize;
-        let mut already = 0usize;
-        let mut deferred = 0usize;
-        let mut unanswered = Vec::new();
-        // What this owner holds, then what is still queued for it. The
-        // foreign-endpoint slot is deliberately not among them.
-        let held = self
-            .in_flight
-            .take()
-            .map(|held| held.delivery)
-            .into_iter()
-            .chain(std::iter::from_fn(|| self.queue.try_recv().ok()));
-        for capsule in held {
-            let Some(finalizer) = capsule.finalizer() else {
-                // Nothing carries its answer, so nothing here can give it one.
-                unanswered.push(capsule);
-                continue;
-            };
-            match finalizer.finalize(outcome) {
-                PrivateAdjudication::Answered => answered += 1,
-                PrivateAdjudication::AlreadyAnswered => already += 1,
-                PrivateAdjudication::Deferred => deferred += 1,
-                PrivateAdjudication::Refused => unanswered.push(capsule),
+        self.closing = Some(closing);
+        Ok(())
+    }
+
+    /// Advance a close by one bounded step.
+    ///
+    /// ONE CAPSULE PER VISIT, and every capsule is classified against the
+    /// retained endpoint before anything is offered for it -- the same
+    /// question the serving path asks, because closing this connection proves
+    /// nothing about another endpoint's recipient. What is received is owned
+    /// before it is judged and consumed only once the authority has taken an
+    /// answer for it.
+    ///
+    /// AN EMPTY QUEUE IS NOT A STOPPED PRODUCER. Senders for it may still be
+    /// held elsewhere, so a quiet visit keeps the receiver; only the producers
+    /// actually being gone reports Drained.
+    fn advance_close(&mut self, byte_order: XByteOrder, sequence: u16) -> X11OrderedCloseStep {
+        let _ = (byte_order, sequence);
+        if self.closing.is_none() {
+            return X11OrderedCloseStep::NotClosing;
+        }
+        // The one this owner was already serving comes first: it is this
+        // endpoint's by construction, and it is owed an answer before anything
+        // still waiting behind it.
+        if let Some(held) = self.in_flight.take() {
+            return self.adjudicate_closing(held.delivery);
+        }
+        // Received into this owner's own slots and classified there, by the
+        // same admission the serving path uses.
+        match take_ordered_delivery(&self.queue, &self.served, &mut self.in_flight, &mut self.refused)
+        {
+            Ok(()) => {
+                let held = self.in_flight.take().expect("admitted into the slot");
+                self.adjudicate_closing(held.delivery)
             }
+            Err(X11OrderedTakeRefusal::ForeignEndpoint)
+            | Err(X11OrderedTakeRefusal::RefusedHeld) => {
+                let refused = self.refused.take().expect("a refusal leaves it owned");
+                self.closing
+                    .as_mut()
+                    .expect("closing")
+                    .foreign
+                    .push(refused);
+                X11OrderedCloseStep::Foreign
+            }
+            Err(X11OrderedTakeRefusal::InFlight) => X11OrderedCloseStep::Quiet,
+            Err(X11OrderedTakeRefusal::Empty) => X11OrderedCloseStep::Quiet,
+            Err(X11OrderedTakeRefusal::Closed) => X11OrderedCloseStep::Drained,
         }
-        X11OrderedClose::Ended {
-            answered,
-            already,
-            deferred,
-            unanswered,
-            refused: self.refused.take().map(Box::new),
+    }
+
+    /// Offer one admitted capsule the only outcome a close establishes.
+    fn adjudicate_closing(&mut self, capsule: XAuthorityOrderedDelivery) -> X11OrderedCloseStep {
+        let closing = self.closing.as_mut().expect("closing");
+        let Some(finalizer) = capsule.finalizer().cloned() else {
+            // Nothing carries its answer, so nothing here can give it one.
+            closing.unanswered.push(capsule);
+            return X11OrderedCloseStep::Adjudicated(PrivateAdjudication::Refused);
+        };
+        // The connection to this recipient ended. That is the whole of what a
+        // close knows about it.
+        let adjudication = finalizer.finalize(XAuthorityInputDeliveryOutcome::ClientDisconnected);
+        match adjudication {
+            PrivateAdjudication::Answered => closing.answered += 1,
+            PrivateAdjudication::AlreadyAnswered => closing.already += 1,
+            PrivateAdjudication::Deferred => closing.deferred += 1,
+            PrivateAdjudication::Refused => closing.unanswered.push(capsule),
         }
+        X11OrderedCloseStep::Adjudicated(adjudication)
+    }
+
+    fn closing(&self) -> Option<&X11OrderedClosing> {
+        self.closing.as_ref()
     }
 
     fn in_flight(&self) -> Option<&X11OrderedInFlight> {
