@@ -280,7 +280,7 @@ pub(super) fn emissions_for_one_writer_fixture(
     let two = take(second, 273);
     let endpoint = fixture
         .private
-        .endpoint_for(client())
+        .endpoint_for(&fixture._registration)
         .expect("the fixture's own registration");
     (one, two, endpoint)
 }
@@ -306,7 +306,7 @@ pub(super) fn emission_and_endpoint_for_writer_fixture(
     let emission = hold.as_mut().unwrap().take_press_emission().unwrap();
     let endpoint = fixture
         .private
-        .endpoint_for(client())
+        .endpoint_for(&fixture._registration)
         .expect("the fixture's own registration");
     (emission, endpoint)
 }

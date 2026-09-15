@@ -103,6 +103,8 @@ enum X11OrderedTakeRefusal {
 enum X11OrderedAdmissionRefusal {
     /// The capsule names an endpoint this writer does not serve.
     ForeignEndpoint,
+    /// One already refused is still held, so nothing further was received.
+    AlreadyHolding,
 }
 
 /// A capsule this writer took and may not write.
@@ -116,7 +118,14 @@ enum X11OrderedAdmissionRefusal {
 #[derive(Debug)]
 struct X11OrderedRefusedDelivery {
     delivery: XAuthorityOrderedDelivery,
-    cause: X11OrderedAdmissionRefusal,
+    /// None while the capsule has been received and not yet judged.
+    ///
+    /// That state is owned and reachable: the capsule lands here before
+    /// anything decides about it, so an interruption between receiving and
+    /// judging leaves a capsule that is owned, unwritten and unclassified --
+    /// which is something an owner can find, rather than a capsule that was in
+    /// a local when the frame went.
+    cause: Option<X11OrderedAdmissionRefusal>,
 }
 
 #[cfg(unix)]
@@ -125,7 +134,7 @@ impl X11OrderedRefusedDelivery {
     fn delivery(&self) -> &XAuthorityOrderedDelivery {
         &self.delivery
     }
-    fn cause(&self) -> X11OrderedAdmissionRefusal {
+    fn cause(&self) -> Option<X11OrderedAdmissionRefusal> {
         self.cause
     }
     /// Who these bytes were owed to, which is not this writer's endpoint.
@@ -154,31 +163,34 @@ fn take_ordered_delivery(
     if refused.is_some() {
         return Err(X11OrderedTakeRefusal::RefusedHeld);
     }
-    match queue.try_recv() {
-        Ok(delivery) => {
-            // RECEIVED INTO THIS WRITER'S OWN STORAGE, THEN JUDGED BY
-            // BORROWING IT. Both destinations are storage this writer owns, so
-            // there is no moment where the queue has given the capsule up and
-            // nothing has taken responsibility for it -- and the capsule is
-            // never held in a local across the decision.
-            if served.admits(&delivery) {
-                *slot = Some(X11OrderedInFlight {
-                    delivery,
-                    frame: 0,
-                    send: X11OrderedSendState::default(),
-                });
-                Ok(())
-            } else {
-                *refused = Some(X11OrderedRefusedDelivery {
-                    delivery,
-                    cause: X11OrderedAdmissionRefusal::ForeignEndpoint,
-                });
-                Err(X11OrderedTakeRefusal::ForeignEndpoint)
-            }
+    // RECEIVED INTO OWNED STORAGE FIRST, unclassified, in the same expression
+    // that receives it. The capsule is never held in a local across the
+    // decision about it.
+    *refused = match queue.try_recv() {
+        Ok(delivery) => Some(X11OrderedRefusedDelivery {
+            delivery,
+            cause: None,
+        }),
+        Err(std::sync::mpsc::TryRecvError::Empty) => return Err(X11OrderedTakeRefusal::Empty),
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            return Err(X11OrderedTakeRefusal::Closed);
         }
-        Err(std::sync::mpsc::TryRecvError::Empty) => Err(X11OrderedTakeRefusal::Empty),
-        Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(X11OrderedTakeRefusal::Closed),
+    };
+    // THEN JUDGED BY BORROWING THAT STORAGE. A refused capsule is classified
+    // where it already lies; an admitted one moves between two places this
+    // writer owns with nothing fallible in between.
+    let held = refused.as_mut().expect("just received into this slot");
+    if !served.admits(&held.delivery) {
+        held.cause = Some(X11OrderedAdmissionRefusal::ForeignEndpoint);
+        return Err(X11OrderedTakeRefusal::ForeignEndpoint);
     }
+    let admitted = refused.take().expect("held just above");
+    *slot = Some(X11OrderedInFlight {
+        delivery: admitted.delivery,
+        frame: 0,
+        send: X11OrderedSendState::default(),
+    });
+    Ok(())
 }
 
 /// What one writing step did for the delivery in hand.
@@ -333,10 +345,74 @@ enum X11OrderedServeStep {
     /// or written, so nothing is owed on the wire and there is no
     /// half-finished event to shut down around -- and the socket of the
     /// endpoint this writer does serve is left alone, because it did nothing
-    /// wrong. The capsule stays owned by this writer with its cause, visible
-    /// as outstanding work, and unanswered: a writer that was never entitled
-    /// to these bytes is not the thing that decides any recipient's outcome.
+    /// wrong. The capsule stays owned in this writer's own slot with its
+    /// cause, and unanswered: a writer that was never entitled to these bytes
+    /// is not the thing that decides any recipient's outcome. Nothing yet
+    /// counts it as outstanding work or hands it to a durable owner -- that
+    /// reporting does not exist, and the slot is the whole of where it lives.
     AdmissionRefused(X11OrderedAdmissionRefusal),
+}
+
+/// One connection's ordered output, owned together.
+///
+/// THE ENDPOINT, THE QUEUE AND THE SOCKET ARE BOUND HERE. Passing them
+/// separately to a serving call let a caller supply any three: the writer's
+/// expectation could be refreshed between calls, or a queue and socket from
+/// one connection served against another's identity. Bound together at
+/// construction, from the registration that made them, there is nothing a
+/// per-call caller can substitute.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
+struct X11OrderedServingOwner {
+    served: XAuthorityServedConnection,
+    queue: Receiver<XAuthorityOrderedDelivery>,
+    socket: UnixStream,
+    in_flight: Option<X11OrderedInFlight>,
+    refused: Option<X11OrderedRefusedDelivery>,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
+impl X11OrderedServingOwner {
+    /// Bind this connection's output to the registration that created it.
+    ///
+    /// The identity is captured from the registration held here, not looked up
+    /// by the client id it happens to carry, so a writer started for one
+    /// registration cannot be handed the identity of the one that replaced it.
+    fn for_registration(
+        frontend: &crate::x11_socket::PrivateXServerFrontend,
+        registration: &XServerFrontendClientRouteRegistration,
+        queue: Receiver<XAuthorityOrderedDelivery>,
+        socket: UnixStream,
+    ) -> Result<Self, PrivateAdmissionRefusal> {
+        Ok(Self {
+            served: XAuthorityServedConnection::retained(frontend.endpoint_for(registration)?),
+            queue,
+            socket,
+            in_flight: None,
+            refused: None,
+        })
+    }
+
+    fn serve_one(&mut self, byte_order: XByteOrder, sequence: u16) -> X11OrderedServeStep {
+        serve_one_ordered_delivery(
+            &self.socket,
+            &self.served,
+            &mut self.in_flight,
+            &mut self.refused,
+            &self.queue,
+            byte_order,
+            sequence,
+        )
+    }
+
+    fn in_flight(&self) -> Option<&X11OrderedInFlight> {
+        self.in_flight.as_ref()
+    }
+
+    fn refused(&self) -> Option<&X11OrderedRefusedDelivery> {
+        self.refused.as_ref()
+    }
 }
 
 /// Serve one step of one recipient's ordered queue.
@@ -368,13 +444,14 @@ fn serve_one_ordered_delivery(
         match take_ordered_delivery(queue, served, in_flight, refused) {
             Ok(()) => {}
             Err(X11OrderedTakeRefusal::Empty) => return X11OrderedServeStep::Idle,
-            Err(X11OrderedTakeRefusal::ForeignEndpoint)
-            | Err(X11OrderedTakeRefusal::RefusedHeld) => {
+            Err(X11OrderedTakeRefusal::ForeignEndpoint) => {
                 return X11OrderedServeStep::AdmissionRefused(
-                    refused
-                        .as_ref()
-                        .expect("a refusal leaves the capsule owned here")
-                        .cause(),
+                    X11OrderedAdmissionRefusal::ForeignEndpoint,
+                );
+            }
+            Err(X11OrderedTakeRefusal::RefusedHeld) => {
+                return X11OrderedServeStep::AdmissionRefused(
+                    X11OrderedAdmissionRefusal::AlreadyHolding,
                 );
             }
             Err(X11OrderedTakeRefusal::Closed) => {

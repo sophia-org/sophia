@@ -21569,7 +21569,8 @@ fn a_capsule_for_another_connection_is_refused_before_any_byte_of_it_is_written(
     // The writer's expectation comes from the registration it serves, not from
     // anything it is about to be asked to write.
     let served = XAuthorityServedConnection::retained(
-        p.endpoint_for(f.client).expect("this connection's own endpoint"),
+        p.endpoint_for(&f.registration)
+            .expect("this connection's own endpoint"),
     );
     let (sender, queue) = sync_channel(4);
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
@@ -21609,7 +21610,7 @@ fn a_capsule_for_another_connection_is_refused_before_any_byte_of_it_is_written(
     let held = refused.as_ref().expect("the capsule is owned by this writer");
     assert_eq!(
         held.cause(),
-        X11OrderedAdmissionRefusal::ForeignEndpoint,
+        Some(X11OrderedAdmissionRefusal::ForeignEndpoint),
         "and it says exactly what was wrong: not a flush, not a failure to write"
     );
     assert_eq!(
@@ -21716,8 +21717,9 @@ fn replace_registration(
     client: XServerFrontendClientId,
     replacement: sophia_protocol::ClientAdmissionContext,
     previous: sophia_protocol::ClientAdmissionId,
-    original: XServerFrontendClientRouteRegistration,
+    original: &XServerFrontendClientRouteRegistration,
     original_channels: XServerFrontendClientRouteChannels,
+    surface: Option<(SurfaceId, XResourceId)>,
 ) -> (
     XServerFrontendClientRouteRegistration,
     XServerFrontendClientRouteChannels,
@@ -21727,11 +21729,12 @@ fn replace_registration(
         .participant
         .revoke_admission(client, previous)
         .expect("the admission this fixture made is the one it revokes");
-    // The first registration goes before the second exists. Its lifecycle
-    // record is what the boundary would otherwise still be holding, and the
-    // row it owns is what a replacement takes the place of.
+    // The first registration's row and channels go before the second exists.
+    // The registration guard itself is kept by the caller, deliberately: a
+    // holder of a stale capability is exactly who must be refused rather than
+    // handed the replacement's identity.
     drop(original_channels);
-    drop(original);
+    let _ = original;
     private
         .broker
         .registry
@@ -21761,6 +21764,24 @@ fn replace_registration(
     // admit above registered the replacement's gate itself, and attaching a
     // second one for the same client is refused as a duplicate.
     let selected = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+    if let Some((surface, window)) = surface {
+        // The original registration's surface route went with it, so the
+        // replacement registers its own.
+        private
+            .broker
+            .registry
+            .register_surface(client, replacement.namespace.id, surface, window)
+            .expect("the replacement's surface");
+        // The replacement selects the same window, so its own presses resolve.
+        let mut state = selected.lock().expect("a readable selection state");
+        state.register(
+            window,
+            XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            Rect { x: 0, y: 0, width: 200, height: 100 },
+        );
+        state.observe_mapped(window);
+        state.update(window, Some((1 << 2) | (1 << 3)), None);
+    }
     private
         .broker
         .registry
@@ -21772,7 +21793,7 @@ fn replace_registration(
         )
         .expect("the replacement's connection state");
     let endpoint = private
-        .endpoint_for(client)
+        .endpoint_for(&registration)
         .expect("the replacement's own endpoint, from its own registration");
     (registration, channels, endpoint)
 }
@@ -21823,8 +21844,9 @@ fn capsule_then_replacement(
         client,
         replacement,
         admitted(client).client_id,
-        original_registration,
+        &original_registration,
         original_channels,
+        None,
     );
     (
         runner,
@@ -22020,8 +22042,9 @@ fn a_producer_does_not_send_an_old_capsule_through_a_replacement_entry() {
         client,
         admitted(client),
         admitted(client).client_id,
-        original_registration,
+        &original_registration,
         original_channels,
+        None,
     );
     let answered_by_teardown = cell.answer();
 
@@ -22061,6 +22084,332 @@ fn a_producer_does_not_send_an_old_capsule_through_a_replacement_entry() {
     );
     drop(channels);
     drop(registration);
+    drop(runner);
+    drop(durable);
+}
+
+#[test]
+fn a_producer_does_not_send_an_old_release_through_a_replacement_entry() {
+    // The press control could not see this: the release reaches its queue by
+    // the ledger-selected attempt path, which acquires its own sender. Both
+    // paths have to check the row they send through.
+    //
+    // Registration/API seam, as elsewhere in this file.
+    let client = XServerFrontendClientId(7691);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_release(&mut f, 76910, 272);
+    let private = f.runner.frontend.as_mut().unwrap();
+
+    // The press goes first and normally, so what is left owed is the release.
+    assert_eq!(private.dispatch_one_press(), Some(true));
+    assert_eq!(
+        f.channels.ordered.try_iter().count(),
+        1,
+        "the press this release ends"
+    );
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.record_one_native(), Some(true));
+    let release_cell = admitted_cell(private, 76911);
+    assert_eq!(private.terminal.settling.len(), 1);
+    assert!(private.terminal.settling[0].native_recorded());
+
+    let PreparedOrderedFixture {
+        mut runner,
+        durable,
+        registration: original_registration,
+        channels: original_channels,
+        ..
+    } = f;
+    let private = runner.frontend.as_mut().unwrap();
+    let (registration, channels, _endpoint) = replace_registration(
+        private,
+        client,
+        admitted(client),
+        admitted(client).client_id,
+        &original_registration,
+        original_channels,
+        None,
+    );
+    let answered_by_teardown = release_cell.answer();
+
+    // The ledger may hand out an attempt; the row it would be served through
+    // is not this release's, so nothing is written down and nothing is taken.
+    for _ in 0..8 {
+        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+    assert!(
+        channels.ordered.try_recv().is_err(),
+        "a replacement registration is not handed the release of the one it replaced"
+    );
+    let release = &private.terminal.settling[0];
+    assert!(
+        matches!(
+            release.dispatch(),
+            PrivateDispatchPhase::Untaken | PrivateDispatchPhase::Pending
+        ),
+        "no handover was begun for it: building its capsule may move Untaken to \
+         Pending, but nothing past that, got {:?}",
+        release.dispatch()
+    );
+    assert!(
+        matches!(
+            release.custody.pending.as_ref(),
+            Some(PrivatePendingDelivery::Capsule(_))
+        ),
+        "and its own capsule is still there, unsent"
+    );
+    assert!(
+        release.attempt().is_none(),
+        "any attempt claimed for it was given back rather than held against an \
+         unusable row"
+    );
+    assert_eq!(
+        release_cell.answer(),
+        answered_by_teardown,
+        "and offering it to a row that is not its own answers nothing"
+    );
+    drop(channels);
+    drop(registration);
+    drop(runner);
+    drop(durable);
+}
+
+#[test]
+fn a_serving_owner_keeps_its_own_endpoint_when_its_registration_is_replaced() {
+    // The comparison controls prove two deliberately different identities
+    // compare unequal. This proves what matters for attachment: an owner built
+    // for one registration, holding that registration's receiver and socket,
+    // goes on expecting THAT registration after a replacement exists -- and
+    // refuses bytes for anything else through its own serving call rather than
+    // through a free function a caller could hand three unrelated things.
+    //
+    // Registration/API seam, as elsewhere in this file.
+    let client = XServerFrontendClientId(7701);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 77010, 272, true);
+
+    // A genuinely different connection, admitted and grabbed the ordinary way,
+    // with its own source-built press. Nothing about this capsule is
+    // fabricated: it is what its own endpoint is owed.
+    let other = XServerFrontendClientId(7702);
+    let other_window = XResourceId::new(0x307702, 1);
+    let (other_registration, _other_channels) = {
+        let p = f.runner.frontend.as_mut().unwrap();
+        let registry = &p.broker.registry;
+        let context = namespaced(other, f.namespace);
+        let (registration, channels) = registry
+            .register_client_with_admission(other, Some(context))
+            .unwrap();
+        registry.attach_private_lifecycle(&registration, context).unwrap();
+        let selected = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+        registry
+            .attach_connection_state(
+                &registration,
+                f.namespace,
+                selected.clone(),
+                Arc::new(AtomicU64::new(0)),
+            )
+            .unwrap();
+        {
+            let mut state = selected.lock().unwrap();
+            state.register(
+                other_window,
+                XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+                Rect { x: 0, y: 0, width: 200, height: 100 },
+            );
+            state.observe_mapped(other_window);
+            state.update(other_window, Some((1 << 2) | (1 << 3)), None);
+        }
+        let mut grabs = registry.input_authority.lock().unwrap();
+        grabs.ungrab_pointer(f.namespace, f.client.raw());
+        grabs
+            .grab_pointer(
+                f.namespace,
+                crate::XActiveInputGrab {
+                    owner: other.raw(),
+                    window: other_window,
+                    owner_events: false,
+                    pointer_mode: 1,
+                    keyboard_mode: 1,
+                    event_mask: u16::MAX,
+                    xi_event_mask: [0; 8],
+                    xi_event_mask_words: 0,
+                    route_lease: None,
+                },
+            )
+            .unwrap();
+        (registration, channels)
+    };
+    attempt_run(&mut f, 77012, 273, true);
+
+    let private = f.runner.frontend.as_mut().unwrap();
+    let recovery = private.broker.registry.input_recovery.clone();
+    let foreign_cell = admitted_cell(private, 77012);
+    let foreign = {
+        let record = private
+            .terminal
+            .holds
+            .iter_mut()
+            .find(|record| record.reached.client() == other)
+            .expect("the other connection's own press");
+        let emission = record.native.as_mut().unwrap().take_press_emission().unwrap();
+        PrivateXServerFrontend::stow_press_capsule(&mut record.custody, emission, &recovery, other);
+        let Some(PrivatePendingDelivery::Capsule(capsule)) = record.custody.pending.take() else {
+            panic!("it built its own capsule")
+        };
+        capsule
+    };
+
+    // Kept before the replacement removes the row that holds it, so this
+    // owner's queue can still be handed something afterwards. That is the
+    // point: an incorrectly supplied capsule has to be caught at the serving
+    // boundary, not only prevented at the producer.
+    let original_sender = private
+        .broker
+        .registry
+        .clients
+        .lock()
+        .unwrap()
+        .get(&client)
+        .expect("the original row")
+        .ordered
+        .clone();
+
+    let PreparedOrderedFixture {
+        mut runner,
+        durable,
+        registration: original_registration,
+        channels: original_channels,
+        ..
+    } = f;
+    let private = runner.frontend.as_mut().unwrap();
+
+    // The owner is built from the registration and receiver that exist now,
+    // and owns them from here on.
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let mut owner = X11OrderedServingOwner::for_registration(
+        private,
+        &original_registration,
+        original_channels.ordered,
+        socket,
+    )
+    .expect("an owner for the registration that made this receiver");
+
+    // Its own connection's event is served normally, once.
+    for _ in 0..8 {
+        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+    let mut flushed = 0;
+    for _ in 0..16 {
+        match owner.serve_one(XByteOrder::LittleEndian, 7) {
+            X11OrderedServeStep::Advanced => {}
+            X11OrderedServeStep::Flushed => flushed += 1,
+            X11OrderedServeStep::Idle => break,
+            other => panic!("its own endpoint's event is served: {other:?}"),
+        }
+    }
+    assert_eq!(flushed, 1, "the endpoint it was built for writes once");
+    assert!(owner.refused().is_none() && owner.in_flight().is_none());
+    // Its own event's bytes are taken off the wire, so what is read later can
+    // only be something written after this point.
+    let mut drained = [0u8; 4096];
+    assert!(
+        (&peer).read(&mut drained).is_ok_and(|read| read > 0),
+        "its own event really did reach the wire"
+    );
+    while (&peer).read(&mut drained).is_ok_and(|read| read > 0) {}
+
+    // Now the registration is replaced. The owner is not rebuilt and is not
+    // told: it still holds what it was given.
+    let (replacement_registration, replacement_channels, replacement_endpoint) =
+        replace_registration(
+            private,
+            client,
+            admitted(client),
+            admitted(client).client_id,
+            &original_registration,
+            XServerFrontendClientRouteChannels {
+                input: original_channels.input,
+                control: original_channels.control,
+                protocol: original_channels.protocol,
+                ordered: sync_channel(1).1,
+            },
+            None,
+        );
+
+    // IT CANNOT ADOPT THE REPLACEMENT'S IDENTITY. The replacement can name its
+    // own endpoint, and it is not the one this owner serves.
+    assert!(
+        !owner.served.endpoint().matches(&replacement_endpoint),
+        "the owner serves the registration it was built for, not the current one"
+    );
+    assert!(
+        private.endpoint_for(&replacement_registration).is_ok(),
+        "and the replacement can name its own"
+    );
+    // AND THE STALE CAPABILITY IS REFUSED, not described. Asking with the
+    // registration this owner was built for must not hand back whatever
+    // registration now holds that client number -- which is the only way an
+    // owner could come to expect the endpoint that replaced it.
+    assert!(
+        private.endpoint_for(&original_registration).is_err(),
+        "a registration that is no longer the current row names no endpoint"
+    );
+
+    // AND IT CANNOT BE HANDED ANOTHER ENDPOINT'S BYTES. A real capsule owed to
+    // a different connection, put on this owner's own queue, is refused
+    // through the owner's own serving call before any of it is written.
+    original_sender
+        .send(foreign)
+        .expect("this owner's queue accepts it");
+    assert!(matches!(
+        owner.serve_one(XByteOrder::LittleEndian, 7),
+        X11OrderedServeStep::AdmissionRefused(X11OrderedAdmissionRefusal::ForeignEndpoint)
+    ));
+    let mut byte = [0u8; 1];
+    assert!(
+        matches!(
+            (&peer).read(&mut byte),
+            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ),
+        "not one byte of another endpoint's event reached the socket this owner holds"
+    );
+    let held = owner.refused().expect("owned by this owner");
+    assert_eq!(
+        held.delivery().delivery(),
+        XAuthorityInputDeliveryId::from_raw(77012)
+    );
+    assert_eq!(held.cause(), Some(X11OrderedAdmissionRefusal::ForeignEndpoint));
+    assert!(Arc::ptr_eq(
+        &foreign_cell,
+        &held.delivery().finalizer().expect("carried").completion
+    ));
+    assert!(owner.in_flight().is_none());
+    assert!(
+        foreign_cell.answer().is_none(),
+        "and its admission is not answered by an owner that was never entitled to it"
+    );
+
+    // A second arrival while one is held is reported as itself and does not
+    // overwrite the one thing that still owns the first.
+    assert!(matches!(
+        owner.serve_one(XByteOrder::LittleEndian, 7),
+        X11OrderedServeStep::AdmissionRefused(X11OrderedAdmissionRefusal::AlreadyHolding)
+    ));
+    assert_eq!(
+        owner
+            .refused()
+            .expect("still held")
+            .delivery()
+            .delivery(),
+        XAuthorityInputDeliveryId::from_raw(77012)
+    );
+    drop(peer);
+    drop(original_registration);
+    drop(other_registration);
+    drop(replacement_channels);
+    drop(replacement_registration);
     drop(runner);
     drop(durable);
 }

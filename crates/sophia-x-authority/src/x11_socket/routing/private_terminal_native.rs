@@ -495,19 +495,43 @@ fn dispatch_custody(
             self.relinquish_outstanding_attempt(claim.token);
             return Some(false);
         }
+        // THE ROW THAT IS CHECKED IS THE ROW THIS GOES TO, the same as for a
+        // press. The endpoint the release's own capsule names is compared
+        // against the client-table entry under the guard the sender is cloned
+        // from, BEFORE the write-ahead and before the capsule is taken -- so a
+        // release owed to a registration that is gone leaves its capsule and
+        // its handover phase exactly as they were.
+        //
         // The sender is cloned and the clients guard released before anything
         // takes common again. Holding it across a give-back would take common
         // beneath clients, which is the forbidden direction.
+        let endpoint = match self.terminal.settling[index].custody.pending.as_ref() {
+            Some(PrivatePendingDelivery::Capsule(capsule)) => capsule.endpoint().clone(),
+            _ => {
+                self.relinquish_outstanding_attempt(claim.token);
+                return Some(false);
+            }
+        };
         let sender = {
             let Ok(clients) = self.broker.registry.clients.lock() else {
                 self.relinquish_outstanding_attempt(claim.token);
                 return Some(false);
             };
-            let sender = clients.get(&recipient).map(|senders| senders.ordered.clone());
+            let sender = clients.get(&recipient).and_then(|senders| {
+                endpoint
+                    .is_entry(recipient, senders)
+                    .then(|| senders.ordered.clone())
+            });
             drop(clients);
             match sender {
                 Some(sender) => sender,
                 None => {
+                    // Nothing was written down and nothing was taken, so this
+                    // attempt is still an unused reservation. It goes back
+                    // through the confirmed give-back, with the record giving
+                    // up its name for it only once the ledger agrees -- and the
+                    // clients guard is already dropped, so common is taken
+                    // beneath nothing.
                     self.relinquish_outstanding_attempt(claim.token);
                     return Some(false);
                 }

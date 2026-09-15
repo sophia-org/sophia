@@ -74,6 +74,17 @@ impl PrivateEndpointIdentity {
             && self.generation == other.generation
     }
 
+    /// Whether this endpoint is exactly the given registration.
+    ///
+    /// The registration guard holds the same cell the client-table entry does,
+    /// so a holder of the guard can say "this is mine" without a lookup.
+    fn is_registration(
+        &self,
+        witness: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+    ) -> bool {
+        Arc::ptr_eq(&self.registration, witness)
+    }
+
     /// Whether this endpoint is exactly the given client-table entry.
     ///
     /// Asked by a producer against the entry it is about to send through, so
@@ -127,10 +138,18 @@ impl PrivateXServerFrontend {
     /// first would let the thing being checked supply the expectation, and the
     /// second would answer with whatever registration currently holds the
     /// number.
+    ///
+    /// THE REGISTRATION IS THE ARGUMENT, not the client. A client id names
+    /// whatever row exists now, so asking by id would hand a replacement's
+    /// identity to a writer that was started for the one it replaced -- which
+    /// is exactly the confusion this identity exists to prevent. The
+    /// registration held here is the capability, and a current row that is not
+    /// it is refused rather than described.
     fn endpoint_for(
         &self,
-        client: XServerFrontendClientId,
+        registration: &XServerFrontendClientRouteRegistration,
     ) -> Result<PrivateEndpointIdentity, PrivateAdmissionRefusal> {
+        let client = registration.client;
         self.participant.under_boundary(|_authority, _issuer, bindings| {
             let bound = bindings
                 .bound
@@ -149,6 +168,12 @@ impl PrivateXServerFrontend {
                 .map_err(|_| PrivateAdmissionRefusal::NotAdmitted)?;
             let endpoint = witness.endpoint.clone();
             drop(clients);
+            // The current row has to BE this registration. A replacement that
+            // passed every check above is still not the registration this
+            // caller holds, and describing it as such is the whole mistake.
+            if !endpoint.is_registration(&registration.connection_state) {
+                return Err(PrivateAdmissionRefusal::NotAdmitted);
+            }
             Ok(endpoint)
         })?
     }
