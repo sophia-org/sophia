@@ -174,6 +174,13 @@ impl LiveProductionMirrorGroupLifecycle {
         self.inflight.get(&self.primary).copied()
     }
 
+    pub(crate) fn submitted_frame(
+        &self,
+        head: RenderHeadId,
+    ) -> Option<LiveProductionNativeFrameId> {
+        self.inflight.get(&head).copied()
+    }
+
     /// Whether this head may consume renderer work for the current turn.
     ///
     /// A physical callback clears this head's KMS submission independently of

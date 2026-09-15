@@ -8,6 +8,7 @@ mod persistent_native_scanout {
 
     mod composition_admission;
     mod composition_installation;
+    mod mirror_completion;
     #[cfg(test)]
     pub(crate) use composition_admission::{
         NativeCompositionOutput, prepare_native_composition_batch,
@@ -18,6 +19,8 @@ mod persistent_native_scanout {
     };
     #[cfg(test)]
     pub(crate) use composition_queue::DeferredNativeCompositions;
+    #[cfg(test)]
+    pub(crate) use mirror_completion::{MirrorCompletionWitness, complete_mirror_head};
     #[cfg(test)]
     pub(crate) use renderer_images::LiveProductionHeadCompositionContent;
     mod composition_queue;
@@ -1834,17 +1837,28 @@ mod persistent_native_scanout {
                     continue;
                 }
                 let group = self.heads[head_index].group;
-                let presented = self.heads[head_index].scanout_custody.present(
-                    self.groups[group].session.card(),
-                    &crate::LivePageFlipCallbackReport {
-                        decision: crate::LivePageFlipCallbackDecision::Accepted,
-                        event: crate::LivePageFlipEvent {
-                            status: crate::LivePageFlipEventStatus::Presented,
-                            frame_serial: Some(callback.frame_serial),
-                        },
-                    },
-                    Some(expected),
+                let callback_ust = self.completion_ust_usec(
+                    output,
+                    callback.head,
+                    callback.frame_serial,
+                    completion_source,
                 );
+                let last_callback_serial = self.heads[head_index].last_callback_serial;
+                let completion = mirror_completion::complete_mirror_head(
+                    self.groups[group].session.card(),
+                    &mut self.heads[head_index].scanout_custody,
+                    self.output_lifecycles
+                        .get_mut(&output)
+                        .expect("mirror lifecycle"),
+                    self.output_cohorts.get_mut(&(output, frame)),
+                    mirror_completion::MirrorCompletionWitness {
+                        expected,
+                        callback,
+                        last_callback_serial,
+                        ust_usec: callback_ust,
+                    },
+                );
+                let presented = completion.physical;
                 let crate::PersistentFlipOutcome::Presented {
                     correlation,
                     previous_cleanup,
@@ -1859,12 +1873,6 @@ mod persistent_native_scanout {
                 };
                 debug_assert_eq!(correlation.and_then(|value| value.native), Some(expected));
                 self.heads[head_index].last_callback_serial = Some(callback.frame_serial);
-                let callback_ust = self.completion_ust_usec(
-                    output,
-                    callback.head,
-                    callback.frame_serial,
-                    completion_source,
-                );
                 let submitted_ust_usec = self.heads[head_index].submitted_ust_usec.take();
                 let submit_to_page_flip = submitted_ust_usec
                     .and_then(|submitted| callback_ust.checked_sub(submitted))
@@ -1934,18 +1942,17 @@ mod persistent_native_scanout {
                         )),
                     }
                 }
-                if let Some(cohort) = self.output_cohorts.get_mut(&(output, frame)) {
-                    let transition = cohort.mark_flipped(callback.head, callback_ust);
-                    if !matches!(
+                if let Some(transition) = completion.cohort
+                    && !matches!(
                         transition,
                         sophia_engine::OutputPresentationTransition::Accepted
                             | sophia_engine::OutputPresentationTransition::PhaseReady
-                    ) {
-                        errors.push(format!(
-                            "mirror head {} entered invalid cohort flip transition {transition:?}",
-                            callback.head.raw(),
-                        ));
-                    }
+                    )
+                {
+                    errors.push(format!(
+                        "mirror head {} entered invalid cohort flip transition {transition:?}",
+                        callback.head.raw(),
+                    ));
                 }
                 tracing::info!(
                     "sophia_live_native_head_completion schema=1 status=accepted output={} head={} callbacks=1 completion_source={} completion_serial={} frame={}",
@@ -1968,23 +1975,16 @@ mod persistent_native_scanout {
                 {
                     continue;
                 }
-                let lifecycle = self
-                    .output_lifecycles
-                    .get_mut(&output)
-                    .expect("mirror output has a lifecycle");
-                if !lifecycle.observe_flip_timing(
-                    callback.head,
-                    frame,
-                    callback.frame_serial,
-                    callback_ust,
-                ) {
+                if !completion.timing_valid {
                     errors.push(format!(
                         "mirror head {} callback timing named the wrong generation",
                         callback.head.raw()
                     ));
                     continue;
                 }
-                let transition = lifecycle.mark_flipped(callback.head, frame);
+                let Some(transition) = completion.logical else {
+                    continue;
+                };
                 match transition {
                     LiveProductionMirrorHeadTransition::GroupReady => {
                         let Some((logical_serial, logical_ust)) = self
@@ -2057,7 +2057,7 @@ mod persistent_native_scanout {
                                 runtime_scanout_state: Some(crate::RuntimeScanoutState::Retired),
                                 in_flight: false,
                                 in_flight_ticks: 0,
-                                cleanup_pending: false,
+                                cleanup_pending: self.heads[head_index].scanout_custody.cleanup_pending(),
                             });
                             completed_serial = Some(logical_serial);
                         }
@@ -4049,9 +4049,9 @@ pub(crate) use persistent_native_scanout::LiveProductionNativeRetirementContent;
 
 #[cfg(all(test, feature = "libdrm-events", feature = "gbm-probe"))]
 pub(crate) use persistent_native_scanout::{
-    DeferredNativeCompositions, LiveProductionHeadCompositionContent,
-    NativeCompositionInstallationHead, NativeCompositionOutput, prepare_native_composition_batch,
-    validate_composition_installation,
+    DeferredNativeCompositions, LiveProductionHeadCompositionContent, MirrorCompletionWitness,
+    NativeCompositionInstallationHead, NativeCompositionOutput, complete_mirror_head,
+    prepare_native_composition_batch, validate_composition_installation,
 };
 
 #[derive(Debug)]

@@ -1,4 +1,6 @@
 use super::*;
+#[path = "mirror_completion_tests.rs"]
+mod mirror_completion_tests;
 use std::{any::Any, cell::Cell, num::NonZeroU32, rc::Rc};
 
 pub(super) struct Target {

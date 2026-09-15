@@ -400,6 +400,27 @@ after both consumers end. An identity-check mutant fails the control. The
 device-hidden backend library suite passes 122 tests with this extraction;
 this adds installation-validation coverage, not native mirror completion.
 
+Mirror physical custody, cohort flip and primary logical timing now pass through
+one shared completion function called by the native adapter. Six controls use
+actual boxed copied buffers and simulated completion/cleanup. They cover a
+delayed sibling while the primary advances, secondary-first completion,
+predecessor cleanup failure, stale/wrong native identity, group-only poisoning,
+an older cohort completing after a newer abort, and wrong supplied cohort
+identity. Poison cannot mint a new cohort Presented; an already-terminal
+Presented remains intact. A supplied cohort must match the current output,
+frame, head set, primary and prepared target before custody moves. The native
+completion report independently preserves outstanding cleanup state.
+
+The two review findings and their source-level closure are recorded under
+`.artifacts/mirror-completion-review/`; six-test positive and compiled poison,
+cohort and physical-guard mutants are retained under
+`.artifacts/shell-lifecycle-dev/`. This is completion-boundary integration, not
+execution of the worker, mirror installer or KMS. Joining those boundaries to
+the actual intake/copy path and the Session/FIFO/WM/client chain remains open.
+The reviewed completion checkpoint passes 590 affected-library tests with
+13 ignored and strict affected-library Clippy in the device-hidden wrapper.
+This is scoped validation, not a canonical or physical acceptance result.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

@@ -120,6 +120,12 @@ impl OutputPresentationCohort {
         self.prepared.get(&head).copied()
     }
 
+    /// Whether an accepted physical owner still owes its first flip observation.
+    /// This remains true after logical failure so its native storage can drain.
+    pub fn head_awaits_flip(&self, head: RenderHeadId) -> bool {
+        self.submitted.contains(&head) && !self.flipped.contains(&head)
+    }
+
     pub fn all_prepared(&self) -> bool {
         self.prepared.len() == self.required.len()
     }
