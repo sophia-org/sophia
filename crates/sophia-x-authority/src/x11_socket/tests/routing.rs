@@ -23917,8 +23917,13 @@ fn a_stop_mid_frame_leaves_the_wire_unusable_rather_than_yielding() {
         inside.send(()).expect("inside");
         wait_release.recv().expect("released");
         let wrote = (*socket).write_all(&[0xABu8; 32]).is_ok();
-        // Recorded before the guard goes, so "this writer has left" is only
-        // true once it really has.
+        // WHAT THIS FLAG WITNESSES, exactly: that this writer's write attempt
+        // finished. It is stored before the guard goes, so it does not witness
+        // the release -- and moving it after the drop would only trade one
+        // scheduling assumption for another. What the assertion below rests on
+        // is the narrower fact that the step cannot have decided before this
+        // writer had done its work, which is what "a flag retracts nothing
+        // from a writer already inside" means.
         holder_flag.store(true, Ordering::Release);
         drop(socket);
         wrote
@@ -23931,9 +23936,10 @@ fn a_stop_mid_frame_leaves_the_wire_unusable_rather_than_yielding() {
     let observed = holder_left.clone();
     let stepper = std::thread::spawn(move || {
         let step = owner.serve_one(XByteOrder::LittleEndian, 7);
-        // WHAT THE CLAIM RESTS ON. Read the instant the step decided, not
-        // after the join: exclusion may only be claimed once the writer that
-        // was already inside has gone.
+        // Read the instant the step decided, not after the join. The sleep
+        // above does not prove the stepper had reached acquisition, so this
+        // does not establish where it was waiting -- only that it did not
+        // decide before the writer already inside had finished writing.
         let had_left = observed.load(Ordering::Acquire);
         (step, had_left, owner)
     });
@@ -23947,8 +23953,8 @@ fn a_stop_mid_frame_leaves_the_wire_unusable_rather_than_yielding() {
     );
     assert!(
         had_left,
-        "exclusion was claimed while another writer still held the wire: a \
-         flag stops later admissions and retracts nothing from one already in"
+        "exclusion was claimed before the writer already inside had finished: \
+         a flag stops later admissions and retracts nothing from one already in"
     );
     let _ = &mut owner;
 
@@ -24110,6 +24116,128 @@ fn a_stop_arriving_after_admission_also_ends_a_wire_mid_frame() {
         )
         .is_err(),
         "so nothing lands after those five bytes"
+    );
+    assert!(owner.in_flight().is_some(), "the delivery stays owned");
+    assert!(cell.answer().is_none());
+}
+
+#[test]
+fn a_stop_that_cannot_take_the_output_claims_nothing_and_says_why() {
+    // Failing to acquire the output is not a shutdown error, and recording one
+    // would describe a syscall never made. Exclusion is not established, so it
+    // is not claimed, and the reason is kept as its own kind.
+    let client = XServerFrontendClientId(7911);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 79110, 272, true);
+    attempt_run(&mut f, 79112, 273, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 79112);
+    for _ in 0..16 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let ordered = std::mem::replace(
+        &mut f.channels.ordered,
+        f.runner
+            .frontend
+            .as_ref()
+            .unwrap()
+            .broker
+            .registry
+            .register_client_with_admission(
+                XServerFrontendClientId(f.client.raw() + 500_000),
+                Some(admitted(XServerFrontendClientId(f.client.raw() + 500_000))),
+            )
+            .expect("a spare registration to borrow a receiver from")
+            .1
+            .ordered,
+    );
+    let transport = XAuthorityOrderedTransport::bind(
+        &f.registration,
+        ordered,
+        &output,
+        &wire,
+        &pending,
+        Some(&stop),
+    )
+    .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    let private = f.runner.frontend.as_ref().unwrap();
+    let mut owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
+        .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
+
+    let first_cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 79110);
+    let mut flushed = false;
+    for _ in 0..16 {
+        match owner.serve_one(XByteOrder::LittleEndian, 7) {
+            X11OrderedServeStep::Advanced => {}
+            X11OrderedServeStep::Flushed => {
+                flushed = true;
+                break;
+            }
+            other => panic!("its own first event is served: {other:?}"),
+        }
+    }
+    assert!(flushed);
+    assert!(first_cell.answer().is_some());
+    let mut drained = [0u8; 4096];
+    while (&peer).read(&mut drained).is_ok_and(|read| read > 0) {}
+
+    let taken = owner.queue.try_recv().expect("its next event");
+    let frame = taken
+        .emission()
+        .encode_frame(0, XByteOrder::LittleEndian, 7)
+        .expect("its own first frame");
+    {
+        let mut socket = output.lock().expect("the connection's output");
+        (*socket)
+            .write_all(&frame.as_bytes()[..5])
+            .expect("five real bytes of it go");
+    }
+    owner.in_flight = Some(X11OrderedInFlight {
+        delivery: taken,
+        frame: 0,
+        send: X11OrderedSendState {
+            frame: Some(X11OrderedFrame {
+                bytes: frame,
+                progress: X11OrderedSendProgress::Sent(5),
+            }),
+            blocked: Duration::ZERO,
+        },
+    });
+
+    // The real output mutex, poisoned without touching the socket.
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = output.lock().unwrap();
+            panic!("intentional output-lock poison for acquisition fixture");
+        }))
+        .is_err()
+    );
+    assert!(output.is_poisoned());
+
+    pending.store(1, Ordering::Release);
+    stop.store(true, Ordering::Release);
+    assert!(
+        matches!(
+            owner.serve_one(XByteOrder::LittleEndian, 7),
+            X11OrderedServeStep::Unterminated
+        ),
+        "exclusion could not be established, so nothing is claimed"
+    );
+    assert_eq!(
+        owner.unterminated_cause(),
+        Some(X11OrderedUnterminatedCause::OutputUnavailable),
+        "and the reason is its own kind, not an invented shutdown error"
+    );
+    assert!(
+        !wire.barred(),
+        "no exclusion was claimed over a wire this could not take"
     );
     assert!(owner.in_flight().is_some(), "the delivery stays owned");
     assert!(cell.answer().is_none());

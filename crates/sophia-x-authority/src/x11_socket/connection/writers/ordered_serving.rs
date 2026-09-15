@@ -171,6 +171,18 @@ struct X11OrderedClosing {
     deferred: usize,
 }
 
+/// Why a wire was left holding an unfinished event.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11OrderedUnterminatedCause {
+    /// The connection's own output could not be acquired, so exclusion could
+    /// not be established and ending it was never attempted.
+    OutputUnavailable,
+    /// Ending it was attempted and refused, with this cause.
+    Shutdown(std::io::ErrorKind),
+}
+
 /// Whether a close has actually ended its connection.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
@@ -250,12 +262,14 @@ struct X11OrderedServingOwner {
     /// left part-written. Nothing may be written through it again: the bytes
     /// on the wire are the beginning of an event nobody can finish.
     unterminated: bool,
-    /// Why ending it refused, when it did.
+    /// Why this wire was left unterminated.
     ///
-    /// Kept because the reason is the only thing that says why this connection
+    /// Kept because the reason is the only thing that says why the connection
     /// is in the state it is in, and whoever picks the continuation up has
-    /// nothing else to go on.
-    unterminated_cause: Option<std::io::ErrorKind>,
+    /// nothing else to go on. Told apart by KIND: failing to acquire the
+    /// output is not a shutdown error, and recording one for the other would
+    /// describe a syscall that was never made.
+    unterminated_cause: Option<X11OrderedUnterminatedCause>,
     closing: Option<X11OrderedClosing>,
     /// How many capsules this owner may retain beyond the ones in its slots.
     ///
@@ -469,7 +483,7 @@ impl X11OrderedServingOwner {
             drop(socket);
             if let Some(kind) = refused {
                 self.unterminated = true;
-                self.unterminated_cause = Some(kind);
+                self.unterminated_cause = Some(X11OrderedUnterminatedCause::Shutdown(kind));
             }
             return X11OrderedServeStep::Stopped;
         }
@@ -490,10 +504,17 @@ impl X11OrderedServingOwner {
             return step;
         };
         // Still holding serialization, which is the point.
-        let ended = match self.shutdown.shutdown(Shutdown::Both) {
-            Ok(()) => true,
-            Err(error) => error.kind() == std::io::ErrorKind::NotConnected,
+        let refused = match self.shutdown.shutdown(Shutdown::Both) {
+            Ok(()) => None,
+            Err(error) if error.kind() == std::io::ErrorKind::NotConnected => None,
+            Err(error) => Some(error.kind()),
         };
+        let ended = refused.is_none();
+        if let Some(kind) = refused {
+            // The same reason contract as the stop exits: a wire left
+            // unterminated says why, or whoever inherits it cannot.
+            self.unterminated_cause = Some(X11OrderedUnterminatedCause::Shutdown(kind));
+        }
         if !ended {
             // BARRED WHILE SERIALIZATION IS STILL HELD, so no writer of this
             // socket can take it between the discovery and the bar. It is the
@@ -700,6 +721,10 @@ impl X11OrderedServingOwner {
         (self.unanswered.capacity(), self.foreign.capacity())
     }
 
+    fn unterminated_cause(&self) -> Option<X11OrderedUnterminatedCause> {
+        self.unterminated_cause
+    }
+
     fn closing(&self) -> Option<&X11OrderedClosing> {
         self.closing.as_ref()
     }
@@ -731,9 +756,12 @@ impl X11OrderedServingOwner {
         // quiescence under the same boundary, not another unsynchronized check.
         let output = self.output.clone();
         let Ok(socket) = output.lock() else {
-            // Exclusion cannot be established, so it is not claimed. The
-            // delivery, the frame and the reason all stay here.
+            // Exclusion cannot be established, so it is not claimed, and
+            // ending was never attempted -- which is a different fact from an
+            // ending that refused, and is recorded as itself. The delivery and
+            // its frame stay here.
             self.unterminated = true;
+            self.unterminated_cause = Some(X11OrderedUnterminatedCause::OutputUnavailable);
             return X11OrderedServeStep::Unterminated;
         };
         self.wire.bar();
@@ -752,7 +780,8 @@ impl X11OrderedServingOwner {
             Err(error) if error.kind() == std::io::ErrorKind::NotConnected => {}
             Err(error) => {
                 self.unterminated = true;
-                self.unterminated_cause = Some(error.kind());
+                self.unterminated_cause =
+                    Some(X11OrderedUnterminatedCause::Shutdown(error.kind()));
             }
         }
     }
