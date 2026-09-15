@@ -258,20 +258,13 @@ impl PrivateOrderedContinuation {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
 impl PrivateOrderedContinuation {
-    /// Whether this connection owes nothing further.
-    ///
-    /// EVERY PART OF IT, not just an empty queue. A drained queue with an
-    /// admission the authority would not take, a capsule belonging to another
-    /// endpoint, or a wire whose ending was never established is a connection
-    /// that still owes something -- and returning its place then would hand the
-    /// capacity out against work that exists.
-    ///
-    /// A queue that is merely quiet says nothing: producers may still hold
-    /// senders for it, so only their being gone counts.
     /// One bounded step of whatever this continuation still owes.
     ///
-    /// A serving owner closes; a setup that never got one has nothing to drive
-    /// and is waiting only for its producers to go.
+    /// A serving owner closes. A setup that never got one is not idle either:
+    /// it ends its wire if it has the handle for one, takes at most one
+    /// capsule off its queue into retained custody, and records whether that
+    /// queue's producers have gone. Everything the predicate reads is learned
+    /// here, because receiving is the only way to learn any of it.
     fn visit(&mut self) {
         if let Self::Setup {
             accepted,
@@ -378,16 +371,6 @@ impl PrivateOrderedContinuation {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
 impl PrivateSettlementOwner {
-    /// Borrow one retained continuation, if the place holds one.
-    ///
-    /// BORROWED, NOT TAKEN OUT. Driving it means calling into the close, which
-    /// takes this connection's output and its finalizers; doing that with the
-    /// record in a local would put a retained continuation in a stack frame
-    /// across exactly the calls that can unwind.
-    ///
-    /// The aggregate lock is NOT held across that work. Its order here is
-    /// settlement before anything the close touches, and holding it while a
-    /// close waits on output serialization would invert that.
     /// Give one bounded visit to each retained continuation in turn.
     ///
     /// FAIR, so one connection that cannot progress does not consume every
