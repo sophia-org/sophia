@@ -246,6 +246,12 @@ fn resolve_and_apply(
                     // delivery with no completion can never be answered and a
                     // ledger that could not be read establishes nothing; both
                     // refuse, and the hold stays exactly where it is.
+                    // Refused rather than replaced, for the same reason the
+                    // press path refuses one.
+                    if pending_custody.is_some() {
+                        notes.custody_retained = true;
+                        return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                    }
                     let Some(release_delivery) = route.delivery else {
                         notes.completion_missing = true;
                         return Err(sophia_input_authority::RegistrationError::StaleRequest);
@@ -596,6 +602,15 @@ fn resolve_and_apply(
             // Acquired before the effect, so a press that cannot have its
             // answer recognised refuses rather than applying one. Fail-closed
             // and named, exactly as the release path is.
+            // AN OCCUPIED SLOT IS REFUSED, NOT REPLACED. A refusal that left
+            // the source holding context left this custody attached to that
+            // same continuation; assigning over it would drop the only handle
+            // able to answer what that continuation still owes, with nothing
+            // recorded about what became of it.
+            if pending_custody.is_some() {
+                notes.custody_retained = true;
+                return Err(sophia_input_authority::RegistrationError::StaleRequest);
+            }
             // A private ordered event with no delivery identity could never
             // have its answer recognised, so it is refused here rather than
             // applied. Ordinary public routing keeps its own behaviour; this
@@ -871,6 +886,9 @@ fn execute_owned(
 
         // Before the rest: these say the work should not have been applied at
         // all, rather than that applying it went wrong.
+        if notes.custody_retained {
+            return Err(PrivateExecutionRefusal::CustodyRetained);
+        }
         if notes.completion_missing {
             return Err(PrivateExecutionRefusal::CompletionMissing);
         }

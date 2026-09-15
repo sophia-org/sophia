@@ -12899,6 +12899,112 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
 }
 
 #[test]
+fn a_retained_custody_refuses_the_next_operation_rather_than_being_replaced() {
+    // A refusal that leaves the source holding context leaves this custody
+    // attached to that same continuation. Assigning over it would drop the
+    // only handle able to answer whatever that continuation still owes, with
+    // nothing recorded about what became of it -- and the replacement would
+    // then be the one everything else believed in.
+    let client = XServerFrontendClientId(2561);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    let run = |private: &mut crate::PrivateXServerFrontend,
+                   keyboards: &mut crate::PrivateKeyboards,
+                   delivery: u64,
+                   button: u32,
+                   pressed: bool| {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                button,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.terminal.delivering.extend(turn);
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("the entry delivers");
+    };
+
+    run(private, keyboards, 2561, 272, true);
+    run(private, keyboards, 2562, 272, false);
+    assert_eq!(private.terminal.settling.len(), 1, "a release is owed");
+
+    // A re-press of the same button, barred by the open release debt. The
+    // source refuses after taking context, so custody stays held.
+    run(private, keyboards, 2563, 272, true);
+    let retained = private
+        .terminal
+        .pending_custody
+        .as_ref()
+        .and_then(|custody| custody.completion.clone())
+        .expect("the refused press left its custody held");
+
+    // ANOTHER ADMITTED PRESS IS REFUSED, not allowed to overwrite it. Driven
+    // directly so this asserts the guard rather than a full queue.
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let next = role.reserve(stamp, 9).expect("a reservation").accepted();
+    let refused = private.run_ordered_input(
+        keyboards,
+        &{
+            let route = button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(2564),
+                273,
+                true,
+            );
+            admit_for_direct_run(private, &route);
+            route
+        },
+        &next,
+        watch,
+    );
+    assert!(
+        matches!(
+            refused,
+            Err(crate::PrivateExecutionRefusal::CustodyRetained)
+        ),
+        "the next operation is refused under its own cause rather than \
+         replacing what is held"
+    );
+    let still = private
+        .terminal
+        .pending_custody
+        .as_ref()
+        .and_then(|custody| custody.completion.clone())
+        .expect("and the held custody is still here");
+    assert!(
+        Arc::ptr_eq(&still, &retained),
+        "the very handle the refused press left, not a replacement"
+    );
+
+    // And an instance holding it does not report itself empty.
+    assert!(!private.terminal.is_empty());
+}
+
+#[test]
 fn a_final_release_carries_the_presss_own_custody_rather_than_replacing_it() {
     // A press and a release are two events owed to the same recipient, each
     // with its own admission and its own handle. Ending the physical hold

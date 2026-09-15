@@ -82,7 +82,10 @@ struct PrivateTerminalInventory {
     /// refusal or an unwind, and moves into the record for its debt as soon as
     /// that record exists.
     ///
-    /// Empty between operations.
+    /// Empty between operations that completed. A refusal which left the
+    /// source holding context leaves this held too, attached to that same
+    /// continuation, and the next operation is refused rather than allowed to
+    /// replace it.
     pending_custody: Option<PrivateDeliveryCustody>,
     /// Releases whose delivery was decided and whose debt is still open.
     settling: Vec<PrivateSettlingRelease>,
@@ -196,6 +199,11 @@ impl PrivateTerminalInventory {
             // holding an activation, a query scope and a selection would be
             // reporting the absence of the record rather than of the debt.
             && self.native_pending.is_none()
+            // A retained custody is an obligation on its own. It outlives a
+            // refusal that left the source holding context, and an instance
+            // reporting itself empty while holding one would be reporting the
+            // absence of a record rather than of the debt.
+            && self.pending_custody.is_none()
             && self.settling.is_empty()
             && self.current.is_none()
             && self.turn.is_empty()
@@ -213,6 +221,7 @@ impl PrivateTerminalInventory {
         Some(self.holds
             .len()
             .saturating_add(usize::from(self.native_pending.is_some()))
+            .saturating_add(usize::from(self.pending_custody.is_some()))
             .saturating_add(usize::from(self.attempt_custody.is_some()))
             .saturating_add(self.settling.len())
             .saturating_add(usize::from(self.current.is_some()))

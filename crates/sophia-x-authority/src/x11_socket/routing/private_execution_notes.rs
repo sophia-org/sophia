@@ -26,6 +26,8 @@ struct PrivateTransactionNotes<'a> {
     recovery_unavailable: bool,
     /// This delivery has no completion to answer it with.
     completion_missing: bool,
+    /// A previous operation's custody is still held with no disposition.
+    custody_retained: bool,
     /// What the native source refused, when it refused.
     ///
     /// Carried out rather than renamed. The source tells a delivery that ended
@@ -63,6 +65,7 @@ impl<'a> PrivateTransactionNotes<'a> {
             delivery_ended: false,
             recovery_unavailable: false,
             completion_missing: false,
+            custody_retained: false,
             native_refusal: None,
             may_have_applied,
         }
@@ -167,6 +170,15 @@ pub(crate) enum PrivateExecutionRefusal {
     /// the work must not be applied: an effect for a delivery whose outcome
     /// is already reported would be an effect nobody is waiting for.
     DeliveryEnded,
+    /// A previous operation's custody is still held here and has had no
+    /// disposition.
+    ///
+    /// Refused rather than replaced. A refusal that left the source holding
+    /// context leaves this custody attached to that same continuation, and
+    /// overwriting it would drop the only handle able to answer whatever that
+    /// continuation still owes -- silently, with nothing recorded about what
+    /// became of it.
+    CustodyRetained,
     /// This delivery has no completion, so its answer could never be matched
     /// to the debt it belongs to.
     ///
