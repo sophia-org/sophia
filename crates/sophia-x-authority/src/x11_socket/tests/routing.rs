@@ -25298,3 +25298,63 @@ fn a_stale_return_cannot_take_the_place_its_successor_holds() {
     drop(two_registration);
     drop(two_runner);
 }
+
+#[test]
+fn a_connection_is_not_exposed_without_a_place_to_hand_over_to() {
+    // From the moment a row is inserted a capsule can be accepted into that
+    // queue, so a connection whose accepted work would have nowhere to go must
+    // not be exposed. The refusal happens before anything is published.
+    let private = private_for_roles();
+    let durable = PrivateSettlementOwner::with_capacities(4, 1);
+    private
+        .broker
+        .registry
+        .continuation_owner
+        .set(durable.clone())
+        .unwrap_or_else(|_| panic!("this registry's continuation owner"));
+
+    let first = XServerFrontendClientId(8041);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(first, Some(admitted(first)))
+        .expect("the first connection has a place");
+    assert_eq!(durable.continuations_reserved(), Some(1));
+
+    // The bound is one, so the second connection is refused -- and refused for
+    // that, not for anything about the client itself.
+    let second = XServerFrontendClientId(8042);
+    let refused = private
+        .broker
+        .registry
+        .register_client_with_admission(second, Some(admitted(second)))
+        .err()
+        .expect("no place is left for it");
+    assert!(
+        matches!(
+            refused,
+            XServerFrontendRouteError::ContinuationUnavailable { client } if client == second
+        ),
+        "refused for the place, got {refused:?}"
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "and the refusal took nothing"
+    );
+
+    // NOTHING WAS PUBLISHED FOR IT. A sender for a connection that was never
+    // exposed is exactly what must not exist.
+    assert!(
+        private
+            .broker
+            .registry
+            .clients
+            .lock()
+            .expect("a readable registry")
+            .get(&second)
+            .is_none(),
+        "the refused connection has no row, so nothing can be accepted for it"
+    );
+    drop(registration);
+}

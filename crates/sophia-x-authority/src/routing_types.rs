@@ -409,6 +409,13 @@ pub enum XServerFrontendRouteError {
     DuplicateClient {
         client: XServerFrontendClientId,
     },
+    /// No place could be reserved for what this connection might hand over.
+    ///
+    /// Refused BEFORE anything is published, because a connection whose
+    /// accepted work would have nowhere to go must not be exposed at all.
+    ContinuationUnavailable {
+        client: XServerFrontendClientId,
+    },
     DuplicateSurface {
         surface: SurfaceId,
     },
@@ -559,6 +566,13 @@ impl core::fmt::Display for XServerFrontendRouteError {
                 write!(
                     formatter,
                     "X11 route client {} is already registered",
+                    client.raw()
+                )
+            }
+            Self::ContinuationUnavailable { client } => {
+                write!(
+                    formatter,
+                    "no retained place is available for X11 route client {}",
                     client.raw()
                 )
             }

@@ -263,8 +263,9 @@ impl PrivateOrderedContinuation {
     /// A serving owner closes. A setup that never got one is not idle either:
     /// it ends its wire if it has the handle for one, takes at most one
     /// capsule off its queue into retained custody, and records whether that
-    /// queue's producers have gone. Everything the predicate reads is learned
-    /// here, because receiving is the only way to learn any of it.
+    /// queue's producers have gone. The predicate reads the facts recorded by
+    /// those operations: receiving is what establishes that a channel is
+    /// finished, and a shutdown's own result is what establishes an ending.
     fn visit(&mut self) {
         if let Self::Setup {
             accepted,
@@ -444,10 +445,12 @@ impl PrivateSettlementOwner {
             // The place has moved on to another connection since this visit
             // began. Returning it now would take somebody else's.
             //
-            // No control reaches this: it needs a place to be returned and
-            // re-reserved between one visit finding a record and that visit
-            // finishing with it. Kept because returning another connection's
-            // place is the worse failure, and recorded as unwitnessed.
+            // Reached by a control that stages the interleave at this API --
+            // a place returned, reserved again, then given a stale return
+            // against the record it used to hold. That is not an observed
+            // concurrent race, and it says nothing about acquisition being
+            // bounded; what it establishes is that this comparison is what
+            // stops a successor's place being freed.
             return;
         }
         held.continuations[index] = PrivateOrderedContinuationPlace::Free;

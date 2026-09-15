@@ -4,6 +4,12 @@ struct XServerFrontendRouteRegistry {
     input_recovery: InputRecovery,
     runtime: Arc<std::sync::OnceLock<std::sync::Weak<Mutex<XAuthorityRuntime>>>>,
     private_applied: Arc<std::sync::OnceLock<PrivateAppliedRegistryOwner>>,
+    /// Where a connection's ordered continuation will go if it ever needs one.
+    ///
+    /// Set for a private instance, so registering can take a connection's place
+    /// BEFORE it publishes that connection's sender. Unset elsewhere, where
+    /// there is no ordered output to hand over.
+    continuation_owner: Arc<std::sync::OnceLock<PrivateSettlementOwner>>,
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
     focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
@@ -221,6 +227,16 @@ impl std::ops::Deref for XAuthorityOrderedReceiver {
 #[cfg(unix)]
 struct XServerFrontendClientRouteRegistration {
     lifecycle: Mutex<Option<PrivateConnectionLifecycle>>,
+    /// The place this connection's ordered continuation will go, reserved
+    /// before this connection was exposed.
+    ///
+    /// Not read yet: the teardown that hands a continuation over is the
+    /// dispatch binding, which is not landed. Until then it is held for what
+    /// losing it does -- a slot dropped without being disposed of is counted as
+    /// abandoned rather than handed out again, so a connection that ended with
+    /// nobody accounting for it is visible instead of silent.
+    #[allow(dead_code)]
+    ordered_continuation: Mutex<Option<PrivateOrderedContinuationSlot>>,
     connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
     input_recovery: InputRecovery,
     client: XServerFrontendClientId,
@@ -398,6 +414,18 @@ impl XServerFrontendRouteRegistry {
         if clients.contains_key(&client) {
             return Err(XServerFrontendRouteError::DuplicateClient { client });
         }
+        // THE PLACE IS TAKEN BEFORE THE SENDER EXISTS. From the moment this
+        // row is inserted a capsule can be accepted into that queue, and a
+        // connection whose accepted work would have nowhere to go must not be
+        // exposed at all. A refusal here publishes nothing.
+        let continuation = match self.continuation_owner.get() {
+            Some(owner) => Some(
+                owner
+                    .reserve_ordered_continuation()
+                    .map_err(|_| XServerFrontendRouteError::ContinuationUnavailable { client })?,
+            ),
+            None => None,
+        };
         self.input_recovery.register(client)?;
         let connection_state = Arc::new(std::sync::OnceLock::new());
         // A writer for this client exists or is about to: registration comes
@@ -425,6 +453,11 @@ impl XServerFrontendRouteRegistry {
         Ok((
             XServerFrontendClientRouteRegistration {
                 lifecycle: Mutex::new(None),
+                // Held for this connection's whole ownership interval. It is
+                // not given back because setup failed or the client went: a
+                // place is returned when the work in it is gone, and until
+                // then it belongs to this connection.
+                ordered_continuation: Mutex::new(continuation),
                 connection_state,
                 input_recovery: self.input_recovery.clone(),
                 client,
