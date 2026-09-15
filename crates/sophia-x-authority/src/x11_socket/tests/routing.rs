@@ -24242,3 +24242,311 @@ fn a_stop_that_cannot_take_the_output_claims_nothing_and_says_why() {
     assert!(owner.in_flight().is_some(), "the delivery stays owned");
     assert!(cell.answer().is_none());
 }
+
+#[test]
+fn a_continuation_place_is_taken_before_exposure_and_kept_while_work_remains() {
+    // The bound covers live connections and retained leftovers together. A
+    // connection that returned its place while still owing work would let a
+    // churn of connections grow retention without limit, which is the whole
+    // reason the two share one number.
+    let client = XServerFrontendClientId(7921);
+    let f = prepared_ordered_fixture(client);
+    let durable = PrivateSettlementOwner::with_capacity(2);
+    assert_eq!(durable.continuations_reserved(), Some(0));
+
+    let first = durable
+        .reserve_ordered_continuation()
+        .expect("a place for the first connection");
+    let mut second = durable
+        .reserve_ordered_continuation()
+        .expect("a place for the second");
+    assert_eq!(durable.continuations_reserved(), Some(2));
+
+    // EXHAUSTED BEFORE PUBLICATION. A third connection cannot be exposed,
+    // because there would be nowhere for what it accepted to go.
+    assert!(
+        matches!(
+            durable.reserve_ordered_continuation(),
+            Err(AdmissionRefusal::Saturated)
+        ),
+        "a connection that cannot be handed over is not built"
+    );
+
+    // A connection that finished owing nothing gives its place back.
+    first.finish();
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    let third = durable
+        .reserve_ordered_continuation()
+        .expect("the returned place is reusable");
+    assert_eq!(durable.continuations_reserved(), Some(2));
+
+    // AND ONE THAT STILL OWES WORK KEEPS ITS PLACE. Installing is not
+    // returning: the leftovers occupy the place they were promised.
+    // A real admission accepted into this connection's queue before anything
+    // could be built for it -- the window the Setup case exists for.
+    let sender = f
+        .runner
+        .frontend
+        .as_ref()
+        .unwrap()
+        .broker
+        .registry
+        .clients
+        .lock()
+        .unwrap()
+        .get(&client)
+        .expect("this connection's row")
+        .ordered
+        .clone();
+    let (emission, _endpoint) =
+        private_native_tests::emission_and_endpoint_for_writer_fixture(79210);
+    let stranded = XAuthorityOrderedDelivery::from_emission(emission).unwrap();
+    sender.send(stranded).expect("accepted into its queue");
+
+    let PreparedOrderedFixture { channels, .. } = f;
+    second.install(PrivateOrderedContinuation::Setup {
+        ordered: Box::new(channels.ordered),
+        refusal: X11OrderedServingRefusal::TransportUnavailable,
+    });
+    // AND IT IS STILL THERE. The queue came with the place, so an admission
+    // accepted before a serving owner existed is not lost with the setup that
+    // failed.
+    let survived = durable
+        .with_ordered_continuation(1, |continuation| {
+            continuation
+                .queue()
+                .try_recv()
+                .map(|capsule| capsule.delivery())
+        })
+        .expect("the place holds it");
+    assert_eq!(
+        survived.expect("the stranded admission"),
+        XAuthorityInputDeliveryId::from_raw(79210),
+        "accepted before the owner existed, and retained with its queue"
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(2),
+        "retained work still occupies its place"
+    );
+    assert_eq!(durable.continuations_retained(), Some(1));
+    assert!(
+        matches!(
+            durable.reserve_ordered_continuation(),
+            Err(AdmissionRefusal::Saturated)
+        ),
+        "so a reconnect cannot take a place the leftovers still hold"
+    );
+    assert_eq!(durable.continuations_abandoned(), Some(0));
+    drop(third);
+    assert_eq!(
+        durable.continuations_abandoned(),
+        Some(1),
+        "a place whose holder disposed of neither is marked, not handed out again"
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(2),
+        "and stays taken"
+    );
+}
+
+#[test]
+fn a_whole_serving_owner_moves_into_its_place_with_everything_it_held() {
+    // One ownership move. Nothing is unpacked, rebuilt, reselected or looked
+    // up again: what arrives is what left, including how far a frame got and
+    // why an ending refused.
+    let client = XServerFrontendClientId(7931);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 79310, 272, true);
+    attempt_run(&mut f, 79312, 273, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let staged_cell = admitted_cell(private, 79312);
+    for _ in 0..16 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let ordered = std::mem::replace(
+        &mut f.channels.ordered,
+        f.runner
+            .frontend
+            .as_ref()
+            .unwrap()
+            .broker
+            .registry
+            .register_client_with_admission(
+                XServerFrontendClientId(f.client.raw() + 500_000),
+                Some(admitted(XServerFrontendClientId(f.client.raw() + 500_000))),
+            )
+            .expect("a spare registration to borrow a receiver from")
+            .1
+            .ordered,
+    );
+    let transport = XAuthorityOrderedTransport::bind(
+        &f.registration,
+        ordered,
+        &output,
+        &wire,
+        &pending,
+        Some(&stop),
+    )
+    .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    let private = f.runner.frontend.as_ref().unwrap();
+    let mut owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
+        .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
+
+    // Its first event finishes properly, so what is staged below adds to this
+    // owner's custody rather than replacing it.
+    let first_cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 79310);
+    let mut flushed = false;
+    for _ in 0..16 {
+        match owner.serve_one(XByteOrder::LittleEndian, 7) {
+            X11OrderedServeStep::Advanced => {}
+            X11OrderedServeStep::Flushed => {
+                flushed = true;
+                break;
+            }
+            other => panic!("its own first event is served: {other:?}"),
+        }
+    }
+    assert!(flushed && first_cell.answer().is_some());
+    let mut drained = [0u8; 4096];
+    while (&peer).read(&mut drained).is_ok_and(|read| read > 0) {}
+
+    // A real capsule with a real prefix written and its progress staged.
+    let taken = owner.queue.try_recv().expect("its next event");
+    let staged_finalizer = Arc::downgrade(taken.finalizer().expect("carried"));
+    let frame = taken
+        .emission()
+        .encode_frame(0, XByteOrder::LittleEndian, 7)
+        .expect("its own first frame");
+    let staged_bytes = frame.as_bytes().to_vec();
+    {
+        let mut socket = output.lock().expect("the connection's output");
+        (*socket)
+            .write_all(&staged_bytes[..5])
+            .expect("five real bytes of it go");
+    }
+    owner.in_flight = Some(X11OrderedInFlight {
+        delivery: taken,
+        frame: 0,
+        send: X11OrderedSendState {
+            frame: Some(X11OrderedFrame {
+                bytes: frame,
+                progress: X11OrderedSendProgress::Sent(5),
+            }),
+            blocked: Duration::ZERO,
+        },
+    });
+    // And a failed ending, so a typed cause travels with it.
+    owner.unterminated = true;
+    owner.unterminated_cause =
+        Some(X11OrderedUnterminatedCause::Shutdown(std::io::ErrorKind::PermissionDenied));
+
+    let durable = PrivateSettlementOwner::with_capacity(2);
+    let mut slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before this connection was exposed");
+    slot.install(PrivateOrderedContinuation::Serving(Box::new(owner)));
+    assert_eq!(durable.continuations_retained(), Some(1));
+
+    // EVERYTHING ARRIVED. Read through a borrow of the stored record.
+    let checked = durable
+        .with_ordered_continuation(0, |continuation| {
+            let PrivateOrderedContinuation::Serving(owner) = continuation else {
+                panic!("a serving owner was installed")
+            };
+            let held = owner.in_flight().expect("its in-flight record");
+            let frame = held
+                .send
+                .frame
+                .as_ref()
+                .expect("the frame it was part way through");
+            (
+                held.delivery().delivery(),
+                frame.progress,
+                frame.bytes.as_bytes().to_vec(),
+                owner.unterminated_cause(),
+                Arc::ptr_eq(
+                    held.delivery().finalizer().expect("carried"),
+                    &staged_finalizer.upgrade().expect("still alive"),
+                ),
+            )
+        })
+        .expect("the place holds it");
+    assert_eq!(checked.0, XAuthorityInputDeliveryId::from_raw(79312));
+    assert_eq!(
+        checked.1,
+        X11OrderedSendProgress::Sent(5),
+        "how far its bytes got came with it"
+    );
+    assert_eq!(checked.2, staged_bytes, "and the exact bytes, not re-encoded");
+    assert_eq!(
+        checked.3,
+        Some(X11OrderedUnterminatedCause::Shutdown(
+            std::io::ErrorKind::PermissionDenied
+        )),
+        "and why its ending refused"
+    );
+    assert!(checked.4, "carrying its own original finalizer");
+    assert!(
+        staged_cell.answer().is_none(),
+        "a transfer answers nobody"
+    );
+}
+
+#[test]
+fn an_unreadable_owner_does_not_make_an_accepted_transfer_optional() {
+    // The work has been accepted and the place is this connection's. Skipping
+    // the move because the aggregate lock is unreadable would drop it, which
+    // is the one thing a reserved destination exists to prevent.
+    let client = XServerFrontendClientId(7941);
+    let f = prepared_ordered_fixture(client);
+    let durable = PrivateSettlementOwner::with_capacity(2);
+    let mut slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+
+    // The real settlement mutex, poisoned without touching any record.
+    let poisoner = durable.clone();
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = poisoner.inner.lock().unwrap();
+            panic!("intentional settlement-lock poison for transfer fixture");
+        }))
+        .is_err()
+    );
+    assert!(durable.inner.is_poisoned());
+    assert_eq!(
+        durable.continuations_retained(),
+        None,
+        "and an ordinary read of it now refuses"
+    );
+
+    let PreparedOrderedFixture { channels, .. } = f;
+    slot.install(PrivateOrderedContinuation::Setup {
+        ordered: Box::new(channels.ordered),
+        refusal: X11OrderedServingRefusal::TransportUnavailable,
+    });
+
+    // It went in anyway, and can be read back through the same fail-closed
+    // discipline every other already-accepted move here uses.
+    let held = durable
+        .with_ordered_continuation(0, |continuation| {
+            matches!(
+                continuation,
+                PrivateOrderedContinuation::Setup {
+                    refusal: X11OrderedServingRefusal::TransportUnavailable,
+                    ..
+                }
+            )
+        })
+        .expect("the place holds it");
+    assert!(held, "the accepted transfer happened despite the poison");
+}

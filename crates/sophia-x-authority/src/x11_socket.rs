@@ -89,6 +89,7 @@ include!("x11_socket/routing/private_terminal.rs");
 include!("x11_socket/routing/private_terminal_native.rs");
 include!("x11_socket/routing/private_inventory.rs");
 include!("x11_socket/routing/private_settlement.rs");
+include!("x11_socket/routing/private_ordered_continuation.rs");
 include!("x11_socket/routing/private_settlement_handle.rs");
 include!("x11_socket/routing/private_settlement_ownership.rs");
 include!("x11_socket/routing/control_completion.rs");

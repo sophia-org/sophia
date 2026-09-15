@@ -64,6 +64,26 @@ struct AbandonedSettlements {
     /// credit it already holds is released exactly when the work is genuinely
     /// answered. No fresh credit is taken at transfer: these already have one.
     outstanding: Vec<(XServerFrontendRouteRegistry, PrivateIdentity)>,
+    /// Places reserved for connections' ordered continuations.
+    ///
+    /// The storage exists from the moment a place is reserved, so installing
+    /// into one allocates nothing at the point where an accepted connection
+    /// would otherwise be held by nobody.
+    continuations: Vec<PrivateOrderedContinuationPlace>,
+    /// How many of those places are taken.
+    ///
+    /// Live reservations and retained continuations share this: a connection
+    /// keeps its place while it runs AND while its leftovers are here, so a
+    /// churn of connections cannot grow retention past the bound by returning
+    /// slots it still owes work against.
+    continuation_slots: usize,
+    /// How many places may be taken at once.
+    continuation_capacity: usize,
+    /// Places whose holder went without disposing of them.
+    ///
+    /// Counted rather than reclaimed. Handing the capacity out again would
+    /// promise it against work nobody accounted for.
+    continuations_abandoned: usize,
     /// Terminal inventories handed over by instances that went.
     ///
     /// Kept as inventories rather than unpacked into the abandoned-work list:
@@ -198,6 +218,14 @@ impl PrivateSettlementOwner {
                 failed: Vec::with_capacity(capacity),
                 failed_capacity: capacity,
                 failure_slots: 0,
+                // One place per connection this instance may admit, taken
+                // from the same declared limit rather than a pool of its own:
+                // a connection that cannot be handed over is one that must not
+                // be exposed, so the two numbers have to be the same number.
+                continuations: Vec::with_capacity(capacity),
+                continuation_slots: 0,
+                continuation_capacity: capacity,
+                continuations_abandoned: 0,
                 reserved: 0,
                 capacity,
             })),
@@ -418,6 +446,80 @@ impl PrivateSettlementOwner {
     fn release_failure_slot(&self) {
         let mut held = self.records_even_if_poisoned();
         held.failure_slots = held.failure_slots.saturating_sub(1);
+    }
+
+    /// Take the place one connection's ordered continuation will need.
+    ///
+    /// BEFORE THAT CONNECTION'S SENDER IS PUBLISHED. Once the sender exists a
+    /// capsule can be accepted into its queue, and from that moment the
+    /// connection has work that must be able to go somewhere. Reserving after
+    /// exposure would be finding out too late.
+    ///
+    /// The storage is made here too, so installing later moves into a place
+    /// that already exists rather than allocating while holding custody.
+    #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+    fn reserve_ordered_continuation(
+        &self,
+    ) -> Result<PrivateOrderedContinuationSlot, AdmissionRefusal> {
+        // An unreachable owner and a full one are different answers, for the
+        // same reason as every other reservation here.
+        let Ok(mut held) = self.inner.lock() else {
+            return Err(AdmissionRefusal::Unavailable);
+        };
+        if held.continuation_slots >= held.continuation_capacity {
+            return Err(AdmissionRefusal::Saturated);
+        }
+        // A FREE place, not merely an empty one. A place already promised to
+        // another connection holds nothing yet, and taking it again would give
+        // two connections the same destination.
+        let index = match held
+            .continuations
+            .iter()
+            .position(|place| matches!(place, PrivateOrderedContinuationPlace::Free))
+        {
+            Some(index) => index,
+            None => {
+                held.continuations
+                    .push(PrivateOrderedContinuationPlace::Free);
+                held.continuations.len() - 1
+            }
+        };
+        held.continuations[index] = PrivateOrderedContinuationPlace::Reserved;
+        held.continuation_slots = held.continuation_slots.saturating_add(1);
+        drop(held);
+        Ok(PrivateOrderedContinuationSlot {
+            owner: self.clone(),
+            index,
+            armed: true,
+        })
+    }
+
+    /// How many places are taken, live and retained together.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn continuations_reserved(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.continuation_slots)
+    }
+
+    /// How many continuations are actually stored here.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn continuations_retained(&self) -> Option<usize> {
+        self.inner
+            .lock()
+            .ok()
+            .map(|held| {
+                held.continuations
+                    .iter()
+                    .filter(|place| {
+                        matches!(place, PrivateOrderedContinuationPlace::Held(_))
+                    })
+                    .count()
+            })
+    }
+
+    /// How many places went with a holder that disposed of neither.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn continuations_abandoned(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.continuations_abandoned)
     }
 
     /// Take a credit for work about to be accepted, if one is free.
