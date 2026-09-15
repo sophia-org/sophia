@@ -12265,24 +12265,79 @@ fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
     );
 }
 
-
-/// Drive terminal work until one capsule reaches this recipient's ordered
-/// queue, and say whether one did.
+/// Whether the exact admitted event's own custody says its handover happened.
 ///
 /// A private event no longer reaches a queue when its entry advances: the
 /// entry is disposed of there, and the handover happens afterwards from the
 /// custody the debt holds. Controls that asserted the old report follow the
 /// event to its real handover through this.
-fn handed_over(private: &mut crate::PrivateXServerFrontend, steps: usize) -> bool {
+///
+/// WHAT IS ALREADY DONE COUNTS. The handover may have happened in an earlier
+/// call -- deliver_turn drives terminal visits itself -- so the phase is read
+/// before any visit is driven here. Counting only NEW dispatches reported "no
+/// handover" for an event the recipient had already been given.
+///
+/// And it is this event's handover, not any. Returning true for whatever
+/// capsule a visit happened to accept passed controls whose own event was
+/// still owed.
+fn handed_over(
+    private: &mut crate::PrivateXServerFrontend,
+    delivery: u64,
+    steps: usize,
+) -> bool {
+    let id = XAuthorityInputDeliveryId::from_raw(delivery);
+    let Ok(Some(cell)) = private.broker.registry.input_recovery.completion_for(id) else {
+        return false;
+    };
     for _ in 0..steps {
+        match handover_phase(private, &cell) {
+            Some(PrivateDispatchPhase::Enqueued) => return true,
+            // Nothing owns this admission's cell, so nothing owes it an event.
+            None => return false,
+            Some(_) => {}
+        }
         match private.deliver_one(&mut |_, _| Ok(())) {
-            Ok(PrivateDeliveryStep::Dispatched { enqueued: true, .. }) => return true,
-            Ok(PrivateDeliveryStep::Idle) => return false,
+            Ok(PrivateDeliveryStep::Idle) | Err(_) => break,
             Ok(_) => {}
-            Err(_) => return false,
         }
     }
-    false
+    matches!(
+        handover_phase(private, &cell),
+        Some(PrivateDispatchPhase::Enqueued)
+    )
+}
+
+/// The handover phase of the custody that owns exactly this admission's cell.
+///
+/// BY THE CELL THE ADMISSION MINTED, because a delivery id is a reusable
+/// number and a queue arrival is only proof that SOME event went. The cell is
+/// the one thing that names this event and nothing else.
+fn handover_phase(
+    private: &crate::PrivateXServerFrontend,
+    cell: &Arc<PrivateDeliveryCompletion>,
+) -> Option<PrivateDispatchPhase> {
+    let owns = |custody: &PrivateDeliveryCustody| {
+        custody
+            .completion
+            .as_ref()
+            .is_some_and(|held| Arc::ptr_eq(held, cell))
+    };
+    private
+        .terminal
+        .holds
+        .iter()
+        .find(|record| owns(&record.custody))
+        .map(|record| record.custody.dispatch)
+        .or_else(|| {
+            private.terminal.settling.iter().find_map(|release| {
+                release
+                    .press_custody
+                    .as_ref()
+                    .filter(|custody| owns(custody))
+                    .map(|custody| custody.dispatch)
+                    .or_else(|| owns(&release.custody).then_some(release.custody.dispatch))
+            })
+        })
 }
 
 /// Admit a delivery the way the ingress would, for controls that drive
@@ -14344,6 +14399,16 @@ fn an_attempt_that_cannot_be_placed_is_given_back_and_keeps_its_capsule() {
             .expect("the entry delivers");
     }
     assert_eq!(private.terminal.settling.len(), 1);
+    // THE PRESS THIS RELEASE ENDS GOES FIRST. It is the earlier event on the
+    // same connection, so the release cannot overtake it.
+    assert!(matches!(
+        private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
+        PrivateDeliveryStep::Dispatched {
+            enqueued: true,
+            relinquished: false
+        }
+    ));
+
     assert!(matches!(
         private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
         PrivateDeliveryStep::Recorded { recorded: true }
@@ -14383,54 +14448,76 @@ fn an_attempt_that_cannot_be_placed_is_given_back_and_keeps_its_capsule() {
 }
 
 #[test]
-fn a_release_that_cannot_build_does_not_hide_the_ones_behind_it() {
+fn a_release_that_cannot_build_does_not_hide_another_recipients() {
     // Choosing the record before asking the ledger meant one release that can
     // never produce a capsule sat at the front and returned every visit
     // before the ledger's cursor moved. Everything behind it was hidden for
     // ever. The ledger selects now, so its cursor is what carries the visit
     // past a release this executor cannot serve.
-    let client = XServerFrontendClientId(2461);
-    let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture {
-        runner,
-        ingress,
-        surface,
-        ..
-    } = &mut fixture;
-    let surface = *surface;
-    let PrivatePreparedRunner {
-        frontend,
-        keyboards,
-        watch,
-        ..
-    } = runner;
-    let private = frontend.as_mut().expect("a live runner");
-    let watch = watch.as_ref().expect("a sealed watch");
+    //
+    // ACROSS RECIPIENTS, which is the only place the claim can be made. On one
+    // connection a release that cannot be built DOES hide what is behind it,
+    // and must: the events after it are owed to the same client in order, and
+    // handing one over early would show it a button going down before the one
+    // it was already owed came up.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(2461));
+    attempt_release(&mut f, 2461, 272);
 
-    // Two independent holds, so two releases owing two deliveries.
-    for (delivery, button, pressed) in [
-        (2461u64, 272u32, true),
-        (2462, 272, false),
-        (2463, 273, true),
-        (2464, 273, false),
-    ] {
-        ingress
-            .submit(button_to(
-                surface,
-                XAuthorityInputDeliveryId::from_raw(delivery),
-                button,
-                pressed,
-            ))
-            .expect("the order to accept it");
-        let turn = private
-            .route_pending_ordered(keyboards, watch)
-            .expect("a readable order");
-        private.terminal.delivering.extend(turn);
-        private
-            .deliver_one(&mut |_, _| Ok(()))
-            .expect("the entry delivers");
-    }
+    let other = XServerFrontendClientId(2462);
+    let other_window = XResourceId::new(0x302462, 1);
+    let (other_registration, _other_channels) = {
+        let p = f.runner.frontend.as_mut().unwrap();
+        let registry = &p.broker.registry;
+        let context = namespaced(other, f.namespace);
+        let (registration, channels) = registry
+            .register_client_with_admission(other, Some(context))
+            .unwrap();
+        registry.attach_private_lifecycle(&registration, context).unwrap();
+        let selected = Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+        registry
+            .attach_connection_state(
+                &registration,
+                f.namespace,
+                selected.clone(),
+                Arc::new(AtomicU64::new(0)),
+            )
+            .unwrap();
+        {
+            let mut state = selected.lock().unwrap();
+            state.register(
+                other_window,
+                XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+                Rect { x: 0, y: 0, width: 200, height: 100 },
+            );
+            state.observe_mapped(other_window);
+            state.update(other_window, Some((1 << 2) | (1 << 3)), None);
+        }
+        let mut grabs = registry.input_authority.lock().unwrap();
+        grabs.ungrab_pointer(f.namespace, f.client.raw());
+        grabs
+            .grab_pointer(
+                f.namespace,
+                crate::XActiveInputGrab {
+                    owner: other.raw(),
+                    window: other_window,
+                    owner_events: false,
+                    pointer_mode: 1,
+                    keyboard_mode: 1,
+                    event_mask: u16::MAX,
+                    xi_event_mask: [0; 8],
+                    xi_event_mask_words: 0,
+                    route_lease: None,
+                },
+            )
+            .unwrap();
+        (registration, channels)
+    };
+    attempt_release(&mut f, 2463, 273);
+
+    let private = f.runner.frontend.as_mut().unwrap();
     assert_eq!(private.terminal.settling.len(), 2, "two releases are owed");
+    assert_eq!(private.terminal.settling[0].reached().client(), f.client);
+    assert_eq!(private.terminal.settling[1].reached().client(), other);
 
     // The first can never produce a capsule: its event is taken away, which
     // is what an unwrappable or already-consumed emission amounts to here.
@@ -14441,7 +14528,7 @@ fn a_release_that_cannot_build_does_not_hide_the_ones_behind_it() {
     drop(stolen);
 
     // Drive terminal visits. The first release can never be served; the
-    // second must still get there.
+    // second, owed to a different connection, must still get there.
     for _ in 0..24 {
         private
             .deliver_one(&mut |_, _| Ok(()))
@@ -14451,12 +14538,18 @@ fn a_release_that_cannot_build_does_not_hide_the_ones_behind_it() {
     assert_eq!(
         private.terminal.settling[1].dispatch(),
         PrivateDispatchPhase::Enqueued,
-        "the release behind the unservable one still reached its recipient"
+        "the other recipient's release still reached it"
     );
     assert!(
         private.terminal.settling[1].attempt().is_some(),
         "and it is named by the attempt it was delivered under"
     );
+    assert_eq!(
+        private.terminal.settling[0].dispatch(),
+        PrivateDispatchPhase::Untaken,
+        "while the one that cannot be built is still owed, not abandoned"
+    );
+    drop(other_registration);
 }
 
 #[test]
@@ -14501,6 +14594,16 @@ fn an_interrupted_handover_is_not_retried_just_because_its_slot_is_empty() {
             .expect("the entry delivers");
     }
     assert_eq!(private.terminal.settling.len(), 1);
+
+    // THE PRESS THIS RELEASE ENDS GOES FIRST. It is the earlier event on the
+    // same connection, so the release cannot overtake it.
+    assert!(matches!(
+        private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
+        PrivateDeliveryStep::Dispatched {
+            enqueued: true,
+            relinquished: false
+        }
+    ));
 
     // Its proof goes in, which is what makes it eligible for an attempt.
     assert!(matches!(
@@ -14757,7 +14860,7 @@ fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the event reached its recipient's ordered queue");
+    assert!(handed_over(private, 2411, 8), "the event reached its recipient's ordered queue");
     assert!(
         private.terminal.holds[0].native.is_some(),
         "the press left a source obligation on its record"
@@ -14775,7 +14878,12 @@ fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the release owes its recipient an event");
+    assert_eq!(
+        delivered.len(),
+        1,
+        "the entry was disposed of and its own outcome reported"
+    );
+    assert!(handed_over(private, 2412, 8), "the release owes its recipient an event");
     assert!(
         private.terminal.holds.is_empty(),
         "the hold ended, so its record is gone"
@@ -15628,7 +15736,7 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
-    assert!(handed_over(private, 8), "the press was accepted onto the client's queue");
+    assert!(handed_over(private, 861, 8), "the press was accepted onto the client's queue");
     assert!(
         matches!(
             delivered[0].completion,
@@ -15640,16 +15748,17 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         !delivered[0].debt_settled,
         "a press creates no release debt to close"
     );
-    let event = channels
-        .input
-        .try_recv()
-        .expect("the client received the press");
+    let queued: Vec<_> = channels.ordered.try_iter().collect();
+    assert_eq!(queued.len(), 1, "the client received the press");
     assert_eq!(
-        event.delivery,
-        Some(XAuthorityInputDeliveryId::from_raw(861)),
+        queued[0].delivery(),
+        XAuthorityInputDeliveryId::from_raw(861),
         "answered against the delivery identity it was accepted with"
     );
-    assert_eq!(event.target_window, Some(window));
+    assert_eq!(queued[0].client(), client);
+    // The window is the source's own resolution, which the capsule carries in
+    // its encoded frames rather than exposing as a field.
+    assert_eq!(private.terminal.holds[0].reached.window(), window);
 
     // Release, run, deliver. Queuing establishes neither half: the recipient
     // half is the writer's outcome, and what the guarded code shows is that
@@ -15668,7 +15777,7 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
-    assert!(handed_over(private, 8), "the release was queued too");
+    assert!(handed_over(private, 862, 8), "the release was queued too");
     assert!(
         delivered[0].sequence.raw() > 0,
         "each delivery names the place in the order it came from"
@@ -15678,10 +15787,13 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
         "but no debt is closed by queuing: the recipient half is the writer's \
          outcome, and nothing here has observed one"
     );
-    assert!(
-        channels.input.try_recv().is_ok(),
-        "the client received the release"
+    let queued: Vec<_> = channels.ordered.try_iter().collect();
+    assert_eq!(queued.len(), 1, "the client received the release");
+    assert_eq!(
+        queued[0].delivery(),
+        XAuthorityInputDeliveryId::from_raw(862)
     );
+    assert_eq!(queued[0].client(), client);
     assert!(
         !private.terminal.settling.is_empty(),
         "so the continuation is retained, because the obligation is still open"
@@ -15881,7 +15993,7 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
     // A press that begins the hold: an event is owed and delivered.
     let delivered = run_one_submission(private, keyboards, 891, true);
     assert_eq!(delivered.len(), 1);
-    assert!(handed_over(private, 8));
+    assert!(handed_over(private, 891, 8));
 
     // The same input pressed again joins the hold. It owes nobody an event,
     // which is an outcome rather than a failure to emit one -- so its
@@ -15892,7 +16004,7 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
         1,
         "a join is reported as what happened, not retained for want of an event"
     );
-    assert!(!handed_over(private, 4), "nobody was owed one");
+    assert!(!handed_over(private, 892, 4), "nobody was owed one");
     assert!(
         matches!(
             delivered[0].completion,
@@ -15910,7 +16022,7 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
     // it could never let go of.
     let delivered = run_one_submission(private, keyboards, 893, false);
     assert_eq!(delivered.len(), 1, "the release reserved and ran");
-    assert!(handed_over(private, 8), "and it owed an event, which was queued");
+    assert!(handed_over(private, 893, 8), "and it owed an event, which was queued");
 }
 
 #[test]
@@ -16011,7 +16123,9 @@ fn an_unreadable_observation_retains_its_entry_without_losing_the_event() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
 
-    // The authority becomes unreadable between the send and the observation.
+    // The authority becomes unreadable after the execution and before the
+    // observation. Nothing is sent on this path, so the window is exactly
+    // between the request applying and its completion being read.
     let poisoner = private.authority().clone();
     assert!(
         std::thread::spawn(move || {
@@ -16173,7 +16287,7 @@ fn a_parked_control_is_answered_exactly_once_after_shutdown() {
 }
 
 #[test]
-fn an_enqueued_entry_is_observed_rather_than_sent_again() {
+fn an_accepted_handover_is_observed_rather_than_offered_again() {
     let client = XServerFrontendClientId(941);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture { runner, ingress, channels, surface, window, .. } = &mut fixture;
@@ -16197,19 +16311,11 @@ fn an_enqueued_entry_is_observed_rather_than_sent_again() {
 
     private.terminal.delivering.extend(turn);
 
-    // Staged on the custody that owns the event, which is the only place that
-    // knows a handover happened. The capsule is taken out because that is what
-    // an accepted send leaves behind: nothing to send twice.
     let recovery = private.broker.registry.input_recovery.clone();
     let cell = recovery
         .completion_for(XAuthorityInputDeliveryId::from_raw(941))
         .expect("a readable recovery")
         .expect("the admission minted a cell");
-    {
-        let custody = &mut private.terminal.holds[0].custody;
-        custody.pending = None;
-        custody.dispatch = PrivateDispatchPhase::Enqueued;
-    }
 
     assert_eq!(
         channels.ordered.try_iter().count(),
@@ -16217,12 +16323,36 @@ fn an_enqueued_entry_is_observed_rather_than_sent_again() {
         "nothing has been handed over by this test yet"
     );
 
+    // A REAL HANDOVER, not a staged phase. The source takes its own emission,
+    // builds its own wrapper and the queue actually accepts it -- which is the
+    // only thing that can make a second offer a duplicate.
     let delivered = private.deliver_turn(Vec::new());
+    let queued: Vec<_> = channels.ordered.try_iter().collect();
+    assert_eq!(queued.len(), 1, "the event reached its recipient exactly once");
+    assert_eq!(
+        queued[0].delivery(),
+        XAuthorityInputDeliveryId::from_raw(941)
+    );
+    assert!(
+        Arc::ptr_eq(
+            &cell,
+            &queued[0].finalizer().expect("carried").completion
+        ),
+        "carrying the cell this exact admission minted"
+    );
+    assert_eq!(
+        private.terminal.holds[0].custody.dispatch,
+        PrivateDispatchPhase::Enqueued,
+        "and the custody records that it happened"
+    );
 
     // Observed, never sent again. The entry's own step sends nothing at all,
     // and the custody that could send refuses to: an event already taken by a
     // queue owes only its outcome, and offering it again would deliver the
     // same transition twice with nothing downstream able to tell.
+    for _ in 0..8 {
+        let _ = private.deliver_one(&mut |_, _| Ok(()));
+    }
     assert_eq!(
         channels.ordered.try_iter().count(),
         0,
@@ -16932,8 +17062,13 @@ fn a_join_leaves_the_source_obligation_alone_so_a_later_press_still_runs() {
     };
 
     let first = run(private, keyboards, 2401, 272);
+    assert_eq!(
+        first.len(),
+        1,
+        "the press was disposed of and its own outcome reported"
+    );
     assert!(
-        handed_over(private, 8),
+        handed_over(private, 2401, 8),
         "the first press owes its recipient an event"
     );
     assert_eq!(private.terminal.holds.len(), 1);
@@ -16943,7 +17078,7 @@ fn a_join_leaves_the_source_obligation_alone_so_a_later_press_still_runs() {
     let joined = run(private, keyboards, 2402, 272);
     let _ = &joined;
     assert!(
-        !handed_over(private, 4),
+        !handed_over(private, 2402, 4),
         "a join owes nobody an event: the button is already down"
     );
     assert_eq!(
@@ -16960,7 +17095,7 @@ fn a_join_leaves_the_source_obligation_alone_so_a_later_press_still_runs() {
     let third = run(private, keyboards, 2403, 273);
     let _ = &third;
     assert!(
-        handed_over(private, 8),
+        handed_over(private, 2403, 8),
         "a different button still presses: the join left no phase behind it"
     );
     assert_eq!(
@@ -17013,7 +17148,12 @@ fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the press reached the client's queue");
+    assert_eq!(
+        delivered.len(),
+        1,
+        "the entry was disposed of and its own outcome reported"
+    );
+    assert!(handed_over(private, 992, 8), "the press reached the client's queue");
     assert_eq!(
         private
             .broker
@@ -17156,7 +17296,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
         "the release finishes, because the ledger was never pressed"
     );
     let _ = &released;
-    assert!(!handed_over(private, 4), "and it owes nobody an event");
+    assert!(!handed_over(private, 9931, 4), "and it owes nobody an event");
     assert!(
         !private
             .terminal
@@ -17209,17 +17349,32 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the event reached its recipient's ordered queue");
+    assert!(handed_over(private, 9941, 8), "the event reached its recipient's ordered queue");
     assert_eq!(projected_buttons(private, namespace, seat), 0x100);
     assert_eq!(private.terminal.holds.len(), 1);
 
-    // Then it goes, and the release arrives afterwards.
+    // Then it goes, and the release arrives afterwards. The ledger is told,
+    // and so is the routing side: output reaches a client through the queue
+    // its connection owns, so a recipient that is gone is one with no entry
+    // there. This is the state route_to_client itself leaves behind when a
+    // queue reports its receiver dropped.
     private
         .broker
         .registry
         .input_recovery
         .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
         .expect("the ledger to be readable");
+    assert!(
+        private
+            .broker
+            .registry
+            .clients
+            .lock()
+            .expect("a readable registry")
+            .remove(&client)
+            .is_some(),
+        "the connection was there to lose"
+    );
     ingress
         .submit(button_to(
             surface,
@@ -17232,6 +17387,11 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
+    assert_eq!(
+        delivered.len(),
+        1,
+        "the entry was disposed of and its own outcome reported"
+    );
 
     // The hold ended and the button is up. Neither could be conditional on
     // anyone still being there to be told: a button left down because its
@@ -17245,7 +17405,10 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
         0,
         "and the button this seat had down is up"
     );
-    assert!(!handed_over(private, 4), "but nothing was enqueued for a client that is gone");
+    assert!(
+        !handed_over(private, 9942, 4),
+        "but nothing was enqueued for a client that is gone"
+    );
     assert_eq!(
         private.terminal.settling.len(),
         1,
@@ -17361,13 +17524,18 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
-    assert!(handed_over(private, 8));
-    assert!(
-        owner_channels.input.try_recv().is_ok(),
-        "the grab owner is the one that received it"
+    assert_eq!(
+        delivered.len(),
+        1,
+        "the entry was disposed of and its own outcome reported"
     );
+    assert!(handed_over(private, 995, 8));
+    let to_owner: Vec<_> = owner_channels.ordered.try_iter().collect();
+    assert_eq!(to_owner.len(), 1, "the grab owner is the one that received it");
+    assert_eq!(to_owner[0].delivery(), delivery);
+    assert_eq!(to_owner[0].client(), owner);
     assert!(
-        channels.input.try_recv().is_err(),
+        channels.ordered.try_recv().is_err(),
         "and the surface's own client did not"
     );
 
@@ -17477,7 +17645,7 @@ fn held_button(
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the event reached its recipient's ordered queue");
+    assert!(handed_over(private, delivery, 8), "the event reached its recipient's ordered queue");
     assert_eq!(private.terminal.holds.len(), 1);
 }
 
@@ -17777,7 +17945,7 @@ fn an_ordered_turn_gives_its_claim_back() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the event reached its recipient's ordered queue");
+    assert!(handed_over(private, 1001, 8), "the event reached its recipient's ordered queue");
 
     // Given back, so the delivery can still be cancelled. A claim nobody
     // resolves is not a delivery that is safe: it is one nothing can ever
@@ -17945,7 +18113,7 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
         .expect("a readable order");
     let delivered = private.deliver_turn(turn);
     assert_eq!(delivered.len(), 1);
-    assert!(!handed_over(private, 4), "a join owes nobody an event: the button is already down");
+    assert!(!handed_over(private, 10032, 4), "a join owes nobody an event: the button is already down");
     assert_eq!(
         private.terminal.holds.len(),
         1,
@@ -18232,7 +18400,7 @@ fn a_press_that_applied_cannot_be_revoked_afterwards() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the event reached its recipient's ordered queue");
+    assert!(handed_over(private, 1203, 8), "the event reached its recipient's ordered queue");
     assert_eq!(
         claim_state(private, delivery),
         (false, true),
@@ -18308,7 +18476,7 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the event reached its recipient's ordered queue");
+    assert!(handed_over(private, 12012, 8), "the event reached its recipient's ordered queue");
     assert_eq!(projected_buttons(private, namespace, seat), 0);
     assert_eq!(private.terminal.settling.len(), 1);
 
@@ -18603,7 +18771,7 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the event reached its recipient's ordered queue");
+    assert!(handed_over(private, 1303, 8), "the event reached its recipient's ordered queue");
 
     // The sweep revokes the connection and publishes nothing for the delivery,
     // because saying it was withdrawn would contradict the effect.
@@ -18758,7 +18926,7 @@ fn private_work_does_not_expire_because_it_waited() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the event reached its recipient's ordered queue");
+    assert!(handed_over(private, 1401, 8), "the event reached its recipient's ordered queue");
 
     // And a real cancellation still reaches it, because what was disabled is
     // the age producer and not the sweep.
@@ -19109,11 +19277,10 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
     // An empty order is not a step and costs nothing.
     let charged = std::cell::RefCell::new(Vec::new());
     let mut charge = |sequence: Option<crate::ReadySequence>, _: std::time::Instant| {
-        // None would be a proof-recording visit. This control drives ordered
-        // entries, so every charge it sees names one.
-        charged
-            .borrow_mut()
-            .push(sequence.expect("an ordered entry, not a recording visit"));
+        // None is a visit that names no ordered entry -- a proof recording, or
+        // handing an event over. Both are kept, because what this control is
+        // about is that every visit is charged for exactly once.
+        charged.borrow_mut().push(sequence);
         Ok(())
     };
     let step = private.deliver_one(&mut charge).expect("a step");
@@ -19122,7 +19289,7 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
     };
     assert_eq!(
         *charged.borrow(),
-        vec![sequence],
+        vec![Some(sequence)],
         "charged once, for the entry taken"
     );
     // The entry was disposed of and its outcome observed; whether anything
@@ -19144,6 +19311,30 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
     assert!(matches!(step, PrivateDeliveryStep::Advanced { .. }));
     assert_eq!(charged.borrow().len(), 2);
     assert_ne!(charged.borrow()[0], charged.borrow()[1], "a different entry");
+    assert!(
+        charged.borrow().iter().all(Option::is_some),
+        "an entry's own visit names it"
+    );
+
+    // Both entries are disposed of, and the events they decided are still
+    // owed. Those handovers are visits of their own, charged for and naming no
+    // entry, because the entry that decided the event is already gone.
+    for expected in [true, true] {
+        let step = private.deliver_one(&mut charge).expect("a step");
+        assert!(matches!(
+            step,
+            PrivateDeliveryStep::Dispatched {
+                enqueued,
+                relinquished: false
+            } if enqueued == expected
+        ));
+        assert_eq!(
+            *charged.borrow().last().expect("a charge for the visit"),
+            None,
+            "a handover names no ordered entry"
+        );
+    }
+    assert_eq!(channels.ordered.try_iter().count(), 2, "both events went");
 
     // Nothing waiting is its own answer, and takes nothing.
     let before = charged.borrow().len();
@@ -19988,7 +20179,7 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
-    assert!(handed_over(private, 8), "the event reached its recipient's ordered queue");
+    assert!(handed_over(private, 1903, 8), "the event reached its recipient's ordered queue");
 
     // A's writer reports its own delivery blocked and still owns it. Whether
     // any of the frame reached the wire depends on how full the socket already
@@ -20507,4 +20698,122 @@ fn an_unrecorded_release_at_the_head_spends_its_connections_turn() {
             && other_cell.answer().is_none()
     );
     drop(other_registration);
+}
+
+#[test]
+fn a_recipients_complete_event_order_is_preserved_across_press_and_release() {
+    let mut f=prepared_ordered_fixture(XServerFrontendClientId(7551));
+    attempt_release(&mut f,75510,272);
+    attempt_run(&mut f,75512,273,true);
+    let p=f.runner.frontend.as_mut().unwrap();
+    let recovery=p.broker.registry.input_recovery.clone();
+    let cells=[75510,75511,75512].map(|id|recovery.completion_for(XAuthorityInputDeliveryId::from_raw(id)).unwrap().unwrap());
+    let mut seen=Vec::new();
+    // Drive the actual terminal arbiter, including native recording/release
+    // dispatch. Drain ALL queue entries after every visit, not merely presses.
+    for _ in 0..16 {
+        let _=p.deliver_one(&mut |_,_|Ok(())).unwrap();
+        while let Ok(capsule)=f.channels.ordered.try_recv() {
+            let id=capsule.delivery();
+            let expected=[75510,75511,75512].iter().position(|n|id==XAuthorityInputDeliveryId::from_raw(*n)).expect("only these actual events exist");
+            assert!(Arc::ptr_eq(&cells[expected],&capsule.finalizer().unwrap().completion));
+            seen.push(id);
+        }
+    }
+    assert!(cells.iter().all(|c|c.answer().is_none()));
+    assert_eq!(seen,[75510,75511,75512].map(XAuthorityInputDeliveryId::from_raw),"sorting only presses cannot preserve the recipient's complete event order");
+}
+
+#[test]
+fn an_indeterminate_head_keeps_its_custody_while_another_recipient_progresses() {
+    let mut f=prepared_ordered_fixture(XServerFrontendClientId(7561));
+    attempt_run(&mut f,75610,272,true);attempt_run(&mut f,75611,273,true);
+    let other=XServerFrontendClientId(7562);let other_window=XResourceId::new(0x307562,1);
+    let (other_registration,other_channels)={
+        let p=f.runner.frontend.as_mut().unwrap();let registry=&p.broker.registry;
+        let context=namespaced(other,f.namespace);
+        let (registration,channels)=registry.register_client_with_admission(other,Some(context)).unwrap();
+        registry.attach_private_lifecycle(&registration,context).unwrap();
+        let selected=Arc::new(Mutex::new(XCoreEventSelectionState::default()));
+        registry.attach_connection_state(&registration,f.namespace,selected.clone(),Arc::new(AtomicU64::new(0))).unwrap();
+        {
+            let mut s=selected.lock().unwrap();
+            s.register(other_window,XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT),1),Rect{x:0,y:0,width:200,height:100});
+            s.observe_mapped(other_window);s.update(other_window,Some((1<<2)|(1<<3)),None);
+        }
+        // Genuine owner operations change subsequent source resolution. Native
+        // A holds remain retained; no foreign inventory or fake recipient is
+        // inserted into this executor. We make no cleanup/lifecycle claim.
+        let mut grabs=registry.input_authority.lock().unwrap();
+        grabs.ungrab_pointer(f.namespace,f.client.raw());
+        grabs.grab_pointer(f.namespace,crate::XActiveInputGrab{owner:other.raw(),window:other_window,owner_events:false,pointer_mode:1,keyboard_mode:1,event_mask:u16::MAX,xi_event_mask:[0;8],xi_event_mask_words:0,route_lease:None}).unwrap();
+        (registration,channels)
+    };
+    attempt_run(&mut f,75612,274,true);
+    let p=f.runner.frontend.as_mut().unwrap();assert_eq!(p.terminal.holds.len(),3);
+    assert_eq!(p.terminal.holds[0].reached.client(),f.client);assert_eq!(p.terminal.holds[1].reached.client(),f.client);assert_eq!(p.terminal.holds[2].reached.client(),other);
+    let recovery=p.broker.registry.input_recovery.clone();
+    let cells=[75610,75611,75612].map(|id|recovery.completion_for(XAuthorityInputDeliveryId::from_raw(id)).unwrap().unwrap());
+    let record=&mut p.terminal.holds[0];let emission=record.native.as_mut().unwrap().take_press_emission().unwrap();
+    PrivateXServerFrontend::stow_press_capsule(&mut record.custody,emission,&recovery,f.client);
+    // Explicitly staged at the state between the dispatch phase write and
+    // capsule take. No actual interrupted send or already-sent byte is claimed.
+    record.custody.dispatch=PrivateDispatchPhase::Indeterminate;
+    let mut seen_a=Vec::new();let mut seen_b=Vec::new();
+    for _ in 0..8 {
+        let _=p.deliver_one(&mut |_,_|Ok(())).unwrap();
+        while let Ok(c)=f.channels.ordered.try_recv(){
+            let index=if c.delivery()==XAuthorityInputDeliveryId::from_raw(75610){0}else{assert_eq!(c.delivery(),XAuthorityInputDeliveryId::from_raw(75611));1};
+            assert!(Arc::ptr_eq(&cells[index],&c.finalizer().unwrap().completion));seen_a.push(c.delivery());
+        }
+        while let Ok(c)=other_channels.ordered.try_recv(){
+            assert_eq!(c.delivery(),XAuthorityInputDeliveryId::from_raw(75612));assert_eq!(c.client(),other);
+            assert!(Arc::ptr_eq(&cells[2],&c.finalizer().unwrap().completion));seen_b.push(c.delivery());
+        }
+    }
+    let old_phase=p.terminal.holds[0].custody.dispatch;
+    let old_owned=matches!(p.terminal.holds[0].custody.pending.as_ref(),Some(PrivatePendingDelivery::Capsule(c)) if c.delivery()==XAuthorityInputDeliveryId::from_raw(75610) && Arc::ptr_eq(&cells[0],&c.finalizer().unwrap().completion));
+    assert!(cells.iter().all(|c|c.answer().is_none()));
+    assert_eq!(seen_b,[XAuthorityInputDeliveryId::from_raw(75612)],"a distinct exact recipient must progress under retained arbitration");
+    assert!(seen_a.is_empty(),"neither the indeterminate head nor any later event may enqueue for its recipient");
+    assert_eq!(old_phase,PrivateDispatchPhase::Indeterminate);assert!(old_owned,"the exact unknown-handover capsule stays inventory-owned");
+    drop(other_registration);
+}
+
+fn output_refused(f:&mut PreparedOrderedFixture,route:XAuthorityRoutedInput)->PrivateExecutionRefusal {
+    f.ingress.submit(route).unwrap();
+    let PrivatePreparedRunner{frontend,keyboards,watch,..}=&mut f.runner;let p=frontend.as_mut().unwrap();
+    assert!(matches!(p.step_once(keyboards,&mut |_,_|Ok(()),watch.as_ref().unwrap()).unwrap(),PrivateOrderedStep::Decided(_)));
+    let Some(PrivateOrderedItem::Refused{refusal,custody,..})=p.terminal.turn.pop() else{panic!("typed pre-effect refusal required")};
+    assert!(custody.observe().unwrap().is_some());refusal
+}
+
+#[test]
+fn an_exhausted_event_order_refuses_before_any_effect() {
+    for release in [false,true] {
+        let mut f=prepared_ordered_fixture(XServerFrontendClientId(if release{7572}else{7571}));
+        if release{attempt_run(&mut f,75720,272,true);}
+        let p=f.runner.frontend.as_mut().unwrap();
+        let held=if release{Some((p.terminal.holds[0].incarnation,p.terminal.holds[0].native.as_ref().unwrap() as *const _ as usize,p.terminal.holds[0].custody.completion.as_ref().unwrap().clone()))}else{None};
+        // Counter exhaustion only is staged. The reservation, completion cell,
+        // native source call boundary and typed refusal are real.
+        p.terminal.next_event_order=u64::MAX;
+        let id=XAuthorityInputDeliveryId::from_raw(if release{75721}else{75710});
+        let route=button_to(f.surface,id,272,!release);
+        assert!(matches!(output_refused(&mut f,route),PrivateExecutionRefusal::OrderExhausted));
+        let p=f.runner.frontend.as_ref().unwrap();
+        assert_eq!(p.terminal.next_event_order,u64::MAX);
+        assert!(p.terminal.pending_custody.is_none() && p.terminal.native_pending.is_none() && p.terminal.settling.is_empty());
+        assert_eq!(p.terminal.holds.len(),usize::from(release));
+        let mask=p.broker.registry.pointer_state.lock().unwrap().get(&(f.namespace,SeatId::from_raw(1))).expect("existing mapper").state();
+        assert_eq!(mask,if release{256}else{0});
+        if let Some((incarnation,native,cell))=held {
+            assert_eq!(p.terminal.holds[0].incarnation,incarnation);assert_eq!(p.terminal.holds[0].native.as_ref().unwrap() as *const _ as usize,native);
+            assert!(Arc::ptr_eq(&cell,p.terminal.holds[0].custody.completion.as_ref().unwrap()));assert_eq!(Arc::strong_count(&cell),3);assert!(cell.answer().is_none());
+        }
+        let recovery=&p.broker.registry.input_recovery;let cell=recovery.completion_for(id).unwrap().unwrap();
+        assert!(cell.answer().is_none());assert_eq!(Arc::strong_count(&cell),2);
+        let (claimed,applied)={let s=recovery.state.lock().unwrap();let e=s.tickets.get(&id).unwrap();(e.claimed,e.may_have_applied)};
+        assert!(!claimed && !applied);assert!(f.channels.ordered.try_recv().is_err());
+    }
 }

@@ -638,8 +638,10 @@ impl PrivateXServerFrontend {
         // instance survived an unwind while the work it described did not.
         let PrivateOrderedItem::Ran { sequence, .. } = &self.terminal.delivering[0] else {
             let item = self.terminal.delivering.remove(0);
-            // A refusal has no completion to read, so nothing about it is
-            // left unobserved.
+            // Retained without being observed here. A refusal still has a
+            // request completion -- owing no event is not the same as owing no
+            // outcome -- and this path does not take it; the item is what
+            // keeps it takeable.
             self.terminal.undelivered.push(PrivateUndelivered { item });
             return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
         };

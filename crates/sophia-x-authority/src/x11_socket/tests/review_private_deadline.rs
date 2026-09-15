@@ -31,13 +31,16 @@ fn review_private_deadline_enqueued_unwritten_work_keeps_socket_and_ticket() {
     let recovery = &private.broker.registry.input_recovery;
     let ticket = recovery.ticket(delivery).unwrap();
     assert_eq!(ticket.client, Some(client));
-    // deliver_turn enqueued the real input event; no writer was constructed.
+    // The real input event reached the recipient's ordered queue; no writer
+    // was constructed to take it off.
     assert!(recovery.recover(ticket.admitted_at + Duration::from_secs(7), false).unwrap().is_empty(),
         "private input queued for an absent writer produced a transport deadline");
     assert!(deliveries.try_recv().is_err());
     assert!(!recovery.state.lock().unwrap().connections.get(&client).unwrap().revoked);
     assert!(recovery.ticket(delivery).is_some());
-    assert!(channels.input.try_recv().is_ok(), "queued event was retained");
+    let queued: Vec<_> = channels.ordered.try_iter().collect();
+    assert_eq!(queued.len(), 1, "queued event was retained");
+    assert_eq!(queued[0].delivery(), delivery);
     peer.write_all(b"p").unwrap();
     let mut byte = [0]; socket.read_exact(&mut byte).unwrap(); assert_eq!(byte, [b'p']);
 }

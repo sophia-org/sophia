@@ -144,15 +144,30 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
     let first = runner.service_turn().unwrap();
     assert_eq!(first.taken, 1);
     assert_eq!(
-        first.starts, 2,
-        "execution and terminal service are separate starts"
+        first.starts, 3,
+        "execution, disposing the entry and handing the event over are each \
+         charged: the entry no longer sends, so the handover is its own visit"
     );
-    assert_eq!(first.terminal_steps, 1);
-    assert_eq!(runner.service.usage().cleanup_starts, 1);
-    assert_eq!(first.enqueued, 1);
+    assert_eq!(
+        first.terminal_steps, 2,
+        "one to dispose the entry, one to hand its event over"
+    );
+    assert_eq!(
+        runner.service.usage().cleanup_starts, 2,
+        "the handover names no ordered entry, so it is charged as cleanup is"
+    );
+    assert_eq!(
+        first.enqueued, 1,
+        "one queue acceptance, counted once and where it happened"
+    );
     assert_eq!(first.observed, 1);
     assert_eq!(first.settled, 0);
-    assert_eq!(channels.input.try_iter().count(), 1);
+    let queued: Vec<_> = channels.ordered.try_iter().collect();
+    assert_eq!(queued.len(), 1, "and one event reached the recipient");
+    assert_eq!(
+        queued[0].delivery(),
+        XAuthorityInputDeliveryId::from_raw(9000)
+    );
     let second = runner.service_turn().unwrap();
     assert_eq!(second.taken, 0);
     assert_eq!(second.enqueued, 0);
@@ -745,4 +760,114 @@ fn unprepared_frontend_teardown_closes_actual_setup_before_waiting_for_common() 
             .unwrap();
         worker.join().unwrap();
     }
+}
+
+#[test]
+fn a_terminal_step_whose_watch_refuses_is_blocked_and_keeps_its_entry() {
+    // The one remaining producer of a blocked terminal step. Nothing about a
+    // delivery entry can be indeterminate any more -- the entry sends nothing
+    // -- so what stops one now is the supervisor refusing to watch the visit
+    // it was already admitted and charged for.
+    //
+    // THE REFUSAL IS REAL. An execution guard taken here and not finished is
+    // exactly what makes the terminal visit's own begin_dequeued refuse: one
+    // watched execution at a time is the rule it enforces. No replacement
+    // watch is installed and no step is assigned a blocked result.
+    let (mut runner, _durable, _registration, channels, _acks, deliveries) =
+        prepared_runner_fixture();
+    let client = XServerFrontendClientId::from_raw(9000);
+    let ingress = runner.ingress_for(client, DeviceId::from_raw(1)).unwrap();
+    let sequence = ingress
+        .submit(button_to(
+            SurfaceId::new(9000, 1),
+            XAuthorityInputDeliveryId::from_raw(91004),
+            272,
+            true,
+        ))
+        .unwrap();
+    assert!(matches!(
+        runner.execute_accounted_step().unwrap(),
+        PrivateAccountedStep::Step {
+            step: PrivateOrderedStep::Decided(decided),
+            ..
+        } if decided == sequence
+    ));
+
+    let private = runner.frontend.as_ref().unwrap();
+    let cell = private
+        .broker
+        .registry
+        .input_recovery
+        .completion_for(XAuthorityInputDeliveryId::from_raw(91004))
+        .unwrap()
+        .unwrap();
+    assert_eq!(private.terminal.turn.len(), 1, "the decided item is owned");
+    assert_eq!(private.terminal.holds.len(), 1);
+
+    // Held for the duration of the terminal call, and never finished.
+    let held = runner
+        .watch
+        .as_ref()
+        .expect("a sealed watch")
+        .begin_dequeued(std::time::Instant::now())
+        .expect("the supervisor is idle before this");
+
+    let before = runner.service.usage();
+    let step = runner.deliver_accounted_step().unwrap();
+    let PrivateAccountedDelivery::Step {
+        step,
+        charge,
+        watch_failed,
+        unwatched,
+    } = step
+    else {
+        panic!("an admitted visit reports a step, not a yield")
+    };
+    assert!(
+        matches!(step, PrivateDeliveryStep::Blocked(blocked) if blocked == sequence),
+        "reported as itself, naming the entry that is stuck"
+    );
+    assert_eq!(
+        unwatched,
+        Some(sequence),
+        "and the supervisor failure names the same entry"
+    );
+    assert!(watch_failed, "the fact travels beside the step");
+    assert!(
+        charge.is_some(),
+        "the visit was admitted and charged before the watch was asked, so its \
+         accounting is finished rather than abandoned"
+    );
+    let after = runner.service.usage();
+    assert_eq!(
+        after.cleanup_starts - before.cleanup_starts,
+        1,
+        "exactly one start, for the visit that happened"
+    );
+
+    // NOTHING WAS DONE TO THE ENTRY. It is still owned by this inventory, its
+    // request is still unobserved, and no event reached the recipient.
+    let private = runner.frontend.as_ref().unwrap();
+    assert_eq!(
+        private.terminal.turn.len() + private.terminal.delivering.len(),
+        1,
+        "the item is still the inventory's"
+    );
+    assert_eq!(private.terminal.holds.len(), 1, "and its hold is untouched");
+    assert_eq!(
+        private.terminal.holds[0].custody.dispatch,
+        PrivateDispatchPhase::Untaken,
+        "no handover was begun"
+    );
+    assert!(cell.answer().is_none(), "and nobody answered for it");
+    assert!(channels.ordered.try_recv().is_err(), "no output happened");
+    assert!(deliveries.try_recv().is_err());
+
+    // A turn that ends in a supervisor failure schedules nothing more.
+    let turn = runner.service_turn().unwrap();
+    assert_eq!(
+        turn.terminal_steps, 0,
+        "the turn stops at the failure rather than taking another step"
+    );
+    drop(held);
 }
