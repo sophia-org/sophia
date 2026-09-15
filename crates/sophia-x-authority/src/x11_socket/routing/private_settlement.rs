@@ -526,23 +526,35 @@ impl PrivateSettlementOwner {
     }
 
     /// How many continuations are actually stored here.
+    ///
+    /// HANDLES ARE COPIED UNDER THE AGGREGATE AND READ AFTER IT IS RELEASED.
+    /// Taking a record beneath the aggregate is the reverse of the order
+    /// driving uses -- a driver holds a record and may enter settlement -- so a
+    /// reader that did it would close the cycle from the other side.
+    ///
+    /// AN UNREADABLE RECORD IS NOT AN ABSENT ONE. Counting a poisoned record
+    /// as empty publishes a zero for an obligation that is still owned and
+    /// still unanswered, which is the one answer a caller must not be given.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn continuations_retained(&self) -> Option<usize> {
-        self.inner
-            .lock()
-            .ok()
-            .map(|held| {
-                held.continuations
-                    .iter()
-                    .filter(|place| {
-                        matches!(
-                            place,
-                            PrivateOrderedContinuationPlace::Taken(record)
-                                if record.lock().map(|held| held.is_some()).unwrap_or(false)
-                        )
-                    })
-                    .count()
-            })
+        let records: Vec<_> = {
+            let held = self.inner.lock().ok()?;
+            held.continuations
+                .iter()
+                .filter_map(|place| match place {
+                    PrivateOrderedContinuationPlace::Taken(record) => Some(record.clone()),
+                    PrivateOrderedContinuationPlace::Free => None,
+                })
+                .collect()
+        };
+        let mut retained = 0usize;
+        for record in records {
+            let Ok(record) = record.lock() else {
+                return None;
+            };
+            retained += usize::from(record.is_some());
+        }
+        Some(retained)
     }
 
     /// How many places went with a holder that disposed of neither.

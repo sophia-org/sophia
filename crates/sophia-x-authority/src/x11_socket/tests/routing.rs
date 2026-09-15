@@ -24785,7 +24785,7 @@ fn a_bound_transport_that_could_not_be_served_keeps_its_ending_handle() {
 }
 
 #[test]
-fn a_handover_holds_its_destination_before_it_takes_anything() {
+fn a_handover_waits_for_the_destination_reserved_for_it() {
     // The record was made while installing, so the one interval that must
     // contain nothing fallible contained an allocation: between taking a
     // connection's work out of its source and putting it somewhere. The
@@ -24798,9 +24798,12 @@ fn a_handover_holds_its_destination_before_it_takes_anything() {
         .reserve_ordered_continuation()
         .expect("a place, reserved before exposure");
 
-    // THE DESTINATION EXISTS ALREADY. Holding it from another thread means a
-    // hand-over that acquires it first cannot proceed -- which is how this
-    // observes the order without reaching inside install.
+    // WHAT THIS ESTABLISHES: that the destination storage exists and is empty
+    // at reservation, that a hand-over does not COMPLETE while that record is
+    // held, and that it completes once released. It does NOT establish the
+    // order of the take against the acquisition -- a take-first hand-over
+    // would also wait here before reporting -- and the signal before install
+    // plus a sleep proves neither entry nor ordering.
     let record = {
         let held = durable.records_even_if_poisoned();
         let PrivateOrderedContinuationPlace::Taken(record) = &held.continuations[0] else {
@@ -24828,11 +24831,10 @@ fn a_handover_holds_its_destination_before_it_takes_anything() {
         checked.send(source.is_none()).expect("reported");
     });
     wait.recv().expect("the installing thread started");
-    // It cannot have taken the work: the destination is held here.
     std::thread::sleep(Duration::from_millis(100));
     assert!(
         report.try_recv().is_err(),
-        "the hand-over waits for its destination rather than taking first"
+        "the hand-over does not complete while its destination is held"
     );
     drop(blocker);
     let took = report.recv().expect("the hand-over finished");
@@ -24864,5 +24866,125 @@ fn a_handover_with_nothing_to_hand_over_is_recorded_rather_than_counted_done() {
         durable.continuations_abandoned(),
         Some(1),
         "it is recorded as having no holder, not counted as done"
+    );
+}
+
+#[test]
+fn reading_the_store_does_not_take_a_record_beneath_it() {
+    // Driving holds a record and may enter settlement. A reader that took a
+    // record while holding the store would close that cycle from the other
+    // side, so the store must be released before any record is read.
+    let client = XServerFrontendClientId(7991);
+    let f = prepared_ordered_fixture(client);
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+    let slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+    let PreparedOrderedFixture { channels, .. } = f;
+    let mut source = Some(PrivateOrderedContinuation::Setup {
+        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
+        refusal: X11OrderedServingRefusal::TransportUnavailable,
+    });
+    slot.install(&mut source);
+
+    let record = {
+        let held = durable.records_even_if_poisoned();
+        let PrivateOrderedContinuationPlace::Taken(record) = &held.continuations[0] else {
+            panic!("its place holds the record")
+        };
+        record.clone()
+    };
+
+    // The record is held, as a driver would hold it. The store must stay
+    // available to everyone else.
+    let blocker = record.lock().expect("hold the record");
+    assert!(
+        durable.inner.try_lock().is_ok(),
+        "the store is not behind a record"
+    );
+    let reporting = durable.clone();
+    let reader = std::thread::spawn(move || reporting.continuations_retained());
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(
+        durable.inner.try_lock().is_ok(),
+        "and a reader waiting on a record does not hold the store while it waits"
+    );
+    drop(blocker);
+    assert_eq!(
+        reader.join().expect("the reader finished"),
+        Some(1),
+        "and it reports once the record is free"
+    );
+}
+
+#[test]
+fn an_unreadable_retained_record_is_not_reported_as_absent() {
+    // Counting a poisoned record as empty publishes a zero for an obligation
+    // that is still owned and still unanswered, which is the one answer a
+    // caller must not be given.
+    let client = XServerFrontendClientId(8001);
+    let f = prepared_ordered_fixture(client);
+    let sender = f
+        .runner
+        .frontend
+        .as_ref()
+        .unwrap()
+        .broker
+        .registry
+        .clients
+        .lock()
+        .unwrap()
+        .get(&client)
+        .expect("this connection's row")
+        .ordered
+        .clone();
+    let (emission, _endpoint) =
+        private_native_tests::emission_and_endpoint_for_writer_fixture(80010);
+    sender
+        .send(XAuthorityOrderedDelivery::from_emission(emission).unwrap())
+        .expect("accepted into its queue");
+
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+    let slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+    let PreparedOrderedFixture { channels, .. } = f;
+    let mut source = Some(PrivateOrderedContinuation::Setup {
+        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
+        refusal: X11OrderedServingRefusal::TransportUnavailable,
+    });
+    slot.install(&mut source);
+    assert_eq!(durable.continuations_retained(), Some(1));
+
+    // A real panic while a record is borrowed poisons only that record.
+    let record = {
+        let held = durable.records_even_if_poisoned();
+        let PrivateOrderedContinuationPlace::Taken(record) = &held.continuations[0] else {
+            panic!("its place holds the record")
+        };
+        record.clone()
+    };
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = record.lock().unwrap();
+            panic!("intentional record poison for reporting fixture");
+        }))
+        .is_err()
+    );
+    assert!(record.is_poisoned());
+    assert!(
+        durable.inner.try_lock().is_ok(),
+        "the store itself is still readable"
+    );
+
+    assert_eq!(
+        durable.continuations_retained(),
+        None,
+        "an unreadable record is not an absent one"
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "and its place is still taken"
     );
 }

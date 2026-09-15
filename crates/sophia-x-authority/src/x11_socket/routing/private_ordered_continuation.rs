@@ -187,13 +187,16 @@ impl PrivateOrderedContinuationSlot {
     /// exists.
     fn finish(mut self) {
         let mut held = self.owner.records_even_if_poisoned();
+        // The place is checked, NOT the record's contents: reading a record
+        // here would take one beneath the aggregate, which is the order
+        // driving relies on being the other way round. A debug assertion is
+        // not a reason to close a lock cycle.
         debug_assert!(
             matches!(
                 &held.continuations[self.index],
-                PrivateOrderedContinuationPlace::Taken(record)
-                    if record.lock().map(|held| held.is_none()).unwrap_or(false)
+                PrivateOrderedContinuationPlace::Taken(_)
             ),
-            "a finished slot holds nothing"
+            "a finished slot is still this slot's place"
         );
         held.continuation_slots = held.continuation_slots.saturating_sub(1);
         held.continuations[self.index] = PrivateOrderedContinuationPlace::Free;
