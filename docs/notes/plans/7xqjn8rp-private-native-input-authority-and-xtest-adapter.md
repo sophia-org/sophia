@@ -1629,3 +1629,43 @@ existing ignored across 42 suites; strict clippy, fmt, layout and diff pass.
 The sandbox initially denied existing owned-socket tests; their authorized
 headless rerun passed. Gate A and Gate B remain open. No hardware, Session
 change, default enablement or master movement.
+
+### M3 native keyboard source and immutable emission (2026-09-14)
+
+The native owner now composes exact applied focus/selection, recipient binding,
+common first-press/final-release, the runner's actual XKB state and a noncopy
+KeyHold. Binding precedes common press; the hold is installed before the effect.
+Joins inherit the retained recipient and never reselect or update XKB. Releases
+keep source errors and native residuals after the aggregate transition. Only a
+sealed source proof can record the native bit, outside adapter and common guards.
+Passive-trigger receipts can answer exact siblings whether the trigger retires
+first or last; absence or replacement without that receipt remains insufficient.
+
+The existing immutable emission interface now encodes core/XI key records and
+selected XKB StateNotify from fixed owned frames. It captures pre-edge component
+state separately from post-edge notification state. Neither encoding nor a queue
+retry reads current selections or XKB. Release retains its target and forms,
+refreshes current coordinates and pointer child, and keeps the pointer source's
+exact connection tree when a grab delivers to another client. Both trees are
+locked in client order and unavailable source topology leaves the emission unbuilt.
+Normal delivery follows pointer descendants up to focus, XI before core, honors
+do-not-propagate, and distinguishes ordinary focus retry from owner-events fallback.
+
+This disabled source component deliberately refuses noncongruent Engine-root and
+X-logical pointer observations, root-only observations, and unavailable topology.
+It does not replace transformed local coordinates with root coordinates. Applied
+transform/geometry provenance and global cross-client topology remain needed for
+general key admission. The accepted standalone passive-preparation behavior and
+ordinary input path are unchanged. Core per-client XKB group projection, full
+query publication, StateOnly/thaw, runner-loss XKB custody and executor/writer
+composition remain open. Fixed inline payload size must be included in aggregate
+capacity reservation before acceptance; a bounded queue alone does not prove it.
+
+Seventeen source controls pass. Thirteen compiled disposable-source mutations
+fail, including a source interruption after the actual XKB effect with the applied
+marker moved too late. An independent C decoder checks an actual emitted
+StateNotify against the installed Xorg structure. Current X-authority all-target
+validation passes 1128 tests, zero failures and one existing ignored test in 27
+groups; strict clippy, explicit include-file formatting, layout and diff pass.
+These are source/codec proofs, not a recipient worker or full Gate B. Key admission
+remains refused. No hardware, Session change, master move or default enablement.

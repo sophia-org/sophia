@@ -6,8 +6,18 @@ pub(crate) struct PrivateOrderedEmission {
     incarnation: HoldIncarnation,
     delivery: Option<XAuthorityInputDeliveryId>,
     connection: RetainedConnection,
-    event: XAuthorityPointerEvent,
-    plan: PrivateResolvedPointer,
+    payload: OrderedPayload,
+}
+
+// Both kinds use fixed inline storage. Capacity accounting must charge the
+// full enum size; boxing would allocate while the source guards are held.
+#[allow(clippy::large_enum_variant)]
+enum OrderedPayload {
+    Pointer {
+        event: XAuthorityPointerEvent,
+        plan: PrivateResolvedPointer,
+    },
+    Key(KeyEmission),
 }
 
 impl std::fmt::Debug for PrivateOrderedEmission {
@@ -30,8 +40,7 @@ impl PrivateOrderedEmission {
             incarnation: hold.incarnation.expect("known source commit"),
             delivery,
             connection: hold.connection(),
-            event,
-            plan,
+            payload: OrderedPayload::Pointer { event, plan },
         }
     }
 
@@ -55,7 +64,10 @@ impl PrivateOrderedEmission {
     }
 
     pub(crate) fn frame_count(&self) -> usize {
-        self.records().count()
+        match &self.payload {
+            OrderedPayload::Pointer { plan, .. } => pointer_records(plan).count(),
+            OrderedPayload::Key(key) => key.frame_count(),
+        }
     }
 
     /// Only wire byte order and the transport's sequence are supplied here.
@@ -67,44 +79,45 @@ impl PrivateOrderedEmission {
         byte_order: XByteOrder,
         sequence: u16,
     ) -> Option<PrivateOrderedFrame> {
-        self.records()
-            .nth(index)
-            .map(|record| record.encode(self.event, byte_order, sequence))
+        match &self.payload {
+            OrderedPayload::Pointer { event, plan } => pointer_records(plan)
+                .nth(index)
+                .map(|record| record.encode(*event, byte_order, sequence)),
+            OrderedPayload::Key(key) => key.encode_frame(index, byte_order, sequence),
+        }
     }
+}
 
-    fn records(&self) -> impl Iterator<Item = EmissionRecord> + '_ {
-        // Preserve source-before-master ordering. Crossings precede the
-        // corresponding stream's transition; releases have no old crossings.
-        self.plan.crossings[4..]
-            .iter()
-            .flatten()
-            .copied()
-            .map(EmissionRecord::Crossing)
-            .chain(
-                self.plan
-                    .source
-                    .iter()
-                    .flatten()
-                    .copied()
-                    .map(EmissionRecord::Xi),
-            )
-            .chain(
-                self.plan.crossings[..4]
-                    .iter()
-                    .flatten()
-                    .copied()
-                    .map(EmissionRecord::Crossing),
-            )
-            .chain(self.plan.core.into_iter().map(EmissionRecord::Core))
-            .chain(
-                self.plan
-                    .master
-                    .iter()
-                    .flatten()
-                    .copied()
-                    .map(EmissionRecord::Xi),
-            )
-    }
+fn pointer_records(plan: &PrivateResolvedPointer) -> impl Iterator<Item = EmissionRecord> + '_ {
+    // Preserve source-before-master ordering. Crossings precede the
+    // corresponding stream's transition; releases have no old crossings.
+    plan.crossings[4..]
+        .iter()
+        .flatten()
+        .copied()
+        .map(EmissionRecord::Crossing)
+        .chain(
+            plan.source
+                .iter()
+                .flatten()
+                .copied()
+                .map(EmissionRecord::Xi),
+        )
+        .chain(
+            plan.crossings[..4]
+                .iter()
+                .flatten()
+                .copied()
+                .map(EmissionRecord::Crossing),
+        )
+        .chain(plan.core.into_iter().map(EmissionRecord::Core))
+        .chain(
+            plan.master
+                .iter()
+                .flatten()
+                .copied()
+                .map(EmissionRecord::Xi),
+        )
 }
 
 enum EmissionRecord {
@@ -120,48 +133,16 @@ impl EmissionRecord {
         byte_order: XByteOrder,
         sequence: u16,
     ) -> PrivateOrderedFrame {
-        let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
         match self {
             Self::Core(target) => {
-                let event = match pointer.kind {
-                    XAuthorityPointerEventKind::Motion => XClientEvent::PointerMotion {
-                        sequence,
-                        time: pointer.time_msec,
-                        root,
-                        event: target.window,
-                        root_x: pointer.root_x,
-                        root_y: pointer.root_y,
-                        event_x: target.event_x,
-                        event_y: target.event_y,
-                        state: pointer.state,
-                    },
+                let (kind, detail) = match pointer.kind {
+                    XAuthorityPointerEventKind::Motion => (6, 0),
                     XAuthorityPointerEventKind::Button { button, pressed }
                     | XAuthorityPointerEventKind::Axis {
                         button, pressed, ..
-                    } => XClientEvent::PointerButton {
-                        sequence,
-                        pressed,
-                        button,
-                        time: pointer.time_msec,
-                        root,
-                        event: target.window,
-                        root_x: pointer.root_x,
-                        root_y: pointer.root_y,
-                        event_x: target.event_x,
-                        event_y: target.event_y,
-                        state: pointer.state,
-                    },
+                    } => (if pressed { 4 } else { 5 }, button),
                 };
-                let mut frame = PrivateOrderedFrame::zeroed(32);
-                frame.bytes[..32].copy_from_slice(&encode_x_client_event(byte_order, event));
-                // The ordinary codec's core event form has no child field.
-                // Ordered resolution does: preserve the exact decided child.
-                write_xi_u32(
-                    byte_order,
-                    &mut frame.bytes[16..20],
-                    target.child.local.raw() as u32,
-                );
-                frame
+                encode_ordered_core_pointer(byte_order, sequence, pointer, target, kind, detail)
             }
             Self::Xi(record) => {
                 let mut frame = encode_xi_device_frame(
@@ -199,28 +180,16 @@ impl EmissionRecord {
                     );
                     frame
                 } else {
-                    let event = XClientEvent::PointerCrossing {
-                        sequence,
-                        entered: record.event_type == 7,
-                        detail: 3,
-                        time: pointer.time_msec,
-                        root,
-                        event: target.window,
-                        root_x: pointer.root_x,
-                        root_y: pointer.root_y,
-                        event_x: target.event_x,
-                        event_y: target.event_y,
-                        state: pointer.state,
-                        mode: 0,
-                        focus: true,
-                    };
-                    let mut frame = PrivateOrderedFrame::zeroed(32);
-                    frame.bytes[..32].copy_from_slice(&encode_x_client_event(byte_order, event));
-                    write_xi_u32(
+                    let mut frame = encode_ordered_core_pointer(
                         byte_order,
-                        &mut frame.bytes[16..20],
-                        target.child.local.raw() as u32,
+                        sequence,
+                        pointer,
+                        target,
+                        record.event_type as u8,
+                        3,
                     );
+                    frame.bytes[30] = 0; // NotifyNormal
+                    frame.bytes[31] = 3; // same screen, focus
                     frame
                 }
             }
@@ -288,4 +257,47 @@ impl Guards<'_> {
             .ok_or(PrivateAppliedRefusal::Interrupted)?;
         Ok(plan)
     }
+}
+
+/// Fixed core record, including the child decided by the source. The ordinary
+/// Vec-returning codec remains untouched and is not on this ordered path.
+fn encode_ordered_core_pointer(
+    order: XByteOrder,
+    sequence: u16,
+    pointer: XAuthorityPointerEvent,
+    target: PrivateResolvedTarget,
+    kind: u8,
+    detail: u8,
+) -> PrivateOrderedFrame {
+    let mut frame = PrivateOrderedFrame::zeroed(32);
+    frame.bytes[0] = kind;
+    frame.bytes[1] = detail;
+    write_xi_u16(order, &mut frame.bytes[2..4], sequence);
+    write_xi_u32(order, &mut frame.bytes[4..8], pointer.time_msec);
+    write_xi_u32(order, &mut frame.bytes[8..12], X_SETUP_DEFAULT_ROOT);
+    write_xi_u32(
+        order,
+        &mut frame.bytes[12..16],
+        target.window.local.raw() as u32,
+    );
+    write_xi_u32(
+        order,
+        &mut frame.bytes[16..20],
+        target.child.local.raw() as u32,
+    );
+    for (offset, coordinate) in [
+        (20, pointer.root_x),
+        (22, pointer.root_y),
+        (24, target.event_x),
+        (26, target.event_y),
+    ] {
+        write_xi_u16(
+            order,
+            &mut frame.bytes[offset..offset + 2],
+            coordinate as u16,
+        );
+    }
+    write_xi_u16(order, &mut frame.bytes[28..30], pointer.state);
+    frame.bytes[30] = 1;
+    frame
 }

@@ -1,4 +1,4 @@
-/// Native pointer effects and their source-produced cleanup evidence. The
+/// Native pointer/key effects and their source-produced cleanup evidence. The
 /// nested module seals phases and proof fields from the executor: callers may
 /// retain a context or ask its status, but cannot mark a projection repaired.
 #[cfg(unix)]
@@ -19,6 +19,8 @@ mod private_native {
         MissingQueryScope,
         Unavailable,
         InvalidButton,
+        InvalidKey,
+        KeyboardUnavailable,
         WrongPhase,
         WrongRecipient,
         ActivationMismatch,
@@ -26,6 +28,7 @@ mod private_native {
         DeliveryEnded,
         RecoveryUnavailable,
         Preparation(crate::PointerPreparationRefusal),
+        KeyboardPreparation(crate::KeyboardPreparationRefusal),
         Resolution(PrivateAppliedRefusal),
         Connection(PrivateAppliedRegistryRefusal),
         Authority(RegistrationError),
@@ -41,6 +44,8 @@ mod private_native {
         Synchronous,
         Activation(crate::PointerActivationRetirement),
         IncarnationMismatch,
+        KeyboardUnavailable,
+        KeyboardActivation(crate::KeyboardActivationRetirement),
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -143,6 +148,7 @@ mod private_native {
                 &client.connection.selections,
                 client.client,
                 client._admission.generation,
+                None,
             )
         }
 
@@ -159,6 +165,7 @@ mod private_native {
                 &connection.selections,
                 connection.client,
                 connection.generation,
+                connection.pointer_tree.as_ref(),
             )
         }
 
@@ -167,6 +174,7 @@ mod private_native {
             selection_owner: &'a Arc<Mutex<XCoreEventSelectionState>>,
             client: XServerFrontendClientId,
             generation: u64,
+            pointer_tree: Option<&'a RetainedPointerTree>,
         ) -> Result<Guards<'a>, Refusal> {
             let pointers = self
                 .0
@@ -180,9 +188,50 @@ mod private_native {
                 .input_authority
                 .lock()
                 .map_err(|_| Refusal::Unavailable)?;
-            let selections = selection_owner
-                .lock()
-                .map_err(|_| Refusal::SelectionUnavailable)?;
+            // A key retains the pointer's source tree separately when an
+            // active grab delivers to another client. Match press lock order;
+            // release must never acquire a lower client after the recipient.
+            let (selections, pointer_selections) = if let Some(source) = pointer_tree {
+                if source.client == client || Arc::ptr_eq(selection_owner, &source.selections) {
+                    return Err(Refusal::ForeignOrigin);
+                }
+                let (selected, source_selected) = if client.raw() < source.client.raw() {
+                    let selected = selection_owner
+                        .lock()
+                        .map_err(|_| Refusal::SelectionUnavailable)?;
+                    let source_selected = source
+                        .selections
+                        .lock()
+                        .map_err(|_| Refusal::SelectionUnavailable)?;
+                    (selected, source_selected)
+                } else {
+                    let source_selected = source
+                        .selections
+                        .lock()
+                        .map_err(|_| Refusal::SelectionUnavailable)?;
+                    let selected = selection_owner
+                        .lock()
+                        .map_err(|_| Refusal::SelectionUnavailable)?;
+                    (selected, source_selected)
+                };
+                if source_selected.private_origin
+                    != Some(PrivateAppliedSelectionOrigin {
+                        authority: self.0.identity,
+                        namespace: self.0.namespace,
+                        client: source.client,
+                    })
+                {
+                    return Err(Refusal::ForeignOrigin);
+                }
+                (selected, Some(source_selected))
+            } else {
+                (
+                    selection_owner
+                        .lock()
+                        .map_err(|_| Refusal::SelectionUnavailable)?,
+                    None,
+                )
+            };
             if selections.private_origin
                 != Some(PrivateAppliedSelectionOrigin {
                     authority: self.0.identity,
@@ -198,6 +247,8 @@ mod private_native {
                 authority,
                 selections,
                 selection_owner,
+                pointer_selections,
+                pointer_tree,
                 client,
                 generation,
             })
@@ -249,6 +300,13 @@ mod private_native {
         selections: Arc<Mutex<XCoreEventSelectionState>>,
         client: XServerFrontendClientId,
         generation: u64,
+        pointer_tree: Option<RetainedPointerTree>,
+    }
+
+    #[derive(Clone)]
+    struct RetainedPointerTree {
+        selections: Arc<Mutex<XCoreEventSelectionState>>,
+        client: XServerFrontendClientId,
     }
 
     impl Hold {
@@ -258,6 +316,7 @@ mod private_native {
                 selections: self.selections.clone(),
                 client: self.client,
                 generation: self.generation,
+                pointer_tree: None,
             }
         }
         pub(super) fn plan(&self) -> PrivateResolvedPointer {
@@ -495,7 +554,12 @@ mod private_native {
             // Do not delegate this to resolution: a delivery refusal is not a
             // selection failure, and checking it after press leaves a hidden
             // common hold for a recipient that could never accept the press.
-            match self.origin.registry.input_recovery.bind(route.delivery, client.client) {
+            match self
+                .origin
+                .registry
+                .input_recovery
+                .bind(route.delivery, client.client)
+            {
                 Ok(true) => {}
                 Ok(false) => return Err(Refusal::DeliveryEnded),
                 Err(_) => return Err(Refusal::RecoveryUnavailable),
@@ -568,7 +632,12 @@ mod private_native {
             selected_event.state = event.state;
             hold.press_event = selected_event;
             hold.status = Status::Held;
-            hold.press_emission = Some(PrivateOrderedEmission::pointer(hold, route.delivery, selected_event, plan));
+            hold.press_emission = Some(PrivateOrderedEmission::pointer(
+                hold,
+                route.delivery,
+                selected_event,
+                plan,
+            ));
             Ok((applied, Some(selected_event)))
         }
     }
@@ -579,6 +648,8 @@ mod private_native {
         authority: MutexGuard<'a, crate::XInputAuthorityState>,
         selections: MutexGuard<'a, XCoreEventSelectionState>,
         selection_owner: &'a Arc<Mutex<XCoreEventSelectionState>>,
+        pointer_selections: Option<MutexGuard<'a, XCoreEventSelectionState>>,
+        pointer_tree: Option<&'a RetainedPointerTree>,
         client: XServerFrontendClientId,
         generation: u64,
     }
@@ -782,7 +853,12 @@ mod private_native {
             let event = event.and_then(|event| {
                 let Some(event) = event else { return Ok(None) };
                 let plan = self.release_plan(hold, event)?;
-                hold.release_emission = Some(PrivateOrderedEmission::pointer(hold, route.delivery, event, plan));
+                hold.release_emission = Some(PrivateOrderedEmission::pointer(
+                    hold,
+                    route.delivery,
+                    event,
+                    plan,
+                ));
                 Ok(Some(event))
             });
             Ok((outcome, event))
@@ -790,6 +866,8 @@ mod private_native {
     }
 
     include!("private_native_emission.rs");
+    include!("private_native_key_emission.rs");
+    include!("private_native_keyboard.rs");
 
     fn pointer_event(
         route: &XAuthorityRoutedInput,
