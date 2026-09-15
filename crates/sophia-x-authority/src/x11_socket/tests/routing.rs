@@ -24323,6 +24323,7 @@ fn a_continuation_place_is_taken_before_exposure_and_kept_while_work_remains() {
         retained: Vec::new(),
         drained: false,
         ended: false,
+        ending_refused: None,
     });
     second.install(&mut source);
     assert!(source.is_none(), "it left the caller's slot");
@@ -24556,6 +24557,7 @@ fn an_unreadable_owner_does_not_make_an_accepted_transfer_optional() {
         retained: Vec::new(),
         drained: false,
         ended: false,
+        ending_refused: None,
     });
     slot.install(&mut source);
 
@@ -24594,6 +24596,7 @@ fn driving_a_continuation_does_not_hold_the_store_behind_it() {
         retained: Vec::new(),
         drained: false,
         ended: false,
+        ending_refused: None,
     });
     slot.install(&mut source);
 
@@ -24658,6 +24661,7 @@ fn an_unwind_before_the_destination_is_held_leaves_the_work_with_its_source() {
         retained: Vec::new(),
         drained: false,
         ended: false,
+        ending_refused: None,
     });
     // WHAT THIS CONTROL ESTABLISHES, exactly: that a caller which decides to
     // hand over and then fails before calling install still has the work. It
@@ -24758,6 +24762,7 @@ fn a_bound_transport_that_could_not_be_served_keeps_its_ending_handle() {
         retained: Vec::new(),
         drained: false,
         ended: false,
+        ending_refused: None,
     });
     slot.install(&mut source);
     assert!(source.is_none());
@@ -24838,6 +24843,7 @@ fn a_handover_waits_for_the_destination_reserved_for_it() {
         retained: Vec::new(),
         drained: false,
         ended: false,
+        ending_refused: None,
     });
 
     let blocker = record.lock().expect("hold the destination");
@@ -24905,6 +24911,7 @@ fn reading_the_store_does_not_take_a_record_beneath_it() {
         retained: Vec::new(),
         drained: false,
         ended: false,
+        ending_refused: None,
     });
     slot.install(&mut source);
 
@@ -24981,6 +24988,7 @@ fn an_unreadable_retained_record_is_not_reported_as_absent() {
         retained: Vec::new(),
         drained: false,
         ended: false,
+        ending_refused: None,
     });
     slot.install(&mut source);
     assert_eq!(durable.continuations_retained(), Some(1));
@@ -25057,6 +25065,7 @@ fn a_quiet_continuation_keeps_its_place_and_does_not_starve_the_others() {
             retained: Vec::new(),
             drained: false,
             ended: false,
+            ending_refused: None,
         });
         slot.install(&mut source);
         places.push(());
@@ -25148,6 +25157,7 @@ fn asking_whether_a_continuation_is_settled_destroys_nothing() {
         retained: Vec::new(),
         drained: false,
         ended: false,
+        ending_refused: None,
     });
     slot.install(&mut source);
 
@@ -25194,4 +25204,97 @@ fn asking_whether_a_continuation_is_settled_destroys_nothing() {
         "and its place stays taken while it is owed an answer"
     );
     assert!(completion.answer().is_none());
+}
+
+#[test]
+fn a_stale_return_cannot_take_the_place_its_successor_holds() {
+    // A place returned and reserved again between a visit finding a record and
+    // that visit finishing with it. The stale return must not free the place
+    // its successor now holds.
+    //
+    // STAGED AT THE API, not observed as a concurrent race: the interleave is
+    // constructed by holding the old record's handle across the return and the
+    // new reservation.
+    let first = XServerFrontendClientId(8031);
+    let second = XServerFrontendClientId(8032);
+    let one = prepared_ordered_fixture(first);
+    let two = prepared_ordered_fixture(second);
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+
+    let slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+    let PreparedOrderedFixture {
+        channels,
+        runner: one_runner,
+        registration: one_registration,
+        durable: _one_durable,
+        ..
+    } = one;
+    let mut source = Some(PrivateOrderedContinuation::Setup {
+        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
+        refusal: X11OrderedServingRefusal::TransportUnavailable,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
+        ending_refused: None,
+    });
+    slot.install(&mut source);
+
+    // A visit's view of that record, captured before the place moves on.
+    let stale = {
+        let held = durable.records_even_if_poisoned();
+        let PrivateOrderedContinuationPlace::Taken(record) = &held.continuations[0] else {
+            panic!("its place holds the record")
+        };
+        record.clone()
+    };
+
+    // Its producers go, so a drive returns the place.
+    drop(one_registration);
+    drop(one_runner);
+    let PreparedOrderedFixture {
+        channels: second_channels,
+        runner: two_runner,
+        registration: two_registration,
+        durable: _two_durable,
+        ..
+    } = two;
+    durable.drive_ordered_continuations(8);
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(0),
+        "the first connection's place came back"
+    );
+
+    // Another connection takes that same place.
+    let replacement = durable
+        .reserve_ordered_continuation()
+        .expect("the returned place is reusable");
+    let mut successor = Some(PrivateOrderedContinuation::Setup {
+        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(second_channels.ordered)),
+        refusal: X11OrderedServingRefusal::TransportUnavailable,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
+        ending_refused: None,
+    });
+    replacement.install(&mut successor);
+    assert_eq!(durable.continuations_reserved(), Some(1));
+
+    // THE STALE RETURN ARRIVES. It names a record that is no longer there.
+    durable.return_ordered_continuation(0, &stale);
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "a return for a record that moved on does not free its successor's place"
+    );
+    let still_there = durable
+        .with_ordered_continuation(0, |continuation| {
+            matches!(continuation, PrivateOrderedContinuation::Setup { .. })
+        })
+        .expect("the successor is still installed");
+    assert!(still_there);
+    drop(two_registration);
+    drop(two_runner);
 }

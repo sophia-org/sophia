@@ -48,6 +48,11 @@ enum PrivateOrderedContinuation {
         /// because returning a place over an unended wire is the failure the
         /// review named.
         ended: bool,
+        /// Why ending it refused, when it did.
+        ///
+        /// The same contract a serving owner keeps: a wire left unterminated
+        /// says why, or whoever inherits it cannot.
+        ending_refused: Option<std::io::ErrorKind>,
     },
     /// A serving owner, whole: its endpoint, receiver, queued contents,
     /// in-flight frame and offset, received-but-unclassified and foreign
@@ -272,6 +277,7 @@ impl PrivateOrderedContinuation {
             accepted,
             retained,
             ended,
+            ending_refused,
             ..
         } = self
         {
@@ -283,10 +289,15 @@ impl PrivateOrderedContinuation {
                     PrivateOrderedSetupCustody::Transport(transport) => {
                         match transport.shutdown.shutdown(Shutdown::Both) {
                             Ok(()) => true,
-                            Err(error) => error.kind() == std::io::ErrorKind::NotConnected,
+                            Err(error) if error.kind() == std::io::ErrorKind::NotConnected => true,
+                            Err(error) => {
+                                *ending_refused = Some(error.kind());
+                                false
+                            }
                         }
                     }
                 };
+
             }
             // ROOM BEFORE CUSTODY, as everywhere else: what is already held is
             // bounded by what the queue itself could hold.
@@ -297,6 +308,12 @@ impl PrivateOrderedContinuation {
                 }
             };
             if retained.len() >= bound {
+                return;
+            }
+            // ROOM BEFORE THE RECEIVE, not after it. Pushing into a store that
+            // then has to grow would allocate while holding a capsule taken
+            // out of its queue, which is the interval nothing may fail in.
+            if retained.capacity() < bound && retained.try_reserve(bound).is_err() {
                 return;
             }
             match self.queue().try_recv() {
@@ -378,9 +395,6 @@ impl PrivateSettlementOwner {
     /// served last rather than at the front -- a blocked record at the front
     /// would otherwise take the whole budget every time.
     ///
-    /// The store is not held across a visit. Each record is found under it,
-    /// the lock is released, and the record is driven in its own storage.
-    ///
     /// A PLACE COMES BACK ONLY WHEN ITS WORK IS GONE. Not when its queue falls
     /// quiet -- producers may still hold senders -- and not when it drains with
     /// an admission still unanswered, a capsule belonging to elsewhere, or a
@@ -457,6 +471,18 @@ impl PrivateSettlementOwner {
         held.continuation_slots = held.continuation_slots.saturating_sub(1);
     }
 
+    /// Borrow one retained continuation, if the place holds one.
+    ///
+    /// BORROWED, NOT TAKEN OUT. Acting on a continuation means calling into
+    /// its close, which takes this connection's output and its finalizers;
+    /// doing that with the record in a local would put retained work in a
+    /// stack frame across exactly the calls that can unwind.
+    ///
+    /// THE STORE IS RELEASED FIRST. Its order is settlement before anything a
+    /// close touches, so holding it while one connection waits on its output
+    /// would invert that and put every other retained connection behind that
+    /// write. The record has its own lock, and the store is held only long
+    /// enough to find it.
     fn with_ordered_continuation<R>(
         &self,
         index: usize,
