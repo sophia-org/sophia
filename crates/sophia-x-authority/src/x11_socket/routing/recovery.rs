@@ -301,15 +301,21 @@ impl InputRecovery {
         client: XServerFrontendClientId,
         delivery: XAuthorityInputDeliveryId,
         outcome: XAuthorityInputDeliveryOutcome,
-    ) -> bool {
+    ) -> PrivateAdjudication {
+        // An admission whose answer this handle already holds is finished,
+        // whether or not its ticket still exists. Reporting a refusal here
+        // stranded a writer that had done everything asked of it.
+        if completion.answer().is_some() {
+            return PrivateAdjudication::AlreadyAnswered;
+        }
         let Ok(mut state) = self.state.lock() else {
-            return false;
+            return PrivateAdjudication::Refused;
         };
         let Some(entry) = state.tickets.get(&delivery) else {
-            return false;
+            return PrivateAdjudication::Refused;
         };
         if !Arc::ptr_eq(&entry.completion, completion) {
-            return false;
+            return PrivateAdjudication::Refused;
         }
         self.terminal_locked(
             &mut state,
@@ -319,22 +325,21 @@ impl InputRecovery {
                 outcome,
             },
         );
-        true
-    }
-
-    /// Bind a finalizer to one admission, for a writer to answer through.
-    fn finalizer_for(
-        &self,
-        delivery: XAuthorityInputDeliveryId,
-        client: XServerFrontendClientId,
-    ) -> Option<PrivateDeliveryFinalizer> {
-        let completion = self.completion_for(delivery).ok().flatten()?;
-        Some(PrivateDeliveryFinalizer {
-            recovery: self.clone(),
-            completion,
-            delivery,
-            client,
-        })
+        // WHAT THE AUTHORITY ACTUALLY DID. Reporting success because it was
+        // called said an answer had been recorded when it had been silently
+        // declined -- a wrong client, for one -- and left the caller believing
+        // a delivery was finished.
+        if completion.answer().is_some() {
+            return PrivateAdjudication::Answered;
+        }
+        if state
+            .tickets
+            .get(&delivery)
+            .is_some_and(|entry| entry.deferred.is_some())
+        {
+            return PrivateAdjudication::Deferred;
+        }
+        PrivateAdjudication::Refused
     }
 
     /// The same custody, with an unreadable ledger told apart from a delivery

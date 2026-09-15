@@ -74,15 +74,20 @@ impl PrivateXServerFrontend {
             return Some(false);
         };
 
-        // Bound to the admission this release holds, not fetched by id.
-        let mut finalizer = self.terminal.settling[index]
-            .delivery()
-            .and_then(|delivery| {
-                self.broker
-                    .registry
-                    .input_recovery
-                    .finalizer_for(delivery, self.terminal.settling[index].reached().client())
-            });
+        // BUILT FROM WHAT THIS RELEASE ALREADY HOLDS. Not fetched by delivery
+        // id: that is the late acquisition a prune and a re-admission defeat,
+        // and it would hand these bytes a finalizer for somebody else's
+        // admission.
+        let mut finalizer = self.terminal.settling[index].completion().map(|completion| {
+            finalizer_from_held(
+                &self.broker.registry.input_recovery,
+                completion,
+                self.terminal.settling[index]
+                    .delivery()
+                    .expect("a release with a completion has a delivery"),
+                self.terminal.settling[index].reached().client(),
+            )
+        });
         // The destination slot is prepared before anything is taken from the
         // hold, so an emission never leaves its obligation with nowhere to be.
         if self.terminal.settling[index].pending.is_none() {

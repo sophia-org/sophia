@@ -306,12 +306,15 @@ fn serve_one_ordered_delivery(
             // the debt that owns it, which adjudicates it in the one place
             // that owns terminal outcomes. Nothing looks a delivery id up
             // here: by now the id may name a different admission.
-            let answered = in_flight
+            let adjudication = in_flight
                 .as_ref()
                 .and_then(|held| held.delivery().finalizer().cloned())
-                .is_some_and(|finalizer| {
+                .map_or(PrivateAdjudication::Refused, |finalizer| {
                     finalizer.finalize(XAuthorityInputDeliveryOutcome::Flushed)
                 });
+            // Taken by the authority, in any of the ways it can take one. Only
+            // a refusal leaves this writer still owing an answer.
+            let answered = !matches!(adjudication, PrivateAdjudication::Refused);
             if !answered {
                 // Nothing was adjudicated, so this delivery is still owed an
                 // answer and is still owed BY THIS WRITER. Custody stays.

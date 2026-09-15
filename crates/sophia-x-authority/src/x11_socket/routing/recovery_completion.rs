@@ -6,6 +6,49 @@
 // different reasons -- a new thing to know about a delivery is not a new way
 // to answer one.
 
+/// What the terminal authority did with an answer it was offered.
+///
+/// A BOOLEAN COULD NOT SAY THIS. Returning true whenever the authority was
+/// called reported success for an answer it had silently rejected; returning
+/// false for a pruned admission stranded a writer whose own cell already held
+/// the answer. Both are states the authority owns, and they are not refusals.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PrivateAdjudication {
+    /// The authority recorded this answer.
+    Answered,
+    /// This admission already had its answer. Nothing more is owed for it.
+    AlreadyAnswered,
+    /// The authority is holding it under a claim, to decide when that
+    /// resolves. It has been taken, and is no longer the writer's to answer.
+    Deferred,
+    /// Nothing was adjudicated: the ledger could not be read, the admission is
+    /// gone with no answer, the entry is not the one this finalizer was made
+    /// for, or the authority declined it. The caller still owes an answer.
+    Refused,
+}
+
+/// Build a finalizer from a completion its holder already has.
+///
+/// NO ACQUISITION. The handle comes from the debt that has carried it since
+/// the operation that created it; looking one up by delivery id here is the
+/// late raw-id acquisition that a prune and a re-admission defeat, and it is
+/// what this constructor exists to avoid.
+#[cfg(unix)]
+fn finalizer_from_held(
+    recovery: &InputRecovery,
+    completion: &Arc<PrivateDeliveryCompletion>,
+    delivery: XAuthorityInputDeliveryId,
+    client: XServerFrontendClientId,
+) -> PrivateDeliveryFinalizer {
+    PrivateDeliveryFinalizer {
+        recovery: recovery.clone(),
+        completion: Arc::clone(completion),
+        delivery,
+        client,
+    }
+}
+
 /// The one way a writer answers the delivery it was given.
 ///
 /// ORIGIN-BOUND. Writing into the completion cell directly recorded an answer
@@ -49,15 +92,11 @@ impl PrivateDeliveryFinalizer {
     /// adjudicated -- the ledger could not be read, the admission is gone, or
     /// the entry is no longer the one this finalizer was made for -- and the
     /// caller still owes this delivery an answer.
-    pub(crate) fn finalize(&self, outcome: XAuthorityInputDeliveryOutcome) -> bool {
+    pub(crate) fn finalize(&self, outcome: XAuthorityInputDeliveryOutcome) -> PrivateAdjudication {
         self.recovery
             .adjudicate_for_held(&self.completion, self.client, self.delivery, outcome)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn completion(&self) -> &Arc<PrivateDeliveryCompletion> {
-        &self.completion
-    }
 }
 
 /// The one place a delivery's terminal outcome is ever written.

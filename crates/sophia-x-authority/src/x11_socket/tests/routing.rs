@@ -18437,16 +18437,13 @@ fn a_writer_answers_through_the_one_authority_that_owns_the_answer() {
     // the cell still said the first one. Two accounts of one delivery,
     // disagreeing. The finalizer adjudicates in one place, and this control
     // checks every account rather than the cell alone.
-    let capsule = ordered_capsule(17301);
+    let (capsule, recovery, receipts) = answerable_capsule(17301);
     let delivery = capsule.delivery();
     let client = capsule.client();
-    let (recovery, receipts) = claim_fixture(delivery);
-    let finalizer = recovery
-        .finalizer_for(delivery, client)
-        .expect("a finalizer bound to this admission");
-    let cell = Arc::clone(finalizer.completion());
-    let mut capsule = capsule;
-    capsule.carry_finalizer(Arc::new(finalizer));
+    let cell = recovery
+        .completion_for(delivery)
+        .expect("a readable ledger")
+        .expect("the admission's own completion");
 
     let (sender, queue) = sync_channel(4);
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
@@ -18482,17 +18479,16 @@ fn a_writer_answers_through_the_one_authority_that_owns_the_answer() {
 #[test]
 fn a_flushed_delivery_is_retired_once_so_the_next_one_can_be_served() {
     // Reporting a flush without giving the slot up would report that same
-    // flush for ever, and no further delivery would ever be taken. One
-    // delivery, one flush, then the next.
+    // flush for ever and nothing behind it would ever be served. BOTH capsules
+    // carry real origin-bound finalizers and nothing here clears the slot:
+    // the retirement this asserts is the one production performs.
+    let (first, _recovery_one, _receipts_one) = answerable_capsule(17201);
+    let (second, _recovery_two, _receipts_two) = answerable_capsule(17202);
     let (sender, queue) = sync_channel(4);
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     let mut in_flight = None;
-    sender
-        .send(ordered_capsule(17201))
-        .expect("the queue to accept the first");
-    sender
-        .send(ordered_capsule(17202))
-        .expect("the queue to accept the second");
+    sender.send(first).expect("the queue to accept the first");
+    sender.send(second).expect("the queue to accept the second");
 
     let mut flushes = 0;
     let mut served = Vec::new();
@@ -18500,15 +18496,8 @@ fn a_flushed_delivery_is_retired_once_so_the_next_one_can_be_served() {
         match serve_one_ordered_delivery(&socket, &mut in_flight, &queue, XByteOrder::LittleEndian, 7) {
             X11OrderedServeStep::Advanced => {}
             X11OrderedServeStep::Flushed => flushes += 1,
-            X11OrderedServeStep::Unanswered => {
-                // These capsules carry no finalizer, so nothing adjudicates
-                // their answer and custody is correctly retained. Counted as
-                // a flush for this control, which is about retirement.
-                flushes += 1;
-                in_flight = None;
-            }
             X11OrderedServeStep::Idle => break,
-            other => panic!("a healthy recipient took its bytes: {other:?}"),
+            other => panic!("every capsule here can be answered: {other:?}"),
         }
         if let Some(held) = in_flight.as_ref() {
             let id = held.delivery().delivery();
@@ -18523,21 +18512,90 @@ fn a_flushed_delivery_is_retired_once_so_the_next_one_can_be_served() {
     drop(peer);
 }
 
+/// A capsule whose writer can actually answer: a real admission in a real
+/// ledger, and a finalizer built from that admission's own completion.
+///
+/// Controls that built a completion out of thin air could not see whether the
+/// ledger agreed with the writer, because there was no ledger behind it.
+fn answerable_capsule(
+    delivery: u64,
+) -> (
+    XAuthorityOrderedDelivery,
+    InputRecovery,
+    Receiver<XAuthorityClientInputDelivery>,
+) {
+    let mut capsule = ordered_capsule(delivery);
+    let id = capsule.delivery();
+    let client = capsule.client();
+    let (recovery, receipts) = claim_fixture(id);
+    let completion = recovery
+        .completion_for(id)
+        .expect("a readable ledger")
+        .expect("the admission minted its completion");
+    capsule.carry_finalizer(Arc::new(finalizer_from_held(
+        &recovery, &completion, id, client,
+    )));
+    (capsule, recovery, receipts)
+}
+
+#[test]
+fn an_adjudication_reports_what_the_authority_did_with_it() {
+    // A boolean could not say this. Reporting success whenever the authority
+    // was called said an answer had been recorded when it had been silently
+    // declined; reporting failure for an admission already answered stranded
+    // a writer that had done everything asked of it.
+    let delivery = XAuthorityInputDeliveryId::from_raw(17401);
+    let client = XServerFrontendClientId(17401);
+    let other = XServerFrontendClientId(17402);
+    let (recovery, _receipts) = claim_fixture(delivery);
+    recovery.register(client).unwrap();
+    assert!(
+        recovery.bind(Some(delivery), client).unwrap(),
+        "the delivery is bound to the recipient it reached"
+    );
+    let completion = recovery
+        .completion_for(delivery)
+        .expect("a readable ledger")
+        .expect("the admission's own completion");
+
+    // A finalizer naming somebody else. The authority declines it, and that
+    // decline is reported as a refusal rather than as a recorded answer.
+    let foreign = finalizer_from_held(&recovery, &completion, delivery, other);
+    assert_eq!(
+        foreign.finalize(XAuthorityInputDeliveryOutcome::Flushed),
+        PrivateAdjudication::Refused,
+        "an answer the authority declined is not an answer it recorded"
+    );
+    assert!(
+        completion.answer().is_none(),
+        "and nothing was written for the client it named"
+    );
+
+    // The right one is recorded.
+    let own = finalizer_from_held(&recovery, &completion, delivery, client);
+    assert_eq!(
+        own.finalize(XAuthorityInputDeliveryOutcome::Flushed),
+        PrivateAdjudication::Answered
+    );
+    assert_eq!(
+        completion.answer().map(|receipt| receipt.outcome),
+        Some(XAuthorityInputDeliveryOutcome::Flushed)
+    );
+
+    // Asked again, it is already answered -- not refused. A writer told
+    // otherwise would hold a finished delivery for ever.
+    assert_eq!(
+        own.finalize(XAuthorityInputDeliveryOutcome::Flushed),
+        PrivateAdjudication::AlreadyAnswered,
+        "an admission that already has its answer owes nothing further"
+    );
+}
+
 #[test]
 fn serving_a_whole_delivery_reports_a_flush_and_nothing_more() {
     // A flush means every frame went and the answer was adjudicated. It does
-    // not mean the recipient read them, and this control asserts what the step
-    // claims rather than what a reader might hope it claims.
-    let capsule = ordered_capsule(17101);
-    let delivery = capsule.delivery();
-    let client = capsule.client();
-    let (recovery, _receipts) = claim_fixture(delivery);
-    let mut capsule = capsule;
-    capsule.carry_finalizer(Arc::new(
-        recovery
-            .finalizer_for(delivery, client)
-            .expect("a finalizer bound to this admission"),
-    ));
+    // not mean the recipient read them.
+    let (capsule, _recovery, _receipts) = answerable_capsule(17101);
     let (sender, queue) = sync_channel(4);
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     let mut in_flight = None;
