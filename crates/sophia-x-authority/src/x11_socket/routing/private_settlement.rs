@@ -90,6 +90,8 @@ struct AbandonedSettlements {
     ///
     /// Retained so a record that cannot progress does not take every visit:
     /// the next call begins after the one served last, not at the front.
+    // Read only by the fair drive, which is not attached yet.
+    #[cfg_attr(not(test), allow(dead_code))]
     continuation_cursor: usize,
     /// Places whose holder went without disposing of them.
     ///

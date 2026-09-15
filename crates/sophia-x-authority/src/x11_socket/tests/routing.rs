@@ -25568,9 +25568,15 @@ fn a_registration_never_takes_the_settlement_store_beneath_the_client_table() {
     // route lease. A registration that reserved under the client table would
     // be the other order, and two orders is a deadlock.
     //
-    // Asserted without hanging: while a registration is blocked waiting for
-    // the store, the client table must be free. Under the inversion it would
-    // be held by that same blocked registration.
+    // WHAT THIS ESTABLISHES, exactly: the store is held for a window in which
+    // the registration provably cannot finish -- it reserves nothing and
+    // returns nothing until the store is released -- and throughout that
+    // window the client table is free. It does NOT establish that the worker
+    // reached its reservation: sleeping for a while is not a rendezvous, and
+    // an observation that found the table free because the thread had not yet
+    // started would look the same from here. The inversion mutant is what
+    // gives the assertion its teeth, and a labelled hook at the reservation
+    // boundary is what would establish arrival.
     let durable = PrivateSettlementOwner::default();
     let private = private_over(&durable, 4);
     let clients = private.broker.registry.clients.clone();
@@ -25583,24 +25589,28 @@ fn a_registration_never_takes_the_settlement_store_beneath_the_client_table() {
             .map(|(registration, _channels)| registration)
     });
     // The store is held for the whole window, so the registration cannot get
-    // past its reservation during it.
+    // past its reservation during it -- whether or not it has reached it.
     let mut free = 0;
     for _ in 0..40 {
         assert!(
             clients.try_lock().is_ok(),
-            "a registration waiting for the store must not be holding the \
-             client table: that is the order the retained drive takes them in \
-             reversed"
+            "a registration that has not completed must not be holding the \
+             client table while the store is held: that is the order the \
+             retained drive takes them in, reversed"
         );
         free += 1;
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     assert_eq!(
         free, 40,
-        "the client table was free at every observation taken while the \
-         registration was blocked on the store"
+        "the client table was free at every observation taken during the \
+         window in which the registration could not complete"
     );
-    assert_eq!(durable_reserved(&held), 0, "nothing was reserved yet");
+    assert_eq!(
+        durable_reserved(&held), 0,
+        "and the registration had not completed: no place was taken while the \
+         store was held"
+    );
     drop(held);
     let registration = joiner
         .join()

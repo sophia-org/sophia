@@ -432,10 +432,12 @@ impl XServerFrontendRouteRegistry {
         let (protocol_sender, protocol) =
             sync_channel(self.per_client_protocol_capacity.get());
         let (ordered_sender, ordered) = sync_channel(self.per_client_input_capacity.get());
-        // THE PLACE IS TAKEN BEFORE THE SENDER EXISTS, and before the client
-        // table is held. From the moment a row is inserted a capsule can be
-        // accepted into that queue, so a connection whose accepted work would
-        // have nowhere to go must not be exposed at all. Taking the settlement
+        // THE PLACE IS TAKEN BEFORE THE ROW IS PUBLISHED, and before the
+        // client table is held. The senders above already exist; what
+        // publication does is make one reachable, and from that moment a
+        // capsule can be accepted into that queue -- so a connection whose
+        // accepted work would have nowhere to go must not be exposed at all.
+        // Taking the settlement
         // store beneath the client table would reverse the order the retained
         // drive already uses -- it holds settlement and then takes clients to
         // release a lease. Two orders, one deadlock.

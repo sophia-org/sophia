@@ -411,7 +411,6 @@ impl PrivateSettlementRef {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
 impl PrivateSettlementOwner {
     /// A handle to this store that does not keep it alive.
     ///
@@ -459,14 +458,16 @@ impl PrivateSettlementOwner {
 
     /// Take the place one connection's ordered continuation will need.
     ///
-    /// BEFORE THAT CONNECTION'S SENDER IS PUBLISHED. Once the sender exists a
-    /// capsule can be accepted into its queue, and from that moment the
-    /// connection has work that must be able to go somewhere. Reserving after
-    /// exposure would be finding out too late.
+    /// BEFORE THAT CONNECTION'S ROW IS PUBLISHED. The channel is already made
+    /// by then -- the sender exists -- but nothing can reach it until the row
+    /// is in, and from that moment a capsule can be accepted into the queue
+    /// and the connection has work that must be able to go somewhere.
+    /// Publication is the boundary, not the sender's existence, and reserving
+    /// after it would be finding out too late.
     ///
-    /// Moves into storage the declared bound already made, rather than
-    /// allocating while holding custody.
-    #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+    /// Takes an index in the outer storage the declared bound already made.
+    /// The record itself is allocated here -- before exposure, which is what
+    /// matters -- rather than later while holding custody.
     fn reserve_ordered_continuation(
         &self,
     ) -> Result<PrivateOrderedContinuationSlot, AdmissionRefusal> {
@@ -561,6 +562,7 @@ impl PrivateSettlementOwner {
     /// quiet -- producers may still hold senders -- and not when it drains with
     /// an admission still unanswered, a capsule belonging to elsewhere, or a
     /// wire whose ending was never established.
+    #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
     fn drive_ordered_continuations(&self, visits: usize) -> usize {
         let mut driven = 0usize;
         for _ in 0..visits {
@@ -610,6 +612,7 @@ impl PrivateSettlementOwner {
     }
 
     /// Give a place back, once the work in it is gone.
+    #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
     fn return_ordered_continuation(
         &self,
         index: usize,
@@ -647,6 +650,7 @@ impl PrivateSettlementOwner {
     /// would invert that and put every other retained connection behind that
     /// write. The record has its own lock, and the store is held only long
     /// enough to find it.
+    #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
     fn with_ordered_continuation<R>(
         &self,
         index: usize,
