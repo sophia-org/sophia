@@ -20136,8 +20136,10 @@ fn a_recipient_that_will_not_take_its_bytes_ends_the_connection_before_returning
             }
             X11OrderedServeStep::TransportUnavailable
             | X11OrderedServeStep::Unterminated
-            | X11OrderedServeStep::Closing => {
-                panic!("this connection is live and serving, not closing")
+            | X11OrderedServeStep::Closing
+            | X11OrderedServeStep::Stopped
+            | X11OrderedServeStep::WireBarred => {
+                panic!("this connection is live, serving, unbarred and not stopping")
             }
         }
     }
@@ -22298,8 +22300,9 @@ fn a_serving_owner_keeps_its_own_endpoint_when_its_registration_is_replaced() {
     peer.set_nonblocking(true).expect("a readable peer");
     let output = Arc::new(Mutex::new(socket));
     let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
     let transport =
-        XAuthorityOrderedTransport::bind(&original_registration, original_channels.ordered, &output, &wire)
+        XAuthorityOrderedTransport::bind(&original_registration, original_channels.ordered, &output, &wire, &pending, None)
             .unwrap_or_else(|(refusal, _)| {
                 panic!("this connection's own receiver and output bind: {refusal:?}")
             });
@@ -22435,9 +22438,10 @@ fn a_serving_constructor_rejects_another_registrations_receiver() {
     let (socket,_peer)=UnixStream::pair().unwrap();
     let output = Arc::new(Mutex::new(socket));
     let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
     // The association is established where the transport is bound, so that is
     // where crossing two real connections is caught.
-    let bound = XAuthorityOrderedTransport::bind(&a.registration, b.channels.ordered, &output, &wire);
+    let bound = XAuthorityOrderedTransport::bind(&a.registration, b.channels.ordered, &output, &wire, &pending, None);
     assert!(
         bound.is_err(),
         "binding must reject B's original receiver when given registration A"
@@ -22450,7 +22454,7 @@ fn a_serving_constructor_rejects_another_registrations_receiver() {
     );
     // And the same refusal stands at the serving owner, for a transport that
     // was bound for a different registration.
-    let transport = XAuthorityOrderedTransport::bind(&b.registration, returned, &output, &wire)
+    let transport = XAuthorityOrderedTransport::bind(&b.registration, returned, &output, &wire, &pending, None)
         .unwrap_or_else(|_| panic!("B's own registration and B's own receiver bind"));
     let owner = X11OrderedServingOwner::for_registration(private, &a.registration, transport);
     assert!(
@@ -22495,8 +22499,9 @@ fn a_failed_serving_constructor_preserves_its_original_queued_capsule() {
     let (socket,_peer)=UnixStream::pair().unwrap();
     let output = Arc::new(Mutex::new(socket));
     let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
     assert!(finalizer.upgrade().is_some(),"revocation did not destroy the actual queued capsule immediately before construction");
-    let transport = XAuthorityOrderedTransport::bind(&f.registration, f.channels.ordered, &output, &wire)
+    let transport = XAuthorityOrderedTransport::bind(&f.registration, f.channels.ordered, &output, &wire, &pending, None)
         .unwrap_or_else(|_| panic!("this connection's own receiver and registration bind"));
     let returned=X11OrderedServingOwner::for_registration(private,&f.registration,transport);
     assert!(returned.is_err(),"the established endpoint refusal is returned");
@@ -22538,6 +22543,7 @@ fn serving_owner_for(
 ) -> (X11OrderedServingOwner, Arc<Mutex<UnixStream>>) {
     let output = Arc::new(Mutex::new(socket));
     let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
     let ordered = std::mem::replace(
         &mut f.channels.ordered,
         f.runner
@@ -22554,7 +22560,7 @@ fn serving_owner_for(
             .1
             .ordered,
     );
-    let transport = XAuthorityOrderedTransport::bind(&f.registration, ordered, &output, &wire)
+    let transport = XAuthorityOrderedTransport::bind(&f.registration, ordered, &output, &wire, &pending, None)
         .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
     let private = f.runner.frontend.as_ref().unwrap();
     let owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
@@ -23542,11 +23548,12 @@ fn a_serving_owner_holds_its_connections_permission_not_one_of_its_own() {
     let (socket, _peer) = UnixStream::pair().expect("a socket pair");
     let output = Arc::new(Mutex::new(socket));
     let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
     let transport =
-        XAuthorityOrderedTransport::bind(&f.registration, f.channels.ordered, &output, &wire)
+        XAuthorityOrderedTransport::bind(&f.registration, f.channels.ordered, &output, &wire, &pending, None)
             .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
     let private = f.runner.frontend.as_ref().unwrap();
-    let owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
+    let mut owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
         .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
 
     assert!(
@@ -23566,6 +23573,20 @@ fn a_serving_owner_holds_its_connections_permission_not_one_of_its_own() {
         lock_x11_non_control_output(&output, &wire, &pending, None).is_err(),
         "barring through the owner stops the other writers of that socket"
     );
+    // AND STOPS THE ORDERED STEP ITSELF. Holding the permission and never
+    // asking it fenced nothing: the owner went on taking capsules and writing
+    // them through the raw lock while every other writer was refused.
+    assert!(
+        matches!(
+            owner.serve_one(XByteOrder::LittleEndian, 7),
+            X11OrderedServeStep::WireBarred
+        ),
+        "the ordered step reads the same permission as everyone else"
+    );
+    assert!(
+        owner.in_flight().is_none(),
+        "and took nothing while it was barred"
+    );
     assert!(
         write_x11_control_records(
             &output,
@@ -23576,5 +23597,90 @@ fn a_serving_owner_holds_its_connections_permission_not_one_of_its_own() {
         )
         .is_err(),
         "control included"
+    );
+}
+
+#[test]
+fn an_ordered_step_yields_to_control_and_acts_on_being_stopped() {
+    // Taking the raw lock skipped two things every other non-control writer
+    // observes: the control-priority yield, and this writer's own stop. A stop
+    // nothing acts on makes a join unbounded however carefully it was set.
+    let client = XServerFrontendClientId(7871);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 78710, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 78710);
+    for _ in 0..8 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let ordered = std::mem::replace(
+        &mut f.channels.ordered,
+        f.runner
+            .frontend
+            .as_ref()
+            .unwrap()
+            .broker
+            .registry
+            .register_client_with_admission(
+                XServerFrontendClientId(f.client.raw() + 500_000),
+                Some(admitted(XServerFrontendClientId(f.client.raw() + 500_000))),
+            )
+            .expect("a spare registration to borrow a receiver from")
+            .1
+            .ordered,
+    );
+    let transport = XAuthorityOrderedTransport::bind(
+        &f.registration,
+        ordered,
+        &output,
+        &wire,
+        &pending,
+        Some(&stop),
+    )
+    .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    let private = f.runner.frontend.as_ref().unwrap();
+    let mut owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
+        .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
+
+    // TOLD TO STOP WHILE CONTROL IS PENDING. It yields, sees the stop, and
+    // leaves -- taking nothing, writing nothing, answering nothing, and saying
+    // so rather than reporting an empty queue.
+    pending.store(1, Ordering::Release);
+    stop.store(true, Ordering::Release);
+    assert!(
+        matches!(
+            owner.serve_one(XByteOrder::LittleEndian, 7),
+            X11OrderedServeStep::Stopped
+        ),
+        "a stopped writer says it is leaving, not that there was nothing to do"
+    );
+    assert!(owner.in_flight().is_none(), "it took nothing");
+    let mut byte = [0u8; 1];
+    assert!(
+        matches!(
+            (&peer).read(&mut byte),
+            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ),
+        "and wrote nothing"
+    );
+    assert!(cell.answer().is_none(), "and answered nobody");
+
+    // Not stopped, control still pending: it yields rather than writing past
+    // control. Bounded here by clearing the counter from this thread.
+    stop.store(false, Ordering::Release);
+    pending.store(0, Ordering::Release);
+    assert!(
+        matches!(
+            owner.serve_one(XByteOrder::LittleEndian, 7),
+            X11OrderedServeStep::Advanced | X11OrderedServeStep::Flushed
+        ),
+        "with control finished and no stop, its own event is served"
     );
 }

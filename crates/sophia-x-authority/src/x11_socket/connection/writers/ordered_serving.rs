@@ -58,6 +58,12 @@ struct XAuthorityOrderedTransport {
     /// This connection's shared wire permission, so barring it stops every
     /// writer of this socket rather than only this one.
     wire: Arc<X11WirePermission>,
+    /// The connection's own control-priority counter, carried so ordered
+    /// output yields to control exactly as the other non-control writers do.
+    control_pending: Arc<AtomicUsize>,
+    /// This writer's stop handle, so being told to stop is something it can
+    /// act on rather than a flag nobody observes.
+    stop: Option<Arc<AtomicBool>>,
 }
 
 #[cfg(unix)]
@@ -79,6 +85,8 @@ impl XAuthorityOrderedTransport {
         ordered: XAuthorityOrderedReceiver,
         output: &Arc<Mutex<UnixStream>>,
         wire: &Arc<X11WirePermission>,
+        control_pending: &Arc<AtomicUsize>,
+        stop: Option<&Arc<AtomicBool>>,
     ) -> Result<Self, (X11OrderedServingRefusal, XAuthorityOrderedReceiver)> {
         if !ordered.minted_by(registration) {
             return Err((X11OrderedServingRefusal::ForeignReceiver, ordered));
@@ -101,6 +109,8 @@ impl XAuthorityOrderedTransport {
             output: output.clone(),
             shutdown,
             wire: wire.clone(),
+            control_pending: control_pending.clone(),
+            stop: stop.cloned(),
         })
     }
 
@@ -232,6 +242,8 @@ struct X11OrderedServingOwner {
     output: Arc<Mutex<UnixStream>>,
     shutdown: UnixStream,
     wire: Arc<X11WirePermission>,
+    control_pending: Arc<AtomicUsize>,
+    stop: Option<Arc<AtomicBool>>,
     in_flight: Option<X11OrderedInFlight>,
     refused: Option<X11OrderedRefusedDelivery>,
     /// Set once this connection's wire could not be ended after a frame was
@@ -325,6 +337,8 @@ impl X11OrderedServingOwner {
             output: transport.output,
             shutdown: transport.shutdown,
             wire: transport.wire,
+            control_pending: transport.control_pending,
+            stop: transport.stop,
             in_flight: None,
             refused: None,
             unterminated: false,
@@ -361,11 +375,28 @@ impl X11OrderedServingOwner {
             // establishing. Two owners of one admission is the whole problem.
             return X11OrderedServeStep::Closing;
         }
-        let Ok(socket) = self.output.lock() else {
-            // Nothing was taken and nothing was written. An unusable transport
-            // is its own answer, not an empty queue: reporting Idle would tell
-            // a caller there was nothing to do while output was still owed.
-            return X11OrderedServeStep::TransportUnavailable;
+        // THROUGH THE SAME ADMISSION AS EVERY OTHER NON-CONTROL WRITER, and
+        // before any capsule is taken. Holding the connection's permission and
+        // never asking it fenced nothing; taking the raw lock also skipped the
+        // control-priority yield and this writer's own stop. Each way out is
+        // told apart, because an empty queue, a stopped writer and a wire that
+        // may not be written are three different facts and a caller told the
+        // wrong one acts on it.
+        let socket = match lock_x11_non_control_output(
+            &self.output,
+            &self.wire,
+            &self.control_pending,
+            self.stop.as_deref(),
+        ) {
+            Ok(Some(socket)) => socket,
+            // Told to stop while yielding to control. Nothing was received,
+            // written or answered, and this is not an empty queue.
+            Ok(None) => return X11OrderedServeStep::Stopped,
+            Err(error) if error.client_failure => {
+                // The wire holds an unfinished event. Nothing may follow it.
+                return X11OrderedServeStep::WireBarred;
+            }
+            Err(_) => return X11OrderedServeStep::TransportUnavailable,
         };
         let step = serve_one_ordered_delivery(
             &socket,

@@ -367,6 +367,19 @@ enum X11OrderedServeStep {
     Unterminated,
     /// A close has begun, so ordinary serving no longer applies here.
     Closing,
+    /// This writer was told to stop while yielding to control output.
+    ///
+    /// Nothing was received, written or answered. Told apart from Idle because
+    /// an empty queue says there is nothing to do and this says this writer is
+    /// leaving; a caller that confused them would keep asking, or stop asking,
+    /// for the wrong reason.
+    Stopped,
+    /// The connection's wire may not be written: it holds the beginning of an
+    /// event nobody can finish.
+    ///
+    /// Told apart from an unusable transport because one is a lock that could
+    /// not be taken and the other is a wire that must not be used again.
+    WireBarred,
 }
 
 /// Serve one step of one recipient's ordered queue.
