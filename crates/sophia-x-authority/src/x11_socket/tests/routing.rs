@@ -12898,6 +12898,166 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
     );
 }
 
+/// Run one real request from one real producer and return what it decided.
+///
+/// Adopted from the independent review, which found the two no-event branches
+/// my own fixture could not reach: they need DISTINCT producers. One device
+/// pressing and joining always leaves the same holder bit, so a release from
+/// it is always a final one.
+fn noevent_run(
+    fixture: &mut PreparedOrderedFixture,
+    ingress: &crate::PrivateIngress,
+    delivery: u64,
+    device: u64,
+    button: u32,
+    pressed: bool,
+) -> PrivateOrderedRun {
+    let mut route = button_to(
+        fixture.surface,
+        XAuthorityInputDeliveryId::from_raw(delivery),
+        button,
+        pressed,
+    );
+    route.request.device = DeviceId::from_raw(device);
+    ingress.submit(route).expect("the order to accept it");
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = &mut fixture.runner;
+    let private = frontend.as_mut().expect("a live runner");
+    assert!(matches!(
+        private
+            .step_once(keyboards, &mut |_, _| Ok(()), watch.as_ref().expect("a sealed watch"))
+            .expect("a step"),
+        PrivateOrderedStep::Decided(_)
+    ));
+    let Some(item) = private.terminal.turn.pop() else {
+        panic!("an accepted request produces a decision")
+    };
+    let PrivateOrderedItem::Ran { run, custody, route, .. } = item else {
+        panic!("an accepted request must run, not refuse")
+    };
+    assert_eq!(route.request.device, DeviceId::from_raw(device));
+    assert!(
+        custody.observe().expect("a readable completion").is_some(),
+        "the real common completion, not a fabricated writer result"
+    );
+    run
+}
+
+/// The two known no-event branches, reached from genuinely separate sources.
+///
+/// SurvivorRemains: A presses, B joins, A releases -- B's holder bit remains.
+/// NotHeld: A presses, and B, which never joined, releases -- the ledger
+/// finds no holder bit for B while this executor still has the record.
+///
+/// Neither outcome, completion cell nor holder bit is set by the control:
+/// the source and the ledger produce the branch themselves.
+fn noevent_from_distinct_sources(survivor: bool) {
+    let (client, base) = if survivor {
+        (XServerFrontendClientId(7511), 75110)
+    } else {
+        (XServerFrontendClientId(7521), 75210)
+    };
+    let mut fixture = prepared_ordered_fixture(client);
+    let first = fixture
+        .runner
+        .frontend
+        .as_mut()
+        .expect("a live runner")
+        .ingress_for(client, DeviceId::from_raw(1))
+        .expect("a producer");
+    let second = fixture
+        .runner
+        .frontend
+        .as_mut()
+        .expect("a live runner")
+        .ingress_for(client, DeviceId::from_raw(2))
+        .expect("a second producer");
+
+    let pressed = noevent_run(&mut fixture, &first, base, 1, 272, true);
+    assert!(pressed.first_press && pressed.owes_event && pressed.event.is_some());
+    let private = fixture.runner.frontend.as_ref().expect("a live runner");
+    let recovery = private.broker.registry.input_recovery.clone();
+    let original = private.terminal.holds[0]
+        .custody
+        .completion
+        .as_ref()
+        .expect("the press holds its own completion")
+        .clone();
+    let incarnation = private.terminal.holds[0].incarnation;
+
+    if survivor {
+        let joined = noevent_run(&mut fixture, &second, base + 1, 2, 272, true);
+        assert!(!joined.first_press && !joined.owes_event && joined.event.is_none());
+    }
+
+    let noevent = noevent_run(
+        &mut fixture,
+        if survivor { &first } else { &second },
+        base + 2,
+        if survivor { 1 } else { 2 },
+        272,
+        false,
+    );
+    let expected = if survivor {
+        sophia_input_authority::ReleaseOutcome::SurvivorRemains
+    } else {
+        sophia_input_authority::ReleaseOutcome::NotHeld
+    };
+    assert_eq!(noevent.release, Some(expected));
+    assert!(!noevent.owes_event && noevent.event.is_none());
+
+    // Nothing of the original press was disturbed, and nothing was invented.
+    let private = fixture.runner.frontend.as_ref().expect("a live runner");
+    assert_eq!(private.terminal.holds.len(), 1);
+    assert!(private.terminal.settling.is_empty());
+    assert_eq!(private.terminal.holds[0].incarnation, incarnation);
+    assert!(private.terminal.holds[0].native.is_some());
+    assert!(Arc::ptr_eq(
+        &original,
+        private.terminal.holds[0]
+            .custody
+            .completion
+            .as_ref()
+            .expect("still held")
+    ));
+    let release = recovery
+        .completion_for(XAuthorityInputDeliveryId::from_raw(base + 2))
+        .expect("a readable ledger")
+        .expect("the no-event release's own admission");
+    assert!(!Arc::ptr_eq(&original, &release));
+    assert!(original.answer().is_none() && release.answer().is_none());
+    assert!(fixture.channels.ordered.try_recv().is_err());
+
+    // THE DISPOSAL ITSELF.
+    assert!(
+        private.terminal.pending_custody.is_none(),
+        "a known no-event branch disposes of the custody it acquired"
+    );
+
+    // And a real new press then runs through the protected path. Accepting
+    // some other refusal would not show the slot was free.
+    let next = noevent_run(&mut fixture, &first, base + 3, 1, 273, true);
+    assert!(next.first_press && next.owes_event && next.event.is_some());
+    let private = fixture.runner.frontend.as_ref().expect("a live runner");
+    assert_eq!(private.terminal.holds.len(), 2);
+    assert!(private.terminal.pending_custody.is_none() && private.terminal.native_pending.is_none());
+    assert!(original.answer().is_none() && release.answer().is_none());
+}
+
+#[test]
+fn a_survivor_release_from_a_distinct_source_disposes_only_its_own_custody() {
+    noevent_from_distinct_sources(true);
+}
+
+#[test]
+fn a_not_held_release_from_a_nonparticipating_source_disposes_only_its_own_custody() {
+    noevent_from_distinct_sources(false);
+}
+
 #[test]
 fn a_completed_operation_leaves_no_custody_behind_for_the_next_one() {
     // The slot is emptied by an explicit transfer or disposition. A press and
