@@ -353,6 +353,60 @@ enum X11OrderedServeStep {
     AdmissionRefused(X11OrderedAdmissionRefusal),
 }
 
+/// Why a connection's ordered output could not be bound.
+///
+/// Carried out beside the resources it was given, never instead of them.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11OrderedServingRefusal {
+    /// The receiver was minted by a different registration.
+    ForeignReceiver,
+    /// The registration names no endpoint: it is not admitted, or it is no
+    /// longer the row this client currently has.
+    Unadmitted(PrivateAdmissionRefusal),
+}
+
+/// One connection's ordered output transport, bound where both halves of it
+/// are owned.
+///
+/// MINTED AT CONNECTION SETUP, which is the only place that can establish
+/// this. The receiver carries the registration cell it was made with, so its
+/// provenance is asked here rather than asserted. A SOCKET CARRIES NOTHING:
+/// there is no witness in a file descriptor saying which connection negotiated
+/// it, and inventing one would be a claim rather than a check. What makes the
+/// pairing sound is that this is minted where the accepted connection's stream
+/// and its registration are both in hand and neither has been anywhere else.
+/// A later holder of this value cannot substitute either half.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
+struct XAuthorityOrderedTransport {
+    ordered: XAuthorityOrderedReceiver,
+    socket: UnixStream,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
+impl XAuthorityOrderedTransport {
+    /// Bind this connection's queue to this connection's stream.
+    ///
+    /// Refusing hands both back: the receiver may already hold accepted events
+    /// and the socket is a live connection, and a binding that failed is not a
+    /// licence to destroy either.
+    #[allow(clippy::result_large_err)] // The resources travel out whole rather than being dropped.
+    fn bind(
+        registration: &XServerFrontendClientRouteRegistration,
+        ordered: XAuthorityOrderedReceiver,
+        socket: UnixStream,
+    ) -> Result<Self, (X11OrderedServingRefusal, XAuthorityOrderedReceiver, UnixStream)> {
+        if !ordered.minted_by(registration) {
+            return Err((X11OrderedServingRefusal::ForeignReceiver, ordered, socket));
+        }
+        Ok(Self { ordered, socket })
+    }
+
+}
+
 /// One connection's ordered output, owned together.
 ///
 /// THE ENDPOINT, THE QUEUE AND THE SOCKET ARE BOUND HERE. Passing them
@@ -376,19 +430,42 @@ struct X11OrderedServingOwner {
 impl X11OrderedServingOwner {
     /// Bind this connection's output to the registration that created it.
     ///
+    /// ONE VALUE, ALREADY BOUND. This takes the transport minted at connection
+    /// setup rather than a queue and a socket a caller pairs up here: the
+    /// receiver's provenance was asked there, against the registration, and
+    /// the socket came from the same accepted connection. Nothing about the
+    /// association is asserted at this boundary.
+    ///
     /// The identity is captured from the registration held here, not looked up
     /// by the client id it happens to carry, so a writer started for one
     /// registration cannot be handed the identity of the one that replaced it.
+    ///
+    /// EVERY REFUSAL HANDS BACK WHAT IT WAS GIVEN. The receiver may already
+    /// hold accepted events and the socket is a live connection; dropping them
+    /// on the way out of a failed preparation would destroy work that was
+    /// admitted and answer for none of it. Nothing is moved into this owner
+    /// until the fallible part has succeeded.
+    #[allow(clippy::result_large_err)] // The transport travels out whole rather than being dropped.
     fn for_registration(
         frontend: &crate::x11_socket::PrivateXServerFrontend,
         registration: &XServerFrontendClientRouteRegistration,
-        queue: Receiver<XAuthorityOrderedDelivery>,
-        socket: UnixStream,
-    ) -> Result<Self, PrivateAdmissionRefusal> {
+        transport: XAuthorityOrderedTransport,
+    ) -> Result<Self, (X11OrderedServingRefusal, XAuthorityOrderedTransport)> {
+        // Asked again here, because a transport bound for one registration
+        // must not prepare a writer for another even though both are opaque.
+        if !transport.ordered.minted_by(registration) {
+            return Err((X11OrderedServingRefusal::ForeignReceiver, transport));
+        }
+        let endpoint = match frontend.endpoint_for(registration) {
+            Ok(endpoint) => endpoint,
+            Err(refusal) => {
+                return Err((X11OrderedServingRefusal::Unadmitted(refusal), transport));
+            }
+        };
         Ok(Self {
-            served: XAuthorityServedConnection::retained(frontend.endpoint_for(registration)?),
-            queue,
-            socket,
+            served: XAuthorityServedConnection::retained(endpoint),
+            queue: transport.ordered.into_receiver(),
+            socket: transport.socket,
             in_flight: None,
             refused: None,
         })

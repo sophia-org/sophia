@@ -21718,7 +21718,6 @@ fn replace_registration(
     replacement: sophia_protocol::ClientAdmissionContext,
     previous: sophia_protocol::ClientAdmissionId,
     original: &XServerFrontendClientRouteRegistration,
-    original_channels: XServerFrontendClientRouteChannels,
     surface: Option<(SurfaceId, XResourceId)>,
 ) -> (
     XServerFrontendClientRouteRegistration,
@@ -21729,11 +21728,11 @@ fn replace_registration(
         .participant
         .revoke_admission(client, previous)
         .expect("the admission this fixture made is the one it revokes");
-    // The first registration's row and channels go before the second exists.
-    // The registration guard itself is kept by the caller, deliberately: a
-    // holder of a stale capability is exactly who must be refused rather than
-    // handed the replacement's identity.
-    drop(original_channels);
+    // The first registration's row goes before the second exists. Its
+    // channels are the caller's to dispose of, because a caller may still be
+    // holding one on purpose. The registration guard itself is kept by the
+    // caller too, deliberately: a holder of a stale capability is exactly who
+    // must be refused rather than handed the replacement's identity.
     let _ = original;
     private
         .broker
@@ -21835,7 +21834,7 @@ fn capsule_then_replacement(
         mut runner,
         durable,
         registration: original_registration,
-        channels: original_channels,
+        channels: _original_channels,
         ..
     } = f;
     let private = runner.frontend.as_mut().unwrap();
@@ -21845,7 +21844,6 @@ fn capsule_then_replacement(
         replacement,
         admitted(client).client_id,
         &original_registration,
-        original_channels,
         None,
     );
     (
@@ -22033,7 +22031,7 @@ fn a_producer_does_not_send_an_old_capsule_through_a_replacement_entry() {
         mut runner,
         durable,
         registration: original_registration,
-        channels: original_channels,
+        channels: _original_channels,
         ..
     } = f;
     let private = runner.frontend.as_mut().unwrap();
@@ -22043,7 +22041,6 @@ fn a_producer_does_not_send_an_old_capsule_through_a_replacement_entry() {
         admitted(client),
         admitted(client).client_id,
         &original_registration,
-        original_channels,
         None,
     );
     let answered_by_teardown = cell.answer();
@@ -22117,7 +22114,7 @@ fn a_producer_does_not_send_an_old_release_through_a_replacement_entry() {
         mut runner,
         durable,
         registration: original_registration,
-        channels: original_channels,
+        channels: _original_channels,
         ..
     } = f;
     let private = runner.frontend.as_mut().unwrap();
@@ -22127,7 +22124,6 @@ fn a_producer_does_not_send_an_old_release_through_a_replacement_entry() {
         admitted(client),
         admitted(client).client_id,
         &original_registration,
-        original_channels,
         None,
     );
     let answered_by_teardown = release_cell.answer();
@@ -22288,13 +22284,16 @@ fn a_serving_owner_keeps_its_own_endpoint_when_its_registration_is_replaced() {
     // and owns them from here on.
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_nonblocking(true).expect("a readable peer");
-    let mut owner = X11OrderedServingOwner::for_registration(
-        private,
-        &original_registration,
-        original_channels.ordered,
-        socket,
-    )
-    .expect("an owner for the registration that made this receiver");
+    let transport =
+        XAuthorityOrderedTransport::bind(&original_registration, original_channels.ordered, socket)
+            .unwrap_or_else(|(refusal, _, _)| {
+                panic!("this connection's own receiver and stream bind: {refusal:?}")
+            });
+    let mut owner =
+        X11OrderedServingOwner::for_registration(private, &original_registration, transport)
+            .unwrap_or_else(|(refusal, _)| {
+                panic!("an owner for the registration that made this receiver: {refusal:?}")
+            });
 
     // Its own connection's event is served normally, once.
     for _ in 0..8 {
@@ -22329,12 +22328,6 @@ fn a_serving_owner_keeps_its_own_endpoint_when_its_registration_is_replaced() {
             admitted(client),
             admitted(client).client_id,
             &original_registration,
-            XServerFrontendClientRouteChannels {
-                input: original_channels.input,
-                control: original_channels.control,
-                protocol: original_channels.protocol,
-                ordered: sync_channel(1).1,
-            },
             None,
         );
 
@@ -22412,4 +22405,88 @@ fn a_serving_owner_keeps_its_own_endpoint_when_its_registration_is_replaced() {
     drop(replacement_registration);
     drop(runner);
     drop(durable);
+}
+
+#[test]
+fn a_serving_constructor_rejects_another_registrations_receiver() {
+    // Two real prepared registrations and their actual registry-created
+    // receivers. Independent origins make the mismatch unambiguous; no
+    // capsule, outcome, socket traffic or production-loop scenario is staged.
+    let a=prepared_ordered_fixture(XServerFrontendClientId(7711));
+    let b=prepared_ordered_fixture(XServerFrontendClientId(7712));
+    let private=a.runner.frontend.as_ref().unwrap();
+    let endpoint_a=private.endpoint_for(&a.registration).unwrap();
+    let endpoint_b=b.runner.frontend.as_ref().unwrap().endpoint_for(&b.registration).unwrap();
+    assert!(!endpoint_a.matches(&endpoint_b));
+    let (socket,_peer)=UnixStream::pair().unwrap();
+    // The association is established where the transport is bound, so that is
+    // where crossing two real connections is caught.
+    let bound = XAuthorityOrderedTransport::bind(&a.registration, b.channels.ordered, socket);
+    assert!(
+        bound.is_err(),
+        "binding must reject B's original receiver when given registration A"
+    );
+    let (refusal, returned, socket) = bound.err().expect("refused");
+    assert_eq!(refusal, X11OrderedServingRefusal::ForeignReceiver);
+    assert!(
+        returned.minted_by(&b.registration),
+        "and the receiver handed back is B's own, whole"
+    );
+    // And the same refusal stands at the serving owner, for a transport that
+    // was bound for a different registration.
+    let transport = XAuthorityOrderedTransport::bind(&b.registration, returned, socket)
+        .unwrap_or_else(|_| panic!("B's own registration and B's own receiver bind"));
+    let owner = X11OrderedServingOwner::for_registration(private, &a.registration, transport);
+    assert!(
+        owner.is_err(),
+        "a transport bound for another registration prepares no writer here"
+    );
+}
+
+#[test]
+fn a_failed_serving_constructor_preserves_its_original_queued_capsule() {
+    let client=XServerFrontendClientId(7721);
+    let mut f=prepared_ordered_fixture(client);
+    // Real admitted native press and actual original ordered queue handover.
+    attempt_run(&mut f,77210,272,true);
+    let private=f.runner.frontend.as_mut().unwrap();
+    let original=admitted_cell(private,77210);
+    assert_eq!(private.dispatch_one_press(),Some(true));
+    let sender=private.broker.registry.clients.lock().unwrap().get(&client).unwrap().ordered.clone();
+    let capsule=f.channels.ordered.try_recv().expect("original queue accepted the actual press");
+    assert_eq!(capsule.delivery(),XAuthorityInputDeliveryId::from_raw(77210));
+    assert_eq!(capsule.client(),client);
+    assert!(Arc::ptr_eq(&original,&capsule.finalizer().unwrap().completion));
+    assert!(capsule.endpoint().matches(&private.endpoint_for(&f.registration).unwrap()));
+    assert_eq!(Arc::strong_count(capsule.finalizer().unwrap()),1,"only this nonclone capsule owns its finalizer Arc");
+    // Keep ONLY a Weak finalizer witness; a strong clone here would mask
+    // destruction of the original queued capsule.
+    let finalizer=Arc::downgrade(capsule.finalizer().unwrap());
+    assert!(sender.try_send(capsule).is_ok(),"put the exact original capsule back into its original queue");
+    assert!(finalizer.upgrade().is_some());
+    assert_eq!(private.terminal.holds[0].custody.dispatch,PrivateDispatchPhase::Enqueued);
+    assert!(private.terminal.holds[0].custody.pending.is_none());
+
+    // Real participant revocation makes endpoint acquisition refuse while the
+    // original registration, receiver, sender and queued capsule remain held.
+    // No registry/authority field, outcome or phase is forced by this control.
+    private.participant.revoke_admission(client,admitted(client).client_id).unwrap();
+    assert!(private.endpoint_for(&f.registration).is_err());
+    let answered_before=original.answer();
+    assert!(Arc::ptr_eq(&original,private.terminal.holds[0].custody.completion.as_ref().unwrap()));
+    assert_eq!(private.terminal.holds[0].custody.dispatch,PrivateDispatchPhase::Enqueued);
+    assert!(private.terminal.holds[0].native.is_some());
+    let (socket,_peer)=UnixStream::pair().unwrap();
+    assert!(finalizer.upgrade().is_some(),"revocation did not destroy the actual queued capsule immediately before construction");
+    let transport = XAuthorityOrderedTransport::bind(&f.registration, f.channels.ordered, socket)
+        .unwrap_or_else(|_| panic!("this connection's own receiver and registration bind"));
+    let returned=X11OrderedServingOwner::for_registration(private,&f.registration,transport);
+    assert!(returned.is_err(),"the established endpoint refusal is returned");
+    let payload_still_owned=finalizer.upgrade().is_some();
+    assert_eq!(original.answer(),answered_before,"constructor failure does not change the completion answer");
+    assert!(Arc::ptr_eq(&original,private.terminal.holds[0].custody.completion.as_ref().unwrap()));
+    assert_eq!(private.terminal.holds[0].custody.dispatch,PrivateDispatchPhase::Enqueued);
+    assert!(private.terminal.holds[0].native.is_some());
+    assert!(payload_still_owned,"a refused constructor must return or durably retain its accepted receiver/capsule resources, not drop them through ?");
+    drop(sender);
 }

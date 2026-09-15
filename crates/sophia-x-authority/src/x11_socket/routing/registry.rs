@@ -161,7 +161,51 @@ struct XServerFrontendClientRouteChannels {
     control: Receiver<X11RoutedControl>,
     protocol: Receiver<XClientEvent>,
     #[allow(dead_code)]
-    ordered: Receiver<XAuthorityOrderedDelivery>,
+    ordered: XAuthorityOrderedReceiver,
+}
+
+/// One connection's ordered receiver, minted with the registration that owns
+/// it.
+///
+/// MINTED HERE AND NOWHERE ELSE, in the same expression that makes the channel
+/// and beside the registration that gets the other end. A serving owner that
+/// accepted a bare receiver could be handed one connection's registration and
+/// another's queue, and nothing about either value would say so; a receiver
+/// that carries the registration cell it was made with can be asked.
+///
+/// There is deliberately no constructor taking a receiver and a witness: one
+/// would let a caller assert exactly the association this exists to establish.
+#[cfg(unix)]
+struct XAuthorityOrderedReceiver {
+    receiver: Receiver<XAuthorityOrderedDelivery>,
+    /// The connection-state cell this registration is, by pointer.
+    registration: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
+impl XAuthorityOrderedReceiver {
+    /// Whether this receiver was minted by exactly this registration.
+    fn minted_by(&self, registration: &XServerFrontendClientRouteRegistration) -> bool {
+        Arc::ptr_eq(&self.registration, &registration.connection_state)
+    }
+
+    /// Give up the receiver itself, once its provenance has been established.
+    fn into_receiver(self) -> Receiver<XAuthorityOrderedDelivery> {
+        self.receiver
+    }
+}
+
+/// Reading a connection's queued output does not need its provenance, so the
+/// ordinary receiver operations are available directly. Taking ownership of
+/// the receiver does need it, and that goes through `into_receiver`.
+#[cfg(unix)]
+impl std::ops::Deref for XAuthorityOrderedReceiver {
+    type Target = Receiver<XAuthorityOrderedDelivery>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.receiver
+    }
 }
 
 #[cfg(unix)]
@@ -364,6 +408,10 @@ impl XServerFrontendRouteRegistry {
                 control_writer_gone: Arc::new(AtomicBool::new(false)),
             },
         );
+        // Taken before the registration consumes it: the receiver and the
+        // registration are minted from the one cell, which is what makes the
+        // question "did this registration make this receiver" answerable.
+        let ordered_witness = connection_state.clone();
         Ok((
             XServerFrontendClientRouteRegistration {
                 lifecycle: Mutex::new(None),
@@ -386,7 +434,12 @@ impl XServerFrontendRouteRegistry {
                 input,
                 control,
                 protocol,
-                ordered,
+                // Minted with the cell this registration and its client-table
+                // entry both hold, so what it came from can be asked later.
+                ordered: XAuthorityOrderedReceiver {
+                    receiver: ordered,
+                    registration: ordered_witness,
+                },
             },
         ))
     }
