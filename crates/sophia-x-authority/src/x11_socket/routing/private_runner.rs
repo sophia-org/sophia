@@ -535,6 +535,9 @@ impl PrivatePreparedRunner {
                             } => {
                                 progress.terminal_steps += 1;
                                 progress.dispatched += usize::from(enqueued);
+                                // One actual queue acceptance, counted once
+                                // and where it happened.
+                                progress.enqueued += usize::from(enqueued);
                                 progress.relinquished += usize::from(relinquished);
                                 if watch_failed {
                                     break;
@@ -572,7 +575,11 @@ impl PrivatePreparedRunner {
                             } => {
                                 progress.terminal_steps += 1;
                                 if let Some(delivered) = report {
-                                    progress.enqueued += usize::from(delivered.enqueued);
+                                    // Observation only. An entry advancing says
+                                    // what the request recorded, not whether
+                                    // anything reached a queue: that is the
+                                    // dispatch's fact and is counted there,
+                                    // once per actual acceptance.
                                     progress.observed +=
                                         usize::from(delivered.completion.is_some());
                                     progress.settled += usize::from(delivered.debt_settled);

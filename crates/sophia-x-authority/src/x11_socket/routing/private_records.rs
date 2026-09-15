@@ -35,6 +35,18 @@ pub struct PrivateReachedResources {
 }
 
 #[cfg(unix)]
+impl PrivateHoldRecord {
+    /// Whether this press's own event is still owed to its recipient.
+    ///
+    /// A press has no debt in the ledger -- one appears when the last holder
+    /// goes -- so no attempt is claimed for it. What it has is an event that
+    /// was decided and a handle to answer it through.
+    fn owes_press_handover(&self) -> bool {
+        self.custody.owes_handover()
+    }
+}
+
+#[cfg(unix)]
 impl PrivateReachedResources {
     pub fn client(self) -> XServerFrontendClientId {
         self.client
@@ -131,6 +143,14 @@ enum PrivatePendingDelivery {
 /// invited them to drift apart exactly where they must not.
 #[cfg(unix)]
 struct PrivateDeliveryCustody {
+    /// Where this event sits in the order its recipient must see.
+    ///
+    /// STAMPED WHEN THE DEBT IS RECORDED, and compared across every place a
+    /// custody can live. Preferring one storage location over another is not
+    /// an order: a press whose hold has ended travels into the settling
+    /// record, so choosing held work first hands a later press over before an
+    /// earlier one that merely moved.
+    order: u64,
     /// The slot is prepared before anything is taken from the hold, so there
     /// is never a moment in which an emission has left its obligation and has
     /// nowhere to be.
@@ -156,9 +176,47 @@ struct PrivateDeliveryCustody {
 
 #[cfg(unix)]
 impl PrivateDeliveryCustody {
+    /// Whether this debt's event is still owed a handover.
+    ///
+    /// READ FROM THE PHASE, never from the slot. An empty slot means either
+    /// nothing taken yet or a handover that never reported, and only the phase
+    /// tells them apart.
+    fn owes_handover(&self) -> bool {
+        self.completion.is_some()
+            && matches!(
+                self.dispatch,
+                PrivateDispatchPhase::Untaken | PrivateDispatchPhase::Pending
+            )
+    }
+
+    /// Whether this custody's phase permits a handover to be attempted.
+    ///
+    /// ORDERING AND PERMISSION ARE DIFFERENT QUESTIONS. An unresolved handover
+    /// must stay in the ordering comparison, because it is what blocks the
+    /// events behind it -- but being the head does not make it sendable. A
+    /// phase that says the bytes may already be on the wire authorizes
+    /// nothing: offering that capsule again is a replay, and its slot holding
+    /// bytes is not permission.
+    fn handover_permitted(&self) -> bool {
+        matches!(
+            self.dispatch,
+            PrivateDispatchPhase::Untaken | PrivateDispatchPhase::Pending
+        )
+    }
+
+    /// Whether anything about this event's handover is still unresolved.
+    ///
+    /// An unfinished handover -- owed, or begun and unreported -- is what a
+    /// later event of the same hold must not overtake.
+    fn handover_unfinished(&self) -> bool {
+        self.completion.is_some()
+            && !matches!(self.dispatch, PrivateDispatchPhase::Enqueued)
+    }
+
     /// Begin custody for a debt, holding the completion it was created with.
-    fn new(completion: Option<Arc<PrivateDeliveryCompletion>>) -> Self {
+    fn new(order: u64, completion: Option<Arc<PrivateDeliveryCompletion>>) -> Self {
         Self {
+            order,
             pending: None,
             dispatch: PrivateDispatchPhase::Untaken,
             attempt: None,
@@ -300,6 +358,29 @@ impl PrivateSettlingRelease {
         self.custody.attempt
     }
 
+    fn custody_order(&self) -> u64 {
+        self.custody.order
+    }
+
+    fn custody_handover_permitted(&self) -> bool {
+        self.custody.handover_permitted()
+    }
+
+    fn custody_handover_unfinished(&self) -> bool {
+        self.custody.handover_unfinished()
+    }
+
+    /// Whether this release's own press is still waiting to be handed over.
+    ///
+    /// A release must not reach the recipient's queue before the press it
+    /// ends. The press's custody travels here when the hold record goes, so
+    /// this is where that ordering is decided.
+    fn press_handover_unfinished(&self) -> bool {
+        self.press_custody
+            .as_ref()
+            .is_some_and(PrivateDeliveryCustody::handover_unfinished)
+    }
+
     /// Whether a delivery attempt may be made for this release now.
     ///
     /// READ FROM THE PHASE, never from the slot. An empty slot means one of
@@ -312,7 +393,11 @@ impl PrivateSettlingRelease {
     /// claim an attempt otherwise, and one attempt at a time, because a
     /// second would be a second writer answering for the same event.
     fn owes_delivery_attempt(&self) -> bool {
-        self.native_recorded
+        // ORDER FIRST. A release cannot be handed over while the press it
+        // ends is still owed one, or has begun one that never reported: the
+        // recipient would see the button come up before it went down.
+        !self.press_handover_unfinished()
+            && self.native_recorded
             && self.custody.attempt.is_none()
             && matches!(
                 self.custody.dispatch,

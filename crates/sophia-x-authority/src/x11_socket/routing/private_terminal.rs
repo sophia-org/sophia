@@ -22,6 +22,16 @@
 /// retained inventory produces no report and is still a step that happened,
 /// so a caller that read "no report" as "no work" would charge nothing for
 /// work it did.
+/// How many stalled press handovers pass before the visit goes to cleanup
+/// instead.
+///
+/// A press that cannot progress must not hold the only visit this service
+/// takes. Independent work that can progress -- recording a proof that owes
+/// nothing to this handover -- still runs while the dependent wire output
+/// stays blocked.
+#[cfg(unix)]
+const PRIVATE_PRESS_STALL_ALLOWANCE: u8 = 2;
+
 /// How many recording visits pass before dispatch is given a turn, when both
 /// are owed.
 ///
@@ -455,36 +465,16 @@ impl PrivateXServerFrontend {
     }
 }
 
-/// How far an event got toward its client.
+/// Decided work whose request could not be observed.
 ///
-/// Recorded before the send it describes, so an interruption inside the send
-/// leaves the phase saying the outcome is unknown rather than leaving it to be
-/// inferred afterwards from which list an item is in. What a recovery owner
-/// may do depends entirely on this: an event that never reached a queue may be
-/// sent, one that reached a queue owes only its observation and must never be
-/// sent again, and one whose send did not return may be neither.
-#[cfg(unix)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PrivateEmissionPhase {
-    /// Nothing was owed a client, so nothing was attempted.
-    NotOwed,
-    /// The send was entered and did not return. Whether the event reached the
-    /// queue is exactly what was lost, so it is neither resent nor assumed
-    /// delivered.
-    Indeterminate,
-    /// The send returned and the queue did not take it.
-    NotEnqueued,
-    /// The queue took it. Only the observation is still owed; resending would
-    /// deliver the same transition twice.
-    Enqueued,
-}
-
-/// Decided work that has not been handed on, with how far it got.
+/// NOT A RECORD OF A SEND. Nothing on this path sends, so nothing here says
+/// how far an event got; what an entry lands here for is that its own
+/// completion could not be read. The item is retained because it is the only
+/// handle able to take that observation later.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
 struct PrivateUndelivered {
     item: PrivateOrderedItem,
-    emission: PrivateEmissionPhase,
 }
 
 /// What delivering one decided item established.
@@ -492,14 +482,10 @@ struct PrivateUndelivered {
 #[cfg_attr(not(test), allow(dead_code))]
 struct PrivateDelivered {
     sequence: crate::ReadySequence,
-    /// Whether the event was accepted onto the client's queue.
-    ///
-    /// Acceptance, not arrival. A queue that is full and a client that has
-    /// gone are both failures to enqueue, but succeeding only means the event
-    /// is queued: the recipient half of a debt is established by the writer's
-    /// own outcome -- a flush that reached the client, or a disconnect that
-    /// established it never will -- and this says nothing about either.
-    enqueued: bool,
+    // WHETHER THE EVENT WAS QUEUED IS NOT REPORTED HERE ANY MORE. This step
+    // disposes of an entry; the handover happens later, from the custody the
+    // debt holds, so a report written now could only have guessed. Enqueueing
+    // is the dispatch's fact and is reported by the dispatch.
     /// The outcome the request recorded, taken exactly once.
     completion: Option<sophia_input_authority::RequestCompletion>,
     /// Whether a release debt was closed by this delivery.
@@ -546,15 +532,8 @@ impl PrivateXServerFrontend {
         // queues fell empty -- which, for a pointer anyone is using, is never.
         let native_owed = self.owes_native_recording();
         let nothing_to_deliver = self.terminal.delivering.is_empty() && self.terminal.turn.is_empty();
-        // A head nobody can describe blocks ITS OWN delivery. It says nothing
-        // about a sealed proof on an unrelated release, and letting it stop
-        // that work too would make one stuck entry hold up obligations it has
-        // no connection to.
-        let head_blocked = !self.terminal.delivering.is_empty()
-            && self.terminal.emission == PrivateEmissionPhase::Indeterminate;
         let native_turn = native_owed
             && (nothing_to_deliver
-                || head_blocked
                 || self.terminal.native_turn_debt >= PRIVATE_NATIVE_TURN_INTERVAL);
         if native_turn {
             // CHARGED AND WATCHED BEFORE THE VISIT, like every other terminal
@@ -587,6 +566,31 @@ impl PrivateXServerFrontend {
                     relinquished: false,
                 });
             }
+            // A press's own event. It claims no ledger attempt, and it is
+            // offered before the release work so a release can never overtake
+            // the press it ends.
+            //
+            // BOUNDED, THOUGH. A press that cannot progress -- a full queue, a
+            // wrapper that cannot be built -- would otherwise take every visit
+            // and starve the proof work behind it, which is work that CAN
+            // progress and does not depend on this handover. After a run of
+            // stalled attempts the visit goes to cleanup instead, and the
+            // press is offered again after it.
+            if self.terminal.press_stall < PRIVATE_PRESS_STALL_ALLOWANCE
+                && let Some(enqueued) = self.dispatch_one_press()
+            {
+                self.terminal.press_stall = if enqueued {
+                    0
+                } else {
+                    self.terminal.press_stall.saturating_add(1)
+                };
+                return Ok(PrivateDeliveryStep::Dispatched {
+                    enqueued,
+                    relinquished: false,
+                });
+            }
+            // Its turn comes back once something else has had one.
+            self.terminal.press_stall = 0;
             if let Some(recorded) = self.record_one_native() {
                 self.terminal.native_class_debt =
                     self.terminal.native_class_debt.saturating_add(1);
@@ -620,96 +624,37 @@ impl PrivateXServerFrontend {
         // disposing, and a chosen entry held in a local is one an interruption
         // would take with the frame.
         let sequence = self.terminal.delivering[0].sequence();
-        if self.terminal.emission == PrivateEmissionPhase::Indeterminate {
-            // Nobody can say whether its event reached the queue. It may not be
-            // sent again and its receipt may not be inferred, and nothing here
-            // can establish either. Reported as itself rather than as an empty
-            // turn, because an owner told "nothing to do" would stop looking
-            // for the thing that is stuck.
-            return Ok(PrivateDeliveryStep::Blocked(sequence));
-        }
         // Charged for the step about to happen, before any guard is taken and
-        // before anything is observed or sent. A refusal here leaves the entry
-        // owned and untouched.
+        // before anything is observed. A refusal here leaves the entry owned
+        // and untouched.
         start(Some(sequence), std::time::Instant::now())?;
         // AFTER ADMISSION, not before it. A refused charge is not a delivery
         // step, and counting it would move native work closer to its turn for
         // work that never happened -- or, the other way round, spend the debt
         // that was about to give it one.
         self.terminal.native_turn_debt = self.terminal.native_turn_debt.saturating_add(1);
-        // What may happen to the entry at the head depends on how far it
-        // already got. Starting a new call is not a disposition, and
-        // deciding that from scratch turns an event that may already be
-        // queued back into one that looks never attempted.
-        let resuming = self.terminal.emission;
-        match resuming {
-            // Ruled out before the charge above, and answered the same way if
-            // it somehow stands here: a head nobody can describe is reported
-            // as blocked rather than worked on.
-            PrivateEmissionPhase::Indeterminate => {
-                return Ok(PrivateDeliveryStep::Blocked(sequence));
-            }
-            // Already on the client's queue. Only the observation is
-            // owed; sending again would deliver the same transition twice.
-            PrivateEmissionPhase::Enqueued => {}
-            // A fresh entry, or one whose send returned without the queue
-            // taking it.
-            PrivateEmissionPhase::NotOwed | PrivateEmissionPhase::NotEnqueued => {
-                self.terminal.emission = PrivateEmissionPhase::NotOwed;
-            }
-        }
         // Read from the entry rather than taken out of it. Removing it
         // first put the obligation in a local, so the phase on this
         // instance survived an unwind while the work it described did not.
-        let PrivateOrderedItem::Ran { sequence, run, .. } = &self.terminal.delivering[0] else {
+        let PrivateOrderedItem::Ran { sequence, .. } = &self.terminal.delivering[0] else {
             let item = self.terminal.delivering.remove(0);
-            // A refusal attempted no emission, so nothing about a client's
-            // queue is owed or unknown for it.
-            self.terminal.undelivered.push(PrivateUndelivered {
-                item,
-                emission: PrivateEmissionPhase::NotOwed,
-            });
+            // A refusal has no completion to read, so nothing about it is
+            // left unobserved.
+            self.terminal.undelivered.push(PrivateUndelivered { item });
             return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
         };
-        let (sequence, run) = (*sequence, *run);
-        let delivery = match &self.terminal.delivering[0] {
-            PrivateOrderedItem::Ran { route, .. } => route.delivery,
-            _ => None,
-        };
-        let enqueued = if resuming == PrivateEmissionPhase::Enqueued {
-            // Resumed after its send. Not sent again.
-            true
-        } else {
-            match (run.event, run.reached) {
-                (Some(event), Some(reached)) => {
-                    // Written before the send, because a phase set after it
-                    // says nothing about a send that did not return.
-                    self.terminal.emission = PrivateEmissionPhase::Indeterminate;
-                    let sent = self.emit(reached, event, delivery).is_ok();
-                    self.terminal.emission = if sent {
-                        PrivateEmissionPhase::Enqueued
-                    } else {
-                        PrivateEmissionPhase::NotEnqueued
-                    };
-                    sent
-                }
-                _ => false,
-            }
-        };
-        if run.owes_event && !enqueued {
-            // An event was owed and has not reached a queue. The entry is
-            // moved with the phase it reached, not before it was known.
-            let item = self.terminal.delivering.remove(0);
-            self.terminal.undelivered.push(PrivateUndelivered {
-                item,
-                emission: self.terminal.emission,
-            });
-            // The phase described that entry. With it gone the next one
-            // has not started, and carrying the phase forward would let it
-            // resume a send it never made.
-            self.terminal.emission = PrivateEmissionPhase::NotOwed;
-            return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
-        }
+        let sequence = *sequence;
+        // NOTHING IS SENT HERE. A private event reaches its recipient through
+        // the ordered handover the debt's own custody performs, which is the
+        // one path it has; sending here as well put the same event on two
+        // queues. What this step still owns is the entry: choosing it,
+        // observing the outcome it recorded, and disposing of it.
+        //
+        // An event that is still owed is owed by the record that holds its
+        // custody, and that record outlives this entry. The entry no longer
+        // waits on it, and no longer reports whether it was queued -- it could
+        // not know, because the handover has not happened yet.
+
         // Owing nobody an event is an outcome, not a failure to emit one.
         // A press that joined a hold, and a release that found nothing
         // held, both finished: their completion is taken here so the grant
@@ -732,27 +677,21 @@ impl PrivateXServerFrontend {
             Err(_unreadable) => {
                 // Nothing was established about the outcome, so the only
                 // handle able to take it is retained rather than dropped.
-                // The emission phase travels with it: this event may
-                // already be on the client's queue, and a recovery owner
-                // that resent it would deliver the same transition twice.
+                // WHAT IS UNKNOWN HERE IS THE OBSERVATION, not a send: this
+                // entry sends nothing, and its event's own custody carries
+                // whatever is known about the handover. Retaining the item is
+                // what keeps the unreadable request answerable.
                 let item = self.terminal.delivering.remove(0);
-                self.terminal.undelivered.push(PrivateUndelivered {
-                    item,
-                    emission: self.terminal.emission,
-                });
-                self.terminal.emission = PrivateEmissionPhase::NotOwed;
+                self.terminal.undelivered.push(PrivateUndelivered { item });
                 return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
             }
         };
-        // Disposed, so the entry goes and the phase that described it goes
-        // with it.
+        // Disposed, so the entry goes.
         let _resolved = self.terminal.delivering.remove(0);
-        self.terminal.emission = PrivateEmissionPhase::NotOwed;
         Ok(PrivateDeliveryStep::Advanced {
             sequence,
             report: Some(PrivateDelivered {
                 sequence,
-                enqueued,
                 completion,
                 debt_settled: false,
             }),
@@ -809,31 +748,6 @@ impl PrivateXServerFrontend {
             delivered.extend(report);
         }
         delivered
-    }
-
-    /// Send one decided event to the client it was decided for.
-    fn emit(
-        &self,
-        reached: PrivateReachedResources,
-        event: XAuthorityInputEvent,
-        delivery: Option<XAuthorityInputDeliveryId>,
-    ) -> Result<(), XServerFrontendRouteError> {
-        let senders = self.broker.registry.client_senders(reached.client())?;
-        self.broker.registry.route_to_client(
-            reached.client(),
-            senders.input,
-            XAuthorityClientInputEvent {
-                client: reached.client(),
-                event,
-                target_window: Some(reached.window()),
-                xi_event_type: None,
-                xi_event_window: None,
-                xi_emulated_button_type: None,
-                xi_emulated_button_window: None,
-                xi_pointer_crossing_mask: 0,
-                delivery,
-            },
-        )
     }
 
 }

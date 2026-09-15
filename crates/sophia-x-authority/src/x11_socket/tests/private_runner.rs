@@ -402,42 +402,6 @@ fn unwatchable_work_finishes_accounting_without_becoming_an_effect() {
 }
 
 #[test]
-fn runner_does_not_charge_or_resend_an_indeterminate_terminal_head() {
-    let (mut runner, _durable, _registration, channels, _acks, _deliveries) =
-        prepared_runner_fixture();
-    let ingress = runner
-        .ingress_for(
-            XServerFrontendClientId::from_raw(9000),
-            DeviceId::from_raw(1),
-        )
-        .unwrap();
-    let sequence = ingress
-        .submit(button_to(
-            SurfaceId::new(9000, 1),
-            XAuthorityInputDeliveryId::from_raw(91003),
-            272,
-            true,
-        ))
-        .unwrap();
-    assert!(matches!(runner.execute_accounted_step().unwrap(),
-        PrivateAccountedStep::Step { step: PrivateOrderedStep::Decided(s), .. } if s==sequence));
-    // Compose the phase an interrupted send would leave on this real owned
-    // decision. This is not an injected transport-unwind control.
-    runner.frontend.as_mut().unwrap().terminal.emission = PrivateEmissionPhase::Indeterminate;
-    let usage = runner.service.usage();
-    for _ in 0..3 {
-        assert!(matches!(runner.deliver_accounted_step().unwrap(),
-            PrivateAccountedDelivery::Step { step: PrivateDeliveryStep::Blocked(s), charge: None, watch_failed: false, unwatched: None } if s==sequence));
-    }
-    assert_eq!(runner.service.usage(), usage);
-    assert_eq!(channels.input.try_iter().count(), 0);
-    assert_eq!(
-        runner.frontend.as_ref().unwrap().terminal.delivering.len(),
-        1
-    );
-}
-
-#[test]
 fn runner_charges_common_wait_and_supervision_can_end_it_independently() {
     use std::io::Read;
     use std::time::Duration;

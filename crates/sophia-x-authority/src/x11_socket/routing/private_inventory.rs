@@ -96,6 +96,21 @@ struct PrivateTerminalInventory {
     /// one belonging to a continuation whose fate is still unknown -- is not
     /// written yet.
     pending_custody: Option<PrivateDeliveryCustody>,
+    /// The next order stamp, so every event this instance decides can be put
+    /// in the order its recipient must see them.
+    next_event_order: u64,
+    /// How many press handovers in a row have failed to progress.
+    press_stall: u8,
+    /// The connection whose head was offered last.
+    ///
+    /// ARBITRATION HELD ACROSS VISITS. Choosing the globally earliest
+    /// unfinished output afresh each visit re-chooses the same connection
+    /// whenever its head cannot progress -- a full queue restores the very
+    /// capsule and phase that selected it -- so another connection with a
+    /// later stamp never gets a turn. Connections are taken in cyclic order
+    /// from here, and the event stamp decides only within one of them.
+    last_offered: Option<XServerFrontendClientId>,
+
     /// Releases whose delivery was decided and whose debt is still open.
     settling: Vec<PrivateSettlingRelease>,
     /// How many terminal steps have gone to deliveries since native work last
@@ -150,12 +165,7 @@ struct PrivateTerminalInventory {
     turn: Vec<PrivateOrderedItem>,
     /// Decided work being handed on right now.
     delivering: Vec<PrivateOrderedItem>,
-    /// How far the entry at the head of `delivering` got toward its client.
-    ///
-    /// Beside the entry rather than inside a local, because the case it
-    /// describes is an unwind inside the send.
-    emission: PrivateEmissionPhase,
-    /// Decided work that has not been handed on, with how far it got.
+    /// Decided work whose completion could not be observed.
     undelivered: Vec<PrivateUndelivered>,
 }
 
@@ -177,6 +187,9 @@ impl PrivateTerminalInventory {
             holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
             native_pending: None,
             pending_custody: None,
+            next_event_order: 0,
+            press_stall: 0,
+            last_offered: None,
             native_recording_cursor: 0,
             attempt_cursor: 0,
             attempt_custody: None,
@@ -186,7 +199,6 @@ impl PrivateTerminalInventory {
             current: None,
             turn: Vec::with_capacity(capacity),
             delivering: Vec::with_capacity(capacity),
-            emission: PrivateEmissionPhase::NotOwed,
             undelivered: Vec::with_capacity(capacity),
         }
     }
@@ -259,6 +271,9 @@ impl PrivateTerminalInventory {
                 holds: Vec::new(),
                 native_pending: None,
                 pending_custody: None,
+                next_event_order: 0,
+                press_stall: 0,
+                last_offered: None,
                 native_recording_cursor: 0,
                 attempt_cursor: 0,
                 attempt_custody: None,
@@ -268,7 +283,6 @@ impl PrivateTerminalInventory {
                 current: None,
                 turn: Vec::new(),
                 delivering: Vec::new(),
-                emission: PrivateEmissionPhase::NotOwed,
                 undelivered: Vec::new(),
             },
         )

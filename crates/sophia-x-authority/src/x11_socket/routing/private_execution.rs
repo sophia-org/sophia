@@ -62,6 +62,7 @@ impl PrivateXServerFrontend {
             settling,
             native_pending,
             pending_custody,
+            next_event_order,
             ..
         } = terminal;
         let Some(PrivateOrderedItem::Refused { custody, route, .. }) = current.as_ref() else {
@@ -72,6 +73,7 @@ impl PrivateXServerFrontend {
             native,
             native_pending,
             pending_custody,
+            next_event_order,
             controller,
             participant,
             broker,
@@ -135,6 +137,7 @@ impl PrivateXServerFrontend {
             settling,
             native_pending,
             pending_custody,
+            next_event_order,
             ..
         } = terminal;
         let outcome = execute_owned(
@@ -142,6 +145,7 @@ impl PrivateXServerFrontend {
             native,
             native_pending,
             pending_custody,
+            next_event_order,
             controller,
             participant,
             broker,
@@ -189,6 +193,7 @@ fn resolve_and_apply(
     native: &private_native::Owner,
     native_pending: &mut Option<private_native::Hold>,
     pending_custody: &mut Option<PrivateDeliveryCustody>,
+    next_event_order: &mut u64,
     notes: &mut PrivateTransactionNotes<'_>,
 ) -> Result<(), sophia_input_authority::RegistrationError> {
     let unavailable = sophia_input_authority::RegistrationError::RoutingUnavailable;
@@ -261,7 +266,15 @@ fn resolve_and_apply(
                         // reason the press's is: a local across that call is
                         // one an interruption takes.
                         Ok(Some(cell)) => {
-                            *pending_custody = Some(PrivateDeliveryCustody::new(Some(cell)));
+                            // Checked, not saturating: a stamp that repeats puts two
+                    // events in one place, which is not an order at all.
+                    let Some(next) = next_event_order.checked_add(1) else {
+                        notes.order_exhausted = true;
+                        return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                    };
+                    let order = *next_event_order;
+                    *next_event_order = next;
+                    *pending_custody = Some(PrivateDeliveryCustody::new(order, Some(cell)));
                         }
                         Ok(None) => {
                             notes.completion_missing = true;
@@ -638,7 +651,15 @@ fn resolve_and_apply(
                 // record, leaving the event that effect just owed with no
                 // handle able to answer it.
                 Ok(Some(cell)) => {
-                    *pending_custody = Some(PrivateDeliveryCustody::new(Some(cell)));
+                    // Checked, not saturating: a stamp that repeats puts two
+                    // events in one place, which is not an order at all.
+                    let Some(next) = next_event_order.checked_add(1) else {
+                        notes.order_exhausted = true;
+                        return Err(sophia_input_authority::RegistrationError::StaleRequest);
+                    };
+                    let order = *next_event_order;
+                    *next_event_order = next;
+                    *pending_custody = Some(PrivateDeliveryCustody::new(order, Some(cell)));
                 }
                 Ok(None) => {
                     notes.completion_missing = true;
@@ -800,6 +821,7 @@ fn execute_owned(
     native: &private_native::Owner,
     native_pending: &mut Option<private_native::Hold>,
     pending_custody: &mut Option<PrivateDeliveryCustody>,
+    next_event_order: &mut u64,
     controller: &PrivateAuthorityController,
     participant: &PrivateAdmissionParticipant,
     broker: &XServerFrontendRouteBroker,
@@ -882,6 +904,7 @@ fn execute_owned(
                     native,
                     native_pending,
                     pending_custody,
+                    next_event_order,
                     &mut notes,
                 )
             })
@@ -898,6 +921,9 @@ fn execute_owned(
 
         // Before the rest: these say the work should not have been applied at
         // all, rather than that applying it went wrong.
+        if notes.order_exhausted {
+            return Err(PrivateExecutionRefusal::OrderExhausted);
+        }
         if notes.custody_retained {
             return Err(PrivateExecutionRefusal::CustodyRetained);
         }

@@ -28,6 +28,8 @@ struct PrivateTransactionNotes<'a> {
     completion_missing: bool,
     /// A previous operation's custody is still held with no disposition.
     custody_retained: bool,
+    /// No unique order stamp was available for this event.
+    order_exhausted: bool,
     /// What the native source refused, when it refused.
     ///
     /// Carried out rather than renamed. The source tells a delivery that ended
@@ -66,6 +68,7 @@ impl<'a> PrivateTransactionNotes<'a> {
             recovery_unavailable: false,
             completion_missing: false,
             custody_retained: false,
+            order_exhausted: false,
             native_refusal: None,
             may_have_applied,
         }
@@ -170,6 +173,13 @@ pub(crate) enum PrivateExecutionRefusal {
     /// the work must not be applied: an effect for a delivery whose outcome
     /// is already reported would be an effect nobody is waiting for.
     DeliveryEnded,
+    /// No unique order could be assigned to this event.
+    ///
+    /// The stamp says where an event sits in the order its recipient must see,
+    /// and a reused one would put two events in the same place. Refused before
+    /// the effect rather than saturating: an order that repeats is not an
+    /// order.
+    OrderExhausted,
     /// A previous operation's custody is still held here and has had no
     /// disposition.
     ///

@@ -6,8 +6,330 @@
 // attempt, an attempt to give back. They change for different reasons, and
 // the stepping is the part that has to stay readable end to end.
 
+/// Which output a recipient's connection owes next.
+///
+/// ONE HEAD PER CONNECTION, ACROSS PRESS AND RELEASE ALIKE. Order is a
+/// property of the recipient's own stream: a release that was decided before a
+/// later press must reach that recipient first, and comparing only presses let
+/// the later one overtake it.
+///
+/// UNFINISHED WORK STAYS IN THE COMPARISON. An event whose handover began and
+/// never reported is exactly what must block everything behind it; excluding
+/// it because it cannot advance removes the reason the others are waiting.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateOutputSite {
+    /// The press custody on a hold record.
+    HeldPress(usize),
+    /// The press custody carried on a settling release.
+    CarriedPress(usize),
+    /// A settling release's own event.
+    Release(usize),
+}
+
 #[cfg(unix)]
 impl PrivateXServerFrontend {
+/// Wrap a press emission and stow it in the custody that owns it.
+///
+/// The slot is filled before anything is handed over, and an emission that
+/// cannot be wrapped is retained there with its cause rather than dropped: it
+/// is still the only copy of an event decided at a moment that has passed.
+#[cfg(unix)]
+fn stow_press_capsule(
+    custody: &mut PrivateDeliveryCustody,
+    emission: PrivateOrderedEmission,
+    recovery: &InputRecovery,
+    recipient: XServerFrontendClientId,
+) {
+    match XAuthorityOrderedDelivery::from_emission(emission) {
+        Ok(mut capsule) => {
+            if let Some(completion) = custody.completion.as_ref() {
+                capsule.carry_finalizer(std::sync::Arc::new(finalizer_from_held(
+                    recovery,
+                    completion,
+                    capsule.delivery(),
+                    recipient,
+                )));
+            }
+            custody.pending = Some(PrivatePendingDelivery::Capsule(capsule));
+            custody.dispatch = PrivateDispatchPhase::Pending;
+        }
+        Err((cause, emission)) => {
+            custody.pending = Some(PrivatePendingDelivery::Unwrapped { emission, cause });
+            custody.dispatch = PrivateDispatchPhase::Unwrappable;
+        }
+    }
+}
+
+/// Hand one debt's event to its recipient, from the custody that owns it.
+///
+/// The order is the same wherever it is used: the slot is prepared before the
+/// emission is taken, the phase is written down before the handover, and a
+/// refused queue returns the exact capsule into the slot with nothing fallible
+/// in between. Full is known-not-enqueued and is offered again unchanged;
+/// nothing is ever re-encoded or reselected.
+#[cfg(unix)]
+fn dispatch_custody(
+    custody: &mut PrivateDeliveryCustody,
+    recipient: XServerFrontendClientId,
+    recovery: &InputRecovery,
+    clients: &Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
+) -> bool {
+    // THE PHASE AUTHORIZES, NOT THE SLOT. A capsule still sitting in a slot
+    // whose phase says the handover may already have happened is not one to
+    // send: an interruption after the write-ahead leaves exactly that, and
+    // offering it again is a replay of bytes the recipient may already hold.
+    if !custody.handover_permitted() {
+        return false;
+    }
+    if !matches!(custody.pending, Some(PrivatePendingDelivery::Capsule(_))) {
+        return false;
+    }
+    let sender = {
+        let Ok(guard) = clients.lock() else {
+            return false;
+        };
+        let sender = guard.get(&recipient).map(|senders| senders.ordered.clone());
+        drop(guard);
+        match sender {
+            Some(sender) => sender,
+            None => return false,
+        }
+    };
+    let _ = recovery;
+    custody.dispatch = PrivateDispatchPhase::Indeterminate;
+    let Some(PrivatePendingDelivery::Capsule(capsule)) = custody.pending.take() else {
+        unreachable!("checked to be a capsule above")
+    };
+    match sender.try_send(capsule) {
+        Ok(()) => {
+            custody.dispatch = PrivateDispatchPhase::Enqueued;
+            true
+        }
+        Err(std::sync::mpsc::TrySendError::Full(capsule))
+        | Err(std::sync::mpsc::TrySendError::Disconnected(capsule)) => {
+            custody.pending = Some(PrivatePendingDelivery::Capsule(capsule));
+            custody.dispatch = PrivateDispatchPhase::Pending;
+            false
+        }
+    }
+}
+
+    /// Whether the custody at this site may have a handover attempted for it.
+    fn head_permits_handover(&self, site: PrivateOutputSite) -> bool {
+        match site {
+            PrivateOutputSite::HeldPress(index) => {
+                self.terminal.holds[index].custody.handover_permitted()
+            }
+            PrivateOutputSite::CarriedPress(index) => self.terminal.settling[index]
+                .press_custody
+                .as_ref()
+                .is_some_and(PrivateDeliveryCustody::handover_permitted),
+            PrivateOutputSite::Release(index) => {
+                self.terminal.settling[index].custody_handover_permitted()
+            }
+        }
+    }
+
+    /// The earliest unfinished output this recipient still owes.
+    ///
+    /// Found before asking whether it can advance, so a head that cannot move
+    /// blocks what is behind it rather than being skipped.
+    fn output_head(&self, recipient: XServerFrontendClientId) -> Option<(u64, PrivateOutputSite)> {
+        let held = self
+            .terminal
+            .holds
+            .iter()
+            .enumerate()
+            .filter(|(_, record)| {
+                record.reached.client() == recipient && record.custody.handover_unfinished()
+            })
+            .map(|(index, record)| (record.custody.order, PrivateOutputSite::HeldPress(index)));
+        let carried = self
+            .terminal
+            .settling
+            .iter()
+            .enumerate()
+            .filter(|(_, release)| release.reached().client() == recipient)
+            .filter_map(|(index, release)| {
+                release
+                    .press_custody
+                    .as_ref()
+                    .filter(|custody| custody.handover_unfinished())
+                    .map(|custody| (custody.order, PrivateOutputSite::CarriedPress(index)))
+            });
+        let releases = self
+            .terminal
+            .settling
+            .iter()
+            .enumerate()
+            .filter(|(_, release)| {
+                release.reached().client() == recipient && release.custody_handover_unfinished()
+            })
+            .map(|(index, release)| (release.custody_order(), PrivateOutputSite::Release(index)));
+        held.chain(carried).chain(releases).min_by_key(|(order, _)| *order)
+    }
+
+    /// How far a connection sits after the one served last, cyclically.
+    ///
+    /// Zero would be the connection just served, so it comes last rather than
+    /// first: a connection that has had its turn waits for the others.
+    fn cyclic_position(&self, client: XServerFrontendClientId) -> u64 {
+        let Some(last) = self.terminal.last_offered else {
+            return client.raw();
+        };
+        client.raw().wrapping_sub(last.raw()).wrapping_sub(1)
+    }
+
+    /// The next output this visit may hand over, and whose it is.
+    ///
+    /// ONE PASS, AND ARBITRATION THAT SURVIVES THE VISIT. Connections are
+    /// compared by how far they sit after the one served last, and the event
+    /// stamp decides only within a connection -- so the winner is the lowest
+    /// unfinished stamp of the connection whose turn it is, which is that
+    /// connection's own head. No dedup list, no rescan per excluded
+    /// connection, and unresolved heads stay in the comparison.
+    ///
+    /// Choosing the globally earliest output instead re-chose the same
+    /// connection every visit whenever its head could not progress: a full
+    /// queue restores the exact capsule and phase that selected it, so the
+    /// next visit made the same choice and a connection with a later stamp
+    /// never got a turn.
+    ///
+    /// THE STAMP IS NEVER CHANGED to achieve this. Fairness is whose turn it
+    /// is; the stamp is the order its recipient must see.
+    fn offered_head(&self) -> Option<(XServerFrontendClientId, PrivateOutputSite)> {
+        let mut best: Option<(u64, u64, XServerFrontendClientId, PrivateOutputSite)> = None;
+        let mut consider = |order: u64, client: XServerFrontendClientId, site, turn: u64| {
+            if best.is_none_or(|(seen_turn, seen_order, _, _)| (turn, order) < (seen_turn, seen_order))
+            {
+                best = Some((turn, order, client, site));
+            }
+        };
+        for (index, record) in self.terminal.holds.iter().enumerate() {
+            if record.custody.handover_unfinished() {
+                let client = record.reached.client();
+                consider(
+                    record.custody.order,
+                    client,
+                    PrivateOutputSite::HeldPress(index),
+                    self.cyclic_position(client),
+                );
+            }
+        }
+        for (index, release) in self.terminal.settling.iter().enumerate() {
+            let client = release.reached().client();
+            let turn = self.cyclic_position(client);
+            if let Some(custody) = release
+                .press_custody
+                .as_ref()
+                .filter(|custody| custody.handover_unfinished())
+            {
+                consider(
+                    custody.order,
+                    client,
+                    PrivateOutputSite::CarriedPress(index),
+                    turn,
+                );
+            }
+            if release.custody_handover_unfinished() {
+                consider(
+                    release.custody_order(),
+                    client,
+                    PrivateOutputSite::Release(index),
+                    turn,
+                );
+            }
+        }
+        best.map(|(_, _, client, site)| (client, site))
+    }
+
+    /// Hand one recipient's next owed event to it.
+    ///
+    /// ONLY A HEAD MOVES. The offer is a single connection's earliest
+    /// unfinished output, so a head that cannot advance blocks what is behind
+    /// it on the same connection, which is what order means.
+    ///
+    /// Releases are heads too, but a release's handover belongs to the attempt
+    /// path -- the ledger chooses which debt gets one -- so a release at the
+    /// head is spent here without a send. What that costs is this visit; what
+    /// it says is that the recipient is not free for anything behind it.
+    ///
+    /// ARBITRATED ACROSS RECIPIENTS. One connection whose head is stuck must
+    /// not stop every other connection's output, so the offer moves on from
+    /// the connection served last whether or not this visit hands anything
+    /// over.
+    fn dispatch_one_press(&mut self) -> Option<bool> {
+        let (recipient, site) = self.offered_head()?;
+        // THE TURN ADVANCES ON SELECTION, not on success. A queue that is full
+        // restores the exact capsule and phase that chose this connection, so
+        // advancing only when something was handed over would choose it again
+        // on the next visit and never reach a connection behind it.
+        self.terminal.last_offered = Some(recipient);
+
+        // A head that belongs to the attempt path, or whose phase forbids a
+        // handover, costs this visit and defers to a later round. Its turn has
+        // been spent, so the next visit starts after it.
+        if matches!(site, PrivateOutputSite::Release(_)) || !self.head_permits_handover(site) {
+            return None;
+        }
+
+        let recovery = self.broker.registry.input_recovery.clone();
+        let custody = match site {
+            PrivateOutputSite::HeldPress(index) => {
+                let record = &mut self.terminal.holds[index];
+                if record.custody.pending.is_none() {
+                    let taken = record
+                        .native
+                        .as_mut()
+                        .and_then(private_native::Hold::take_press_emission);
+                    let Some(emission) = taken else {
+                        return Some(false);
+                    };
+                    Self::stow_press_capsule(
+                        &mut record.custody,
+                        emission,
+                        &recovery,
+                        recipient,
+                    );
+                }
+                &mut record.custody
+            }
+            PrivateOutputSite::CarriedPress(index) => {
+                let release = &mut self.terminal.settling[index];
+                if release
+                    .press_custody
+                    .as_ref()
+                    .is_some_and(|custody| custody.pending.is_none())
+                {
+                    let taken = release
+                        .native_mut()
+                        .and_then(private_native::Hold::take_press_emission);
+                    let Some(emission) = taken else {
+                        return Some(false);
+                    };
+                    Self::stow_press_capsule(
+                        release.press_custody.as_mut().expect("selected by it"),
+                        emission,
+                        &recovery,
+                        recipient,
+                    );
+                }
+                release
+                    .press_custody
+                    .as_mut()
+                    .expect("selected by its custody")
+            }
+            PrivateOutputSite::Release(_) => unreachable!("left to the attempt path"),
+        };
+        Some(Self::dispatch_custody(
+            custody,
+            recipient,
+            &recovery,
+            &self.broker.registry.clients,
+        ))
+    }
+
     /// Claim one delivery attempt and hand its capsule to the recipient.
     ///
     /// ONE RELEASE, ONE ATTEMPT, and the two ends are joined here because
@@ -60,13 +382,24 @@ impl PrivateXServerFrontend {
             phase: PrivateAttemptPhase::Unplaced,
         });
 
-        let Some(index) = self
+        // THE LEDGER'S CHOICE STANDS; what this decides is only whether this
+        // executor can serve it now. A release that is not its connection's
+        // output head must wait, and the attempt goes back rather than being
+        // spent on an event that would arrive out of order.
+        let servable = self
             .terminal
             .settling
             .iter()
             .position(|release| release.incarnation() == claim.hold)
             .filter(|index| self.terminal.settling[*index].owes_delivery_attempt())
-        else {
+            .filter(|index| {
+                let release = &self.terminal.settling[*index];
+                matches!(
+                    self.output_head(release.reached().client()),
+                    Some((_, PrivateOutputSite::Release(head))) if head == *index
+                )
+            });
+        let Some(index) = servable else {
             // The ledger chose a debt this executor cannot serve. Its answer
             // stands; the token stays outstanding until the give-back is
             // confirmed.
@@ -404,6 +737,17 @@ impl PrivateXServerFrontend {
     fn owes_native_recording(&self) -> bool {
         self.owes_receipt_settlement()
             || self.owes_attempt_return()
+            || self
+                .terminal
+                .holds
+                .iter()
+                .any(PrivateHoldRecord::owes_press_handover)
+            || self.terminal.settling.iter().any(|release| {
+                release
+                    .press_custody
+                    .as_ref()
+                    .is_some_and(PrivateDeliveryCustody::owes_handover)
+            })
             || self.terminal.settling.iter().any(|release| {
                 release.owes_native_recording() || release.owes_delivery_attempt()
             })
