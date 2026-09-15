@@ -24320,6 +24320,9 @@ fn a_continuation_place_is_taken_before_exposure_and_kept_while_work_remains() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
     });
     second.install(&mut source);
     assert!(source.is_none(), "it left the caller's slot");
@@ -24550,6 +24553,9 @@ fn an_unreadable_owner_does_not_make_an_accepted_transfer_optional() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
     });
     slot.install(&mut source);
 
@@ -24585,6 +24591,9 @@ fn driving_a_continuation_does_not_hold_the_store_behind_it() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
     });
     slot.install(&mut source);
 
@@ -24646,6 +24655,9 @@ fn an_unwind_before_the_destination_is_held_leaves_the_work_with_its_source() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
     });
     // WHAT THIS CONTROL ESTABLISHES, exactly: that a caller which decides to
     // hand over and then fails before calling install still has the work. It
@@ -24743,6 +24755,9 @@ fn a_bound_transport_that_could_not_be_served_keeps_its_ending_handle() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Transport(Box::new(returned)),
         refusal,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
     });
     slot.install(&mut source);
     assert!(source.is_none());
@@ -24820,6 +24835,9 @@ fn a_handover_waits_for_the_destination_reserved_for_it() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
     });
 
     let blocker = record.lock().expect("hold the destination");
@@ -24884,6 +24902,9 @@ fn reading_the_store_does_not_take_a_record_beneath_it() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
     });
     slot.install(&mut source);
 
@@ -24957,6 +24978,9 @@ fn an_unreadable_retained_record_is_not_reported_as_absent() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
     });
     slot.install(&mut source);
     assert_eq!(durable.continuations_retained(), Some(1));
@@ -25030,6 +25054,9 @@ fn a_quiet_continuation_keeps_its_place_and_does_not_starve_the_others() {
         let mut source = Some(PrivateOrderedContinuation::Setup {
             accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
             refusal: X11OrderedServingRefusal::TransportUnavailable,
+            retained: Vec::new(),
+            drained: false,
+            ended: false,
         });
         slot.install(&mut source);
         places.push(());
@@ -25066,4 +25093,105 @@ fn a_quiet_continuation_keeps_its_place_and_does_not_starve_the_others() {
     );
     assert_eq!(durable.continuations_retained(), Some(0));
     let _ = places;
+}
+
+#[test]
+fn asking_whether_a_continuation_is_settled_destroys_nothing() {
+    // Receiving is the only way to question a channel, so a predicate that
+    // questioned one consumed whatever was waiting and reported on work it had
+    // just destroyed. The admission is real and its finalizer is watched by a
+    // Weak, so a capsule thrown away by the question would be visible as gone.
+    let client = XServerFrontendClientId(8021);
+    let f = prepared_ordered_fixture(client);
+    let sender = f
+        .runner
+        .frontend
+        .as_ref()
+        .unwrap()
+        .broker
+        .registry
+        .clients
+        .lock()
+        .unwrap()
+        .get(&client)
+        .expect("this connection's row")
+        .ordered
+        .clone();
+    let delivery = XAuthorityInputDeliveryId::from_raw(80210);
+    // The ledger that actually admitted this delivery is the one that can
+    // answer for it.
+    let (recovery, _receipts) = claim_fixture(delivery);
+    let (emission, _endpoint) =
+        private_native_tests::emission_and_endpoint_for_writer_fixture(80210);
+    let mut capsule = XAuthorityOrderedDelivery::from_emission(emission).unwrap();
+    let completion = recovery
+        .completion_for(delivery)
+        .expect("a readable ledger")
+        .expect("its admission minted a cell");
+    capsule.carry_finalizer(Arc::new(finalizer_from_held(
+        &recovery,
+        &completion,
+        delivery,
+        client,
+    )));
+    let finalizer = Arc::downgrade(capsule.finalizer().expect("carried"));
+    sender.send(capsule).expect("accepted into its queue");
+
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+    let slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+    let PreparedOrderedFixture { channels, .. } = f;
+    let mut source = Some(PrivateOrderedContinuation::Setup {
+        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
+        refusal: X11OrderedServingRefusal::TransportUnavailable,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
+    });
+    slot.install(&mut source);
+
+    // ASKED REPEATEDLY, WITHOUT DRIVING. Nothing may be consumed by the
+    // question, and the place may not come back while that admission exists.
+    for _ in 0..8 {
+        let settled = durable
+            .with_ordered_continuation(0, |continuation| continuation.settled())
+            .expect("the place holds it");
+        assert!(!settled, "an accepted admission is not a settled connection");
+    }
+    assert!(
+        finalizer.upgrade().is_some(),
+        "the question did not destroy the capsule it was asked about"
+    );
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    assert!(completion.answer().is_none(), "and answered nobody");
+
+    // A visit takes it into custody, where it is still owed an answer, so the
+    // place still does not come back.
+    durable.drive_ordered_continuations(4);
+    assert!(
+        finalizer.upgrade().is_some(),
+        "a visit receives into custody rather than discarding"
+    );
+    let retained = durable
+        .with_ordered_continuation(0, |continuation| {
+            let PrivateOrderedContinuation::Setup { retained, .. } = continuation else {
+                panic!("a setup case was installed")
+            };
+            retained
+                .first()
+                .map(XAuthorityOrderedDelivery::delivery)
+        })
+        .expect("the place holds it");
+    assert_eq!(
+        retained,
+        Some(delivery),
+        "the exact admission is held, not thrown away"
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "and its place stays taken while it is owed an answer"
+    );
+    assert!(completion.answer().is_none());
 }

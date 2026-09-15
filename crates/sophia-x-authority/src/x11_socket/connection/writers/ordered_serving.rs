@@ -169,6 +169,13 @@ struct X11OrderedClosing {
     /// holds. Counted apart: a deferral is not a published answer, and a
     /// caller that treated it as one would stop looking.
     deferred: usize,
+    /// Whether this queue's producers are all gone.
+    ///
+    /// RECORDED WHEN IT WAS OBSERVED, by a visit that was receiving anyway.
+    /// The only way to ask a channel is to receive from it, so a predicate
+    /// that asked would consume whatever was waiting and answer with it
+    /// destroyed.
+    drained: bool,
 }
 
 /// Why a wire was left holding an unfinished event.
@@ -569,6 +576,7 @@ impl X11OrderedServingOwner {
             answered: 0,
             already: 0,
             deferred: 0,
+            drained: false,
         });
         if closing.termination == X11OrderedTermination::Established {
             return Ok(());
@@ -647,7 +655,12 @@ impl X11OrderedServingOwner {
             }
             Err(X11OrderedTakeRefusal::InFlight) => X11OrderedCloseStep::Quiet,
             Err(X11OrderedTakeRefusal::Empty) => X11OrderedCloseStep::Quiet,
-            Err(X11OrderedTakeRefusal::Closed) => X11OrderedCloseStep::Drained,
+            Err(X11OrderedTakeRefusal::Closed) => {
+                if let Some(closing) = self.closing.as_mut() {
+                    closing.drained = true;
+                }
+                X11OrderedCloseStep::Drained
+            }
         }
     }
 

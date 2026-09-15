@@ -25,6 +25,29 @@ enum PrivateOrderedContinuation {
     Setup {
         accepted: PrivateOrderedSetupCustody,
         refusal: X11OrderedServingRefusal,
+        /// Capsules taken off that queue and still owed an answer.
+        ///
+        /// RECEIVED INTO CUSTODY, never probed away. Asking a channel whether
+        /// it is finished means receiving from it, so anything that asked
+        /// without keeping what it got would destroy accepted work to answer
+        /// a question about it.
+        retained: Vec<XAuthorityOrderedDelivery>,
+        /// Whether that queue's producers are gone, as observed while
+        /// receiving. Not asked, because asking consumes.
+        drained: bool,
+        /// Whether this connection's wire has been ended.
+        ///
+        /// A setup that got as far as binding holds the handle that can end
+        /// it, and a connection nobody will ever serve is one whose recipient
+        /// is otherwise left waiting for events that are not coming.
+        ///
+        /// Not independently witnessed: the same visit that ends the wire is
+        /// the only thing that observes the queue finishing, so no control
+        /// here separates the two. It would separate if an ending refused,
+        /// which is the branch this host gives no honest way to reach. Kept
+        /// because returning a place over an unended wire is the failure the
+        /// review named.
+        ended: bool,
     },
     /// A serving owner, whole: its endpoint, receiver, queued contents,
     /// in-flight frame and offset, received-but-unclassified and foreign
@@ -245,6 +268,54 @@ impl PrivateOrderedContinuation {
     /// A serving owner closes; a setup that never got one has nothing to drive
     /// and is waiting only for its producers to go.
     fn visit(&mut self) {
+        if let Self::Setup {
+            accepted,
+            retained,
+            ended,
+            ..
+        } = self
+        {
+            // A connection nobody will serve still has a recipient waiting.
+            // Ending it is the one disposition this case can perform.
+            if !*ended {
+                *ended = match accepted {
+                    PrivateOrderedSetupCustody::Receiver(_) => true,
+                    PrivateOrderedSetupCustody::Transport(transport) => {
+                        match transport.shutdown.shutdown(Shutdown::Both) {
+                            Ok(()) => true,
+                            Err(error) => error.kind() == std::io::ErrorKind::NotConnected,
+                        }
+                    }
+                };
+            }
+            // ROOM BEFORE CUSTODY, as everywhere else: what is already held is
+            // bounded by what the queue itself could hold.
+            let bound = match accepted {
+                PrivateOrderedSetupCustody::Receiver(ordered) => ordered.capacity(),
+                PrivateOrderedSetupCustody::Transport(transport) => {
+                    transport.ordered.capacity()
+                }
+            };
+            if retained.len() >= bound {
+                return;
+            }
+            match self.queue().try_recv() {
+                Ok(capsule) => {
+                    let Self::Setup { retained, .. } = self else {
+                        unreachable!("matched above")
+                    };
+                    retained.push(capsule);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    let Self::Setup { drained, .. } = self else {
+                        unreachable!("matched above")
+                    };
+                    *drained = true;
+                }
+            }
+            return;
+        }
         let Self::Serving(owner) = self else {
             return;
         };
@@ -260,32 +331,28 @@ impl PrivateOrderedContinuation {
         owner.advance_close(XByteOrder::LittleEndian, 0);
     }
 
+    /// ASKS NOTHING OF THE QUEUE. Receiving is the only way to question a
+    /// channel, so a predicate that questioned one would consume what was
+    /// waiting and report on work it had just destroyed. Everything here was
+    /// recorded by a visit that was receiving anyway.
     fn settled(&self) -> bool {
         match self {
-            // Nothing was ever served for it, so what it owes is whatever it
-            // accepted. It is settled only once that queue can never deliver
-            // again and holds nothing.
-            Self::Setup { .. } => {
-                matches!(
-                    self.queue().try_recv(),
-                    Err(std::sync::mpsc::TryRecvError::Disconnected)
-                )
-            }
+            Self::Setup {
+                retained,
+                drained,
+                ended,
+                ..
+            } => *drained && *ended && retained.is_empty(),
             Self::Serving(owner) => {
                 owner.retained_unanswered().is_empty()
                     && owner.retained_foreign().is_empty()
                     && owner.in_flight().is_none()
                     && owner.refused().is_none()
                     && !owner.unterminated
-                    && owner
-                        .closing()
-                        .is_some_and(|closing| {
-                            closing.termination == X11OrderedTermination::Established
-                        })
-                    && matches!(
-                        owner.queue.try_recv(),
-                        Err(std::sync::mpsc::TryRecvError::Disconnected)
-                    )
+                    && owner.closing().is_some_and(|closing| {
+                        closing.termination == X11OrderedTermination::Established
+                            && closing.drained
+                    })
             }
         }
     }
