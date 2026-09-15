@@ -58,7 +58,7 @@ impl LiveProductionVisualRuntime {
                 );
                 tracing::info!(
                     target: "sophia_scanout_evidence",
-                    "sophia_shell_native_binding schema=1 connection_epoch={} content_grant_epoch={} output={} candidate_generation={} native_owner={} native_frame={} head={} target_generation={} heads={}",
+                    "sophia_shell_native_binding schema=1 connection_epoch={} content_grant_epoch={} output={} candidate_generation={} native_owner={} native_frame={} head={} target_generation={} heads={} mode_refresh_millihz={}",
                     content.grant.connection_epoch,
                     content.grant.content_grant_epoch,
                     output.raw(),
@@ -68,6 +68,7 @@ impl LiveProductionVisualRuntime {
                     target.head.raw(),
                     target.target_generation,
                     targets.len(),
+                    target.refresh_millihz,
                 );
             }
         }

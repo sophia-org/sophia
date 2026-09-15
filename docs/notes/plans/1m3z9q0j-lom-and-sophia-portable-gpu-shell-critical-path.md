@@ -601,6 +601,15 @@ normal exit, exact terminal settlement and post-cleanup accounting remains
 required; a watchdog exit or destruction of the accounting owner is not evidence
 of successful reclamation. No canonical release or native acceptance is claimed.
 
+Native binding evidence now also carries the existing current render target's
+`mode_refresh_millihz`. Each physical head must name a stable mode of at least
+60 Hz, including mirrored siblings. The workload verifier rejects absent or
+invalid rate evidence and reports the actual recorded rates per head. This
+uses no default and changes no mode or scheduling policy. It qualifies mode
+selection only: observed cadence, VRR behavior and driver health are separate
+from the mode's nominal rate. Synthetic transcript and recorder controls do not
+establish any native hardware rate.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

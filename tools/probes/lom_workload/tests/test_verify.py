@@ -22,6 +22,7 @@ class CausalLatencyTests(unittest.TestCase):
             self.assertEqual(output["ack_p95_usec"], 10_000)
             self.assertEqual(output["native_p95_usec"], 50_000)
             self.assertEqual(len(output["samples"]), 20)
+            self.assertEqual(set(output["mode_refresh_millihz_by_head"].values()), {60000})
 
     def test_missing_rejected_or_ambiguous_outcome_never_disappears_from_statistics(self):
         for name in ["sophia_shell_action_receipt", "sophia_shell_action_cause",
@@ -100,6 +101,41 @@ class CausalLatencyTests(unittest.TestCase):
         host["sophia_shell_native_completion"][-1]["monotonic_usec"] = 70_999_999
         with self.assertRaisesRegex(InvalidEvidence, "full workload duration"):
             verify(host, client, limits())
+
+    def test_every_head_needs_a_stable_qualified_mode(self):
+        for refresh in [0, 59_999, 1 << 32, 120_000]:
+            with self.subTest(refresh=refresh):
+                host, client = transcript()
+                host["sophia_shell_native_binding"][2]["mode_refresh_millihz"] = refresh
+                with self.assertRaises(InvalidEvidence):
+                    verify(host, client, limits())
+        host, client = transcript()
+        # Mirrored coverage must qualify each physical head, not just primary.
+        extra = []
+        for row in host["sophia_shell_native_binding"]:
+            row["heads"] = 2
+            extra.append({**row, "head": row["head"] + 10, "mode_refresh_millihz": 120_000})
+        host["sophia_shell_native_binding"].extend(extra)
+        for row in host["sophia_shell_native_completion"]:
+            row["heads"] = 2
+        self.assertEqual(verify(host, client, limits())["status"], "pass")
+        # Keep the slow sibling stable throughout: topology-change rejection
+        # must not mask a missing lower-bound check.
+        for row in extra:
+            row["mode_refresh_millihz"] = 30_000
+        with self.assertRaisesRegex(InvalidEvidence, "below 60 Hz"):
+            verify(host, client, limits())
+
+    def test_refresh_evidence_is_mandatory_bounded_and_not_duplicated(self):
+        row = encode({"sophia_shell_native_binding": transcript()[0]["sophia_shell_native_binding"][:1]}).strip()
+        self.assertIsNotNone(decode(row, HOST))
+        for invalid in [row.replace(" mode_refresh_millihz=60000", ""),
+                        row + " mode_refresh_millihz=60000",
+                        row.replace("mode_refresh_millihz=60000", "mode_refresh_millihz=-1"),
+                        row.replace("mode_refresh_millihz=60000", "mode_refresh_millihz=18446744073709551616")]:
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(InvalidEvidence):
+                    decode(invalid, HOST)
 
     def test_strict_record_schema(self):
         row = encode({"sophia_shell_native_completion": transcript()[0]["sophia_shell_native_completion"][:1]}).strip()

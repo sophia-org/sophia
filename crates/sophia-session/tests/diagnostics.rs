@@ -664,7 +664,7 @@ fn shell_action_causal_fields_are_scoped_and_bounded() {
         "sophia_shell_action_cause schema=1 connection_epoch=1 event_id=3 output=4 action=8 activation_serial=9 policy_connection_epoch=10 admission=Admitted",
         "sophia_shell_indicator_state schema=1 connection_epoch=1 indicator_generation=13 output=4 indicator=2 action=8 slot=1 state_bits=1 entries=4",
         "sophia_shell_action_policy schema=1 policy_connection_epoch=10 activation_serial=9 action=8 transaction=11 request_id=12 indicator_generation=13 outcome=Committed",
-        "sophia_shell_native_binding schema=1 connection_epoch=1 content_grant_epoch=2 output=3 candidate_generation=4 native_owner=5 native_frame=6 head=7 target_generation=8 heads=2",
+        "sophia_shell_native_binding schema=1 connection_epoch=1 content_grant_epoch=2 output=3 candidate_generation=4 native_owner=5 native_frame=6 head=7 target_generation=8 heads=2 mode_refresh_millihz=60000",
         "sophia_shell_native_completion schema=1 output=3 native_owner=5 native_frame=6 heads=2 monotonic_usec=12345 timestamp_source=kernel missing_kernel_timestamp=0",
     ] {
         assert_eq!(

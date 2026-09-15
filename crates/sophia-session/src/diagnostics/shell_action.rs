@@ -85,6 +85,7 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
             | "native_frame"
             | "head"
             | "target_generation"
+            | "mode_refresh_millihz"
             | "heads",
         ) => number,
         (

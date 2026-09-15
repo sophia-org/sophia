@@ -83,6 +83,7 @@ class Capture:
                     "replaced native content grant")
             bindings[key(binding, "connection_epoch content_grant_epoch output candidate_generation")].append(binding)
         self.completed = {}
+        self.mode_refresh = {}
         self.unqualified = 0
         topology = {}
         claimed_frames = set()
@@ -97,9 +98,16 @@ class Capture:
             require(all(key(h, "native_owner native_frame heads") ==
                         key(first, "native_owner native_frame heads") for h in heads),
                     "candidate spans unrelated native frames")
-            layout = tuple(sorted(key(h, "native_owner head target_generation") for h in heads))
+            # Mode qualification is not measured cadence or a healthy-driver claim.
+            require(all(60_000 <= h["mode_refresh_millihz"] <= (1 << 32) - 1 for h in heads),
+                    "native head mode is below 60 Hz or has invalid refresh")
+            layout = tuple(sorted(key(h, "native_owner head target_generation mode_refresh_millihz")
+                                  for h in heads))
             old = topology.setdefault(identity[2], layout)
             require(old == layout, "native owner or topology changed during workload")
+            self.mode_refresh[identity[2]] = {
+                str(h["head"]): h["mode_refresh_millihz"] for h in heads
+            }
             frame_key = key(first, "native_owner output native_frame")
             require(frame_key not in claimed_frames, "one native frame claimed by two candidates")
             claimed_frames.add(frame_key)
@@ -200,7 +208,8 @@ def verify(host, client, workload):
         require(max(times) >= end, "capture lacks full workload duration on every output")
         values = samples[output]
         require(len(values) == workload["actions_per_output"], "missing per-output action samples")
-        summary = {"count": len(values), "samples": values}
+        summary = {"count": len(values), "samples": values,
+                   "mode_refresh_millihz_by_head": capture.mode_refresh[output]}
         for metric in ["ack", "native"]:
             ordered = sorted(v[f"{metric}_usec"] for v in values)
             p95 = ordered[math.ceil(len(ordered) * 0.95) - 1]

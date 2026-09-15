@@ -30,7 +30,7 @@ def transcript():
         host["sophia_shell_native_binding"].append(dict(
             connection_epoch=1, content_grant_epoch=2, output=output,
             candidate_generation=generation, native_owner=1, native_frame=generation,
-            head=output, target_generation=1, heads=1,
+            head=output, target_generation=1, heads=1, mode_refresh_millihz=60000,
         ))
         host["sophia_shell_native_completion"].append(dict(
             output=output, native_owner=1, native_frame=generation, heads=1,

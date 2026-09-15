@@ -35,7 +35,7 @@ HOST = {
     ),
     "sophia_shell_native_binding": (
         "connection_epoch content_grant_epoch output candidate_generation native_owner "
-        "native_frame head target_generation heads", "", {},
+        "native_frame head target_generation heads mode_refresh_millihz", "", {},
     ),
     "sophia_shell_native_completion": (
         "output native_owner native_frame heads monotonic_usec", "",

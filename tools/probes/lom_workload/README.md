@@ -1,7 +1,7 @@
 # Lom causal workload evidence
 
 This verifier checks the action-latency part of the planned two-output workload.
-It is **not yet the complete attended gate**: it does not establish refresh rate,
+It is **not yet the complete attended gate**: it does not establish measured cadence,
 memory plateau, post-teardown reclamation, session recovery, GPU grant correctness
 or healthy process lifetimes. Run those separate checks too. The current tty4
 launcher has not yet been upgraded to this workload.
@@ -63,3 +63,13 @@ python3 -B -m unittest discover -s tools/probes/lom_workload/tests -v
 They are also registered in `tools/check_lom_gpu_content_proof_verifiers.sh`.
 Fixtures do not run Session, Lom, WM, a GPU worker or native scanout. Passing them
 establishes verifier behavior against the given transcript, not native latency.
+
+## Native mode qualification
+
+Each owned candidate binding includes `mode_refresh_millihz` from the current
+native head render target. The verifier requires every head, including mirror
+siblings, to have a stable mode of at least 60 Hz. Missing, zero, overflowing,
+duplicate or changing refresh evidence fails; no 60 Hz default is supplied.
+The report retains each head's selected mode rate. This is mode qualification,
+not measured rendering cadence, VRR minimum cadence or a driver-health claim.
+Kernel completion latency, process health and teardown remain separate checks.
