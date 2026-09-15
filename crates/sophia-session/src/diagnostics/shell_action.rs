@@ -10,6 +10,8 @@ pub(super) fn record(name: &str) -> bool {
             | "sophia_shell_native_completion"
             | "sophia_shell_indicator_state"
             | "sophia_shell_content_shutdown"
+            | "sophia_shell_content_sample"
+            | "sophia_shell_content_budget"
     )
 }
 
@@ -21,8 +23,28 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
         (_, "schema") => value == "1",
         ("sophia_shell_content_shutdown", "status") => matches!(value, "quiescent" | "retained"),
         ("sophia_shell_content_shutdown", "workers_joined") => matches!(value, "0" | "1"),
+        ("sophia_shell_content_sample", "status") => value == "active",
+        ("sophia_shell_content_sample", "workers_joined") => value == "0",
         (
-            "sophia_shell_content_shutdown",
+            "sophia_shell_content_budget",
+            "connection_epoch"
+            | "content_grant_epoch"
+            | "limits_generation"
+            | "max_staging_bytes"
+            | "max_resident_bytes"
+            | "max_retiring_bytes"
+            | "max_live_resources"
+            | "max_resource_ids"
+            | "max_open_transfers"
+            | "max_allocations_total"
+            | "max_open_candidates_total"
+            | "max_pending_candidates_total"
+            | "max_control_records"
+            | "max_input_queue_bytes"
+            | "max_output_queue_bytes",
+        ) => number,
+        (
+            "sophia_shell_content_shutdown" | "sophia_shell_content_sample",
             "connection_epoch"
             | "content_grant_epoch"
             | "settled_candidates"

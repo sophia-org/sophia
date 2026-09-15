@@ -1,5 +1,6 @@
 use super::*;
 mod content;
+mod content_accounting;
 mod content_shutdown;
 mod gpu;
 pub(crate) mod gpu_content_proof;

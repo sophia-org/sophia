@@ -17,10 +17,24 @@ SHUTDOWN_INVENTORY = (
     "reserved_resident_bytes reserved_bytes reserved_backing_bytes response_records "
     "response_bytes input_records input_bytes"
 )
+CONTENT_BUDGET = (
+    "limits_generation max_staging_bytes max_resident_bytes max_retiring_bytes "
+    "max_live_resources max_resource_ids max_open_transfers max_allocations_total "
+    "max_open_candidates_total max_pending_candidates_total max_control_records "
+    "max_input_queue_bytes max_output_queue_bytes"
+)
 
 # A tuple gives mandatory integer fields, fields admitting zero, and enums.
 # Unknown fields fail rather than quietly changing the interpreted contract.
 HOST = {
+    "sophia_shell_content_budget": (
+        "connection_epoch content_grant_epoch " + CONTENT_BUDGET, "", {},
+    ),
+    "sophia_shell_content_sample": (
+        "connection_epoch content_grant_epoch monotonic_usec settled_candidates " + SHUTDOWN_INVENTORY,
+        "settled_candidates " + SHUTDOWN_INVENTORY,
+        {"status": {"active"}, "workers_joined": {"0"}},
+    ),
     "sophia_shell_content_shutdown": (
         "connection_epoch content_grant_epoch monotonic_usec settled_candidates " + SHUTDOWN_INVENTORY,
         "settled_candidates " + SHUTDOWN_INVENTORY,

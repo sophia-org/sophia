@@ -3,7 +3,7 @@
 This verifier checks the action-latency part of the planned two-output workload.
 It also requires the exact final content-shutdown accounting record.
 It is **not yet the complete attended gate**: it does not establish measured cadence,
-memory plateau, session recovery, GPU grant correctness
+process/GPU memory plateau, session recovery, GPU grant correctness
 or healthy process lifetimes. Run those separate checks too. The current tty4
 launcher has not yet been upgraded to this workload.
 
@@ -88,3 +88,26 @@ obligations resolved after rendering ended, not newly presented frames.
 This validates the final protocol/storage snapshot emitted by Session, not
 process RSS, global historical worker reclamation or GPU residency. It does not
 replace the native gate's normal exit, cleanup, fatal/restart and recovery checks.
+
+## In-run protocol storage
+
+The existing bounded five-second owner-loop sampler observes actual content
+stores and aggregate input/output charges without collecting owners or draining
+responses. It records the actual immutable negotiated ceilings alongside each
+sample. Workload verification requires samples bracketing the entire window,
+no gap over six seconds and no grant or limit change.
+
+For this one-panel-per-output workload the declared ceiling is two resource
+slots per output (four total), with storage/backing bounded by twice the sum of
+the exact panel pixel sizes. Allocations, candidates, permits, demands and
+transport inventory have explicit numeric ceilings, also subject to negotiated
+limits. Resource-ID population must not grow past its observed warmup high-water
+mark. The report retains every inventory high-water and the bounds used. Final
+shutdown still requires zero, including retiring owners and reserved credits.
+
+These are sampled protocol/storage bounds and warmed ID stability, not proof
+against every between-sample excursion or arbitrary-duration leak. Existing
+production admission enforces its negotiated bounds continuously. Real retained
+cache/consumer coverage in the separate 1000-cycle tests is not replaced by
+these observations, and neither evidence class establishes process or GPU
+memory residency.

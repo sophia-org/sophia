@@ -76,6 +76,23 @@ def transcript():
         settled_candidates=1, status="quiescent", workers_joined="1",
         **dict.fromkeys(SHUTDOWN_INVENTORY.split(), 0),
     ))
+    host["sophia_shell_content_budget"].append(dict(
+        connection_epoch=1, content_grant_epoch=2, limits_generation=1,
+        max_staging_bytes=8 * 1024 * 1024, max_resident_bytes=16 * 1024 * 1024,
+        max_retiring_bytes=16 * 1024 * 1024, max_live_resources=64, max_resource_ids=128,
+        max_open_transfers=4, max_allocations_total=16, max_open_candidates_total=8,
+        max_pending_candidates_total=8, max_control_records=128,
+        max_input_queue_bytes=131072, max_output_queue_bytes=262144,
+    ))
+    for when in range(5_000_000, 86_000_000, 5_000_000):
+        host["sophia_shell_content_sample"].append({
+            **dict.fromkeys(SHUTDOWN_INVENTORY.split(), 0),
+            "connection_epoch": 1, "content_grant_epoch": 2, "monotonic_usec": when,
+            "settled_candidates": 0, "status": "active", "workers_joined": "0",
+            "active_epochs": 1, "resource_ids": 4, "resources": 2, "allocations": 2,
+            "resident_bytes": 19200, "backing_bytes": 19200,
+            "reserved_bytes": 40 * 1024 * 1024, "reserved_backing_bytes": 32 * 1024 * 1024,
+        })
     return host, client
 
 

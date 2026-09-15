@@ -631,6 +631,16 @@ KMS teardown or establish a normal native exit. Reconnect-time settlement remain
 separate. The launcher still needs bounded normal exit, workload/plateau checks
 and strict verification of this final snapshot before attended readiness.
 
+Workload inventory now uses the existing five-second bounded owner-loop sampler
+to observe actual content stores, aggregate transport charges and their immutable
+negotiated ceilings. The verifier brackets the complete action window, rejects
+sampling gaps over six seconds, checks four total reusable slots and pixel bytes
+bounded by twice the exact two-panel sizes, and refuses warmed resource-ID growth.
+It also checks negotiated and workload-specific candidate/allocation/queue bounds.
+All final ownership/credits must still be zero. This measures protocol storage;
+RSS and driver allocations are separate populations, and sampled plateaus do
+not substitute for production admission or the retained-cache 1000-cycle controls.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

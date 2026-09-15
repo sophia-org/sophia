@@ -1042,6 +1042,9 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if resource_sampler.is_due(sample_now) {
+            if let Some(shell) = metadata_shell.as_ref() {
+                shell.record_content_accounting();
+            }
             let native_resources = native_scanout.as_ref().map_or_else(
                 sophia_backend_live::LivePersistentRenderMetrics::default,
                 LiveProductionNativeScanout::persistent_render_metrics,
