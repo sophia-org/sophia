@@ -249,52 +249,34 @@ impl LiveProductionNativeScanout {
         // Validation borrows the whole generation. A refused handoff returns
         // its actual pixel owners, not only a reason or a reconstructible ID.
         let preparation = (|| {
-            if generation.heads.is_empty()
-                || generation
-                    .heads
-                    .iter()
-                    .any(|head| head.content.frame() != generation.frame)
-            {
-                return Err("mirror generation has invalid or mismatched frame identity");
-            }
             let expected = self.head_indices(generation.output);
-            let actual = generation
-                .heads
+            let current = expected
                 .iter()
-                .map(|head| head.head_index)
+                .map(|index| {
+                    let head = &self.heads[*index];
+                    composition_installation::NativeCompositionInstallationHead {
+                        index: *index,
+                        identity: self.native_frame_identity(
+                            *index,
+                            generation.output,
+                            generation.frame,
+                        ),
+                        prepared_cleanup_available: head.prepared_scanout.is_none()
+                            || head.scanout_custody.can_cancel_prepared(),
+                        protected_frames: [
+                            head.pending_content,
+                            head.rendering_content,
+                            head.submitted_content,
+                        ]
+                        .map(|content| {
+                            content
+                                .filter(|value| value.requires_retirement())
+                                .map(|value| value.frame())
+                        }),
+                    }
+                })
                 .collect::<Vec<_>>();
-            if expected != actual {
-                return Err("mirror generation does not cover every physical head exactly once");
-            }
-            if generation.heads.iter().any(|queued| {
-                queued.identity
-                    != self.native_frame_identity(
-                        queued.head_index,
-                        generation.output,
-                        generation.frame,
-                    )
-            }) {
-                return Err("mirror generation does not name the current native targets");
-            }
-            if generation.heads.iter().any(|queued| {
-                let head = &self.heads[queued.head_index];
-                head.prepared_scanout.is_some() && !head.scanout_custody.can_cancel_prepared()
-            }) {
-                return Err("mirror generation waits for prepared-owner cleanup capacity");
-            }
-            if expected.iter().any(|index| {
-                let head = &self.heads[*index];
-                [
-                    head.pending_content,
-                    head.rendering_content,
-                    head.submitted_content,
-                ]
-                .into_iter()
-                .flatten()
-                .any(|old| old.requires_retirement() && old.frame() != generation.frame)
-            }) {
-                return Err("composition installation waits for an existing distinct retirement");
-            }
+            composition_installation::validate_composition_installation(&generation, &current)?;
             if expected.len() == 1 {
                 return Ok(None);
             }

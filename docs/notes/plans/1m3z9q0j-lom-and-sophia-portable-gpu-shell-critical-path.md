@@ -391,6 +391,15 @@ cannot establish a new grant's Presented identity. A pending same-grant frame
 keeps the exact previous presented targets until its own retirement. These are
 scoped device-hidden development checks, not a current-source canonical pass.
 
+The next bounded extraction shares the native installation validator with the
+production-queue fixture. The native adapter captures current owner, head and
+target identity independently of the queued payload before transferring any
+head. Two-head controls retain both real source owners through a second-head
+identity, cleanup-capacity or retirement-obligation refusal, then release once
+after both consumers end. An identity-check mutant fails the control. The
+device-hidden backend library suite passes 122 tests with this extraction;
+this adds installation-validation coverage, not native mirror completion.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

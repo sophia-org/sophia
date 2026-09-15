@@ -76,8 +76,16 @@ fn generation(
     output: OutputId,
     frame: u64,
 ) -> LiveProductionQueuedMirrorGeneration {
+    generation_with_owner(lease, output, frame, crate::NativeFrameOwner::new())
+}
+
+fn generation_with_owner(
+    lease: &sophia_runtime::ContentResourceLease,
+    output: OutputId,
+    frame: u64,
+    owner: crate::NativeFrameOwner,
+) -> LiveProductionQueuedMirrorGeneration {
     let frame = LiveProductionNativeFrameId::from_raw(frame);
-    let owner = crate::NativeFrameOwner::new();
     let size = Size {
         width: 4,
         height: 2,
@@ -485,3 +493,6 @@ fn protected_retirement_survives_ordinary_repaint_and_failed_installation() {
     drop(retry);
     assert_released_once(&mut store);
 }
+
+#[path = "native_composition_installation.rs"]
+mod installation;

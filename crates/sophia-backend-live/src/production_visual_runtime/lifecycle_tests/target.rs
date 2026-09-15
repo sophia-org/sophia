@@ -112,6 +112,27 @@ impl Target {
 
     pub fn begin_render(&mut self, output: OutputId) {
         assert!(!self.rendering.contains_key(&output));
+        let queued = self.queue.get(output).unwrap();
+        let target = self.outputs[&output];
+        let current = [crate::NativeCompositionInstallationHead {
+            index: self.outputs.keys().position(|id| *id == output).unwrap(),
+            identity: self.owner.frame(
+                output,
+                target.head,
+                target.target_generation,
+                queued.frame.raw(),
+            ),
+            prepared_cleanup_available: true, // this adapter has no prepared owner
+            protected_frames: [
+                None,
+                None,
+                self.submitted
+                    .get(&output)
+                    .filter(|content| content.requires_retirement())
+                    .map(|content| content.frame()),
+            ],
+        }];
+        crate::validate_composition_installation(queued, &current).unwrap();
         let generation = self.queue.take_ready(output, None, None, None).unwrap();
         assert_eq!(generation.heads.len(), 1);
         let head = generation.heads.into_iter().next().unwrap();

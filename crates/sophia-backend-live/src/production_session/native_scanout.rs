@@ -7,9 +7,14 @@ mod persistent_native_scanout {
     use std::time::{Duration, Instant};
 
     mod composition_admission;
+    mod composition_installation;
     #[cfg(test)]
     pub(crate) use composition_admission::{
         NativeCompositionOutput, prepare_native_composition_batch,
+    };
+    #[cfg(test)]
+    pub(crate) use composition_installation::{
+        NativeCompositionInstallationHead, validate_composition_installation,
     };
     #[cfg(test)]
     pub(crate) use composition_queue::DeferredNativeCompositions;
@@ -4044,8 +4049,9 @@ pub(crate) use persistent_native_scanout::LiveProductionNativeRetirementContent;
 
 #[cfg(all(test, feature = "libdrm-events", feature = "gbm-probe"))]
 pub(crate) use persistent_native_scanout::{
-    DeferredNativeCompositions, LiveProductionHeadCompositionContent, NativeCompositionOutput,
-    prepare_native_composition_batch,
+    DeferredNativeCompositions, LiveProductionHeadCompositionContent,
+    NativeCompositionInstallationHead, NativeCompositionOutput, prepare_native_composition_batch,
+    validate_composition_installation,
 };
 
 #[derive(Debug)]
