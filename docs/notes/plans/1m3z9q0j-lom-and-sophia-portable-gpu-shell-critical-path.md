@@ -503,6 +503,26 @@ causality remain open. Scoped validation: 602 affected-library passes,
 13 ignored, strict affected Clippy and layout pass, no hardware. Evidence:
 `.artifacts/shell-lifecycle-dev/indicator-response-*`.
 
+The next owner-loop extraction calls one shared activation service from both
+`physical_input_phase` and the private-client fixture. It owns typed request
+intake, publication classification, descriptor-only event high-water, linked
+presented-action validation, actual WM queue admission, ledger completion and
+exact transport response. Poll failures retain the previous recover-at-caller
+behavior; WM/finish failures still propagate. One sampled monotonic elapsed
+time now covers this bounded decision; ACK service samples its own time.
+
+Five private-client controls cover both ACK orders, unknown/stale/capacity and
+duplicate outcomes with exact WM call counts, direct-mode snapshot/high-water,
+and empty-intake no-replay. The same production borrowed WM queue is used for
+the accepted roundtrip; native Presented and committed publication are still
+supplied facts. Bypassing publication or linked-ledger checks compiles and fails
+the intended call-count assertions. Session library: 445 passes, 13 ignored;
+strict affected Clippy and layout pass. This is shared decision orchestration,
+not an execution of the entire physical owner loop or WM peer/native pipeline.
+The exact earlier signed `2e569301` separately passed device-hidden canonical
+`cargo xtask check` at `.artifacts/offline-check-2e569301/report.json`;
+that canonical result excludes this extraction. No hardware ran.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

@@ -195,6 +195,89 @@ impl ContentActionLedger {
         LinkedIndicatorAdmission::Eligible
     }
 
+    pub(super) fn service_indicator_request(
+        &mut self,
+        transport: &mut ShellSessionTransport,
+        indicators: &mut super::super::indicators::LiveIndicatorState,
+        input_enabled: bool,
+        now_msec: u64,
+        admit: impl FnOnce(
+            sophia_protocol::WmActionId,
+            sophia_protocol::OutputId,
+        ) -> Result<
+            crate::live_session::LiveWmRequestAdmission,
+            Box<dyn std::error::Error>,
+        >,
+    ) -> Result<bool, super::super::indicators::IndicatorServiceError> {
+        use super::super::indicators::IndicatorServiceError as Error;
+        let Some(request) = indicators
+            .poll_request(transport, input_enabled)
+            .map_err(Error::Poll)?
+        else {
+            return Ok(false);
+        };
+        self.finish_indicator_request(transport, request, input_enabled, now_msec, admit)
+            .map_err(Error::Completion)?;
+        Ok(true)
+    }
+
+    // This is the owner-loop decision sequence, shared with the private
+    // roundtrip fixture. Only WM admission is borrowed from its policy owner.
+    pub(super) fn finish_indicator_request(
+        &mut self,
+        transport: &mut ShellSessionTransport,
+        request: super::super::indicators::LiveIndicatorActivationRequest,
+        input_enabled: bool,
+        now_msec: u64,
+        admit: impl FnOnce(
+            sophia_protocol::WmActionId,
+            sophia_protocol::OutputId,
+        ) -> Result<
+            crate::live_session::LiveWmRequestAdmission,
+            Box<dyn std::error::Error>,
+        >,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::live_session::LiveWmRequestAdmission as Admission;
+        use sophia_protocol::ShellIndicatorActivationStatus as Status;
+        let mut status = request.status;
+        let mut reason = 0;
+        if status == Status::Accepted
+            && input_enabled
+            && self.indicator_admission(&request.activation, now_msec)
+                != LinkedIndicatorAdmission::Eligible
+        {
+            status = Status::Stale;
+            reason = ContentReason::Stale as u16;
+        }
+        if status == Status::Accepted {
+            match admit(
+                sophia_protocol::WmActionId::from_raw(request.activation.action),
+                request.activation.output,
+            )? {
+                Admission::Admitted => self.wm_admitted(request.activation.event_id, now_msec),
+                Admission::RejectedCapacity => {
+                    self.wm_rejected(request.activation.event_id, now_msec);
+                    status = Status::Unknown;
+                    reason = ContentReason::Budget as u16;
+                }
+                Admission::Duplicate => {
+                    self.wm_rejected(request.activation.event_id, now_msec);
+                    status = Status::Stale;
+                    reason = ContentReason::Stale as u16;
+                }
+            }
+        }
+        // The effect is complete. Only this exact owned response can be retried
+        // by the transport; never repeat the admission closure after refusal.
+        transport.finish_indicator_activation(
+            request.transaction,
+            &request.activation,
+            status,
+            reason,
+        )?;
+        Ok(())
+    }
+
     pub(super) fn wm_admitted(&mut self, event_id: u64, now_msec: u64) {
         if let Some(pending) = self
             .live
@@ -397,33 +480,6 @@ impl super::super::LiveMetadataShell {
         });
         Ok(processed)
     }
-
-    pub(in crate::live_session) fn content_indicator_admitted_by_ledger(
-        &self,
-        activation: &ShellIndicatorActivation,
-    ) -> bool {
-        if !self.content.input_requested {
-            return true;
-        }
-        self.content
-            .actions
-            .indicator_admission(activation, self.content.now_msec())
-            == LinkedIndicatorAdmission::Eligible
-    }
-
-    pub(in crate::live_session) fn content_indicator_admitted(&mut self, event_id: u64) {
-        let now = self.content.now_msec();
-        self.content.actions.wm_admitted(event_id, now);
-    }
-
-    pub(in crate::live_session) fn content_indicator_rejected(&mut self, event_id: u64) {
-        let now = self.content.now_msec();
-        self.content.actions.wm_rejected(event_id, now);
-    }
-
-    pub(in crate::live_session) fn content_input_requested(&self) -> bool {
-        self.content.input_requested
-    }
 }
 
 #[path = "actions/tests.rs"]
@@ -436,3 +492,28 @@ mod transport_tests;
 #[cfg(test)]
 #[path = "../../../../tests/support/content_actions/client_roundtrip_tests.rs"]
 mod client_roundtrip_tests;
+
+impl super::LiveContentSession {
+    pub(in crate::live_session) fn service_indicator_request(
+        &mut self,
+        transport: &mut ShellSessionTransport,
+        indicators: &mut super::super::indicators::LiveIndicatorState,
+        admit: impl FnOnce(
+            sophia_protocol::WmActionId,
+            sophia_protocol::OutputId,
+        ) -> Result<
+            crate::live_session::LiveWmRequestAdmission,
+            Box<dyn std::error::Error>,
+        >,
+    ) -> Result<bool, super::super::indicators::IndicatorServiceError> {
+        // One timestamp for this bounded dispatch; ACK service has its own time.
+        let now = self.now_msec();
+        self.actions.service_indicator_request(
+            transport,
+            indicators,
+            self.input_requested,
+            now,
+            admit,
+        )
+    }
+}

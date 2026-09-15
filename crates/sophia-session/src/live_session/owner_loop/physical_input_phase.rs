@@ -1151,43 +1151,15 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     shell.recover_transport("content_action_failure")?;
                     revoke_shell_input = true;
                 }
-                match shell.take_indicator_activation() {
-                    Ok(Some(request)) => {
-                        use sophia_protocol::ShellIndicatorActivationStatus as Status;
-                        let mut status = request.status;
-                        let mut reason = 0_u16;
-                        if status == Status::Accepted
-                            && !shell.content_indicator_admitted_by_ledger(&request.activation)
-                        {
-                            status = Status::Stale;
-                            reason = sophia_protocol::ContentReason::Stale as u16;
-                        }
-                        if status == Status::Accepted {
-                            let action = sophia_protocol::WmActionId::from_raw(request.activation.action);
-                            let admission = wm_session.as_mut().map_or(
-                                Ok(LiveWmRequestAdmission::Duplicate),
-                                |wm| wm.enqueue_indicator_action(action, request.activation.output),
-                            )?;
-                            match admission {
-                                LiveWmRequestAdmission::Admitted => {
-                                    shell.content_indicator_admitted(request.activation.event_id);
-                                }
-                                LiveWmRequestAdmission::RejectedCapacity => {
-                                    shell.content_indicator_rejected(request.activation.event_id);
-                                    status = Status::Unknown;
-                                    reason = sophia_protocol::ContentReason::Budget as u16;
-                                }
-                                LiveWmRequestAdmission::Duplicate => {
-                                    shell.content_indicator_rejected(request.activation.event_id);
-                                    status = Status::Stale;
-                                    reason = sophia_protocol::ContentReason::Stale as u16;
-                                }
-                            }
-                        }
-                        shell.finish_indicator_activation(request, status, reason)?;
-                    }
-                    Ok(None)=>{},
-                    Err(error)=>{
+                match shell.service_indicator_activation(|action, output| {
+                    wm_session.as_mut().map_or(
+                        Ok(LiveWmRequestAdmission::Duplicate),
+                        |wm| wm.enqueue_indicator_action(action, output),
+                    )
+                }) {
+                    Ok(_) => {},
+                    Err(metadata_shell::indicators::IndicatorServiceError::Completion(error)) => return Err(error),
+                    Err(metadata_shell::indicators::IndicatorServiceError::Poll(error)) => {
                         crate::session_eprintln!("sophia_shell_indicators status=activation_failed error={error}");
                         shell.recover_transport("indicator_activation_failure")?;revoke_shell_input=true;
                     }

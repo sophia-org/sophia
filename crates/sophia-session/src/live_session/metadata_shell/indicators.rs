@@ -50,56 +50,53 @@ impl LiveMetadataShell {
     }
 }
 
+#[derive(Debug)]
+pub(in crate::live_session) enum IndicatorServiceError {
+    Poll(Box<dyn std::error::Error>),
+    Completion(Box<dyn std::error::Error>),
+}
+
 impl LiveMetadataShell {
-    /// Take one activation the shell sent, if it is still meaningful.
-    ///
-    /// The shell must name the snapshot it was presenting. A pill clicked
-    /// against a set that has since been replaced refers to a view that may
-    /// have moved, so it is answered stale rather than applied late. The
-    /// action itself is validated again by the WM against what was published;
-    /// this check only establishes that the shell was looking at the same
-    /// screen the session was.
-    pub(in crate::live_session) fn take_indicator_activation(
+    pub(in crate::live_session) fn service_indicator_activation(
         &mut self,
-    ) -> Result<Option<LiveIndicatorActivationRequest>, Box<dyn std::error::Error>> {
+        admit: impl FnOnce(
+            sophia_protocol::WmActionId,
+            OutputId,
+        ) -> Result<
+            crate::live_session::LiveWmRequestAdmission,
+            Box<dyn std::error::Error>,
+        >,
+    ) -> Result<bool, IndicatorServiceError> {
         if !self.connected || !self.transport.supports_indicator_activation() {
-            return Ok(None);
+            return Ok(false);
         }
-        let Some((tx, activation)) = self.transport.poll_indicator_activation()? else {
+        self.content
+            .service_indicator_request(&mut self.transport, &mut self.indicators, admit)
+    }
+}
+
+impl LiveIndicatorState {
+    pub(in crate::live_session) fn poll_request(
+        &mut self,
+        transport: &mut sophia_runtime::ShellSessionTransport,
+        input_enabled: bool,
+    ) -> Result<Option<LiveIndicatorActivationRequest>, Box<dyn std::error::Error>> {
+        let Some((transaction, activation)) = transport.poll_indicator_activation()? else {
             return Ok(None);
         };
-
-        let mut status =
-            classify_indicator_activation(self.indicators.last_published.as_ref(), &activation);
-        if status == sophia_protocol::ShellIndicatorActivationStatus::Accepted
-            && !self.content_input_requested()
-        {
-            if activation.event_id <= self.indicators.direct_event_high_water {
+        let mut status = classify_indicator_activation(self.last_published.as_ref(), &activation);
+        if status == sophia_protocol::ShellIndicatorActivationStatus::Accepted && !input_enabled {
+            if activation.event_id <= self.direct_event_high_water {
                 status = sophia_protocol::ShellIndicatorActivationStatus::Stale;
             } else {
-                self.indicators.direct_event_high_water = activation.event_id;
+                self.direct_event_high_water = activation.event_id;
             }
         }
         Ok(Some(LiveIndicatorActivationRequest {
-            transaction: tx,
+            transaction,
             activation,
             status,
         }))
-    }
-
-    pub(in crate::live_session) fn finish_indicator_activation(
-        &mut self,
-        request: LiveIndicatorActivationRequest,
-        status: sophia_protocol::ShellIndicatorActivationStatus,
-        reason: u16,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.transport.finish_indicator_activation(
-            request.transaction,
-            &request.activation,
-            status,
-            reason,
-        )?;
-        Ok(())
     }
 }
 
