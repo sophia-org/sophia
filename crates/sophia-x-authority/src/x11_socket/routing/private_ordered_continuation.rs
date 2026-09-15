@@ -23,7 +23,7 @@ enum PrivateOrderedContinuation {
     /// refused would drop an admission nobody ever answered for, so the exact
     /// pieces are kept with the refusal that stopped them.
     Setup {
-        ordered: Box<XAuthorityOrderedReceiver>,
+        accepted: PrivateOrderedSetupCustody,
         refusal: X11OrderedServingRefusal,
     },
     /// A serving owner, whole: its endpoint, receiver, queued contents,
@@ -32,6 +32,23 @@ enum PrivateOrderedContinuation {
     /// output, permission and stop handles, its independent shutdown handle,
     /// and whatever its close has established so far.
     Serving(Box<X11OrderedServingOwner>),
+}
+
+/// What a connection had accepted when its setup refused.
+///
+/// HOW FAR IT GOT DECIDES WHAT THERE IS TO KEEP. A receiver that was minted
+/// and published but never bound has its queue and nothing else. One that was
+/// bound has the connection's output, its permission, its control counter, its
+/// stop handle and -- the part that matters most -- the independent handle
+/// that can still end the wire. Keeping only the queue in that case would
+/// discard the one thing able to terminate a connection nobody will serve.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+enum PrivateOrderedSetupCustody {
+    /// Published, never bound.
+    Receiver(Box<XAuthorityOrderedReceiver>),
+    /// Bound, never served.
+    Transport(Box<XAuthorityOrderedTransport>),
 }
 
 /// One place in the continuation store.
@@ -47,7 +64,14 @@ enum PrivateOrderedContinuationPlace {
     /// Promised to a connection that has not handed anything over yet.
     Reserved,
     /// Holding one connection's continuation.
-    Held(PrivateOrderedContinuation),
+    ///
+    /// SEPARATELY OWNED, deliberately. Driving a continuation means calling
+    /// into its close, which takes this connection's output and its
+    /// finalizers; doing that under the aggregate lock would put the whole
+    /// store behind one connection's write, and would take common beneath
+    /// settlement. The record has its own lock, so the aggregate one is held
+    /// only long enough to find it.
+    Held(Arc<Mutex<PrivateOrderedContinuation>>),
 }
 
 /// A reserved place for one connection's ordered continuation.
@@ -81,16 +105,26 @@ struct PrivateOrderedContinuationSlot {
 impl PrivateOrderedContinuationSlot {
     /// Put this connection's continuation in the place reserved for it.
     ///
-    /// THE STORAGE IS ALREADY THERE. Reserving made the place; this only moves
-    /// into it, with nothing fallible, no allocation and no callback between
-    /// taking the owner and installing it -- the interval where an accepted
-    /// connection would otherwise be held by nobody.
+    /// TAKEN FROM A SOURCE-OWNED SLOT, NOT BY VALUE. A continuation passed by
+    /// value is in a stack frame from the caller's expression until this
+    /// reaches its destination, and an unwind anywhere in between -- acquiring
+    /// the store, above all -- drops accepted work while the reservation for
+    /// it survives. It stays in the caller's slot until the destination is
+    /// held, and is taken out only once there is somewhere for it to go.
+    ///
+    /// The storage itself was made when the place was reserved, so between the
+    /// take and the installation there is nothing fallible, no allocation and
+    /// no callback.
     ///
     /// An unreadable owner does not make this optional. The work has been
     /// accepted and the place is this connection's; skipping the move would
     /// drop it, so the poisoned guard is used exactly as every other
     /// already-accepted move here uses it.
-    fn install(&mut self, continuation: PrivateOrderedContinuation) {
+    ///
+    /// CONSUMES THE CAPABILITY. A slot that stayed usable after installing had
+    /// only a debug assertion between a second call and overwriting held work,
+    /// and that protection is not there in a release build.
+    fn install(mut self, source: &mut Option<PrivateOrderedContinuation>) {
         let mut held = self.owner.records_even_if_poisoned();
         debug_assert!(
             matches!(
@@ -99,7 +133,15 @@ impl PrivateOrderedContinuationSlot {
             ),
             "this place is this slot's and holds nothing yet"
         );
-        held.continuations[self.index] = PrivateOrderedContinuationPlace::Held(continuation);
+        let Some(continuation) = source.take() else {
+            // Nothing to install. The place stays this connection's, because
+            // the reservation is not returned by an install that had nothing.
+            drop(held);
+            self.armed = false;
+            return;
+        };
+        held.continuations[self.index] =
+            PrivateOrderedContinuationPlace::Held(Arc::new(Mutex::new(continuation)));
         self.armed = false;
     }
 
@@ -134,7 +176,14 @@ impl PrivateOrderedContinuation {
     /// retained Setup case exists to keep.
     fn queue(&self) -> &Receiver<XAuthorityOrderedDelivery> {
         match self {
-            Self::Setup { ordered, .. } => ordered,
+            Self::Setup {
+                accepted: PrivateOrderedSetupCustody::Receiver(ordered),
+                ..
+            } => ordered,
+            Self::Setup {
+                accepted: PrivateOrderedSetupCustody::Transport(transport),
+                ..
+            } => &transport.ordered,
             Self::Serving(owner) => &owner.queue,
         }
     }
@@ -158,12 +207,22 @@ impl PrivateSettlementOwner {
         index: usize,
         act: impl FnOnce(&mut PrivateOrderedContinuation) -> R,
     ) -> Option<R> {
-        let mut held = self.records_even_if_poisoned();
-        let PrivateOrderedContinuationPlace::Held(record) = held.continuations.get_mut(index)?
-        else {
-            return None;
+        // The aggregate lock is held only to find the record's own handle.
+        let record = {
+            let held = self.records_even_if_poisoned();
+            let PrivateOrderedContinuationPlace::Held(record) = held.continuations.get(index)?
+            else {
+                return None;
+            };
+            record.clone()
         };
-        Some(act(record))
+        // RELEASED BEFORE ANYTHING IS DRIVEN. The order is settlement before
+        // whatever a close touches, so holding the store while one connection
+        // waits on its output would invert it and put every other retained
+        // connection behind that write. The record is borrowed in its own
+        // storage instead -- it is never moved into a local here.
+        let mut record = record.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        Some(act(&mut record))
     }
 }
 

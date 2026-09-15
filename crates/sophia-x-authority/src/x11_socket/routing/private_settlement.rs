@@ -204,6 +204,23 @@ impl Default for PrivateSettlementOwner {
 
 #[cfg(unix)]
 impl PrivateSettlementOwner {
+    /// The same owner, with the connection bound configured separately.
+    ///
+    /// A CONNECTION IS NOT AN OPERATION. The abandoned-work capacity counts
+    /// obligations an instance accepted; this counts connections that may
+    /// exist at once, live and retained together, and it comes from the
+    /// declared client limit. Inheriting one for the other made the bound a
+    /// coincidence.
+    pub fn with_capacities(capacity: usize, connections: usize) -> Self {
+        let owner = Self::with_capacity(capacity);
+        {
+            let mut held = owner.records_even_if_poisoned();
+            held.continuations = Vec::with_capacity(connections);
+            held.continuation_capacity = connections;
+        }
+        owner
+    }
+
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             inner: Arc::new(Mutex::new(AbandonedSettlements {
@@ -222,9 +239,14 @@ impl PrivateSettlementOwner {
                 // from the same declared limit rather than a pool of its own:
                 // a connection that cannot be handed over is one that must not
                 // be exposed, so the two numbers have to be the same number.
-                continuations: Vec::with_capacity(capacity),
+                // NONE UNTIL CONFIGURED. A connection bound is not the
+                // abandoned-work capacity, and inheriting one for the other
+                // made the number a coincidence. An owner built without one
+                // admits no connection rather than admitting as many as it
+                // happens to allow obligations.
+                continuations: Vec::new(),
                 continuation_slots: 0,
-                continuation_capacity: capacity,
+                continuation_capacity: 0,
                 continuations_abandoned: 0,
                 reserved: 0,
                 capacity,
