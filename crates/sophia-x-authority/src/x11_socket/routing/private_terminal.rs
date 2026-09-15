@@ -519,7 +519,16 @@ impl PrivateXServerFrontend {
             // step, and before anything takes common.
             start(None, std::time::Instant::now())?;
             self.terminal.native_turn_debt = 0;
-            // An attempt whose give-back never landed is answered first. It
+            // A receipt that has arrived is answered before anything else.
+            // It is the only thing that can release an attempt whose handover
+            // already happened, and everything else waits behind that slot.
+            if let Some(settled) = self.settle_one_receipt() {
+                return Ok(PrivateDeliveryStep::Dispatched {
+                    enqueued: false,
+                    relinquished: !settled,
+                });
+            }
+            // An attempt whose give-back never landed is answered next. It
             // is the ledger's slot, not this executor's, and holding one
             // while claiming another is how a bounded pool runs out.
             if let Some(relinquished) = self.relinquish_one_attempt() {

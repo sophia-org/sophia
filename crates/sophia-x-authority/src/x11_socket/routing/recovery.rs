@@ -272,6 +272,19 @@ impl InputRecovery {
         }
     }
 
+    /// The terminal outcome published for one delivery, if one has been.
+    ///
+    /// Read rather than consumed: the outcome is the writer's answer and this
+    /// executor is one reader of it, not its owner. Reading it settles
+    /// nothing by itself -- what a receipt proves is decided where the debt
+    /// it belongs to is known.
+    fn terminal_outcome(
+        &self,
+        id: XAuthorityInputDeliveryId,
+    ) -> Option<XAuthorityClientInputDelivery> {
+        self.state.lock().ok()?.tickets.get(&id)?.terminal
+    }
+
     fn ticket(&self, id: XAuthorityInputDeliveryId) -> Option<XAuthorityInputDeliveryTicket> {
         self.state
             .lock()

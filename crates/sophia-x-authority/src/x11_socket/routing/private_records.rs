@@ -96,6 +96,14 @@ enum PrivateDispatchPhase {
     Enqueued,
     /// The emission could not be wrapped, and is retained with its cause.
     Unwrappable,
+    /// Handed over, answered, and NEVER TO BE SENT AGAIN.
+    ///
+    /// A write that failed or timed out may have put part of an event on the
+    /// wire. Rebuilding it would produce a second copy of something the
+    /// recipient may hold half of, and no later fact can establish how much
+    /// arrived. The debt may stay unsettled; that is the honest outcome, and
+    /// it is preferable to a duplicate nobody can detect.
+    Unrepeatable,
 }
 
 /// What a release is holding on its way to a writer.
@@ -165,6 +173,13 @@ pub struct PrivateSettlingRelease {
     /// later finds an empty slot.
     #[cfg_attr(not(test), allow(dead_code))]
     unbuilt: Option<PrivateAppliedRefusal>,
+    /// The writer's own answer for this release's delivery, once it has one.
+    ///
+    /// Preserved separately from what it settled. "Nothing was settled" and
+    /// "settled because the recipient was gone" are different facts, and a
+    /// reader with only the settlement bits cannot tell them apart.
+    #[cfg_attr(not(test), allow(dead_code))]
+    outcome_seen: Option<XAuthorityInputDeliveryOutcome>,
     /// Whether the source's own native bit has been recorded for this release.
     native_recorded: bool,
     /// What the last recording attempt refused with, if one did.
@@ -233,6 +248,11 @@ impl PrivateSettlingRelease {
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
+    fn outcome_seen(&self) -> Option<XAuthorityInputDeliveryOutcome> {
+        self.outcome_seen
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
     fn dispatch(&self) -> PrivateDispatchPhase {
         self.dispatch
     }
@@ -260,6 +280,17 @@ impl PrivateSettlingRelease {
                 self.dispatch,
                 PrivateDispatchPhase::Untaken | PrivateDispatchPhase::Pending
             )
+    }
+
+    /// Keep the writer's own answer, whatever it settled.
+    fn record_outcome(&mut self, outcome: XAuthorityInputDeliveryOutcome) {
+        self.outcome_seen = Some(outcome);
+    }
+
+    /// Mark this release's event as one that must never be sent again.
+    fn mark_unrepeatable(&mut self) {
+        self.pending = None;
+        self.dispatch = PrivateDispatchPhase::Unrepeatable;
     }
 
     /// Stop naming an attempt, once the ledger has confirmed it back.

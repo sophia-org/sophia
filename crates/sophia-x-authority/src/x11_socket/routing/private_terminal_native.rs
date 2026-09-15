@@ -179,6 +179,76 @@ impl PrivateXServerFrontend {
         }
     }
 
+    /// Finish one delivery attempt against the receipt its writer published.
+    ///
+    /// WHAT A RECEIPT PROVES IS DECIDED HERE, where the debt it belongs to is
+    /// known. The receipt names a delivery; the debt is named by an
+    /// incarnation; this record is the only thing holding both.
+    ///
+    /// ONLY AN ESTABLISHED FLUSH OR TERMINATION SETTLES THE RECIPIENT HALF.
+    /// A write that failed and a wait that ran out are not proof that nobody
+    /// received anything -- they are the absence of proof either way, and
+    /// they finish the attempt with neither bit so the debt stays owed.
+    ///
+    /// AND THEY DO NOT AUTHORISE A REPLAY. A failed or timed-out write may
+    /// have put part of the event on the wire, so the capsule is not returned
+    /// to Pending; it is marked unrepeatable and never rebuilt. The debt may
+    /// then never settle, which is the honest outcome and better than a
+    /// duplicate nobody can detect.
+    fn settle_one_receipt(&mut self) -> Option<bool> {
+        let recovery = &self.broker.registry.input_recovery;
+        let found = self.terminal.settling.iter().enumerate().find_map(|(index, release)| {
+            let token = release.attempt()?;
+            let delivery = release.delivery()?;
+            let receipt = recovery.terminal_outcome(delivery)?;
+            Some((index, token, receipt))
+        });
+        let (index, token, receipt) = found?;
+        // A receipt for a client this release never reached says nothing
+        // about this release. Answered as no receipt at all rather than as
+        // one, so nothing settles on somebody else's outcome.
+        if receipt.client != self.terminal.settling[index].reached().client() {
+            return Some(false);
+        }
+        let settlement = match receipt.outcome {
+            // The writer established that the bytes went, or that the
+            // recipient is gone. Both answer the recipient's half.
+            XAuthorityInputDeliveryOutcome::Flushed
+            | XAuthorityInputDeliveryOutcome::ClientDisconnected => {
+                sophia_input_authority::SettlementBit {
+                    native_reconciled: false,
+                    recipient_settled: true,
+                }
+            }
+            // Everything else is the absence of proof, including TimedOut and
+            // WriteFailed. Neither bit, and the debt stays exactly as owed.
+            _ => sophia_input_authority::SettlementBit::default(),
+        };
+        let answered = self.authority().under_common_as_origin(|authority, issuer| {
+            authority.finish_attempt(issuer, token, settlement)
+        });
+        if !matches!(answered, Ok(Ok(_))) {
+            // The ledger did not answer. Nothing is recorded here either: the
+            // attempt is still out and this receipt will be read again.
+            return Some(false);
+        }
+        if self
+            .terminal
+            .attempt_custody
+            .is_some_and(|custody| custody.token == token)
+        {
+            self.terminal.attempt_custody = None;
+        }
+        let release = &mut self.terminal.settling[index];
+        release.record_outcome(receipt.outcome);
+        release.clear_attempt();
+        if !settlement.recipient_settled {
+            // Possibly part-written, so never sent again.
+            release.mark_unrepeatable();
+        }
+        Some(settlement.recipient_settled)
+    }
+
     /// Give one claimed attempt back with neither settlement bit.
     ///
     /// The debt stays exactly as owed as it was; this says only that the
@@ -238,6 +308,17 @@ impl PrivateXServerFrontend {
         Some(self.relinquish_outstanding_attempt(custody.token))
     }
 
+    /// Whether a receipt is waiting to be answered against its debt.
+    fn owes_receipt_settlement(&self) -> bool {
+        let recovery = &self.broker.registry.input_recovery;
+        self.terminal.settling.iter().any(|release| {
+            release.attempt().is_some()
+                && release
+                    .delivery()
+                    .is_some_and(|delivery| recovery.terminal_outcome(delivery).is_some())
+        })
+    }
+
     /// Whether this executor holds return work of its own.
     ///
     /// Asked beside the release-derived work rather than through it. A held
@@ -256,7 +337,8 @@ impl PrivateXServerFrontend {
     /// stays idle and costs nothing. Choosing the entry is still the visit's
     /// own job -- this only says whether there is one to choose.
     fn owes_native_recording(&self) -> bool {
-        self.owes_attempt_return()
+        self.owes_receipt_settlement()
+            || self.owes_attempt_return()
             || self.terminal.settling.iter().any(|release| {
                 release.owes_native_recording() || release.owes_delivery_attempt()
             })

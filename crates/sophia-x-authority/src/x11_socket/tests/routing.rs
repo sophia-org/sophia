@@ -12779,6 +12779,116 @@ fn settling_slot_is_empty(release: &PrivateSettlingRelease) -> bool {
 }
 
 #[test]
+fn a_receipt_settles_only_what_it_establishes_and_never_authorises_a_replay() {
+    // Two releases with the same shape and opposite answers. A flush is proof
+    // the bytes went; a failed write is the absence of proof either way, and
+    // the difference is the whole of what a receipt is for.
+    let client = XServerFrontendClientId(2481);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    for (delivery, button, pressed) in [
+        (2481u64, 272u32, true),
+        (2482, 272, false),
+        (2483, 273, true),
+        (2484, 273, false),
+    ] {
+        ingress
+            .submit(button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(delivery),
+                button,
+                pressed,
+            ))
+            .expect("the order to accept it");
+        let turn = private
+            .route_pending_ordered(keyboards, watch)
+            .expect("a readable order");
+        private.terminal.delivering.extend(turn);
+        private
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("the entry delivers");
+    }
+    assert_eq!(private.terminal.settling.len(), 2);
+
+    // Drive until both releases have their proof recorded and their delivery
+    // handed over.
+    for _ in 0..24 {
+        private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+    }
+    for index in 0..2 {
+        assert_eq!(
+            private.terminal.settling[index].dispatch(),
+            PrivateDispatchPhase::Enqueued,
+            "release {index} reached its recipient's queue"
+        );
+        assert!(private.terminal.settling[index].attempt().is_some());
+    }
+
+    // The writer answers: one flushed, one failed.
+    let recovery = &private.broker.registry.input_recovery;
+    for (index, outcome) in [
+        (0usize, XAuthorityInputDeliveryOutcome::Flushed),
+        (1, XAuthorityInputDeliveryOutcome::WriteFailed),
+    ] {
+        let delivery = private.terminal.settling[index]
+            .delivery()
+            .expect("the release knows which delivery carries it");
+        recovery
+            .finish(client, Some(delivery), outcome)
+            .expect("the writer's answer is published against the delivery it names");
+    }
+
+    // Answer both receipts.
+    for _ in 0..4 {
+        private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+    }
+
+    // THE FLUSH SETTLED THE RECIPIENT'S HALF.
+    assert_eq!(
+        private.terminal.settling[0].outcome_seen(),
+        Some(XAuthorityInputDeliveryOutcome::Flushed)
+    );
+    assert_eq!(
+        private.terminal.settling[0].dispatch(),
+        PrivateDispatchPhase::Enqueued,
+        "a flushed delivery is finished where it was, not marked unsendable"
+    );
+
+    // THE FAILED WRITE SETTLED NOTHING AND AUTHORISED NOTHING. It is not
+    // proof that nobody received anything, so the debt stays owed; and it may
+    // have put part of the event on the wire, so the event is never rebuilt.
+    assert_eq!(
+        private.terminal.settling[1].outcome_seen(),
+        Some(XAuthorityInputDeliveryOutcome::WriteFailed),
+        "the cause is kept apart from what it settled"
+    );
+    assert_eq!(
+        private.terminal.settling[1].dispatch(),
+        PrivateDispatchPhase::Unrepeatable,
+        "and the capsule is never offered again"
+    );
+    assert!(
+        private.terminal.settling[1].attempt().is_none(),
+        "the attempt was finished, so the ledger's slot is free for others"
+    );
+}
+
+#[test]
 fn an_attempt_that_cannot_be_placed_is_given_back_and_keeps_its_capsule() {
     // A claim this executor cannot place is an unused reservation. It goes
     // back with neither bit -- the debt is exactly as owed as before -- and
