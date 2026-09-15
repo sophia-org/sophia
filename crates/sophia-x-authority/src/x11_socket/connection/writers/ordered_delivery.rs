@@ -370,14 +370,18 @@ enum X11OrderedServingRefusal {
 /// One connection's ordered output transport, bound where both halves of it
 /// are owned.
 ///
-/// MINTED AT CONNECTION SETUP, which is the only place that can establish
-/// this. The receiver carries the registration cell it was made with, so its
-/// provenance is asked here rather than asserted. A SOCKET CARRIES NOTHING:
-/// there is no witness in a file descriptor saying which connection negotiated
-/// it, and inventing one would be a claim rather than a check. What makes the
-/// pairing sound is that this is minted where the accepted connection's stream
-/// and its registration are both in hand and neither has been anywhere else.
-/// A later holder of this value cannot substitute either half.
+/// The receiver half is established: it carries the registration cell it was
+/// minted with, so its provenance is asked here rather than asserted, and a
+/// later holder cannot substitute it.
+///
+/// THE SOCKET HALF IS NOT ESTABLISHED YET. A file descriptor carries no
+/// witness of which connection negotiated it, and inventing one would be a
+/// claim rather than a check. What would make the pairing sound is binding
+/// where the accepted stream and its registration are both in hand and neither
+/// has been anywhere else -- and today every caller of `bind` is a test, while
+/// connection setup still drops its ordered receiver. Until that caller
+/// exists, retaining whatever socket is passed here proves nothing about its
+/// origin, and this says so rather than describing a property it does not have.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 struct XAuthorityOrderedTransport {
