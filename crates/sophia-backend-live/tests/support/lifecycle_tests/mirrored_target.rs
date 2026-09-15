@@ -385,6 +385,9 @@ impl CompositionInstaller for MirroredTarget {
 }
 
 impl NativeCompositionTarget for MirroredTarget {
+    fn frame_owner(&self) -> crate::NativeFrameOwner {
+        self.owner
+    }
     fn frame_service_available(&self) -> bool {
         true
     }

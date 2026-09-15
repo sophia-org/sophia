@@ -338,6 +338,12 @@ fn equal_scene_trace_does_not_authorize_another_native_frames_fallback() {
     let output = OutputId::from_raw(1);
     let head = RenderHeadId::from_raw(2);
     let exact = owner.frame(output, head, 3, 4);
+    assert_ne!(exact.owner(), 0);
+    assert_eq!(exact.owner(), owner.frame(output, head, 3, 5).owner());
+    assert_ne!(
+        exact.owner(),
+        NativeFrameOwner::new().frame(output, head, 3, 4).owner()
+    );
     assert_eq!(
         (
             exact.output(),

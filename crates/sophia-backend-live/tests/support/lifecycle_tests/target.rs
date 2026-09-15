@@ -250,6 +250,9 @@ impl Target {
 }
 
 impl NativeCompositionTarget for Target {
+    fn frame_owner(&self) -> crate::NativeFrameOwner {
+        self.owner
+    }
     fn frame_service_available(&self) -> bool {
         true
     }

@@ -542,6 +542,29 @@ originating render revision/candidate to an exact completion witness, and the
 workload verifier must reject missing or ambiguous joins. No latency acceptance
 is inferred from these diagnostic records or their fixture values.
 
+
+The native timing slice emits a candidate-to-native binding only after the
+actual owned queue admits its fresh retirement frame. Binding includes the
+native owner incarnation, output/frame and every head/target generation.
+Completion is a separate observation of exact displayed custody: every current
+head must display that same native frame, and a mirror must have nonfailed
+convergence. The timestamp is the maximum associated head completion time.
+This does not change primary-driven logical publication or input activation.
+A lagging sibling leaves all-head timing unavailable; a later unrelated frame
+cannot supply the missing witness. Capture must retain the first exact record
+rather than infer timing from Session polling or FIFO enqueue.
+
+Head completion now retains the timestamp provenance from the native reducer.
+Evidence distinguishes kernel UST from local observation fallback and flags
+missing kernel timestamps. A fallback may describe real completion, but cannot
+silently satisfy an exact kernel-completion latency gate. Controls cover both
+mirror completion orders, exact and mismatched displayed identity, missing and
+duplicate heads, and mixed kernel/fallback provenance. The bounded recorder
+captures both native records even with ordinary tracing disabled. These are
+simulated completion/source and recorder controls, not KMS or latency results.
+Originating Lom revision joins, complete workload accounting, numeric latency
+limits and the exact-source release/attended gate remain open.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

@@ -50,6 +50,11 @@ pub struct LiveNativeFrameIdentity {
 }
 
 impl LiveNativeFrameIdentity {
+    /// Process-local native owner incarnation for exact diagnostic correlation.
+    pub const fn owner(self) -> u64 {
+        self.owner.0.get()
+    }
+
     pub const fn output(self) -> sophia_protocol::OutputId {
         self.output
     }

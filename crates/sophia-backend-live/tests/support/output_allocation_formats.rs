@@ -175,6 +175,7 @@ fn head(id: u32, output: u64, modifier: u64) -> LiveProductionNativeHead {
         service_skew_baseline: None,
         presented_submission_ust_usec: 0,
         presented_page_flip_ust_usec: 0,
+        presented_completion_timestamp: None,
         presented_submit_to_page_flip: Duration::ZERO,
         submissions: 0,
         retirements: 0,

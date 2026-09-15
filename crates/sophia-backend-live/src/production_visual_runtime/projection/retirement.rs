@@ -41,6 +41,36 @@ impl LiveProductionVisualRuntime {
             .filter(|(output, _)| !required_outputs.contains(output) || ready.contains(output))
             .collect();
         let queued = native.queue_retained_batch(frames, &ready)?;
+        for (output, native_frame) in &queued {
+            if !ready.contains(output) {
+                continue;
+            }
+            let Some(content) = self.shell_content.get(output) else {
+                continue;
+            };
+            let targets = native.head_targets(*output);
+            for target in &targets {
+                let identity = native.frame_owner().frame(
+                    *output,
+                    target.head,
+                    target.target_generation,
+                    native_frame.raw(),
+                );
+                tracing::info!(
+                    target: "sophia_scanout_evidence",
+                    "sophia_shell_native_binding schema=1 connection_epoch={} content_grant_epoch={} output={} candidate_generation={} native_owner={} native_frame={} head={} target_generation={} heads={}",
+                    content.grant.connection_epoch,
+                    content.grant.content_grant_epoch,
+                    output.raw(),
+                    content.candidate_generation,
+                    identity.owner(),
+                    identity.frame(),
+                    target.head.raw(),
+                    target.target_generation,
+                    targets.len(),
+                );
+            }
+        }
         self.retained_projection_retirements
             .retain(|output, _| !queued.contains_key(output));
         if !self.retained_projection_retirements.is_empty() {

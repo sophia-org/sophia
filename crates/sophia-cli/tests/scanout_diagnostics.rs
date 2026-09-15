@@ -16,6 +16,8 @@ const EXPORTER_TARGET: &str = "sophia_scanout_evidence";
 const ATOMIC_REJECTED: &str = "sophia_live_atomic_test schema=1 output=2 scene_generation=10 status=Rejected errno=22 request_scope=PageFlip nonblocking=true allow_modeset=false";
 const ATOMIC_ACCEPTED: &str = "sophia_live_atomic_test schema=1 output=2 scene_generation=11 status=Submitted errno=none request_scope=PageFlip nonblocking=true allow_modeset=false";
 const LAYOUT_TESTED: &str = "sophia_live_layout_probe schema=1 output=2 scene_generation=10 source_image=41 status=Tested original_status=Rejected alternative_status=Submitted original_errno=22 alternative_errno=none format=875713112 original_modifier=144115188757872388 alternative_modifier=0";
+const SHELL_BINDING: &str = "sophia_shell_native_binding schema=1 connection_epoch=1 content_grant_epoch=2 output=3 candidate_generation=4 native_owner=5 native_frame=6 head=7 target_generation=8 heads=1";
+const SHELL_COMPLETION: &str = "sophia_shell_native_completion schema=1 output=3 native_owner=5 native_frame=6 heads=1 monotonic_usec=12345 timestamp_source=kernel missing_kernel_timestamp=0";
 const FORMATTER_MARKER: &str = "unrelated formatter output remains visible";
 
 struct Fixture(PathBuf);
@@ -69,6 +71,11 @@ fn capture_child(path: &Path) {
         "{} cookie=private-cookie title=private-title path=/private/account",
         LAYOUT_TESTED
     );
+
+    tracing::info!(target: EXPORTER_TARGET, "{} payload=private", SHELL_BINDING);
+    tracing::info!(target: EXPORTER_TARGET, "{}", SHELL_COMPLETION);
+    tracing::info!(target: "another_backend", "{}", SHELL_COMPLETION);
+    tracing::info!(target: EXPORTER_TARGET, "sophia_shell_native_completion_extra native_frame=6");
 
     // Both target identity and the complete record token are required.
     tracing::info!(target: "another_backend", "{}", ATOMIC_REJECTED);
@@ -162,8 +169,8 @@ fn scanout_records_reach_capture_independently_of_console_logging() {
         .events
         .iter()
         .map(|line| {
-            line.split_once("sophia_live_")
-                .map(|(_, record)| format!("sophia_live_{record}"))
+            line.split_once("sophia_")
+                .map(|(_, record)| format!("sophia_{record}"))
                 .unwrap_or_else(|| panic!("unexpected captured record: {line}"))
         })
         .collect::<Vec<_>>();
@@ -173,6 +180,8 @@ fn scanout_records_reach_capture_independently_of_console_logging() {
             ATOMIC_REJECTED,
             ATOMIC_ACCEPTED,
             LAYOUT_TESTED,
+            SHELL_BINDING,
+            SHELL_COMPLETION,
             "sophia_live_atomic_test schema=1 scene_generation=12 status=Submitted errno=none output=2",
         ],
         "only approved messages should persist, once each and without private fields"

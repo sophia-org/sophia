@@ -548,3 +548,120 @@ fn mismatched_supplied_cohort_refuses_before_any_owner_or_cohort_mutation() {
     );
     assert_eq!(mirror.owners.get(), 0);
 }
+
+#[test]
+fn native_timing_requires_every_exact_displayed_owner_and_uses_latest_completion() {
+    for first in 0..2 {
+        let mut mirror = Mirror::new();
+        mirror.begin(1);
+        mirror.submit(0, 1);
+        mirror.submit(1, 1);
+        let timing = |mirror: &Mirror, mutate: usize| {
+            crate::completed_timing(
+                mirror.owner,
+                OutputId::from_raw(1),
+                crate::LiveProductionNativeFrameId::from_raw(1),
+                2,
+                Some(&mirror.group),
+                (0..2).map(|index| {
+                    let mut displayed = mirror.custody[index]
+                        .displayed()
+                        .and_then(|v| v.correlation())
+                        .and_then(|v| v.native);
+                    if index == 1 {
+                        displayed = match mutate {
+                            1 => None,
+                            2 => Some(crate::NativeFrameOwner::new().frame(
+                                OutputId::from_raw(1),
+                                head(index),
+                                1,
+                                1,
+                            )),
+                            3 => Some(mirror.owner.frame(OutputId::from_raw(2), head(index), 1, 1)),
+                            4 => Some(mirror.owner.frame(OutputId::from_raw(1), head(0), 1, 1)),
+                            5 => Some(mirror.owner.frame(OutputId::from_raw(1), head(index), 2, 1)),
+                            6 => Some(mirror.owner.frame(OutputId::from_raw(1), head(index), 1, 2)),
+                            _ => displayed,
+                        };
+                    }
+                    crate::PresentedTimingHead {
+                        expected: mirror.identity(index, 1),
+                        displayed,
+                        kernel_timestamp: !matches!(mutate, 8 | 9) || index == 0,
+                        missing_kernel_timestamp: mutate == 9 && index == 1,
+                        completed_usec: if mutate == 7 {
+                            0
+                        } else {
+                            (index as u64 + 1) * 1000
+                        },
+                    }
+                }),
+            )
+        };
+        assert_eq!(timing(&mirror, 0), None);
+        mirror.flip(first, 1, 1);
+        assert_eq!(timing(&mirror, 0), None); // Primary logical progress is not sibling completion.
+        mirror.flip(1 - first, 1, 2);
+        assert_eq!(timing(&mirror, 0), Some((2000, true, false)));
+        assert_eq!(timing(&mirror, 8), Some((2000, false, false)));
+        assert_eq!(timing(&mirror, 9), Some((2000, false, true)));
+        for invalid in 1..=7 {
+            assert_eq!(timing(&mirror, invalid), None);
+        }
+        // Reading evidence does not retire or replace any real copied owner.
+        assert_eq!(mirror.owners.get(), 2);
+    }
+}
+
+#[test]
+fn singleton_timing_refuses_missing_wrong_and_duplicate_completion_identity() {
+    let owner = crate::NativeFrameOwner::new();
+    let output = OutputId::from_raw(1);
+    let frame = crate::LiveProductionNativeFrameId::from_raw(7);
+    let expected = owner.frame(output, head(0), 1, frame.raw());
+    for displayed in [
+        None,
+        Some(owner.frame(output, head(0), 1, 8)),
+        Some(expected),
+    ] {
+        let result = crate::completed_timing(
+            owner,
+            output,
+            frame,
+            1,
+            None,
+            [crate::PresentedTimingHead {
+                expected,
+                displayed,
+                completed_usec: 4000,
+                kernel_timestamp: true,
+                missing_kernel_timestamp: false,
+            }],
+        );
+        assert_eq!(
+            result,
+            (displayed == Some(expected)).then_some((4000, true, false))
+        );
+    }
+    assert_eq!(
+        crate::completed_timing(owner, output, frame, 1, None, []),
+        None
+    );
+    assert_eq!(
+        crate::completed_timing(
+            owner,
+            output,
+            frame,
+            1,
+            None,
+            (0..2).map(|_| crate::PresentedTimingHead {
+                expected,
+                displayed: Some(expected),
+                completed_usec: 4000,
+                kernel_timestamp: true,
+                missing_kernel_timestamp: false,
+            })
+        ),
+        None
+    );
+}

@@ -23,7 +23,12 @@ impl<S: Subscriber> Layer<S> for ScanoutDiagnostics {
         let line = message.as_str();
         if matches!(
             line.split_whitespace().next(),
-            Some("sophia_live_atomic_test" | "sophia_live_layout_probe")
+            Some(
+                "sophia_live_atomic_test"
+                    | "sophia_live_layout_probe"
+                    | "sophia_shell_native_binding"
+                    | "sophia_shell_native_completion"
+            )
         ) {
             capture_line(line);
         }

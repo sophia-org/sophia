@@ -9,6 +9,9 @@ mod persistent_native_scanout {
     mod composition_admission;
     mod composition_installation;
     mod mirror_completion;
+    mod presentation_timing;
+    #[cfg(test)]
+    pub(crate) use presentation_timing::{PresentedTimingHead, completed_timing};
     mod settled_mirror;
     #[cfg(test)]
     pub(crate) use composition_admission::{
@@ -349,6 +352,7 @@ mod persistent_native_scanout {
         pub presented_submissions: usize,
         pub presented_submission_ust_usec: u64,
         pub presented_page_flip_ust_usec: u64,
+        pub presented_completion_timestamp: Option<LiveProductionCompletionTimestamp>,
         pub presented_submit_to_page_flip: Duration,
         /// Sibling completions when this head's current request went
         /// outstanding, or `None` while it has nothing in flight.
@@ -855,6 +859,7 @@ mod persistent_native_scanout {
                         service_skew_baseline: None,
                         presented_submission_ust_usec: 0,
                         presented_page_flip_ust_usec: 0,
+                        presented_completion_timestamp: None,
                         presented_submit_to_page_flip: Duration::ZERO,
                         submissions: 0,
                         retirements: 0,
@@ -1129,6 +1134,10 @@ mod persistent_native_scanout {
                 *counts.entry(head.output.id).or_default() += 1;
             }
             counts.into_iter().collect()
+        }
+
+        pub(crate) fn frame_owner(&self) -> crate::NativeFrameOwner {
+            self.native_frame_owner
         }
 
         fn native_frame_identity(
@@ -1844,12 +1853,13 @@ mod persistent_native_scanout {
                     continue;
                 }
                 let group = self.heads[head_index].group;
-                let callback_ust = self.completion_ust_usec(
+                let callback_timestamp = self.completion_timestamp(
                     output,
                     callback.head,
                     callback.frame_serial,
                     completion_source,
                 );
+                let callback_ust = callback_timestamp.ust_usec;
                 let last_callback_serial = self.heads[head_index].last_callback_serial;
                 let completion = mirror_completion::complete_mirror_head(
                     self.groups[group].session.card(),
@@ -1895,6 +1905,7 @@ mod persistent_native_scanout {
                 self.heads[head_index].presented_submission_ust_usec =
                     submitted_ust_usec.unwrap_or_default();
                 self.heads[head_index].presented_page_flip_ust_usec = callback_ust;
+                self.heads[head_index].presented_completion_timestamp = Some(callback_timestamp);
                 self.heads[head_index].presented_submit_to_page_flip = submit_to_page_flip;
                 // A mirror head composes by construction -- eligibility
                 // requires a single-head plan shape -- so this is recorded
@@ -1989,6 +2000,7 @@ mod persistent_native_scanout {
                     ));
                     continue;
                 }
+                self.trace_shell_native_completion(output, frame);
                 let Some(transition) = completion.logical else {
                     continue;
                 };
@@ -3154,12 +3166,13 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                     .last_accepted
                     .and_then(|accepted| accepted.event.frame_serial)
                 {
-                    let ust = self.completion_ust_usec(
+                    let timestamp = self.completion_timestamp(
                         output,
                         self.heads[index].head,
                         kernel_sequence,
                         completion_source,
                     );
+                    let ust = timestamp.ust_usec;
                     let submitted_ust_usec = self.heads[index].submitted_ust_usec.take();
                     let submit_to_page_flip = submitted_ust_usec
                         .and_then(|submitted| ust.checked_sub(submitted))
@@ -3176,6 +3189,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                     self.heads[index].presented_submission_ust_usec =
                         submitted_ust_usec.unwrap_or_default();
                     self.heads[index].presented_page_flip_ust_usec = ust;
+                    self.heads[index].presented_completion_timestamp = Some(timestamp);
                     self.heads[index].presented_submit_to_page_flip = submit_to_page_flip;
                     // What the display engine did with the buffer, filed
                     // under how the buffer got there. This half should not
@@ -3201,6 +3215,8 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                             completion_source.label(),
                             ust,
                         );
+                    } else if let Some(content) = self.heads[index].presented_content {
+                        self.trace_shell_native_completion(output, content.frame());
                     }
                 }
             }
@@ -3212,13 +3228,13 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
                 .saturating_add(usize::from(report.max_reached));
         }
 
-        fn completion_ust_usec(
+        fn completion_timestamp(
             &mut self,
             output: OutputId,
             head: sophia_engine::RenderHeadId,
             sequence: u64,
             source: LiveProductionKmsCompletionSource,
-        ) -> u64 {
+        ) -> LiveProductionCompletionTimestamp {
             // Always consume a matching timestamp record. An out-fence is
             // authoritative once selected, so a late kernel event must not
             // leave timing evidence resident after its physical owner retires.
@@ -3244,7 +3260,7 @@ pending_before={pending_before:?} rendering_before={rendering_before:?} exporter
             // CLOCK_MONOTONIC epoch. Session-relative elapsed time would jump
             // backward when a head changes to authoritative out-fence
             // completion and would strand the logical presentation owner.
-            timestamp.ust_usec
+            timestamp
         }
 
         fn monotonic_ust_usec() -> u64 {
@@ -4059,9 +4075,9 @@ pub(crate) use persistent_native_scanout::{
     CompositionInstallation, CompositionInstaller, DeferredNativeCompositions,
     LiveProductionHeadCompositionContent, LiveProductionQueuedMirrorHeadFrame,
     MirrorCompletionWitness, NativeCompositionInstallationHead, NativeCompositionOutput,
-    SettledMirrorHead, complete_mirror_head, install_composition_generation,
-    prepare_native_composition_batch, reserve_composition_lifecycle, settled_mirror_checksum,
-    validate_composition_installation,
+    PresentedTimingHead, SettledMirrorHead, complete_mirror_head, completed_timing,
+    install_composition_generation, prepare_native_composition_batch,
+    reserve_composition_lifecycle, settled_mirror_checksum, validate_composition_installation,
 };
 
 #[derive(Debug)]

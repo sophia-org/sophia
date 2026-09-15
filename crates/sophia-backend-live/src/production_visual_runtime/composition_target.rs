@@ -4,6 +4,7 @@
 use super::*;
 
 pub(crate) trait NativeCompositionTarget {
+    fn frame_owner(&self) -> crate::NativeFrameOwner;
     fn frame_service_available(&self) -> bool;
     fn head_targets(&self, output: OutputId) -> Vec<HeadRenderTarget>;
     fn has_in_flight_direct(&self) -> bool;
@@ -18,6 +19,9 @@ pub(crate) trait NativeCompositionTarget {
 }
 
 impl NativeCompositionTarget for LiveProductionNativeScanout {
+    fn frame_owner(&self) -> crate::NativeFrameOwner {
+        self.frame_owner()
+    }
     fn frame_service_available(&self) -> bool {
         self.output_topology_allows_frame_service()
     }
