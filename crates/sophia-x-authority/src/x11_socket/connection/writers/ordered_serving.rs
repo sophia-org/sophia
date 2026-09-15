@@ -250,6 +250,12 @@ struct X11OrderedServingOwner {
     /// left part-written. Nothing may be written through it again: the bytes
     /// on the wire are the beginning of an event nobody can finish.
     unterminated: bool,
+    /// Why ending it refused, when it did.
+    ///
+    /// Kept because the reason is the only thing that says why this connection
+    /// is in the state it is in, and whoever picks the continuation up has
+    /// nothing else to go on.
+    unterminated_cause: Option<std::io::ErrorKind>,
     closing: Option<X11OrderedClosing>,
     /// How many capsules this owner may retain beyond the ones in its slots.
     ///
@@ -342,6 +348,7 @@ impl X11OrderedServingOwner {
             in_flight: None,
             refused: None,
             unterminated: false,
+            unterminated_cause: None,
             closing: None,
             retention,
             unanswered,
@@ -391,11 +398,9 @@ impl X11OrderedServingOwner {
         // custody exists to prevent. A begun frame is finished or the
         // connection is ended, and stopping is neither.
         //
-        // No control reaches this: staging a half-written frame needs a
-        // recipient whose buffer fills partway through one, and nothing here
-        // produces that deterministically. It is kept because abandoning a
-        // partial frame is the worse failure, and recorded as unwitnessed
-        // rather than described as covered.
+        // Reached by controls that stage a begun frame explicitly: nothing
+        // here produces a naturally interrupted send, so the stored progress
+        // is staged while the prefix on the wire is real.
         if self.stop_requested() && !self.mid_frame() {
             return X11OrderedServeStep::Stopped;
         }
@@ -447,13 +452,24 @@ impl X11OrderedServingOwner {
         if self.stop_requested() {
             // Barred under the serialization this still holds, so nothing can
             // take the wire between deciding it is unusable and saying so.
-            let mid_frame = self.mid_frame();
-            if mid_frame {
+            let refused = if self.mid_frame() {
+                // Already holding serialization, so exclusion is established
+                // here by construction: nothing else is inside, and the bar is
+                // set before the guard goes. The ending is attempted under it
+                // too; what it refused with is recorded once the guard is back.
                 self.wire.bar();
-            }
+                match self.shutdown.shutdown(Shutdown::Both) {
+                    Ok(()) => None,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotConnected => None,
+                    Err(error) => Some(error.kind()),
+                }
+            } else {
+                None
+            };
             drop(socket);
-            if mid_frame {
-                return self.end_partial_frame();
+            if let Some(kind) = refused {
+                self.unterminated = true;
+                self.unterminated_cause = Some(kind);
             }
             return X11OrderedServeStep::Stopped;
         }
@@ -703,21 +719,42 @@ impl X11OrderedServingOwner {
         if !self.mid_frame() {
             return X11OrderedServeStep::Stopped;
         }
+        // REQUESTING A BAR IS NOT ESTABLISHING EXCLUSION. Setting the flag with
+        // nothing held stops later admissions and retracts nothing from a
+        // writer already inside: it passed the permission, it holds the
+        // serialization, and it will write when it resumes -- directly after
+        // this prefix. The flag is not a recall.
+        //
+        // Taking the serialization is what establishes it. A writer that holds
+        // it is still working; acquiring means it has finished and left, and a
+        // bar set while this holds the guard is seen by everyone after. That is
+        // quiescence under the same boundary, not another unsynchronized check.
+        let output = self.output.clone();
+        let Ok(socket) = output.lock() else {
+            // Exclusion cannot be established, so it is not claimed. The
+            // delivery, the frame and the reason all stay here.
+            self.unterminated = true;
+            return X11OrderedServeStep::Unterminated;
+        };
         self.wire.bar();
-        self.end_partial_frame()
+        self.end_partial_frame();
+        drop(socket);
+        X11OrderedServeStep::Stopped
     }
 
     /// End the connection a partial frame is stranded on.
     ///
     /// The bar is what stops other writers; this is what stops the recipient
     /// waiting for the rest of an event that is not coming.
-    fn end_partial_frame(&mut self) -> X11OrderedServeStep {
+    fn end_partial_frame(&mut self) {
         match self.shutdown.shutdown(Shutdown::Both) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotConnected => {}
-            Err(_) => self.unterminated = true,
+            Err(error) => {
+                self.unterminated = true;
+                self.unterminated_cause = Some(error.kind());
+            }
         }
-        X11OrderedServeStep::Stopped
     }
 
     fn stop_requested(&self) -> bool {

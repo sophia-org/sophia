@@ -23851,12 +23851,30 @@ fn a_stop_mid_frame_leaves_the_wire_unusable_rather_than_yielding() {
     let mut owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
         .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
 
-    // A real capsule taken, its real first frame begun, and five of its bytes
-    // actually written.
-    assert!(matches!(
-        owner.serve_one(XByteOrder::LittleEndian, 7),
-        X11OrderedServeStep::Advanced | X11OrderedServeStep::Flushed
-    ));
+    // THE FIRST CAPSULE IS FINISHED THROUGH THE OWNER, not written and then
+    // overwritten. Accepting Advanced and moving on would leave that delivery
+    // owned and awaiting its own publication, and reading its bytes is not
+    // that publication -- the staging below would be discarding custody rather
+    // than adding to it.
+    let first_cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 78910);
+    let mut flushed = false;
+    for _ in 0..16 {
+        match owner.serve_one(XByteOrder::LittleEndian, 7) {
+            X11OrderedServeStep::Advanced => {}
+            X11OrderedServeStep::Flushed => {
+                flushed = true;
+                break;
+            }
+            other => panic!("its own first event is served: {other:?}"),
+        }
+    }
+    assert!(flushed, "the first delivery finished through this owner");
+    assert_eq!(
+        first_cell.answer().map(|answer| answer.outcome),
+        Some(XAuthorityInputDeliveryOutcome::Flushed),
+        "and was published for its own admission"
+    );
+    assert!(owner.in_flight().is_none(), "so its slot is free");
     let mut drained = [0u8; 4096];
     while (&peer).read(&mut drained).is_ok_and(|read| read > 0) {}
     let taken = owner.queue.try_recv().expect("its next event");
@@ -23885,14 +23903,54 @@ fn a_stop_mid_frame_leaves_the_wire_unusable_rather_than_yielding() {
     });
     assert!(owner.mid_frame(), "a frame is begun and not finished");
 
+    // A WRITER IS ALREADY INSIDE. It passed the permission and holds the
+    // serialization; setting the flag stops later admissions and retracts
+    // nothing from this one. If the stop exit only barred, this writer would
+    // resume and put its event straight after the prefix.
+    let holder_output = output.clone();
+    let holder_left = Arc::new(AtomicBool::new(false));
+    let holder_flag = holder_left.clone();
+    let (inside, resumed) = std::sync::mpsc::channel();
+    let (release, wait_release) = std::sync::mpsc::channel();
+    let holder = std::thread::spawn(move || {
+        let mut socket = holder_output.lock().expect("the connection's output");
+        inside.send(()).expect("inside");
+        wait_release.recv().expect("released");
+        let wrote = (*socket).write_all(&[0xABu8; 32]).is_ok();
+        // Recorded before the guard goes, so "this writer has left" is only
+        // true once it really has.
+        holder_flag.store(true, Ordering::Release);
+        drop(socket);
+        wrote
+    });
+    resumed.recv().expect("the other writer holds the output");
+
     // Told to stop, with control pending so the shared wait is the exit taken.
     pending.store(1, Ordering::Release);
     stop.store(true, Ordering::Release);
-    let step = owner.serve_one(XByteOrder::LittleEndian, 7);
+    let observed = holder_left.clone();
+    let stepper = std::thread::spawn(move || {
+        let step = owner.serve_one(XByteOrder::LittleEndian, 7);
+        // WHAT THE CLAIM RESTS ON. Read the instant the step decided, not
+        // after the join: exclusion may only be claimed once the writer that
+        // was already inside has gone.
+        let had_left = observed.load(Ordering::Acquire);
+        (step, had_left, owner)
+    });
+    std::thread::sleep(Duration::from_millis(100));
+    release.send(()).expect("let the inside writer go");
+    let _inside_wrote = holder.join().expect("the inside writer finished");
+    let (step, had_left, mut owner) = stepper.join().expect("the serving thread finished");
     assert!(
         matches!(step, X11OrderedServeStep::Stopped),
         "the writer is leaving: {step:?}"
     );
+    assert!(
+        had_left,
+        "exclusion was claimed while another writer still held the wire: a \
+         flag stops later admissions and retracts nothing from one already in"
+    );
+    let _ = &mut owner;
 
     // AND THE WIRE IS NOT LEFT FOR ANYONE ELSE.
     assert!(
@@ -23967,10 +24025,30 @@ fn a_stop_arriving_after_admission_also_ends_a_wire_mid_frame() {
     let mut owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
         .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
 
-    assert!(matches!(
-        owner.serve_one(XByteOrder::LittleEndian, 7),
-        X11OrderedServeStep::Advanced | X11OrderedServeStep::Flushed
-    ));
+    // THE FIRST CAPSULE IS FINISHED THROUGH THE OWNER, not written and then
+    // overwritten. Accepting Advanced and moving on would leave that delivery
+    // owned and awaiting its own publication, and reading its bytes is not
+    // that publication -- the staging below would be discarding custody rather
+    // than adding to it.
+    let first_cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 79010);
+    let mut flushed = false;
+    for _ in 0..16 {
+        match owner.serve_one(XByteOrder::LittleEndian, 7) {
+            X11OrderedServeStep::Advanced => {}
+            X11OrderedServeStep::Flushed => {
+                flushed = true;
+                break;
+            }
+            other => panic!("its own first event is served: {other:?}"),
+        }
+    }
+    assert!(flushed, "the first delivery finished through this owner");
+    assert_eq!(
+        first_cell.answer().map(|answer| answer.outcome),
+        Some(XAuthorityInputDeliveryOutcome::Flushed),
+        "and was published for its own admission"
+    );
+    assert!(owner.in_flight().is_none(), "so its slot is free");
     let mut drained = [0u8; 4096];
     while (&peer).read(&mut drained).is_ok_and(|read| read > 0) {}
     let taken = owner.queue.try_recv().expect("its next event");
