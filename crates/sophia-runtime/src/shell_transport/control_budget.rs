@@ -12,8 +12,9 @@ impl ShellSessionTransport {
             return false;
         };
         let (bulk_records, bulk_bytes) = self.content_epochs.active_bulk_occupancy();
-        let reserved =
-            self.content_epochs.active_control_occupancy() + self.action_cancellations.len();
+        let reserved = self.content_epochs.active_control_occupancy()
+            + self.action_cancellations.len()
+            + usize::from(self.indicator_response.is_some());
         let controls = reserved - bulk_records + self.output.controls() + additional;
         let records = reserved + self.output.records() + additional;
         records <= limits.max_control_records as usize
@@ -37,8 +38,9 @@ impl ShellSessionTransport {
             return false;
         };
         let (bulk_records, bulk_bytes) = self.content_epochs.active_bulk_occupancy();
-        let reserved =
-            self.content_epochs.active_control_occupancy() + self.action_cancellations.len();
+        let reserved = self.content_epochs.active_control_occupancy()
+            + self.action_cancellations.len()
+            + usize::from(self.indicator_response.is_some());
         let Some(records) = reserved.checked_sub(usize::from(transfer)) else {
             return false;
         };
@@ -71,7 +73,10 @@ impl ShellSessionTransport {
         if self.content_limits.is_some() {
             self.frame_capacity_available(bytes, false, false)
         } else {
-            self.output.records() < 64 && self.output.len().saturating_add(bytes) <= 2 * 1024 * 1024
+            self.output.records() + usize::from(self.indicator_response.is_some()) < 64
+                && self.output.len().saturating_add(bytes).saturating_add(
+                    usize::from(self.indicator_response.is_some()) * CONTROL_FRAME_BYTES,
+                ) <= 2 * 1024 * 1024
         }
     }
 }

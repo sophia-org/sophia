@@ -17,3 +17,4 @@ inline-tests crates/sophia-runtime/src/shell_transport/outbox.rs
 inline-tests crates/sophia-session/src/live_session/metadata_shell/content/actions.rs
 inline-tests crates/sophia-shell-client/src/candidate.rs
 inline-tests crates/sophia-shell-client/src/outbox.rs
+inline-tests crates/sophia-runtime/src/shell_transport/indicator_responses.rs

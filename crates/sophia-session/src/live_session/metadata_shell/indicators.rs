@@ -65,14 +65,9 @@ impl LiveMetadataShell {
         if !self.connected || !self.transport.supports_indicator_activation() {
             return Ok(None);
         }
-        let Some(frame) = self
-            .transport
-            .poll_kind(sophia_protocol::IpcMessageKind::ShellIndicatorActivate)?
-        else {
+        let Some((tx, activation)) = self.transport.poll_indicator_activation()? else {
             return Ok(None);
         };
-        let (tx, activation) = sophia_protocol::decode_shell_indicator_activation(&frame)
-            .map_err(sophia_runtime::ShellTransportError::Codec)?;
 
         let mut status =
             classify_indicator_activation(self.indicators.last_published.as_ref(), &activation);
@@ -98,19 +93,11 @@ impl LiveMetadataShell {
         status: sophia_protocol::ShellIndicatorActivationStatus,
         reason: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let outcome = sophia_protocol::ShellIndicatorActivationOutcome {
-            connection_epoch: self.transport.connection_epoch(),
-            snapshot_generation: request.activation.snapshot_generation,
-            event_id: request.activation.event_id,
+        self.transport.finish_indicator_activation(
+            request.transaction,
+            &request.activation,
             status,
             reason,
-        };
-        self.transport.send_async(
-            sophia_protocol::encode_shell_indicator_activation_outcome(
-                request.transaction,
-                &outcome,
-            )
-            .map_err(sophia_runtime::ShellTransportError::Codec)?,
         )?;
         Ok(())
     }

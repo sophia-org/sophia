@@ -221,12 +221,7 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
         if ack_first {
             assert_eq!(h.ledger.service_acks(&mut h.transport, 1, 64).unwrap(), 1);
         }
-        let frame = h
-            .transport
-            .poll_kind(IpcMessageKind::ShellIndicatorActivate)
-            .unwrap()
-            .unwrap();
-        let (tx, received) = decode_shell_indicator_activation(&frame).unwrap();
+        let (tx, received) = h.transport.poll_indicator_activation().unwrap().unwrap();
         assert_eq!((tx.raw(), received), (81, activation));
         assert_eq!(
             h.ledger.live[0].ack,
@@ -279,6 +274,21 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
             usize::from(!ack_first)
         );
         assert!(h.ledger.live.is_empty());
+        h.transport
+            .finish_indicator_activation(tx, &received, ShellIndicatorActivationStatus::Accepted, 0)
+            .unwrap();
+        h.transport.poll_io().unwrap();
+        let (outcome_tx, outcome) = h
+            .client
+            .poll_indicator_activation_outcome()
+            .unwrap()
+            .unwrap();
+        assert_eq!(outcome_tx, tx);
+        assert_eq!(
+            (outcome.event_id, outcome.status),
+            (event, ShellIndicatorActivationStatus::Accepted)
+        );
+
         assert!(
             h.transport
                 .poll_kind(IpcMessageKind::ShellIndicatorActivate)

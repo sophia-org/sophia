@@ -481,6 +481,28 @@ attempts remain retained failures. Relocated affected-library validation passes
 591 tests with 13 ignored. These are scoped checks, not a canonical release or
 attended acceptance result. Logs: `.artifacts/shell-lifecycle-dev/client-wm-*`.
 
+
+The subsequent response-owner slice makes Session consume indicator requests
+through the typed transport admission path. Before inbox removal, one exact
+request owns an aggregate control credit. The transport records its first
+completed outcome before fallible encoding/FIFO admission, refuses a conflicting
+completion, and retries only that outcome from `poll_io`. Pending requests
+cannot be delivered to WM again. FIFO ownership clears the plain pending record
+without another allocation, callback or I/O; partial writes retain the frame's
+credit through the final byte. Reconnect/disconnect invalidates the old owner.
+Content and descriptor-only peers both account for the reservation.
+
+Three external private-owner controls exercise record/byte credit, partial
+FIFO drain, exact result retention, and no readmission. The post-reservation
+refusal control deliberately reduces a fixture limit: it is a defensive
+returned-refusal test, not an observed kernel-backpressure schedule. Two
+compiled mutations (missing credit and dropped refused result) fail. The real
+private-client roundtrip now receives the exact Accepted outcome after shared
+WM queue insertion. The owner loop's complete execution and policy/native
+causality remain open. Scoped validation: 602 affected-library passes,
+13 ignored, strict affected Clippy and layout pass, no hardware. Evidence:
+`.artifacts/shell-lifecycle-dev/indicator-response-*`.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

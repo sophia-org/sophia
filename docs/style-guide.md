@@ -151,7 +151,9 @@ the release API. The runtime retirement-authority fixture similarly mounts
 externally to distinguish the persistent and transient custody paths.
 
 External transport-budget and client outbox/candidate fixtures need to inspect
-exact producer credits and partial-write ownership across refusal; the public
+exact producer credits and partial-write ownership across refusal; this includes
+`tests/support/shell_indicator_responses.rs`, which retains the exact completed
+WM response while forcing FIFO admission refusal. The public
 socket API cannot select those internal transfer points. Session's external
 content-action fixtures join the real private socket, generic client and action
 ledger, using the shared WM admission boundary. These mounts and test-only

@@ -31,6 +31,7 @@ mod content_allocations;
 mod content_candidates;
 mod content_resources;
 mod control_budget;
+mod indicator_responses;
 mod outbox;
 pub use content_admission::ShellContentAdmissionPolicy;
 
@@ -104,6 +105,7 @@ pub struct ShellSessionTransport {
     input: Vec<u8>,
     output: outbox::ShellOutbox,
     action_cancellations: Vec<sophia_protocol::ContentAction>,
+    indicator_response: Option<indicator_responses::PendingIndicatorResponse>,
     inbox: VecDeque<Vec<u8>>,
     connection_epoch: u64,
     last_content_grant_epoch: u64,
@@ -142,6 +144,7 @@ impl ShellSessionTransport {
             input: Vec::new(),
             output: outbox::ShellOutbox::default(),
             action_cancellations: Vec::with_capacity(16),
+            indicator_response: None,
             inbox: VecDeque::new(),
             connection_epoch: 0,
             last_content_grant_epoch: 0,
@@ -355,6 +358,7 @@ impl ShellSessionTransport {
         self.input.clear();
         self.output.clear();
         self.action_cancellations.clear();
+        self.indicator_response = None;
         self.inbox.clear();
         self.capabilities = capabilities;
         self.stream = Some(stream);
@@ -566,6 +570,7 @@ impl ShellSessionTransport {
         self.input.clear();
         self.output.clear();
         self.action_cancellations.clear();
+        self.indicator_response = None;
         self.inbox.clear();
         self.requested_candidate = None;
         self.pending_candidate = None;
@@ -650,6 +655,10 @@ impl ShellSessionTransport {
 
     /// Bounded, nonblocking I/O shared by persistent tabs and the r1 facade.
     pub fn poll_io(&mut self) -> Result<(), ShellTransportError> {
+        if self.stream.is_none() {
+            return Err(ShellTransportError::NotConnected);
+        }
+        self.flush_indicator_response()?;
         let stream = self
             .stream
             .as_mut()
