@@ -12266,6 +12266,22 @@ fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
 }
 
 
+/// Admit a delivery the way the ingress would, for controls that drive
+/// run_ordered_input directly.
+///
+/// A real delivery is always admitted before it is executed -- that is where
+/// its completion is minted -- so a control that presses one which was never
+/// admitted is describing a route that cannot occur. Added rather than
+/// loosening the executor, which now refuses a release whose answer it could
+/// never recognise.
+fn admit_for_direct_run(private: &crate::PrivateXServerFrontend, route: &XAuthorityRoutedInput) {
+    private
+        .broker
+        .registry
+        .input_recovery
+        .admit(route, 0, std::time::Instant::now());
+}
+
 #[test]
 fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() {
     let client = XServerFrontendClientId(701);
@@ -12288,7 +12304,11 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(701), 272, true),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(701), 272, true);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &pressed,
         
                 watch,
@@ -12333,7 +12353,11 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(703), 272, true),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(703), 272, true);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &joined,
         
                 watch,
@@ -12359,7 +12383,11 @@ fn an_admitted_button_runs_the_ordered_path_and_releases_to_its_recorded_hold() 
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(702), 272, false),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(702), 272, false);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &released,
         
                 watch,
@@ -12502,7 +12530,11 @@ fn a_release_answers_its_hold_after_the_surface_is_gone() {
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(731), 272, true),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(731), 272, true);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &pressed,
         
                 watch,
@@ -12526,7 +12558,11 @@ fn a_release_answers_its_hold_after_the_surface_is_gone() {
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(732), 272, false),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(732), 272, false);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &released,
         
                 watch,
@@ -12564,7 +12600,11 @@ fn a_release_keeps_the_window_its_press_recorded() {
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(741), 272, true),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(741), 272, true);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &pressed,
         
                 watch,
@@ -12590,7 +12630,11 @@ fn a_release_keeps_the_window_its_press_recorded() {
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(742), 272, false),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(742), 272, false);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &released,
         
                 watch,
@@ -12855,6 +12899,92 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
 }
 
 #[test]
+fn a_release_whose_answer_could_never_be_recognised_refuses_and_keeps_its_hold() {
+    // Custody is acquired before the effect, and a release that cannot get it
+    // is refused there -- before the ledger moves and before the record that
+    // owns the native obligation leaves inventory. Enqueuing anyway would
+    // hand over a delivery whose answer nothing could ever match to its debt.
+    let client = XServerFrontendClientId(2531);
+    let mut fixture = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        runner,
+        ingress,
+        surface,
+        ..
+    } = &mut fixture;
+    let surface = *surface;
+    let PrivatePreparedRunner {
+        frontend,
+        keyboards,
+        watch,
+        ..
+    } = runner;
+    let private = frontend.as_mut().expect("a live runner");
+    let watch = watch.as_ref().expect("a sealed watch");
+
+    // A real press through the ingress, so a hold exists with its obligation.
+    ingress
+        .submit(button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2531),
+            272,
+            true,
+        ))
+        .expect("the order to accept the press");
+    let turn = private
+        .route_pending_ordered(keyboards, watch)
+        .expect("a readable order");
+    private.terminal.delivering.extend(turn);
+    private
+        .deliver_one(&mut |_, _| Ok(()))
+        .expect("the press delivers");
+    assert_eq!(private.terminal.holds.len(), 1);
+    assert!(
+        private.terminal.holds[0].native.is_some(),
+        "the press left its source obligation on its record"
+    );
+
+    // A release whose delivery was never admitted, so no completion was ever
+    // minted for it. This is the case the executor must refuse.
+    let role = private
+        .reservation_role(client, DeviceId::from_raw(1))
+        .expect("a capability");
+    let stamp = private.control_gate().stamp().expect("an open coordinator");
+    let released = role.reserve(stamp, 9).expect("a reservation").accepted();
+    let refused = private.run_ordered_input(
+        keyboards,
+        &button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(2599),
+            272,
+            false,
+        ),
+        &released,
+        watch,
+    );
+    assert!(
+        refused.is_err(),
+        "a release with no completion to answer it is refused"
+    );
+
+    // AND THE OBLIGATION IS STILL HERE. Refusing before the effect is what
+    // makes that true: nothing was released, so nothing was left unowned.
+    assert_eq!(
+        private.terminal.holds.len(),
+        1,
+        "the hold stays exactly where it was"
+    );
+    assert!(
+        private.terminal.holds[0].native.is_some(),
+        "and it still owns the activation, query scope and selection it raised"
+    );
+    assert!(
+        private.terminal.settling.is_empty(),
+        "no release record was made for a release that did not happen"
+    );
+}
+
+#[test]
 fn a_release_holds_the_completion_of_the_admission_it_was_recorded_for() {
     // Acquiring the handle at dispatch meant looking the delivery up by id
     // again. By then the original ticket may have been pruned -- leaving no
@@ -12934,7 +13064,7 @@ fn a_release_holds_the_completion_of_the_admission_it_was_recorded_for() {
     );
     if readmitted {
         let fresh = recovery
-            .completion_of(delivery)
+            .completion_for(delivery).ok().flatten()
             .expect("the re-admission minted its own");
         assert!(
             !Arc::ptr_eq(&fresh, &held),
@@ -13118,7 +13248,7 @@ fn a_reused_delivery_id_does_not_settle_the_debt_that_had_it_before() {
         "the pruned id is available again, which is the situation being guarded"
     );
     let fresh = recovery
-        .completion_of(delivery)
+        .completion_for(delivery).ok().flatten()
         .expect("the new admission minted its own completion");
     let held = private.terminal.settling[0]
         .completion()
@@ -13770,7 +13900,11 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(761), 272, true),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(761), 272, true);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &pressed,
         
                 watch,
@@ -13788,7 +13922,11 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(762), 272, false),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(762), 272, false);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &released,
         
                 watch,
@@ -13825,7 +13963,11 @@ fn a_final_release_clears_what_its_press_projected_and_reports_it() {
     let again = role.reserve(stamp, 3).expect("a reservation").accepted();
     let barred = private.run_ordered_input(
         keyboards,
-        &button_to(surface, XAuthorityInputDeliveryId::from_raw(763), 272, true),
+        &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(763), 272, true);
+                admit_for_direct_run(private, &route);
+                route
+            },
         &again,
     
                 watch,
@@ -13875,12 +14017,16 @@ fn a_release_with_a_survivor_leaves_the_projection_alone() {
         private
             .run_ordered_input(
                 keyboards,
-                &button_to(
+                &{
+                let route = button_to(
                     surface,
                     XAuthorityInputDeliveryId::from_raw(delivery),
                     272,
                     true,
-                ),
+                );
+                admit_for_direct_run(private, &route);
+                route
+            },
                 &custody,
             
                 watch,
@@ -13896,7 +14042,11 @@ fn a_release_with_a_survivor_leaves_the_projection_alone() {
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(773), 272, false),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(773), 272, false);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &released,
         
                 watch,
@@ -13991,7 +14141,11 @@ fn a_release_whose_seat_projection_is_gone_retains_a_residual_rather_than_refusi
     private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(791), 272, true),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(791), 272, true);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &pressed,
         
                 watch,
@@ -14014,7 +14168,11 @@ fn a_release_whose_seat_projection_is_gone_retains_a_residual_rather_than_refusi
     let run = private
         .run_ordered_input(
             keyboards,
-            &button_to(surface, XAuthorityInputDeliveryId::from_raw(792), 272, false),
+            &{
+                let route = button_to(surface, XAuthorityInputDeliveryId::from_raw(792), 272, false);
+                admit_for_direct_run(private, &route);
+                route
+            },
             &released,
             watch,
         )

@@ -14,6 +14,12 @@ pub struct XAuthorityInputDeliveryTicket {
     pub client: Option<XServerFrontendClientId>,
 }
 
+/// The ledger could not be read, so nothing is established about whether this
+/// delivery has a completion at all.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PrivateCompletionUnreadable;
+
 /// The one place a delivery's terminal outcome is ever written.
 ///
 /// MINTED BY THIS LEDGER AT ADMISSION, before anything can be accepted for the
@@ -314,11 +320,21 @@ impl InputRecovery {
     /// window in which the delivery is pruned and re-admitted between the two.
     /// A holder of this cell can never be answered by a later admission that
     /// happens to reuse the number.
-    fn completion_of(
+    /// The same custody, with an unreadable ledger told apart from a delivery
+    /// that has none.
+    ///
+    /// Absence and inability to look are different facts. A caller that has to
+    /// fail closed needs to know which it met, because one says this delivery
+    /// will never be answerable and the other says nothing at all.
+    fn completion_for(
         &self,
         id: XAuthorityInputDeliveryId,
-    ) -> Option<Arc<PrivateDeliveryCompletion>> {
-        Some(Arc::clone(&self.state.lock().ok()?.tickets.get(&id)?.completion))
+    ) -> Result<Option<Arc<PrivateDeliveryCompletion>>, PrivateCompletionUnreadable> {
+        let state = self.state.lock().map_err(|_| PrivateCompletionUnreadable)?;
+        Ok(state
+            .tickets
+            .get(&id)
+            .map(|entry| Arc::clone(&entry.completion)))
     }
 
     fn ticket(&self, id: XAuthorityInputDeliveryId) -> Option<XAuthorityInputDeliveryTicket> {

@@ -102,3 +102,139 @@ struct PrivateOrderedDecision {
     release: Option<sophia_input_authority::ReleaseOutcome>,
     event: Option<XAuthorityInputEvent>,
 }
+
+// What one guarded transition can refuse with, and what it reports when it
+// does not. Moved here from the transition itself: this file is the
+// vocabulary a transition answers in, and a refusal is part of that answer.
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PrivateExecutionRefusal {
+    /// The keyboard state offered is not this instance's.
+    ForeignKeyboards,
+    /// This seat has no keyboard state and one could not be built. Refused
+    /// before the transaction, where refusing is still free.
+    SeatUnavailable,
+    /// The input does not name anything this authority can validate.
+    Unmappable,
+    /// A new key press needs an authoritative reached target, and the only
+    /// focus record available is an intent that was queued rather than one a
+    /// writer applied. Refused rather than delivered somewhere plausible.
+    FocusNotApplied,
+    /// This executor already holds as many records as it may.
+    ///
+    /// Refused before the effect, so nothing is applied that could not then be
+    /// recorded -- a hold whose plan has nowhere to go is a release nobody can
+    /// answer.
+    RecordsExhausted,
+    /// The ledger owes this release a delivery and the plan recording where
+    /// its press went is not here.
+    ///
+    /// Not the same as owing nobody an event. A hold that ended has a
+    /// recipient by definition, so an absent record is an obligation nobody
+    /// can currently discharge -- reporting it as nothing to emit would settle
+    /// a debt by losing the evidence of it.
+    HoldPlanMissing,
+    /// No supervisor is watching this execution.
+    ///
+    /// Refused rather than run unwatched. The watch exists for the case where
+    /// an execution does not come back, and starting one that nothing is
+    /// watching is starting the case it was meant to catch with nothing left
+    /// to catch it.
+    Unwatched,
+    /// This instance has no prepared native origin.
+    ///
+    /// Refused rather than pressed without one. Every hold clones that origin
+    /// and a proof is checked against it, so a press that began without one
+    /// would leave a hold nothing could ever prove anything about.
+    NativeUnprepared,
+    /// Another execution holds this delivery.
+    ///
+    /// Its effect may be under way, so this one may not apply a second. Not
+    /// the same as ended: nothing has finished, and the delivery is still owed
+    /// an outcome by whoever holds it.
+    DeliveryClaimedElsewhere,
+    /// The ledger will not carry this delivery to a recipient.
+    ///
+    /// Either a terminal outcome was already recorded for it -- revoked with
+    /// its epoch, timed out, or disconnected with its client while it waited
+    /// its turn -- or binding it to the recipient found that connection
+    /// already revoked and recorded one now. Both are decisions, and in both
+    /// the work must not be applied: an effect for a delivery whose outcome
+    /// is already reported would be an effect nobody is waiting for.
+    DeliveryEnded,
+    /// The delivery ledger could not be read.
+    ///
+    /// Not the same as ended. Nothing is known about whether this delivery is
+    /// still owed an outcome, and executing on that would create a hold this
+    /// executor cannot prove anyone is waiting for.
+    RecoveryUnavailable,
+    /// The item was taken from the order and execution had not been attempted.
+    ///
+    /// The phase a current item carries while it is owned and before its
+    /// execution returns, so an interruption leaves a record that says what
+    /// was and was not tried.
+    NotAttempted,
+    /// The transaction returned without deciding.
+    ///
+    /// Carries the completion the authority actually recorded, because that is
+    /// the cause. Discarding it and naming a plausible error here would
+    /// replace what happened with a guess about it.
+    NotDecided(sophia_input_authority::RequestCompletion),
+    /// The source refused, under the name the source gave it.
+    ///
+    /// The source distinguishes a delivery that ended, a ledger nobody could
+    /// read, a selection that was not there and an origin that was not ours.
+    /// All of them leave the transaction carrying one authority error, so
+    /// reporting that error would say only that something went wrong inside.
+    /// Recording the cause and never reading it would be worse still: a fact
+    /// written down where nothing can reach it is not a fact anyone has.
+    Native(private_native::Refusal),
+    /// The admission boundary refused.
+    Admission(PrivateAdmissionRefusal),
+    /// The authority refused.
+    Authority(PrivateAuthorityRefusal),
+}
+
+/// What one ordered input did.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateOrderedRun {
+    /// Where it went, as decided under the guards.
+    ///
+    /// `None` where nothing was owed a delivery. That is an outcome, not a
+    /// failure to find a target.
+    pub reached: Option<PrivateReachedResources>,
+    /// Whether this press began the hold rather than joining one.
+    ///
+    /// A join moves the ledger without being a delivery, and without being a
+    /// keyboard transition either: the aggregate already had this input down.
+    pub first_press: bool,
+    /// Whether the keyboard state was moved by this input.
+    pub keyboard_applied: bool,
+    /// What a release did, when this was one.
+    ///
+    /// Carried rather than inferred from an absent recipient. A source that
+    /// was not holding, and one whose input another source still holds, are
+    /// both successful ledger outcomes that owe nobody an event -- and neither
+    /// is a target that has gone.
+    pub release: Option<sophia_input_authority::ReleaseOutcome>,
+    /// The completion the authority recorded.
+    pub completion: sophia_input_authority::RequestCompletion,
+    /// Whether this outcome owes a client an event at all.
+    ///
+    /// Decided under the guards, where the ledger said what happened, and not
+    /// inferred later from an absent event. A press that joined a hold and a
+    /// release that found nothing held both legitimately owe nobody anything;
+    /// an event that was owed and never built is a debt. Both look like no
+    /// event afterwards, and treating them alike either strands finished work
+    /// or discards an obligation.
+    pub owes_event: bool,
+    /// The event this owes a client, decided under the guards.
+    ///
+    /// `None` where nothing is owed one: a press that joined a hold moved the
+    /// aggregate without being a delivery, and a release with a survivor left
+    /// the aggregate unchanged. Emitting either would send a client a
+    /// transition that did not happen to it.
+    pub event: Option<XAuthorityInputEvent>,
+}
