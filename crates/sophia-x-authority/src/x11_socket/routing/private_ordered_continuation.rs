@@ -61,17 +61,22 @@ enum PrivateOrderedSetupCustody {
 enum PrivateOrderedContinuationPlace {
     /// Nobody holds this place.
     Free,
-    /// Promised to a connection that has not handed anything over yet.
-    Reserved,
-    /// Holding one connection's continuation.
+    /// Promised to a connection, with its record already made and empty.
     ///
-    /// SEPARATELY OWNED, deliberately. Driving a continuation means calling
-    /// into its close, which takes this connection's output and its
-    /// finalizers; doing that under the aggregate lock would put the whole
-    /// store behind one connection's write, and would take common beneath
-    /// settlement. The record has its own lock, so the aggregate one is held
-    /// only long enough to find it.
-    Held(Arc<Mutex<PrivateOrderedContinuation>>),
+    /// THE RECORD EXISTS FROM THE RESERVATION, not from the hand-over. Making
+    /// it while installing put an allocation inside the one interval that must
+    /// not contain one: between taking a connection's work out of its source
+    /// and putting it somewhere, where anything that can fail loses it. The
+    /// aggregate's place and the record are different storage, and reserving
+    /// has to make both.
+    ///
+    /// SEPARATELY OWNED, too. Driving a continuation means calling into its
+    /// close, which takes this connection's output and its finalizers; doing
+    /// that under the aggregate lock would put the whole store behind one
+    /// connection's write, and would take common beneath settlement. The
+    /// record has its own lock, so the aggregate one is held only long enough
+    /// to find it.
+    Taken(Arc<Mutex<Option<PrivateOrderedContinuation>>>),
 }
 
 /// A reserved place for one connection's ordered continuation.
@@ -125,23 +130,52 @@ impl PrivateOrderedContinuationSlot {
     /// only a debug assertion between a second call and overwriting held work,
     /// and that protection is not there in a release build.
     fn install(mut self, source: &mut Option<PrivateOrderedContinuation>) {
-        let mut held = self.owner.records_even_if_poisoned();
-        debug_assert!(
-            matches!(
-                held.continuations[self.index],
-                PrivateOrderedContinuationPlace::Reserved
-            ),
-            "this place is this slot's and holds nothing yet"
-        );
+        // The record was made when this place was reserved. Finding it is a
+        // reference count, not an allocation, and it happens while the work is
+        // still the caller's.
+        let record = {
+            let held = self.owner.records_even_if_poisoned();
+            match held.continuations.get(self.index) {
+                Some(PrivateOrderedContinuationPlace::Taken(record)) => record.clone(),
+                _ => {
+                    // No place to install into. Nothing is taken, so the work
+                    // stays with its source and this is reported rather than
+                    // quietly counted as done.
+                    drop(held);
+                    self.abandon();
+                    return;
+                }
+            }
+        };
+        // THE DESTINATION IS HELD FIRST. From here to the assignment there is
+        // no allocation, no callback and nothing that can fail.
+        //
+        // No control here discriminates this order: once install is entered
+        // the source is inside it, and the interval between a take and an
+        // assignment is not observable from outside without reaching in. What
+        // the control beside it establishes is that a hand-over WAITS for its
+        // destination rather than completing; the ordering itself rests on
+        // this being the only take, textually after the acquisition.
+        let mut destination = record
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let Some(continuation) = source.take() else {
-            // Nothing to install. The place stays this connection's, because
-            // the reservation is not returned by an install that had nothing.
-            drop(held);
-            self.armed = false;
+            // Nothing was handed over. The place is not installed into and not
+            // returned either -- no holder and no driver remains for it -- so
+            // it is recorded as what it is rather than left looking taken by
+            // someone who will come back for it.
+            drop(destination);
+            self.abandon();
             return;
         };
-        held.continuations[self.index] =
-            PrivateOrderedContinuationPlace::Held(Arc::new(Mutex::new(continuation)));
+        *destination = Some(continuation);
+        self.armed = false;
+    }
+
+    /// Give up this place without disposing of it, and say so.
+    fn abandon(&mut self) {
+        let mut held = self.owner.records_even_if_poisoned();
+        held.continuations_abandoned = held.continuations_abandoned.saturating_add(1);
         self.armed = false;
     }
 
@@ -155,8 +189,9 @@ impl PrivateOrderedContinuationSlot {
         let mut held = self.owner.records_even_if_poisoned();
         debug_assert!(
             matches!(
-                held.continuations[self.index],
-                PrivateOrderedContinuationPlace::Reserved
+                &held.continuations[self.index],
+                PrivateOrderedContinuationPlace::Taken(record)
+                    if record.lock().map(|held| held.is_none()).unwrap_or(false)
             ),
             "a finished slot holds nothing"
         );
@@ -210,7 +245,7 @@ impl PrivateSettlementOwner {
         // The aggregate lock is held only to find the record's own handle.
         let record = {
             let held = self.records_even_if_poisoned();
-            let PrivateOrderedContinuationPlace::Held(record) = held.continuations.get(index)?
+            let PrivateOrderedContinuationPlace::Taken(record) = held.continuations.get(index)?
             else {
                 return None;
             };
@@ -222,7 +257,7 @@ impl PrivateSettlementOwner {
         // connection behind that write. The record is borrowed in its own
         // storage instead -- it is never moved into a local here.
         let mut record = record.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        Some(act(&mut record))
+        Some(act(record.as_mut()?))
     }
 }
 

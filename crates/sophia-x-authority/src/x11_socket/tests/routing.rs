@@ -24647,11 +24647,14 @@ fn an_unwind_before_the_destination_is_held_leaves_the_work_with_its_source() {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
     });
+    // WHAT THIS CONTROL ESTABLISHES, exactly: that a caller which decides to
+    // hand over and then fails before calling install still has the work. It
+    // panics in a closure that never enters install, so it says nothing about
+    // install's own acquisition order -- the control below is what holds the
+    // destination first.
     let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _slot = &slot;
-        // Stands for any fallible step between deciding to hand over and
-        // holding the destination.
-        panic!("intentional unwind before the destination is held");
+        panic!("intentional unwind before install is called");
     }));
     assert!(unwound.is_err());
     assert!(
@@ -24779,4 +24782,87 @@ fn a_bound_transport_that_could_not_be_served_keeps_its_ending_handle() {
     drop(replacement_registration);
     drop(registration);
     drop(runner);
+}
+
+#[test]
+fn a_handover_holds_its_destination_before_it_takes_anything() {
+    // The record was made while installing, so the one interval that must
+    // contain nothing fallible contained an allocation: between taking a
+    // connection's work out of its source and putting it somewhere. The
+    // aggregate's reserved place and the record are different storage, and
+    // reserving has to make both.
+    let client = XServerFrontendClientId(7981);
+    let f = prepared_ordered_fixture(client);
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+    let slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+
+    // THE DESTINATION EXISTS ALREADY. Holding it from another thread means a
+    // hand-over that acquires it first cannot proceed -- which is how this
+    // observes the order without reaching inside install.
+    let record = {
+        let held = durable.records_even_if_poisoned();
+        let PrivateOrderedContinuationPlace::Taken(record) = &held.continuations[0] else {
+            panic!("reserving made the record")
+        };
+        record.clone()
+    };
+    assert!(
+        record.lock().expect("a fresh record").is_none(),
+        "made empty, at reservation"
+    );
+
+    let PreparedOrderedFixture { channels, .. } = f;
+    let mut source = Some(PrivateOrderedContinuation::Setup {
+        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
+        refusal: X11OrderedServingRefusal::TransportUnavailable,
+    });
+
+    let blocker = record.lock().expect("hold the destination");
+    let (started, wait) = std::sync::mpsc::channel();
+    let (checked, report) = std::sync::mpsc::channel();
+    let installer = std::thread::spawn(move || {
+        started.send(()).expect("started");
+        slot.install(&mut source);
+        checked.send(source.is_none()).expect("reported");
+    });
+    wait.recv().expect("the installing thread started");
+    // It cannot have taken the work: the destination is held here.
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(
+        report.try_recv().is_err(),
+        "the hand-over waits for its destination rather than taking first"
+    );
+    drop(blocker);
+    let took = report.recv().expect("the hand-over finished");
+    installer.join().expect("the installing thread finished");
+    assert!(took, "and then it moved the work in");
+
+    assert_eq!(durable.continuations_retained(), Some(1));
+    assert_eq!(durable.continuations_abandoned(), Some(0));
+}
+
+#[test]
+fn a_handover_with_nothing_to_hand_over_is_recorded_rather_than_counted_done() {
+    // Installing an empty source left the place looking taken by someone who
+    // would come back for it, while no holder or driver remained. It is not
+    // installed and not released; it is reported.
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+    let slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+    let mut empty = None;
+    slot.install(&mut empty);
+    assert_eq!(durable.continuations_retained(), Some(0), "nothing installed");
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "and the place is not handed out again"
+    );
+    assert_eq!(
+        durable.continuations_abandoned(),
+        Some(1),
+        "it is recorded as having no holder, not counted as done"
+    );
 }

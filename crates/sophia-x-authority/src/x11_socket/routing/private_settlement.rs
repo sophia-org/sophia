@@ -506,7 +506,10 @@ impl PrivateSettlementOwner {
                 held.continuations.len() - 1
             }
         };
-        held.continuations[index] = PrivateOrderedContinuationPlace::Reserved;
+        // The record is made HERE, before this connection is exposed, so the
+        // hand-over later is a move into storage that already exists.
+        held.continuations[index] =
+            PrivateOrderedContinuationPlace::Taken(Arc::new(Mutex::new(None)));
         held.continuation_slots = held.continuation_slots.saturating_add(1);
         drop(held);
         Ok(PrivateOrderedContinuationSlot {
@@ -532,7 +535,11 @@ impl PrivateSettlementOwner {
                 held.continuations
                     .iter()
                     .filter(|place| {
-                        matches!(place, PrivateOrderedContinuationPlace::Held(_))
+                        matches!(
+                            place,
+                            PrivateOrderedContinuationPlace::Taken(record)
+                                if record.lock().map(|held| held.is_some()).unwrap_or(false)
+                        )
                     })
                     .count()
             })
