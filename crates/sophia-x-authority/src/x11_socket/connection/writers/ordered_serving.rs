@@ -379,11 +379,12 @@ impl X11OrderedServingOwner {
         // observes stop while control output is pending, so a writer told to
         // stop with no control pending would never see it there.
         //
-        // AN EARLY-OUT, NOT THE GUARANTEE. The recheck under serialization
-        // below catches everything this does, so removing this changes no
-        // outcome -- what it saves is taking the connection's output at all
-        // for a writer that is already leaving. The recheck is the one that
-        // has to be there.
+        // AN EARLY-OUT, NOT THE GUARANTEE. The recheck under serialization is
+        // the one that has to be there. This is not quite outcome-equivalent
+        // to it, though: acquisition can refuse first -- a barred wire or an
+        // unusable lock -- and report that instead, where this would have said
+        // Stopped. What it buys is not taking the connection's output at all
+        // for a writer already leaving.
         //
         // NOT IN THE MIDDLE OF A FRAME. Bytes already on the wire are the
         // beginning of an event; walking away from them is the thing wire
@@ -405,28 +406,55 @@ impl X11OrderedServingOwner {
         // told apart, because an empty queue, a stopped writer and a wire that
         // may not be written are three different facts and a caller told the
         // wrong one acts on it.
-        let socket = match lock_x11_non_control_output(
+        let admitted = lock_x11_non_control_output(
             &self.output,
             &self.wire,
             &self.control_pending,
             self.stop.as_deref(),
-        ) {
-            Ok(Some(socket)) => socket,
-            // Told to stop while yielding to control. Nothing was received,
-            // written or answered, and this is not an empty queue.
-            Ok(None) => return X11OrderedServeStep::Stopped,
+        );
+        // The refusals are answered with the borrow given up first, because
+        // what some of them have to do next needs this owner mutably.
+        let refusal = match &admitted {
+            Ok(Some(_)) => None,
+            // Told to stop while yielding to control.
+            //
+            // THE SHARED WAIT ANSWERS STOP TOO, so this exit is reached with a
+            // frame already begun -- and it is the exit that mattered: the
+            // mid-frame conditions elsewhere never see it. Leaving here with a
+            // prefix on the wire and no writer to finish it is what let a
+            // control write land directly after those bytes.
+            Ok(None) => Some(None),
+            // The wire holds an unfinished event. Nothing may follow it.
             Err(error) if error.client_failure => {
-                // The wire holds an unfinished event. Nothing may follow it.
-                return X11OrderedServeStep::WireBarred;
+                Some(Some(X11OrderedServeStep::WireBarred))
             }
-            Err(_) => return X11OrderedServeStep::TransportUnavailable,
+            Err(_) => Some(Some(X11OrderedServeStep::TransportUnavailable)),
         };
+        if let Some(refusal) = refusal {
+            drop(admitted);
+            return match refusal {
+                Some(step) => step,
+                None => self.stop_without_finishing(),
+            };
+        }
+        let socket = admitted
+            .expect("checked above")
+            .expect("checked above");
         // AND AGAIN UNDER SERIALIZATION. Stop may have been set while this was
         // waiting for control or for the lock itself; taking custody now would
         // start work for a writer that is already leaving. The guard goes back
         // with nothing taken.
-        if self.stop_requested() && !self.mid_frame() {
+        if self.stop_requested() {
+            // Barred under the serialization this still holds, so nothing can
+            // take the wire between deciding it is unusable and saying so.
+            let mid_frame = self.mid_frame();
+            if mid_frame {
+                self.wire.bar();
+            }
             drop(socket);
+            if mid_frame {
+                return self.end_partial_frame();
+            }
             return X11OrderedServeStep::Stopped;
         }
         let step = serve_one_ordered_delivery(
@@ -658,6 +686,38 @@ impl X11OrderedServingOwner {
 
     fn closing(&self) -> Option<&X11OrderedClosing> {
         self.closing.as_ref()
+    }
+
+    /// Leave without finishing, ending the wire if a frame was begun.
+    ///
+    /// A PARTIAL FRAME IS NOT SOMETHING TO WALK AWAY FROM. Keeping custody of
+    /// the delivery is not enough: the bytes are on the wire, and the next
+    /// writer to take the serialization puts its own event directly after a
+    /// prefix, which X11 can neither describe nor recover from. So either the
+    /// frame finishes under serialization -- which a stopped writer will not
+    /// be admitted to do -- or the wire stops being usable before this yields.
+    ///
+    /// The delivery itself stays owned. What ends is the connection, not the
+    /// obligation.
+    fn stop_without_finishing(&mut self) -> X11OrderedServeStep {
+        if !self.mid_frame() {
+            return X11OrderedServeStep::Stopped;
+        }
+        self.wire.bar();
+        self.end_partial_frame()
+    }
+
+    /// End the connection a partial frame is stranded on.
+    ///
+    /// The bar is what stops other writers; this is what stops the recipient
+    /// waiting for the rest of an event that is not coming.
+    fn end_partial_frame(&mut self) -> X11OrderedServeStep {
+        match self.shutdown.shutdown(Shutdown::Both) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotConnected => {}
+            Err(_) => self.unterminated = true,
+        }
+        X11OrderedServeStep::Stopped
     }
 
     fn stop_requested(&self) -> bool {

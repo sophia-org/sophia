@@ -23755,8 +23755,14 @@ fn a_stop_set_while_waiting_for_the_output_is_seen_before_taking_custody() {
     let mut owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
         .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
 
-    // The parent takes the output, so the owner's serving step blocks on it
-    // after having passed any entry check.
+    // The parent takes the output, so the owner's serving step blocks on it.
+    //
+    // A COARSE RENDEZVOUS, AND NAMED AS ONE. The thread signals before calling
+    // serve_one and the sleep only makes it likely the step is already blocked
+    // on the mutex; a descheduled thread could still be at the entry check
+    // when the stop is set, in which case this exercises that check instead.
+    // Either way the required answer is the same, which is why it is asserted
+    // here -- but this does not establish WHICH check saw it.
     let held = output.lock().expect("the connection's own output");
     let serving_stop = stop.clone();
     let (started, wait) = std::sync::mpsc::channel();
@@ -23787,4 +23793,246 @@ fn a_stop_set_while_waiting_for_the_output_is_seen_before_taking_custody() {
         "and wrote nothing"
     );
     assert!(cell.answer().is_none(), "and answered nobody");
+}
+
+#[test]
+fn a_stop_mid_frame_leaves_the_wire_unusable_rather_than_yielding() {
+    // Keeping custody is not enough when bytes are already on the wire: the
+    // next writer to take the serialization puts its own event directly after
+    // a prefix. The stop exit that the shared wait answers was reached without
+    // ever asking about a begun frame, so that is exactly what happened.
+    //
+    // The prefix is real -- the source built the frame and five of its bytes
+    // actually went -- and the stored progress is explicitly staged, because
+    // nothing here produces a naturally interrupted send.
+    let client = XServerFrontendClientId(7891);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 78910, 272, true);
+    // A second admission, so one can be served and another staged mid-frame.
+    attempt_run(&mut f, 78912, 273, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 78912);
+    for _ in 0..16 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let ordered = std::mem::replace(
+        &mut f.channels.ordered,
+        f.runner
+            .frontend
+            .as_ref()
+            .unwrap()
+            .broker
+            .registry
+            .register_client_with_admission(
+                XServerFrontendClientId(f.client.raw() + 500_000),
+                Some(admitted(XServerFrontendClientId(f.client.raw() + 500_000))),
+            )
+            .expect("a spare registration to borrow a receiver from")
+            .1
+            .ordered,
+    );
+    let transport = XAuthorityOrderedTransport::bind(
+        &f.registration,
+        ordered,
+        &output,
+        &wire,
+        &pending,
+        Some(&stop),
+    )
+    .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    let private = f.runner.frontend.as_ref().unwrap();
+    let mut owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
+        .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
+
+    // A real capsule taken, its real first frame begun, and five of its bytes
+    // actually written.
+    assert!(matches!(
+        owner.serve_one(XByteOrder::LittleEndian, 7),
+        X11OrderedServeStep::Advanced | X11OrderedServeStep::Flushed
+    ));
+    let mut drained = [0u8; 4096];
+    while (&peer).read(&mut drained).is_ok_and(|read| read > 0) {}
+    let taken = owner.queue.try_recv().expect("its next event");
+    let frame = taken
+        .emission()
+        .encode_frame(0, XByteOrder::LittleEndian, 7)
+        .expect("its own first frame");
+    {
+        let mut socket = output.lock().expect("the connection's output");
+        (*socket)
+            .write_all(&frame.as_bytes()[..5])
+            .expect("five real bytes of it go");
+    }
+    let staged_len = frame.as_bytes().len();
+    assert!(staged_len > 5, "the frame really is longer than its prefix");
+    owner.in_flight = Some(X11OrderedInFlight {
+        delivery: taken,
+        frame: 0,
+        send: X11OrderedSendState {
+            frame: Some(X11OrderedFrame {
+                bytes: frame,
+                progress: X11OrderedSendProgress::Sent(5),
+            }),
+            blocked: Duration::ZERO,
+        },
+    });
+    assert!(owner.mid_frame(), "a frame is begun and not finished");
+
+    // Told to stop, with control pending so the shared wait is the exit taken.
+    pending.store(1, Ordering::Release);
+    stop.store(true, Ordering::Release);
+    let step = owner.serve_one(XByteOrder::LittleEndian, 7);
+    assert!(
+        matches!(step, X11OrderedServeStep::Stopped),
+        "the writer is leaving: {step:?}"
+    );
+
+    // AND THE WIRE IS NOT LEFT FOR ANYONE ELSE.
+    assert!(
+        wire.barred(),
+        "a prefix with no writer to finish it makes the wire unusable"
+    );
+    assert!(
+        write_x11_control_records(
+            &output,
+            &wire,
+            XByteOrder::LittleEndian,
+            &AtomicU16::new(1),
+            vec![vec![0u8; 32]],
+        )
+        .is_err(),
+        "so no control event lands directly after those five bytes"
+    );
+    // The obligation is not what ended. The connection is.
+    assert!(owner.in_flight().is_some(), "the delivery stays owned");
+    assert!(cell.answer().is_none(), "and nobody answered for it");
+}
+
+#[test]
+fn a_stop_arriving_after_admission_also_ends_a_wire_mid_frame() {
+    // The other stop exit: admitted because nothing was pending and no stop was
+    // set, then told to stop before the recheck under serialization. With a
+    // frame begun it must end the wire there too, not simply hand the guard
+    // back. Same staging note as the sibling control -- the prefix is real,
+    // the stored progress is staged.
+    let client = XServerFrontendClientId(7901);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 79010, 272, true);
+    attempt_run(&mut f, 79012, 273, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 79012);
+    for _ in 0..16 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let ordered = std::mem::replace(
+        &mut f.channels.ordered,
+        f.runner
+            .frontend
+            .as_ref()
+            .unwrap()
+            .broker
+            .registry
+            .register_client_with_admission(
+                XServerFrontendClientId(f.client.raw() + 500_000),
+                Some(admitted(XServerFrontendClientId(f.client.raw() + 500_000))),
+            )
+            .expect("a spare registration to borrow a receiver from")
+            .1
+            .ordered,
+    );
+    let transport = XAuthorityOrderedTransport::bind(
+        &f.registration,
+        ordered,
+        &output,
+        &wire,
+        &pending,
+        Some(&stop),
+    )
+    .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    let private = f.runner.frontend.as_ref().unwrap();
+    let mut owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
+        .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
+
+    assert!(matches!(
+        owner.serve_one(XByteOrder::LittleEndian, 7),
+        X11OrderedServeStep::Advanced | X11OrderedServeStep::Flushed
+    ));
+    let mut drained = [0u8; 4096];
+    while (&peer).read(&mut drained).is_ok_and(|read| read > 0) {}
+    let taken = owner.queue.try_recv().expect("its next event");
+    let frame = taken
+        .emission()
+        .encode_frame(0, XByteOrder::LittleEndian, 7)
+        .expect("its own first frame");
+    {
+        let mut socket = output.lock().expect("the connection's output");
+        (*socket)
+            .write_all(&frame.as_bytes()[..5])
+            .expect("five real bytes of it go");
+    }
+    owner.in_flight = Some(X11OrderedInFlight {
+        delivery: taken,
+        frame: 0,
+        send: X11OrderedSendState {
+            frame: Some(X11OrderedFrame {
+                bytes: frame,
+                progress: X11OrderedSendProgress::Sent(5),
+            }),
+            blocked: Duration::ZERO,
+        },
+    });
+    assert!(owner.mid_frame());
+
+    // Nothing pending and no stop, so the helper admits; the parent holds the
+    // output, so the step blocks after that admission. The stop is set while
+    // it is blocked, which only the recheck can see.
+    let held = output.lock().expect("the connection's own output");
+    let serving_stop = stop.clone();
+    let (started, wait) = std::sync::mpsc::channel();
+    let server = std::thread::spawn(move || {
+        started.send(()).expect("started");
+        let step = owner.serve_one(XByteOrder::LittleEndian, 7);
+        (step, owner)
+    });
+    wait.recv().expect("the serving thread started");
+    std::thread::sleep(Duration::from_millis(50));
+    serving_stop.store(true, Ordering::Release);
+    drop(held);
+
+    let (step, owner) = server.join().expect("the serving thread finished");
+    assert!(
+        matches!(step, X11OrderedServeStep::Stopped),
+        "the writer is leaving: {step:?}"
+    );
+    assert!(
+        wire.barred(),
+        "and the wire it left a prefix on is unusable"
+    );
+    assert!(
+        write_x11_control_records(
+            &output,
+            &wire,
+            XByteOrder::LittleEndian,
+            &AtomicU16::new(1),
+            vec![vec![0u8; 32]],
+        )
+        .is_err(),
+        "so nothing lands after those five bytes"
+    );
+    assert!(owner.in_flight().is_some(), "the delivery stays owned");
+    assert!(cell.answer().is_none());
 }

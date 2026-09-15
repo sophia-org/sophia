@@ -58,12 +58,18 @@ impl X11OrderedInFlight {
         self.send.blocked()
     }
 
-    /// Whether a frame of this delivery is begun and not finished.
+    /// Whether a frame of this delivery is stored.
     ///
     /// Read so that stopping cannot happen in the middle of one: bytes already
     /// on the wire are the beginning of an event, and leaving them there while
     /// this writer walks away is the state the whole wire-custody rule exists
     /// to prevent.
+    ///
+    /// DELIBERATELY ANY STORED FRAME, not only one with bytes known to have
+    /// gone. A frame at Sent(0), and one complete but not yet retired, both
+    /// answer true. The question being asked is whether this writer is in the
+    /// middle of something, and treating "nothing has gone yet" as safe would
+    /// need certainty about a send that has not reported.
     fn mid_frame(&self) -> bool {
         self.send.frame.is_some()
     }
