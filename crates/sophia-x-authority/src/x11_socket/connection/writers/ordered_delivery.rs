@@ -57,6 +57,16 @@ impl X11OrderedInFlight {
     fn blocked(&self) -> Duration {
         self.send.blocked()
     }
+
+    /// Whether a frame of this delivery is begun and not finished.
+    ///
+    /// Read so that stopping cannot happen in the middle of one: bytes already
+    /// on the wire are the beginning of an event, and leaving them there while
+    /// this writer walks away is the state the whole wire-custody rule exists
+    /// to prevent.
+    fn mid_frame(&self) -> bool {
+        self.send.frame.is_some()
+    }
 }
 
 /// Why an ordered delivery was not taken.

@@ -23672,15 +23672,119 @@ fn an_ordered_step_yields_to_control_and_acts_on_being_stopped() {
     );
     assert!(cell.answer().is_none(), "and answered nobody");
 
-    // Not stopped, control still pending: it yields rather than writing past
-    // control. Bounded here by clearing the counter from this thread.
-    stop.store(false, Ordering::Release);
+    // WITH NO CONTROL PENDING AT ALL. The shared wait only observes stop while
+    // control is pending, so this is the case that saw nothing and served on.
     pending.store(0, Ordering::Release);
+    assert!(
+        matches!(
+            owner.serve_one(XByteOrder::LittleEndian, 7),
+            X11OrderedServeStep::Stopped
+        ),
+        "stop is this writer's own question, not one control has to raise"
+    );
+    assert!(owner.in_flight().is_none());
+    assert!(
+        matches!(
+            (&peer).read(&mut byte),
+            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ),
+        "and still nothing written"
+    );
+    assert!(cell.answer().is_none());
+
+    // Cleared: ordinary resumption. This proves serving after control has
+    // finished and the stop is lifted -- not live waiting, which this control
+    // does not test.
+    stop.store(false, Ordering::Release);
     assert!(
         matches!(
             owner.serve_one(XByteOrder::LittleEndian, 7),
             X11OrderedServeStep::Advanced | X11OrderedServeStep::Flushed
         ),
-        "with control finished and no stop, its own event is served"
+        "with no stop and no control pending, its own event is served"
     );
+}
+
+#[test]
+fn a_stop_set_while_waiting_for_the_output_is_seen_before_taking_custody() {
+    // An entry-only check leaves the window between passing it and acquiring
+    // serialization. This closes it from the other side: the stop is set while
+    // the owner is blocked on the mutex, so it can only be seen by asking
+    // again under the guard.
+    let client = XServerFrontendClientId(7881);
+    let mut f = prepared_ordered_fixture(client);
+    attempt_run(&mut f, 78810, 272, true);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 78810);
+    for _ in 0..8 {
+        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    }
+
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let ordered = std::mem::replace(
+        &mut f.channels.ordered,
+        f.runner
+            .frontend
+            .as_ref()
+            .unwrap()
+            .broker
+            .registry
+            .register_client_with_admission(
+                XServerFrontendClientId(f.client.raw() + 500_000),
+                Some(admitted(XServerFrontendClientId(f.client.raw() + 500_000))),
+            )
+            .expect("a spare registration to borrow a receiver from")
+            .1
+            .ordered,
+    );
+    let transport = XAuthorityOrderedTransport::bind(
+        &f.registration,
+        ordered,
+        &output,
+        &wire,
+        &pending,
+        Some(&stop),
+    )
+    .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    let private = f.runner.frontend.as_ref().unwrap();
+    let mut owner = X11OrderedServingOwner::for_registration(private, &f.registration, transport)
+        .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
+
+    // The parent takes the output, so the owner's serving step blocks on it
+    // after having passed any entry check.
+    let held = output.lock().expect("the connection's own output");
+    let serving_stop = stop.clone();
+    let (started, wait) = std::sync::mpsc::channel();
+    let server = std::thread::spawn(move || {
+        started.send(()).expect("started");
+        let step = owner.serve_one(XByteOrder::LittleEndian, 7);
+        (step, owner)
+    });
+    wait.recv().expect("the serving thread started");
+    // It is now either about to take the lock or blocked on it. Setting the
+    // stop here can only be observed by a check under the acquired guard.
+    std::thread::sleep(Duration::from_millis(50));
+    serving_stop.store(true, Ordering::Release);
+    drop(held);
+
+    let (step, owner) = server.join().expect("the serving thread finished");
+    assert!(
+        matches!(step, X11OrderedServeStep::Stopped),
+        "a stop set while waiting for output is seen before custody is taken, got {step:?}"
+    );
+    assert!(owner.in_flight().is_none(), "it took nothing");
+    let mut byte = [0u8; 1];
+    assert!(
+        matches!(
+            (&peer).read(&mut byte),
+            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ),
+        "and wrote nothing"
+    );
+    assert!(cell.answer().is_none(), "and answered nobody");
 }

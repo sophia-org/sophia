@@ -375,6 +375,29 @@ impl X11OrderedServingOwner {
             // establishing. Two owners of one admission is the whole problem.
             return X11OrderedServeStep::Closing;
         }
+        // STOP IS ASKED HERE, INDEPENDENTLY OF CONTROL. The shared wait only
+        // observes stop while control output is pending, so a writer told to
+        // stop with no control pending would never see it there.
+        //
+        // AN EARLY-OUT, NOT THE GUARANTEE. The recheck under serialization
+        // below catches everything this does, so removing this changes no
+        // outcome -- what it saves is taking the connection's output at all
+        // for a writer that is already leaving. The recheck is the one that
+        // has to be there.
+        //
+        // NOT IN THE MIDDLE OF A FRAME. Bytes already on the wire are the
+        // beginning of an event; walking away from them is the thing wire
+        // custody exists to prevent. A begun frame is finished or the
+        // connection is ended, and stopping is neither.
+        //
+        // No control reaches this: staging a half-written frame needs a
+        // recipient whose buffer fills partway through one, and nothing here
+        // produces that deterministically. It is kept because abandoning a
+        // partial frame is the worse failure, and recorded as unwitnessed
+        // rather than described as covered.
+        if self.stop_requested() && !self.mid_frame() {
+            return X11OrderedServeStep::Stopped;
+        }
         // THROUGH THE SAME ADMISSION AS EVERY OTHER NON-CONTROL WRITER, and
         // before any capsule is taken. Holding the connection's permission and
         // never asking it fenced nothing; taking the raw lock also skipped the
@@ -398,6 +421,14 @@ impl X11OrderedServingOwner {
             }
             Err(_) => return X11OrderedServeStep::TransportUnavailable,
         };
+        // AND AGAIN UNDER SERIALIZATION. Stop may have been set while this was
+        // waiting for control or for the lock itself; taking custody now would
+        // start work for a writer that is already leaving. The guard goes back
+        // with nothing taken.
+        if self.stop_requested() && !self.mid_frame() {
+            drop(socket);
+            return X11OrderedServeStep::Stopped;
+        }
         let step = serve_one_ordered_delivery(
             &socket,
             &self.served,
@@ -627,6 +658,19 @@ impl X11OrderedServingOwner {
 
     fn closing(&self) -> Option<&X11OrderedClosing> {
         self.closing.as_ref()
+    }
+
+    fn stop_requested(&self) -> bool {
+        self.stop
+            .as_ref()
+            .is_some_and(|stop| stop.load(Ordering::Acquire))
+    }
+
+    /// Whether this owner is in the middle of writing a frame.
+    fn mid_frame(&self) -> bool {
+        self.in_flight
+            .as_ref()
+            .is_some_and(X11OrderedInFlight::mid_frame)
     }
 
     fn in_flight(&self) -> Option<&X11OrderedInFlight> {
