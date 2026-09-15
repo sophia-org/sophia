@@ -261,7 +261,8 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
                 true,
                 1,
                 |action, output| {
-                    LiveIndicatorAdmission {
+                    let result = LiveIndicatorAdmission {
+                        policy_connection_epoch: 1,
                         publication: &publication,
                         outputs: &outputs,
                         active_output: activation.output,
@@ -270,7 +271,11 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
                         in_flight_source: None,
                         in_flight: false,
                     }
-                    .enqueue(action, output)
+                    .enqueue(action, output)?;
+                    assert_eq!(result.policy_connection_epoch, 1);
+                    assert_eq!(result.activation_serial, Some(100));
+                    assert!(matches!(queue[0].cause, PolicyRequestCause::Action { activation_serial, .. } if Some(activation_serial) == result.activation_serial));
+                    Ok(result)
                 },
             )
             .unwrap();
@@ -383,6 +388,7 @@ fn shared_wm_admission_keeps_unpublished_and_capacity_refusals_out_of_the_queue(
     let mut queue = std::collections::VecDeque::new();
     let mut next_transaction = 100;
     let mut owner = LiveIndicatorAdmission {
+        policy_connection_epoch: 1,
         publication: &published,
         outputs: &outputs,
         active_output: outputs[1].id,
@@ -394,13 +400,15 @@ fn shared_wm_admission_keeps_unpublished_and_capacity_refusals_out_of_the_queue(
     assert_eq!(
         owner
             .enqueue(WmActionId::from_raw(14), activation.output)
-            .unwrap(),
+            .unwrap()
+            .admission,
         LiveWmRequestAdmission::Duplicate
     );
     assert_eq!(
         owner
             .enqueue(WmActionId::from_raw(13), outputs[1].id)
-            .unwrap(),
+            .unwrap()
+            .admission,
         LiveWmRequestAdmission::Duplicate
     );
     assert!(owner.queue.is_empty());
@@ -409,7 +417,8 @@ fn shared_wm_admission_keeps_unpublished_and_capacity_refusals_out_of_the_queue(
         assert_eq!(
             owner
                 .enqueue(WmActionId::from_raw(13), activation.output)
-                .unwrap(),
+                .unwrap()
+                .admission,
             LiveWmRequestAdmission::Admitted
         );
     }
@@ -421,7 +430,8 @@ fn shared_wm_admission_keeps_unpublished_and_capacity_refusals_out_of_the_queue(
     assert_eq!(
         owner
             .enqueue(WmActionId::from_raw(13), activation.output)
-            .unwrap(),
+            .unwrap()
+            .admission,
         LiveWmRequestAdmission::RejectedCapacity
     );
     assert_eq!(
@@ -442,14 +452,16 @@ fn shared_wm_admission_keeps_unpublished_and_capacity_refusals_out_of_the_queue(
     assert_eq!(
         owner
             .enqueue(WmActionId::from_raw(13), activation.output)
-            .unwrap(),
+            .unwrap()
+            .admission,
         LiveWmRequestAdmission::RejectedCapacity
     );
     owner.in_flight = false;
     assert_eq!(
         owner
             .enqueue(WmActionId::from_raw(13), activation.output)
-            .unwrap(),
+            .unwrap()
+            .admission,
         LiveWmRequestAdmission::Admitted
     );
 }
@@ -537,7 +549,11 @@ fn owner_decision_finishes_refusals_without_replaying_wm_admission() {
         h.ledger
             .service_indicator_request(&mut h.transport, &mut indicators, true, 1, |_, _| {
                 invoked += 1;
-                Ok(admission)
+                Ok(crate::live_session::LiveIndicatorAdmissionResult {
+                    admission,
+                    activation_serial: Some(100),
+                    policy_connection_epoch: 1,
+                })
             })
             .unwrap();
         assert_eq!(invoked, calls);
@@ -605,7 +621,11 @@ fn direct_mode_keeps_snapshot_and_event_high_water_checks() {
             h.ledger
                 .service_indicator_request(&mut h.transport, &mut indicators, false, 1, |_, _| {
                     calls += 1;
-                    Ok(crate::live_session::LiveWmRequestAdmission::Admitted)
+                    Ok(crate::live_session::LiveIndicatorAdmissionResult {
+                        admission: crate::live_session::LiveWmRequestAdmission::Admitted,
+                        activation_serial: Some(100),
+                        policy_connection_epoch: 1,
+                    })
                 },)
                 .unwrap()
         );

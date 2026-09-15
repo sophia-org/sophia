@@ -63,7 +63,7 @@ impl LiveMetadataShell {
             sophia_protocol::WmActionId,
             OutputId,
         ) -> Result<
-            crate::live_session::LiveWmRequestAdmission,
+            crate::live_session::LiveIndicatorAdmissionResult,
             Box<dyn std::error::Error>,
         >,
     ) -> Result<bool, IndicatorServiceError> {

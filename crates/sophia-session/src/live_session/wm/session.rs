@@ -420,9 +420,10 @@ impl LiveWmSession {
         &mut self,
         action: WmActionId,
         output: sophia_protocol::OutputId,
-    ) -> Result<LiveWmRequestAdmission, Box<dyn std::error::Error>> {
+    ) -> Result<LiveIndicatorAdmissionResult, Box<dyn std::error::Error>> {
         let public = self.public.as_mut().ok_or("public WM state is unavailable")?;
         LiveIndicatorAdmission {
+            policy_connection_epoch: public.connection_epoch,
             publication: &public.reducer.indicator_publication(),
             outputs: &public.outputs,
             active_output: public.active_output,

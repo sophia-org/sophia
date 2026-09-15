@@ -1153,7 +1153,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 }
                 match shell.service_indicator_activation(|action, output| {
                     wm_session.as_mut().map_or(
-                        Ok(LiveWmRequestAdmission::Duplicate),
+                        Ok(LiveIndicatorAdmissionResult::unavailable()),
                         |wm| wm.enqueue_indicator_action(action, output),
                     )
                 }) {

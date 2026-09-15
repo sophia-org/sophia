@@ -101,6 +101,7 @@ impl ContentActionLedger {
         let deadline_msec = now_msec
             .checked_add(u64::from(limits.action_ack_timeout_ms))
             .ok_or(ShellTransportError::InvalidConnectionEpoch)?;
+        let issued_usec = action_monotonic_usec();
         transport.send_content_action(transaction, &action)?;
         self.next_event_id = next;
         self.issued_high_water = event_id;
@@ -112,6 +113,12 @@ impl ContentActionLedger {
             activation: ActivationState::Awaiting,
             cancel_sent: false,
         });
+        action_trace(
+            "issued",
+            &self.live.last().expect("just installed action").action,
+            issued_usec,
+            0,
+        );
         Ok(Some(event_id))
     }
 
@@ -163,6 +170,12 @@ impl ContentActionLedger {
             ACK_REJECTED_STALE => AckState::Rejected,
             _ => return Err(ShellTransportError::WrongContentRecord),
         };
+        action_trace(
+            "acknowledged",
+            &pending.action,
+            action_monotonic_usec(),
+            ack.disposition,
+        );
         // Receipt and WM authority are orthogonal; neither ACK outcome can
         // undo an effect already admitted by the WM owner.
         Ok(())
@@ -205,7 +218,7 @@ impl ContentActionLedger {
             sophia_protocol::WmActionId,
             sophia_protocol::OutputId,
         ) -> Result<
-            crate::live_session::LiveWmRequestAdmission,
+            crate::live_session::LiveIndicatorAdmissionResult,
             Box<dyn std::error::Error>,
         >,
     ) -> Result<bool, super::super::indicators::IndicatorServiceError> {
@@ -233,7 +246,7 @@ impl ContentActionLedger {
             sophia_protocol::WmActionId,
             sophia_protocol::OutputId,
         ) -> Result<
-            crate::live_session::LiveWmRequestAdmission,
+            crate::live_session::LiveIndicatorAdmissionResult,
             Box<dyn std::error::Error>,
         >,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -241,6 +254,7 @@ impl ContentActionLedger {
         use sophia_protocol::ShellIndicatorActivationStatus as Status;
         let mut status = request.status;
         let mut reason = 0;
+        let mut receipt = None;
         if status == Status::Accepted
             && input_enabled
             && self.indicator_admission(&request.activation, now_msec)
@@ -250,10 +264,11 @@ impl ContentActionLedger {
             reason = ContentReason::Stale as u16;
         }
         if status == Status::Accepted {
-            match admit(
+            let result = admit(
                 sophia_protocol::WmActionId::from_raw(request.activation.action),
                 request.activation.output,
-            )? {
+            )?;
+            match result.admission {
                 Admission::Admitted => self.wm_admitted(request.activation.event_id, now_msec),
                 Admission::RejectedCapacity => {
                     self.wm_rejected(request.activation.event_id, now_msec);
@@ -266,6 +281,7 @@ impl ContentActionLedger {
                     reason = ContentReason::Stale as u16;
                 }
             }
+            receipt = Some(result);
         }
         // The effect is complete. Only this exact owned response can be retried
         // by the transport; never repeat the admission closure after refusal.
@@ -275,6 +291,18 @@ impl ContentActionLedger {
             status,
             reason,
         )?;
+        if let Some(result) = receipt {
+            crate::session_println!(
+                "sophia_shell_action_cause schema=1 connection_epoch={} event_id={} output={} action={} activation_serial={} policy_connection_epoch={} admission={:?}",
+                request.activation.connection_epoch,
+                request.activation.event_id,
+                request.activation.output.raw(),
+                request.activation.action,
+                result.activation_serial.unwrap_or(0),
+                result.policy_connection_epoch,
+                result.admission,
+            );
+        }
         Ok(())
     }
 
@@ -502,7 +530,7 @@ impl super::LiveContentSession {
             sophia_protocol::WmActionId,
             sophia_protocol::OutputId,
         ) -> Result<
-            crate::live_session::LiveWmRequestAdmission,
+            crate::live_session::LiveIndicatorAdmissionResult,
             Box<dyn std::error::Error>,
         >,
     ) -> Result<bool, super::super::indicators::IndicatorServiceError> {
@@ -516,4 +544,29 @@ impl super::LiveContentSession {
             admit,
         )
     }
+}
+
+fn action_monotonic_usec() -> u64 {
+    let time = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+    u64::try_from(time.tv_sec)
+        .unwrap_or_default()
+        .saturating_mul(1_000_000)
+        .saturating_add(u64::try_from(time.tv_nsec).unwrap_or_default() / 1_000)
+}
+
+fn action_trace(status: &str, action: &ContentAction, monotonic_usec: u64, disposition: u16) {
+    crate::session_println!(
+        "sophia_shell_action_receipt schema=1 status={} connection_epoch={} content_grant_epoch={} event_id={} output={} candidate_generation={} presentation_epoch={} target_generation={} action={} monotonic_usec={} disposition={}",
+        status,
+        action.grant.connection_epoch,
+        action.grant.content_grant_epoch,
+        action.event_id,
+        action.output.id,
+        action.candidate_generation,
+        action.presentation_epoch,
+        action.target_generation,
+        action.action_id,
+        monotonic_usec,
+        disposition,
+    );
 }

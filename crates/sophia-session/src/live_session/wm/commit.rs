@@ -178,6 +178,16 @@ impl LiveWmSession {
                 outcome,
                 expect_session_operation: settlement.expect_session_operation,
             })?;
+        if let Some(request) = public.in_flight_request.as_ref()
+            && let sophia_protocol::PolicyRequestCause::Action { activation_serial, action } = request.cause
+        {
+            crate::session_println!(
+                "sophia_shell_action_policy schema=1 policy_connection_epoch={} activation_serial={} action={} transaction={} request_id={} indicator_generation={} outcome={:?}",
+                public.connection_epoch, activation_serial, action.raw(),
+                settlement.transaction.raw(), settlement.request_id,
+                public.reducer.indicator_publication().generation, outcome,
+            );
+        }
         public.settle_public_projection(outcome);
         crate::session_println!(
             "sophia_live_wm_chrome schema=2 status=settled transaction={} request_id={} scene_generation={} outcome={outcome:?}",

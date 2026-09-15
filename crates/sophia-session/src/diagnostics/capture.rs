@@ -328,6 +328,13 @@ pub fn reduced_record(line: &str) -> Option<String> {
             }
             continue;
         }
+        if super::shell_action::record(name) {
+            if super::shell_action::field(name, key, value) {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
         if let Some(limit) = match key {
             "major" | "code" => Some(u64::from(u8::MAX)),
             "minor" => Some(u64::from(u16::MAX)),

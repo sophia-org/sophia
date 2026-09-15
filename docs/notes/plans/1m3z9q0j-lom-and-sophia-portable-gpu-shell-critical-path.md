@@ -523,6 +523,25 @@ The exact earlier signed `2e569301` separately passed device-hidden canonical
 `cargo xtask check` at `.artifacts/offline-check-2e569301/report.json`;
 that canonical result excludes this extraction. No hardware ran.
 
+The causal-evidence follow-up returns the WM queue attempt's actual activation
+serial and policy connection epoch from the shared admission owner. Session
+records that receipt only after updating the ledger and handing the exact
+response to transport ownership. Accepted issuance and exact validated ACKs
+carry `CLOCK_MONOTONIC` microseconds, connection/grant/event and presented target
+identity. Invalid, duplicate and late ACKs emit no validated-ACK record. The
+policy settlement record binds the same policy epoch/activation serial to the
+reducer's resulting indicator generation and explicit outcome; queue admission
+is not called policy execution.
+
+The structured recorder has a record-specific numeric/enum allowlist with
+bounded integer parsing and payload rejection. The real private-client control
+checks that the returned receipt names the serial actually inserted into WM's
+queue; sanitization controls cover the new vocabulary and malformed fields.
+These are the first half of the causal chain. Native timing must still bind the
+originating render revision/candidate to an exact completion witness, and the
+workload verifier must reject missing or ambiguous joins. No latency acceptance
+is inferred from these diagnostic records or their fixture values.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

@@ -655,3 +655,30 @@ fn visual_progress_rejects_unbounded_identity_and_arbitrary_vocabulary() {
         );
     }
 }
+
+#[test]
+fn shell_action_causal_fields_are_scoped_and_bounded() {
+    for record in [
+        "sophia_shell_action_receipt schema=1 status=issued connection_epoch=1 content_grant_epoch=2 event_id=3 output=4 candidate_generation=5 presentation_epoch=6 target_generation=7 action=8 monotonic_usec=12345 disposition=0",
+        "sophia_shell_action_receipt schema=1 status=acknowledged connection_epoch=1 content_grant_epoch=2 event_id=3 output=4 candidate_generation=5 presentation_epoch=6 target_generation=7 action=8 monotonic_usec=12350 disposition=1",
+        "sophia_shell_action_cause schema=1 connection_epoch=1 event_id=3 output=4 action=8 activation_serial=9 policy_connection_epoch=10 admission=Admitted",
+        "sophia_shell_action_policy schema=1 policy_connection_epoch=10 activation_serial=9 action=8 transaction=11 request_id=12 indicator_generation=13 outcome=Committed",
+    ] {
+        assert_eq!(
+            reduced_record(&format!("{record} title=secret x=123 payload=456")),
+            Some(record.into())
+        );
+    }
+    for record in [
+        "sophia_shell_action_receipt status=private monotonic_usec=-1 disposition=3",
+        "sophia_shell_action_receipt event_id=18446744073709551616 action=+2",
+        "sophia_shell_action_cause status=issued admission=secret target_generation=1",
+        "sophia_shell_action_policy outcome=Cancelled event_id=1",
+        "sophia_shell_action_cause schema=2",
+    ] {
+        assert_eq!(
+            reduced_record(record).as_deref(),
+            record.split_whitespace().next()
+        );
+    }
+}

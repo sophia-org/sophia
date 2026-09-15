@@ -3,6 +3,7 @@ mod capture;
 mod commands;
 mod failure;
 mod recovery;
+mod shell_action;
 pub use recovery::SessionCompletionFailure;
 mod session_failure;
 mod storage;
