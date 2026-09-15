@@ -138,13 +138,23 @@ fn identical_shell_pixels_require_a_distinct_queue_and_exact_presentation() {
     );
 }
 
+trait IntegrationTarget: NativeCompositionTarget {
+    fn queued(&self) -> &crate::DeferredNativeCompositions;
+    fn drain(&mut self);
+    fn teardown(&mut self);
+    fn backing_count(&self) -> usize;
+}
+
 #[test]
 fn thousand_two_output_intakes_reclaim_pixels_with_real_history_and_one_held_consumer() {
+    exercise_thousand(Target::new(&outputs()));
+}
+
+fn exercise_thousand<T: IntegrationTarget>(mut target: T) {
     let outputs = outputs();
     let grant = grant();
     let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
     let mut scene = LiveProductionCpuScene::new(outputs[0].size);
-    let mut target = Target::new(&outputs);
     let mut store =
         sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant)).unwrap();
     let held_id = ContentResourceId {
@@ -160,7 +170,7 @@ fn thousand_two_output_intakes_reclaim_pixels_with_real_history_and_one_held_con
         )
         .unwrap();
     // Hold a real byte consumer from the actual Engine-lowered native queue.
-    let bytes = target.queue.get(outputs[0].id).unwrap().heads[0]
+    let bytes = target.queued().get(outputs[0].id).unwrap().heads[0]
         .frame
         .layers
         .iter()
@@ -303,7 +313,7 @@ fn thousand_two_output_intakes_reclaim_pixels_with_real_history_and_one_held_con
     runtime.shell_content.clear();
     drop(stable);
     target.teardown();
-    assert_eq!(target.backing_owners.get(), 0);
+    assert_eq!(target.backing_count(), 0);
     retire(&mut store, grant, stable_id);
     retire(&mut store, grant, previous.unwrap());
     let final_releases = released(&mut store);

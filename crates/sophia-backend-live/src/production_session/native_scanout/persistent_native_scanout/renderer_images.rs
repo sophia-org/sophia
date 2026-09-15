@@ -246,127 +246,16 @@ impl LiveProductionNativeScanout {
         generation: LiveProductionQueuedMirrorGeneration,
         status: &'static str,
     ) -> Result<(), (&'static str, LiveProductionQueuedMirrorGeneration)> {
-        // Validation borrows the whole generation. A refused handoff returns
-        // its actual pixel owners, not only a reason or a reconstructible ID.
-        let preparation = (|| {
-            let expected = self.head_indices(generation.output);
-            let current = expected
-                .iter()
-                .map(|index| {
-                    let head = &self.heads[*index];
-                    composition_installation::NativeCompositionInstallationHead {
-                        index: *index,
-                        identity: self.native_frame_identity(
-                            *index,
-                            generation.output,
-                            generation.frame,
-                        ),
-                        prepared_cleanup_available: head.prepared_scanout.is_none()
-                            || head.scanout_custody.can_cancel_prepared(),
-                        protected_frames: [
-                            head.pending_content,
-                            head.rendering_content,
-                            head.submitted_content,
-                        ]
-                        .map(|content| {
-                            content
-                                .filter(|value| value.requires_retirement())
-                                .map(|value| value.frame())
-                        }),
-                    }
-                })
-                .collect::<Vec<_>>();
-            composition_installation::validate_composition_installation(&generation, &current)?;
-            if expected.len() == 1 {
-                return Ok(None);
-            }
-            let lifecycle = self
-                .output_lifecycles
-                .get(&generation.output)
-                .ok_or("mirror generation targets an unregistered output")?;
-            let cohort = if lifecycle.initialized() {
-                Some(
-                    sophia_engine::OutputPresentationCohort::new(
-                        generation.output,
-                        generation.frame.raw(),
-                        lifecycle.primary_head(),
-                        expected.iter().map(|index| self.heads[*index].head),
-                    )
-                    .ok_or("mirror generation could not create its presentation cohort")?,
-                )
-            } else {
-                None
-            };
-            Ok(cohort)
-        })();
-        let cohort = match preparation {
-            Ok(cohort) => cohort,
-            Err(reason) => return Err((reason, generation)),
-        };
-        if let Some(cohort) = cohort {
-            let lifecycle = self
-                .output_lifecycles
-                .get_mut(&generation.output)
-                .expect("output validated before reservation");
-            if lifecycle.begin(generation.frame) != LiveProductionMirrorGroupBegin::Started {
-                return Err((
-                    "mirror generation could not reserve its lifecycle",
-                    generation,
-                ));
-            }
-            self.output_cohorts
-                .insert((generation.output, generation.frame), cohort);
-        }
         let source = generation.source();
         let checksum = generation.logical_checksum();
-        let mirrored = generation.heads.len() > 1;
-        for queued in generation.heads {
-            if let Some(old_frame) = self.heads[queued.head_index]
-                .prepared_group_frame
-                .filter(|old| *old != generation.frame)
-                && let Some(prepared) = self.heads[queued.head_index].prepared_scanout.take()
-            {
-                assert!(
-                    self.cancel_prepared_head_owner(queued.head_index, prepared),
-                    "cleanup capacity checked before generation transfer"
-                );
-                if let Some(cohort) = self.output_cohorts.get_mut(&(generation.output, old_frame)) {
-                    let _ = cohort.mark_skipped(self.heads[queued.head_index].head);
-                }
-            }
-            if let Some(old_frame) = self.heads[queued.head_index]
-                .pending_content
-                .map(LiveProductionScanoutContent::frame)
-                .filter(|old| *old != generation.frame)
-                && let Some(cohort) = self.output_cohorts.get_mut(&(generation.output, old_frame))
-            {
-                let _ = cohort.mark_skipped(self.heads[queued.head_index].head);
-            }
-            let identity = queued.identity;
-            let (head, exporter) = self.head_and_exporter(queued.head_index, generation.output);
-            if let Some(checksum) = checksum {
-                head.last_checksum = checksum;
-                head.pending_nonzero_pixel_bytes = queued.cpu_nonzero_pixel_bytes;
-            }
-            head.pending_content = Some(queued.content);
-            head.queue_output_damage_snapshot(queued.output_damage_snapshot);
-            // The second mirror refusal. A verdict proven about one head's
-            // plan says nothing about a cohort that projects one scene into
-            // several modes, so it does not travel into a mirror head's
-            // exporter at all -- whatever that exporter was enabled with, and
-            // whichever order a head joined the group in.
-            let mut frame = queued.frame;
-            if mirrored {
-                frame.direct_scanout =
-                    sophia_engine::DirectScanoutVerdict::CompositionRequired("mirror_cohort");
-            }
-            exporter.set_pending_identified_mixed_frame(frame, Some(identity));
-        }
+        let output = generation.output;
+        let frame = generation.frame;
+        composition_installation::install_composition_generation(self, generation)?;
         tracing::info!(
             "sophia_live_mirror_generation schema=2 status={} output={} frame={} source={} logical_content_checksum={}",
             status,
-            generation.output.raw(),
-            generation.frame.raw(),
+            output.raw(),
+            frame.raw(),
             source,
             checksum.map_or_else(|| "none".to_owned(), |checksum| checksum.to_string()),
         );

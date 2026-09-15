@@ -1,6 +1,8 @@
 use super::*;
 #[path = "mirror_completion_tests.rs"]
 mod mirror_completion_tests;
+#[path = "mirrored_target.rs"]
+mod mirrored_target;
 use std::{any::Any, cell::Cell, num::NonZeroU32, rc::Rc};
 
 pub(super) struct Target {
@@ -162,45 +164,15 @@ impl Target {
 
     pub fn finish_render(&mut self, output: OutputId) {
         let (pending, content) = self.rendering.remove(&output).unwrap();
-        let crate::PendingRenderedFrame::Mixed(frame, native) = pending else {
-            unreachable!()
-        };
-        // Simulated worker completion copies the actual lowered input bytes.
-        // The returned backing owns a different allocation, not a source lease.
-        let mut copied = Vec::new();
-        for layer in &frame.layers {
-            if let LiveOwnedMixedCompositionLayer::Cpu { buffer, .. } = layer {
-                copied.extend_from_slice(&buffer.bytes);
-            }
-        }
-        drop(frame);
         let target = self.outputs[&output];
+        let submission = copy_submission(
+            pending,
+            target,
+            self.serial,
+            content.frame().raw(),
+            &self.backing_owners,
+        );
         let custody = self.custody.entry(output).or_default();
-        self.backing_owners.set(self.backing_owners.get() + 1);
-        let submission = crate::LiveRenderedPrimaryPlaneScanoutSubmission {
-            scanout_buffer: Box::new(CopiedBacking {
-                bytes: copied,
-                live: self.backing_owners.clone(),
-            }) as Box<dyn Any>,
-            correlation: Some(crate::LiveRendererFrameCorrelation {
-                native,
-                request: None,
-                trace: None,
-                direct_scanout: None,
-            }),
-            primary_plane: crate::LibdrmNativePrimaryPlaneScanoutSubmission {
-                resources: crate::LibdrmNativePrimaryPlaneResourceBundle::new(
-                    NonZeroU32::new(u32::try_from(content.frame().raw()).unwrap())
-                        .unwrap()
-                        .into(),
-                    None,
-                    target.native_size,
-                ),
-                completion_fence: None,
-            },
-            submitted_after_page_flip_serial: Some(self.serial),
-            layout_witness: None,
-        };
         custody.accept_submission(submission).unwrap();
         self.submitted.insert(output, content);
         self.frames
@@ -309,6 +281,7 @@ impl NativeCompositionTarget for Target {
                         protected: self.protected(*output),
                         available: self.reject_output != Some(*output),
                         newest: [None, None, None, self.newest.get(output).copied()],
+                        settled_mirror_checksum: None,
                     },
                 )
             })
@@ -396,5 +369,68 @@ impl LibdrmNativePrimaryPlaneResourceDevice for Device {
     }
     fn destroy_mode_blob(&self, _: u64) -> io::Result<()> {
         unreachable!()
+    }
+}
+
+// Fake worker/device edge shared by both native-queue integration adapters.
+// The bytes are copied from actual Pending Mixed sources; scanout does not inherit their leases.
+fn copy_submission(
+    pending: crate::PendingRenderedFrame,
+    target: HeadRenderTarget,
+    serial: u64,
+    framebuffer: u64,
+    owners: &Rc<Cell<usize>>,
+) -> crate::BoxedRenderedPrimaryPlaneScanoutSubmission {
+    let crate::PendingRenderedFrame::Mixed(frame, native) = pending else {
+        unreachable!()
+    };
+    // Simulated worker completion copies the actual lowered input bytes.
+    // The returned backing owns a different allocation, not a source lease.
+    let mut copied = Vec::new();
+    for layer in &frame.layers {
+        if let LiveOwnedMixedCompositionLayer::Cpu { buffer, .. } = layer {
+            copied.extend_from_slice(&buffer.bytes);
+        }
+    }
+    drop(frame);
+    owners.set(owners.get() + 1);
+    crate::LiveRenderedPrimaryPlaneScanoutSubmission {
+        scanout_buffer: Box::new(CopiedBacking {
+            bytes: copied,
+            live: owners.clone(),
+        }) as Box<dyn Any>,
+        correlation: Some(crate::LiveRendererFrameCorrelation {
+            native,
+            request: None,
+            trace: None,
+            direct_scanout: None,
+        }),
+        primary_plane: crate::LibdrmNativePrimaryPlaneScanoutSubmission {
+            resources: crate::LibdrmNativePrimaryPlaneResourceBundle::new(
+                NonZeroU32::new(u32::try_from(framebuffer).unwrap())
+                    .unwrap()
+                    .into(),
+                None,
+                target.native_size,
+            ),
+            completion_fence: None,
+        },
+        submitted_after_page_flip_serial: Some(serial),
+        layout_witness: None,
+    }
+}
+
+impl IntegrationTarget for Target {
+    fn queued(&self) -> &crate::DeferredNativeCompositions {
+        &self.queue
+    }
+    fn drain(&mut self) {
+        Target::drain(self);
+    }
+    fn teardown(&mut self) {
+        Target::teardown(self);
+    }
+    fn backing_count(&self) -> usize {
+        self.backing_owners.get()
     }
 }

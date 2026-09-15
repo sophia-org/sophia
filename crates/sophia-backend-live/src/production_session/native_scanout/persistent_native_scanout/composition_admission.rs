@@ -17,6 +17,7 @@ pub(crate) struct NativeCompositionOutput {
     pub protected: bool,
     pub available: bool,
     pub newest: [Option<LiveProductionScanoutContent>; 4],
+    pub settled_mirror_checksum: Option<u64>,
 }
 
 pub(crate) fn prepare_native_composition_batch(
@@ -56,15 +57,17 @@ pub(crate) fn prepare_native_composition_batch(
             let checksum = validate_live_head_composition_frame_batch(*output, &targets, frames)?;
             let suppress = state.protected
                 || matches!(content, LiveProductionHeadCompositionContent::Retained)
-                    && targets.len() == 1
-                    && reduce_live_production_retained_frame_queue(
-                        live_production_retained_frame_requirement(required.contains(output)),
-                        state.newest[0],
-                        state.newest[1],
-                        state.newest[2],
-                        state.newest[3],
-                        checksum,
-                    ) != LiveProductionRetainedSceneQueueStatus::Queue;
+                    && ((targets.len() == 1
+                        && reduce_live_production_retained_frame_queue(
+                            live_production_retained_frame_requirement(required.contains(output)),
+                            state.newest[0],
+                            state.newest[1],
+                            state.newest[2],
+                            state.newest[3],
+                            checksum,
+                        ) != LiveProductionRetainedSceneQueueStatus::Queue)
+                        || (!required.contains(output)
+                            && state.settled_mirror_checksum == Some(checksum)));
             selected.insert(*output, (checksum, suppress));
         }
         if required.iter().any(|output| !selected.contains_key(output)) {
@@ -176,6 +179,33 @@ impl LiveProductionNativeScanout {
                         protected: self.output_retirement_protected(output.id),
                         available: !self.mirror_generation_failed(output.id),
                         newest,
+                        settled_mirror_checksum: super::settled_mirror::settled_mirror_checksum(
+                            self.native_frame_owner,
+                            output.id,
+                            indices.len(),
+                            self.output_lifecycles.get(&output.id),
+                            indices.iter().map(|index| {
+                                let head = &self.heads[*index];
+                                super::settled_mirror::SettledMirrorHead {
+                                    head: head.head,
+                                    target_generation: head.target_generation,
+                                    idle: !self.exporters[*index].pending_frame()
+                                        && !self.deferred_mirror_generations.pending(output.id)
+                                        && head.pending_content.is_none()
+                                        && head.rendering_content.is_none()
+                                        && head.submitted_content.is_none()
+                                        && head.prepared_scanout.is_none()
+                                        && head.scanout_custody.submitted().is_none()
+                                        && !head.scanout_custody.cleanup_pending(),
+                                    presented: head.presented_content,
+                                    displayed: head
+                                        .scanout_custody
+                                        .displayed()
+                                        .and_then(|value| value.correlation())
+                                        .and_then(|value| value.native),
+                                }
+                            }),
+                        ),
                     },
                 )
             })

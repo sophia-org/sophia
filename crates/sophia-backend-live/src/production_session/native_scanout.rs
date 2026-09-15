@@ -9,20 +9,27 @@ mod persistent_native_scanout {
     mod composition_admission;
     mod composition_installation;
     mod mirror_completion;
+    mod settled_mirror;
     #[cfg(test)]
     pub(crate) use composition_admission::{
         NativeCompositionOutput, prepare_native_composition_batch,
     };
     #[cfg(test)]
     pub(crate) use composition_installation::{
-        NativeCompositionInstallationHead, validate_composition_installation,
+        CompositionInstallation, CompositionInstaller, NativeCompositionInstallationHead,
+        install_composition_generation, reserve_composition_lifecycle,
+        validate_composition_installation,
     };
     #[cfg(test)]
-    pub(crate) use composition_queue::DeferredNativeCompositions;
+    pub(crate) use composition_queue::{
+        DeferredNativeCompositions, LiveProductionQueuedMirrorHeadFrame,
+    };
     #[cfg(test)]
     pub(crate) use mirror_completion::{MirrorCompletionWitness, complete_mirror_head};
     #[cfg(test)]
     pub(crate) use renderer_images::LiveProductionHeadCompositionContent;
+    #[cfg(test)]
+    pub(crate) use settled_mirror::{SettledMirrorHead, settled_mirror_checksum};
     mod composition_queue;
     mod cursor;
     mod frame_damage;
@@ -4049,9 +4056,12 @@ pub(crate) use persistent_native_scanout::LiveProductionNativeRetirementContent;
 
 #[cfg(all(test, feature = "libdrm-events", feature = "gbm-probe"))]
 pub(crate) use persistent_native_scanout::{
-    DeferredNativeCompositions, LiveProductionHeadCompositionContent, MirrorCompletionWitness,
-    NativeCompositionInstallationHead, NativeCompositionOutput, complete_mirror_head,
-    prepare_native_composition_batch, validate_composition_installation,
+    CompositionInstallation, CompositionInstaller, DeferredNativeCompositions,
+    LiveProductionHeadCompositionContent, LiveProductionQueuedMirrorHeadFrame,
+    MirrorCompletionWitness, NativeCompositionInstallationHead, NativeCompositionOutput,
+    SettledMirrorHead, complete_mirror_head, install_composition_generation,
+    prepare_native_composition_batch, reserve_composition_lifecycle, settled_mirror_checksum,
+    validate_composition_installation,
 };
 
 #[derive(Debug)]

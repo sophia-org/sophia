@@ -421,6 +421,34 @@ The reviewed completion checkpoint passes 590 affected-library tests with
 13 ignored and strict affected-library Clippy in the device-hidden wrapper.
 This is scoped validation, not a canonical or physical acceptance result.
 
+
+The next checkpoint joins the production composition installer and shared
+mirror reservation policy to actual `set_shell_content`, Engine lowering,
+owned deferred generations, `PendingRenderedFrame::Mixed`, copied backing
+custody and shared mirror completion. The two-output 1,000-cycle workload now
+also runs with two physical heads per output. Only device/copy/completion
+operations are simulated; this does not exercise a real renderer worker,
+exporter or KMS. The full Session/FIFO/WM/client action chain remains open.
+
+An ordinary retained offer may suppress a mirrored neighbor only when every
+current head has exact displayed native identity and the same frame/checksum,
+the live group is converged, and actual queue/exporter/worker/prepared/submitted
+owners are idle. Pending cleanup conservatively disables suppression. Required
+identical content still mints a distinct frame. Shared validation and lifecycle
+reservation precede the first owner transfer; returned refusal retains the
+whole generation. No panic/unwind retention claim is made.
+
+Device-hidden evidence: 134 backend library tests pass, including the mirrored
+1,000-cycle test, whole-owner reservation refusal/retry, lagging heads, exact
+unchanged-neighbor preservation and deferred ordinary change-back. The latter
+asserts equality with both actually displayed checksums and preserves the
+lowerer's scene identity. Strict backend Clippy passes with the integration
+target's required `libinput-events` feature; the incomplete-feature invocation
+is retained as a failure, not a pass. Scoped logs are under
+`.artifacts/shell-lifecycle-dev/mirror-*`. No native run or full-tranche source
+acceptance follows from these controls; frozen review and broader validation
+remain separate gates.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,
