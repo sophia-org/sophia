@@ -8,6 +8,7 @@ pub(super) fn record(name: &str) -> bool {
             | "sophia_shell_action_policy"
             | "sophia_shell_native_binding"
             | "sophia_shell_native_completion"
+            | "sophia_shell_indicator_state"
     )
 }
 
@@ -23,6 +24,17 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
         ("sophia_shell_native_completion", "timestamp_source") => {
             matches!(value, "kernel" | "observation_fallback")
         }
+        (
+            "sophia_shell_indicator_state",
+            "connection_epoch"
+            | "indicator_generation"
+            | "output"
+            | "indicator"
+            | "action"
+            | "slot"
+            | "state_bits"
+            | "entries",
+        ) => number,
         ("sophia_shell_action_receipt", "status") => matches!(value, "issued" | "acknowledged"),
         ("sophia_shell_action_receipt", "disposition") => matches!(value, "0" | "1" | "2"),
         (
@@ -33,6 +45,7 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
             | "output"
             | "candidate_generation"
             | "presentation_epoch"
+            | "target_id"
             | "target_generation"
             | "action"
             | "monotonic_usec",

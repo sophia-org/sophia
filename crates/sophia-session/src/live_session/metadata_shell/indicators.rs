@@ -46,6 +46,27 @@ impl LiveMetadataShell {
             self.transport.send_async(frame)?;
         }
         self.indicators.last_published = Some(snapshot);
+        // Evidence of the exact enqueued publication, not peer consumption.
+        // Repeat publications may share a generation when only focus moves;
+        // the indicator identities and state must still agree for that revision.
+        let published = self
+            .indicators
+            .last_published
+            .as_ref()
+            .expect("just retained");
+        for indicator in &published.indicators {
+            crate::session_println!(
+                "sophia_shell_indicator_state schema=1 connection_epoch={} indicator_generation={} output={} indicator={} action={} slot={} state_bits={} entries={}",
+                published.connection_epoch,
+                published.generation,
+                indicator.output.raw(),
+                indicator.indicator,
+                indicator.action,
+                indicator.slot,
+                indicator.state_bits,
+                published.indicators.len(),
+            );
+        }
         Ok(())
     }
 }

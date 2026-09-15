@@ -565,6 +565,24 @@ simulated completion/source and recorder controls, not KMS or latency results.
 Originating Lom revision joins, complete workload accounting, numeric latency
 limits and the exact-source release/attended gate remain open.
 
+
+The next evidence slice records the exact enqueued indicator states without
+labels, adds target identity to issuance/ACK evidence, and has Lom name its
+captured revision with exact grant/candidate/presentation identities. The new
+`tools/probes/lom_workload/verify.py` rejects missing, contradictory or unrelated
+joins across issuance, validated ACK, WM serial, committed indicator state,
+originating Lom candidate and all-head native completion. It checks every
+sample and independent per-output nearest-rank p95 and maximum limits. Its
+synthetic transcript/CLI controls are registered in the existing Lom verifier
+gate. These controls execute no Session, policy peer, renderer or KMS pipeline.
+
+The verifier explicitly reports `scope=causal_action_latency`. It does not yet
+close refresh-rate evidence, memory plateau/teardown credit reclamation,
+process stability, recovery or the attended launcher. Budget values in its
+fixtures are test inputs, not a recovered numerical operator approval. Workload
+limits must be fixed before the native attempt; the proposed numerical defaults
+are not yet ratified. t081/t098/t100 and the paired Lom acceptance stay open.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

@@ -556,7 +556,7 @@ fn action_monotonic_usec() -> u64 {
 
 fn action_trace(status: &str, action: &ContentAction, monotonic_usec: u64, disposition: u16) {
     crate::session_println!(
-        "sophia_shell_action_receipt schema=1 status={} connection_epoch={} content_grant_epoch={} event_id={} output={} candidate_generation={} presentation_epoch={} target_generation={} action={} monotonic_usec={} disposition={}",
+        "sophia_shell_action_receipt schema=1 status={} connection_epoch={} content_grant_epoch={} event_id={} output={} candidate_generation={} presentation_epoch={} target_id={} target_generation={} action={} monotonic_usec={} disposition={}",
         status,
         action.grant.connection_epoch,
         action.grant.content_grant_epoch,
@@ -564,6 +564,7 @@ fn action_trace(status: &str, action: &ContentAction, monotonic_usec: u64, dispo
         action.output.id,
         action.candidate_generation,
         action.presentation_epoch,
+        action.target_id,
         action.target_generation,
         action.action_id,
         monotonic_usec,
