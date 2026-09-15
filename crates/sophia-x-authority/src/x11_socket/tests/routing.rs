@@ -25299,52 +25299,82 @@ fn a_stale_return_cannot_take_the_place_its_successor_holds() {
     drop(two_runner);
 }
 
-#[test]
-fn a_connection_is_not_exposed_without_a_place_to_hand_over_to() {
-    // From the moment a row is inserted a capsule can be accepted into that
-    // queue, so a connection whose accepted work would have nowhere to go must
-    // not be exposed. The refusal happens before anything is published.
-    let private = private_for_roles();
-    let durable = PrivateSettlementOwner::with_capacities(4, 1);
-    private
-        .broker
-        .registry
-        .continuation_owner
-        .set(durable.clone())
-        .unwrap_or_else(|_| panic!("this registry's continuation owner"));
+/// A private instance over a store the caller keeps, with a declared limit.
+///
+/// Built through the real constructor. Nothing here installs a continuation
+/// owner or declares a bound: a fixture that did either would be certifying
+/// its own wiring rather than production's.
+fn private_over(
+    durable: &crate::PrivateSettlementOwner,
+    clients: usize,
+) -> crate::PrivateXServerFrontend {
+    let (sender, _receiver) = sync_channel(4);
+    let (delivery_sender, _delivery_receiver) = channel();
+    let (authority, issuer, submit) = private_authority();
+    crate::PrivateXServerFrontend::new(
+        crate::PrivateFrontendParts {
+            max_concurrent_clients: NonZeroUsize::new(clients).unwrap(),
+            input_capacity: NonZeroUsize::new(4).unwrap(),
+            control_acknowledgements: sender,
+            input_deliveries: delivery_sender,
+            authority,
+            issuer,
+            submit,
+        },
+        durable,
+    )
+    .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"))
+}
 
-    let first = XServerFrontendClientId(8041);
-    let (registration, _channels) = private
+#[test]
+fn a_private_instance_takes_its_connection_bound_from_its_declared_client_limit() {
+    // THROUGH REAL CONSTRUCTION. The store arrives with no bound declared, and
+    // an instance that left it that way would admit connections reserving
+    // nothing -- the public frontend's behaviour, silently applied to a
+    // private one whose accepted work must have somewhere to go.
+    let durable = PrivateSettlementOwner::default();
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(0),
+        "nothing is reserved before an instance exists"
+    );
+    let private = private_over(&durable, 2);
+
+    let first = XServerFrontendClientId(8051);
+    let one = private
         .broker
         .registry
         .register_client_with_admission(first, Some(admitted(first)))
         .expect("the first connection has a place");
-    assert_eq!(durable.continuations_reserved(), Some(1));
-
-    // The bound is one, so the second connection is refused -- and refused for
-    // that, not for anything about the client itself.
-    let second = XServerFrontendClientId(8042);
-    let refused = private
-        .broker
-        .registry
-        .register_client_with_admission(second, Some(admitted(second)))
-        .err()
-        .expect("no place is left for it");
-    assert!(
-        matches!(
-            refused,
-            XServerFrontendRouteError::ContinuationUnavailable { client } if client == second
-        ),
-        "refused for the place, got {refused:?}"
-    );
     assert_eq!(
         durable.continuations_reserved(),
         Some(1),
-        "and the refusal took nothing"
+        "production installed the owner, so registration reserves"
     );
+    let second = XServerFrontendClientId(8052);
+    let two = private
+        .broker
+        .registry
+        .register_client_with_admission(second, Some(admitted(second)))
+        .expect("the declared limit is two");
+    assert_eq!(durable.continuations_reserved(), Some(2));
 
-    // NOTHING WAS PUBLISHED FOR IT. A sender for a connection that was never
-    // exposed is exactly what must not exist.
+    // The bound is the declared limit, not the abandoned-work capacity the
+    // store was built with, and not unbounded.
+    let third = XServerFrontendClientId(8053);
+    let refused = private
+        .broker
+        .registry
+        .register_client_with_admission(third, Some(admitted(third)))
+        .err()
+        .expect("the declared limit is two");
+    assert!(
+        matches!(
+            refused,
+            XServerFrontendRouteError::ContinuationUnavailable { client } if client == third
+        ),
+        "refused for the place, got {refused:?}"
+    );
     assert!(
         private
             .broker
@@ -25352,9 +25382,235 @@ fn a_connection_is_not_exposed_without_a_place_to_hand_over_to() {
             .clients
             .lock()
             .expect("a readable registry")
-            .get(&second)
+            .get(&third)
             .is_none(),
         "the refused connection has no row, so nothing can be accepted for it"
     );
+    drop(one);
+    drop(two);
+}
+
+#[test]
+fn a_registry_does_not_keep_the_store_it_takes_places_from_alive() {
+    // THE RING IS BUILT, not assumed: an instance that ends owing a hold hands
+    // its terminal inventory to the store, and that inventory keeps the
+    // registry it must act through. A registry that owned the store back would
+    // close it -- store, retained inventory, registry, store -- and nothing in
+    // it would ever drop. What that looks like from outside is an instance
+    // whose obligations stay readable forever, so it reads as still settling
+    // rather than as a leak.
+    let durable = PrivateSettlementOwner::default();
+    let watch = Arc::downgrade(&durable.inner);
+    let client = XServerFrontendClientId(8061);
+    let common = instance_handing_over_a_retained_hold(
+        &durable,
+        client,
+        SurfaceId::new(0x8061, 1),
+        NamespaceId::from_raw(client.raw()),
+        80610,
+        272,
+    );
+    assert_eq!(
+        durable.terminal_inventories().expect("readable"),
+        1,
+        "the store retains an inventory, and that inventory holds a registry"
+    );
+    assert!(watch.upgrade().is_some(), "the store is alive and in use");
+    let answered_to = Arc::downgrade(&common);
+
+    // Everything that legitimately owns the store goes here. The registry
+    // inside the retained inventory does not own it, so it holds nothing back.
+    drop(common);
+    drop(durable);
+    assert!(
+        watch.upgrade().is_none(),
+        "a registry that owned its store back would keep the store, the \
+         inventory and every obligation in it reachable forever"
+    );
+    assert!(
+        answered_to.upgrade().is_none(),
+        "and the authority the retained hold answered to goes with it"
+    );
+}
+
+#[test]
+fn a_registry_whose_store_is_gone_refuses_rather_than_exposing_a_connection() {
+    // A STORE THAT HAS GONE IS NOT AN EMPTY STORE. The registry holds it
+    // weakly, so it can outlive it; carrying on without one would expose a
+    // connection whose accepted work has nowhere to go, which is the thing
+    // reserving was for.
+    let registry = {
+        let durable = PrivateSettlementOwner::default();
+        let private = private_over(&durable, 4);
+        private.broker.registry.clone()
+    };
+    let client = XServerFrontendClientId(8101);
+    let refused = registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .err()
+        .expect("there is no store to take a place from");
+    assert!(
+        matches!(
+            refused,
+            XServerFrontendRouteError::ContinuationUnavailable { client: gone } if gone == client
+        ),
+        "refused for the place, got {refused:?}"
+    );
+    assert!(
+        registry
+            .clients
+            .lock()
+            .expect("a readable registry")
+            .get(&client)
+            .is_none(),
+        "and published nothing"
+    );
+}
+
+#[test]
+fn a_later_instance_does_not_move_the_bound_its_places_were_taken_against() {
+    // The store outlives the instance that declared its bound. A second
+    // instance arriving with a different client limit finds places already
+    // held against the first, and moving the number under them would hand out
+    // places a departed instance already accounted for.
+    let durable = PrivateSettlementOwner::default();
+    let first_instance = private_over(&durable, 1);
+    let client = XServerFrontendClientId(8071);
+    let registration = first_instance
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("the one place");
+    // Retained: the connection's place stays held after its instance goes.
     drop(registration);
+    drop(first_instance);
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "the place is retained across the instance that took it"
+    );
+
+    let second_instance = private_over(&durable, 8);
+    let later = XServerFrontendClientId(8072);
+    let refused = second_instance
+        .broker
+        .registry
+        .register_client_with_admission(later, Some(admitted(later)))
+        .err()
+        .expect("the bound in force is the one the retained place was taken against");
+    assert!(
+        matches!(
+            refused,
+            XServerFrontendRouteError::ContinuationUnavailable { client } if client == later
+        ),
+        "refused for the place, got {refused:?}"
+    );
+}
+
+#[test]
+fn a_refusal_before_publication_gives_its_place_back() {
+    // A RESERVATION THAT PUBLISHED NOTHING IS NOT RETAINED WORK. No row and no
+    // reachable queue means no capsule could have been accepted for it, so
+    // holding the place would spend the bound on a connection that never
+    // existed -- and the store cannot tell later, because there is nothing to
+    // ask.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8081);
+    let registration = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place");
+    assert_eq!(durable.continuations_reserved(), Some(1));
+
+    // Refused after the place was taken and before anything was published.
+    let refused = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .err()
+        .expect("the client is already registered");
+    assert!(
+        matches!(
+            refused,
+            XServerFrontendRouteError::DuplicateClient { client: duplicate } if duplicate == client
+        ),
+        "refused for the duplicate, got {refused:?}"
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "the refusal gave its place back rather than retaining one for a \
+         connection that was never exposed"
+    );
+    assert_eq!(
+        durable.continuations_abandoned(),
+        Some(0),
+        "and did not abandon one either: there is nothing to account for"
+    );
+
+    // Proved against the bound, not just the counter: the second place is
+    // still there to be taken.
+    let other = XServerFrontendClientId(8082);
+    let second = private
+        .broker
+        .registry
+        .register_client_with_admission(other, Some(admitted(other)))
+        .expect("the place the refused duplicate gave back");
+    drop(registration);
+    drop(second);
+}
+
+#[test]
+fn a_registration_never_takes_the_settlement_store_beneath_the_client_table() {
+    // THE DRIVE ALREADY HOLDS SETTLEMENT AND THEN TAKES CLIENTS, to release a
+    // route lease. A registration that reserved under the client table would
+    // be the other order, and two orders is a deadlock.
+    //
+    // Asserted without hanging: while a registration is blocked waiting for
+    // the store, the client table must be free. Under the inversion it would
+    // be held by that same blocked registration.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 4);
+    let clients = private.broker.registry.clients.clone();
+    let registry = private.broker.registry.clone();
+    let client = XServerFrontendClientId(8091);
+    let held = durable.records_even_if_poisoned();
+    let joiner = std::thread::spawn(move || {
+        registry
+            .register_client_with_admission(client, Some(admitted(client)))
+            .map(|(registration, _channels)| registration)
+    });
+    // The store is held for the whole window, so the registration cannot get
+    // past its reservation during it.
+    let mut free = 0;
+    for _ in 0..40 {
+        assert!(
+            clients.try_lock().is_ok(),
+            "a registration waiting for the store must not be holding the \
+             client table: that is the order the retained drive takes them in \
+             reversed"
+        );
+        free += 1;
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(
+        free, 40,
+        "the client table was free at every observation taken while the \
+         registration was blocked on the store"
+    );
+    assert_eq!(durable_reserved(&held), 0, "nothing was reserved yet");
+    drop(held);
+    let registration = joiner
+        .join()
+        .expect("the registration thread")
+        .expect("a place, once the store is free");
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    drop(registration);
+}
+
+/// Reserved places, read from a guard the caller already holds.
+fn durable_reserved(held: &AbandonedSettlements) -> usize {
+    held.continuation_slots
 }

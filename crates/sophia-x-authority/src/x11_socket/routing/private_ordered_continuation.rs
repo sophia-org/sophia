@@ -207,13 +207,30 @@ impl PrivateOrderedContinuationSlot {
         self.armed = false;
     }
 
+    /// Give the place back, for a connection that was never exposed.
+    ///
+    /// A RESERVATION THAT PUBLISHED NOTHING IS NOT RETAINED WORK. Nothing could
+    /// have been accepted for a connection with no row and no reachable queue,
+    /// so there is nothing to account for and the capacity is free. Holding it
+    /// would spend a place on a connection that never existed.
+    ///
+    /// Only for a KNOWN pre-publication failure. A disposition that is merely
+    /// unknown keeps its place.
+    fn relinquish_unexposed(self) {
+        self.give_back();
+    }
+
     /// Give the place back, for a connection that finished owing nothing.
     ///
     /// Only for that. A slot returned while its owner still holds unanswered
     /// admissions, foreign capsules or a wire whose ending was never
     /// established would be capacity handed out against work that still
     /// exists.
-    fn finish(mut self) {
+    fn finish(self) {
+        self.give_back();
+    }
+
+    fn give_back(mut self) {
         let mut held = self.owner.records_even_if_poisoned();
         // The place is checked, NOT the record's contents: reading a record
         // here would take one beneath the aggregate, which is the order
@@ -369,9 +386,170 @@ impl PrivateOrderedContinuation {
     }
 }
 
+/// A settlement store a holder may use but does not own.
+///
+/// See [`PrivateSettlementOwner::settlement_ref`] for why this is the only
+/// shape a registry may hold one in.
+#[cfg(unix)]
+#[derive(Clone)]
+struct PrivateSettlementRef {
+    inner: std::sync::Weak<Mutex<AbandonedSettlements>>,
+}
+
+#[cfg(unix)]
+impl PrivateSettlementRef {
+    /// The store, if it is still there.
+    ///
+    /// A store that has gone is not an empty store: nothing can be handed to
+    /// it, and a caller that needs one must refuse rather than carry on
+    /// without it.
+    fn owner(&self) -> Option<PrivateSettlementOwner> {
+        self.inner
+            .upgrade()
+            .map(|inner| PrivateSettlementOwner { inner })
+    }
+}
+
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
 impl PrivateSettlementOwner {
+    /// A handle to this store that does not keep it alive.
+    ///
+    /// WEAK BY CONSTRUCTION, and it has to be. The store retains records that
+    /// hold registries: an instance that ends owing a hold hands its terminal
+    /// inventory over, and that inventory keeps the registry it must act
+    /// through in order to answer. A registry that then held the store
+    /// strongly would close the ring -- store, retained inventory, registry,
+    /// store -- and nothing in it would ever drop. The obligations would stay
+    /// readable forever, which reads as "still owed" rather than "leaked", so
+    /// the leak would present as an instance that never finishes settling.
+    fn settlement_ref(&self) -> PrivateSettlementRef {
+        PrivateSettlementRef {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
+
+    /// Declare how many connections may hold a place at once.
+    ///
+    /// DECLARED ONCE, AND NEVER RESET OVER RETAINED WORK. This store outlives
+    /// the instance that configured it -- that is what durable means -- so a
+    /// later instance arriving with its own client limit finds places already
+    /// held against the first one. Moving the number under them would either
+    /// strand work above a smaller bound or hand out places a departed
+    /// instance already accounted for. The bound in force wins and is reported
+    /// back, so a caller can tell whether the number it asked for is the
+    /// number it got.
+    ///
+    /// Refuses only for an unreadable store, which is not the same answer as
+    /// a bound of nothing.
+    fn declare_connection_bound(&self, connections: NonZeroUsize) -> Option<usize> {
+        let Ok(mut held) = self.inner.lock() else {
+            return None;
+        };
+        if held.continuation_bound_declared {
+            return Some(held.continuation_capacity);
+        }
+        // The storage is made here, so a reservation moves into a place that
+        // already exists rather than allocating while holding custody.
+        held.continuations.reserve(connections.get());
+        held.continuation_capacity = connections.get();
+        held.continuation_bound_declared = true;
+        Some(connections.get())
+    }
+
+    /// Take the place one connection's ordered continuation will need.
+    ///
+    /// BEFORE THAT CONNECTION'S SENDER IS PUBLISHED. Once the sender exists a
+    /// capsule can be accepted into its queue, and from that moment the
+    /// connection has work that must be able to go somewhere. Reserving after
+    /// exposure would be finding out too late.
+    ///
+    /// Moves into storage the declared bound already made, rather than
+    /// allocating while holding custody.
+    #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+    fn reserve_ordered_continuation(
+        &self,
+    ) -> Result<PrivateOrderedContinuationSlot, AdmissionRefusal> {
+        // An unreachable owner and a full one are different answers, for the
+        // same reason as every other reservation here.
+        let Ok(mut held) = self.inner.lock() else {
+            return Err(AdmissionRefusal::Unavailable);
+        };
+        if held.continuation_slots >= held.continuation_capacity {
+            return Err(AdmissionRefusal::Saturated);
+        }
+        // A FREE place, not merely an empty one. A place already promised to
+        // another connection holds nothing yet, and taking it again would give
+        // two connections the same destination.
+        let index = match held
+            .continuations
+            .iter()
+            .position(|place| matches!(place, PrivateOrderedContinuationPlace::Free))
+        {
+            Some(index) => index,
+            None => {
+                held.continuations
+                    .push(PrivateOrderedContinuationPlace::Free);
+                held.continuations.len() - 1
+            }
+        };
+        // The record is made HERE, before this connection is exposed, so the
+        // hand-over later is a move into storage that already exists.
+        held.continuations[index] =
+            PrivateOrderedContinuationPlace::Taken(Arc::new(Mutex::new(None)));
+        held.continuation_slots = held.continuation_slots.saturating_add(1);
+        drop(held);
+        Ok(PrivateOrderedContinuationSlot {
+            owner: self.clone(),
+            index,
+            armed: true,
+        })
+    }
+
+    /// How many places are taken, live and retained together.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn continuations_reserved(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.continuation_slots)
+    }
+
+    /// How many continuations are actually stored here.
+    ///
+    /// HANDLES ARE COPIED UNDER THE AGGREGATE AND READ AFTER IT IS RELEASED.
+    /// Taking a record beneath the aggregate is the reverse of the order
+    /// driving uses -- a driver holds a record and may enter settlement -- so a
+    /// reader that did it would close the cycle from the other side.
+    ///
+    /// AN UNREADABLE RECORD IS NOT AN ABSENT ONE. Counting a poisoned record
+    /// as empty publishes a zero for an obligation that is still owned and
+    /// still unanswered, which is the one answer a caller must not be given.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn continuations_retained(&self) -> Option<usize> {
+        let records: Vec<_> = {
+            let held = self.inner.lock().ok()?;
+            held.continuations
+                .iter()
+                .filter_map(|place| match place {
+                    PrivateOrderedContinuationPlace::Taken(record) => Some(record.clone()),
+                    PrivateOrderedContinuationPlace::Free => None,
+                })
+                .collect()
+        };
+        let mut retained = 0usize;
+        for record in records {
+            let Ok(record) = record.lock() else {
+                return None;
+            };
+            retained += usize::from(record.is_some());
+        }
+        Some(retained)
+    }
+
+    /// How many places went with a holder that disposed of neither.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn continuations_abandoned(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.continuations_abandoned)
+    }
+
     /// Give one bounded visit to each retained continuation in turn.
     ///
     /// FAIR, so one connection that cannot progress does not consume every

@@ -430,6 +430,16 @@ impl PrivateXServerFrontend {
         if let Err(refusal) = durable.reserve_failure_slot() {
             return Err((refusal, parts));
         }
+        // Also before anything is exposed: the number of connections that may
+        // hold a place at once is this instance's declared client limit, and
+        // it has to be in force before a registry built below can publish a
+        // row. Declared, not imposed -- a durable store carrying places from
+        // an earlier instance keeps the bound those were taken against.
+        let connections = parts.max_concurrent_clients;
+        if durable.declare_connection_bound(connections).is_none() {
+            durable.release_failure_slot();
+            return Err((AdmissionRefusal::Unavailable, parts));
+        }
         // Room for a full ingress round plus the classes that arrive beside
         // it, with a share kept back so cleanup is never the thing that cannot
         // be admitted.
@@ -517,6 +527,17 @@ impl PrivateXServerFrontend {
         assert!(
             broker.registry.install_control_completion(completion.clone()),
             "a freshly built broker has no completion registry yet"
+        );
+        // A PRIVATE INSTANCE NEVER FALLS THROUGH THE UNCONFIGURED PATH. An
+        // uninstalled owner means registration reserves nothing, which is the
+        // public frontend's behaviour and would silently give this one
+        // connections whose accepted work has nowhere to go.
+        assert!(
+            broker
+                .registry
+                .install_continuation_owner(durable, connections)
+                .is_some(),
+            "a freshly built broker has no continuation owner yet"
         );
         let participant = PrivateAdmissionParticipant::new(controller.clone());
         let lifecycle = PrivateLifecycleOwner::from_prepared(participant.clone(), broker.registry.input_authority.clone(), broker.registry.pointer_state.clone(), lifecycle_storage);

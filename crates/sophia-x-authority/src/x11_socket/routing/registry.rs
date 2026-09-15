@@ -9,7 +9,7 @@ struct XServerFrontendRouteRegistry {
     /// Set for a private instance, so registering can take a connection's place
     /// BEFORE it publishes that connection's sender. Unset elsewhere, where
     /// there is no ordered output to hand over.
-    continuation_owner: Arc<std::sync::OnceLock<PrivateSettlementOwner>>,
+    continuation_owner: Arc<std::sync::OnceLock<PrivateSettlementRef>>,
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
     focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
@@ -391,6 +391,31 @@ impl XServerFrontendRouteRegistry {
         self.register_client_with_admission(client, None)
     }
 
+    /// Give this registry the store its connections take their places from,
+    /// against the declared client limit.
+    ///
+    /// BEFORE ANY ROW CAN BE PUBLISHED. A registry that admitted connections
+    /// first and was given a store afterwards would have exposed queues whose
+    /// accepted work has nowhere to go, and no later installation can go back
+    /// and reserve for them. Once installed it does not change: the places
+    /// held under it belong to it.
+    ///
+    /// The bound is declared, not imposed -- a durable store that already
+    /// carries places from an earlier instance keeps the bound those were
+    /// taken against. Reports the bound in force, or nothing if the store
+    /// cannot be read or an owner is already installed.
+    pub(crate) fn install_continuation_owner(
+        &self,
+        owner: &PrivateSettlementOwner,
+        connections: NonZeroUsize,
+    ) -> Option<usize> {
+        let bound = owner.declare_connection_bound(connections)?;
+        // Held weakly. The store retains inventories that hold this registry,
+        // so owning it back would close a ring neither end could leave.
+        self.continuation_owner.set(owner.settlement_ref()).ok()?;
+        Some(bound)
+    }
+
     fn register_client_with_admission(
         &self,
         client: XServerFrontendClientId,
@@ -407,6 +432,87 @@ impl XServerFrontendRouteRegistry {
         let (protocol_sender, protocol) =
             sync_channel(self.per_client_protocol_capacity.get());
         let (ordered_sender, ordered) = sync_channel(self.per_client_input_capacity.get());
+        // THE PLACE IS TAKEN BEFORE THE SENDER EXISTS, and before the client
+        // table is held. From the moment a row is inserted a capsule can be
+        // accepted into that queue, so a connection whose accepted work would
+        // have nowhere to go must not be exposed at all. Taking the settlement
+        // store beneath the client table would reverse the order the retained
+        // drive already uses -- it holds settlement and then takes clients to
+        // release a lease. Two orders, one deadlock.
+        let mut continuation = match self.continuation_owner.get() {
+            // A store that has gone is not a store with room. This registry
+            // does not own it, so the connection is refused rather than
+            // exposed with nowhere to hand over to.
+            Some(store) => {
+                let owner = store
+                    .owner()
+                    .ok_or(XServerFrontendRouteError::ContinuationUnavailable { client })?;
+                Some(
+                    owner
+                        .reserve_ordered_continuation()
+                        .map_err(|_| XServerFrontendRouteError::ContinuationUnavailable {
+                            client,
+                        })?,
+                )
+            }
+            None => None,
+        };
+        // Both halves are minted from the one cell, which is what makes the
+        // question "did this registration make this receiver" answerable.
+        let connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>> =
+            Arc::new(std::sync::OnceLock::new());
+        let senders = XServerFrontendClientRouteSenders {
+            connection_state: connection_state.clone(),
+            input: input_sender,
+            control: control_sender,
+            protocol: protocol_sender,
+            admission,
+            ordered: ordered_sender,
+            control_writer_gone: Arc::new(AtomicBool::new(false)),
+        };
+        let published =
+            self.publish_registered_client(client, senders, &connection_state, &mut continuation);
+        // The client table is released here, before the place is disposed of.
+        //
+        // A RESERVATION THAT PUBLISHED NOTHING IS NOT RETAINED WORK. Every
+        // refusal above happened with no row and no reachable queue, so no
+        // capsule could have been accepted for this connection and the place
+        // owes nothing. Publication is what takes it: on success the
+        // registration holds it, and this is None.
+        if let Some(unexposed) = continuation.take() {
+            unexposed.relinquish_unexposed();
+        }
+        let registration = published?;
+        Ok((
+            registration,
+            XServerFrontendClientRouteChannels {
+                input,
+                control,
+                protocol,
+                ordered: XAuthorityOrderedReceiver {
+                    receiver: ordered,
+                    registration: connection_state,
+                    capacity: self.per_client_input_capacity.get(),
+                },
+            },
+        ))
+    }
+
+    /// Insert the row and mint the registration that owns it.
+    ///
+    /// Separated so the client table is held for exactly this, and released
+    /// before the caller disposes of anything held elsewhere.
+    ///
+    /// The place is taken out of `continuation` only once the row is in. A
+    /// caller that gets an error back still owns it, and one that gets a
+    /// registration back does not: taken means published.
+    fn publish_registered_client(
+        &self,
+        client: XServerFrontendClientId,
+        senders: XServerFrontendClientRouteSenders,
+        connection_state: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+        continuation: &mut Option<PrivateOrderedContinuationSlot>,
+    ) -> Result<XServerFrontendClientRouteRegistration, XServerFrontendRouteError> {
         let mut clients = self
             .clients
             .lock()
@@ -414,78 +520,36 @@ impl XServerFrontendRouteRegistry {
         if clients.contains_key(&client) {
             return Err(XServerFrontendRouteError::DuplicateClient { client });
         }
-        // THE PLACE IS TAKEN BEFORE THE SENDER EXISTS. From the moment this
-        // row is inserted a capsule can be accepted into that queue, and a
-        // connection whose accepted work would have nowhere to go must not be
-        // exposed at all. A refusal here publishes nothing.
-        let continuation = match self.continuation_owner.get() {
-            Some(owner) => Some(
-                owner
-                    .reserve_ordered_continuation()
-                    .map_err(|_| XServerFrontendRouteError::ContinuationUnavailable { client })?,
-            ),
-            None => None,
-        };
         self.input_recovery.register(client)?;
-        let connection_state = Arc::new(std::sync::OnceLock::new());
         // A writer for this client exists or is about to: registration comes
         // before the spawn, and control accepted in that window is not control
         // with nowhere to go. The writer stopping is what clears it.
         if let Some(completion) = self.control_completion.get() {
             completion.expect_writer(client);
         }
-        clients.insert(
+        clients.insert(client, senders);
+        Ok(XServerFrontendClientRouteRegistration {
+            lifecycle: Mutex::new(None),
+            // Held for this connection's whole ownership interval once it is
+            // exposed. It is not given back because setup failed or the client
+            // went: a place is returned when the work in it is gone, and until
+            // then it belongs to this connection.
+            ordered_continuation: Mutex::new(continuation.take()),
+            connection_state: connection_state.clone(),
+            input_recovery: self.input_recovery.clone(),
             client,
-            XServerFrontendClientRouteSenders {
-                connection_state: connection_state.clone(),
-                input: input_sender,
-                control: control_sender,
-                protocol: protocol_sender,
-                admission,
-                ordered: ordered_sender,
-                control_writer_gone: Arc::new(AtomicBool::new(false)),
-            },
-        );
-        // Taken before the registration consumes it: the receiver and the
-        // registration are minted from the one cell, which is what makes the
-        // question "did this registration make this receiver" answerable.
-        let ordered_witness = connection_state.clone();
-        Ok((
-            XServerFrontendClientRouteRegistration {
-                lifecycle: Mutex::new(None),
-                // Held for this connection's whole ownership interval. It is
-                // not given back because setup failed or the client went: a
-                // place is returned when the work in it is gone, and until
-                // then it belongs to this connection.
-                ordered_continuation: Mutex::new(continuation),
-                connection_state,
-                input_recovery: self.input_recovery.clone(),
-                client,
-                control_completion: self.control_completion.clone(),
-                clients: self.clients.clone(),
-                surfaces: self.surfaces.clone(),
-                focused_surface: self.focused_surface.clone(),
-                window_parents: self.window_parents.clone(),
-                core_event_subscriptions: self.core_event_subscriptions.clone(),
-                randr_subscriptions: self.randr_subscriptions.clone(),
-                xfixes_selection_subscriptions: self.xfixes_selection_subscriptions.clone(),
-                present_subscriptions: self.present_subscriptions.clone(),
-                pending_presentations: self.pending_presentations.clone(),
-                frozen_input: self.frozen_input.clone(),
-            },
-            XServerFrontendClientRouteChannels {
-                input,
-                control,
-                protocol,
-                // Minted with the cell this registration and its client-table
-                // entry both hold, so what it came from can be asked later.
-                ordered: XAuthorityOrderedReceiver {
-                    receiver: ordered,
-                    registration: ordered_witness,
-                    capacity: self.per_client_input_capacity.get(),
-                },
-            },
-        ))
+            control_completion: self.control_completion.clone(),
+            clients: self.clients.clone(),
+            surfaces: self.surfaces.clone(),
+            focused_surface: self.focused_surface.clone(),
+            window_parents: self.window_parents.clone(),
+            core_event_subscriptions: self.core_event_subscriptions.clone(),
+            randr_subscriptions: self.randr_subscriptions.clone(),
+            xfixes_selection_subscriptions: self.xfixes_selection_subscriptions.clone(),
+            present_subscriptions: self.present_subscriptions.clone(),
+            pending_presentations: self.pending_presentations.clone(),
+            frozen_input: self.frozen_input.clone(),
+        })
     }
 
     fn route_input(
