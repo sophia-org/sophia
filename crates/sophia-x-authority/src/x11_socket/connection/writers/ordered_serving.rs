@@ -168,10 +168,13 @@ enum X11OrderedTermination {
     Refused(std::io::ErrorKind),
 }
 
-/// How many times one close may attempt to end its wire.
+/// How many times one close may attempt to end its wire HERE.
 ///
-/// Bounded because a retry that never stops is a close that never finishes,
-/// and whoever is waiting for this connection to end would wait forever.
+/// THIS BOUNDS LOCAL EFFORT AND NOTHING ELSE. Reaching it does not finish the
+/// close, does not establish termination, and does not stop anyone waiting on
+/// this connection: it stops this owner from retrying, leaving an unconfirmed
+/// close retained and undriven. Who drives it after that, and for how long, is
+/// scheduling that does not exist yet.
 #[cfg(unix)]
 const X11_ORDERED_CLOSE_ATTEMPTS: u8 = 3;
 
@@ -208,7 +211,7 @@ enum X11OrderedCloseStep {
     Drained,
 }
 
-/// One connection's ordered output, owned together./// One connection's ordered output, owned together.
+/// One connection's ordered output, owned together.
 ///
 /// THE ENDPOINT, THE QUEUE AND THE SOCKET ARE BOUND HERE. Passing them
 /// separately to a serving call let a caller supply any three: the writer's
@@ -327,12 +330,20 @@ impl X11OrderedServingOwner {
 
     /// Serve one step, writing through this connection's own serialization.
     ///
-    /// The output lock is taken for the write. It is NOT released while this
-    /// connection's wire holds the beginning of an event nobody can finish:
-    /// when the step below could not end the wire itself, this ends it through
-    /// the handle that needs no lock, before the guard goes. If even that
-    /// fails, the connection is latched unusable rather than handed back to a
-    /// caller who would write into a half-finished frame.
+    /// The output lock is taken for the write. When the step below could not
+    /// end the wire itself, this ends it through the handle that needs no
+    /// lock, before the guard goes.
+    ///
+    /// PENDING, AND NOT YET TRUE OF THE CONNECTION. If that ending also fails,
+    /// the guard is released -- it cannot be held across a return -- and the
+    /// only thing stopping a later write is a latch private to THIS owner.
+    /// Every other writer of this socket shares the same Arc and does not read
+    /// it: the input, protocol and reply writers reach it through the
+    /// non-control helper, and control writes take the stream directly. So in
+    /// that one case serialization IS released while the wire holds the
+    /// beginning of an event nobody can finish. Closing it needs a permission
+    /// check under the shared serialization boundary that every post-exposure
+    /// writer observes, which does not exist yet.
     fn serve_one(&mut self, byte_order: XByteOrder, sequence: u16) -> X11OrderedServeStep {
         if self.unterminated {
             return X11OrderedServeStep::Unterminated;
