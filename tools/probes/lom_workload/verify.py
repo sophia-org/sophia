@@ -6,7 +6,7 @@ import json
 import math
 from collections import defaultdict
 
-from records import CLIENT, HOST, InvalidEvidence, read
+from records import CLIENT, HOST, SHUTDOWN_INVENTORY, InvalidEvidence, read
 
 
 def require(condition, reason):
@@ -219,10 +219,21 @@ def verify(host, client, workload):
             summary[f"{metric}_p95_usec"] = p95
             summary[f"{metric}_max_usec"] = maximum
         report[str(output)] = summary
-    return {"schema": 1, "status": "pass", "scope": "causal_action_latency",
+    shutdown = exactly_one(host["sophia_shell_content_shutdown"], "final shell shutdown")
+    require(key(shutdown, "connection_epoch content_grant_epoch") == capture.grant,
+            "shutdown belongs to a different grant")
+    require(shutdown["status"] == "quiescent" and shutdown["workers_joined"] == "1",
+            "shell shutdown did not finish current renderer workers")
+    require(all(shutdown[field] == 0 for field in SHUTDOWN_INVENTORY.split()),
+            "shell shutdown retains actual ownership or credit")
+    # The final observation cannot borrow an earlier empty snapshot. All
+    # qualifying native work, including the end-of-window frames, precedes it.
+    require(shutdown["monotonic_usec"] >= max(end, *capture.completed.values()),
+            "shell shutdown precedes workload completion")
+    return {"schema": 1, "status": "pass", "scope": "causal_action_latency_and_content_shutdown",
             "percentile_estimator": "nearest_rank", "window_start_usec": start,
             "window_end_usec": end, "budgets": workload, "outputs": report,
-            "unqualified_candidates": capture.unqualified}
+            "unqualified_candidates": capture.unqualified, "content_shutdown": shutdown}
 
 
 def unique_json_object(pairs):

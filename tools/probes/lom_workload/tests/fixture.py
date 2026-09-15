@@ -1,6 +1,6 @@
 """Synthetic complete causal transcript; no application, GPU or socket execution."""
 
-from records import HOST, CLIENT
+from records import HOST, CLIENT, SHUTDOWN_INVENTORY
 
 
 def transcript():
@@ -71,6 +71,11 @@ def transcript():
             presentation(output, index + 2, when + 50_000)
     for output in (1, 2):
         presentation(output, 41, 72_000_000)
+    host["sophia_shell_content_shutdown"].append(dict(
+        connection_epoch=1, content_grant_epoch=2, monotonic_usec=90_000_000,
+        settled_candidates=1, status="quiescent", workers_joined="1",
+        **dict.fromkeys(SHUTDOWN_INVENTORY.split(), 0),
+    ))
     return host, client
 
 

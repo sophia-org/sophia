@@ -11,10 +11,21 @@ class InvalidEvidence(ValueError):
 U64 = (1 << 64) - 1
 MAX_LOG_BYTES = 64 * 1024 * 1024
 MAX_RECORDS = 100_000
+SHUTDOWN_INVENTORY = (
+    "active_epochs retired_epochs candidates resources resource_ids transfers allocations "
+    "permits demands staging_bytes resident_bytes retiring_bytes backing_bytes "
+    "reserved_resident_bytes reserved_bytes reserved_backing_bytes response_records "
+    "response_bytes input_records input_bytes"
+)
 
 # A tuple gives mandatory integer fields, fields admitting zero, and enums.
 # Unknown fields fail rather than quietly changing the interpreted contract.
 HOST = {
+    "sophia_shell_content_shutdown": (
+        "connection_epoch content_grant_epoch monotonic_usec settled_candidates " + SHUTDOWN_INVENTORY,
+        "settled_candidates " + SHUTDOWN_INVENTORY,
+        {"status": {"quiescent", "retained"}, "workers_joined": {"0", "1"}},
+    ),
     "sophia_shell_action_receipt": (
         "connection_epoch content_grant_epoch event_id output candidate_generation "
         "presentation_epoch target_id target_generation action monotonic_usec",

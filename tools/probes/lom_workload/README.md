@@ -1,8 +1,9 @@
 # Lom causal workload evidence
 
 This verifier checks the action-latency part of the planned two-output workload.
+It also requires the exact final content-shutdown accounting record.
 It is **not yet the complete attended gate**: it does not establish measured cadence,
-memory plateau, post-teardown reclamation, session recovery, GPU grant correctness
+memory plateau, session recovery, GPU grant correctness
 or healthy process lifetimes. Run those separate checks too. The current tty4
 launcher has not yet been upgraded to this workload.
 
@@ -73,3 +74,17 @@ duplicate or changing refresh evidence fails; no 60 Hz default is supplied.
 The report retains each head's selected mode rate. This is mode qualification,
 not measured rendering cadence, VRR minimum cadence or a driver-health claim.
 Kernel completion latency, process health and teardown remain separate checks.
+
+## Final content accounting
+
+Exactly one host shutdown record must follow the full workload and every
+qualifying native completion, name the same connection/grant, confirm current
+renderer workers joined and report zero for every actual owned store, byte,
+input and response credit. The `quiescent` label alone is insufficient. Missing,
+duplicate, malformed or mismatched fields fail; no empty default is supplied.
+The reported settled-candidate count may be nonzero: these were disconnected
+obligations resolved after rendering ended, not newly presented frames.
+
+This validates the final protocol/storage snapshot emitted by Session, not
+process RSS, global historical worker reclamation or GPU residency. It does not
+replace the native gate's normal exit, cleanup, fatal/restart and recovery checks.

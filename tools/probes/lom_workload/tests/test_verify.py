@@ -16,7 +16,7 @@ class CausalLatencyTests(unittest.TestCase):
     def test_complete_transcript_retains_every_sample_and_exact_chain(self):
         result = verify(*transcript(), limits())
         self.assertEqual(result["status"], "pass")
-        self.assertEqual(result["scope"], "causal_action_latency")
+        self.assertEqual(result["scope"], "causal_action_latency_and_content_shutdown")
         for output in result["outputs"].values():
             self.assertEqual(output["count"], 20)
             self.assertEqual(output["ack_p95_usec"], 10_000)
