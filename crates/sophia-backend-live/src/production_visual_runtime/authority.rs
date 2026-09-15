@@ -583,6 +583,7 @@ impl LiveProductionVisualRuntime {
         let output_count = self.outputs.output_count();
         let production = &self.production;
         let primary_output = self.outputs.primary_output();
+        let ordinary_repaints_pending = &mut self.ordinary_repaints_pending;
         let outputs = &mut self.outputs;
         let surface_metadata = &self.surface_metadata;
         let native_head_frames_requested = native_head_frames.is_some();
@@ -639,12 +640,16 @@ impl LiveProductionVisualRuntime {
                                         "native heads disagree on logical content checksum".into(),
                                     );
                                 }
-                                let frame = native_scanout
-                                    .queue_head_composition_frames(output_id, frames)?;
+                                let frame = ordinary_repaint::admit(
+                                    ordinary_repaints_pending,
+                                    native_scanout,
+                                    output_id,
+                                    frames,
+                                )?;
                                 if Some(output_id) == primary_output {
-                                    primary_logical_target_ref.set(Some(
-                                        LiveProductionCpuTarget::new(frame, logical_checksum),
-                                    ));
+                                    primary_logical_target_ref.set(frame.map(|frame| {
+                                        LiveProductionCpuTarget::new(frame, logical_checksum)
+                                    }));
                                 }
                             } else {
                                 outputs.initialize_native_head_composition(

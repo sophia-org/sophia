@@ -2224,6 +2224,7 @@ impl LiveProductionNativeScanout {
     /// has been queued for every replacement logical output.
     pub fn arm_installed_output_topology_first_presentation(
         &mut self,
+        first_frames: &BTreeMap<OutputId, LiveProductionNativeFrameId>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self
             .output_topology_preparation
@@ -2233,17 +2234,35 @@ impl LiveProductionNativeScanout {
         {
             return Err("native output topology candidate is not ready to arm".into());
         }
-        for output in &self.logical_outputs {
-            let indices = self.head_indices(output.id);
-            if indices.is_empty()
-                || indices.iter().any(|index| {
-                    self.heads[*index].pending_content.is_none()
-                        || !self.exporters[*index].pending_frame()
-                })
-            {
-                return Err("native output topology first-frame coverage is incomplete".into());
-            }
+        if first_frames.len() != self.logical_outputs.len() {
+            return Err("native output topology first-frame output coverage is incomplete".into());
         }
+        let mut expected = BTreeMap::new();
+        for output in &self.logical_outputs {
+            let frame = first_frames
+                .get(&output.id)
+                .ok_or("native output topology first frame is absent")?;
+            expected.insert(
+                output.id,
+                self.head_indices(output.id)
+                    .into_iter()
+                    .map(|index| {
+                        let head = &self.heads[index];
+                        (
+                            index,
+                            self.native_frame_owner.frame(
+                                output.id,
+                                head.head,
+                                head.target_generation,
+                                frame.raw(),
+                            ),
+                        )
+                    })
+                    .collect(),
+            );
+        }
+        self.deferred_mirror_generations
+            .validate_first_frames(&expected)?;
         self.output_topology_preparation
             .as_mut()
             .expect("topology state checked above")

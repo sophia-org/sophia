@@ -641,6 +641,47 @@ All final ownership/credits must still be zero. This measures protocol storage;
 RSS and driver allocations are separate populations, and sampled plateaus do
 not substitute for production admission or the retained-cache 1000-cycle controls.
 
+#### 2026-09-15 native crash and queue/startup repair
+
+The operator's `20260915T223914Z` capture ran Sophia `82342681` with Lom
+`7e3b4cc7`. GPU preflight passed, but Session exited 1 in KmsSubmit with
+`composition output already owns a distinct retirement`. Output 2 had presented
+while output 1 still owed its exact retirement; a WM update preceded the fatal
+ordinary Scene admission. A separate earlier topology attempt rolled back with
+`native output topology first-frame coverage is incomplete`. The capture does
+not establish that rollback caused the later fatal. The preserved report and
+19 hashed original inputs are in
+`.artifacts/lom-native-failure-20260915T223914Z/`. This failure supersedes the
+candidate's earlier readiness claim; it is not evidence of a GPU driver crash.
+
+The repair separates replaceable ordinary Scene admission from forced topology
+and explicit retirement requests. A blocked ordinary output returns no new
+frame ID and retains one output-local repaint obligation. Service recomposes
+current retained sources after protection clears, without another external
+event; other outputs progress. Actual queued/submitted owners are unchanged.
+Ordinary CPU entry points still offer outputs independently: do not generalize
+the topology whole-batch guarantee to an entire CPU cycle. Deferred retry does
+not establish Session CPU visual-progress or native latency correlation.
+
+Topology admits its entire first-frame batch into the real owned queue before
+arming. Arming compares those owned frames with returned IDs and independently
+current native owner/head/target identities, rather than demanding exporter
+pending state before service is allowed. Native shell construction is prepared
+without launch; the startup transaction and execution must both settle before
+negotiation. First success retains `ready` epoch 1; only later successes report
+`reconnected`. No exception was added to the single-grant acceptance check.
+
+Device-hidden regression evidence is in `.artifacts/shell-lifecycle-dev/`:
+`repaint-red.log` reproduces the original exact fatal; `repaint-backend.log`,
+`repaint-retry.log`, and `repaint-session.log` cover output-local deferral,
+changed WM outline retry without another event, invalid second-output refusal,
+owned topology coverage and private socket startup negotiation. The startup
+fixture supplies protection evidence; it is not a protected-child/GPU launch.
+`repaint-mutations.json` records compiled behavioral negatives. Existing actual
+owner/1000-cycle fixtures retain simulated device completion scope. Canonical
+validation and native acceptance remain separate gates; no new hardware run is
+implied by these controls. Keep t100 and t081 open until their full exits pass.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

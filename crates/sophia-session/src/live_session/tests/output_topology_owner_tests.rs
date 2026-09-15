@@ -259,11 +259,13 @@ fn shell_reconnect_waits_until_topology_execution_fully_clears() {
         LiveOutputTopologyExecutionPhase::RollingBack,
     ] {
         assert!(
-            !owner_loop_shell_presentation_available(true, true, Some(phase)),
+            !owner_loop_shell_presentation_available(true, true, Some(phase), false),
             "native readiness during {phase:?} must not publish stale output facts"
         );
     }
-    assert!(owner_loop_shell_presentation_available(true, true, None));
+    assert!(owner_loop_shell_presentation_available(
+        true, true, None, false
+    ));
 }
 
 #[test]
@@ -574,4 +576,39 @@ fn input_shell_and_broker_authorities_remain_deferred_by_a_reload() {
     let effects = desktop_profile_reload_effects(&before, &after);
     assert!(!effects.output_changed);
     assert_eq!(effects.deferred.len(), sections.len());
+}
+
+#[test]
+fn startup_transaction_blocks_shell_before_execution_is_dispatched() {
+    assert!(!owner_loop_shell_presentation_available(
+        true, true, None, true
+    ));
+    for phase in [
+        LiveOutputTopologyExecutionPhase::Applying,
+        LiveOutputTopologyExecutionPhase::AwaitingFirstPresentation,
+        LiveOutputTopologyExecutionPhase::Reconciling,
+        LiveOutputTopologyExecutionPhase::RollingBack,
+    ] {
+        assert!(!owner_loop_shell_presentation_available(
+            true,
+            true,
+            Some(phase),
+            true
+        ));
+        assert!(!owner_loop_shell_presentation_available(
+            true,
+            true,
+            Some(phase),
+            false
+        ));
+    }
+    assert!(owner_loop_shell_presentation_available(
+        true, true, None, false
+    ));
+    assert!(!owner_loop_shell_presentation_available(
+        false, true, None, false
+    ));
+    assert!(!owner_loop_shell_presentation_available(
+        true, false, None, false
+    ));
 }

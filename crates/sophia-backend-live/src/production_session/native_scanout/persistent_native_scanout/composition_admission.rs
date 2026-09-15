@@ -42,7 +42,11 @@ pub(crate) fn prepare_native_composition_batch(
             }
             if state.protected
                 && (required.contains(output)
-                    || !matches!(content, LiveProductionHeadCompositionContent::Retained))
+                    || !matches!(
+                        content,
+                        LiveProductionHeadCompositionContent::Retained
+                            | LiveProductionHeadCompositionContent::OrdinaryScene
+                    ))
             {
                 return Err("composition output already owns a distinct retirement");
             }
@@ -140,6 +144,35 @@ pub(crate) fn prepare_native_composition_batch(
 }
 
 impl LiveProductionNativeScanout {
+    /// Atomically owns all first frames before topology frame service opens.
+    pub fn queue_topology_first_frames(
+        &mut self,
+        batches: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        if self.output_topology_preparation_phase()
+            != Some(LiveProductionNativeTopologyPreparationPhase::CandidateInstalled)
+            || batches.len() != self.logical_outputs.len()
+        {
+            return Err("topology first-frame batch is not complete or installable".into());
+        }
+        self.prepare_and_admit_head_batch(
+            batches,
+            &BTreeSet::new(),
+            LiveProductionHeadCompositionContent::Scene,
+        )
+    }
+
+    pub(crate) fn queue_ordinary_head_composition_batch(
+        &mut self,
+        batches: NativeHeadCompositionBatch,
+    ) -> Result<BTreeMap<OutputId, LiveProductionNativeFrameId>, Box<dyn std::error::Error>> {
+        self.prepare_and_admit_head_batch(
+            batches,
+            &BTreeSet::new(),
+            LiveProductionHeadCompositionContent::OrdinaryScene,
+        )
+    }
+
     pub(super) fn prepare_and_admit_head_batch(
         &mut self,
         batches: super::composition_admission::NativeHeadCompositionBatch,

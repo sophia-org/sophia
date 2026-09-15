@@ -19,6 +19,7 @@ mod compositor_graphics;
 #[cfg(test)]
 #[path = "../tests/support/lifecycle_tests.rs"]
 mod lifecycle_tests;
+mod ordinary_repaint;
 use composition_target::NativeCompositionTarget;
 mod native;
 mod ownership;
@@ -297,6 +298,7 @@ pub struct LiveProductionVisualRuntime {
     surface_outputs: BTreeMap<SurfaceId, OutputId>,
     geometry_routed_surfaces: BTreeSet<SurfaceId>,
     retained_projection_pending: bool,
+    ordinary_repaints_pending: BTreeSet<OutputId>,
     /// Output-local shell candidates and the exact grant that owns each
     /// physical retirement. Pixel equality or a replacement connection cannot
     /// settle that protocol obligation.
@@ -427,6 +429,7 @@ impl LiveProductionVisualRuntime {
             surface_outputs: BTreeMap::new(),
             geometry_routed_surfaces: BTreeSet::new(),
             retained_projection_pending: false,
+            ordinary_repaints_pending: BTreeSet::new(),
             retained_projection_retirements: BTreeMap::new(),
             translations: TranslationTimeline::default(),
             translation_origin: Instant::now(),
@@ -735,6 +738,7 @@ impl LiveProductionVisualRuntime {
             .collect::<Vec<_>>();
         self.observe_content_ordered_resource_releases(authority_envelope);
         let head_plan_orders = self.presentation_orders_by_output();
+        let ordinary_repaints_pending = &mut self.ordinary_repaints_pending;
         let (production, outputs) = (&mut self.production, &mut self.outputs);
         let output_count = outputs.output_count();
         let primary_output = outputs.primary_output();
@@ -892,11 +896,10 @@ impl LiveProductionVisualRuntime {
                                             initialized_here = true;
                                             None
                                         } else {
-                                            let frame = native_scanout
-                                                .queue_head_composition_frames(output_id, prepared)?;
-                                            logical_target.map(|checksum| {
+                                            let frame = ordinary_repaint::admit(ordinary_repaints_pending, native_scanout, output_id, prepared)?;
+                                            frame.and_then(|frame| logical_target.map(|checksum| {
                                                 LiveProductionCpuTarget::new(frame, checksum)
-                                            })
+                                            }))
                                         };
                                         if Some(output_id) == primary_output {
                                             primary_logical_target_ref.set(queued_target);
@@ -1305,7 +1308,7 @@ impl LiveProductionVisualRuntime {
         if self.native_publication_blocked() {
             return Ok(None);
         }
-        Ok(Some(self.run_cpu_repaint(
+        Ok(Some(self.run_cpu_repaint_inner(
             scene,
             raised_surface,
             focused_surface,
@@ -1316,6 +1319,34 @@ impl LiveProductionVisualRuntime {
     }
 
     pub fn run_cpu_repaint(
+        &mut self,
+        scene: &mut LiveProductionCpuScene,
+        raised_surface: Option<SurfaceId>,
+        focused_surface: Option<SurfaceId>,
+        cursor_presentation: LiveProductionCursorPresentation,
+        output_descriptors: &[sophia_engine::HeadlessOutput],
+        native_scanout: &mut LiveProductionNativeScanout,
+    ) -> Result<LiveProductionCpuSubmission, Box<dyn std::error::Error>> {
+        // Forced startup/topology work cannot be silently deferred. Validate
+        // every output before the ordinary helper can transfer any owner.
+        if native_scanout
+            .outputs()
+            .iter()
+            .any(|output| native_scanout.output_retirement_protected(output.id))
+        {
+            return Err("forced repaint waits for an existing distinct retirement".into());
+        }
+        self.run_cpu_repaint_inner(
+            scene,
+            raised_surface,
+            focused_surface,
+            cursor_presentation,
+            output_descriptors,
+            native_scanout,
+        )
+    }
+
+    fn run_cpu_repaint_inner(
         &mut self,
         scene: &mut LiveProductionCpuScene,
         raised_surface: Option<SurfaceId>,
@@ -1345,6 +1376,7 @@ impl LiveProductionVisualRuntime {
         let primary_output = self.outputs.primary_output();
         let production = &self.production;
         let surface_metadata = &self.surface_metadata;
+        let ordinary_repaints_pending = &mut self.ordinary_repaints_pending;
         let outputs = &mut self.outputs;
         let mut head_batches = head_batches.into_iter().collect::<BTreeMap<_, _>>();
         let primary_logical_target = std::cell::Cell::new(None);
@@ -1369,10 +1401,17 @@ impl LiveProductionVisualRuntime {
                     return Err("CPU repaint heads disagree on logical content checksum".into());
                 }
                 if outputs.native_initialized(output_id) {
-                    let frame = native_scanout.queue_head_composition_frames(output_id, frames)?;
+                    let frame = ordinary_repaint::admit(
+                        ordinary_repaints_pending,
+                        native_scanout,
+                        output_id,
+                        frames,
+                    )?;
                     if Some(output_id) == primary_output {
                         primary_logical_target_ref
-                            .set(Some(LiveProductionCpuTarget::new(frame, logical_checksum)));
+                            .set(frame.map(|frame| {
+                                LiveProductionCpuTarget::new(frame, logical_checksum)
+                            }));
                     }
                 } else {
                     outputs.initialize_native_head_composition(

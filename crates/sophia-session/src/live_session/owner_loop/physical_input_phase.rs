@@ -1075,6 +1075,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             active_output_topology_preparation
                 .as_ref()
                 .map(|execution| execution.phase),
+            wm_session.as_ref().is_some_and(LiveWmSession::startup_output_topology_pending),
         );
         if shell_presentation_available {
             if let Some(shell) = metadata_shell.as_mut() {
@@ -1089,7 +1090,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             let mut revoke_shell_input = false;
             let shell_operational = match shell.poll() {
                 Ok(LiveMetadataShellPoll::Healthy) => true,
-                Ok(LiveMetadataShellPoll::Reconnected { .. }) => {
+                Ok(LiveMetadataShellPoll::Connected { .. } | LiveMetadataShellPoll::Reconnected { .. }) => {
                     revoke_shell_input = true;
                     true
                 }

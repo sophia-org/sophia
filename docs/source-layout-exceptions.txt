@@ -18,3 +18,6 @@ inline-tests crates/sophia-session/src/live_session/metadata_shell/content/actio
 inline-tests crates/sophia-shell-client/src/candidate.rs
 inline-tests crates/sophia-shell-client/src/outbox.rs
 inline-tests crates/sophia-runtime/src/shell_transport/indicator_responses.rs
+
+# External initial/reconnect negotiation fixture; no inline test bodies.
+inline-tests crates/sophia-session/src/live_session/metadata_shell/launch.rs

@@ -309,6 +309,7 @@ impl LiveProductionVisualRuntime {
         if self.retained_projection_pending {
             self.queue_retained_projection(scene, native_scanout)?;
         }
+        self.service_ordinary_repaints(scene, native_scanout)?;
         self.service_translation_frames(native_scanout, scene)?;
         let initial = self.native_output_service_request(native_scanout)?;
         let mut reducer = OutputFrameServiceReducer::begin(&initial)

@@ -721,7 +721,12 @@ pub(crate) fn run_persistent_xterm_session(
                         .shell_gpu_device()?,
                 ),
             };
-            LiveMetadataShell::start(
+            let construct = if native_scanout.is_some() {
+                LiveMetadataShell::prepare
+            } else {
+                LiveMetadataShell::start
+            };
+            construct(
                 process,
                 config.shell_panel_thickness,
                 config.shell_content_enabled,

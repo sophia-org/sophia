@@ -496,3 +496,71 @@ fn protected_retirement_survives_ordinary_repaint_and_failed_installation() {
 
 #[path = "native_composition_installation.rs"]
 mod installation;
+
+#[test]
+fn topology_first_frames_are_owned_before_exporter_installation() {
+    let (_store, lease) = content_resource();
+    let owner = crate::NativeFrameOwner::new();
+    let output = OutputId::from_raw(1);
+    let mut queue = DeferredNativeCompositions::default();
+    let expected = BTreeMap::from([(
+        output,
+        (0..2)
+            .map(|index| {
+                (
+                    index,
+                    owner.frame(
+                        output,
+                        sophia_engine::RenderHeadId::from_raw(index as u64 + 1),
+                        1,
+                        3,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>(),
+    )]);
+    assert!(queue.validate_first_frames(&expected).is_err());
+    queue
+        .admit_batch(
+            vec![generation_with_owner(&lease, output, 3, owner)],
+            &BTreeSet::from([output]),
+        )
+        .unwrap_or_else(|(reason, _)| panic!("{reason}"));
+    assert!(queue.validate_first_frames(&expected).is_ok());
+    for negative in 0..7 {
+        let mut wrong = expected.clone();
+        match negative {
+            0 => {
+                wrong.get_mut(&output).unwrap()[1].1 = crate::NativeFrameOwner::new().frame(
+                    output,
+                    sophia_engine::RenderHeadId::from_raw(2),
+                    1,
+                    3,
+                )
+            }
+            1 => {
+                wrong.get_mut(&output).unwrap()[1].1 =
+                    owner.frame(output, sophia_engine::RenderHeadId::from_raw(2), 2, 3)
+            }
+            2 => {
+                wrong.get_mut(&output).unwrap()[1].1 =
+                    owner.frame(output, sophia_engine::RenderHeadId::from_raw(2), 1, 4)
+            }
+            3 => {
+                wrong.get_mut(&output).unwrap().pop();
+            }
+            4 => wrong.get_mut(&output).unwrap()[1].0 = 0,
+            5 => {
+                wrong.insert(OutputId::from_raw(2), vec![]);
+            }
+            6 => wrong.get_mut(&output).unwrap()[1].1 = expected[&output][0].1,
+            _ => unreachable!(),
+        }
+        assert!(
+            queue.validate_first_frames(&wrong).is_err(),
+            "negative {negative}"
+        );
+        assert_eq!(queue.get(output).unwrap().frame.raw(), 3);
+        assert_eq!(queue.get(output).unwrap().heads.len(), 2);
+    }
+}

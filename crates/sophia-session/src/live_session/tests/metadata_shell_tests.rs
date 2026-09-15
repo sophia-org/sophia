@@ -452,3 +452,34 @@ mod indicator_projection {
         assert_eq!(status.layout, "Scroller");
     }
 }
+
+#[test]
+fn native_shell_preparation_does_not_execute_or_negotiate() {
+    // This executable cannot negotiate. Construction succeeding demonstrates
+    // that preparation did not spawn it. All socket state is fixture-local.
+    let mut shell = crate::live_session::metadata_shell::LiveMetadataShell::prepare(
+        "/bin/false",
+        Some(32),
+        true,
+        true,
+        sophia_config::ShellGpuMode::Denied,
+        None,
+        None,
+    )
+    .unwrap();
+    for _ in 0..3 {
+        assert!(matches!(
+            shell.poll().unwrap(),
+            crate::live_session::LiveMetadataShellPoll::Unavailable
+        ));
+        assert!(matches!(
+            shell.recover_transport("paused_fixture").unwrap(),
+            crate::live_session::LiveMetadataShellPoll::Unavailable
+        ));
+    }
+    assert!(
+        !shell
+            .set_presentation_available(false, "still_starting")
+            .unwrap()
+    );
+}

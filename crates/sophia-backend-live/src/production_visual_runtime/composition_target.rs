@@ -14,6 +14,10 @@ pub(crate) trait NativeCompositionTarget {
         frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
         required: &BTreeSet<OutputId>,
     ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>;
+    fn queue_ordinary_batch(
+        &mut self,
+        frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>;
     fn retained_repaint_deferred(&self) -> bool;
     fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot>;
 }
@@ -41,6 +45,13 @@ impl NativeCompositionTarget for LiveProductionNativeScanout {
     ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
     {
         self.queue_retained_output_head_composition_frames_requiring_retirement(frames, required)
+    }
+    fn queue_ordinary_batch(
+        &mut self,
+        frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
+    {
+        self.queue_ordinary_head_composition_batch(frames)
     }
     fn retained_repaint_deferred(&self) -> bool {
         LiveProductionNativeScanout::retained_repaint_deferred(self)

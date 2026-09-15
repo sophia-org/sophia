@@ -409,6 +409,57 @@ impl NativeCompositionTarget for MirroredTarget {
         required: &BTreeSet<OutputId>,
     ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
     {
+        self.queue_scene_batch(
+            frames,
+            required,
+            crate::LiveProductionHeadCompositionContent::Retained,
+        )
+    }
+    fn queue_ordinary_batch(
+        &mut self,
+        frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
+    {
+        self.queue_scene_batch(
+            frames,
+            &BTreeSet::new(),
+            crate::LiveProductionHeadCompositionContent::OrdinaryScene,
+        )
+    }
+    fn retained_repaint_deferred(&self) -> bool {
+        self.outputs.keys().any(|output| self.protected(*output))
+    }
+    fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot> {
+        self.heads[self.outputs[&output][0]].frames.presented()
+    }
+}
+
+#[path = "mirrored_intake_tests.rs"]
+mod tests;
+
+impl IntegrationTarget for MirroredTarget {
+    fn queued(&self) -> &crate::DeferredNativeCompositions {
+        &self.queue
+    }
+    fn drain(&mut self) {
+        MirroredTarget::drain(self);
+    }
+    fn teardown(&mut self) {
+        MirroredTarget::teardown(self);
+    }
+    fn backing_count(&self) -> usize {
+        self.owners.get()
+    }
+}
+
+impl MirroredTarget {
+    fn queue_scene_batch(
+        &mut self,
+        frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+        required: &BTreeSet<OutputId>,
+        content: crate::LiveProductionHeadCompositionContent,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
+    {
         let states = self
             .outputs
             .iter()
@@ -436,35 +487,11 @@ impl NativeCompositionTarget for MirroredTarget {
             &states,
             self.owner,
             &mut self.next,
-            crate::LiveProductionHeadCompositionContent::Retained,
+            content,
         )
         .map_err(|(reason, _owners)| reason)?;
         self.queue
             .admit_batch(generations, &self.outputs.keys().copied().collect())
             .map_err(|(reason, _owners)| reason.into())
-    }
-    fn retained_repaint_deferred(&self) -> bool {
-        self.outputs.keys().any(|output| self.protected(*output))
-    }
-    fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot> {
-        self.heads[self.outputs[&output][0]].frames.presented()
-    }
-}
-
-#[path = "mirrored_intake_tests.rs"]
-mod tests;
-
-impl IntegrationTarget for MirroredTarget {
-    fn queued(&self) -> &crate::DeferredNativeCompositions {
-        &self.queue
-    }
-    fn drain(&mut self) {
-        MirroredTarget::drain(self);
-    }
-    fn teardown(&mut self) {
-        MirroredTarget::teardown(self);
-    }
-    fn backing_count(&self) -> usize {
-        self.owners.get()
     }
 }

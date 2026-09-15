@@ -68,6 +68,37 @@ pub(crate) enum DeferredCompositionOffer {
 }
 
 impl DeferredNativeCompositions {
+    /// First-frame ownership is in this queue before exporters may be serviced.
+    /// Expectations come from the installed topology and returned admission IDs.
+    pub(crate) fn validate_first_frames(
+        &self,
+        expected: &BTreeMap<OutputId, Vec<(usize, crate::LiveNativeFrameIdentity)>>,
+    ) -> Result<(), &'static str> {
+        if expected.is_empty() {
+            return Err("topology has no first-frame targets");
+        }
+        for (output, heads) in expected {
+            let generation = self
+                .generations
+                .get(output)
+                .ok_or("topology first frame is not queue-owned")?;
+            if heads.is_empty() || heads.len() != generation.heads.len() {
+                return Err("topology first-frame head coverage is incomplete");
+            }
+            for ((index, identity), owned) in heads.iter().zip(&generation.heads) {
+                if identity.output() != *output
+                    || identity.frame() != generation.frame.raw()
+                    || *index != owned.head_index
+                    || *identity != owned.identity
+                    || owned.content.frame() != generation.frame
+                {
+                    return Err("topology first frame does not match installed targets");
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Reserve the complete set of output cells before any renderer handoff.
     /// Refusal returns all offered owners and leaves existing cells unchanged.
     pub(crate) fn admit_batch(

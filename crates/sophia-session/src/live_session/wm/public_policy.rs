@@ -1744,6 +1744,10 @@ impl LiveWmSession {
             .is_some_and(LivePublicPolicyState::output_topology_effect_pending)
     }
 
+    fn startup_output_topology_pending(&self) -> bool {
+        self.public.as_ref().is_some_and(|public| public.startup_output_transaction.is_some())
+    }
+
     fn is_startup_output_transaction(&self, transaction: TransactionId) -> bool {
         self.public
             .as_ref()

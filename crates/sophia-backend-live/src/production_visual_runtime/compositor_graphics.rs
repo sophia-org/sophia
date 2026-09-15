@@ -319,7 +319,7 @@ impl LiveProductionVisualRuntime {
 
     /// The in-flight submission's transaction, when that submission put a
     /// client's buffer on the plane directly.
-    fn in_flight_direct<T: NativeCompositionTarget>(
+    pub(super) fn in_flight_direct<T: NativeCompositionTarget>(
         &self,
         native_scanout: &T,
     ) -> Option<TransactionId> {

@@ -316,6 +316,7 @@ impl LiveProductionVisualRuntime {
         )?;
         self.translations.settle();
         self.translation_deadlines.clear();
+        self.ordinary_repaints_pending.clear();
         self.native_suspended = true;
         // A suspended/revoked output no longer has a visible native
         // interaction snapshot. Do not retain routes into retired pixels.
@@ -518,6 +519,7 @@ impl LiveProductionVisualRuntime {
         self.translation_deadlines.clear();
         native_scanout.set_translation_motion_active(false);
         self.outputs = next;
+        self.ordinary_repaints_pending.clear();
         self.input_projections = input_projections;
         Ok(())
     }

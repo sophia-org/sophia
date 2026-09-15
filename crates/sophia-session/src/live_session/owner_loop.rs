@@ -151,11 +151,12 @@ fn owner_loop_shell_presentation_available(
     seat_active: bool,
     native_attached: bool,
     topology_phase: Option<LiveOutputTopologyExecutionPhase>,
+    startup_pending: bool,
 ) -> bool {
     metadata_shell::shell_presentation_available(
         seat_active,
         native_attached,
-        topology_phase.is_none(),
+        topology_phase.is_none() && !startup_pending,
     )
 }
 

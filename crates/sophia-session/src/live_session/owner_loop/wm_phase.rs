@@ -401,21 +401,8 @@
                                     &candidate_outputs,
                                     &candidate_viewports,
                                 )?;
-                                let mut first_frames = BTreeMap::new();
-                                for candidate_output in &candidate_outputs {
-                                    let frames = by_output
-                                        .remove(&candidate_output.id)
-                                        .ok_or("first topology frame omitted a logical output")?;
-                                    let frame = native.queue_head_composition_frames(
-                                        candidate_output.id,
-                                        frames,
-                                    )?;
-                                    first_frames.insert(candidate_output.id, frame);
-                                }
-                                if !by_output.is_empty() {
-                                    return Err("first topology frame names an unknown output".into());
-                                }
-                                native.arm_installed_output_topology_first_presentation()?;
+                                let first_frames = native.queue_topology_first_frames(by_output.into_iter().collect())?;
+                                native.arm_installed_output_topology_first_presentation(&first_frames)?;
                                 Ok((candidate_outputs, first_frames))
                             })();
                             match installation {

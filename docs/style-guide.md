@@ -403,3 +403,8 @@ Three resolutions, in order of preference:
 Silencing a lint to make the gate quiet is the one resolution that is never
 available. If a warning is wrong often enough to be annoying, say so in the
 config with a reason; if it is wrong once, say so at the site.
+
+The metadata-shell `launch.rs` test mount exercises private preparation and
+post-negotiation state with real local socket handshakes. Its test body lives in
+`tests/support/shell_startup.rs`; supplied protection evidence is not a native
+supervisor proof. The exception permits that exact external fixture mount only.

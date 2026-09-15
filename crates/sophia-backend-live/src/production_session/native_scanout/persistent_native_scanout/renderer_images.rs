@@ -119,6 +119,8 @@ pub fn validate_live_head_composition_frame_batch(
 #[derive(Clone, Copy)]
 pub(crate) enum LiveProductionHeadCompositionContent {
     Scene,
+    /// Replaceable scene work; a protected output defers without a new ID.
+    OrdinaryScene,
     MixedPresent(TransactionId),
     Retained,
     RetainedFresh,
@@ -131,7 +133,7 @@ impl LiveProductionHeadCompositionContent {
         logical_content_checksum: u64,
     ) -> LiveProductionScanoutContent {
         match self {
-            Self::Scene => LiveProductionScanoutContent::HeadComposition {
+            Self::Scene | Self::OrdinaryScene => LiveProductionScanoutContent::HeadComposition {
                 frame,
                 logical_content_checksum,
                 nonzero_rgb_pixels: 0,
@@ -830,7 +832,7 @@ impl LiveProductionNativeScanout {
         })
     }
 
-    pub(super) fn output_retirement_protected(&self, output: OutputId) -> bool {
+    pub(crate) fn output_retirement_protected(&self, output: OutputId) -> bool {
         self.deferred_mirror_generations.protected(output)
             || self.installed_retirement_protected(output)
     }

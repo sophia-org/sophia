@@ -372,3 +372,222 @@ fn deferred_ordinary_change_back_is_not_suppressed_by_displayed_pixels() {
     target.drain();
     target.teardown();
 }
+
+#[test]
+fn ordinary_scene_defers_protected_output_without_stopping_neighbor() {
+    let outputs = outputs();
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(outputs[0].size);
+    let mut target = MirroredTarget::new(&outputs);
+    let mut store =
+        sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant())).unwrap();
+    let source = upload(
+        &mut store,
+        grant(),
+        ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+    );
+    runtime
+        .set_shell_content_on_target(
+            shell_frame(outputs[0], 1, source),
+            &scene,
+            Some(&mut target),
+        )
+        .unwrap();
+    let protected = target.queue.get(outputs[0].id).unwrap().frame;
+    let before = target.next;
+    let frames = runtime
+        .retained_output_head_composition_frames(&scene, &target)
+        .unwrap();
+    let states = target
+        .outputs
+        .iter()
+        .map(|(output, indices)| {
+            (
+                *output,
+                crate::NativeCompositionOutput {
+                    targets: indices
+                        .iter()
+                        .map(|index| (*index, target.heads[*index].target))
+                        .collect(),
+                    ready: target.ready(*output),
+                    protected: target.protected(*output),
+                    available: true,
+                    newest: [None; 4],
+                    settled_mirror_checksum: None,
+                },
+            )
+        })
+        .collect();
+    let result = crate::prepare_native_composition_batch(
+        frames,
+        &BTreeSet::new(),
+        &states,
+        target.owner,
+        &mut target.next,
+        crate::LiveProductionHeadCompositionContent::OrdinaryScene,
+    );
+    let generations =
+        result.unwrap_or_else(|(reason, _)| panic!("ordinary repaint became fatal: {reason}"));
+    assert_eq!(generations.len(), 1);
+    assert_eq!(generations[0].output, outputs[1].id);
+    assert_eq!(target.next, before + 1);
+    target
+        .queue
+        .admit_batch(generations, &target.outputs.keys().copied().collect())
+        .unwrap_or_else(|(reason, _)| panic!("{reason}"));
+    assert_eq!(target.queue.get(outputs[0].id).unwrap().frame, protected);
+    assert!(
+        target
+            .queue
+            .get(outputs[0].id)
+            .unwrap()
+            .requires_retirement()
+    );
+    target.install(outputs[1].id).unwrap();
+    target.prepare(outputs[1].id);
+    target.flip(outputs[1].id, 0);
+    target.flip(outputs[1].id, 1);
+    assert_eq!(target.queue.get(outputs[0].id).unwrap().frame, protected);
+}
+
+#[test]
+fn ordinary_retry_retains_one_obligation_and_recomposes_without_another_event() {
+    let outputs = outputs();
+    let output = outputs[0].id;
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(outputs[0].size);
+    let mut target = MirroredTarget::new(&outputs);
+    let mut store =
+        sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant())).unwrap();
+    let source = upload(
+        &mut store,
+        grant(),
+        ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+    );
+    runtime
+        .set_shell_content_on_target(
+            shell_frame(outputs[0], 1, source),
+            &scene,
+            Some(&mut target),
+        )
+        .unwrap();
+    let protected = target.queue.get(output).unwrap().frame;
+    let next = target.next;
+    let original_checksum = target.queue.get(output).unwrap().logical_content_checksum;
+    let mut latest_checksum = None;
+    for x in 0..8 {
+        // A WM-owned outline is a scene update independent of shell resource
+        // identity. Do not mutate accepted shell pixels or target meaning.
+        runtime
+            .set_floating_outline(
+                Some(crate::LiveFloatingOutline {
+                    surface: SurfaceId::new(71, 1),
+                    geometry: Rect {
+                        x: 16 + x,
+                        y: 8,
+                        width: 16,
+                        height: 12,
+                    },
+                }),
+                &scene,
+                None,
+            )
+            .unwrap();
+        let frames = runtime
+            .retained_output_head_composition_frames(&scene, &target)
+            .unwrap()
+            .into_iter()
+            .find(|(id, _)| *id == output)
+            .unwrap()
+            .1;
+        latest_checksum = Some(frames[0].logical_content_checksum);
+        assert_eq!(
+            ordinary_repaint::admit(
+                &mut runtime.ordinary_repaints_pending,
+                &mut target,
+                output,
+                frames
+            )
+            .unwrap(),
+            None
+        );
+        runtime
+            .service_ordinary_repaints(&scene, &mut target)
+            .unwrap();
+        assert_eq!(runtime.ordinary_repaints_pending, BTreeSet::from([output]));
+        assert_eq!(target.next, next);
+        assert_eq!(target.queue.get(output).unwrap().frame, protected);
+    }
+    assert_ne!(latest_checksum, original_checksum);
+    target.install(output).unwrap();
+    target.prepare(output);
+    target.flip(output, 0);
+    runtime
+        .service_ordinary_repaints(&scene, &mut target)
+        .unwrap();
+    assert_eq!(
+        target.next, next,
+        "lagging sibling still protects retirement"
+    );
+    target.flip(output, 1);
+    // No event or new repaint offer: native service alone admits the retained
+    // latest-scene obligation, through the same helper as production callers.
+    runtime
+        .service_ordinary_repaints(&scene, &mut target)
+        .unwrap();
+    assert!(runtime.ordinary_repaints_pending.is_empty());
+    assert_eq!(target.next, next + 1);
+    assert_ne!(target.queue.get(output).unwrap().frame, protected);
+    assert!(!target.queue.get(output).unwrap().requires_retirement());
+    assert_eq!(
+        target.queue.get(output).unwrap().logical_content_checksum,
+        latest_checksum
+    );
+    target.drain();
+    let next = target.next;
+    runtime
+        .service_ordinary_repaints(&scene, &mut target)
+        .unwrap();
+    assert_eq!(target.next, next, "settled obligation is not replayed");
+    target.teardown();
+}
+
+#[test]
+fn ordinary_invalid_second_output_is_not_hidden_by_first_output_deferral() {
+    let outputs = outputs();
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(outputs[0].size);
+    let mut target = MirroredTarget::new(&outputs);
+    let mut store =
+        sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant())).unwrap();
+    let source = upload(
+        &mut store,
+        grant(),
+        ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+    );
+    runtime
+        .set_shell_content_on_target(
+            shell_frame(outputs[0], 1, source),
+            &scene,
+            Some(&mut target),
+        )
+        .unwrap();
+    let protected = target.queue.get(outputs[0].id).unwrap().frame;
+    let next = target.next;
+    let mut frames = runtime
+        .retained_output_head_composition_frames(&scene, &target)
+        .unwrap();
+    frames[1].1[1].target_generation += 1;
+    assert!(target.queue_ordinary_batch(frames).is_err());
+    assert_eq!(target.next, next);
+    assert_eq!(target.queue.get(outputs[0].id).unwrap().frame, protected);
+}

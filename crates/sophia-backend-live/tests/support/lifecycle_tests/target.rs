@@ -271,36 +271,22 @@ impl NativeCompositionTarget for Target {
         required: &BTreeSet<OutputId>,
     ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
     {
-        let states = self
-            .outputs
-            .iter()
-            .enumerate()
-            .map(|(index, (output, target))| {
-                (
-                    *output,
-                    crate::NativeCompositionOutput {
-                        targets: vec![(index, *target)],
-                        ready: self.ready(*output),
-                        protected: self.protected(*output),
-                        available: self.reject_output != Some(*output),
-                        newest: [None, None, None, self.newest.get(output).copied()],
-                        settled_mirror_checksum: None,
-                    },
-                )
-            })
-            .collect();
-        let prepared = crate::prepare_native_composition_batch(
+        self.queue_scene_batch(
             frames,
             required,
-            &states,
-            self.owner,
-            &mut self.next,
             crate::LiveProductionHeadCompositionContent::Retained,
         )
-        .map_err(|(reason, _owners)| reason)?;
-        self.queue
-            .admit_batch(prepared, &self.outputs.keys().copied().collect())
-            .map_err(|(reason, _owners)| reason.into())
+    }
+    fn queue_ordinary_batch(
+        &mut self,
+        frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
+    {
+        self.queue_scene_batch(
+            frames,
+            &BTreeSet::new(),
+            crate::LiveProductionHeadCompositionContent::OrdinaryScene,
+        )
     }
     fn retained_repaint_deferred(&self) -> bool {
         self.outputs.keys().any(|output| self.protected(*output))
@@ -435,5 +421,46 @@ impl IntegrationTarget for Target {
     }
     fn backing_count(&self) -> usize {
         self.backing_owners.get()
+    }
+}
+
+impl Target {
+    fn queue_scene_batch(
+        &mut self,
+        frames: Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+        required: &BTreeSet<OutputId>,
+        content: crate::LiveProductionHeadCompositionContent,
+    ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>
+    {
+        let states = self
+            .outputs
+            .iter()
+            .enumerate()
+            .map(|(index, (output, target))| {
+                (
+                    *output,
+                    crate::NativeCompositionOutput {
+                        targets: vec![(index, *target)],
+                        ready: self.ready(*output),
+                        protected: self.protected(*output),
+                        available: self.reject_output != Some(*output),
+                        newest: [None, None, None, self.newest.get(output).copied()],
+                        settled_mirror_checksum: None,
+                    },
+                )
+            })
+            .collect();
+        let prepared = crate::prepare_native_composition_batch(
+            frames,
+            required,
+            &states,
+            self.owner,
+            &mut self.next,
+            content,
+        )
+        .map_err(|(reason, _owners)| reason)?;
+        self.queue
+            .admit_batch(prepared, &self.outputs.keys().copied().collect())
+            .map_err(|(reason, _owners)| reason.into())
     }
 }
