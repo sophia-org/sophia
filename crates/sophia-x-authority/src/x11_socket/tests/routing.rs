@@ -25059,9 +25059,10 @@ fn a_stop_after_a_permit_still_takes_the_worker_out() {
         Ok("permitted")
     );
 
-    // The same authoritative handle, and a wake so it looks.
-    stop.store(true, std::sync::atomic::Ordering::Release);
-    wake.publish_recheck();
+    // Through the real cancellation: the connection's own stop, and a wake so
+    // it looks. A cancellation that only cleared the permit would leave this
+    // worker exactly where it is.
+    cancel_connection_worker(&stop, &wake);
     assert_eq!(
         seen.recv_timeout(std::time::Duration::from_secs(5)),
         Ok("stopped"),
@@ -25145,18 +25146,17 @@ fn a_worker_handed_on_to_be_joined_does_not_leave_its_slot_free() {
     );
 
     // The handle goes to a joiner, and nothing is joined yet.
-    let handed = hand_worker_to_joiner(&slot, &wake).expect("its handle");
+    let handed = hand_worker_to_joiner(&slot);
+    assert!(!handed.source_poisoned);
+    let handed = handed.handle.expect("its handle");
     assert!(
         !slot.lock().expect("readable").running(),
         "the slot holds no handle now"
     );
     assert!(
-        !wake
-            .state
-            .lock()
-            .expect("readable")
-            .started,
-        "and the permit went with it, so nothing can inherit one"
+        wake.state.lock().expect("readable").started,
+        "AND THE GRANT IS UNTOUCHED. Moving a handle is not a decision about \
+         whether the worker should still be running"
     );
 
     let mut spawned_again = false;
@@ -25171,10 +25171,97 @@ fn a_worker_handed_on_to_be_joined_does_not_leave_its_slot_free() {
     );
     assert!(!spawned_again, "and nothing was attempted");
 
-    // Both threads are accounted for before anything is concluded.
-    stop.store(true, std::sync::atomic::Ordering::Release);
-    wake.publish_recheck();
+    // Both threads are accounted for before anything is concluded, and
+    // stopping is its own deliberate act rather than a side effect of the
+    // handoff.
+    cancel_connection_worker(&stop, &wake);
     handed.join().expect("the first worker");
+}
+
+#[test]
+fn a_worker_not_yet_at_its_first_look_is_not_stranded_by_the_handoff() {
+    // THE GRANT SURVIVES THE MOVE. A worker held before it has reached its
+    // first look has not seen its permit yet; a handoff that revoked the
+    // permit left it waiting for a permission taken back, with nothing telling
+    // it otherwise and its handle already somewhere else.
+    //
+    // A real predicate-lock handshake holds the worker there: the control owns
+    // the notice until it chooses to let go, so this does not depend on
+    // timing.
+    let (slot, stop, wake) = startup_fixture();
+    let (saw, seen) = sync_channel(1);
+    let body = permit_waiter(Arc::clone(&stop), Arc::clone(&wake), saw);
+
+    // Held here, so the worker cannot reach its predicate.
+    let held_notice = wake.state.lock().expect("a readable notice");
+    let started = std::thread::Builder::new()
+        .spawn(body)
+        .expect("a thread for this control");
+    {
+        let mut slotted = slot.lock().expect("readable");
+        slotted.handle = Some(started);
+        slotted.life = PrivateWorkerLife::Running;
+    }
+    // Permit it, still holding the notice, so the worker has not observed it.
+    let mut state = held_notice;
+    state.started = true;
+    drop(state);
+
+    // And hand the handle on before the worker has looked.
+    let handed = hand_worker_to_joiner(&slot).handle.expect("its handle");
+
+    // It is not stranded: the grant it was given is still there.
+    wake.ready.notify_all();
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("permitted"),
+        "the worker got the permission it was granted"
+    );
+    handed.join().expect("the first worker");
+    assert!(
+        !stop.load(std::sync::atomic::Ordering::Acquire),
+        "and nothing stopped it, because nothing asked it to"
+    );
+}
+
+#[test]
+fn a_poisoned_slot_still_hands_over_the_worker_it_owns() {
+    // ACCEPTED CUSTODY IS NOT ABSENCE. A slot somebody panicked inside still
+    // owns whatever it owns, and answering "nothing here" would leave a
+    // running thread with no route to a join at all -- while reporting that
+    // there was nothing to join.
+    let (slot, stop, wake) = startup_fixture();
+    let (saw, seen) = sync_channel(1);
+    let body = permit_waiter(Arc::clone(&stop), Arc::clone(&wake), saw);
+    assert_eq!(
+        start_connection_worker(&slot, &stop, &wake, || {
+            std::thread::Builder::new().spawn(body)
+        }),
+        PrivateStartupOutcome::Started
+    );
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("permitted")
+    );
+
+    // A holder panics inside the slot.
+    let holder = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _inside = slot.lock().expect("readable");
+        panic!("a holder unwound inside this slot");
+    }));
+    assert!(holder.is_err(), "the holder unwound");
+    assert!(slot.lock().is_err(), "so the slot is poisoned");
+
+    let handed = hand_worker_to_joiner(&slot);
+    assert!(
+        handed.source_poisoned,
+        "and that is reported, beside the handle rather than instead of it"
+    );
+    let handle = handed
+        .handle
+        .expect("THE WORKER IS STILL HANDED OVER, because it is still owned");
+    cancel_connection_worker(&stop, &wake);
+    handle.join().expect("the worker");
 }
 
 #[test]

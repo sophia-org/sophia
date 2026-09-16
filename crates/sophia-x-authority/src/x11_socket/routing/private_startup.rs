@@ -135,34 +135,69 @@ impl PrivateWorkerSlot {
     }
 }
 
+/// What handing a worker on produced.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Nothing joins a worker yet.
+struct PrivateWorkerHandoff {
+    /// The worker, if this slot had one.
+    handle: Option<std::thread::JoinHandle<()>>,
+    /// Whether the slot it came from had been poisoned.
+    ///
+    /// REPORTED BESIDE THE HANDLE, NOT INSTEAD OF IT. A slot somebody panicked
+    /// inside still owns whatever it owns, and answering "nothing here" would
+    /// report accepted custody as absence -- leaving a running thread with no
+    /// route to a join through this at all.
+    source_poisoned: bool,
+}
+
 /// Give this connection's worker to whoever will join it.
 ///
 /// THE SLOT REMEMBERS THAT IT HAD ONE. Handing the handle on empties it, and
 /// an empty slot that had forgotten would start a second worker for a
 /// connection whose first is still running.
 ///
-/// The permit goes with it: a worker that has been handed on is not a worker
-/// anything may still be permitted by, and leaving the old permit set would
-/// let a later arrival inherit one nobody granted it.
+/// IT DOES NOT REVOKE ANYTHING. Moving a handle is not a decision about
+/// whether the worker should still be running: a transfer that cleared the
+/// permit left a worker which had not yet reached its first look waiting for a
+/// permission that had been taken back, with nothing telling it otherwise and
+/// its handle already elsewhere. What bars a successor is the lifecycle, and
+/// what stops a worker is cancellation, which is its own act.
+///
+/// NOTHING FOLLOWS THE TAKE. The lifecycle is written under the same lock the
+/// handle came out of, and there is no later acquisition to cross -- so there
+/// is no interval in which the handle is in a local and something else could
+/// fail.
 ///
 /// NO JOIN HERE, and no lock held across one. What comes back is the handle;
 /// joining it is the caller's, after this returns.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Nothing joins a worker yet.
-fn hand_worker_to_joiner(
-    slot: &Mutex<PrivateWorkerSlot>,
-    wake: &Arc<PrivateOrderedWake>,
-) -> Option<std::thread::JoinHandle<()>> {
-    let mut held = slot.lock().ok()?;
-    let handle = held.handle.take()?;
-    held.life = PrivateWorkerLife::HandedToJoiner;
-    drop(held);
-    let mut state = wake
-        .state
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    state.started = false;
-    Some(handle)
+fn hand_worker_to_joiner(slot: &Mutex<PrivateWorkerSlot>) -> PrivateWorkerHandoff {
+    let (mut held, source_poisoned) = match slot.lock() {
+        Ok(held) => (held, false),
+        Err(poisoned) => (poisoned.into_inner(), true),
+    };
+    let handle = held.handle.take();
+    if handle.is_some() {
+        held.life = PrivateWorkerLife::HandedToJoiner;
+    }
+    PrivateWorkerHandoff {
+        handle,
+        source_poisoned,
+    }
+}
+
+/// Tell this connection's worker to stop, and wake it so it looks.
+///
+/// THE CONNECTION'S OWN STOP, the one its serving already consults, and a
+/// recheck so a worker waiting on its notice goes and asks. Cancellation is
+/// this, deliberately and by itself -- not a side effect of moving a handle,
+/// and not the absence of a permit.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Nothing cancels a worker yet.
+fn cancel_connection_worker(stop: &Arc<AtomicBool>, wake: &Arc<PrivateOrderedWake>) {
+    stop.store(true, std::sync::atomic::Ordering::Release);
+    wake.publish_recheck();
 }
 
 /// Start one connection's worker, owning its handle from the moment it exists.
@@ -231,8 +266,9 @@ where
     // IT CAN REFUSE. A permit taken from a notice somebody panicked inside is
     // not a permit: recovering that guard and writing into it would grant a
     // worker permission on the strength of a lock whose contents nobody stands
-    // behind. Nothing is recovered here -- the poisoned guard is not taken at
-    // all, so nothing is held when the cancellation below reacquires it.
+    // behind. The lock IS acquired -- that is what poisoning means -- and the
+    // error carrying its guard is dropped here rather than recovered, so
+    // nothing is still held when the cancellation below reacquires it.
     let permitted = match wake.state.lock() {
         Ok(mut state) => {
             state.started = true;
