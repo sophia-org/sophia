@@ -20,6 +20,39 @@ enum PrivateHomeStanding {
     Retained,
 }
 
+/// What a live borrow found.
+///
+/// FOUR ANSWERS. Three of them are reasons a borrower may not act, and each is
+/// a different fact: a home its connection has left, a home nothing has been
+/// bound into, and a home nobody can read. Collapsing any of them into "there
+/// was nothing to do" would let a worker treat a connection it must not touch,
+/// or one it cannot vouch for, as an idle one.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a body no production call site uses yet.
+enum PrivateHomeBorrow<R> {
+    /// The home was live and held a payload; here is what the act returned.
+    Acted(R),
+    /// Its connection has ended. Not this borrower's to act on.
+    Retained,
+    /// Live, and nothing has been bound into it.
+    Empty,
+    /// A holder panicked inside it.
+    Unreadable,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a body no production call site uses yet.
+impl<R> PrivateHomeBorrow<R> {
+    /// What the act returned, for a caller that has already decided the other
+    /// three mean the same thing to it.
+    fn acted(self) -> Option<R> {
+        match self {
+            Self::Acted(value) => Some(value),
+            Self::Retained | Self::Empty | Self::Unreadable => None,
+        }
+    }
+}
+
 /// The one place a connection's ordered output lives.
 ///
 /// SHARED, AND IT HAS TO BE. This used to live in the registration, and
@@ -171,6 +204,34 @@ impl PrivateOrderedHome {
     /// what a recovered guard makes it look like.
     fn unreadable(&self) -> bool {
         self.state.is_poisoned()
+    }
+
+    /// Act on a LIVE home's payload, under one acquisition.
+    ///
+    /// FOR A BORROWER THAT IS NOT THE RETAINED DRIVE. Standing and payload are
+    /// checked together with the act, because what may be done here depends on
+    /// both and asking separately would let them disagree between the question
+    /// and the answer.
+    ///
+    /// AN UNREADABLE HOME IS NOT AN EMPTY ONE, and is not recovered. A holder
+    /// panicked in here; going on to serve through whatever is inside would be
+    /// writing a client's events out of a payload nobody stands behind.
+    /// `borrow` recovers because the acts that use it must go ahead regardless
+    /// -- writing down what a teardown knows -- and this is not one of those.
+    fn borrow_live<R>(
+        &self,
+        act: impl FnOnce(&mut PrivateOrderedContinuation) -> R,
+    ) -> PrivateHomeBorrow<R> {
+        let Ok(mut held) = self.state.lock() else {
+            return PrivateHomeBorrow::Unreadable;
+        };
+        if held.standing != PrivateHomeStanding::Live {
+            return PrivateHomeBorrow::Retained;
+        }
+        match held.payload.as_mut() {
+            Some(payload) => PrivateHomeBorrow::Acted(act(payload)),
+            None => PrivateHomeBorrow::Empty,
+        }
     }
 
     /// Whether anything is here.

@@ -324,9 +324,13 @@ fn write_one_ordered_frame(
 }
 
 /// What one serving step did for the recipient it answers.
+///
+/// Copied rather than moved, so a caller can classify one and keep it: what a
+/// step says is a fact about a visit that has already happened, and nothing in
+/// one owns anything.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedServeStep {
     /// Nothing was waiting and nothing is in flight.
     Idle,

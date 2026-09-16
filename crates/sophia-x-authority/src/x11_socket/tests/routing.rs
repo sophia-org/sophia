@@ -31594,3 +31594,702 @@ fn a_registration_never_takes_the_settlement_store_beneath_the_client_table() {
 fn durable_reserved(held: &AbandonedSettlements) -> usize {
     held.continuation_slots
 }
+
+/// Stops this connection's worker however the control leaves.
+///
+/// A body waiting on its notice outlives an assertion that failed above it,
+/// and a scope joins what it spawned -- so without this a control that failed
+/// would hang instead of reporting. It stops on the way out, whichever way
+/// out that is.
+struct PrivateWorkerStopper<'a>(&'a Arc<AtomicBool>, &'a Arc<PrivateOrderedWake>);
+
+impl Drop for PrivateWorkerStopper<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+        self.1.ready.notify_all();
+    }
+}
+
+/// Hand a capsule over the way a production producer does: the recheck level
+/// is armed first and published as the notice drops, whatever the send did.
+///
+/// `admit` alone publishes nothing -- it is the gate, not the notice -- so a
+/// control that only sent would leave a waiting body with nothing to wake it.
+fn produced_send(sender: &PrivateGatedOrderedSender, capsule: XAuthorityOrderedDelivery) {
+    let notify = sender.arm_wake();
+    gated_send(sender, capsule).expect("an open endpoint");
+    drop(notify);
+}
+
+/// A connection served by a real owner, with an actual stop it can be told to
+/// use.
+///
+/// THE PRODUCTION BINDING PASSES NO STOP. A worker over an owner that has none
+/// cannot be told to stop, so these controls bind with one -- through the same
+/// `bind` production uses -- and the body refuses an owner without one rather
+/// than running a thread nothing can end. Wiring that binding is the
+/// attachment's work and is not done here.
+struct PrivateWorkerFixture {
+    fixture: PreparedOrderedFixture,
+    home: Arc<PrivateOrderedHome>,
+    wake: Arc<PrivateOrderedWake>,
+    stop: Arc<AtomicBool>,
+    sequence: Arc<AtomicU64>,
+    sender: PrivateGatedOrderedSender,
+    peer: UnixStream,
+    _output: Arc<Mutex<UnixStream>>,
+}
+
+fn worker_fixture(client: XServerFrontendClientId) -> PrivateWorkerFixture {
+    worker_fixture_bound(client, true)
+}
+
+/// The same, with the choice production makes today available: a transport
+/// bound with no stop at all.
+fn worker_fixture_bound(
+    client: XServerFrontendClientId,
+    stoppable: bool,
+) -> PrivateWorkerFixture {
+    // THE PREPARED CONNECTION, whole: admitted through its lifecycle, its
+    // applied state attached, its durable store held by the fixture. Promotion
+    // asks the boundary for this registration's endpoint, so a connection
+    // assembled by hand would be refused as unadmitted -- and rightly.
+    let mut f = prepared_ordered_fixture(client);
+    let ordered = std::mem::replace(
+        &mut f.channels.ordered,
+        f.runner
+            .frontend
+            .as_ref()
+            .unwrap()
+            .broker
+            .registry
+            .register_client_with_admission(
+                XServerFrontendClientId(client.raw() + 500_000),
+                Some(admitted(XServerFrontendClientId(client.raw() + 500_000))),
+            )
+            .expect("a spare registration to borrow a receiver from")
+            .1
+            .ordered,
+    );
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_read_timeout(Some(Duration::from_secs(3)))
+        .expect("a bounded read");
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let wake = Arc::clone(&ordered.wake);
+    let transport = XAuthorityOrderedTransport::bind(
+        &f.registration,
+        ordered,
+        &output,
+        &wire,
+        &pending,
+        stoppable.then_some(&stop),
+    )
+    .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    assert!(matches!(
+        f.registration
+            .retain_ordered_setup(PrivateOrderedContinuation::Setup {
+                accepted: PrivateOrderedSetupCustody::Transport(Box::new(transport)),
+                refusal: X11OrderedServingRefusal::Unserved,
+                evidence: PrivateOrderedEvidence::unstarted(),
+                retained: Vec::new(),
+                drained: false,
+                ended: false,
+                ending_refused: None,
+            }),
+        Ok(())
+    ));
+    assert_eq!(
+        f.registration
+            .promote_ordered_serving(f.runner.frontend.as_ref().unwrap()),
+        PrivateOrderedPromotion::Ready
+    );
+    let sender = capture_gated_sender(f.runner.frontend.as_ref().unwrap(), client);
+    let home = Arc::clone(&f.registration.ordered_home);
+    PrivateWorkerFixture {
+        fixture: f,
+        home,
+        wake,
+        stop,
+        sequence: Arc::new(AtomicU64::new(7)),
+        sender,
+        peer,
+        _output: output,
+    }
+}
+
+impl PrivateWorkerFixture {
+    /// This connection's startup permit, published the way startup publishes
+    /// it: under the notice, and woken.
+    fn permit(&self) {
+        self.wake
+            .state
+            .lock()
+            .expect("a readable notice")
+            .started = true;
+        self.wake.ready.notify_all();
+    }
+
+    /// This connection's handles, cloned so a body can be built inside a
+    /// thread without borrowing the fixture the test still needs.
+    fn handles(
+        &self,
+    ) -> (
+        Arc<PrivateOrderedHome>,
+        Arc<PrivateOrderedWake>,
+        Arc<AtomicBool>,
+        Arc<AtomicU64>,
+    ) {
+        (
+            Arc::clone(&self.home),
+            Arc::clone(&self.wake),
+            Arc::clone(&self.stop),
+            Arc::clone(&self.sequence),
+        )
+    }
+
+    fn body<'a>(&'a self, exit: &'a PrivateWorkerExit, steps: usize) -> PrivateWorkerBody<'a> {
+        PrivateWorkerBody {
+            home: &self.home,
+            wake: &self.wake,
+            stop: &self.stop,
+            byte_order: XByteOrder::LittleEndian,
+            sequence: &self.sequence,
+            exit,
+            steps,
+        }
+    }
+}
+
+#[test]
+fn a_body_serves_an_admitted_delivery_to_real_bytes_and_answers_for_it() {
+    // THE WHOLE POINT OF A WORKER, end to end through the real owner: an
+    // admitted delivery -- reserved, executed, observed and dispatched by the
+    // production path -- becomes bytes this connection's peer can read, and
+    // its completion says so. The body encodes nothing, writes nothing and
+    // answers nothing itself; it asks the owner for one step at a time.
+    let mut f = worker_fixture(XServerFrontendClientId(8391));
+    attempt_run(&mut f.fixture, 83910, 272, true);
+    let private = f.fixture.runner.frontend.as_mut().unwrap();
+    let cell = admitted_cell(private, 83910);
+    assert_eq!(
+        private.dispatch_one_press(),
+        Some(true),
+        "the real producer handed it to this connection's queue"
+    );
+    assert!(cell.answer().is_none(), "and nothing has served it yet");
+
+    f.permit();
+    let exit = PrivateWorkerExit::unstarted();
+    let (home, wake, stop, sequence) = f.handles();
+    let outcome = std::thread::scope(|scope| {
+        let exit = &exit;
+        let worker = scope.spawn(move || {
+            PrivateWorkerBody {
+                home: &home,
+                wake: &wake,
+                stop: &stop,
+                byte_order: XByteOrder::LittleEndian,
+                sequence: &sequence,
+                exit,
+                steps: 16,
+            }
+            .run()
+        });
+        let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
+        // ITS BYTES ARE ON THE WIRE. A whole X event, read by the peer this
+        // connection was bound to.
+        let mut seen = [0u8; 32];
+        std::io::Read::read_exact(&mut (&f.peer), &mut seen)
+            .expect("its peer reads what was sent");
+        assert_eq!(seen[0], 4, "a button press, which is what was run");
+        // THE EXECUTION CONTEXT IS THIS CONNECTION'S, and the bytes say so.
+        // The sequence field carries the counter this body was given, in the
+        // byte order it was given -- not a constant, and not the other order,
+        // either of which would put different bytes here.
+        assert_eq!(
+            &seen[2..4],
+            &[7, 0],
+            "its own sequence, little-endian as supplied"
+        );
+
+        // AND THEN IT IS STOPPED AND JOINED, before anything is dropped: a
+        // registration going while a borrower is still in its home is the
+        // integration boundary, not this body's to cross.
+        f.stop.store(true, Ordering::SeqCst);
+        f.wake.ready.notify_all();
+        worker.join().expect("the body finished")
+    });
+    let answer = cell.answer().expect("and the delivery is answered for");
+    assert_eq!(answer.delivery, XAuthorityInputDeliveryId::from_raw(83910));
+    assert_eq!(answer.outcome, XAuthorityInputDeliveryOutcome::Flushed);
+    assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped, "{outcome:?}");
+    assert_eq!(exit.outcome(), Some(outcome));
+    assert!(exit.left(), "and its frame is gone");
+    drop(f.fixture);
+}
+
+#[test]
+fn a_body_will_not_serve_work_queued_before_its_permit() {
+    // WORK IS NOT PERMISSION. A queue with something on it says a producer got
+    // there first, not that the transaction which owns this worker's handle
+    // has finished; serving on the strength of it would be a worker running
+    // before anything permitted it.
+    //
+    // AND IT IS NOT A REASON TO GIVE UP EITHER. The pending level is left
+    // exactly as it was found, so whatever put it there still gets its wake.
+    let f = worker_fixture(XServerFrontendClientId(8392));
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(83920);
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    produced_send(&f.sender, capsule);
+    assert!(
+        f.wake.state.lock().expect("a readable notice").pending,
+        "the producer published a level"
+    );
+
+    // Stopped rather than permitted, so the body leaves startup without ever
+    // serving.
+    f.stop.store(true, Ordering::SeqCst);
+    f.wake.ready.notify_all();
+    let exit = PrivateWorkerExit::unstarted();
+    let outcome = f.body(&exit, 8).run();
+
+    assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped);
+    assert!(cell.answer().is_none(), "nothing was served");
+    assert!(
+        f.wake.state.lock().expect("a readable notice").pending,
+        "and the level it never waited on is still there"
+    );
+    // THE CAPSULE IS STILL ON ITS OWN QUEUE, held by nobody else.
+    assert!(
+        f.home
+            .borrow_live(|payload| {
+                let PrivateOrderedContinuation::Serving { owner, .. } = payload else {
+                    panic!("promoted")
+                };
+                owner.queue.try_recv().is_ok()
+            })
+            .acted()
+            .expect("its own home"),
+        "the work it refused to serve is where the producer put it"
+    );
+    drop(f.fixture);
+}
+
+#[test]
+fn an_unpermitted_body_serves_nothing_until_it_is_permitted() {
+    // THE PERMIT IS ASKED FOR, and waited on. A body that went straight to
+    // serving would be writing this connection's events before the
+    // transaction that owns its handle had finished -- and there is work
+    // waiting here, so nothing but the permit is holding it back.
+    let mut f = worker_fixture(XServerFrontendClientId(8402));
+    attempt_run(&mut f.fixture, 84020, 272, true);
+    let cell = admitted_cell(f.fixture.runner.frontend.as_ref().unwrap(), 84020);
+    assert_eq!(
+        f.fixture
+            .runner
+            .frontend
+            .as_mut()
+            .unwrap()
+            .dispatch_one_press(),
+        Some(true)
+    );
+    assert!(
+        f.wake.state.lock().expect("a readable notice").pending,
+        "work is queued and announced"
+    );
+    assert!(
+        !f.wake.state.lock().expect("a readable notice").started,
+        "and nothing has permitted this worker"
+    );
+
+    let exit = PrivateWorkerExit::unstarted();
+    let (home, wake, stop, sequence) = f.handles();
+    std::thread::scope(|scope| {
+        let exit = &exit;
+        let worker = scope.spawn(move || {
+            PrivateWorkerBody {
+                home: &home,
+                wake: &wake,
+                stop: &stop,
+                byte_order: XByteOrder::LittleEndian,
+                sequence: &sequence,
+                exit,
+                steps: 16,
+            }
+            .run()
+        });
+        let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
+        // Long enough that a body which never asked would have served it.
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(cell.answer().is_none(), "it served nothing");
+        assert!(!exit.left(), "and is still waiting to be allowed to");
+
+        // AND NOW IT MAY.
+        f.permit();
+        let mut seen = [0u8; 32];
+        std::io::Read::read_exact(&mut (&f.peer), &mut seen)
+            .expect("its peer reads what the permitted body sent");
+        assert_eq!(seen[0], 4);
+        f.stop.store(true, Ordering::SeqCst);
+        f.wake.ready.notify_all();
+        assert_eq!(
+            worker.join().expect("the body finished").trigger,
+            PrivateWorkerTrigger::Stopped
+        );
+    });
+    assert!(cell.answer().is_some());
+    drop(f.fixture);
+}
+
+#[test]
+fn waiting_for_a_permit_leaves_the_producers_level_where_it_was() {
+    // A PERMIT IS NOT AN IDLE WAIT, and must not consume what an idle wait
+    // consumes. The level belongs to whoever published it: a startup that
+    // swallowed it would leave a producer having announced work to a worker
+    // that then went to sleep without looking.
+    //
+    // NO STEPS ARE TAKEN HERE, so what is observed is the startup wait alone.
+    let f = worker_fixture(XServerFrontendClientId(8403));
+    f.permit();
+    // Published the way a producer publishes it, with nothing sent: the level
+    // is the subject, not the capsule.
+    drop(f.sender.arm_wake());
+    assert!(f.wake.state.lock().expect("a readable notice").pending);
+
+    let exit = PrivateWorkerExit::unstarted();
+    let outcome = f.body(&exit, 0).run();
+    assert_eq!(outcome.trigger, PrivateWorkerTrigger::Exhausted);
+    assert!(
+        f.wake.state.lock().expect("a readable notice").pending,
+        "the level a producer published is still there for whoever waits next"
+    );
+    drop(f.fixture);
+}
+
+#[test]
+fn a_body_that_finds_nothing_waits_and_is_woken_by_an_actual_producer() {
+    // THE REAL WAKE PATH, AND THE ANTI-SPIN CONTROL IN ONE. An idle body waits
+    // on this connection's notice; what ends the wait is the production
+    // producer publishing to that same notice, not a timeout and not a poll.
+    //
+    // AND IT IS GENUINELY ASLEEP. Its departure is not published while it
+    // waits, which a body spinning on a sticky permit or an unconsumed level
+    // would have reached long before -- it had eight steps and nothing to do
+    // with them.
+    let mut f = worker_fixture(XServerFrontendClientId(8393));
+    f.permit();
+    attempt_run(&mut f.fixture, 83930, 272, true);
+    let cell = admitted_cell(f.fixture.runner.frontend.as_ref().unwrap(), 83930);
+    let exit = PrivateWorkerExit::unstarted();
+    let (home, wake, stop, sequence) = f.handles();
+
+    std::thread::scope(|scope| {
+        let exit = &exit;
+        let worker = scope.spawn(move || {
+            PrivateWorkerBody {
+                home: &home,
+                wake: &wake,
+                stop: &stop,
+                byte_order: XByteOrder::LittleEndian,
+                sequence: &sequence,
+                exit,
+                steps: 8,
+            }
+            .run()
+        });
+        let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
+        // Long enough that a body taking steps would have taken all of them.
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            !exit.left(),
+            "it is waiting, not working through a budget on nothing"
+        );
+        assert!(cell.answer().is_none(), "and has served nothing");
+
+        // The production producer, which arms this connection's notice itself.
+        assert_eq!(
+            f.fixture
+                .runner
+                .frontend
+                .as_mut()
+                .unwrap()
+                .dispatch_one_press(),
+            Some(true)
+        );
+        // Its bytes reach the peer, which is what says the wake produced a
+        // serve rather than merely a return.
+        let mut seen = [0u8; 32];
+        std::io::Read::read_exact(&mut (&f.peer), &mut seen)
+            .expect("its peer reads what the woken body sent");
+        assert_eq!(seen[0], 4);
+        f.stop.store(true, Ordering::SeqCst);
+        f.wake.ready.notify_all();
+        let outcome = worker.join().expect("the body finished");
+        assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped, "{outcome:?}");
+    });
+    assert!(
+        cell.answer().is_some(),
+        "the woken body served what the producer put there"
+    );
+    assert!(
+        !f.wake.state.lock().expect("a readable notice").pending,
+        "and consumed the level that woke it"
+    );
+    assert!(
+        f.wake.state.lock().expect("a readable notice").started,
+        "while the permit stayed set, having never been a reason to wake"
+    );
+    drop(f.fixture);
+}
+
+#[test]
+fn a_body_told_to_stop_while_idle_asks_its_owner_what_that_means() {
+    // A STOP IS A TRIGGER, NOT A RESULT. Reading the flag back as `Stopped`
+    // would report a wire outcome nobody established; the owner is asked once,
+    // and what it says is kept beside the trigger rather than instead of it.
+    let f = worker_fixture(XServerFrontendClientId(8396));
+    f.permit();
+    let exit = PrivateWorkerExit::unstarted();
+    std::thread::scope(|scope| {
+        let (home, wake, stop, sequence) = f.handles();
+        let exit = &exit;
+        let worker = scope.spawn(move || {
+            PrivateWorkerBody {
+                home: &home,
+                wake: &wake,
+                stop: &stop,
+                byte_order: XByteOrder::LittleEndian,
+                sequence: &sequence,
+                exit,
+                steps: 16,
+            }
+            .run()
+        });
+        let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
+        // THE ACTUAL STOP AND ITS WAKE, which is how a running worker is told:
+        // a bare write into a sleeping body reaches nothing.
+        f.stop.store(true, Ordering::SeqCst);
+        f.wake.ready.notify_all();
+        let outcome = worker.join().expect("the body finished");
+        assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped);
+        assert_eq!(
+            outcome.result,
+            Some(X11OrderedServeStep::Stopped),
+            "and the owner is what said so"
+        );
+    });
+    drop(f.fixture);
+}
+
+#[test]
+fn a_body_that_cannot_read_its_notice_stops_the_connection_and_asks_once() {
+    // A NOTICE NOBODY STANDS BEHIND IS NOT A WAIT. Recovering the guard and
+    // sleeping on it would put this worker to sleep on a level a panic left,
+    // with nothing able to wake it. So the same authoritative stop is set and
+    // the notice woken -- the connection's own stop, not a fresh flag -- and
+    // the owner is asked once for its departure.
+    for on_reacquisition in [false, true] {
+        let f = worker_fixture(XServerFrontendClientId(8397));
+        f.permit();
+        let exit = PrivateWorkerExit::unstarted();
+        if on_reacquisition {
+            // Poisoned while the body is asleep in the wait, so what it finds
+            // is the reacquisition after a wake rather than the way in.
+            std::thread::scope(|scope| {
+                let body = f.body(&exit, 16);
+                let worker = scope.spawn(move || body.run());
+                // The body is idle and waiting on this notice.
+                assert!(
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let _held = f.wake.state.lock().expect("a readable notice");
+                        f.wake.ready.notify_all();
+                        panic!("a holder unwound inside this connection's notice");
+                    }))
+                    .is_err(),
+                    "the holder unwound"
+                );
+                let outcome = worker.join().expect("the body finished");
+                assert_eq!(outcome.trigger, PrivateWorkerTrigger::NoticeUnreadable);
+            });
+        } else {
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _held = f.wake.state.lock().expect("a readable notice");
+                    panic!("a holder unwound inside this connection's notice");
+                }))
+                .is_err(),
+                "the holder unwound"
+            );
+            let outcome = f.body(&exit, 16).run();
+            assert_eq!(outcome.trigger, PrivateWorkerTrigger::NoticeUnreadable);
+            assert_eq!(
+                outcome.result,
+                Some(X11OrderedServeStep::Stopped),
+                "the owner's own word about a connection now stopped"
+            );
+        }
+        assert!(
+            f.stop.load(Ordering::SeqCst),
+            "the connection's own stop is what was set"
+        );
+        drop(f.fixture);
+    }
+}
+
+#[test]
+fn a_body_refuses_a_home_or_an_owner_it_may_not_serve() {
+    // EACH REFUSAL IS A DIFFERENT FACT, and none of them is idleness. A body
+    // that reported no work for any of these would say this connection had
+    // nothing owed when what happened was that it could not serve it.
+    //
+    // NOTHING IS CONSUMED BY A REFUSAL: no receive, no write, no answer.
+    // No stop: the production binding's own shape, refused rather than run.
+    let unstoppable = worker_fixture_bound(XServerFrontendClientId(8398), false);
+    let no_stop = PrivateWorkerExit::unstarted();
+    let refused = unstoppable.body(&no_stop, 8).run();
+    assert_eq!(
+        refused.trigger,
+        PrivateWorkerTrigger::Ineligible(PrivateWorkerRefusal::NoStop),
+        "an owner with no stop is a worker nothing could end"
+    );
+    assert_eq!(refused.result, None, "and its owner was never asked");
+    drop(unstoppable.fixture);
+
+    // A notice that is not this owner's.
+    let f = worker_fixture(XServerFrontendClientId(8399));
+    let foreign = Arc::new(PrivateOrderedWake::for_first_sender());
+    let exit = PrivateWorkerExit::unstarted();
+    assert_eq!(
+        PrivateWorkerBody {
+            home: &f.home,
+            wake: &foreign,
+            stop: &f.stop,
+            byte_order: XByteOrder::LittleEndian,
+            sequence: &f.sequence,
+            exit: &exit,
+            steps: 8,
+        }
+        .run()
+        .trigger,
+        PrivateWorkerTrigger::Ineligible(PrivateWorkerRefusal::ForeignNotice)
+    );
+    // A stop that is not this owner's.
+    let other_stop = Arc::new(AtomicBool::new(false));
+    assert_eq!(
+        PrivateWorkerBody {
+            home: &f.home,
+            wake: &f.wake,
+            stop: &other_stop,
+            byte_order: XByteOrder::LittleEndian,
+            sequence: &f.sequence,
+            exit: &exit,
+            steps: 8,
+        }
+        .run()
+        .trigger,
+        PrivateWorkerTrigger::Ineligible(PrivateWorkerRefusal::ForeignStop)
+    );
+
+    // A home whose connection has ended: whoever finishes it owns it now.
+    let ended = {
+        let g = worker_fixture(XServerFrontendClientId(8400));
+        let home = Arc::clone(&g.home);
+        let wake = Arc::clone(&g.wake);
+        let stop = Arc::clone(&g.stop);
+        let sequence = Arc::clone(&g.sequence);
+        drop((g.fixture, g.sender));
+        let exit = PrivateWorkerExit::unstarted();
+        PrivateWorkerBody {
+            home: &home,
+            wake: &wake,
+            stop: &stop,
+            byte_order: XByteOrder::LittleEndian,
+            sequence: &sequence,
+            exit: &exit,
+            steps: 8,
+        }
+        .run()
+        .trigger
+    };
+    assert_eq!(
+        ended,
+        PrivateWorkerTrigger::Ineligible(PrivateWorkerRefusal::HomeRetained)
+    );
+    drop(f.fixture);
+}
+
+#[test]
+fn a_body_that_panics_publishes_its_departure_without_a_classification() {
+    // DEPARTURE AND CLASSIFICATION ARE TWO WRITES, and an unwind makes only
+    // the first. That is what lets a caller tell a body that left from one
+    // still running -- and what stops it reading a departure as a reaping.
+    //
+    // LEFT IS NOT JOINED. What establishes the panic is the join below, and
+    // what this control shows is that the two are separate answers.
+    let f = worker_fixture(XServerFrontendClientId(8401));
+    f.permit();
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(84010);
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    let frames = order_pass_frames(&capsule);
+    produced_send(&f.sender, capsule);
+
+    let exit = PrivateWorkerExit::unstarted();
+    let joined = std::thread::scope(|scope| {
+        let home = Arc::clone(&f.home);
+        let wake = Arc::clone(&f.wake);
+        let stop = Arc::clone(&f.stop);
+        let sequence = Arc::clone(&f.sequence);
+        let exit = &exit;
+        scope
+            .spawn(move || {
+                let _running = PrivateWorkerBody {
+                    home: &home,
+                    wake: &wake,
+                    stop: &stop,
+                    byte_order: XByteOrder::LittleEndian,
+                    sequence: &sequence,
+                    exit,
+                    steps: 8,
+                };
+                // Inside the frame the body would run in, before it runs.
+                let _leaving = PrivateWorkerLeaving(exit);
+                panic!("a worker frame unwound");
+            })
+            .join()
+    });
+    assert!(joined.is_err(), "the join is what says it panicked");
+    assert!(exit.left(), "its frame published that it was gone");
+    assert!(
+        exit.outcome().is_none(),
+        "and left no classification, which is not itself proof of a panic"
+    );
+
+    // THE HOME AND ITS CUSTODY SURVIVE THE FRAME THAT WENT. Nothing was taken
+    // out of the home to be lost with it.
+    assert!(!f.home.unreadable(), "the home is still readable");
+    let survived = f
+        .home
+        .borrow_live(|payload| {
+            let PrivateOrderedContinuation::Serving { owner, .. } = payload else {
+                panic!("promoted")
+            };
+            owner.queue.try_recv().ok()
+        })
+        .acted()
+        .expect("its own home")
+        .expect("the capsule nobody served");
+    assert_eq!(
+        survived.delivery(),
+        XAuthorityInputDeliveryId::from_raw(84010)
+    );
+    assert_eq!(order_pass_frames(&survived), frames);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &survived.finalizer().expect("carried").completion
+    ));
+    assert!(cell.answer().is_none(), "and nothing answered for it");
+    drop((f.fixture, survived, cell));
+}
