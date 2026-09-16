@@ -20965,14 +20965,21 @@ fn a_sender_captured_before_a_close_is_refused_after_it() {
 #[test]
 fn a_fence_waits_for_a_handover_already_admitted() {
     // THE OTHER SIDE OF THE SAME INTERVAL. A handover that got in before the
-    // close finishes, and the close cannot report a fence until it has. This
-    // is a real rendezvous, not a timed one: the admission is held by this
-    // thread, so there is no question of whether the other side arrived --
-    // the fence thread is blocked on a lock this thread holds, and its
-    // completion is observed by a message it sends only after returning.
+    // close finishes, and the close cannot report a fence until it has.
+    //
+    // WHAT THIS ESTABLISHES, exactly: this thread provably holds the admission
+    // for the whole window, and the closer's own message -- sent only after
+    // close returns -- does not arrive during it. What it does NOT establish
+    // is that the closer reached its lock: the 150ms is a timeout, not a
+    // rendezvous, and a closer that had not started yet would look the same
+    // from here. The message witnesses completion, not arrival.
     let mut f = prepared_ordered_fixture(XServerFrontendClientId(8211));
     attempt_run(&mut f, 82110, 272, true);
     let captured = capture_gated_sender(f.runner.frontend.as_ref().unwrap(), f.client);
+    // A fixture capsule, not one this recipient's own source built. It is here
+    // to be a thing that crosses the gate, so what this control says is about
+    // the gate and the channel -- not about which capsules a recipient admits,
+    // which is the endpoint check's subject and is covered elsewhere.
     let (capsule, _endpoint) = capsule_and_endpoint(82119);
     let admitted = captured.admit().expect("an open endpoint");
 
@@ -21234,7 +21241,8 @@ fn a_full_refusal_then_a_close_retains_once_and_gives_the_attempt_back_once() {
 
     // The fourth slot is filled directly, through the same gate production
     // uses, so the release below meets a genuinely full queue rather than a
-    // staged refusal.
+    // staged refusal. The filler is a fixture capsule: it is here to occupy a
+    // slot, and no claim is made that this recipient would admit it.
     let filler = capture_gated_sender(f.runner.frontend.as_ref().unwrap(), f.client);
     let (fill, _) = capsule_and_endpoint(82699);
     gated_send(&filler, fill).expect("the fourth slot");
@@ -21380,6 +21388,245 @@ fn a_producer_waiting_on_the_ledger_is_not_holding_the_handover_gate() {
     let frontend = producer.join().expect("the producing thread");
     assert!(frontend.terminal.attempt_custody.is_none());
     f.runner.frontend = Some(frontend);
+}
+
+
+/// What a retained continuation is, read from the place a connection held.
+fn retained_setup_kind(
+    durable: &PrivateSettlementOwner,
+    index: usize,
+) -> Option<(&'static str, X11OrderedServingRefusal, usize, bool, bool)> {
+    durable.with_ordered_continuation(index, |continuation| match continuation {
+        PrivateOrderedContinuation::Setup {
+            accepted,
+            refusal,
+            retained,
+            drained,
+            ended,
+            ..
+        } => (
+            match accepted {
+                PrivateOrderedSetupCustody::Receiver(_) => "receiver",
+                PrivateOrderedSetupCustody::Transport(_) => "transport",
+            },
+            *refusal,
+            retained.len(),
+            *drained,
+            *ended,
+        ),
+        PrivateOrderedContinuation::Serving(_) => panic!("no owner is built yet"),
+    })
+}
+
+#[test]
+fn a_connections_ordered_output_is_retained_whole_when_its_registration_ends() {
+    // UNTIL NOW THIS QUEUE WAS DROPPED. A registration publishes its ordered
+    // sender before anything is bound, so a capsule can be accepted into that
+    // queue immediately; ending the connection without moving the queue into
+    // the place reserved for it discarded accepted work nobody had answered
+    // for.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8301);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    assert_eq!(durable.continuations_reserved(), Some(1));
+
+    // Bound where both halves are owned, exactly as connection setup does it.
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    assert_eq!(
+        registration
+            .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+            .unwrap_or_else(|_| panic!("a fresh registration holds no custody")),
+        None,
+        "this receiver was minted by this registration, so it binds"
+    );
+
+    // A capsule is accepted for this connection before it ends.
+    let sender = capture_gated_sender(&private, client);
+    let (capsule, _) = capsule_and_endpoint(83010);
+    gated_send(&sender, capsule).expect("an open endpoint");
+
+    drop(registration);
+    let (kind, refusal, retained, drained, ended) =
+        retained_setup_kind(&durable, 0).expect("the place this connection held");
+    assert_eq!(kind, "transport", "the binding is retained, not just the queue");
+    assert_eq!(
+        refusal,
+        X11OrderedServingRefusal::Unserved,
+        "no owner was built, and that is the reason recorded"
+    );
+    assert_eq!(
+        (retained, drained, ended),
+        (0, false, false),
+        "teardown receives nothing, learns nothing about producers, and ends \
+         no wire: each of those is a separate act with its own outcome"
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "the place is still this connection's, because the work in it is not gone"
+    );
+    assert_eq!(durable.continuations_retained(), Some(1));
+}
+
+#[test]
+fn a_registration_that_ends_refuses_handovers_before_it_takes_its_queue_away() {
+    // A CONNECTION THAT ENDS IS CLOSED TO HANDOVERS. Removing the row is not
+    // what does it: the capture happens under the client table and the send
+    // after it is released, so a sender already in a producer's hand outlives
+    // the row.
+    //
+    // WHAT THIS ESTABLISHES is that teardown fences at all, and that what the
+    // connection owed is in its place afterwards. It does NOT establish the
+    // order of those two inside teardown: nothing is received during teardown,
+    // so a capsule accepted between the take and the fence would land on the
+    // same retained queue either way, and no outcome here separates them. The
+    // order will become observable when a driver receives from that queue, and
+    // it is written fence-first for that reason rather than for this one.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8311);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let sender = capture_gated_sender(&private, client);
+    assert!(
+        sender.admit().is_ok(),
+        "before the registration ends, this captured sender admits"
+    );
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    assert_eq!(
+        registration
+            .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+            .unwrap_or_else(|_| panic!("a fresh registration holds no custody")),
+        None
+    );
+
+    drop(registration);
+    assert_eq!(
+        sender.admit().err(),
+        Some(PrivateHandoverRefusal::Fenced),
+        "a sender captured before the connection ended is refused after it"
+    );
+    assert!(
+        retained_setup_kind(&durable, 0).is_some(),
+        "and what it would have gone to is retained"
+    );
+}
+
+#[test]
+fn a_connection_whose_binding_refused_retains_its_queue_without_a_socket() {
+    // RECEIVER ONLY. A transport carries an independent handle on the
+    // connection, so retaining one keeps the wire open for whoever drives it.
+    // A receiver alone carries no such handle: the accepted socket goes with
+    // the connection that owned it, and the queue is retained with no way to
+    // deliver what is in it. That is the worse outcome, and it is recorded as
+    // what it is.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8321);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+
+    // A receiver this registration did not mint: the binding refuses, and
+    // refusing hands the receiver back rather than destroying it.
+    let other = XServerFrontendClientId(8322);
+    let (other_registration, other_channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(other, Some(admitted(other)))
+        .expect("a second place and row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    assert_eq!(
+        registration
+            .bind_ordered_output(other_channels.ordered, &output, &wire, &pending)
+            .unwrap_or_else(|_| panic!("a fresh registration holds no custody")),
+        Some(X11OrderedServingRefusal::ForeignReceiver),
+        "a receiver another registration minted is not this one's, and the \
+         refusal does not destroy it"
+    );
+    drop(channels);
+
+    drop(registration);
+    let (kind, refusal, retained, drained, ended) =
+        retained_setup_kind(&durable, 0).expect("the place this connection held");
+    assert_eq!(kind, "receiver", "there is no transport to retain");
+    assert_eq!(refusal, X11OrderedServingRefusal::Unserved);
+    assert_eq!((retained, drained, ended), (0, false, false));
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(2),
+        "both connections still hold their places"
+    );
+    drop(other_registration);
+}
+
+#[test]
+fn a_second_binding_is_refused_rather_than_replacing_the_first() {
+    // The first custody may already hold accepted capsules. Replacing it would
+    // discard them with nothing recording that they existed, so the second is
+    // handed back to whoever offered it.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8331);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("the first custody"));
+
+    let second = XServerFrontendClientId(8332);
+    let (second_registration, second_channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(second, Some(admitted(second)))
+        .expect("a second place and row");
+    let Err(returned) = registration.bind_ordered_output(
+        second_channels.ordered,
+        &output,
+        &wire,
+        &pending,
+    ) else {
+        panic!("a second binding is refused")
+    };
+    assert!(
+        returned.minted_by(&second_registration),
+        "and the receiver comes back whole, still the one its own \
+         registration minted, rather than being dropped"
+    );
+    drop(returned);
+    drop(registration);
+    assert_eq!(
+        retained_setup_kind(&durable, 0).map(|kind| kind.0),
+        Some("transport"),
+        "the first custody is what was retained"
+    );
+    drop(second_registration);
 }
 
 #[test]

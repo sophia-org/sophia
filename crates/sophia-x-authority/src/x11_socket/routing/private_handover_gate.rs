@@ -92,11 +92,15 @@ impl PrivateHandoverGate {
     }
 }
 
-/// A recipient's ordered queue, reachable only through its gate.
+/// A recipient's ordered queue, reached through its gate.
 ///
-/// The sender is private on purpose. A producer that could clone the channel
-/// out of this would have the capture back without the serialization, which is
-/// the whole defect.
+/// The sender field is private, but that is a smaller guarantee than it looks:
+/// the routing sources are textually included into one module, so anything in
+/// that module could reach `sender` directly and send around the gate. This
+/// keeps an accidental clone from compiling elsewhere; it does not make a
+/// bypass impossible, and no type here can. What is established is narrower
+/// and has to be re-established as producers are added: the two production
+/// ordered sends that exist both go through `admit`.
 #[cfg(unix)]
 #[derive(Clone)]
 pub(crate) struct PrivateGatedOrderedSender {

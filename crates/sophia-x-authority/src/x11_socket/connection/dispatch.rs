@@ -604,6 +604,34 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             routing.input_recovery.attach(client, stream.try_clone().map_err(|error|
                 X11SetupSocketError::new(format!("failed to clone recovery socket: {error}")))?)
                 .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
+            // BOUND WHERE BOTH HALVES ARE OWNED. This is the one place where
+            // the accepted stream and the registration minted for it are both
+            // in hand and neither has been anywhere else, which is what makes
+            // the pairing sound rather than asserted. The receiver was
+            // published with this connection's row, so a capsule can already
+            // be on that queue; dropping it here -- which is what happened
+            // until now -- discarded accepted work nobody had answered for.
+            //
+            // What to do with a refused binding is decided in the registry,
+            // beside the other rules about accepted work. NOTHING IS STARTED
+            // HERE: binding is preparation, and no ordered worker exists.
+            if registration
+                .bind_ordered_output(
+                    channels.ordered,
+                    &output_stream,
+                    &output_wire,
+                    &output_control_pending,
+                )
+                .is_err()
+            {
+                // This registration is new, so it holds no custody and this
+                // cannot happen. It refuses rather than replacing a custody
+                // that may already hold accepted capsules.
+                let _ = state.release_client(client);
+                return Err(X11SetupSocketError::new(
+                    "X11 ordered output was already bound for this client".to_string(),
+                ));
+            }
             (
                 Some(registration),
                 Some(X11InputEventReceiver::Routed {

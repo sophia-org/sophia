@@ -23,6 +23,14 @@ enum X11OrderedServingRefusal {
     /// The registration names no endpoint: it is not admitted, or it is no
     /// longer the row this client currently has.
     Unadmitted(PrivateAdmissionRefusal),
+    /// The binding was made and no serving owner was ever built on it.
+    ///
+    /// NOT A FAILURE. It is what a connection's ordered output is today: bound
+    /// where both halves are owned, and never served, because attaching a
+    /// worker is separate work that has not landed. A connection that ends in
+    /// this state still has a queue that may hold accepted capsules, and this
+    /// is the honest reason there is no owner to answer for them.
+    Unserved,
 }
 
 /// One connection's ordered output transport, bound where both halves of it
@@ -32,14 +40,15 @@ enum X11OrderedServingRefusal {
 /// minted with, so its provenance is asked here rather than asserted, and a
 /// later holder cannot substitute it.
 ///
-/// THE SOCKET HALF IS NOT ESTABLISHED YET. A file descriptor carries no
-/// witness of which connection negotiated it, and inventing one would be a
-/// claim rather than a check. What would make the pairing sound is binding
-/// where the accepted stream and its registration are both in hand and neither
-/// has been anywhere else -- and today every caller of `bind` is a test, while
-/// connection setup still drops its ordered receiver. Until that caller
-/// exists, retaining whatever socket is passed here proves nothing about its
-/// origin, and this says so rather than describing a property it does not have.
+/// THE SOCKET HALF IS ESTABLISHED BY WHERE IT IS BOUND, not by anything the
+/// descriptor carries. A file descriptor holds no witness of which connection
+/// negotiated it, and inventing one would be a claim rather than a check. What
+/// makes the pairing sound is binding at the one place where the accepted
+/// stream and the registration minted for it are both in hand and neither has
+/// been anywhere else: connection setup, which is now where this is called
+/// from. A caller that obtained a socket some other way could still pass it
+/// here and this would retain it -- the soundness is the call site's, and it
+/// is not a property this type can check.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 struct XAuthorityOrderedTransport {

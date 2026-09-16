@@ -237,6 +237,15 @@ struct XServerFrontendClientRouteRegistration {
     /// nobody accounting for it is visible instead of silent.
     #[allow(dead_code)]
     ordered_continuation: Mutex<Option<PrivateOrderedContinuationSlot>>,
+    /// This connection's ordered output, from binding until teardown.
+    ///
+    /// HELD BY THE REGISTRATION because the registration owns the place it
+    /// will go into. A guard in the connection's own frame would have to be
+    /// declared in exactly the right order among a dozen other locals to be
+    /// dropped before the registration, and every early return out of setup is
+    /// a path where accepted work would be lost if it were not. Here there is
+    /// one owner for both halves of the move.
+    ordered_setup: Mutex<Option<PrivateOrderedSetupCustody>>,
     /// Where this registration's handovers are serialized with its closing.
     ///
     /// Held here as well as in the row, because closing is this
@@ -282,7 +291,91 @@ impl XServerFrontendClientRouteRegistration {
     /// it. What it establishes is that no FURTHER handover will be admitted;
     /// it does not end a socket, answer a finalizer or settle anything, and
     /// those remain separate facts to be established separately.
-    #[cfg_attr(not(test), allow(dead_code))] // Teardown drives closing; not attached yet.
+    /// Bind this connection's ordered queue to this connection's own output,
+    /// and take custody of whichever half survives.
+    ///
+    /// THE DECISION LIVES HERE, not at the call site. The call site owns the
+    /// accepted stream and this registration, which is what makes the pairing
+    /// sound, but what to do with a refused binding is a rule about accepted
+    /// work and belongs where the rest of those rules are -- and where a
+    /// control can reach it.
+    ///
+    /// A REFUSED BINDING STILL HAS A QUEUE. The receiver was published with
+    /// this connection's row, so it may already hold capsules; it is retained
+    /// with the refusal that stopped it rather than dropped. What it cannot
+    /// have is a handle on the connection, so nothing will be able to end that
+    /// wire later -- which is the honest cost of the refusal and is recorded,
+    /// not smoothed over.
+    ///
+    /// `Err` means this registration already holds custody: nothing is taken,
+    /// and the receiver goes back to the caller rather than being replaced
+    /// over work that may already be on it.
+    #[allow(clippy::result_large_err)] // The receiver travels back rather than being dropped.
+    pub(crate) fn bind_ordered_output(
+        &self,
+        ordered: XAuthorityOrderedReceiver,
+        output: &Arc<Mutex<UnixStream>>,
+        wire: &Arc<X11WirePermission>,
+        control_pending: &Arc<AtomicUsize>,
+    ) -> Result<Option<X11OrderedServingRefusal>, XAuthorityOrderedReceiver> {
+        let (custody, refused) = match XAuthorityOrderedTransport::bind(
+            self,
+            ordered,
+            output,
+            wire,
+            control_pending,
+            None,
+        ) {
+            Ok(transport) => (
+                PrivateOrderedSetupCustody::Transport(Box::new(transport)),
+                None,
+            ),
+            Err((refusal, ordered)) => (
+                PrivateOrderedSetupCustody::Receiver(Box::new(ordered)),
+                Some(refusal),
+            ),
+        };
+        match self.retain_ordered_setup(custody) {
+            Ok(()) => Ok(refused),
+            // Already bound. Whatever was offered here comes back out; the
+            // first custody stays, because it may hold accepted capsules.
+            Err(PrivateOrderedSetupCustody::Receiver(ordered)) => Err(*ordered),
+            // UNREACHABLE, and kept correct rather than removed. Getting here
+            // means a second binding SUCCEEDED, which needs a second receiver
+            // this registration minted -- and a registration mints exactly
+            // one, with its queue, before its row is published. No control
+            // covers this arm, because covering it would mean fabricating a
+            // receiver production never makes; what it does is what the
+            // reachable arm does, so the rule does not depend on which one
+            // runs.
+            Err(PrivateOrderedSetupCustody::Transport(transport)) => Err(transport.ordered),
+        }
+    }
+
+    /// Take custody of this connection's ordered output.
+    ///
+    /// WRITTEN DOWN BEFORE IT IS USED. From here the registration owns it, and
+    /// every way out of connection setup -- including the ones that refuse
+    /// three lines later -- ends with it retained rather than dropped.
+    ///
+    /// Refuses a second custody rather than replacing one: the first may
+    /// already hold accepted capsules, and overwriting it would discard them
+    /// with nothing recording that they existed. The rejected custody comes
+    /// back to the caller.
+    pub(crate) fn retain_ordered_setup(
+        &self,
+        custody: PrivateOrderedSetupCustody,
+    ) -> Result<(), PrivateOrderedSetupCustody> {
+        let Ok(mut held) = self.ordered_setup.lock() else {
+            return Err(custody);
+        };
+        if held.is_some() {
+            return Err(custody);
+        }
+        *held = Some(custody);
+        Ok(())
+    }
+
     pub(crate) fn fence_ordered_handovers(&self) -> PrivateHandoverFence {
         self.ordered_gate.close()
     }
@@ -582,6 +675,10 @@ impl XServerFrontendRouteRegistry {
             // went: a place is returned when the work in it is gone, and until
             // then it belongs to this connection.
             ordered_continuation: Mutex::new(continuation.take()),
+            // Empty until this connection's setup binds its queue. A
+            // connection that never gets that far still holds a place, and
+            // what goes into it is then the receiver alone.
+            ordered_setup: Mutex::new(None),
             // The registration's own gate, so closing is exact by
             // construction rather than by looking anything up.
             ordered_gate: gate.clone(),
