@@ -26,19 +26,20 @@ enum PrivateOrderedWorkerExit {
     NeverStarted,
 }
 
-/// What is known about how a connection's ordered output reached its place.
+/// What is known about a connection's ordered output when it is retained.
 ///
 /// THREE SEPARATE FACTS, kept apart because each is established by a different
 /// thing and none implies another. What a close established is the producers'
-/// side. What became of a worker is the consumer's. Whether the storage it was
-/// taken from had been poisoned is neither: a panic can happen outside a visit
-/// without poisoning anything, and poison can be found with no join having
-/// happened at all.
+/// side. What became of a worker is the consumer's. Whether the home was found
+/// poisoned is neither: a panic can happen outside a visit without poisoning
+/// anything, and poison can be found with no join having happened at all.
 ///
-/// CARRIED, NOT RECOMPUTED. It travels with the payload into the place,
-/// because after that nothing can establish any of it: the gate is gone with
-/// the registration, the worker is gone, and the storage it came from no
-/// longer exists.
+/// WRITTEN ONCE, BY TEARDOWN, AND NOT RECOMPUTED. It is written into the
+/// payload where the payload already lives, because after teardown nothing can
+/// establish any of it: the gate goes with the registration and the worker is
+/// gone. Nothing is transferred to carry it -- the home the payload is in is
+/// the home it was always in -- so what this exists for is the reading, not
+/// the move.
 #[cfg(unix)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PrivateOrderedEvidence {
@@ -49,12 +50,22 @@ struct PrivateOrderedEvidence {
     fence: Option<PrivateHandoverFence>,
     /// What became of the worker that was to serve it.
     worker: PrivateOrderedWorkerExit,
-    /// Whether the storage this payload was taken from had been poisoned.
+    /// Whether the home was found poisoned when this connection ended.
     ///
-    /// The work still moves -- refusing to move it would strand accepted work
-    /// to make a point -- but moving it into a readable place does not make it
-    /// readable, and the destination's own lock cannot carry a fact about the
-    /// source's. Recording it here is what stops the transfer laundering it.
+    /// WRITTEN, BUT NOT READABLE ON THE PATH IT DESCRIBES, and that is worth
+    /// saying rather than leaving to be discovered. It used to be what stopped
+    /// a transfer laundering the fact: teardown read the payload out of
+    /// poisoned storage and put it in a record with a lock of its own, and the
+    /// destination's lock could not carry a fact about the source's. Nothing
+    /// is transferred now. The home a holder panicked in IS the home the place
+    /// holds, so a retained reader finds that home unreadable and reports a row
+    /// nothing can be read from -- which is where the fact actually reaches a
+    /// caller, and it reaches it without this field.
+    ///
+    /// Teardown still writes it, because teardown knows it and this is where
+    /// what teardown knows goes. Nothing recovers a poisoned home into an
+    /// ordinary report in order to expose it: that would trade a true "cannot
+    /// be read" for a reading nobody established.
     source_poisoned: bool,
 }
 
