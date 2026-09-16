@@ -424,9 +424,14 @@ impl PrivateServiceOwner {
 
     /// A live borrow of this owner, for the acts that require one.
     ///
-    /// THE OWNER IS THE SCOPE. A caller that has one of these is holding this
-    /// owner borrowed, so nothing it reaches through the lease can outlive the
-    /// keeper it came from.
+    /// THE OWNER IS THE SCOPE. A caller holding one of these is holding this
+    /// owner borrowed, so the ACT it is for, and any pin taken through it,
+    /// cannot outlive the keeper they came from.
+    ///
+    /// AN OWNING EVIDENCE HANDLE IS NOT ONE OF THOSE, and deliberately so. A
+    /// reader that keeps an `Arc` on a join's evidence goes on reading that
+    /// result after the act, the service and this owner have all gone. What a
+    /// lease bounds is reaching, not what reaching found.
     pub fn lease(&self) -> PrivateServiceLease<'_> {
         PrivateServiceLease { owner: self }
     }
