@@ -589,28 +589,18 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     )));
                 }
             };
-            // Keep the actual connection projection with this exact route
-            // registration before any writer can observe or mutate it. Private
-            // preparation may come before or after this setup edge.
-            if let Some(context) = admission { routing.attach_private_lifecycle(&registration, context)?; }
-            routing.attach_connection_state(
-                &registration,
-                namespace,
-                core_event_selections.clone(),
-                focused_surface_window.clone(),
-            ).map_err(|error| X11SetupSocketError::new(format!(
-                "failed to register X11 applied connection state: {error:?}"
-            )))?;
-            routing.input_recovery.attach(client, stream.try_clone().map_err(|error|
-                X11SetupSocketError::new(format!("failed to clone recovery socket: {error}")))?)
-                .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
-            // BOUND WHERE BOTH HALVES ARE OWNED. This is the one place where
-            // the accepted stream and the registration minted for it are both
-            // in hand and neither has been anywhere else, which is what makes
-            // the pairing sound rather than asserted. The receiver was
-            // published with this connection's row, so a capsule can already
-            // be on that queue; dropping it here -- which is what happened
-            // until now -- discarded accepted work nobody had answered for.
+            // BOUND HERE, BEFORE THE FIRST THING THAT CAN REFUSE.
+            //
+            // This is the one place where the accepted stream and the
+            // registration minted for it are both in hand and neither has been
+            // anywhere else, which is what makes the pairing sound rather than
+            // asserted. It is also the first instruction after publication:
+            // the row is live from the line above, so a capsule can already be
+            // on this queue, and every attachment below can refuse. A binding
+            // placed after them left each of those refusals dropping the
+            // receiver -- the place reserved for this connection survived, and
+            // the accepted work it was reserved for did not. An empty place is
+            // not custody of anything.
             //
             // What to do with a refused binding is decided in the registry,
             // beside the other rules about accepted work. NOTHING IS STARTED
@@ -632,6 +622,21 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     "X11 ordered output was already bound for this client".to_string(),
                 ));
             }
+            // Keep the actual connection projection with this exact route
+            // registration before any writer can observe or mutate it. Private
+            // preparation may come before or after this setup edge.
+            if let Some(context) = admission { routing.attach_private_lifecycle(&registration, context)?; }
+            routing.attach_connection_state(
+                &registration,
+                namespace,
+                core_event_selections.clone(),
+                focused_surface_window.clone(),
+            ).map_err(|error| X11SetupSocketError::new(format!(
+                "failed to register X11 applied connection state: {error:?}"
+            )))?;
+            routing.input_recovery.attach(client, stream.try_clone().map_err(|error|
+                X11SetupSocketError::new(format!("failed to clone recovery socket: {error}")))?)
+                .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
             (
                 Some(registration),
                 Some(X11InputEventReceiver::Routed {

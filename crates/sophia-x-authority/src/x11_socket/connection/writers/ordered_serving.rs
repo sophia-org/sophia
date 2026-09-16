@@ -9,6 +9,9 @@
 ///
 /// Carried out beside the resources it was given, never instead of them.
 #[cfg(unix)]
+// ForeignReceiver, TransportUnavailable and Unserved are recorded by binding,
+// which connection setup now does. The rest are the serving loop's, and it is
+// not attached yet.
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedServingRefusal {
@@ -50,7 +53,9 @@ enum X11OrderedServingRefusal {
 /// here and this would retain it -- the soundness is the call site's, and it
 /// is not a property this type can check.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
+// Bound by connection setup; its handles are read by the serving loop, which
+// is not attached yet.
+#[cfg_attr(not(test), allow(dead_code))]
 struct XAuthorityOrderedTransport {
     ordered: XAuthorityOrderedReceiver,
     /// This connection's actual serialized output.
@@ -76,7 +81,6 @@ struct XAuthorityOrderedTransport {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 impl XAuthorityOrderedTransport {
     /// Bind this connection's queue to this connection's own output.
     ///

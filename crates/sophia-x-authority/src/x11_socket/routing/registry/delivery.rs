@@ -745,14 +745,10 @@ impl XServerFrontendClientRouteRegistration {
     /// outcome, and a teardown that ended a wire in passing would report
     /// nothing about whether it worked.
     fn retain_ordered_continuation(&self) {
-        let fence = self.fence_ordered_handovers();
+        let _fence = self.fence_ordered_handovers();
         // The place was taken before this connection was exposed. Taking the
         // slot out is what says this registration is done with it.
         let slot = match self.ordered_continuation.lock() {
-            Ok(mut held) => held.take(),
-            Err(poisoned) => poisoned.into_inner().take(),
-        };
-        let custody = match self.ordered_setup.lock() {
             Ok(mut held) => held.take(),
             Err(poisoned) => poisoned.into_inner().take(),
         };
@@ -760,10 +756,20 @@ impl XServerFrontendClientRouteRegistration {
             // No place. Either this registry has no continuation store, or the
             // place has already been disposed of; in both cases there is
             // nothing to install into and nothing here may invent one.
-            drop(custody);
             return;
         };
-        let Some(accepted) = custody else {
+        // THE WORK STAYS IN REGISTRATION-OWNED STORAGE until the destination
+        // is held. Taking it into a local here and building around it would
+        // put it in this frame across the store and record acquisitions inside
+        // `install`, and an unwind anywhere in that interval would destroy it
+        // while the place promised to it survived empty. The guard is what is
+        // handed over; `install` takes from it only once it has somewhere to
+        // put what it takes.
+        let mut held = match self.ordered_setup.lock() {
+            Ok(held) => held,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if held.is_none() {
             // NO CUSTODY IS NOT NO WORK. This connection's row was published,
             // so capsules may have been accepted into a queue whose receiver
             // went somewhere this registration cannot see -- setup may never
@@ -771,48 +777,34 @@ impl XServerFrontendClientRouteRegistration {
             // called. The disposition of anything on it is unknown, and
             // unknown is retained: the slot's own drop accounts for the place
             // rather than returning it as though nothing had been exposed.
+            drop(held);
             drop(slot);
             return;
-        };
-        // Source-owned until the destination is held: `install` takes it out
-        // of this slot only once it has somewhere to put it.
-        let mut source = Some(PrivateOrderedContinuation::Setup {
-            accepted,
-            // No owner was ever built. Not a failure -- attaching a worker is
-            // separate work that has not landed -- and the honest reason there
-            // is nobody to answer for what is on this queue.
-            refusal: X11OrderedServingRefusal::Unserved,
-            // Nothing was received here, so nothing is retained beside the
-            // queue and nothing is known about its producers.
-            retained: Vec::new(),
-            drained: false,
-            // A teardown does not end a wire, so it claims neither.
-            ended: false,
-            ending_refused: None,
-        });
-        slot.install(&mut source);
+        }
+        slot.install(&mut held);
         debug_assert!(
-            source.is_none(),
+            held.is_none(),
             "an installed continuation leaves its source empty"
         );
-        let _ = fence;
     }
 }
 
 #[cfg(unix)]
 impl Drop for XServerFrontendClientRouteRegistration {
     fn drop(&mut self) {
-        // FIRST, AND BEFORE THE ROW GOES. Closing this endpoint to further
-        // handovers is what makes everything after it well defined: a producer
-        // that already captured this connection's sender is refused from here,
-        // and one that was already inside finishes before this returns. Taking
-        // the queue away first would leave a producer to accept into a queue
-        // nobody would look at again.
+        // A CONNECTION THAT ENDS IS CLOSED TO HANDOVERS, and its queue goes to
+        // the place reserved for it.
         //
-        // Removing the row is not a substitute and never was. The capture
-        // happens under the client table and the send happens after it is
+        // Removing the row below is not what closes it and never was: the
+        // capture happens under the client table and the send after it is
         // released, so a row removed here says nothing about a sender already
-        // in someone's hand.
+        // in someone's hand. The gate is what a captured sender is refused by.
+        //
+        // The fence is taken before the queue is moved. No outcome separates
+        // the two today -- nothing is received here, so a capsule accepted in
+        // between lands on the same retained queue either way -- and the order
+        // is written this way for when a driver receives from that queue,
+        // where it will separate.
         self.retain_ordered_continuation();
         if let Ok(Some(lease)) = self.lifecycle.get_mut() {
             lease.close();

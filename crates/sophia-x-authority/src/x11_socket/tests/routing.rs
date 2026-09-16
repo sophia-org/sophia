@@ -21391,6 +21391,38 @@ fn a_producer_waiting_on_the_ledger_is_not_holding_the_handover_gate() {
 }
 
 
+/// A retained continuation with an INDEPENDENT HANDLE on its connection.
+///
+/// A receiver alone can never establish an ending -- it has nothing to end
+/// with -- so a control whose subject is what happens after an ending must
+/// bind a real transport rather than assert the ending into a record.
+fn transport_continuation(
+    registration: &XServerFrontendClientRouteRegistration,
+    ordered: XAuthorityOrderedReceiver,
+) -> PrivateOrderedContinuation {
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let transport = XAuthorityOrderedTransport::bind(
+        registration,
+        ordered,
+        &output,
+        &wire,
+        &pending,
+        None,
+    )
+    .unwrap_or_else(|_| panic!("this registration's own receiver"));
+    PrivateOrderedContinuation::Setup {
+        accepted: PrivateOrderedSetupCustody::Transport(Box::new(transport)),
+        refusal: X11OrderedServingRefusal::Unserved,
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
+        ending_refused: None,
+    }
+}
+
 /// What a retained continuation is, read from the place a connection held.
 fn retained_setup_kind(
     durable: &PrivateSettlementOwner,
@@ -21450,7 +21482,13 @@ fn a_connections_ordered_output_is_retained_whole_when_its_registration_ends() {
 
     // A capsule is accepted for this connection before it ends.
     let sender = capture_gated_sender(&private, client);
-    let (capsule, _) = capsule_and_endpoint(83010);
+    // A capsule that carries its own completion, so what survives retention
+    // can be checked as a payload and not only as a count. It is a fixture
+    // capsule: it is here to be work on this queue, and no claim is made that
+    // this recipient would have admitted it.
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(83010);
+    let frames = order_pass_frames(&capsule);
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
     gated_send(&sender, capsule).expect("an open endpoint");
 
     drop(registration);
@@ -21474,6 +21512,34 @@ fn a_connections_ordered_output_is_retained_whole_when_its_registration_ends() {
         "the place is still this connection's, because the work in it is not gone"
     );
     assert_eq!(durable.continuations_retained(), Some(1));
+
+    // THE PAYLOAD, not the counters. A kind and a count would be satisfied by
+    // a queue that had been emptied and a record that said the right words, so
+    // the exact capsule is taken out of the retained receiver here and checked
+    // against the one that went in: same delivery, same encoded frames, same
+    // completion cell.
+    let survived = durable
+        .with_ordered_continuation(0, |continuation| {
+            let PrivateOrderedContinuation::Setup { accepted, .. } = continuation else {
+                panic!("no owner is built yet")
+            };
+            let PrivateOrderedSetupCustody::Transport(transport) = accepted else {
+                panic!("this connection bound")
+            };
+            transport.ordered.receiver.try_recv().ok()
+        })
+        .expect("the place this connection held")
+        .expect("the capsule accepted before the connection ended");
+    assert_eq!(
+        survived.delivery(),
+        XAuthorityInputDeliveryId::from_raw(83010)
+    );
+    assert_eq!(order_pass_frames(&survived), frames);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &survived.finalizer().expect("carried").completion
+    ));
+    assert!(cell.answer().is_none(), "and nothing answered for it");
 }
 
 #[test]
@@ -21569,7 +21635,13 @@ fn a_connection_whose_binding_refused_retains_its_queue_without_a_socket() {
     let (kind, refusal, retained, drained, ended) =
         retained_setup_kind(&durable, 0).expect("the place this connection held");
     assert_eq!(kind, "receiver", "there is no transport to retain");
-    assert_eq!(refusal, X11OrderedServingRefusal::Unserved);
+    assert_eq!(
+        refusal,
+        X11OrderedServingRefusal::ForeignReceiver,
+        "THE CAUSE IS THE ONE THAT HAPPENED. Writing 'never served' over a \
+         binding that actually refused would send whoever inherits this queue \
+         looking for a worker that was never the problem"
+    );
     assert_eq!((retained, drained, ended), (0, false, false));
     assert_eq!(
         durable.continuations_reserved(),
@@ -21627,6 +21699,198 @@ fn a_second_binding_is_refused_rather_than_replacing_the_first() {
         "the first custody is what was retained"
     );
     drop(second_registration);
+}
+
+
+#[test]
+fn a_receiver_only_connection_never_reports_an_ended_wire() {
+    // HAVING NO HANDLE IS NOT HAVING ENDED SOMETHING. A binding that refused
+    // leaves a queue and no way to reach the connection: the accepted socket
+    // is still open and its peer still waiting. A visit that recorded `ended`
+    // because there was nothing to end with let the record read as settled and
+    // handed the place back over a live wire with accepted work still on it.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8341);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let other = XServerFrontendClientId(8342);
+    let (other_registration, other_channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(other, Some(admitted(other)))
+        .expect("a second place and row");
+
+    // A real refusal: a receiver another registration minted.
+    let (stream, peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    assert_eq!(
+        registration
+            .bind_ordered_output(other_channels.ordered, &output, &wire, &pending)
+            .unwrap_or_else(|_| panic!("a fresh registration holds no custody")),
+        Some(X11OrderedServingRefusal::ForeignReceiver)
+    );
+    drop(channels);
+    drop(registration);
+
+    // Driven as hard as anything drives it. The record can never report an
+    // ending, so it never settles and its place never comes back.
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    let (kind, _refusal, _retained, _drained, ended) =
+        retained_setup_kind(&durable, 0).expect("the place this connection held");
+    assert_eq!(kind, "receiver");
+    assert!(
+        !ended,
+        "nothing here has touched that socket, so nothing may say it was ended"
+    );
+    assert!(
+        !durable
+            .with_ordered_continuation(0, |continuation| continuation.settled())
+            .expect("the place holds it"),
+        "a record that cannot establish an ending is not a settled connection"
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(2),
+        "and its place is not handed back"
+    );
+
+    // The accepted socket is still open, which is the fact the record is
+    // refusing to misreport.
+    peer.set_nonblocking(true).expect("a readable peer");
+    let mut byte = [0u8; 1];
+    assert_eq!(
+        (&peer).read(&mut byte).map_err(|error| error.kind()),
+        Err(std::io::ErrorKind::WouldBlock),
+        "the peer is still connected and still waiting"
+    );
+    drop(other_registration);
+}
+
+#[test]
+fn a_second_binding_hands_back_the_receiver_it_was_offered() {
+    // REACHABLE, and it took two steps to reach: offer this registration a
+    // receiver it did not mint -- refused, and retained as custody -- then
+    // offer it its own. The second binding SUCCEEDS and retention refuses it,
+    // which is the arm that hands a bound transport's receiver back out.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let holder = XServerFrontendClientId(8351);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(holder, Some(admitted(holder)))
+        .expect("a place and a row");
+    let other = XServerFrontendClientId(8352);
+    let (other_registration, other_channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(other, Some(admitted(other)))
+        .expect("a second place and row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+
+    // First: a foreign receiver. Refused, and retained with that cause.
+    assert_eq!(
+        registration
+            .bind_ordered_output(other_channels.ordered, &output, &wire, &pending)
+            .unwrap_or_else(|_| panic!("a fresh registration holds no custody")),
+        Some(X11OrderedServingRefusal::ForeignReceiver)
+    );
+
+    // Second: its own receiver. The binding is fine; the custody is not free.
+    let Err(returned) =
+        registration.bind_ordered_output(channels.ordered, &output, &wire, &pending)
+    else {
+        panic!("this registration already holds custody")
+    };
+    assert!(
+        returned.minted_by(&registration),
+        "the receiver handed back is the one that was offered, whole"
+    );
+
+    // The first custody is untouched: it is the foreign receiver, with the
+    // cause that stopped it.
+    drop(returned);
+    drop(registration);
+    let (kind, refusal, ..) = retained_setup_kind(&durable, 0).expect("the retained place");
+    assert_eq!(kind, "receiver");
+    assert_eq!(
+        refusal,
+        X11OrderedServingRefusal::ForeignReceiver,
+        "the first custody stayed, with the reason it was first refused"
+    );
+    drop(other_registration);
+}
+
+#[test]
+fn a_bound_connection_keeps_its_queue_through_a_later_setup_refusal() {
+    // THE BINDING COMES BEFORE THE FIRST THING THAT CAN REFUSE. Connection
+    // setup publishes the row, then attaches lifecycle, connection state and
+    // recovery -- each of which can fail. A binding placed after them left
+    // every one of those refusals dropping the receiver, and the reserved
+    // place survived holding nothing. Here the binding has happened, and the
+    // connection then ends the way a refusal ends it.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8361);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a fresh registration holds no custody"));
+
+    // Accepted after the row was published, which is the window that matters.
+    let sender = capture_gated_sender(&private, client);
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(83610);
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    gated_send(&sender, capsule).expect("an open endpoint");
+
+    // A refusal after this point unwinds the connection: the registration
+    // drops, and so does everything the caller still held.
+    drop(registration);
+    drop(private);
+
+    let survived = durable
+        .with_ordered_continuation(0, |continuation| {
+            let PrivateOrderedContinuation::Setup { accepted, .. } = continuation else {
+                panic!("no owner is built yet")
+            };
+            let PrivateOrderedSetupCustody::Transport(transport) = accepted else {
+                panic!("this connection bound")
+            };
+            transport.ordered.receiver.try_recv().ok()
+        })
+        .expect("the place this connection held")
+        .expect("the capsule accepted before the refusal");
+    assert_eq!(
+        survived.delivery(),
+        XAuthorityInputDeliveryId::from_raw(83610)
+    );
+    assert!(Arc::ptr_eq(
+        &cell,
+        &survived.finalizer().expect("carried").completion
+    ));
+    assert!(
+        cell.answer().is_none(),
+        "nobody answered for it, which is why losing it was losing something"
+    );
 }
 
 #[test]
@@ -25807,15 +26071,19 @@ fn a_quiet_continuation_keeps_its_place_and_does_not_starve_the_others() {
         let slot = durable
             .reserve_ordered_continuation()
             .expect("a place, reserved before exposure");
-        let PreparedOrderedFixture { channels, .. } = fixture;
-        let mut source = Some(PrivateOrderedContinuation::Setup {
-            accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
-            refusal: X11OrderedServingRefusal::TransportUnavailable,
-            retained: Vec::new(),
-            drained: false,
-            ended: false,
-            ending_refused: None,
-        });
+        let PreparedOrderedFixture {
+            channels,
+            registration,
+            ..
+        } = fixture;
+        // Bound, so a visit can actually end this wire. A receiver alone has
+        // nothing to end with and could never reach a settled record, which
+        // would make this control about the wrong thing.
+        let mut source = Some(transport_continuation(&registration, channels.ordered));
+        // And then gone, along with the row it published: a registration that
+        // stayed would be a producer still holding a sender, which is the one
+        // thing that keeps a queue from finishing.
+        drop(registration);
         slot.install(&mut source);
         places.push(());
     }
@@ -25899,15 +26167,13 @@ fn asking_whether_a_continuation_is_settled_destroys_nothing() {
     let slot = durable
         .reserve_ordered_continuation()
         .expect("a place, reserved before exposure");
-    let PreparedOrderedFixture { channels, .. } = f;
-    let mut source = Some(PrivateOrderedContinuation::Setup {
-        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
-        refusal: X11OrderedServingRefusal::TransportUnavailable,
-        retained: Vec::new(),
-        drained: false,
-        ended: false,
-        ending_refused: None,
-    });
+    let PreparedOrderedFixture {
+        channels,
+        registration,
+        ..
+    } = f;
+    let mut source = Some(transport_continuation(&registration, channels.ordered));
+    drop(registration);
     slot.install(&mut source);
 
     // ASKED REPEATEDLY, WITHOUT DRIVING. Nothing may be consumed by the
@@ -25980,14 +26246,9 @@ fn a_stale_return_cannot_take_the_place_its_successor_holds() {
         durable: _one_durable,
         ..
     } = one;
-    let mut source = Some(PrivateOrderedContinuation::Setup {
-        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
-        refusal: X11OrderedServingRefusal::TransportUnavailable,
-        retained: Vec::new(),
-        drained: false,
-        ended: false,
-        ending_refused: None,
-    });
+    // Bound, so a visit can establish an ending and this place can come back
+    // at all. A receiver alone has nothing to end with.
+    let mut source = Some(transport_continuation(&one_registration, channels.ordered));
     slot.install(&mut source);
 
     // A visit's view of that record, captured before the place moves on.

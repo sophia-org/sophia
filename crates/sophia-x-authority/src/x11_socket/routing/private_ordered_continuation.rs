@@ -293,10 +293,25 @@ impl PrivateOrderedContinuation {
         } = self
         {
             // A connection nobody will serve still has a recipient waiting.
-            // Ending it is the one disposition this case can perform.
+            // Ending it is the one disposition this case can perform -- when
+            // it has anything to perform it with.
             if !*ended {
                 *ended = match accepted {
-                    PrivateOrderedSetupCustody::Receiver(_) => true,
+                    // NOT ENDED. HAVING NO HANDLE IS NOT HAVING ENDED
+                    // SOMETHING. A receiver alone carries no way to reach the
+                    // connection: the accepted socket is still open, its peer
+                    // is still waiting, and nothing here has touched it.
+                    // Recording `ended` because there is nothing to end with
+                    // read as an established fact, let `settled` agree, and
+                    // handed the place back over a live wire with accepted
+                    // work still on its queue.
+                    //
+                    // So this stays false, and the place stays held. That is
+                    // the honest outcome of a connection whose binding refused:
+                    // there is work nobody can deliver and a wire nobody here
+                    // can close, and saying so is the only thing left to do
+                    // about it.
+                    PrivateOrderedSetupCustody::Receiver(_) => false,
                     PrivateOrderedSetupCustody::Transport(transport) => {
                         match transport.shutdown.shutdown(Shutdown::Both) {
                             Ok(()) => true,
