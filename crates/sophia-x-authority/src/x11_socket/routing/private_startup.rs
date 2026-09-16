@@ -157,6 +157,14 @@ struct PrivateWorkerHandoff {
     /// report accepted custody as absence -- leaving a running thread with no
     /// route to a join through this at all.
     source_poisoned: bool,
+    /// The life this slot was in when the handle was asked for.
+    ///
+    /// READ BEFORE ANYTHING WAS CHANGED. Without it, "no handle" is one answer
+    /// covering two different facts: a connection that never started one, and
+    /// one whose handle has already gone to somebody else. A caller deciding
+    /// what to do next needs them apart -- nothing was started is not a
+    /// reason to stop expecting a join, and already handed on is.
+    found: PrivateWorkerLife,
 }
 
 /// Give this connection's worker to whoever will join it.
@@ -186,6 +194,7 @@ fn hand_worker_to_joiner(slot: &Mutex<PrivateWorkerSlot>) -> PrivateWorkerHandof
         Ok(held) => (held, false),
         Err(poisoned) => (poisoned.into_inner(), true),
     };
+    let found = held.life;
     let handle = held.handle.take();
     if handle.is_some() {
         held.life = PrivateWorkerLife::HandedToJoiner;
@@ -193,6 +202,7 @@ fn hand_worker_to_joiner(slot: &Mutex<PrivateWorkerSlot>) -> PrivateWorkerHandof
     PrivateWorkerHandoff {
         handle,
         source_poisoned,
+        found,
     }
 }
 

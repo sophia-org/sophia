@@ -138,6 +138,24 @@ impl PrivateWorkerExit {
         self.left.load(Ordering::SeqCst)
     }
 
+    /// What this record says, with absence and unreadability apart.
+    ///
+    /// FOR A READER WHOSE SUBJECT IS THE RECORD ITSELF. `outcome` recovers a
+    /// poisoned guard because its callers want whatever is in there; this one
+    /// is for a caller deciding what a body left behind, where "nothing was
+    /// written" and "nothing can be read" are different findings and neither
+    /// is a panic.
+    fn reading(&self) -> PrivateExitReading {
+        let Ok(held) = self.outcome.lock() else {
+            return PrivateExitReading::Unreadable;
+        };
+        match *held {
+            Some(outcome) => PrivateExitReading::Classified(outcome),
+            None if self.left() => PrivateExitReading::Unclassified,
+            None => PrivateExitReading::NotLeft,
+        }
+    }
+
     fn outcome(&self) -> Option<PrivateWorkerOutcome> {
         *self
             .outcome
