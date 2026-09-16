@@ -657,6 +657,7 @@ impl LiveProductionVisualRuntime {
                 .push(CompositorDisplayCommand::Border(border));
         }
         if let Some(content) = self.shell_content.get(&output) {
+            let content = &content.frame;
             if display_list
                 .commands
                 .len()

@@ -6,6 +6,7 @@ LOM_SOURCE="${SOPHIA_LOM_SOURCE:-/home/niltempus/dev/lom}"
 LOM_TARGET="${SOPHIA_LOM_TARGET_DIR:-$HOME/.cache/lom-target}"
 LOM_CONFIG="${SOPHIA_LOM_CONFIG:-$LOM_SOURCE/examples/minimal/live-shell.kdl}"
 HAGIA_BIN="${SOPHIA_HAGIA_BIN:-/home/niltempus/dev/hagia/hagia}"
+HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 LOM_CORE_CONFIG="${SOPHIA_LOM_CORE_CONFIG:-$ROOT_DIR/tools/fixtures/lom_panel_core.kdl}"
 WORKLOAD_BUDGETS="$ROOT_DIR/tools/fixtures/lom_workload_budgets.json"
 EVIDENCE_DIR="${SOPHIA_LOM_NATIVE_EVIDENCE_DIR:-$ROOT_DIR/.artifacts/lom-panel-native/$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -22,7 +23,7 @@ mkdir -m 700 "$EVIDENCE_DIR"
 cp "$WORKLOAD_BUDGETS" "$EVIDENCE_DIR/workload-budgets.json"
 cp "$LOM_CONFIG" "$EVIDENCE_DIR/lom-config.kdl"
 cp "$LOM_CORE_CONFIG" "$EVIDENCE_DIR/core.kdl"
-cp "$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl" "$EVIDENCE_DIR/desktop.kdl"
+cp "$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl" "$EVIDENCE_DIR/probe-overrides.kdl"
 LOM_CONFIG="$EVIDENCE_DIR/lom-config.kdl"
 LOM_CORE_CONFIG="$EVIDENCE_DIR/core.kdl"
 python3 - "$ROOT_DIR/tools/probes/lom_workload" "$EVIDENCE_DIR/workload-budgets.json" <<'PY'
@@ -36,6 +37,31 @@ cargo build --offline --release -p sophia-cli --features native-session --manife
 CARGO_TARGET_DIR="$LOM_TARGET" cargo build --offline --release --manifest-path "$LOM_SOURCE/Cargo.toml"
 LOM_BIN="$LOM_TARGET/release/lom"
 SOPHIA_BIN="$ROOT_DIR/target/release/sophia"
+wm_profile="${SOPHIA_DESKTOP_PROFILE:-}"
+if [[ -z "$wm_profile" ]]; then
+    config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+    for candidate in "$config_home/sophia/desktop.kdl" "$config_home/hagia/config.kdl" \
+        /etc/sophia/desktop.kdl /etc/hagia/config.kdl "$HAGIA_ROOT/examples/config/default.kdl"; do
+        if [[ -e "$candidate" || -L "$candidate" ]]; then
+            wm_profile="$candidate"
+            break
+        fi
+    done
+fi
+[[ "$wm_profile" == /* && -f "$wm_profile" ]] || {
+    echo "Select an existing absolute WM profile with SOPHIA_DESKTOP_PROFILE." >&2
+    exit 2
+}
+# Expand includes through the real parser and preserve all configured bindings
+# and application declarations. Only the recorded probe overrides differ.
+"$SOPHIA_BIN" config print-effective --desktop-profile="$wm_profile" \
+    > "$EVIDENCE_DIR/wm-profile.kdl"
+cargo build --offline --release -p sophia-config --example desktop_profile_probe \
+    --manifest-path "$ROOT_DIR/Cargo.toml"
+"$ROOT_DIR/target/release/examples/desktop_profile_probe" \
+    "$EVIDENCE_DIR/wm-profile.kdl" "$EVIDENCE_DIR/probe-overrides.kdl" \
+    > "$EVIDENCE_DIR/desktop.kdl"
+"$SOPHIA_BIN" config check --desktop-profile="$EVIDENCE_DIR/desktop.kdl"
 {
     printf 'sophia_commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD)"
     printf 'sophia_binary_sha256=%s\n' "$(sha256sum "$SOPHIA_BIN" | cut -d' ' -f1)"
@@ -46,10 +72,13 @@ SOPHIA_BIN="$ROOT_DIR/target/release/sophia"
     printf 'workload_budgets_sha256=%s\n' "$(sha256sum "$EVIDENCE_DIR/workload-budgets.json" | cut -d' ' -f1)"
     printf 'core_config_sha256=%s\n' "$(sha256sum "$LOM_CORE_CONFIG" | cut -d' ' -f1)"
     printf 'desktop_profile_sha256=%s\n' "$(sha256sum "$EVIDENCE_DIR/desktop.kdl" | cut -d' ' -f1)"
+    printf 'wm_profile_sha256=%s\n' "$(sha256sum "$EVIDENCE_DIR/wm-profile.kdl" | cut -d' ' -f1)"
+    printf 'probe_overrides_sha256=%s\n' "$(sha256sum "$EVIDENCE_DIR/probe-overrides.kdl" | cut -d' ' -f1)"
     printf 'native_runtime_msec=90000\nwatchdog_seconds=110\n'
 } > "$EVIDENCE_DIR/identity.manifest"
 sha256sum "$SOPHIA_BIN" "$LOM_BIN" "$HAGIA_BIN" "$LOM_CONFIG" "$LOM_CORE_CONFIG" \
-    "$EVIDENCE_DIR/desktop.kdl" "$EVIDENCE_DIR/workload-budgets.json" > "$EVIDENCE_DIR/inputs.sha256"
+    "$EVIDENCE_DIR/desktop.kdl" "$EVIDENCE_DIR/wm-profile.kdl" \
+    "$EVIDENCE_DIR/probe-overrides.kdl" "$EVIDENCE_DIR/workload-budgets.json" > "$EVIDENCE_DIR/inputs.sha256"
 verify_candidate_inputs() {
     sha256sum --check --status "$EVIDENCE_DIR/inputs.sha256"
     [[ "sophia_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)" == "$(sed -n '/^sophia_commit=/p' "$EVIDENCE_DIR/identity.manifest")" ]]
@@ -92,7 +121,7 @@ SOPHIA_SESSION_STARTUP=none \
 SOPHIA_SESSION_WATCHDOG_SECONDS=110 \
 SOPHIA_DIAGNOSTIC_DIR="$EVIDENCE_DIR/session" \
 SOPHIA_UNTRUSTED_SESSION_OUTPUT_LOG="$EVIDENCE_DIR/session/untrusted-session-output.log" \
-    "$ROOT_DIR/tools/run_sophia_session.sh" --max-runtime-ms=90000
+    "$ROOT_DIR/tools/run_sophia_session.sh" --max-runtime-ms=90000 --shell-process="$LOM_BIN"
 native_status=$?
 set -e
 printf 'native_exit_status=%s\n' "$native_status" > "$EVIDENCE_DIR/native-outcome.txt"

@@ -269,7 +269,7 @@
         if session_requests.open_launcher && let Some(shell)=metadata_shell.as_mut()
             && shell.queue_launcher(wm_session.as_ref().and_then(LiveWmSession::reference_output).unwrap_or(output.id))? {
             reference_capture.present(None);
-            if let Some(runtime)=runtime.as_mut(){runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;}
+            if let Some(runtime)=runtime.as_mut(){runtime.set_descriptor_overlay(None,scene,native_scanout.as_mut())?;}
         }
         if session_requests.reload_profile {
             profile_reload_requested = true;

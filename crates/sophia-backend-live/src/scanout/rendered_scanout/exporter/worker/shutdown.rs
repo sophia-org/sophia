@@ -14,10 +14,13 @@ impl NativeGbmRendererWorkerCore {
         if !self.control.is_shutdown() {
             return Err(io::Error::other("renderer shutdown was not requested"));
         }
-        self._thread
-            .lock()
-            .map_err(|_| io::Error::other("renderer thread owner lock poisoned"))?
-            .poll_join()
+        match self._thread.try_lock() {
+            Ok(mut thread) => thread.poll_join(),
+            Err(std::sync::TryLockError::WouldBlock) => Ok(false),
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                Err(io::Error::other("renderer thread owner lock poisoned"))
+            }
+        }
     }
 }
 

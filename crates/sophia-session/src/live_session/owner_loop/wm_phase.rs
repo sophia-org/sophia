@@ -153,12 +153,12 @@
                                     "output authority effect has no visual runtime",
                                 )?;
                                 let candidate_frames = runtime.compose_output_topology_head_frames(
-                                    &scene,
+                                    scene,
                                     &execution.effect.resolved,
                                     execution.effect.candidate_topology_epoch,
                                 )?;
                                 let rollback_frames = runtime.compose_output_topology_head_frames(
-                                    &scene,
+                                    scene,
                                     &rollback,
                                     execution.effect.candidate_topology_epoch,
                                 )?;
@@ -357,7 +357,7 @@
                                     .as_mut()
                                     .ok_or("output topology apply lost the visual runtime")?;
                                 let frames = runtime.compose_output_topology_head_frames(
-                                    &scene,
+                                    scene,
                                     &execution.effect.resolved,
                                     execution.effect.candidate_topology_epoch,
                                 )?;
@@ -792,7 +792,7 @@
                     if let Some(runtime) = runtime.as_mut() {
                         let _ = runtime.set_floating_outline(
                             None,
-                            &scene,
+                            scene,
                             native_scanout.as_mut(),
                         )?;
                     }

@@ -48,6 +48,7 @@ impl LiveProductionVisualRuntime {
             let Some(content) = self.shell_content.get(output) else {
                 continue;
             };
+            let content = &content.frame;
             let targets = native.head_targets(*output);
             for target in &targets {
                 let identity = native.frame_owner().frame(

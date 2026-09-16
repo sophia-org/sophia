@@ -314,6 +314,10 @@ impl LiveProductionVisualRuntime {
             self.production.committed_surfaces(),
             None,
         )?;
+        self.content_layout_generation = self
+            .content_layout_generation
+            .checked_add(1)
+            .ok_or("content layout generation exhausted")?;
         self.translations.settle();
         self.translation_deadlines.clear();
         self.ordinary_repaints_pending.clear();
@@ -347,7 +351,7 @@ impl LiveProductionVisualRuntime {
         native_scanout: &mut LiveProductionNativeScanout,
         outputs: &[sophia_engine::HeadlessOutput],
         scene: &LiveProductionCpuScene,
-        renderer_handoff: Option<LiveProductionRendererImageHandoff>,
+        renderer_handoff: Option<&LiveProductionRendererImageHandoff>,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let retained = self.retained_renderer_image_ids();
         validate_renderer_image_resume_admission(
@@ -518,6 +522,10 @@ impl LiveProductionVisualRuntime {
         self.translations.settle();
         self.translation_deadlines.clear();
         native_scanout.set_translation_motion_active(false);
+        self.content_layout_generation = self
+            .content_layout_generation
+            .checked_add(1)
+            .ok_or("content layout generation exhausted")?;
         self.outputs = next;
         self.ordinary_repaints_pending.clear();
         self.input_projections = input_projections;
@@ -531,6 +539,21 @@ impl LiveProductionVisualRuntime {
     ) -> Result<(), Box<dyn std::error::Error>> {
         if !self.drain_native_scanout_until(native_scanout, timeout)? {
             return Err("persistent native scanout remained in flight during teardown".into());
+        }
+        Ok(())
+    }
+
+    /// Pure ownership check for terminal/revoked cleanup. Joining a renderer
+    /// cannot dispose of singleton submitted/displayed/cleanup custody here.
+    pub fn validate_native_retirement_disposition(&self) -> Result<(), &'static str> {
+        if self.outputs.values().any(|output| {
+            output.runtime.rendered_primary_plane_scanout_in_flight()
+                || output.runtime.rendered_primary_plane_scanout_displayed()
+                || output
+                    .runtime
+                    .rendered_primary_plane_scanout_cleanup_pending()
+        }) {
+            return Err("visual runtime retains unresolved native scanout custody");
         }
         Ok(())
     }

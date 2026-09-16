@@ -21,3 +21,10 @@ inline-tests crates/sophia-runtime/src/shell_transport/indicator_responses.rs
 
 # External initial/reconnect negotiation fixture; no inline test bodies.
 inline-tests crates/sophia-session/src/live_session/metadata_shell/launch.rs
+inline-tests crates/sophia-session/src/live_session/native_owner_retirement.rs
+
+# Existing projection tests relocated without changing their bodies.
+inline-tests crates/sophia-backend-live/src/production_visual_runtime/projection.rs
+
+# External private plane-descriptor ownership fixture; no graphics operation.
+inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/types.rs

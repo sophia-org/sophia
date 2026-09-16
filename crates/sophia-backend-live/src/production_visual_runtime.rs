@@ -223,6 +223,14 @@ pub struct LivePresentedInputProjection {
     pub content: Option<sophia_engine::PresentedContentBinding>,
 }
 
+/// Geometry is captured with admission, never reconstructed from a later layout.
+/// The pair moves and rolls back as one owner when native queueing refuses.
+#[derive(Clone, Debug, PartialEq)]
+struct AdmittedShellContent {
+    frame: LiveShellContentFrame,
+    transform: sophia_engine::PresentedContentTransform,
+}
+
 /// Retains policy order only for surfaces present in Engine's committed scene.
 /// Policy may name a newly admitted surface before matching pixels commit; it
 /// is absent from native composition until the ordinary visual commit lands.
@@ -299,6 +307,7 @@ pub struct LiveProductionVisualRuntime {
     geometry_routed_surfaces: BTreeSet<SurfaceId>,
     retained_projection_pending: bool,
     ordinary_repaints_pending: BTreeSet<OutputId>,
+    content_layout_generation: u64,
     /// Output-local shell candidates and the exact grant that owns each
     /// physical retirement. Pixel equality or a replacement connection cannot
     /// settle that protocol obligation.
@@ -313,7 +322,7 @@ pub struct LiveProductionVisualRuntime {
     indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
     descriptor_overlay_interactive: bool,
-    shell_content: BTreeMap<OutputId, LiveShellContentFrame>,
+    shell_content: BTreeMap<OutputId, AdmittedShellContent>,
     tab_bars: Vec<sophia_engine::TabBarProjection>,
     tab_frames: BTreeMap<OutputId, sophia_engine::CompositorDamageList>,
     pending_focus_ring_observation: Option<LiveFocusRingObservation>,
@@ -430,6 +439,7 @@ impl LiveProductionVisualRuntime {
             geometry_routed_surfaces: BTreeSet::new(),
             retained_projection_pending: false,
             ordinary_repaints_pending: BTreeSet::new(),
+            content_layout_generation: 1,
             retained_projection_retirements: BTreeMap::new(),
             translations: TranslationTimeline::default(),
             translation_origin: Instant::now(),

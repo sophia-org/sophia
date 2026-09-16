@@ -65,6 +65,30 @@ pub struct NativeOwnedDmaBufPlane {
 }
 
 impl NativeRendererImageSnapshot {
+    /// Duplicate only descriptor ownership, preserving the original snapshot
+    /// through a fallible replacement-renderer import.
+    pub fn try_clone(&self) -> std::io::Result<Self> {
+        let mut planes = std::array::from_fn(|_| None);
+        for (destination, source) in planes.iter_mut().zip(&self.planes) {
+            if let Some(source) = source {
+                *destination = Some(NativeOwnedDmaBufPlane {
+                    fd: source.fd.try_clone()?,
+                    offset: source.offset,
+                    stride: source.stride,
+                });
+            }
+        }
+        Ok(Self {
+            image_id: self.image_id,
+            width: self.width,
+            height: self.height,
+            format: self.format,
+            modifier: self.modifier,
+            plane_count: self.plane_count,
+            planes,
+        })
+    }
+
     pub const fn image_id(&self) -> NativeRendererImageId {
         self.image_id
     }
@@ -290,3 +314,7 @@ pub struct NativeGbmPersistentRenderStats {
     pub max_render: Duration,
     pub max_upload: Duration,
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/image_snapshot_ownership.rs"]
+mod ownership_tests;

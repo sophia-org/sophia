@@ -54,6 +54,16 @@ fn binding(target: PresentedContentTarget) -> PresentedContentBinding {
         candidate_generation: target.candidate_generation,
         presentation_epoch: target.presentation_epoch,
         interaction_generation: target.interaction_generation,
+        transform: sophia_engine::PresentedContentTransform {
+            viewport: sophia_protocol::Rect {
+                x: 0,
+                y: 0,
+                width: 2000,
+                height: 1000,
+            },
+            layout_generation: 1,
+        },
+        authority_current: true,
         allocations: vec![(
             target.allocation,
             target.allocation_logical,
@@ -65,6 +75,111 @@ fn binding(target: PresentedContentTarget) -> PresentedContentBinding {
 
 fn button(button: u32, pressed: bool) -> InputEventKind {
     InputEventKind::PointerButton { button, pressed }
+}
+
+fn click_part(
+    state: &mut ContentCaptureState,
+    binding: &PresentedContentBinding,
+    point: Point,
+    pressed: bool,
+) -> ContentPointerDisposition {
+    resolve_content_pointer_event(
+        state,
+        SeatId::from_raw(1),
+        DeviceId::from_raw(2),
+        button(0x110, pressed),
+        Some(point),
+        Some(binding),
+        false,
+    )
+}
+
+#[test]
+fn content_coordinates_translate_once_for_nonzero_and_negative_output_origins() {
+    // The fixture allocation is 200 logical / 300 physical: the target at
+    // pixel30 starts at logical120. Translation must not scale a second time.
+    for (x, y) in [(2560, 0), (-1920, -700), (0, 0)] {
+        let mut b = binding(target(10, 11));
+        b.transform.viewport.x = x;
+        b.transform.viewport.y = y;
+        let point = Point {
+            x: f64::from(x) + 130.0,
+            y: f64::from(y) + 30.0,
+        };
+        let mut state = ContentCaptureState::default();
+        assert_eq!(
+            click_part(&mut state, &b, point, true),
+            ContentPointerDisposition::Captured
+        );
+        assert_eq!(
+            click_part(&mut state, &b, point, false),
+            ContentPointerDisposition::Activated(b.targets[0].clone())
+        );
+    }
+}
+
+#[test]
+fn topology_only_change_and_cross_output_release_cancel_without_clickthrough() {
+    for cross_output in [false, true] {
+        let original = binding(target(10, 11));
+        let point = Point { x: 130.0, y: 30.0 };
+        let mut state = ContentCaptureState::default();
+        assert_eq!(
+            click_part(&mut state, &original, point, true),
+            ContentPointerDisposition::Captured
+        );
+        let mut changed = original.clone();
+        if cross_output {
+            changed.output.id += 1;
+            changed.targets[0].output = changed.output;
+        } else {
+            changed.transform.layout_generation += 1;
+        }
+        assert_eq!(
+            click_part(&mut state, &changed, point, false),
+            ContentPointerDisposition::Cancelled
+        );
+    }
+}
+
+#[test]
+fn stale_known_shell_consumes_new_sequence_even_after_projection_disappears() {
+    let mut b = binding(target(10, 11));
+    b.authority_current = false;
+    let point = Point { x: 130.0, y: 30.0 };
+    let mut state = ContentCaptureState::default();
+    assert_eq!(
+        click_part(&mut state, &b, point, true),
+        ContentPointerDisposition::Consumed
+    );
+    assert_eq!(
+        resolve_content_pointer_event(
+            &mut state,
+            SeatId::from_raw(1),
+            DeviceId::from_raw(2),
+            button(0x110, false),
+            Some(point),
+            None,
+            false
+        ),
+        ContentPointerDisposition::Consumed
+    );
+}
+
+#[test]
+fn nonfinite_or_other_output_points_cannot_mint_content_capture() {
+    let b = binding(target(10, 11));
+    for x in [f64::NAN, f64::INFINITY, -1.0, 2560.0] {
+        assert_eq!(
+            click_part(
+                &mut ContentCaptureState::default(),
+                &b,
+                Point { x, y: 30.0 },
+                true
+            ),
+            ContentPointerDisposition::Pass
+        );
+    }
 }
 
 #[test]

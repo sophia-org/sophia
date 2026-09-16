@@ -26,6 +26,49 @@ fn grant() -> ContentGrant {
 }
 
 #[test]
+fn runtime_retirement_refuses_and_retains_real_displayed_custody_without_device_calls() {
+    use std::{num::NonZeroU32, sync::Arc};
+    let outputs = outputs();
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    assert!(runtime.validate_native_retirement_disposition().is_ok());
+    let bytes = Arc::new(vec![0_u8; 4096]);
+    let submission = crate::LiveRenderedPrimaryPlaneScanoutSubmission {
+        scanout_buffer: bytes.clone(),
+        correlation: None,
+        primary_plane: crate::LibdrmNativePrimaryPlaneScanoutSubmission {
+            resources: crate::LibdrmNativePrimaryPlaneResourceBundle::new(
+                NonZeroU32::new(10).unwrap().into(),
+                None,
+                outputs[0].size,
+            ),
+            completion_fence: None,
+        },
+        submitted_after_page_flip_serial: None,
+        layout_witness: None,
+    };
+    assert!(
+        runtime
+            .outputs
+            .values_mut()
+            .next()
+            .unwrap()
+            .runtime
+            .adopt_presented_rendered_primary_plane_scanout(submission)
+    );
+    for _ in 0..3 {
+        assert!(runtime.validate_native_retirement_disposition().is_err());
+        assert_eq!(Arc::strong_count(&bytes), 2);
+    }
+    // No device is supplied: this is refusal/retention, not framebuffer cleanup.
+    // The terminal error carrier can keep this whole runtime until disposition.
+    let retained = Box::new(runtime);
+    assert_eq!(Arc::strong_count(&bytes), 2);
+    assert!(retained.validate_native_retirement_disposition().is_err());
+    drop(retained); // Explicit terminal fallback, never a clean retirement.
+    assert_eq!(Arc::strong_count(&bytes), 1);
+}
+
+#[test]
 fn actual_intake_refusal_rolls_back_candidate_without_partial_native_batch() {
     let outputs = outputs();
     let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
@@ -70,7 +113,9 @@ fn actual_intake_refusal_rolls_back_candidate_without_partial_native_batch() {
     assert!(!runtime.shell_content.contains_key(&outputs[1].id));
     assert!(runtime.retained_projection_retirements.is_empty());
     assert_eq!(
-        runtime.shell_content[&outputs[0].id].candidate_generation,
+        runtime.shell_content[&outputs[0].id]
+            .frame
+            .candidate_generation,
         1
     );
     target.reject_output = None;
@@ -253,6 +298,13 @@ fn exercise_thousand<T: IntegrationTarget>(mut target: T) {
                 .unwrap();
             assert_eq!(binding.targets[0].action_id, candidate);
             assert_eq!(binding.targets[0].presentation_epoch, epoch);
+            let viewport = runtime.outputs.logical_viewport(output.id).unwrap();
+            assert_eq!(binding.transform.viewport, viewport);
+            assert!(binding.authority_current);
+            let global = Point {
+                x: f64::from(viewport.x) + 1.0,
+                y: f64::from(viewport.y) + 1.0,
+            };
             assert!(matches!(
                 resolve_content_pointer_event(
                     &mut capture,
@@ -262,14 +314,14 @@ fn exercise_thousand<T: IntegrationTarget>(mut target: T) {
                         button: CHROME_PRIMARY_BUTTON,
                         pressed: true
                     },
-                    Some(Point { x: 1.0, y: 1.0 }),
+                    Some(global),
                     Some(binding),
                     false
                 ),
                 ContentPointerDisposition::Captured
             ));
             assert!(
-                matches!(resolve_content_pointer_event(&mut capture, SeatId::from_raw(1), DeviceId::from_raw(1), InputEventKind::PointerButton { button: CHROME_PRIMARY_BUTTON, pressed: false }, Some(Point { x: 1.0, y: 1.0 }), Some(binding), false), ContentPointerDisposition::Activated(target) if target.action_id == candidate && target.presentation_epoch == epoch)
+                matches!(resolve_content_pointer_event(&mut capture, SeatId::from_raw(1), DeviceId::from_raw(1), InputEventKind::PointerButton { button: CHROME_PRIMARY_BUTTON, pressed: false }, Some(global), Some(binding), false), ContentPointerDisposition::Activated(target) if target.action_id == candidate && target.presentation_epoch == epoch)
             );
             activation_count += 1;
 
@@ -277,6 +329,7 @@ fn exercise_thousand<T: IntegrationTarget>(mut target: T) {
             let display = CompositorDisplayList {
                 output: output.id,
                 commands: runtime.shell_content[&output.id]
+                    .frame
                     .images
                     .iter()
                     .cloned()
@@ -658,10 +711,63 @@ fn reconnect_reusing_candidate_numbers_cannot_publish_old_pixels_as_new_grant() 
         .set_shell_content_on_target(shell_frame(outputs[0], 1, new), &scene, Some(&mut target))
         .unwrap();
     runtime.publish_presented_input_layers(&target);
-    assert!(runtime.input_projections[0].content.is_none());
+    let stale = runtime.input_projections[0].content.as_ref().unwrap();
+    assert!(!stale.authority_current);
+    assert_eq!(stale.targets[0].grant, grant());
+    let mut capture = ContentCaptureState::default();
+    assert_eq!(
+        resolve_content_pointer_event(
+            &mut capture,
+            SeatId::from_raw(1),
+            DeviceId::from_raw(1),
+            InputEventKind::PointerButton {
+                button: CHROME_PRIMARY_BUTTON,
+                pressed: true
+            },
+            Some(Point { x: 1.0, y: 1.0 }),
+            Some(stale),
+            false
+        ),
+        ContentPointerDisposition::Consumed
+    );
     assert_eq!(
         runtime.shell_content_presentation_epoch(outputs[0].id, 1),
         None
+    );
+    runtime.input_projections[0].content = None;
+    runtime.publish_presented_input_layers(&target);
+    let unknown = runtime.input_projections[0].content.as_ref().unwrap();
+    assert!(!unknown.authority_current);
+    assert!(unknown.targets.is_empty());
+    assert_eq!(
+        resolve_content_pointer_event(
+            &mut capture,
+            SeatId::from_raw(1),
+            DeviceId::from_raw(1),
+            InputEventKind::PointerButton {
+                button: CHROME_PRIMARY_BUTTON,
+                pressed: false
+            },
+            Some(Point { x: 1.0, y: 1.0 }),
+            Some(unknown),
+            false
+        ),
+        ContentPointerDisposition::Consumed
+    );
+    assert_eq!(
+        resolve_content_pointer_event(
+            &mut capture,
+            SeatId::from_raw(1),
+            DeviceId::from_raw(1),
+            InputEventKind::PointerButton {
+                button: CHROME_PRIMARY_BUTTON,
+                pressed: true
+            },
+            Some(Point { x: 1.0, y: 1.0 }),
+            Some(unknown),
+            false
+        ),
+        ContentPointerDisposition::Consumed
     );
     target.complete(outputs[0].id);
     runtime.publish_presented_input_layers(&target);
@@ -678,5 +784,113 @@ fn reconnect_reusing_candidate_numbers_cannot_publish_old_pixels_as_new_grant() 
             .targets[0]
             .grant,
         next_grant
+    );
+}
+
+#[test]
+fn topology_change_cannot_reinterpret_old_presented_pixels_with_a_new_origin() {
+    let outputs = outputs();
+    let output = outputs[0];
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(output.size);
+    let mut target = Target::new(&outputs);
+    let mut store =
+        sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant())).unwrap();
+    let pixels = upload(
+        &mut store,
+        grant(),
+        ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+    );
+    runtime
+        .set_shell_content_on_target(shell_frame(output, 1, pixels), &scene, Some(&mut target))
+        .unwrap();
+    target.drain();
+    runtime.publish_presented_input_layers(&target);
+    let old = runtime.input_projections[0].content.clone().unwrap();
+    // Supply a committed topology transition without constructing a DRM owner.
+    // Publication/intake below are the real production methods, completion fake.
+    let mut viewports = runtime.outputs.logical_viewports().collect::<Vec<_>>();
+    viewports
+        .iter_mut()
+        .find(|(id, _)| *id == output.id)
+        .unwrap()
+        .1
+        .x = -1920;
+    runtime
+        .outputs
+        .replace_logical_viewports(&viewports)
+        .unwrap();
+    runtime.content_layout_generation += 1;
+    for retained_metadata in [true, false] {
+        if !retained_metadata {
+            runtime.input_projections[0].content = None;
+        }
+        runtime.publish_presented_input_layers(&target);
+        let stale = runtime.input_projections[0].content.as_ref().unwrap();
+        assert_eq!(stale.transform, old.transform);
+        assert!(!stale.authority_current);
+        let mut capture = ContentCaptureState::default();
+        assert_eq!(
+            resolve_content_pointer_event(
+                &mut capture,
+                SeatId::from_raw(1),
+                DeviceId::from_raw(1),
+                InputEventKind::PointerButton {
+                    button: CHROME_PRIMARY_BUTTON,
+                    pressed: true
+                },
+                Some(Point { x: -1919.0, y: 1.0 }),
+                Some(stale),
+                false
+            ),
+            ContentPointerDisposition::Consumed
+        );
+    }
+    let next = upload(
+        &mut store,
+        grant(),
+        ContentResourceId {
+            id: 2,
+            generation: 1,
+        },
+    );
+    runtime
+        .set_shell_content_on_target(shell_frame(output, 2, next), &scene, Some(&mut target))
+        .unwrap();
+    runtime.publish_presented_input_layers(&target);
+    assert!(
+        !runtime.input_projections[0]
+            .content
+            .as_ref()
+            .unwrap()
+            .authority_current
+    );
+    target.drain();
+    runtime.publish_presented_input_layers(&target);
+    let current = runtime.input_projections[0].content.as_ref().unwrap();
+    assert!(current.authority_current);
+    assert_eq!(current.transform.viewport.x, -1920);
+    assert_eq!(
+        current.transform.layout_generation,
+        old.transform.layout_generation + 1
+    );
+    let mut capture = ContentCaptureState::default();
+    assert_eq!(
+        resolve_content_pointer_event(
+            &mut capture,
+            SeatId::from_raw(1),
+            DeviceId::from_raw(1),
+            InputEventKind::PointerButton {
+                button: CHROME_PRIMARY_BUTTON,
+                pressed: true
+            },
+            Some(Point { x: -1919.0, y: 1.0 }),
+            Some(current),
+            false
+        ),
+        ContentPointerDisposition::Captured
     );
 }

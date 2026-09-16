@@ -5,7 +5,7 @@
 // shares the enclosing loop's locals exactly as it did inline.
 {
                 if runtime.is_none() {
-                    runtime = Some(
+                    *runtime = Some(
                         LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut())?
                             .with_m4_proof_controls(
                                 config.m4_first_acquire_delay,
@@ -116,7 +116,7 @@
                         let (submission, committed_surfaces, cpu_progress) =
                             runtime.run_cpu_production_cycle(LiveProductionCycleRequest {
                                 batch: &production_batch,
-                                scene: &mut scene,
+                                scene,
                                 raised_surface,
                                 focused_surface,
                                 cursor_presentation,
@@ -145,7 +145,7 @@
                         let (submission, committed_surfaces, cpu_progress) =
                             runtime.run_gpu_production_cycle(LiveProductionCycleRequest {
                                 batch: &production_batch,
-                                scene: &mut scene,
+                                scene,
                                 raised_surface,
                                 focused_surface,
                                 cursor_presentation,

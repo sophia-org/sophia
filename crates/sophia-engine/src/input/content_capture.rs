@@ -28,11 +28,39 @@ pub struct PresentedContentTarget {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PresentedContentTransform {
+    /// Committed root-space logical viewport; never a client-provided origin.
+    pub viewport: sophia_protocol::Rect,
+    pub layout_generation: u64,
+}
+
+impl PresentedContentTransform {
+    fn local(&self, point: Point) -> Option<Point> {
+        let r = self.viewport;
+        (point.x.is_finite()
+            && point.y.is_finite()
+            && self.layout_generation != 0
+            && point.x >= f64::from(r.x)
+            && point.y >= f64::from(r.y)
+            && point.x < f64::from(r.x) + f64::from(r.width)
+            && point.y < f64::from(r.y) + f64::from(r.height))
+        .then_some(Point {
+            x: point.x - f64::from(r.x),
+            y: point.y - f64::from(r.y),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresentedContentBinding {
     pub output: ContentOutputId,
     pub candidate_generation: u64,
     pub presentation_epoch: u64,
     pub interaction_generation: u64,
+    pub transform: PresentedContentTransform,
+    /// False means retained shell pixels without current input authority, not
+    /// empty content. Such a projection consumes new presses until replaced.
+    pub authority_current: bool,
     pub targets: Vec<PresentedContentTarget>,
     pub allocations: Vec<(ContentAllocationId, ContentLogicalRect, ContentPixelRect)>,
 }
@@ -42,6 +70,7 @@ struct ContentCapture {
     device: DeviceId,
     button: u32,
     target: PresentedContentTarget,
+    transform: PresentedContentTransform,
     valid: bool,
 }
 
@@ -238,12 +267,14 @@ pub fn resolve_content_pointer_event(
         return disposition;
     }
     if let Some(mut capture) = state.captures.remove(&seat) {
-        let current = binding.and_then(|binding| {
-            binding
-                .targets
-                .iter()
-                .find(|target| same_target(target, &capture.target))
-        });
+        let current = binding
+            .filter(|binding| binding.authority_current && binding.transform == capture.transform)
+            .and_then(|binding| {
+                binding
+                    .targets
+                    .iter()
+                    .find(|target| same_target(target, &capture.target))
+            });
         capture.valid &= current == Some(&capture.target);
         let InputEventKind::PointerButton { button, pressed } = kind else {
             state.captures.insert(seat, capture);
@@ -263,7 +294,10 @@ pub fn resolve_content_pointer_event(
         if !capture.valid {
             return ContentPointerDisposition::Cancelled;
         }
-        return if position.is_some_and(|point| target_contains(&capture.target, point)) {
+        return if position
+            .and_then(|point| capture.transform.local(point))
+            .is_some_and(|point| target_contains(&capture.target, point))
+        {
             ContentPointerDisposition::Activated(capture.target)
         } else {
             ContentPointerDisposition::Consumed
@@ -275,7 +309,17 @@ pub fn resolve_content_pointer_event(
     let Some(binding) = binding else {
         return ContentPointerDisposition::Pass;
     };
-    let Some(position) = position else {
+    if !binding.authority_current {
+        if let InputEventKind::PointerButton {
+            button,
+            pressed: true,
+        } = kind
+        {
+            state.remember_suppressed(seat, device, button);
+        }
+        return ContentPointerDisposition::Consumed;
+    }
+    let Some(position) = position.and_then(|point| binding.transform.local(point)) else {
         return ContentPointerDisposition::Pass;
     };
     let target = binding
@@ -309,6 +353,7 @@ pub fn resolve_content_pointer_event(
             device,
             button,
             target: target.clone(),
+            transform: binding.transform.clone(),
             valid: true,
         },
     );

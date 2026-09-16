@@ -1,4 +1,7 @@
 use super::prelude::*;
+mod content_mapping_evidence;
+mod native_owner_retirement;
+use native_owner_retirement::{NativeRetirement, RetirementMode};
 
 use crate::desktop_output_activation::{
     NativeOutputActivationFailure, NativeOutputActivationSettlement,
@@ -1050,6 +1053,16 @@ pub(crate) fn run_persistent_xterm_session(
         );
     }
 
+    // These owners outlive both successful and failing owner-loop returns.
+    let mut native_retirement = NativeRetirement::default();
+    if let Some(native) = native_scanout.as_ref() {
+        native_retirement.admit(native)?;
+    }
+    let mut suspended_renderer_images = None;
+    let mut render_owners = LoopRenderOwners {
+        seat_active: true,
+        ..Default::default()
+    };
     let (primary_child, secondary_children) = process.children_mut();
     let result = run_session_loop(
         &mut config,
@@ -1072,6 +1085,9 @@ pub(crate) fn run_persistent_xterm_session(
             secondary_children,
             physical_input: &mut physical_input,
             native_scanout: &mut native_scanout,
+            native_retirement: &mut native_retirement,
+            render_owners: &mut render_owners,
+            suspended_renderer_images: &mut suspended_renderer_images,
             seat_controller: &mut seat_controller,
             wm_session: &mut wm_session,
             scripting: &mut scripting,
@@ -1092,7 +1108,7 @@ pub(crate) fn run_persistent_xterm_session(
             output_notifications,
         },
     );
-    let session_error = result.err().map(|error| error.to_string());
+    let session_error = result.err();
     let mut outer_cleanup_failures = Vec::new();
     drop(randr_witness);
     crate::session_println!("sophia_live_session_lifecycle schema=1 status=stopping_frontend");
@@ -1149,33 +1165,65 @@ pub(crate) fn run_persistent_xterm_session(
     if let Err(error) = xauthority.remove() {
         outer_cleanup_failures.push(format!("X authority cleanup failed: {error}"));
     }
-    // The successful loop has completed native detach/cleanup and dropped its
-    // actual Engine/runtime/CPU-scene owners. Finish the remaining native owner
-    // while the disconnected shell's accounting store is still alive.
-    if session_error.is_none()
-        && outer_cleanup_failures.is_empty()
-        && let Some(shell) = metadata_shell.as_mut()
-        && let Err(error) = shell.finish_content_shutdown(&mut native_scanout)
+    // All rendering owners survived the loop, including singleton custody in
+    // the visual runtime. Earlier errors do not waive their disposition.
+    if let Some(shell) = metadata_shell.as_mut()
+        && let Err(error) = shell.stop_for_session_shutdown()
     {
-        outer_cleanup_failures.push(format!("shell content final cleanup failed: {error}"));
+        outer_cleanup_failures.push(format!("shell admission shutdown failed: {error}"));
+    }
+    let native_finish = native_owner_retirement::finish_render_owners(
+        &mut render_owners.runtime,
+        &mut render_owners.scene,
+        &mut native_scanout,
+        &mut native_retirement,
+        render_owners.seat_active,
+        config.native_scanout,
+    );
+    let native_error = native_finish.err();
+    if let Some(error) = native_error.as_ref() {
+        outer_cleanup_failures.push(format!("native retirement unresolved: {error}"));
+    } else {
+        // A failed retirement keeps its handoff in the terminal error carrier.
+        // Only established native disposition permits releasing it and then
+        // collecting the shell's actual remaining resource consumers.
+        drop(suspended_renderer_images.take());
+        if let Some(shell) = metadata_shell.as_mut()
+            && let Err(error) = shell.finish_content_shutdown(&native_retirement)
+        {
+            outer_cleanup_failures.push(format!("shell content final cleanup failed: {error}"));
+        }
     }
     if outer_cleanup_failures.is_empty() {
         crate::session_println!(
             "sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed"
         );
     }
-    if let Some(original) = session_error {
-        if outer_cleanup_failures.is_empty() {
-            return Err(original.into());
-        }
-        return Err(format!(
-            "{original}; outer session cleanup failed: {}",
+    if session_error.is_some() || !outer_cleanup_failures.is_empty() {
+        let message = format!(
+            "{}{}{}",
+            session_error
+                .as_ref()
+                .map_or(String::new(), ToString::to_string),
+            if session_error.is_some() && !outer_cleanup_failures.is_empty() {
+                "; "
+            } else {
+                ""
+            },
             outer_cleanup_failures.join("; ")
-        )
-        .into());
-    }
-    if let Some(error) = outer_cleanup_failures.into_iter().next() {
-        return Err(error.into());
+        );
+        return Err(Box::new(native_owner_retirement::RetirementFailure::new(
+            message,
+            native_retirement,
+            (
+                native_scanout,
+                metadata_shell,
+                suspended_renderer_images,
+                render_owners,
+                session_error,
+                native_error,
+            ),
+        )));
     }
     Ok(())
 }

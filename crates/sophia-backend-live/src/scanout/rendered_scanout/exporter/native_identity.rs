@@ -10,6 +10,10 @@ use std::{
 pub(crate) struct NativeFrameOwner(NonZeroU64);
 
 impl NativeFrameOwner {
+    pub(crate) const fn raw(self) -> u64 {
+        self.0.get()
+    }
+
     pub(crate) fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let raw = NEXT
@@ -52,7 +56,7 @@ pub struct LiveNativeFrameIdentity {
 impl LiveNativeFrameIdentity {
     /// Process-local native owner incarnation for exact diagnostic correlation.
     pub const fn owner(self) -> u64 {
-        self.owner.0.get()
+        self.owner.raw()
     }
 
     pub const fn output(self) -> sophia_protocol::OutputId {

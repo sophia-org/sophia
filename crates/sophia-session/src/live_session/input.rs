@@ -1383,7 +1383,7 @@ fn route_input_events_with_launcher(
                 if pointer_routing_enabled
                     && let Some(state) = content_captures.as_deref_mut()
                 {
-                    match sophia_engine::resolve_content_pointer_event(
+                    let disposition = sophia_engine::resolve_content_pointer_event(
                         state,
                         event.seat,
                         event.device,
@@ -1391,7 +1391,24 @@ fn route_input_events_with_launcher(
                         event.global_position,
                         content_binding,
                         application_owned,
-                    ) {
+                    );
+                    if let (sophia_protocol::InputEventKind::PointerButton { pressed, .. }, Some(binding)) = (kind, content_binding)
+                        && !matches!(disposition, sophia_engine::ContentPointerDisposition::Pass)
+                    {
+                        let status = match &disposition {
+                            sophia_engine::ContentPointerDisposition::Captured => "captured",
+                            sophia_engine::ContentPointerDisposition::Activated(_) => "activated",
+                            sophia_engine::ContentPointerDisposition::Cancelled => "cancelled",
+                            _ => "consumed",
+                        };
+                        crate::session_println!(
+                            "sophia_shell_pointer_binding schema=1 status={} pressed={} observed_output={} output_generation={} candidate={} presentation={} layout_generation={} authority_current={}",
+                            status, pressed, binding.output.id, binding.output.generation,
+                            binding.candidate_generation, binding.presentation_epoch,
+                            binding.transform.layout_generation, binding.authority_current,
+                        );
+                    }
+                    match disposition {
                         sophia_engine::ContentPointerDisposition::Pass => {}
                         sophia_engine::ContentPointerDisposition::Activated(target) => {
                             report.content_activations.push(target);

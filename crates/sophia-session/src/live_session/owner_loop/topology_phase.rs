@@ -99,12 +99,13 @@
     if rebuild_requested {
         output_topology_retry_at = None;
         pause_metadata_shell_presentation!("topology_rebuild");
-        let mut renderer_handoff = suspended_renderer_images.take();
+        let mut retirement_mode = RetirementMode::Abandoned;
         if let (Some(runtime), Some(native)) = (runtime.as_mut(), native_scanout.as_mut()) {
             match runtime.suspend_native_scanout(native, &outputs, Duration::from_secs(2)) {
                 Ok(report) => {
+                    retirement_mode = RetirementMode::from_suspend(report.outcome);
                         native_evidence.observe_settlement(report.outcome.drained(), report.abandoned_scanouts);
-                    renderer_handoff = Some(capture_renderer_image_handoff(
+                    *suspended_renderer_images = Some(capture_renderer_image_handoff(
                         runtime,
                         native,
                     )?);
@@ -120,7 +121,7 @@
                     let report = runtime.suspend_revoked_native_scanout(&outputs)?;
                     native_evidence.observe_settlement(report.outcome.drained(), report.abandoned_scanouts);
                     let discarded = runtime.discard_retained_renderer_images();
-                    renderer_handoff = None;
+                    *suspended_renderer_images = None;
                     tracing::warn!(
                         "sophia_live_output_topology schema=1 status=forced_detach transition={} error={error} abandoned_scanouts={} discarded_images={discarded}",
                         output_topology_owner.transition,
@@ -129,9 +130,10 @@
                 }
             }
         }
-        close_native_owner!("topology_rebuild");
+        close_native_owner!("topology_rebuild", retirement_mode);
 
         if !native_recovery_allowed!() { continue; }
+        native_retirement.finish()?;
         let replacement = match seat_controller.as_ref() {
             Some(controller) => {
                 LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
@@ -147,14 +149,16 @@
         match replacement {
             Err(error) => {
                 let _ = output_topology_owner.observe_rebuild(Vec::new(), Vec::new())?;
-                suspended_renderer_images = renderer_handoff;
                 output_topology_retry_at = Some(Instant::now() + Duration::from_millis(250));
                 tracing::warn!(
                     "sophia_live_output_topology schema=1 status=unavailable transition={} retry_msec=250 error={error}",
                     output_topology_owner.transition,
                 );
             }
-            Ok(mut replacement) => {
+            Ok(replacement) => {
+                *native_scanout = Some(replacement);
+                native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
+                let replacement = native_scanout.as_mut().expect("just adopted");
                 let replacement_outputs = replacement.outputs();
                 let rebuild = output_topology_owner
                     .observe_rebuild(replacement_outputs.clone(), replacement.head_fingerprint())?;
@@ -177,10 +181,10 @@
                     .ok_or("DRM topology rescan lost the visual runtime")?;
                 let restored = resume_native_scanout_from_scene(
                     runtime,
-                    &mut replacement,
+                    replacement,
                     &replacement_outputs,
-                    &mut scene,
-                    renderer_handoff,
+                    scene,
+                    suspended_renderer_images,
                 )?;
 
                 if topology_changed {
@@ -285,7 +289,6 @@
                     });
                 }
                 native_evidence.open("topology_rebuild");
-                *native_scanout = Some(replacement);
                 native_presentation_admitted = false;
                 tracing::info!(
                     "sophia_live_output_topology schema=1 status=published transition={} topology_epoch={} generation={} outputs={} changed={} restored_images={} policy_required={} input=quarantined",
@@ -314,7 +317,7 @@
             let focused = runtime.focused_surface();
             scene.force_full_repaint();
             let forced = runtime.run_cpu_repaint(
-                &mut scene,
+                scene,
                 focused,
                 focused,
                 LiveProductionCursorPresentation::HardwarePlane,

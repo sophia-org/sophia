@@ -7,6 +7,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 #[path = "policy_active_focus.rs"]
 mod policy_active_focus;
 
+#[path = "../../../sophia-config/examples/desktop_profile_probe.rs"]
+mod desktop_probe;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,
@@ -18,7 +21,11 @@ impl ReloadFixture {
         Self::from_config_fixture(ConfigFixture::new(&[]))
     }
 
-    fn from_config_fixture(mut source: ConfigFixture) -> Self {
+    fn from_config_fixture(source: ConfigFixture) -> Self {
+        Self::from_config_with_actions(source, Vec::new())
+    }
+
+    fn from_config_with_actions(mut source: ConfigFixture, actions: Vec<sophia_protocol::PolicyActionRegistration>) -> Self {
         source.config.wm_socket_path = source.directory.join("wm.sock");
         activate_session_profile(&mut source.config);
         let config = &source.config;
@@ -55,7 +62,7 @@ impl ReloadFixture {
         let configuration = sophia_protocol::PolicyConfiguration {
             connection_epoch: 1,
             generation: key.generation().raw(),
-            actions: Vec::new(),
+            actions,
             chrome: sophia_protocol::WmChromePolicy::default(),
         };
         let commands = SessionCommandRegistry::prepare(1, &config.applications).unwrap();
@@ -532,17 +539,27 @@ fn rejected_policy_restores_the_exact_spec_fragments_and_commands() {
 #[test]
 fn lom_panel_gate_commits_hagias_complete_catalog_and_rejects_a_missing_slot() {
     let core = include_str!("../../../../tools/fixtures/lom_panel_core.kdl");
-    let desktop = include_str!("../../../../tools/fixtures/lom_panel_desktop.kdl");
     let arguments = [
         "--session-app=browser=/usr/bin/true",
         "--session-action-app=browser=browser",
         "--wm-process-default=/usr/bin/true",
         "--shell-process-default=/usr/bin/true",
     ];
+    let wm = ConfigFixture::from_documents(core, r#"schema 1
+        policy { layout "scroller"; }
+        shell { enabled #true; }
+        shortcut { profile "operator"; bind "Super+4" "policy:focus-workspace 7"; }
+        session { startup "terminal"; }
+    "#, &arguments);
+    let overrides = wm.directory.join("probe.kdl");
+    std::fs::write(&overrides, include_str!("../../../../tools/fixtures/lom_panel_desktop.kdl")).unwrap();
+    let desktop = desktop_probe::compose(&wm.directory.join("desktop.kdl"), &overrides).unwrap();
     let make_fixture = || {
-        ReloadFixture::from_config_fixture(ConfigFixture::from_documents(
-            core, desktop, &arguments,
-        ))
+        ReloadFixture::from_config_with_actions(ConfigFixture::from_documents(
+            core, &desktop, &arguments,
+        ), vec![sophia_protocol::PolicyActionRegistration {
+            action: WmActionId::from_raw(8), name: "focus-workspace 7".into(), session_operation_slot: None,
+        }])
     };
     let policy_configuration = |fixture: &ReloadFixture| {
         let mut configuration = fixture.configuration();
@@ -553,11 +570,18 @@ fn lom_panel_gate_commits_hagias_complete_catalog_and_rejects_a_missing_slot() {
                 session_operation_slot: Some(slot),
             })
             .collect();
+        configuration.actions.push(sophia_protocol::PolicyActionRegistration {
+            action: WmActionId::from_raw(8),
+            name: "focus-workspace 7".into(),
+            session_operation_slot: None,
+        });
         configuration
     };
 
     let mut admitted = make_fixture();
     assert!(admitted.source.config.applications.startup.is_empty());
+    assert_eq!(admitted.source.config.shortcut_profile_candidate.bindings,
+        wm.config.shortcut_profile_candidate.bindings);
     let catalog = admitted.source.config.application_catalog.as_ref().unwrap();
     assert_eq!(catalog.name, "lom-panel-gate");
     assert!(catalog.sources.is_empty());

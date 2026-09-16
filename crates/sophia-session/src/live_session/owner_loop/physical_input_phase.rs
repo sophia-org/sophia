@@ -1038,7 +1038,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             surface_samples += 1;
             next_surface_sample = sample_now + Duration::from_secs(1);
             if let Some(runtime) = runtime.as_ref() {
-                log_cpu_surface_sample(&scene, runtime.committed_surfaces(), surface_samples);
+                log_cpu_surface_sample(scene, runtime.committed_surfaces(), surface_samples);
             }
         }
         if resource_sampler.is_due(sample_now) {
@@ -1078,6 +1078,9 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             wm_session.as_ref().is_some_and(LiveWmSession::startup_output_topology_pending),
         );
         if shell_presentation_available {
+            if let Some((runtime, native)) = runtime.as_ref().zip(native_scanout.as_ref()) {
+                content_mapping_evidence.observe(native, runtime.input_projections());
+            }
             if let Some(shell) = metadata_shell.as_mut() {
                 let _ = shell.set_presentation_available(true, "native_available")?;
             }
@@ -1126,7 +1129,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     if let Some(overlay)=shell.poll_candidate(broker)?
-                        && let Err(error)=runtime.set_descriptor_overlay(overlay,&scene,native_scanout.as_mut()) {
+                        && let Err(error)=runtime.set_descriptor_overlay(overlay,scene,native_scanout.as_mut()) {
                             shell.reject_pending()?;return Err(error);
                         }
                     Ok(())
@@ -1168,7 +1171,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                         shell.recover_transport("indicator_activation_failure")?;revoke_shell_input=true;
                     }
                 }
-                match shell.service_tabs(publication,broker,runtime,&scene,native_scanout.as_mut()) {
+                match shell.service_tabs(publication,broker,runtime,scene,native_scanout.as_mut()) {
                     Ok(focus)=>for(surface,output) in focus {
                         if let (Some(wm),Some(output))=(wm_session.as_mut(),outputs.iter().find(|o|o.id==output).copied()) {
                             wm.enqueue_tab_focus(surface,output.id)?;
@@ -1178,21 +1181,21 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if let Some(runtime)=runtime.as_mut() {
-                if let Err(error)=shell.service_launcher(config,xauthority,&mut session_launches,secondary_children,&mut launch_admission_started_at,runtime,&scene,native_scanout.as_mut()){
+                if let Err(error)=shell.service_launcher(config,xauthority,&mut session_launches,secondary_children,&mut launch_admission_started_at,runtime,scene,native_scanout.as_mut()){
                     crate::session_eprintln!("sophia_launcher status=unavailable error={error}");
                     shell.cancel_launcher()?;
                     shell.recover_transport("launcher_failure")?;
-                    runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;
+                    runtime.set_descriptor_overlay(None,scene,native_scanout.as_mut())?;
                     revoke_shell_input=true;
                 }
                 shell.update_launcher_capture(&mut launcher_capture);
                 if launcher_capture.active(){key_repeat.cancel_all();}
                 let shortcuts=wm_session.as_ref().and_then(LiveWmSession::reference_shortcuts);
                 let reference_output=wm_session.as_ref().and_then(LiveWmSession::reference_output).unwrap_or(output.id);
-                if let Err(error)=shell.service_reference(shortcuts,reference_output,runtime,&scene,native_scanout.as_mut()) {
+                if let Err(error)=shell.service_reference(shortcuts,reference_output,runtime,scene,native_scanout.as_mut()) {
                     crate::session_eprintln!("sophia_reference status=unavailable error={error}");
                     shell.recover_transport("reference_failure")?;
-                    runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;
+                    runtime.set_descriptor_overlay(None,scene,native_scanout.as_mut())?;
                     revoke_shell_input=true;
                 }
                 let reference_input=shell.reference_input();
@@ -1207,7 +1210,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or("shell content output topology has no root bounds")?;
                 if let Err(error) = shell.service_content(
                     runtime,
-                    &scene,
+                    scene,
                     native_scanout.as_mut(),
                     &outputs,
                     &output_bounds,
@@ -1266,7 +1269,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 content_captures.revoke_targets();
                 if let Some(runtime) = runtime.as_mut() {
                     runtime.revoke_descriptor_overlay_interaction();
-                    if reference_was_active {runtime.set_descriptor_overlay(None,&scene,native_scanout.as_mut())?;}
+                    if reference_was_active {runtime.set_descriptor_overlay(None,scene,native_scanout.as_mut())?;}
                 }
             }
             shell_work_area_bands = Some(shell.work_area_bands());
@@ -1326,6 +1329,10 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         }
         *failure_phase = crate::diagnostics::SessionFailurePhase::Lifecycle;
         include!("lifecycle.rs");
+        // Seat disable acknowledgement precedes worker retirement visits.
+        if requested_virtual_terminal.is_none() {
+            let _ = native_retirement.poll()?;
+        }
         *failure_phase = crate::diagnostics::SessionFailurePhase::WindowManagement;
         include!("wm_phase.rs");
         *failure_phase = crate::diagnostics::SessionFailurePhase::Authority;

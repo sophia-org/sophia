@@ -8,15 +8,16 @@ let suspended = runtime
     .ok_or("startup native recovery lost the visual runtime")?
     .suspend_native_scanout(current, &outputs, Duration::from_millis(100))?;
 native_evidence.observe_settlement(suspended.outcome.drained(), suspended.abandoned_scanouts);
-let renderer_handoff = capture_renderer_image_handoff(
+*suspended_renderer_images = Some(capture_renderer_image_handoff(
     runtime
         .as_ref()
         .ok_or("startup native recovery lost the visual runtime")?,
     current,
-)?;
-close_native_owner!("startup_recovery");
+)?);
+close_native_owner!("startup_recovery", RetirementMode::from_suspend(suspended.outcome));
 if !native_recovery_allowed!() { continue; }
-let mut replacement = LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
+        native_retirement.finish()?;
+let replacement = LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
     &seat_controller
         .as_ref()
         .ok_or("startup native recovery lost the seat controller")?
@@ -25,11 +26,13 @@ let mut replacement = LiveProductionNativeScanout::new_with_seat_mirroring_mappi
     initial_head_mapping,
     config.cursor_resolution.asset.clone(),
 )?;
+*native_scanout = Some(replacement);
+native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
+let replacement = native_scanout.as_mut().expect("just adopted");
 if replacement.outputs() != outputs {
-    suspended_renderer_images = Some(renderer_handoff);
     schedule_output_topology_rebuild!("startup_recovery", false);
     startup_topology_recovery_pending = true;
-    drop(replacement);
+    close_native_owner!("replacement_mismatch");
     tracing::warn!(
         "sophia_live_session_startup schema=3 status=recovery_deferred reason=output_topology_changed"
     );
@@ -39,13 +42,12 @@ if replacement.outputs() != outputs {
         .ok_or("startup native recovery lost the visual runtime")?;
     let restored_renderer_images = resume_native_scanout_from_scene(
         runtime,
-        &mut replacement,
+        replacement,
         &outputs,
-        &mut scene,
-        Some(renderer_handoff),
+        scene,
+        suspended_renderer_images,
     )?;
     native_evidence.open("startup_recovery");
-    *native_scanout = Some(replacement);
     let _ = reduce_session_startup(
         &mut startup_readiness,
         SessionStartupEvent::NativeRecovered,

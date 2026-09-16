@@ -36,7 +36,12 @@ impl LiveProductionVisualRuntime {
         {
             return Err("shell content frame is malformed".into());
         }
-        if self.shell_content.get(&frame.output) == Some(&frame) {
+        if self
+            .shell_content
+            .get(&frame.output)
+            .map(|owned| &owned.frame)
+            == Some(&frame)
+        {
             return Ok(false);
         }
         let native_scanout = native_scanout
@@ -59,7 +64,16 @@ impl LiveProductionVisualRuntime {
                     .into(),
             );
         }
-        let previous = self.shell_content.insert(output, frame);
+        let transform = sophia_engine::PresentedContentTransform {
+            viewport: self
+                .outputs
+                .logical_viewport(output)
+                .ok_or("shell content output has no committed viewport")?,
+            layout_generation: self.content_layout_generation,
+        };
+        let previous = self
+            .shell_content
+            .insert(output, AdmittedShellContent { frame, transform });
         let previous_retirement = self.retained_projection_retirements.insert(output, grant);
         if let Err(error) = self.queue_retained_projection(scene, native_scanout) {
             match previous_retirement {
@@ -126,6 +140,7 @@ impl LiveProductionVisualRuntime {
         candidate_generation: u64,
     ) -> Option<u64> {
         let frame = self.shell_content.get(&output)?;
+        let frame = &frame.frame;
         if frame.candidate_generation != candidate_generation {
             return None;
         }

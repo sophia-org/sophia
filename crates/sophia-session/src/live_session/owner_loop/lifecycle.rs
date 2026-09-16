@@ -1,8 +1,10 @@
 {
         if let Some(controller) = seat_controller.as_mut() {
+            render_owners.seat_active = false;
             if let Some(event) = controller.dispatch()? {
                 seat_state = seat_state.observe(event);
             }
+            render_owners.seat_active = seat_state == sophia_backend_live::LiveSeatState::Active;
             if seat_state == sophia_backend_live::LiveSeatState::Active
                 && native_recovery_allowed!()
                 && let Some((terminal, queued_at)) = pending_virtual_terminal
@@ -68,7 +70,7 @@
                 match quiesced {
                     Ok(report) => {
                         native_evidence.observe_settlement(report.outcome.drained(), report.abandoned_scanouts);
-                        suspended_renderer_images = match (runtime.as_ref(), native_scanout.as_mut())
+                        *suspended_renderer_images = match (runtime.as_ref(), native_scanout.as_mut())
                         {
                             (Some(runtime), Some(native)) => {
                                 Some(capture_renderer_image_handoff(runtime, native)?)
@@ -79,7 +81,7 @@
                             "sophia_live_renderer_handoff schema=1 status=captured images={}",
                             suspended_renderer_images.as_ref().map_or(0, |handoff| handoff.len()),
                         );
-                        close_native_owner!("seat_release");
+                        close_native_owner!("seat_release", RetirementMode::from_suspend(report.outcome));
                         seat_release_prepared = true;
                         crate::session_println!(
                             "sophia_live_session_vt schema=6 status=quiesced target={terminal} outcome={} drained={} abandoned_scanouts={} skipped_present={}",
@@ -103,29 +105,33 @@
                             Err(error) => {
                                 seat_release_prepared = false;
                                 if !native_recovery_allowed!() { continue; }
-                                let mut resumed =
+                                native_retirement.finish()?;
+                let resumed =
                                     LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                                         &controller.device_opener(),
                                         mirror_grouping,
                                         initial_head_mapping,
                                         config.cursor_resolution.asset.clone(),
                                     )?;
+                                *native_scanout = Some(resumed);
+                                native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
+                                let resumed = native_scanout.as_mut().expect("just adopted");
                                 if resumed.outputs() != outputs {
                                     schedule_output_topology_rebuild!("switch_rejected", true);
-                                    drop(resumed);
+                                    close_native_owner!("replacement_mismatch");
                                 } else {
                                     let restored = resume_native_scanout_from_scene(
                                         runtime.as_mut().ok_or(
                                             "seat switch rejection lost the visual runtime",
                                         )?,
-                                        &mut resumed,
+                                        resumed,
                                         &outputs,
-                                        &mut scene,
-                                        suspended_renderer_images.take(),
+                                        scene,
+                                        suspended_renderer_images,
                                     )?;
                                     publish_resumed_topology_transport!(resumed);
                                     native_evidence.open("seat_resume");
-                                    *native_scanout = Some(resumed);
+
                     native_presentation_admitted = false;
                                     crate::session_println!(
                                         "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=switch_rejected"
@@ -186,29 +192,33 @@
             {
                 requested_virtual_terminal = None;
                 seat_release_prepared = false;
-                let mut resumed =
+                native_retirement.finish()?;
+                let resumed =
                     LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                         &controller.device_opener(),
                         mirror_grouping,
                         initial_head_mapping,
                         config.cursor_resolution.asset.clone(),
                     )?;
+                *native_scanout = Some(resumed);
+                native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
+                let resumed = native_scanout.as_mut().expect("just adopted");
                 if resumed.outputs() != outputs {
                     schedule_output_topology_rebuild!("switch_timeout", true);
-                    drop(resumed);
+                    close_native_owner!("replacement_mismatch");
                 } else {
                     let restored = resume_native_scanout_from_scene(
                         runtime
                             .as_mut()
                             .ok_or("seat switch timeout lost the visual runtime")?,
-                        &mut resumed,
+                        resumed,
                         &outputs,
-                        &mut scene,
-                        suspended_renderer_images.take(),
+                        scene,
+                        suspended_renderer_images,
                     )?;
                     publish_resumed_topology_transport!(resumed);
                     native_evidence.open("seat_resume");
-                    *native_scanout = Some(resumed);
+
                     native_presentation_admitted = false;
                     crate::session_println!(
                         "sophia_live_renderer_handoff schema=1 status=restored images={restored} source=disable_timeout"
@@ -274,7 +284,7 @@
                     let report = runtime.suspend_revoked_native_scanout(&outputs)?;
                     native_evidence.observe_settlement(report.outcome.drained(), report.abandoned_scanouts);
                     let discarded_renderer_images = runtime.discard_retained_renderer_images();
-                    suspended_renderer_images = None;
+                    *suspended_renderer_images = None;
                     crate::session_println!(
                         "sophia_live_seat schema=2 status=forced_detach abandoned_scanouts={} skipped_present={}",
                         report.abandoned_scanouts,
@@ -286,9 +296,10 @@
                         "sophia_live_renderer_handoff schema=1 status=discarded images={discarded_renderer_images} source=forced_detach"
                     );
                 }
-                close_native_owner!("seat_release");
+                close_native_owner!("seat_release", RetirementMode::DeviceRevoked);
                 controller.acknowledge_disable()?;
                 seat_state = seat_state.released();
+                render_owners.seat_active = false;
                 seat_release_prepared = false;
                 requested_virtual_terminal = None;
                 modifiers = config.keyboard_mapper();
@@ -302,16 +313,20 @@
                 && native_recovery_allowed!()
             {
                 crate::session_println!("sophia_live_seat schema=1 status=acquire_pending");
-                let mut resumed =
+                native_retirement.finish()?;
+                let resumed =
                     LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                         &controller.device_opener(),
                         mirror_grouping,
                         initial_head_mapping,
                         config.cursor_resolution.asset.clone(),
                     )?;
+                *native_scanout = Some(resumed);
+                native_retirement.admit(native_scanout.as_ref().expect("just adopted"))?;
+                let resumed = native_scanout.as_mut().expect("just adopted");
                 if resumed.outputs() != outputs {
                     schedule_output_topology_rebuild!("seat_resume", true);
-                    drop(resumed);
+                    close_native_owner!("replacement_mismatch");
                 } else {
                     let frames = scene.frames_for_outputs(&outputs)?;
                     let scene_outputs = frames.len();
@@ -326,14 +341,14 @@
                         runtime
                             .as_mut()
                             .ok_or("seat resume lost the visual runtime")?,
-                        &mut resumed,
+                        resumed,
                         &outputs,
-                        &mut scene,
-                        suspended_renderer_images.take(),
+                        scene,
+                        suspended_renderer_images,
                     )?;
                     publish_resumed_topology_transport!(resumed);
                     native_evidence.open("seat_resume");
-                    *native_scanout = Some(resumed);
+
                     native_presentation_admitted = false;
                     // CPU snapshots live in the Engine scene, outside the imported
                     // renderer-image table. Record both recovery paths separately.
@@ -356,6 +371,7 @@
                 )?;
                 cursor_updates = CursorUpdateState::new(pointer.position().is_some());
                 seat_state = seat_state.acquired();
+                render_owners.seat_active = seat_state == sophia_backend_live::LiveSeatState::Active;
                 crate::session_println!("sophia_live_seat schema=1 status=active source=resume");
                 std::io::stdout().flush()?;
             }
@@ -625,7 +641,7 @@
                     layout.consume_escaped_present(key);
                 }
             }
-            let service = match runtime.service_native(native_scanout, &scene) {
+            let service = match runtime.service_native(native_scanout, scene) {
                 Ok(service) => Some(service),
                 Err(error) => {
                     let Some(execution) = active_output_topology_preparation.as_mut() else {
@@ -1202,7 +1218,7 @@
                         // private path would prove nothing about the product.
                         match runtime.set_descriptor_overlay(
                             Some(overlay),
-                            &scene,
+                            scene,
                             native_scanout.as_mut(),
                         ) {
                             Ok(_) => crate::session_println!(
@@ -1222,7 +1238,7 @@
                     if let Some(runtime) = runtime.as_mut() {
                         match runtime.set_descriptor_overlay(
                             None,
-                            &scene,
+                            scene,
                             native_scanout.as_mut(),
                         ) {
                             Ok(_) => crate::session_println!(

@@ -7,6 +7,13 @@ pub struct LiveRendererImageSnapshot {
 }
 
 impl LiveRendererImageSnapshot {
+    pub fn try_clone(&self) -> std::io::Result<Self> {
+        Ok(Self {
+            image_id: self.image_id,
+            inner: self.inner.try_clone()?,
+        })
+    }
+
     pub const fn image_id(&self) -> LiveRendererImageId {
         self.image_id
     }

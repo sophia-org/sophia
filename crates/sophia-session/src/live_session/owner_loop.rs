@@ -18,6 +18,9 @@ struct SessionLoopResources<'a> {
     secondary_children: &'a mut Vec<ManagedSessionChild>,
     physical_input: &'a mut Option<SessionPhysicalInput>,
     native_scanout: &'a mut Option<LiveProductionNativeScanout>,
+    native_retirement: &'a mut NativeRetirement,
+    render_owners: &'a mut LoopRenderOwners,
+    suspended_renderer_images: &'a mut Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
     seat_controller: &'a mut Option<sophia_backend_live::LiveSeatController>,
     wm_session: &'a mut Option<LiveWmSession>,
     scripting: &'a mut LiveControlState,
@@ -30,6 +33,13 @@ struct SessionLoopResources<'a> {
     /// Neutral initial policy for heads reconstructed after VT/hotplug loss.
     /// Output-authority commits may replace it independently on live heads.
     initial_head_mapping: sophia_protocol::OutputHeadMapping,
+}
+
+#[derive(Default)]
+struct LoopRenderOwners {
+    runtime: Option<LiveProductionVisualRuntime>,
+    scene: Option<LiveProductionCpuScene>,
+    seat_active: bool,
 }
 
 struct SessionLoopStartup<'a> {
@@ -132,9 +142,11 @@ fn resume_native_scanout_from_scene(
     native: &mut LiveProductionNativeScanout,
     outputs: &[sophia_engine::HeadlessOutput],
     scene: &mut LiveProductionCpuScene,
-    handoff: Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
+    handoff: &mut Option<sophia_backend_live::LiveProductionRendererImageHandoff>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    runtime.resume_native_scanout(native, outputs, scene, handoff)
+    native_owner_retirement::restore_retained_handoff(handoff, |handoff| {
+        runtime.resume_native_scanout(native, outputs, scene, handoff)
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -284,6 +296,9 @@ fn run_session_loop_inner(
         secondary_children,
         physical_input,
         native_scanout,
+        native_retirement,
+        render_owners,
+        suspended_renderer_images,
         seat_controller,
         wm_session,
         scripting,
@@ -339,7 +354,7 @@ fn run_session_loop_inner(
         sophia_backend_live::LiveDrmTopologyRescanNotice,
     > = None;
     let mut output_topology_policy_commit_baseline = 0u64;
-    let mut scene = LiveProductionCpuScene::new(output.size);
+    let scene = render_owners.scene.insert(LiveProductionCpuScene::new(output.size));
     scene.set_cursor_asset(config.cursor_resolution.asset.clone());
     let cursor_fallback = config
         .cursor_resolution
@@ -397,7 +412,8 @@ fn run_session_loop_inner(
         .unwrap_or(config.surface_chrome_style);
     let window_transitions_enabled = !std::env::var("SOPHIA_ENABLE_WINDOW_TRANSITIONS")
         .is_ok_and(|value| value == "0");
-    let mut runtime = if initialize_empty_runtime {
+    let runtime = &mut render_owners.runtime;
+    if initialize_empty_runtime {
         let mut initialized = LiveProductionVisualRuntime::new(&outputs, native_scanout.as_mut())?
         .with_m4_proof_controls(
             config.m4_first_acquire_delay,
@@ -411,9 +427,11 @@ fn run_session_loop_inner(
                 .as_ref()
                 .and_then(LiveWmSession::indicator_publication),
         );
+        *runtime = Some(initialized);
         if let Some(native) = native_scanout.as_mut() {
+            let initialized = runtime.as_mut().expect("runtime just retained");
             let _ = initialized.run_cpu_repaint(
-                &mut scene,
+                scene,
                 None,
                 None,
                 LiveProductionCursorPresentation::HardwarePlane,
@@ -421,10 +439,7 @@ fn run_session_loop_inner(
                 native,
             )?;
         }
-        Some(initialized)
-    } else {
-        None
-    };
+    }
     let mut window_allocation_publisher = window_allocation::LiveWindowAllocationPublisher::default();
     let mut last_authority_update = started;
     let mut injection_checksum = None;
@@ -610,6 +625,7 @@ fn run_session_loop_inner(
     }
     let mut session_quiescence = None::<SessionQuiescence>;
     let mut native_evidence = NativeSessionEvidence::default();
+    let mut content_mapping_evidence = content_mapping_evidence::ContentMappingEvidence::default();
     if native_scanout.is_some() {
         native_evidence.open("startup");
     }
@@ -620,8 +636,8 @@ fn run_session_loop_inner(
         };
     }
     macro_rules! close_native_owner {
-        ($reason:literal) => {{
-            if let Some(native) = native_scanout.take() {
+        ($reason:literal, $mode:expr) => {{
+            if let Some(native) = native_scanout.as_ref() {
                 cpu_visual_progress.observe_native_scanout(&native, Instant::now());
                 cpu_visual_progress.close_native_owner();
                 input_latency_samples.close_native_owner();
@@ -630,7 +646,9 @@ fn run_session_loop_inner(
                 startup_required_submissions = None;
                 native_evidence.close(&NativeEvidenceSnapshot::capture(&native), $reason);
             }
+            native_retirement.begin(native_scanout, $mode, $reason)?;
         }};
+        ($reason:literal) => { close_native_owner!($reason, RetirementMode::Drained) };
     }
 
 
@@ -656,7 +674,6 @@ fn run_session_loop_inner(
     let mut pending_virtual_terminal: Option<(u8, Instant)> = None;
     let mut requested_virtual_terminal = None;
     let mut seat_release_prepared = false;
-    let mut suspended_renderer_images = None;
     let mut observed_wm_restart_count = wm_session.as_ref().map_or(0, |wm| wm.restarts);
     let mut output_proof_rollback_after_apply =
         OutputProofRollbackAfterApply::new(config.output_proof_rollback_after_apply);

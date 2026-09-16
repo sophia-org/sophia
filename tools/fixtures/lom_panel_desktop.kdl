@@ -1,15 +1,12 @@
 schema 1
 
-policy { layout "scroller"; }
+// Probe overrides only. Policy and shortcuts come from the selected WM profile.
 shell {
     enabled #true
     content #true
     content-input #true
     panel 24
     gpu "direct"
-}
-shortcut {
-    profile "lom-panel-gate"
 }
 session {
     // The catalog makes Hagia's launcher action callable. The explicit empty

@@ -408,3 +408,18 @@ The metadata-shell `launch.rs` test mount exercises private preparation and
 post-negotiation state with real local socket handshakes. Its test body lives in
 `tests/support/shell_startup.rs`; supplied protection evidence is not a native
 supervisor proof. The exception permits that exact external fixture mount only.
+
+The `native_owner_retirement.rs` mount exercises the private production retirement
+owner with simulated worker/disposition effects. Its external fixture checks
+held bytes, exact successor identity, and terminal error custody without exposing
+a public completion constructor. It does not construct a native scanout, exercise
+KMS, or establish device cleanup. The exception permits this mount only.
+
+The external `presented_projection.rs` fixture retains the existing private
+projection and geometry controls relocated from the production module. Its mount
+does not expose projection internals publicly or change the tested transitions.
+
+The external image-snapshot ownership fixture mounts beside private plane fields
+so ordinary socket descriptors can check duplicate ownership and retained-source
+lifetime without constructing an EGL context or exposing a public fake-image
+constructor. It proves descriptor custody only, not DMA-BUF import or rendering.

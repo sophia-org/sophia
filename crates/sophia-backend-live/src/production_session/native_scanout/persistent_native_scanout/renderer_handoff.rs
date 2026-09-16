@@ -87,7 +87,7 @@ impl LiveProductionNativeScanout {
 
     pub fn restore_renderer_image_handoff(
         &mut self,
-        handoff: LiveProductionRendererImageHandoff,
+        handoff: &LiveProductionRendererImageHandoff,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let expected_count = handoff.expected.len();
         let active = self
@@ -146,14 +146,14 @@ impl LiveProductionNativeScanout {
         )?;
         let plan = crate::plan_live_renderer_image_restore(&owners)
             .map_err(|_| "renderer-image handoff contains invalid owner coverage")?;
-        for ((index, source), selected) in indices.into_iter().zip(handoff.heads).zip(plan) {
+        for ((index, source), selected) in indices.into_iter().zip(&handoff.heads).zip(plan) {
             let mut selected = selected.into_iter().peekable();
-            for (position, snapshot) in source.snapshots.into_iter().enumerate() {
+            for (position, snapshot) in source.snapshots.iter().enumerate() {
                 if selected.peek() != Some(&position) {
                     continue;
                 }
                 selected.next();
-                if !self.exporters[index].restore_promoted_renderer_image(snapshot)? {
+                if !self.exporters[index].restore_promoted_renderer_image(snapshot.try_clone()?)? {
                     return Err("replacement renderer rejected a retained image snapshot".into());
                 }
             }

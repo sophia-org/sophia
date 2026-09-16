@@ -16,13 +16,13 @@ impl LiveMetadataShell {
         Ok(())
     }
 
-    /// Called only after the owner loop returned successfully and its runtime
-    /// and CPU scene have actually dropped. Consume the remaining native owner
+    /// Called after the owner loop returned and its runtime, CPU scene and
+    /// renderer handoff have actually dropped. Require exact native retirement
     /// before settling disconnected submissions. No destructor of the protocol
     /// accounting owner can substitute for the final collection below.
     pub(in crate::live_session) fn finish_content_shutdown(
         &mut self,
-        native: &mut Option<LiveProductionNativeScanout>,
+        retirement: &crate::live_session::native_owner_retirement::NativeRetirement,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if !self.content.owns_work_area() {
             return Ok(());
@@ -30,26 +30,19 @@ impl LiveMetadataShell {
         if !self.presentation_paused || self.connected {
             return Err("shell content shutdown still has live admission".into());
         }
-        if native.as_ref().is_some_and(|native| {
-            !native.output_topology_preparation_quiescent() || native.any_head_cleanup_pending()
-        }) {
-            return Err("shell content shutdown still has native work or cleanup".into());
-        }
-        native
-            .as_mut()
-            .ok_or("shell content shutdown has no native owner")?
-            .shutdown_renderer_workers(Duration::from_secs(2))?;
-        let report = match self
-            .transport
-            .finish_content_after_backend_drop(native.take())
-        {
+        let completed = retirement.completion()?;
+        let report = match self.transport.finish_content_after_backend_drop(completed) {
             Ok(report) => report,
-            Err(owner) => {
-                *native = owner;
+            Err(_) => {
                 return Err("shell content shutdown refused a live transport epoch".into());
             }
         };
         let accounting = report.accounting;
+        crate::session_println!(
+            "sophia_shell_native_retirement schema=1 owner={} disposition={:?}",
+            completed.identity,
+            completed.mode,
+        );
         content_accounting::emit(
             "sophia_shell_content_shutdown",
             if accounting.quiescent() {

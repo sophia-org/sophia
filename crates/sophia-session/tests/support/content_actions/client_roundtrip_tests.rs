@@ -18,6 +18,10 @@ struct Harness {
 
 impl Harness {
     fn new() -> Self {
+        Self::on_output(5)
+    }
+
+    fn on_output(output: u64) -> Self {
         let directory = std::env::temp_dir().join(format!(
             "sophia-client-action-{}-{}",
             std::process::id(),
@@ -75,6 +79,7 @@ impl Harness {
         };
         let mut target = super::tests::target();
         target.grant = limits.grant;
+        target.output.id = output;
         let mut lifecycle = ContentLifecycle::new(limits.clone()).unwrap();
         lifecycle
             .register(ClientContentCandidate {
@@ -187,12 +192,67 @@ fn ack(action: &ContentAction) -> ContentActionAck {
 
 #[test]
 fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
-    for ack_first in [false, true] {
-        let mut h = Harness::new();
+    for (output, origin, ack_first) in [
+        (1, 0, false),
+        (1, 0, true),
+        (2, 2560, false),
+        (2, -1920, true),
+    ] {
+        let mut h = Harness::on_output(output);
         h.outcome(1);
         h.dispatch();
         assert!(h.lifecycle.presented(h.target.output).is_none());
         h.outcome(2);
+        // Presented geometry is supplied by this fixture, as before. Drive the
+        // actual global-to-output capture before entering the socket/WM chain.
+        let binding = sophia_engine::PresentedContentBinding {
+            output: h.target.output,
+            candidate_generation: h.target.candidate_generation,
+            presentation_epoch: h.target.presentation_epoch,
+            interaction_generation: h.target.interaction_generation,
+            transform: sophia_engine::PresentedContentTransform {
+                viewport: Rect {
+                    x: origin,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+                layout_generation: 1,
+            },
+            authority_current: true,
+            targets: vec![h.target.clone()],
+            allocations: vec![(
+                h.target.allocation,
+                h.target.allocation_logical,
+                h.target.allocation_pixel,
+            )],
+        };
+        let mut capture = sophia_engine::ContentCaptureState::default();
+        for pressed in [true, false] {
+            let disposition = sophia_engine::resolve_content_pointer_event(
+                &mut capture,
+                SeatId::from_raw(1),
+                DeviceId::from_raw(1),
+                InputEventKind::PointerButton {
+                    button: 0x110,
+                    pressed,
+                },
+                Some(Point {
+                    x: f64::from(origin) + 4.0,
+                    y: 4.0,
+                }),
+                Some(&binding),
+                false,
+            );
+            assert_eq!(
+                disposition,
+                if pressed {
+                    sophia_engine::ContentPointerDisposition::Captured
+                } else {
+                    sophia_engine::ContentPointerDisposition::Activated(h.target.clone())
+                }
+            );
+        }
         let event = h.issue(); // Both records traverse the same actual server FIFO.
         let presented = h.dispatch();
         assert_eq!(presented.transaction.raw(), 70);

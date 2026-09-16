@@ -802,7 +802,7 @@
                             .top_client_positioned_surface()
                             .or_else(|| focus.focused_surface(seat));
                         match runtime.run_ordinary_cpu_repaint(
-                            &mut scene,
+                            scene,
                             raised_surface,
                             focus.focused_surface(seat),
                             LiveProductionCursorPresentation::HardwarePlane,
@@ -840,7 +840,7 @@
                             }
                         }
                     }
-                    let service = runtime.service_native(native_scanout, &scene)?;
+                    let service = runtime.service_native(native_scanout, scene)?;
                     last_native_frame_service = Instant::now();
                     let native_work_remains = native_frame_service_requires_owner_progress(
                         &runtime.native_output_service_request(native_scanout)?,

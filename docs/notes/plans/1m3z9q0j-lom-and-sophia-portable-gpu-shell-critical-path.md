@@ -682,6 +682,48 @@ owner/1000-cycle fixtures retain simulated device completion scope. Canonical
 validation and native acceptance remain separate gates; no new hardware run is
 implied by these controls. Keep t100 and t081 open until their full exits pass.
 
+#### Attended e29 follow-up: configuration ownership
+
+Keyboard bindings remain in the selected WM desktop profile. The Lom gate must
+not introduce its own Super+number list. Its recorded profile is composed offline
+from the operator's expanded WM profile plus explicit probe overrides for shell
+content, the test catalog and empty application startup. Policy, shortcuts and
+application commands remain from the WM profile; the probe refuses replacements
+of policy or shortcut definitions. An explicit Lom executable selection replaces
+only the test shell. Original configuration files are never rewritten.
+
+The `sophia-config` `desktop_profile_probe` example uses the production parser
+and source renderer; Session reloads its output as ordinary KDL. Controls retain
+custom chords, included bindings, literal command arguments and named application
+references while proving empty startup. The actual Session staging control uses
+that composed profile and a registered workspace action: the complete operation
+catalog commits and the missing-slot catalog refuses. These are offline controls,
+not proof that a physical Super chord was delivered or switched a workspace.
+
+
+The final-exit repair keeps the visual runtime, CPU scene, native retirement
+slot and renderer-image handoff outside the owner loop. The production final
+transition is shared with a fixture using simulated drain/join/disposition
+operations and real retained byte owners. A revoked seat cannot call drain;
+failed disposition requests worker shutdown but retains the runtime and scene.
+The terminal error carries those owners and the prior error. Exact completion
+precedes handoff release and final shell accounting. An explicitly headless
+profile returns no native receipt; missing ownership in a native profile still
+refuses. Join success alone cannot establish revoked scanout disposition.
+Resume borrows the retained renderer-image handoff; each import receives only a
+duplicate of its plane descriptors. The original handoff is released after the
+entire resume succeeds, and stays in the outer error carrier on refusal. Ordinary
+socket-descriptor controls establish duplication lifetime, not DMA-BUF import.
+Successor admission also requires the prior exact completion even when the
+retiring slot is empty; absence alone cannot replace a live owner's identity.
+
+Author device-hidden controls cover retained ownership through an unrelated
+error, later continuation, no duplicate shutdown request, revoked no-drain,
+missing/old completion and a successor owner. The compiled drain-after-revoke
+mutation fails its no-call assertion. These controls do not execute native
+KMS or establish an attended shutdown result. Frozen review, canonical validation
+and native acceptance remain separate pending gates.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,
