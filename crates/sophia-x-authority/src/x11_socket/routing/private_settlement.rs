@@ -93,6 +93,18 @@ struct AbandonedSettlements {
     // Read only by the fair drive, which is not attached yet.
     #[cfg_attr(not(test), allow(dead_code))]
     continuation_cursor: usize,
+    /// Places for holders the store itself keeps.
+    ///
+    /// One per connection place at most: a holder exists to be responsible for
+    /// a place, so there cannot be more of them than there are places. The
+    /// storage for one exists from the moment it is promised, so committing a
+    /// conversion into it allocates nothing.
+    // Read by conversions and by a maintenance driver that is not attached yet.
+    #[cfg_attr(not(test), allow(dead_code))]
+    holders: Vec<PrivateHolderPlace>,
+    /// How many holder places are spoken for, promised and filled together.
+    #[cfg_attr(not(test), allow(dead_code))]
+    holders_taken: usize,
     /// Places whose holder went without disposing of them.
     ///
     /// Counted rather than reclaimed. Handing the capacity out again would
@@ -265,6 +277,11 @@ impl PrivateSettlementOwner {
                 continuation_bound_declared: false,
                 continuation_cursor: 0,
                 continuations_abandoned: 0,
+                // No holder before a connection bound: holders are bounded by
+                // the places they are responsible for, and a store told no
+                // bound has no places to be responsible for.
+                holders: Vec::new(),
+                holders_taken: 0,
                 reserved: 0,
                 capacity,
             })),

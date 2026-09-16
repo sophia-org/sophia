@@ -702,8 +702,9 @@ impl PrivateSettlementOwner {
         held.continuation_slots = held.continuation_slots.saturating_add(1);
         drop(held);
         Ok(PrivateOrderedContinuationSlot {
-            // An owner: this connection is exposed from here, and the place
-            // it must dispose of is in there.
+            // An owner: this connection is about to be exposed -- the row is
+            // published after this returns -- and the place it will have to
+            // dispose of is in there.
             owner: self.clone(),
             index,
             armed: true,
