@@ -192,20 +192,52 @@ fn ack(action: &ContentAction) -> ContentActionAck {
 
 #[test]
 fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
-    for (output, origin, ack_first) in [
-        (1, 0, false),
-        (1, 0, true),
-        (2, 2560, false),
-        (2, -1920, true),
-    ] {
-        let mut h = Harness::on_output(output);
+    let mut h = Harness::on_output(1);
+    let grant = h.limits.grant;
+    let mut queue = std::collections::VecDeque::new();
+    let mut next_transaction = 100;
+    let mut admissions = [0; 2];
+    for round in 0..1000 {
+        let (output, origin, ack_first) = [
+            (1, 0, false),
+            (2, 2560, true),
+            (1, 0, true),
+            (2, -1920, false),
+        ][round % 4];
+        if round != 0 {
+            let mut candidate = h
+                .lifecycle
+                .presented(h.target.output)
+                .unwrap()
+                .candidate
+                .clone();
+            h.target.output.id = output;
+            h.target.allocation.id = 4 + output;
+            h.target.candidate_generation += 1;
+            h.target.presentation_epoch += 1;
+            candidate.begin.output = h.target.output;
+            candidate.begin.candidate_generation = h.target.candidate_generation;
+            candidate.surfaces[0].allocation = h.target.allocation;
+            h.lifecycle.register(candidate).unwrap();
+        }
+        assert_eq!(h.target.grant, grant);
+        let before = h
+            .lifecycle
+            .presented(h.target.output)
+            .map(|p| p.candidate.begin.candidate_generation);
         h.outcome(1);
         h.dispatch();
-        assert!(h.lifecycle.presented(h.target.output).is_none());
+        assert_eq!(
+            h.lifecycle
+                .presented(h.target.output)
+                .map(|p| p.candidate.begin.candidate_generation),
+            before,
+            "Prepared must retain the previous targets"
+        );
         h.outcome(2);
         // Presented geometry is supplied by this fixture, as before. Drive the
         // actual global-to-output capture before entering the socket/WM chain.
-        let binding = sophia_engine::PresentedContentBinding {
+        let mut binding = sophia_engine::PresentedContentBinding {
             output: h.target.output,
             candidate_generation: h.target.candidate_generation,
             presentation_epoch: h.target.presentation_epoch,
@@ -252,6 +284,32 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
                     sophia_engine::ContentPointerDisposition::Activated(h.target.clone())
                 }
             );
+            if pressed {
+                // Process the pressed candidate, then present a new raster
+                // before release. Only the shared presentation reducer can
+                // preserve button continuity; native completion is supplied.
+                h.dispatch();
+                let mut candidate = h
+                    .lifecycle
+                    .presented(h.target.output)
+                    .unwrap()
+                    .candidate
+                    .clone();
+                h.target.candidate_generation += 1;
+                h.target.presentation_epoch += 1;
+                candidate.begin.candidate_generation = h.target.candidate_generation;
+                h.lifecycle.register(candidate).unwrap();
+                h.outcome(1);
+                h.dispatch();
+                h.outcome(2);
+                let mut next = binding.clone();
+                next.candidate_generation = h.target.candidate_generation;
+                next.presentation_epoch = h.target.presentation_epoch;
+                next.targets[0] = h.target.clone();
+                sophia_engine::reconcile_content_continuity(Some(&binding), &mut next);
+                h.target = next.targets[0].clone();
+                binding = next;
+            }
         }
         let event = h.issue(); // Both records traverse the same actual server FIFO.
         let presented = h.dispatch();
@@ -262,6 +320,15 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
         let ShellContentRecord::Action(action) = dispatched.record else {
             panic!("action")
         };
+        let mut refreshed = binding.clone();
+        refreshed.candidate_generation += 1;
+        refreshed.presentation_epoch += 1;
+        refreshed.targets[0].candidate_generation += 1;
+        refreshed.targets[0].presentation_epoch += 1;
+        sophia_engine::reconcile_content_continuity(Some(&binding), &mut refreshed);
+        assert_eq!(h.ledger.next_cancellation(&[refreshed.clone()], 1), None);
+        // The exact issued record remains unchanged; no reissue or new effect.
+        assert_eq!(h.ledger.live[0].action, action);
         let activation = ShellIndicatorActivation {
             connection_epoch: action.grant.connection_epoch,
             snapshot_generation: 7,
@@ -304,8 +371,7 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
             },
             scale: 1,
         }];
-        let mut queue = std::collections::VecDeque::new();
-        let mut next_transaction = 100;
+        let expected_serial = next_transaction;
         let snapshot = crate::live_session::metadata_shell::indicators::indicator_snapshot(
             &publication,
             Some(activation.output),
@@ -334,7 +400,7 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
                     }
                     .enqueue(action, output)?;
                     assert_eq!(result.policy_connection_epoch, 1);
-                    assert_eq!(result.activation_serial, Some(100));
+                    assert_eq!(result.activation_serial, Some(expected_serial));
                     assert!(matches!(queue[0].cause, PolicyRequestCause::OutputAction { activation_serial, .. } if Some(activation_serial) == result.activation_serial));
                     Ok(result)
                 },
@@ -342,7 +408,7 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
             .unwrap();
         assert_eq!(queue.len(), 1);
         assert!(
-            matches!(queue[0].cause, PolicyRequestCause::OutputAction { activation_serial: 100, action: v, output, output_generation: 1 } if v.raw() == activation.action && output == activation.output)
+            matches!(queue[0].cause, PolicyRequestCause::OutputAction { activation_serial, action: v, output, output_generation: 1 } if activation_serial == expected_serial && v.raw() == activation.action && output == activation.output)
         );
         assert_eq!(queue[0].affected_outputs, vec![activation.output]);
         assert_eq!(
@@ -372,8 +438,14 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
                 .unwrap()
                 .is_none()
         );
-        h.transport.disconnect().unwrap();
+        admissions[output as usize - 1] += 1;
+        queue.pop_front().unwrap();
+        h.lifecycle.finish_action(event);
     }
+    assert_eq!(admissions, [500, 500]);
+    assert_eq!(h.ledger.issued_high_water, 1000);
+    assert!(queue.is_empty());
+    h.transport.disconnect().unwrap();
 }
 
 #[test]

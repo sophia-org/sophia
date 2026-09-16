@@ -4,8 +4,8 @@ EXTENDS Naturals, Sequences
 (***************************************************************************
  * The discrete-action seam for one content-shell target. A target becomes *
  * authoritative only with native presentation, and pointer capture names   *
- * that exact presented identity. Revocation or replacement invalidates the *
- * capture, but the later physical release remains consumed rather than     *
+ * that presented button lifetime. Equivalent refresh preserves capture;   *
+ * revocation or incompatible replacement cancels without releases         *
  * falling through to an application.                                      *
  *                                                                         *
  * ContentActionAck settlement is local to the shell action exchange. The   *
@@ -15,7 +15,7 @@ EXTENDS Naturals, Sequences
 
 CONSTANTS
     MaxEpoch, MaxGeneration,
-    CaptureFromPresented,
+    CaptureFromPresented, PreserveRefreshCapture,
     SuppressRevokedRelease,
     SuppressReplacedRelease,
     ConsumeSuppressedRelease,
@@ -25,6 +25,7 @@ CONSTANTS
 ASSUME /\ MaxEpoch \in (Nat \ {0})
        /\ MaxGeneration \in (Nat \ {0})
        /\ CaptureFromPresented \in BOOLEAN
+       /\ PreserveRefreshCapture \in BOOLEAN
        /\ SuppressRevokedRelease \in BOOLEAN
        /\ SuppressReplacedRelease \in BOOLEAN
        /\ ConsumeSuppressedRelease \in BOOLEAN
@@ -45,8 +46,9 @@ ContentIdentity(epoch, generation) ==
 
 Identities ==
     {NoIdentity} \cup
-    {ContentIdentity(epoch, generation) :
-        epoch \in Epochs, generation \in Generations}
+    {[ContentIdentity(epoch, generation) EXCEPT !.candidate = raster,
+        !.presentation = raster] :
+        epoch \in Epochs, generation \in Generations, raster \in Generations}
 
 CaptureRecords == [captured : Identities, presented : Identities]
 ActionRecords ==
@@ -108,6 +110,26 @@ Present ==
     /\ invalidCause' = IF contactDown THEN "replaced" ELSE "none"
     /\ UNCHANGED
         <<shellEpoch, nextGeneration, prepared, contactDown, pressedIdentity,
+          captureHistory, actionHistory, applicationReleases, pendingEvent,
+          eventIdentity, ackReceived, ackSettled, wmRequested, wmAdmitted,
+          wmTerminal, accepted>>
+
+\* Same authority/geometry (abstracted by interaction/allocation/target),
+\* distinct raster. Every actual projection transition participates; an
+\* incompatible Present clears capture, so a later refresh cannot revive it.
+Refresh ==
+    LET next == [presented EXCEPT !.candidate = nextGeneration,
+                                 !.presentation = nextGeneration] IN
+    /\ interactionLive
+    /\ presented # NoIdentity
+    /\ nextGeneration <= MaxGeneration
+    /\ nextGeneration' = nextGeneration + 1
+    /\ prepared' = next
+    /\ presented' = next
+    /\ capture' = IF capture = presented /\ PreserveRefreshCapture
+                   THEN next ELSE capture
+    /\ UNCHANGED
+        <<shellEpoch, interactionLive, contactDown, pressedIdentity, invalidCause,
           captureHistory, actionHistory, applicationReleases, pendingEvent,
           eventIdentity, ackReceived, ackSettled, wmRequested, wmAdmitted,
           wmTerminal, accepted>>
@@ -183,12 +205,12 @@ Release ==
     /\ actionHistory' =
         IF emit
         THEN actionHistory \cup
-             {[identity |-> pressedIdentity, presented |-> presented,
+             {[identity |-> IF valid THEN presented ELSE pressedIdentity, presented |-> presented,
                live |-> interactionLive, valid |-> valid,
                cause |-> invalidCause]}
         ELSE actionHistory
     /\ pendingEvent' = emit
-    /\ eventIdentity' = IF emit THEN pressedIdentity ELSE NoIdentity
+    /\ eventIdentity' = IF emit THEN (IF valid THEN presented ELSE pressedIdentity) ELSE NoIdentity
     /\ applicationReleases' =
         IF valid \/ emit \/ ConsumeSuppressedRelease
         THEN applicationReleases
@@ -264,6 +286,7 @@ FinishWmActivation(outcome) ==
 Next ==
     \/ Prepare
     \/ Present
+    \/ Refresh
     \/ Press
     \/ RevokeInteraction
     \/ ReplaceShell
@@ -303,6 +326,13 @@ CapturesNameExactPresentedContent ==
     \A record \in captureHistory :
         /\ record.presented # NoIdentity
         /\ record.captured = record.presented
+
+EquivalentRefreshKeepsCapture ==
+    (contactDown /\ invalidCause = "none" /\ interactionLive
+     /\ pressedIdentity # NoIdentity
+     /\ pressedIdentity.shell = presented.shell
+     /\ pressedIdentity.interaction = presented.interaction)
+    => CaptureIsCurrent
 
 ReleasedActionsNameExactPresentedContent ==
     \A record \in actionHistory :

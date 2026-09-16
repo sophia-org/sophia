@@ -1,5 +1,6 @@
 mod chrome_capture;
 mod content_capture;
+mod content_continuity;
 mod focus;
 mod focus_handoff;
 mod hit_test;
@@ -12,6 +13,7 @@ mod routed;
 
 pub use chrome_capture::*;
 pub use content_capture::*;
+pub use content_continuity::*;
 pub use focus::*;
 pub use focus_handoff::*;
 pub use hit_test::*;

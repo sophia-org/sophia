@@ -804,6 +804,8 @@ pub(super) fn project_render_bundle(
             allocation_rows.push(row);
         }
         targets.push(sophia_engine::PresentedContentTarget {
+            continuity: None,
+            scale_generation: allocation.scale_generation,
             grant: bundle.grant,
             output: bundle.output,
             candidate_generation: bundle.candidate_generation,

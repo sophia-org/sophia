@@ -1006,3 +1006,25 @@ composition, which is checked.
   replaces, retired once the content shell renders.
 - `t022` and `t023` in [todo](../../../todo.md) remain open CP-15 prerequisites
   that this record does not close.
+
+
+### Presented button continuity (2026-09-16)
+
+A raster replacement does not itself revoke a button. Engine retains a
+server-local, non-reused continuity token only across consecutive authoritative
+presentations with equal grant/output/allocation/scale, committed transform,
+interaction generation, target identity/generation/action and geometry. A gap,
+revocation or incompatible transition breaks the token permanently, even when
+identical fields later reappear. Prepared work cannot establish continuity.
+Tokens own no pixel storage and are not wire fields.
+
+Release resolves the continuously captured button to its exact current presented
+candidate. The existing Presented-before-Action FIFO and exact client validation
+remain mandatory. Already-issued actions retain their original immutable identity
+and response credits across equivalent refresh; they are not reissued or retagged.
+WM publication validation and authority revocation remain independent checks.
+
+Clients keep target generations stable across harmless rendering/publication
+updates, advance them for changed semantic owner/meaning/geometry, and never reuse
+a removed lifetime. Indicator snapshot revision is a separate field in the
+candidate-specific callback, not the target generation. No r5 wire layout changes.

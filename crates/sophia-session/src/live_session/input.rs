@@ -1401,9 +1401,10 @@ fn route_input_events_with_launcher(
                             sophia_engine::ContentPointerDisposition::Cancelled => "cancelled",
                             _ => "consumed",
                         };
+                        let reason = if matches!(disposition, sophia_engine::ContentPointerDisposition::Cancelled) { "target_continuity_lost" } else { "none" };
                         crate::session_println!(
-                            "sophia_shell_pointer_binding schema=1 status={} pressed={} observed_output={} output_generation={} candidate={} presentation={} layout_generation={} authority_current={}",
-                            status, pressed, binding.output.id, binding.output.generation,
+                            "sophia_shell_pointer_binding schema=1 status={} reason={} pressed={} observed_output={} output_generation={} candidate={} presentation={} layout_generation={} authority_current={}",
+                            status, reason, pressed, binding.output.id, binding.output.generation,
                             binding.candidate_generation, binding.presentation_epoch,
                             binding.transform.layout_generation, binding.authority_current,
                         );

@@ -285,6 +285,7 @@ impl LiveProductionVisualRuntime {
         projection.descriptor_projection = descriptor_projection;
         projection.tab_occlusions = tab_occlusions;
         if let Some(binding) = &mut content {
+            sophia_engine::reconcile_content_continuity(projection.content.as_ref(), binding);
             binding.presentation_epoch = projection.epoch.max(1);
             for target in &mut binding.targets {
                 target.presentation_epoch = binding.presentation_epoch;

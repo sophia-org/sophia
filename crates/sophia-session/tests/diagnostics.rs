@@ -693,3 +693,18 @@ fn shell_action_causal_fields_are_scoped_and_bounded() {
         );
     }
 }
+
+#[test]
+fn content_pointer_cancellation_identity_survives_capture() {
+    let line = "sophia_shell_pointer_binding schema=1 status=cancelled reason=target_continuity_lost pressed=false observed_output=2 candidate=15 presentation=9 layout_generation=2 authority_current=true";
+    let reduced = reduced_record(line).expect("known diagnostic");
+    for field in [
+        "status=cancelled",
+        "reason=target_continuity_lost",
+        "observed_output=2",
+        "candidate=15",
+        "presentation=9",
+    ] {
+        assert!(reduced.contains(field), "missing {field}: {reduced}");
+    }
+}

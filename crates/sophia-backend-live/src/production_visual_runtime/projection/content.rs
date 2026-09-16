@@ -61,7 +61,9 @@ pub(super) fn same_content_binding(
                         let mut previous = previous.clone();
                         let mut next = next.clone();
                         previous.presentation_epoch = 0;
+                        previous.continuity = None;
                         next.presentation_epoch = 0;
+                        next.continuity = None;
                         previous == next
                     })
                 && previous.targets.len() == next.targets.len()

@@ -9,6 +9,8 @@ use sophia_protocol::{
 
 fn target(candidate: u64, presentation: u64) -> PresentedContentTarget {
     PresentedContentTarget {
+        continuity: sophia_engine::ContentTargetContinuity::mint(),
+        scale_generation: 1,
         grant: ContentGrant {
             connection_epoch: 3,
             content_grant_epoch: 4,
@@ -386,4 +388,70 @@ fn suppression_overflow_quarantines_the_device_until_all_buttons_are_up() {
         ),
         ContentPointerDisposition::Pass
     );
+}
+
+#[test]
+fn equivalent_refresh_activates_current_frame_not_pressed_frame() {
+    let mut b = binding(target(10, 11));
+    let mut state = ContentCaptureState::default();
+    let point = Point { x: 130.0, y: 30.0 };
+    assert_eq!(
+        click_part(&mut state, &b, point, true),
+        ContentPointerDisposition::Captured
+    );
+    for generation in 12..20 {
+        let mut next = b.clone();
+        next.candidate_generation = generation;
+        next.presentation_epoch = generation + 1;
+        next.targets[0].candidate_generation = generation;
+        next.targets[0].presentation_epoch = generation + 1;
+        sophia_engine::reconcile_content_continuity(Some(&b), &mut next);
+        assert_eq!(next.targets[0].continuity, b.targets[0].continuity);
+        b = next;
+    }
+    assert_eq!(
+        click_part(&mut state, &b, point, false),
+        ContentPointerDisposition::Activated(b.targets[0].clone())
+    );
+}
+
+#[test]
+fn presentation_transitions_break_continuity_even_without_intervening_input() {
+    let point = Point { x: 130.0, y: 30.0 };
+    for change in 0..12 {
+        let b = binding(target(10, 11));
+        let mut state = ContentCaptureState::default();
+        assert_eq!(
+            click_part(&mut state, &b, point, true),
+            ContentPointerDisposition::Captured
+        );
+        let mut changed = b.clone();
+        match change {
+            0 => changed.targets.clear(),
+            1 => changed.authority_current = false,
+            2 => changed.targets[0].action_id += 1,
+            3 => changed.targets[0].target_generation += 1,
+            4 => changed.targets[0].bounds_px.x += 1,
+            5 => changed.targets[0].scale_generation += 1,
+            6 => changed.targets[0].allocation.generation += 1,
+            7 => changed.targets[0].grant.content_grant_epoch += 1,
+            8 => changed.transform.layout_generation += 1,
+            9 => changed.targets[0].interaction_generation += 1,
+            10 => changed.targets[0].allocation_logical.width += 1,
+            11 => changed.targets[0].output.generation += 1,
+            _ => unreachable!(),
+        }
+        sophia_engine::reconcile_content_continuity(Some(&b), &mut changed);
+        let mut restored = b.clone();
+        sophia_engine::reconcile_content_continuity(Some(&changed), &mut restored);
+        assert_ne!(
+            restored.targets[0].continuity, b.targets[0].continuity,
+            "change {change}"
+        );
+        assert_eq!(
+            click_part(&mut state, &restored, point, false),
+            ContentPointerDisposition::Cancelled,
+            "change {change}"
+        );
+    }
 }

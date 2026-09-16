@@ -882,3 +882,12 @@ Five registered negative controls require their precise invariant failure:
 that a peer or GPU will make progress. `ShellPresentedContentAction` now models
 WM activation request separately from ACK receipt, matching the independently
 authorized production paths; its existing six controls remain required.
+
+
+`ShellPresentedContentAction` includes equivalent raster refresh separately from
+incompatible replacement. Capture follows a continuous button to the current
+presented identity while the original press record remains historical. The
+`DropsRefresh` control fails `EquivalentRefreshKeepsCapture`; the six existing
+revocation, replacement, click-through, Prepared, ACK and WM controls remain
+registered. Geometry/semantic equivalence is abstracted by the model's target,
+interaction and allocation identities; Rust controls check the concrete fields.

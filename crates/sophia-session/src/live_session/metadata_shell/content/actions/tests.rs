@@ -8,6 +8,8 @@ use sophia_protocol::{
 
 pub(super) fn target() -> PresentedContentTarget {
     PresentedContentTarget {
+        continuity: sophia_engine::ContentTargetContinuity::mint(),
+        scale_generation: 1,
         grant: ContentGrant {
             connection_epoch: 3,
             content_grant_epoch: 4,

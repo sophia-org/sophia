@@ -340,10 +340,10 @@ impl ContentActionLedger {
         for (index, pending) in self.live.iter_mut().enumerate() {
             let expired = now_msec >= pending.deadline_msec;
             let current = presented.iter().any(|binding| {
-                binding
-                    .targets
-                    .iter()
-                    .any(|target| target == &pending.target)
+                binding.targets.iter().any(|target| {
+                    binding.authority_current
+                        && sophia_engine::content_target_continues(target, &pending.target)
+                })
             });
             if !expired && (pending.activation == ActivationState::WmAdmitted || current) {
                 continue;

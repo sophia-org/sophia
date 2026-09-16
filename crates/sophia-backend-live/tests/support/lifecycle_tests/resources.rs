@@ -94,6 +94,8 @@ pub(super) fn shell_frame(
             resource: lease,
         }],
         targets: vec![PresentedContentTarget {
+            continuity: sophia_engine::ContentTargetContinuity::mint(),
+            scale_generation: 1,
             grant,
             output: ContentOutputId {
                 id: output.id.raw(),

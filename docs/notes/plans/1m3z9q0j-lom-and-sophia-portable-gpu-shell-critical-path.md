@@ -915,3 +915,35 @@ native completion timestamp. No shell-wire change or Lom-specific compositor
 policy was added. The next authorized `lom-test` must establish no visible flash,
 continued click/shortcut correctness on both monitors, complete workload
 outcomes, stable connection/resource ownership and clean shutdown.
+
+
+### Click continuity follow-up (2026-09-16)
+
+The attended `20260916T230302Z` capture on Sophia ff1c78fc / Lom 72624d3
+contained 26 captured button sequences, 19 activated actions, and seven releases
+without activation. Every one of those seven crossed a new presentation on both
+outputs. The old Engine equality required the candidate/presentation numbers to
+remain unchanged. Diagnostic sanitization dropped cancellation status and several
+identity fields, so the retained record alone is not an exact cancellation-reason
+trace. The source and deterministic regressions establish the redraw mechanism.
+
+The repair gives each continuously presented equivalent target a server-owned
+non-reused token, assigned at production projection publication. Release names
+the current exact presentation; queued actions retain their original identities
+across equivalent updates. Incompatible transitions still invalidate and suppress
+release. Lom separates button lifetimes from indicator publication revisions.
+Neither a pixel checksum nor the latest model authorizes capture continuity.
+
+Evidence is retained under `.artifacts/click-continuity`: Engine field/ABA controls,
+actual backend intake/lowering/queue/projection with simulated completion over
+1,000 two-output refreshes, 1,000 Session socket/client/shared-WM actions on one grant (500 per output)
+with supplied presentation facts, and Lom socket/raster/registry tests. These are compositional
+headless controls, not one full physical owner-loop/KMS execution. Mutations and
+exact-source gates are recorded with their own logs. No native run is performed
+by this repair; t081 and Lom t008/t009 stay open.
+
+The capture also exited 1 with `window allocation frontend disconnected` and a
+Drained retirement receipt. Its cause is separate and unestablished by this slice;
+click continuity is not a shutdown repair or clean-session acceptance. The next
+authorized attended matrix must count all 40 intended switches (20 per output),
+include holds across clock refresh, and retain shutdown outcome independently.

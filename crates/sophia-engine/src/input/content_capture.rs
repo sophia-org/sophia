@@ -13,6 +13,8 @@ const BUTTON_CODES: usize = MAX_TRACKED_BUTTON_CODE as usize + 1;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresentedContentTarget {
+    pub continuity: Option<super::ContentTargetContinuity>,
+    pub scale_generation: u64,
     pub grant: ContentGrant,
     pub output: ContentOutputId,
     pub candidate_generation: u64,
@@ -273,9 +275,9 @@ pub fn resolve_content_pointer_event(
                 binding
                     .targets
                     .iter()
-                    .find(|target| same_target(target, &capture.target))
+                    .find(|target| super::content_target_continues(target, &capture.target))
             });
-        capture.valid &= current == Some(&capture.target);
+        capture.valid &= current.is_some();
         let InputEventKind::PointerButton { button, pressed } = kind else {
             state.captures.insert(seat, capture);
             return ContentPointerDisposition::Consumed;
@@ -298,7 +300,7 @@ pub fn resolve_content_pointer_event(
             .and_then(|point| capture.transform.local(point))
             .is_some_and(|point| target_contains(&capture.target, point))
         {
-            ContentPointerDisposition::Activated(capture.target)
+            ContentPointerDisposition::Activated(current.expect("validated current target").clone())
         } else {
             ContentPointerDisposition::Consumed
         };
@@ -358,18 +360,6 @@ pub fn resolve_content_pointer_event(
         },
     );
     ContentPointerDisposition::Captured
-}
-
-fn same_target(left: &PresentedContentTarget, right: &PresentedContentTarget) -> bool {
-    left.grant == right.grant
-        && left.output == right.output
-        && left.candidate_generation == right.candidate_generation
-        && left.presentation_epoch == right.presentation_epoch
-        && left.interaction_generation == right.interaction_generation
-        && left.allocation == right.allocation
-        && left.target_id == right.target_id
-        && left.target_generation == right.target_generation
-        && left.action_id == right.action_id
 }
 
 fn logical_contains(rect: ContentLogicalRect, point: Point) -> bool {

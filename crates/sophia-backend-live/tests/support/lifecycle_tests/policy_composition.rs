@@ -233,3 +233,116 @@ fn policy_capture_retains_sources_and_preserves_application_shell_overlay_order(
     assert!(store.take_event().is_some());
     assert!(store.take_event().is_none());
 }
+
+#[test]
+fn thousand_presented_refreshes_keep_capture_on_both_outputs() {
+    use sophia_engine::{
+        ContentCaptureState, ContentPointerDisposition, resolve_content_pointer_event,
+    };
+    use sophia_protocol::{DeviceId, InputEventKind, Point, SeatId};
+    let outputs = outputs();
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(outputs[0].size);
+    let mut native = Target::new(&outputs);
+    let mut store =
+        sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant())).unwrap();
+    let leases: Vec<_> = outputs
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            upload(
+                &mut store,
+                grant(),
+                ContentResourceId {
+                    id: i as u64 + 1,
+                    generation: 1,
+                },
+            )
+        })
+        .collect();
+    for (i, output) in outputs.iter().enumerate() {
+        runtime
+            .set_shell_content_on_target(
+                shell_frame(*output, i as u64 + 1, leases[i].clone()),
+                &scene,
+                Some(&mut native),
+            )
+            .unwrap();
+        native.drain();
+        runtime.publish_presented_input_layers(&native);
+    }
+    let mut capture = ContentCaptureState::default();
+    for cycle in 0..1000 {
+        let index = cycle % 2;
+        let original = runtime.input_projections[index].content.clone().unwrap();
+        let target = &original.targets[0];
+        let point = Point {
+            x: f64::from(original.transform.viewport.x + target.allocation_logical.x) + 1.0,
+            y: f64::from(original.transform.viewport.y + target.allocation_logical.y) + 1.0,
+        };
+        let press = resolve_content_pointer_event(
+            &mut capture,
+            SeatId::from_raw(1),
+            DeviceId::from_raw(1),
+            InputEventKind::PointerButton {
+                button: 0x110,
+                pressed: true,
+            },
+            Some(point),
+            Some(&original),
+            false,
+        );
+        assert_eq!(press, ContentPointerDisposition::Captured);
+        let generation = cycle as u64 + 3;
+        let mut frame = shell_frame(outputs[index], generation, leases[index].clone());
+        // Raster identity changes; the target's client authority does not.
+        frame.interaction_generation = original.interaction_generation;
+        frame.targets[0] = original.targets[0].clone();
+        frame.targets[0].candidate_generation = generation;
+        frame.targets[0].presentation_epoch = 0;
+        frame.targets[0].continuity = None;
+        runtime
+            .set_shell_content_on_target(frame, &scene, Some(&mut native))
+            .unwrap();
+        native.drain();
+        runtime.publish_presented_input_layers(&native);
+        let current = runtime.input_projections[index].content.as_ref().unwrap();
+        assert_eq!(
+            current.targets[0].continuity,
+            original.targets[0].continuity
+        );
+        assert_eq!(current.candidate_generation, generation);
+        let release = resolve_content_pointer_event(
+            &mut capture,
+            SeatId::from_raw(1),
+            DeviceId::from_raw(1),
+            InputEventKind::PointerButton {
+                button: 0x110,
+                pressed: false,
+            },
+            Some(point),
+            Some(current),
+            false,
+        );
+        assert_eq!(
+            release,
+            ContentPointerDisposition::Activated(current.targets[0].clone())
+        );
+        let repeated = current.clone();
+        runtime.publish_presented_input_layers(&native);
+        assert_eq!(
+            runtime.input_projections[index].content.as_ref(),
+            Some(&repeated),
+            "observing the same displayed frame must not mint another presentation or token"
+        );
+        assert_eq!(runtime.input_projections.len(), 2);
+        assert_eq!(store.usage().resident, 64);
+        assert_eq!(store.usage().retiring, 0);
+        assert!(
+            runtime
+                .input_projections
+                .iter()
+                .all(|p| p.content.as_ref().unwrap().targets.len() == 1)
+        );
+    }
+}

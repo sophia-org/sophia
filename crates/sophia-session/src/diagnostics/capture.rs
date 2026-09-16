@@ -595,6 +595,20 @@ fn layout_probe_field(key: &str, value: &str) -> bool {
 // Scope the vocabulary to its producer so arbitrary child text cannot become
 // an approved status or an identifier disguised as a numeric measurement.
 fn interaction_field(record: &str, key: &str, value: &str) -> bool {
+    if record == "sophia_shell_pointer_binding" {
+        match key {
+            "reason" => return matches!(value, "none" | "target_continuity_lost"),
+            "status" => {
+                return matches!(value, "captured" | "activated" | "cancelled" | "consumed");
+            }
+            "observed_output" | "candidate" | "presentation" => {
+                return !value.is_empty()
+                    && value.bytes().all(|b| b.is_ascii_digit())
+                    && value.parse::<u64>().is_ok();
+            }
+            _ => {}
+        }
+    }
     if record == "sophia_live_wm_configuration" {
         return match key {
             "reason" => value == "unavailable_session_slot",

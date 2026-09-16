@@ -399,6 +399,7 @@ grep -Fq 'Invariant PresentedBundleHasLiveContent is violated.' "$log" || {
 # release to an application, while shell acknowledgement and WM admission keep
 # their independent settlement boundaries.
 for control in \
+    ShellPresentedContentActionDropsRefresh \
     ShellPresentedContentActionCapturePrepared \
     ShellPresentedContentActionRoutesRevokedRelease \
     ShellPresentedContentActionRoutesReplacedRelease \
@@ -420,6 +421,8 @@ for control in \
         exit 1
     fi
     case "$control" in
+        ShellPresentedContentActionDropsRefresh)
+            invariant=EquivalentRefreshKeepsCapture ;;
         ShellPresentedContentActionCapturePrepared)
             invariant=CapturesNameExactPresentedContent
             ;;

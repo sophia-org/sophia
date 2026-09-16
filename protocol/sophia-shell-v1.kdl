@@ -298,6 +298,10 @@ protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=
         field "destination_y_px" type="i32"
         field "reserved" type="u32" reserved=#true
     }
+    // target_generation is a button lifetime, not an indicator publication or
+    // raster revision. Preserve across equivalent redraws; advance on changed
+    // meaning/geometry/owner and removal/reappearance. Actions still name the
+    // exact currently presented candidate; no capture token crosses the wire.
     record "ContentTarget" {
         field "surface_index" type="u16"
         field "action_kind" type="u16"
