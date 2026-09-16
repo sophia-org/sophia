@@ -154,20 +154,6 @@ impl PrivateOrderedContinuation {
 
 #[cfg(unix)]
 impl PrivateSettlementOwner {
-    /// The record kept at one place, for a control that needs the handle
-    /// itself rather than a reading of it.
-    #[cfg_attr(not(test), allow(dead_code))] // Only controls take a record handle.
-    fn record_handle(
-        &self,
-        index: usize,
-    ) -> Option<Arc<Mutex<Option<PrivateOrderedContinuation>>>> {
-        let held = self.inner.lock().ok()?;
-        match held.continuations.get(index)? {
-            PrivateOrderedContinuationPlace::Taken(record) => Some(record.clone()),
-            PrivateOrderedContinuationPlace::Free => None,
-        }
-    }
-
     /// Read every retained connection this store is holding.
     ///
     /// ONE READING PER PLACE THAT HOLDS SOMETHING. Free places and places that

@@ -23000,7 +23000,15 @@ fn a_refused_ending_is_reported_as_refused_and_not_as_untried() {
     // Staged: this host gives no honest way to make a shutdown refuse, so the
     // close record is written as begin_close's own failure branch writes it --
     // one attempt made, refused, and no ending established.
-    owner.staged_close_refusal(std::io::ErrorKind::PermissionDenied);
+    owner.closing = Some(X11OrderedClosing {
+        cause: X11OrderedCloseCause::ConnectionEnded,
+        termination: X11OrderedTermination::Refused(std::io::ErrorKind::PermissionDenied),
+        attempts: 1,
+        answered: 0,
+        already: 0,
+        deferred: 0,
+        drained: false,
+    });
     assert!(
         !owner.ending_ended(),
         "nothing ended this wire, which is the state being reported"
@@ -23031,7 +23039,8 @@ fn an_ending_that_was_established_outranks_a_cause_recorded_before_it() {
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     let (mut owner, _output) = serving_owner_for(&mut f, socket);
     // Staged history: an earlier attempt refused.
-    owner.staged_unterminated(X11OrderedUnterminatedCause::Shutdown(
+    owner.unterminated = true;
+    owner.unterminated_cause = Some(X11OrderedUnterminatedCause::Shutdown(
         std::io::ErrorKind::PermissionDenied,
     ));
     // And then a real close, over a real peer that really goes.
@@ -23136,7 +23145,13 @@ fn a_record_that_cannot_be_read_is_reported_as_unreadable() {
     slot.install(&mut source);
 
     // A holder panics inside this record.
-    let record = durable.record_handle(0).expect("its place holds a record");
+    let record = {
+        let held = durable.inner.lock().expect("a readable store");
+        let PrivateOrderedContinuationPlace::Taken(record) = &held.continuations[0] else {
+            panic!("its place holds a record")
+        };
+        record.clone()
+    };
     let holder = std::thread::spawn(move || {
         let _inside = record.lock().expect("a readable record");
         panic!("a holder unwound inside this record");
@@ -23148,6 +23163,142 @@ fn a_record_that_cannot_be_read_is_reported_as_unreadable() {
     assert!(
         readings[0].1.is_none(),
         "and is reported as unreadable rather than as anything in particular"
+    );
+}
+
+
+#[test]
+fn an_ordinary_stop_ends_nothing_and_is_not_reported_as_an_ending() {
+    // A STOP WITH NOTHING PART-WRITTEN LEAVES THE WIRE ALONE. No shutdown is
+    // made, the connection is still usable and still unbarred, and its queue
+    // still holds what was accepted.
+    //
+    // WHICH STOP THIS IS: the early one, where stop is already set when
+    // serve_one is entered, so it returns without taking the output at all.
+    // The other is a stop that arrives AFTER that check, which reaches the
+    // exit under serialization with nothing part-written; "nothing refused" is
+    // true there too, and reading an ending from it reported a live connection
+    // as ended. Reaching that one needs a rendezvous inside serve_one, which
+    // this crate has no way to make, so it is not established here.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8621));
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let (mut owner, output) = serving_owner_for(&mut f, socket);
+    let stop = Arc::new(AtomicBool::new(true));
+    owner.stop = Some(stop);
+    assert!(!owner.mid_frame(), "nothing is part-written");
+
+    assert!(matches!(
+        owner.serve_one(XByteOrder::LittleEndian, 7),
+        X11OrderedServeStep::Stopped
+    ));
+    assert!(
+        !owner.ending_ended(),
+        "nothing attempted an ending, so nothing may record one"
+    );
+    let (_durable, reading) = serving_reading(owner);
+    assert_eq!(reading.ending, PrivateRetainedEnding::Unattempted);
+
+    // AND THE CONNECTION REALLY IS STILL THERE. Its wire was never barred and
+    // never shut down, so bytes written now arrive.
+    let mut byte = [0u8; 1];
+    assert_eq!(
+        (&peer).read(&mut byte).map_err(|error| error.kind()),
+        Err(std::io::ErrorKind::WouldBlock),
+        "nothing was written and nothing was ended"
+    );
+    std::io::Write::write_all(&mut *output.lock().expect("its output"), b"alive")
+        .expect("a wire nobody ended still carries bytes");
+    let mut alive = [0u8; 5];
+    std::io::Read::read_exact(&mut (&peer), &mut alive).expect("and they arrive");
+    assert_eq!(&alive, b"alive");
+}
+
+#[test]
+fn an_ending_reached_by_an_ordinary_serving_exit_is_reported_as_one() {
+    // THE SAME FACT, REACHED THE ORDINARY WAY. A send that finds the peer gone
+    // ends the wire on its way out and says so in the step it returns.
+    // Recording an ending only on the close paths meant an owner whose wire
+    // this had ended read as never having attempted one.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8631));
+    attempt_run(&mut f, 86310, 272, true);
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    {
+        let private = f.runner.frontend.as_mut().unwrap();
+        assert_eq!(private.dispatch_one_press(), Some(true));
+    }
+    // The peer really goes, so the write really fails.
+    drop(peer);
+    let mut ended = None;
+    for _ in 0..8 {
+        match owner.serve_one(XByteOrder::LittleEndian, 7) {
+            step @ X11OrderedServeStep::Ended { .. } => {
+                ended = Some(step);
+                break;
+            }
+            X11OrderedServeStep::Idle => break,
+            _ => continue,
+        }
+    }
+    assert!(
+        matches!(ended, Some(X11OrderedServeStep::Ended { shutdown: true, .. })),
+        "the exit ended this wire and said so: {ended:?}"
+    );
+    assert!(
+        owner.ending_ended(),
+        "so the owner knows its wire was ended"
+    );
+
+    let (_durable, reading) = serving_reading(owner);
+    assert_eq!(reading.ending, PrivateRetainedEnding::Ended);
+}
+
+
+#[test]
+fn an_ending_this_owner_made_itself_is_reported_as_one() {
+    // THE OWNER'S OWN FALLBACK. When the delivery writer finds the producers
+    // gone it reports the end without shutting anything down, and this owner
+    // ends the wire itself on the way out. That is a second site, and an
+    // ending recorded at only one of them left the other reading as never
+    // attempted.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8641));
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+
+    // Its producers really go: the row and everything holding a sender for it.
+    let PreparedOrderedFixture {
+        registration,
+        runner,
+        channels,
+        ..
+    } = f;
+    drop(channels);
+    drop(registration);
+    drop(runner);
+
+    let step = owner.serve_one(XByteOrder::LittleEndian, 7);
+    assert!(
+        matches!(
+            step,
+            X11OrderedServeStep::Ended {
+                shutdown: true,
+                ..
+            }
+        ),
+        "this owner ended the wire itself: {step:?}"
+    );
+    assert!(owner.ending_ended(), "so it knows it did");
+    let (_durable, reading) = serving_reading(owner);
+    assert_eq!(reading.ending, PrivateRetainedEnding::Ended);
+
+    // The peer sees the end, which is the fact being reported.
+    let mut byte = [0u8; 1];
+    assert_eq!(
+        (&peer).read(&mut byte).ok(),
+        Some(0),
+        "the wire really was ended"
     );
 }
 

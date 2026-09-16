@@ -278,9 +278,6 @@ struct X11OrderedServingOwner {
     stop: Option<Arc<AtomicBool>>,
     in_flight: Option<X11OrderedInFlight>,
     refused: Option<X11OrderedRefusedDelivery>,
-    /// Set once this connection's wire could not be ended after a frame was
-    /// left part-written. Nothing may be written through it again: the bytes
-    /// on the wire are the beginning of an event nobody can finish.
     /// Whether this connection's wire has actually been ended.
     ///
     /// A FACT OF ITS OWN, set wherever a shutdown succeeds, because the paths
@@ -294,6 +291,9 @@ struct X11OrderedServingOwner {
     /// nothing on its own: it does not settle anything, does not reopen this
     /// connection's output, and does not discharge a cause recorded beside it.
     ending_established: bool,
+    /// Set once this connection's wire could not be ended after a frame was
+    /// left part-written. Nothing may be written through it again: the bytes
+    /// on the wire are the beginning of an event nobody can finish.
     unterminated: bool,
     /// Why this wire was left unterminated.
     ///
@@ -500,7 +500,15 @@ impl X11OrderedServingOwner {
         if self.stop_requested() {
             // Barred under the serialization this still holds, so nothing can
             // take the wire between deciding it is unusable and saying so.
-            let refused = if self.mid_frame() {
+            // ATTEMPTED ONLY MID-FRAME, and that distinction is the whole of
+            // what this records. An ordinary stop with nothing part-written
+            // leaves the wire alone: no shutdown is made, the connection is
+            // still usable and still unbarred, and its queue still holds what
+            // was accepted. "Nothing refused" is true of that case as well as
+            // of a shutdown that worked, so it cannot be what an ending is
+            // read from -- doing so reported a live connection as ended.
+            let attempted = self.mid_frame();
+            let refused = if attempted {
                 // Already holding serialization, so exclusion is established
                 // here by construction: nothing else is inside, and the bar is
                 // set before the guard goes. The ending is attempted under it
@@ -515,7 +523,7 @@ impl X11OrderedServingOwner {
                 None
             };
             drop(socket);
-            if refused.is_none() {
+            if attempted && refused.is_none() {
                 self.ending_established = true;
             }
             if let Some(kind) = refused {
@@ -538,6 +546,19 @@ impl X11OrderedServingOwner {
             shutdown: false,
         } = step
         else {
+            // THE OTHER ORDINARY EXIT. A delivery that found its producer gone
+            // ends the wire where it discovers it and reports the ending in
+            // the step, so this owner never runs the shutdown below and must
+            // take the fact from what it was told instead.
+            if matches!(
+                step,
+                X11OrderedServeStep::Ended {
+                    shutdown: true,
+                    ..
+                }
+            ) {
+                self.ending_established = true;
+            }
             return step;
         };
         // Still holding serialization, which is the point.
@@ -547,6 +568,14 @@ impl X11OrderedServingOwner {
             Err(error) => Some(error.kind()),
         };
         let ended = refused.is_none();
+        if ended {
+            // THE SAME FACT, REACHED THE ORDINARY WAY. A send that found the
+            // peer gone, and a producer that disappeared, both end the wire
+            // here and report it in the step they return. Recording it only on
+            // the close paths meant an owner whose wire this ended read as
+            // never having attempted one.
+            self.ending_established = true;
+        }
         if let Some(kind) = refused {
             // The same reason contract as the stop exits: a wire left
             // unterminated says why, or whoever inherits it cannot.
@@ -763,31 +792,6 @@ impl X11OrderedServingOwner {
     /// that grew while holding custody never had the room it claimed.
     fn retention_capacity(&self) -> (usize, usize) {
         (self.unanswered.capacity(), self.foreign.capacity())
-    }
-
-    /// Stage a close refusal, for a control that cannot make one happen.
-    ///
-    /// This host gives no honest way to make a shutdown refuse, so the field
-    /// `begin_close`'s own failure branch writes is written directly. Nothing
-    /// in production calls this.
-    #[cfg_attr(not(test), allow(dead_code))] // Only controls stage a refusal.
-    fn staged_close_refusal(&mut self, kind: std::io::ErrorKind) {
-        self.closing = Some(X11OrderedClosing {
-            cause: X11OrderedCloseCause::ConnectionEnded,
-            termination: X11OrderedTermination::Refused(kind),
-            attempts: 1,
-            answered: 0,
-            already: 0,
-            deferred: 0,
-            drained: false,
-        });
-    }
-
-    /// Stage an unterminated cause recorded by an earlier attempt.
-    #[cfg_attr(not(test), allow(dead_code))] // Only controls stage a cause.
-    fn staged_unterminated(&mut self, cause: X11OrderedUnterminatedCause) {
-        self.unterminated = true;
-        self.unterminated_cause = Some(cause);
     }
 
     /// Whether this connection's wire has been ended, by any path.
