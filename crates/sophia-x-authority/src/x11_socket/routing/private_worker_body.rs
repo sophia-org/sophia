@@ -63,6 +63,22 @@ enum PrivateWorkerTrigger {
     Ineligible(PrivateWorkerRefusal),
 }
 
+/// What came of asking this connection's owner for a step.
+///
+/// A REFUSAL IS NOT AN ABSENCE. Reporting "could not ask" as "did not ask"
+/// loses the one fact a caller needs to act on -- that the home or its owner
+/// was in a state nothing may serve through -- and leaves a body looking as
+/// though it left for its own reasons.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateWorkerAsk {
+    /// What the owner said.
+    Said(X11OrderedServeStep),
+    /// Why it could not be asked.
+    Refused(PrivateWorkerRefusal),
+}
+
 /// What a worker body did.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
@@ -70,11 +86,18 @@ enum PrivateWorkerTrigger {
 struct PrivateWorkerOutcome {
     /// This body's reason for leaving.
     trigger: PrivateWorkerTrigger,
-    /// The owner's last word, when it was asked for one.
+    /// WHAT CAME OF THIS BODY'S LAST ASK, whichever ask that was.
     ///
-    /// `None` means the owner was never asked -- it was ineligible, or startup
-    /// ended before serving began. It never means the owner said nothing.
-    result: Option<X11OrderedServeStep>,
+    /// For a trigger the owner's own step produced, it is that step. For a
+    /// departure it is the departure ask, which is an extra visit made after
+    /// the loop and NOT counted against the step budget. For `Exhausted` it is
+    /// the last ordinary step taken, which is not nothing: a body that used
+    /// its whole budget has been serving.
+    ///
+    /// `None` MEANS NEVER ASKED, and only that: ineligible before any visit,
+    /// or startup ended before serving began. It is not a way of saying the
+    /// owner had nothing to say.
+    last: Option<PrivateWorkerAsk>,
 }
 
 /// Where a worker body's departure is recorded, owned by whoever started it.
@@ -150,12 +173,12 @@ struct PrivateWorkerBody<'a> {
     stop: &'a Arc<AtomicBool>,
     /// This connection's byte order.
     byte_order: XByteOrder,
-    /// This connection's own sequence counter.
+    /// This connection's own event sequence, shared with its other writers.
     ///
-    /// SUPPLIED, NOT INVENTED AND NOT BORROWED FROM A CLOSER. Where the number
-    /// comes from in a served connection is the attachment's business; what
-    /// this refuses to do is make one up or reach for somebody else's.
-    sequence: &'a Arc<AtomicU64>,
+    /// THE ONE THE DISPATCH ALREADY MAKES, not a mirror of it. A counter of
+    /// this body's own would number this connection's ordered events
+    /// independently of everything else written to the same wire.
+    sequence: &'a Arc<AtomicU16>,
     /// Where this body's departure goes.
     exit: &'a PrivateWorkerExit,
     /// The most steps this body will take.
@@ -190,7 +213,7 @@ impl PrivateWorkerBody<'_> {
         if let Err(refusal) = self.credentials() {
             return PrivateWorkerOutcome {
                 trigger: PrivateWorkerTrigger::Ineligible(refusal),
-                result: None,
+                last: Some(PrivateWorkerAsk::Refused(refusal)),
             };
         }
         match self.await_permit() {
@@ -202,10 +225,15 @@ impl PrivateWorkerBody<'_> {
             PrivateWorkerStart::Disappeared => {
                 return PrivateWorkerOutcome {
                     trigger: PrivateWorkerTrigger::NeverPermitted,
-                    result: None,
+                    // Never asked: startup ended before a single visit.
+                    last: None,
                 };
             }
         }
+        // KEPT ACROSS THE LOOP, so a body that leaves on its own budget can
+        // still say what it was doing. Reporting nothing there would read as a
+        // body that never served.
+        let mut last = None;
         for _ in 0..self.steps {
             // STOP IS ASKED BEFORE EVERY VISIT. It outranks a permit, and a
             // worker told to stop must not take this connection's output for
@@ -214,11 +242,14 @@ impl PrivateWorkerBody<'_> {
                 return self.depart(PrivateWorkerTrigger::Stopped);
             }
             let step = match self.visit() {
-                Ok(step) => step,
+                Ok(step) => {
+                    last = Some(PrivateWorkerAsk::Said(step));
+                    step
+                }
                 Err(refusal) => {
                     return PrivateWorkerOutcome {
                         trigger: PrivateWorkerTrigger::Ineligible(refusal),
-                        result: None,
+                        last: Some(PrivateWorkerAsk::Refused(refusal)),
                     };
                 }
             };
@@ -249,14 +280,14 @@ impl PrivateWorkerBody<'_> {
                 | X11OrderedServeStep::Ended { .. } => {
                     return PrivateWorkerOutcome {
                         trigger: PrivateWorkerTrigger::OwnerStep,
-                        result: Some(step),
+                        last: Some(PrivateWorkerAsk::Said(step)),
                     };
                 }
             }
         }
         PrivateWorkerOutcome {
             trigger: PrivateWorkerTrigger::Exhausted,
-            result: None,
+            last,
         }
     }
 
@@ -300,7 +331,7 @@ impl PrivateWorkerBody<'_> {
         // Read for this visit. How a connection's counter becomes the wire's
         // sequence is the encoding's business, not this body's; what this does
         // is pass the connection's own rather than a constant.
-        let sequence = self.sequence.load(Ordering::SeqCst) as u16;
+        let sequence = self.sequence.load(Ordering::SeqCst);
         let found = self.home.borrow_live(|payload| {
             let PrivateOrderedContinuation::Serving { owner, .. } = payload else {
                 return Err(PrivateWorkerRefusal::NotServing);
@@ -343,9 +374,14 @@ impl PrivateWorkerBody<'_> {
         }
         PrivateWorkerOutcome {
             trigger,
-            // An owner that cannot be used says nothing, and nothing is
-            // invented on its behalf.
-            result: self.visit().ok(),
+            // AN OWNER THAT CANNOT BE USED SAYS WHY, and that is kept. Turning
+            // the refusal into an absence here erased the one fact a caller
+            // has to act on -- that the home was in a state nothing may serve
+            // through -- and left a departure looking ordinary.
+            last: Some(match self.visit() {
+                Ok(step) => PrivateWorkerAsk::Said(step),
+                Err(refusal) => PrivateWorkerAsk::Refused(refusal),
+            }),
         }
     }
 

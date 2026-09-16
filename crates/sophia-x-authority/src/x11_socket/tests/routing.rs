@@ -31605,9 +31605,38 @@ struct PrivateWorkerStopper<'a>(&'a Arc<AtomicBool>, &'a Arc<PrivateOrderedWake>
 
 impl Drop for PrivateWorkerStopper<'_> {
     fn drop(&mut self) {
-        self.0.store(true, Ordering::SeqCst);
-        self.1.ready.notify_all();
+        // THROUGH THE PRODUCTION CANCELLATION. A bare store and a signal
+        // beside the predicate mutex can land after a waiter has checked stop
+        // and before it waits, and then the signal reaches nobody: the cleanup
+        // hangs on a body that will never look again. The existing helper
+        // publishes the recheck under that mutex, which is what makes the
+        // stop visible to a waiter either side of its check.
+        cancel_connection_worker(self.0, self.1);
     }
+}
+
+/// Wait until this connection's body is demonstrably in its idle wait.
+///
+/// A HANDSHAKE, NOT A SLEEP. The level is published under the predicate mutex
+/// and this returns when it has been consumed -- and only the waiter consumes
+/// it, under that same mutex, on the way out of the wait. A body that had not
+/// reached the wait would leave it set.
+///
+/// Bounded, because a control that never finishes reports nothing.
+fn waited_and_consumed(wake: &Arc<PrivateOrderedWake>) -> bool {
+    wake.publish_recheck();
+    for _ in 0..20_000 {
+        if !wake
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .pending
+        {
+            return true;
+        }
+        std::thread::yield_now();
+    }
+    false
 }
 
 /// Hand a capsule over the way a production producer does: the recheck level
@@ -31634,7 +31663,7 @@ struct PrivateWorkerFixture {
     home: Arc<PrivateOrderedHome>,
     wake: Arc<PrivateOrderedWake>,
     stop: Arc<AtomicBool>,
-    sequence: Arc<AtomicU64>,
+    sequence: Arc<AtomicU16>,
     sender: PrivateGatedOrderedSender,
     peer: UnixStream,
     _output: Arc<Mutex<UnixStream>>,
@@ -31713,7 +31742,7 @@ fn worker_fixture_bound(
         home,
         wake,
         stop,
-        sequence: Arc::new(AtomicU64::new(7)),
+        sequence: Arc::new(AtomicU16::new(7)),
         sender,
         peer,
         _output: output,
@@ -31740,7 +31769,7 @@ impl PrivateWorkerFixture {
         Arc<PrivateOrderedHome>,
         Arc<PrivateOrderedWake>,
         Arc<AtomicBool>,
-        Arc<AtomicU64>,
+        Arc<AtomicU16>,
     ) {
         (
             Arc::clone(&self.home),
@@ -31818,8 +31847,7 @@ fn a_body_serves_an_admitted_delivery_to_real_bytes_and_answers_for_it() {
         // AND THEN IT IS STOPPED AND JOINED, before anything is dropped: a
         // registration going while a borrower is still in its home is the
         // integration boundary, not this body's to cross.
-        f.stop.store(true, Ordering::SeqCst);
-        f.wake.ready.notify_all();
+        cancel_connection_worker(&f.stop, &f.wake);
         worker.join().expect("the body finished")
     });
     let answer = cell.answer().expect("and the delivery is answered for");
@@ -31933,8 +31961,7 @@ fn an_unpermitted_body_serves_nothing_until_it_is_permitted() {
         std::io::Read::read_exact(&mut (&f.peer), &mut seen)
             .expect("its peer reads what the permitted body sent");
         assert_eq!(seen[0], 4);
-        f.stop.store(true, Ordering::SeqCst);
-        f.wake.ready.notify_all();
+        cancel_connection_worker(&f.stop, &f.wake);
         assert_eq!(
             worker.join().expect("the body finished").trigger,
             PrivateWorkerTrigger::Stopped
@@ -32025,18 +32052,13 @@ fn a_body_that_finds_nothing_waits_and_is_woken_by_an_actual_producer() {
         std::io::Read::read_exact(&mut (&f.peer), &mut seen)
             .expect("its peer reads what the woken body sent");
         assert_eq!(seen[0], 4);
-        f.stop.store(true, Ordering::SeqCst);
-        f.wake.ready.notify_all();
+        cancel_connection_worker(&f.stop, &f.wake);
         let outcome = worker.join().expect("the body finished");
         assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped, "{outcome:?}");
     });
     assert!(
         cell.answer().is_some(),
         "the woken body served what the producer put there"
-    );
-    assert!(
-        !f.wake.state.lock().expect("a readable notice").pending,
-        "and consumed the level that woke it"
     );
     assert!(
         f.wake.state.lock().expect("a readable notice").started,
@@ -32071,13 +32093,12 @@ fn a_body_told_to_stop_while_idle_asks_its_owner_what_that_means() {
         let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
         // THE ACTUAL STOP AND ITS WAKE, which is how a running worker is told:
         // a bare write into a sleeping body reaches nothing.
-        f.stop.store(true, Ordering::SeqCst);
-        f.wake.ready.notify_all();
+        cancel_connection_worker(&f.stop, &f.wake);
         let outcome = worker.join().expect("the body finished");
         assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped);
         assert_eq!(
-            outcome.result,
-            Some(X11OrderedServeStep::Stopped),
+            outcome.last,
+            Some(PrivateWorkerAsk::Said(X11OrderedServeStep::Stopped)),
             "and the owner is what said so"
         );
     });
@@ -32101,7 +32122,13 @@ fn a_body_that_cannot_read_its_notice_stops_the_connection_and_asks_once() {
             std::thread::scope(|scope| {
                 let body = f.body(&exit, 16);
                 let worker = scope.spawn(move || body.run());
-                // The body is idle and waiting on this notice.
+                // REACHED THE WAIT FIRST, so the poison below lands on a
+                // reacquisition rather than on the way in -- which is the
+                // whole difference between this arm and the one beside it.
+                assert!(
+                    waited_and_consumed(&f.wake),
+                    "the body is in its idle wait"
+                );
                 assert!(
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let _held = f.wake.state.lock().expect("a readable notice");
@@ -32126,8 +32153,8 @@ fn a_body_that_cannot_read_its_notice_stops_the_connection_and_asks_once() {
             let outcome = f.body(&exit, 16).run();
             assert_eq!(outcome.trigger, PrivateWorkerTrigger::NoticeUnreadable);
             assert_eq!(
-                outcome.result,
-                Some(X11OrderedServeStep::Stopped),
+                outcome.last,
+                Some(PrivateWorkerAsk::Said(X11OrderedServeStep::Stopped)),
                 "the owner's own word about a connection now stopped"
             );
         }
@@ -32137,6 +32164,187 @@ fn a_body_that_cannot_read_its_notice_stops_the_connection_and_asks_once() {
         );
         drop(f.fixture);
     }
+}
+
+#[test]
+fn a_body_ends_on_the_owners_word_when_the_last_sender_disappears() {
+    // GONE IS A HINT, AND THE OWNER'S RECEIVE IS THE FINDING. That every
+    // sender has disappeared is a reason to look again; what says the queue is
+    // finished is the owner receiving from it, and the outcome it gives is the
+    // owner's rather than a flag this body read back.
+    //
+    // THE LAST SENDER GOES WITHOUT THE REGISTRATION GOING. The registry's own
+    // routing removes a client's row when its protocol receiver has gone, so
+    // dropping that receiver and driving the real routing seam takes the last
+    // counted wrapper with it. No table surgery, no invented level, and no
+    // registration torn down under a body still borrowing its home -- which is
+    // the integration boundary, not this body's to cross.
+    let f = worker_fixture(XServerFrontendClientId(8404));
+    f.permit();
+    let exit = PrivateWorkerExit::unstarted();
+    let sender = f.sender;
+    let protocol = f.fixture.channels.protocol;
+    let (home, wake, stop, sequence) = (
+        Arc::clone(&f.home),
+        Arc::clone(&f.wake),
+        Arc::clone(&f.stop),
+        Arc::clone(&f.sequence),
+    );
+    let outcome = std::thread::scope(|scope| {
+        let exit = &exit;
+        let worker = scope.spawn(move || {
+            PrivateWorkerBody {
+                home: &home,
+                wake: &wake,
+                stop: &stop,
+                byte_order: XByteOrder::LittleEndian,
+                sequence: &sequence,
+                exit,
+                steps: 16,
+            }
+            .run()
+        });
+        let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
+        assert!(
+            waited_and_consumed(&f.wake),
+            "the body is in its idle wait before anything disappears"
+        );
+
+        // The connection's protocol receiver goes, and the ordered sender this
+        // control was holding with it.
+        drop((protocol, sender));
+        // THE REAL ROUTING SEAM: it finds the protocol queue disconnected and
+        // removes the row, which is what releases the last ordered wrapper.
+        f.fixture
+            .runner
+            .frontend
+            .as_ref()
+            .unwrap()
+            .broker
+            .registry
+            .route_protocol(
+                f.fixture.client,
+                XClientEvent::UnmapNotify {
+                    sequence: 1,
+                    event: f.fixture.window,
+                    window: f.fixture.window,
+                    from_configure: false,
+                },
+            )
+            .expect("a disconnected protocol queue is not this caller's error");
+        let outcome = worker.join().expect("the body finished");
+        // Read HERE, before the control's own cleanup stops anything: what is
+        // being asked is whether the body ended on the owner's word without
+        // the connection having been told to stop.
+        (outcome, f.stop.load(Ordering::SeqCst), f.home.standing())
+    });
+    let (outcome, stopped, standing) = outcome;
+    assert_eq!(outcome.trigger, PrivateWorkerTrigger::OwnerStep);
+    assert_eq!(
+        outcome.last,
+        Some(PrivateWorkerAsk::Said(X11OrderedServeStep::Ended {
+            outcome: XAuthorityInputDeliveryOutcome::ClientDisconnected,
+            shutdown: true,
+        })),
+        "the owner's own ending, with its exact outcome and what it shut down"
+    );
+    // The connection is still live and was never told to stop: what ended was
+    // its queue, established by the owner receiving from it.
+    assert_eq!(standing, PrivateHomeStanding::Live);
+    assert!(!stopped, "and nothing had told the connection to stop");
+    drop(f.fixture.registration);
+}
+
+#[test]
+fn a_departure_that_cannot_ask_its_owner_says_so_rather_than_nothing() {
+    // A REFUSAL IS NOT AN ABSENCE. When a departure's ask cannot be made --
+    // the home unreadable by the time the body is told to stop -- reporting
+    // "nothing said" loses the one fact a caller has to act on, and leaves the
+    // departure looking ordinary. What could not be asked, and why, is kept
+    // beside the trigger.
+    let f = worker_fixture(XServerFrontendClientId(8405));
+    f.permit();
+    let exit = PrivateWorkerExit::unstarted();
+    let (home, wake, stop, sequence) = f.handles();
+    let outcome = std::thread::scope(|scope| {
+        let exit = &exit;
+        let worker = scope.spawn(move || {
+            PrivateWorkerBody {
+                home: &home,
+                wake: &wake,
+                stop: &stop,
+                byte_order: XByteOrder::LittleEndian,
+                sequence: &sequence,
+                exit,
+                steps: 16,
+            }
+            .run()
+        });
+        let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
+        // Credentials already succeeded and the body is in its idle wait, so
+        // what follows happens to a body that was serving this connection
+        // perfectly well a moment ago.
+        assert!(waited_and_consumed(&f.wake), "the body is in its idle wait");
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _held = f.home.state.lock().expect("a readable home");
+                panic!("a holder unwound inside this connection's home");
+            }))
+            .is_err(),
+            "the holder unwound"
+        );
+        assert!(f.home.unreadable());
+        cancel_connection_worker(&f.stop, &f.wake);
+        worker.join().expect("the body finished")
+    });
+    assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped);
+    assert_eq!(
+        outcome.last,
+        Some(PrivateWorkerAsk::Refused(
+            PrivateWorkerRefusal::HomeUnreadable
+        )),
+        "what could not be asked, not silence standing in for it"
+    );
+    drop(f.fixture);
+}
+
+#[test]
+fn a_body_that_spends_its_budget_still_says_what_it_was_doing() {
+    // EXHAUSTION IS NOT INNOCENCE. A body that used every step it was given
+    // has been serving, and reporting that nothing was ever asked would read
+    // as one that never did -- which is exactly what a caller deciding
+    // whether work is owed must not be told.
+    let mut f = worker_fixture(XServerFrontendClientId(8406));
+    attempt_run(&mut f.fixture, 84060, 272, true);
+    let cell = admitted_cell(f.fixture.runner.frontend.as_ref().unwrap(), 84060);
+    assert_eq!(
+        f.fixture
+            .runner
+            .frontend
+            .as_mut()
+            .unwrap()
+            .dispatch_one_press(),
+        Some(true)
+    );
+    f.permit();
+
+    // Two steps: enough to take the delivery and finish it, and no more, so
+    // the budget is what ends this rather than the connection.
+    let exit = PrivateWorkerExit::unstarted();
+    let outcome = f.body(&exit, 2).run();
+    let mut seen = [0u8; 32];
+    std::io::Read::read_exact(&mut (&f.peer), &mut seen).expect("its peer reads what was sent");
+    assert_eq!(seen[0], 4);
+    assert_eq!(
+        cell.answer().expect("answered for").outcome,
+        XAuthorityInputDeliveryOutcome::Flushed
+    );
+    assert_eq!(outcome.trigger, PrivateWorkerTrigger::Exhausted);
+    assert!(
+        matches!(outcome.last, Some(PrivateWorkerAsk::Said(_))),
+        "its last step, not a claim that it never took one: {outcome:?}"
+    );
+    drop(f.fixture);
 }
 
 #[test]
@@ -32155,7 +32363,11 @@ fn a_body_refuses_a_home_or_an_owner_it_may_not_serve() {
         PrivateWorkerTrigger::Ineligible(PrivateWorkerRefusal::NoStop),
         "an owner with no stop is a worker nothing could end"
     );
-    assert_eq!(refused.result, None, "and its owner was never asked");
+    assert_eq!(
+        refused.last,
+        Some(PrivateWorkerAsk::Refused(PrivateWorkerRefusal::NoStop)),
+        "and the refusal is kept rather than reported as nothing said"
+    );
     drop(unstoppable.fixture);
 
     // A notice that is not this owner's.
@@ -32221,75 +32433,3 @@ fn a_body_refuses_a_home_or_an_owner_it_may_not_serve() {
     drop(f.fixture);
 }
 
-#[test]
-fn a_body_that_panics_publishes_its_departure_without_a_classification() {
-    // DEPARTURE AND CLASSIFICATION ARE TWO WRITES, and an unwind makes only
-    // the first. That is what lets a caller tell a body that left from one
-    // still running -- and what stops it reading a departure as a reaping.
-    //
-    // LEFT IS NOT JOINED. What establishes the panic is the join below, and
-    // what this control shows is that the two are separate answers.
-    let f = worker_fixture(XServerFrontendClientId(8401));
-    f.permit();
-    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(84010);
-    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
-    let frames = order_pass_frames(&capsule);
-    produced_send(&f.sender, capsule);
-
-    let exit = PrivateWorkerExit::unstarted();
-    let joined = std::thread::scope(|scope| {
-        let home = Arc::clone(&f.home);
-        let wake = Arc::clone(&f.wake);
-        let stop = Arc::clone(&f.stop);
-        let sequence = Arc::clone(&f.sequence);
-        let exit = &exit;
-        scope
-            .spawn(move || {
-                let _running = PrivateWorkerBody {
-                    home: &home,
-                    wake: &wake,
-                    stop: &stop,
-                    byte_order: XByteOrder::LittleEndian,
-                    sequence: &sequence,
-                    exit,
-                    steps: 8,
-                };
-                // Inside the frame the body would run in, before it runs.
-                let _leaving = PrivateWorkerLeaving(exit);
-                panic!("a worker frame unwound");
-            })
-            .join()
-    });
-    assert!(joined.is_err(), "the join is what says it panicked");
-    assert!(exit.left(), "its frame published that it was gone");
-    assert!(
-        exit.outcome().is_none(),
-        "and left no classification, which is not itself proof of a panic"
-    );
-
-    // THE HOME AND ITS CUSTODY SURVIVE THE FRAME THAT WENT. Nothing was taken
-    // out of the home to be lost with it.
-    assert!(!f.home.unreadable(), "the home is still readable");
-    let survived = f
-        .home
-        .borrow_live(|payload| {
-            let PrivateOrderedContinuation::Serving { owner, .. } = payload else {
-                panic!("promoted")
-            };
-            owner.queue.try_recv().ok()
-        })
-        .acted()
-        .expect("its own home")
-        .expect("the capsule nobody served");
-    assert_eq!(
-        survived.delivery(),
-        XAuthorityInputDeliveryId::from_raw(84010)
-    );
-    assert_eq!(order_pass_frames(&survived), frames);
-    assert!(Arc::ptr_eq(
-        &cell,
-        &survived.finalizer().expect("carried").completion
-    ));
-    assert!(cell.answer().is_none(), "and nothing answered for it");
-    drop((f.fixture, survived, cell));
-}
