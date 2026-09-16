@@ -21550,6 +21550,203 @@ fn a_connections_ordered_output_is_retained_whole_when_its_registration_ends() {
 }
 
 #[test]
+fn a_reserved_place_does_not_keep_the_store_that_issued_it_alive() {
+    // A CREDIT IS NOT A CLAIM ON ITS ISSUER. A place lives inside the store
+    // that issued it, so a place holding that store strongly is a ring with
+    // itself: store, entry, holder, store. The registry's handle is weak and
+    // is not on that ring, so it does not open it. Nothing would ever drop,
+    // and every obligation inside would stay readable for ever -- which reads
+    // as an instance still settling rather than as a leak.
+    //
+    // THE RING IS BUILT HERE DELIBERATELY. The reservation is real, the only
+    // strong holder is dropped while the place is still held, and what is
+    // asked afterwards is whether the store is still there.
+    for dispose_explicitly in [false, true] {
+        let capability;
+        let slot = {
+            let durable = PrivateSettlementOwner::default();
+            assert_eq!(
+                durable.declare_connection_bound(NonZeroUsize::new(2).expect("nonzero")),
+                Some(2)
+            );
+            let slot = durable
+                .reserve_ordered_continuation()
+                .expect("a declared bound leaves a place");
+            assert_eq!(durable.continuations_reserved(), Some(1));
+            capability = durable.settlement_ref();
+            assert!(
+                capability.owner().is_some(),
+                "while its maker holds it, the store is there"
+            );
+            slot
+        };
+        // THE MAKER IS GONE AND THE PLACE IS STILL HELD. This is the whole
+        // question: if the place kept the store, it would answer here.
+        assert!(
+            capability.owner().is_none(),
+            "a held place must not be the reason its store exists"
+        );
+
+        // AND DISPOSING OF IT IS NOT AN ERROR. There is no counter left to
+        // move and nowhere to give the place back to, so both disposals do
+        // nothing rather than failing -- and nothing is owed, because the
+        // account an obligation would have been written into is the thing
+        // that disappeared.
+        if dispose_explicitly {
+            slot.relinquish_unexposed();
+        } else {
+            drop(slot);
+        }
+        assert!(capability.owner().is_none());
+    }
+}
+
+#[test]
+fn a_handover_into_a_place_whose_store_has_gone_keeps_its_work_and_says_so() {
+    // THE CONTRACT IS THAT THIS CANNOT HAPPEN -- the store outlives every
+    // connection it issued a place to, which is why the constructor takes it
+    // by reference. What this establishes is what the hand-over does if it
+    // happens anyway: it says the store is gone and leaves the work where it
+    // was, rather than reporting an installation into a place that is not
+    // there and letting accepted work disappear under the word "installed".
+    let live = PrivateSettlementOwner::default();
+    let private = private_over(&live, 2);
+    let client = XServerFrontendClientId(8331);
+    let (_registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+
+    // A SECOND STORE, whose only holder goes while its place is still held.
+    let capability;
+    let slot = {
+        let doomed = PrivateSettlementOwner::with_capacities(2, 2);
+        let slot = doomed
+            .reserve_ordered_continuation()
+            .expect("a place, reserved before exposure");
+        capability = doomed.settlement_ref();
+        slot
+    };
+    assert!(capability.owner().is_none(), "its only holder has gone");
+
+    // A real receiver, minted by a real registration, in the shape teardown
+    // hands over. Nothing about it is staged except which store it is aimed at.
+    let mut source = Some(PrivateOrderedContinuation::Setup {
+        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
+        refusal: X11OrderedServingRefusal::Unserved,
+        evidence: PrivateOrderedEvidence::unstarted(),
+        retained: Vec::new(),
+        drained: false,
+        ended: false,
+        ending_refused: None,
+    });
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::NoStore);
+    assert!(
+        source.is_some(),
+        "work is taken only once there is somewhere for it to go"
+    );
+}
+
+#[test]
+fn a_retained_continuation_outlives_its_instance_and_goes_with_its_store() {
+    // WHO KEEPS THE STORE ALIVE: whoever made it. The constructor takes it by
+    // reference and clones a holder for the instance, so an instance that ends
+    // does not take the store with it -- that is what durable means, and it is
+    // why this control holds the store itself rather than reaching for one
+    // through the instance.
+    let durable = PrivateSettlementOwner::default();
+    let capability = durable.settlement_ref();
+    let client = XServerFrontendClientId(8321);
+    let (cell, survived, wire_weak, output_weak, pending_weak) = {
+        let private = private_over(&durable, 2);
+        let (registration, channels) = private
+            .broker
+            .registry
+            .register_client_with_admission(client, Some(admitted(client)))
+            .expect("a place and a row");
+        let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+        let output = Arc::new(Mutex::new(stream));
+        let wire = Arc::new(X11WirePermission::open());
+        let pending = Arc::new(AtomicUsize::new(0));
+        assert_eq!(
+            registration
+                .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+                .unwrap_or_else(|_| panic!("a fresh registration holds no custody")),
+            None
+        );
+        let sender = capture_gated_sender(&private, client);
+        let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(83210);
+        let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+        gated_send(&sender, capsule).expect("an open endpoint");
+        drop(sender);
+        // The binding's own halves are weakly observed from here on, so what
+        // the retained record holds can be asked about without holding it.
+        let weaks = (
+            Arc::downgrade(&wire),
+            Arc::downgrade(&output),
+            Arc::downgrade(&pending),
+        );
+        drop((wire, output, pending));
+
+        // Teardown hands the queue into the place reserved for it.
+        drop(registration);
+        assert_eq!(durable.continuations_retained(), Some(1));
+
+        // AND THEN THE INSTANCE ENDS, with the retained work still owed.
+        drop(private);
+        (cell, weaks.0.upgrade().is_some(), weaks.0, weaks.1, weaks.2)
+    };
+    assert!(
+        survived,
+        "an instance that ends does not take the retained binding with it"
+    );
+    assert_eq!(
+        durable.continuations_retained(),
+        Some(1),
+        "the place is still this connection's after its instance has gone"
+    );
+    // THE PAYLOAD, not the counters: the exact capsule accepted before the
+    // connection ended is still in the retained queue.
+    let capsule = durable
+        .with_ordered_continuation(0, |continuation| {
+            let PrivateOrderedContinuation::Setup { accepted, .. } = continuation else {
+                panic!("no owner is built yet")
+            };
+            let PrivateOrderedSetupCustody::Transport(transport) = accepted else {
+                panic!("this connection bound")
+            };
+            transport.ordered.receiver.try_recv().ok()
+        })
+        .expect("the place this connection held")
+        .expect("the capsule accepted before the connection ended");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(83210)
+    );
+    assert!(Arc::ptr_eq(
+        &cell,
+        &capsule.finalizer().expect("carried").completion
+    ));
+    drop((capsule, cell));
+
+    // NOW THE LEGITIMATE HOLDERS GO. Nothing inside the store is holding the
+    // store, so the store drops and takes the record it retained with it.
+    assert!(capability.owner().is_some());
+    drop(durable);
+    assert!(
+        capability.owner().is_none(),
+        "no holder remains, so nothing self-referential keeps the store"
+    );
+    assert!(
+        wire_weak.upgrade().is_none()
+            && output_weak.upgrade().is_none()
+            && pending_weak.upgrade().is_none(),
+        "a store that drops takes the bindings it retained with it"
+    );
+}
+
+#[test]
 fn a_registration_that_ends_refuses_handovers_before_it_takes_its_queue_away() {
     // A CONNECTION THAT ENDS IS CLOSED TO HANDOVERS. Removing the row is not
     // what does it: the capture happens under the client table and the send
@@ -25451,17 +25648,40 @@ fn a_departure_says_which_of_the_three_histories_it_found() {
     );
     let handed = hand_worker_to_joiner(&slot).handle.expect("its handle");
 
-    // And once its handle has gone to a joiner, that is what a later look
-    // finds -- through the departing flag, which did not replace the history.
-    {
-        let mut held = slot.lock().expect("readable");
-        held.departing = false;
-    }
+    // A repeated departure says what it is: the first one stands. It does not
+    // re-read the history, which is why the third case below is a connection
+    // of its own rather than this one with a field put back.
     assert_eq!(
         depart_connection(&slot, &stop, &wake),
-        PrivateDeparture::WorkerHandedOn
+        PrivateDeparture::AlreadyDeparting
     );
     handed.join().expect("the worker");
+
+    // The third history, through a fresh connection: started, handed on, and
+    // only then departed for the first time.
+    let (slot, stop, wake) = startup_fixture();
+    let (saw, seen) = sync_channel(1);
+    let body = permit_waiter(Arc::clone(&stop), Arc::clone(&wake), saw);
+    assert_eq!(
+        start_connection_worker(&slot, &stop, &wake, || {
+            std::thread::Builder::new().spawn(body)
+        }),
+        PrivateStartupOutcome::Started
+    );
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("permitted")
+    );
+    let handed = hand_worker_to_joiner(&slot).handle.expect("its handle");
+    assert_eq!(
+        depart_connection(&slot, &stop, &wake),
+        PrivateDeparture::WorkerHandedOn,
+        "its handle is with a joiner, and the departure says so"
+    );
+    handed.join().expect("the worker");
+
+    // WHAT THESE ARE: facts about a handle and a history. Neither says the
+    // thread is executing now, and neither says it has been joined.
 }
 
 #[test]

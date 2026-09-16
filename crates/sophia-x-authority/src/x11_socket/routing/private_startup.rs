@@ -218,11 +218,16 @@ enum PrivateDeparture {
 
 /// Tell this connection to go, and find out what is here to be dealt with.
 ///
-/// THE STOP AND THE WAKE COME FIRST, BEFORE ANY LOCK. The worker slot is held
+/// THE STOP AND THE WAKE COME BEFORE THE WORKER-SLOT LOCK. The slot is held
 /// across a spawn -- creating a thread is somebody else's latency -- so a
 /// departure that wrote its no-more-starts decision first would wait behind
 /// that spawn before telling the connection anything. Stopping a connection
 /// must not queue behind starting one.
+///
+/// NOT LOCK-FREE, AND NOT BOUNDED. The stop itself is one atomic write, but
+/// the wake that follows takes the connection's notice, so this is an order
+/// between two locks rather than the absence of one, and nothing here says how
+/// long either takes.
 ///
 /// Then the decision, which is serialized against starting by the slot's own
 /// lock: a start takes it and refuses a departing slot, a departure takes it

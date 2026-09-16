@@ -824,11 +824,27 @@ impl XServerFrontendClientRouteRegistration {
             // exists, what it left is written here by whoever joined it.
             recorded.worker = PrivateOrderedWorkerExit::NeverStarted;
         }
-        slot.install(&mut held);
-        debug_assert!(
-            held.is_none(),
-            "an installed continuation leaves its source empty"
-        );
+        match slot.install(&mut held) {
+            PrivateContinuationInstall::Installed => debug_assert!(
+                held.is_none(),
+                "an installed continuation leaves its source empty"
+            ),
+            // THE STORE OUTLIVES EVERY CONNECTION IT ISSUED A PLACE TO -- that
+            // is the contract the constructor takes it by reference to state.
+            // If it has gone anyway, the queue held here drops now, because
+            // the only thing that could ever have read it again was the store.
+            // Saying so beats asserting the premise that made it impossible.
+            PrivateContinuationInstall::NoStore => {
+                debug_assert!(false, "a store outlives the connections it placed");
+                drop(held.take());
+            }
+            // Already marked abandoned by the hand-over itself. The work drops
+            // here for the same reason: there is no place left to read it from.
+            PrivateContinuationInstall::NoPlace
+            | PrivateContinuationInstall::NothingHandedOver => {
+                drop(held.take());
+            }
+        }
     }
 }
 

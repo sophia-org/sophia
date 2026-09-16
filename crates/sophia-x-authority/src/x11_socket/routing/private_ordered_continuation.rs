@@ -200,7 +200,24 @@ enum PrivateOrderedContinuationPlace {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
 struct PrivateOrderedContinuationSlot {
-    owner: PrivateSettlementOwner,
+    /// The store this place belongs to, held WITHOUT keeping it alive.
+    ///
+    /// A CREDIT IS NOT A CLAIM ON THE THING THAT ISSUED IT. A strong reference
+    /// here closes a ring the moment the store itself holds anything that
+    /// holds a place -- store, record, place, store -- and the registry's weak
+    /// reference does not touch that ring, because it is not on it. Nothing
+    /// then drops, and every obligation inside stays readable for ever, which
+    /// reads as an instance still settling rather than as a leak.
+    ///
+    /// WHAT KEEPS THE STORE ALIVE is whoever made it: it is handed to each
+    /// instance by reference and outlives them all, which is what durable
+    /// means. A place is one of its own entries and cannot be the reason it
+    /// exists.
+    ///
+    /// If the store has gone, the accounting it held has gone with it: there
+    /// is no counter left to move and nothing to give a place back to. Every
+    /// disposal below therefore does nothing rather than failing, and says so.
+    owner: PrivateSettlementRef,
     /// Which reserved place this is. The storage exists from the moment the
     /// slot does, so installing into it allocates nothing.
     index: usize,
@@ -209,6 +226,28 @@ struct PrivateOrderedContinuationSlot {
     /// Cleared by whichever disposal actually happens, so the fallback in Drop
     /// cannot transfer or account for the same place twice.
     armed: bool,
+}
+
+/// Where a hand-over actually put the work.
+///
+/// SAID, NOT ASSUMED. Three of these four leave the source holding what it
+/// came with, and a caller that treated every return as an installation would
+/// be asserting a premise rather than reading a result.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateContinuationInstall {
+    /// Into the place reserved for it. The source is empty.
+    Installed,
+    /// The store has gone, so the place went with it.
+    ///
+    /// NOTHING IS OWED AND NOTHING IS MARKED: the account that a mark would
+    /// have been written into is the thing that disappeared. The work stays
+    /// with its source, which now has nowhere to put it.
+    NoStore,
+    /// The place was not there. Marked abandoned; the source keeps its work.
+    NoPlace,
+    /// The source held nothing. Marked abandoned.
+    NothingHandedOver,
 }
 
 #[cfg(unix)]
@@ -235,12 +274,21 @@ impl PrivateOrderedContinuationSlot {
     /// CONSUMES THE CAPABILITY. A slot that stayed usable after installing had
     /// only a debug assertion between a second call and overwriting held work,
     /// and that protection is not there in a release build.
-    fn install(mut self, source: &mut Option<PrivateOrderedContinuation>) {
+    fn install(
+        mut self,
+        source: &mut Option<PrivateOrderedContinuation>,
+    ) -> PrivateContinuationInstall {
         // The record was made when this place was reserved. Finding it is a
         // reference count, not an allocation, and it happens while the work is
         // still the caller's.
         let record = {
-            let held = self.owner.records_even_if_poisoned();
+            let Some(owner) = self.owner.owner() else {
+                // The store has gone. There is nowhere to install into, and
+                // nothing is taken from the source.
+                self.armed = false;
+                return PrivateContinuationInstall::NoStore;
+            };
+            let held = owner.records_even_if_poisoned();
             match held.continuations.get(self.index) {
                 Some(PrivateOrderedContinuationPlace::Taken(record)) => record.clone(),
                 _ => {
@@ -249,7 +297,7 @@ impl PrivateOrderedContinuationSlot {
                     // quietly counted as done.
                     drop(held);
                     self.abandon();
-                    return;
+                    return PrivateContinuationInstall::NoPlace;
                 }
             }
         };
@@ -272,15 +320,20 @@ impl PrivateOrderedContinuationSlot {
             // someone who will come back for it.
             drop(destination);
             self.abandon();
-            return;
+            return PrivateContinuationInstall::NothingHandedOver;
         };
         *destination = Some(continuation);
         self.armed = false;
+        PrivateContinuationInstall::Installed
     }
 
     /// Give up this place without disposing of it, and say so.
     fn abandon(&mut self) {
-        let mut held = self.owner.records_even_if_poisoned();
+        let Some(owner) = self.owner.owner() else {
+            self.armed = false;
+            return;
+        };
+        let mut held = owner.records_even_if_poisoned();
         held.continuations_abandoned = held.continuations_abandoned.saturating_add(1);
         self.armed = false;
     }
@@ -309,7 +362,11 @@ impl PrivateOrderedContinuationSlot {
     }
 
     fn give_back(mut self) {
-        let mut held = self.owner.records_even_if_poisoned();
+        let Some(owner) = self.owner.owner() else {
+            self.armed = false;
+            return;
+        };
+        let mut held = owner.records_even_if_poisoned();
         // The place is checked, NOT the record's contents: reading a record
         // here would take one beneath the aggregate, which is the order
         // driving relies on being the other way round. A debug assertion is
@@ -658,7 +715,9 @@ impl PrivateSettlementOwner {
         held.continuation_slots = held.continuation_slots.saturating_add(1);
         drop(held);
         Ok(PrivateOrderedContinuationSlot {
-            owner: self.clone(),
+            // Weak, deliberately: a place is one of this store's own entries
+            // and must not be the reason the store exists.
+            owner: self.settlement_ref(),
             index,
             armed: true,
         })
@@ -845,7 +904,12 @@ impl Drop for PrivateOrderedContinuationSlot {
         if !self.armed {
             return;
         }
-        let mut held = self.owner.records_even_if_poisoned();
+        // If the store has gone, its account has gone with it: there is no
+        // counter left to mark and nothing this could be read from later.
+        let Some(owner) = self.owner.owner() else {
+            return;
+        };
+        let mut held = owner.records_even_if_poisoned();
         held.continuations_abandoned = held.continuations_abandoned.saturating_add(1);
     }
 }
