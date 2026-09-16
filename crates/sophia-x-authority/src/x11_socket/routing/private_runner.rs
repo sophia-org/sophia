@@ -470,11 +470,17 @@ impl PrivatePreparedRunner {
         &self.frontend.as_ref().expect("live runner").participant
     }
 
-    pub fn control_producer(&self) -> PrivateControlProducer {
-        self.frontend
-            .as_ref()
-            .expect("live runner")
-            .control_producer()
+    /// ISSUED ONLY ON A LIVE LEASE, and used only on one: the producer this
+    /// hands out asks again at every acceptance.
+    pub fn control_producer(
+        &self,
+        service: &PrivateServiceLease<'_>,
+    ) -> Result<PrivateControlProducer, PrivateServiceRefusal> {
+        let frontend = self.frontend.as_ref().expect("live runner");
+        if !frontend.broker.registry.leased_by(service) {
+            return Err(PrivateServiceRefusal::ForeignServiceOwner);
+        }
+        Ok(frontend.control_producer())
     }
 
     /// THE OWNER IS BORROWED FOR THIS ACT, and for every one like it. A

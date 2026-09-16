@@ -317,7 +317,7 @@ fn lifecycle_integration_native_hold_debt_is_not_query_cleanup() {
     let client = XServerFrontendClientId(7609);
     let surface = SurfaceId::new(7609, 1);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, ingress, channels, registration, .. } = &mut fixture;
+    let PreparedOrderedFixture { keeper, runner, ingress, channels, registration, .. } = &mut fixture;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
@@ -327,6 +327,7 @@ fn lifecycle_integration_native_hold_debt_is_not_query_cleanup() {
     let (_held_cell, _held_capsule) = held_button(
         private,
         ingress,
+        &keeper.lease(),
         keyboards,
         watch,
         &mut inbox,

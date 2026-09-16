@@ -78,6 +78,12 @@ enum PrivateCustodyReach<'o> {
     /// It says the keeper this service was built over is no longer there --
     /// which is the outer owner's destruction, not this service's exit.
     KeeperGone,
+    /// The lease offered is a different owner's.
+    ///
+    /// NOT A CLAIM THAT ANYTHING WAS DESTROYED. Both owners may be perfectly
+    /// alive; what is wrong is the association, and a caller told the keeper
+    /// had gone would go looking for a destruction that never happened.
+    ForeignKeeper,
     /// The place holds something else now.
     Replaced,
 }
@@ -104,9 +110,11 @@ struct PrivateCustodyPin<'o> {
 
 /// A pin reads as the custody it pins, because that is all it is.
 ///
-/// IT IS STILL AN OWNING HANDLE. Borrowing through it is what an operation
-/// does; the pin itself is the caller's, and holding one after the owner has
-/// gone keeps this custody alive without keeping the inventory.
+/// IT IS STILL AN OWNING HANDLE, and that is worth saying because it is no
+/// longer the thing that decides how long it lasts: a pin borrows the owner it
+/// was reached through, so it cannot be held past one. What an owning handle
+/// buys is that the custody itself cannot go while the pin is alive, which is
+/// what makes borrowing through it sound.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Held by a caller no production site has yet.
 impl std::ops::Deref for PrivateCustodyPin<'_> {
@@ -169,7 +177,7 @@ impl PrivateRegisteredCustody {
         // live owner cannot produce one, and a caller holding what this
         // returns cannot let that owner go.
         if !service.keeps(&self.inventory) {
-            return PrivateCustodyReach::KeeperGone;
+            return PrivateCustodyReach::ForeignKeeper;
         }
         let Some(inventory) = self.inventory.upgrade() else {
             return PrivateCustodyReach::KeeperGone;
@@ -318,7 +326,16 @@ impl PrivateCustodyKeeper {
 ///
 /// AND IT IS THIS OWNER, NOT AN OWNER. Two owners over one store are two
 /// inventories; a lease on the wrong one proves the wrong thing, so every act
-/// that takes one compares it with the inventory it is about to use.
+/// that takes one compares it with the inventory it is about to use. That
+/// comparison failing says the association is wrong, NOT that anything was
+/// destroyed: both owners may be perfectly alive.
+///
+/// WHAT IT BOUNDS IS THE ACT, NOT WHAT THE ACT FOUND. A pin taken through a
+/// lease cannot outlive the owner, because pinning is reaching into that
+/// owner's inventory. An owning handle on the EVIDENCE is a different thing
+/// and deliberately outlives all of it: a reader that keeps one goes on
+/// reading the result after the service, the operation and the keeper have
+/// all gone.
 ///
 /// NOTHING IS OWNED HERE, and holding one authorises nothing by itself: it
 /// says the keeper is there, not that anything may be started, joined, driven

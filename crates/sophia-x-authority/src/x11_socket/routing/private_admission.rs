@@ -15,6 +15,15 @@
 /// started afterwards.
 #[cfg(unix)]
 pub struct SharedAdmission {
+    /// Who keeps this instance's connections' evidence, named weakly.
+    ///
+    /// HELD HERE BECAUSE THE PRODUCERS HOLD THIS. Accepting work is a
+    /// continuing act of the service, and the thing a producer must be able to
+    /// ask is whether the lease it was handed is this service's keeper. Weak,
+    /// like every other edge pointing that way: this object is reachable from
+    /// the store, and an owning edge from here would put the owner on a ring
+    /// through its own store.
+    custody_keeper: PrivateCustodyKeeper,
     /// Credits for the storage that would hold this work if it were ever
     /// abandoned, taken before acceptance so that transfer cannot be refused.
     durable: PrivateSettlementOwner,
@@ -33,8 +42,13 @@ pub struct SharedAdmission {
 
 #[cfg(unix)]
 impl SharedAdmission {
-    fn new(ready: crate::ReadyStream<PrivateOperation>, durable: PrivateSettlementOwner) -> Self {
+    fn new(
+        ready: crate::ReadyStream<PrivateOperation>,
+        durable: PrivateSettlementOwner,
+        custody_keeper: PrivateCustodyKeeper,
+    ) -> Self {
         Self {
+            custody_keeper,
             durable,
             ready: Arc::new(Mutex::new(SharedQueue {
                 ready,
@@ -216,6 +230,13 @@ pub enum AdmissionRefusal {
     Unavailable,
     /// The consumer is gone. Nothing accepted now could ever run.
     ConsumerGone,
+    /// The lease offered is not this service's keeper.
+    ///
+    /// NOT A FACT ABOUT THE WORK, THE QUEUE OR THE CLIENT. What is refused is
+    /// the association: either the owner named is a different one, or the one
+    /// this service was built over has gone. Nothing was accepted, reserved or
+    /// consumed.
+    ForeignServiceOwner,
     /// The authority could not say what it has published, so no coordinator
     /// can be derived from it. Not a capacity answer: nothing is exhausted,
     /// and nothing was exposed.
@@ -244,6 +265,9 @@ pub enum PrivateSendError {
     DeliveryAlreadyTracked(XAuthorityRoutedInput),
     /// The recovery ledger or the shared queue cannot be reached.
     Unavailable(XAuthorityRoutedInput),
+    /// The lease offered is not this service's keeper, so this producer may
+    /// not accept work now. The work is handed back, unaccepted.
+    ForeignServiceOwner(XAuthorityRoutedInput),
     /// Positions are exhausted. Terminal for this instance: what was already
     /// accepted keeps its completion, and nothing further is taken.
     Exhausted(XAuthorityRoutedInput),
@@ -293,10 +317,18 @@ pub struct PrivateControlProducer {
 #[cfg(unix)]
 impl PrivateControlProducer {
     /// Accept control into the shared order.
+    /// THE LEASE IS ASKED FOR AT EVERY ACCEPTANCE, not only when this producer
+    /// was issued. A producer handed out while the keeper was alive and used
+    /// afterwards is the same continuing service, and work accepted through it
+    /// belongs to connections whose evidence lives outside this instance.
     pub fn submit(
         &self,
+        service: &PrivateServiceLease<'_>,
         control: XAuthorityClientControlCommand,
     ) -> Result<crate::ReadySequence, (AdmissionRefusal, XAuthorityClientControlCommand)> {
+        if !service.keeps_for(&self.admission.custody_keeper) {
+            return Err((AdmissionRefusal::ForeignServiceOwner, control));
+        }
         if !self.admission.lifecycle_open() {
             return Err((AdmissionRefusal::ConsumerGone, control));
         }
@@ -356,10 +388,18 @@ impl PrivateIngress {
     /// Position is assigned as the entry is published, inside the shared
     /// admission's own hold, so a send that has returned cannot be overtaken
     /// by one that started afterwards.
+    /// THE LEASE IS ASKED FOR AT EVERY ACCEPTANCE, for the same reason as the
+    /// control producer above: this is the act that takes work into the
+    /// service, and a service with no live keeper has nowhere outside itself
+    /// to leave an account of what becomes of it.
     pub fn submit(
         &self,
+        service: &PrivateServiceLease<'_>,
         route: XAuthorityRoutedInput,
     ) -> Result<crate::ReadySequence, PrivateSendError> {
+        if !service.keeps_for(&self.admission.custody_keeper) {
+            return Err(PrivateSendError::ForeignServiceOwner(route));
+        }
         // Refuse without waiting for a possibly wedged common authority.
         // Acceptance checks again while it owns the publication queue.
         if !self.admission.lifecycle_open() {
@@ -477,6 +517,13 @@ impl PrivateIngress {
                     // true thing to say about it is that what would accept it
                     // cannot be reached.
                     AdmissionRefusal::AuthorityUnreadable => PrivateSendError::Unavailable(route),
+                    // Refused above, before anything was reserved, so a send
+                    // never reaches here with it. Answered as itself rather
+                    // than folded into another refusal, because the fact is
+                    // about the service and not about the queue.
+                    AdmissionRefusal::ForeignServiceOwner => {
+                        PrivateSendError::ForeignServiceOwner(route)
+                    }
                 }
             })
     }

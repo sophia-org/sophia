@@ -4,7 +4,7 @@ fn review_private_deadline_unbound_queued_work_does_not_expire_by_age() {
     let surface = SurfaceId::new(6201, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(6201);
     let f = ordered_ingress_fixture(client, surface);
-    f.ingress.submit(button_to(surface, delivery, 272, true)).unwrap();
+    f.ingress.submit(&f._keeper.lease(), button_to(surface, delivery, 272, true)).unwrap();
     let recovery = &f.private.broker.registry.input_recovery;
     let ticket = recovery.ticket(delivery).unwrap();
     assert_eq!(ticket.client, None);
@@ -20,7 +20,7 @@ fn review_private_deadline_enqueued_unwritten_work_keeps_socket_and_ticket() {
     let surface = SurfaceId::new(6202, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(6202);
         let mut f = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, ingress, channels, deliveries, .. } = &mut f;
+    let PreparedOrderedFixture { keeper, runner, ingress, channels, deliveries, .. } = &mut f;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
@@ -31,6 +31,7 @@ fn review_private_deadline_enqueued_unwritten_work_keeps_socket_and_ticket() {
     let (_held_cell, held_capsule) = held_button(
         private,
         ingress,
+        &keeper.lease(),
         keyboards,
         watch,
         &mut inbox,
@@ -64,7 +65,7 @@ fn review_private_deadline_forced_unbound_revoke_still_ends_work() {
     let surface = SurfaceId::new(6203, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(6203);
     let f = ordered_ingress_fixture(client, surface);
-    f.ingress.submit(button_to(surface, delivery, 272, true)).unwrap();
+    f.ingress.submit(&f._keeper.lease(), button_to(surface, delivery, 272, true)).unwrap();
     let recovery = &f.private.broker.registry.input_recovery;
     assert_eq!(recovery.recover(Instant::now(), true).unwrap().len(), 1);
     let receipt = f.deliveries.try_recv().unwrap();
@@ -80,7 +81,7 @@ fn review_private_deadline_forced_bound_revoke_respects_an_applied_claim() {
     let surface = SurfaceId::new(6204, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(6204);
         let mut f = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, ingress, channels, deliveries, .. } = &mut f;
+    let PreparedOrderedFixture { keeper, runner, ingress, channels, deliveries, .. } = &mut f;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
@@ -91,6 +92,7 @@ fn review_private_deadline_forced_bound_revoke_respects_an_applied_claim() {
     let (_held_cell, _held_capsule) = held_button(
         private,
         ingress,
+        &keeper.lease(),
         keyboards,
         watch,
         &mut inbox,

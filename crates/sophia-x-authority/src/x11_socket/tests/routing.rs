@@ -3053,7 +3053,7 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
     // never involved in. Open: admitted.
     let sender = private.ingress();
     sender
-        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(95)))
+        .submit(&service_keeper.lease(), motion_to(surface, XAuthorityInputDeliveryId::from_raw(95)))
         .expect("an open coordinator to admit work");
 
     // Close THIS gate. If the sender were stamping from anything else, it
@@ -3067,7 +3067,7 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
 
     assert!(
         sender
-            .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(96)))
+            .submit(&service_keeper.lease(), motion_to(surface, XAuthorityInputDeliveryId::from_raw(96)))
             .is_err(),
         "the sender must stamp from the coordinator this frontend was built with"
     );
@@ -3110,14 +3110,14 @@ fn the_private_host_delivers_each_admitted_input_exactly_once() {
     let sender = private.ingress();
     for delivery in [100u64, 101] {
         sender
-            .submit(motion_to(
+            .submit(&service_keeper.lease(), motion_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
             ))
             .expect("an open coordinator to admit work");
     }
 
-    let ran = private.route_pending().expect("the ordered pass to run");
+    let ran = private.route_pending(&service_keeper.lease()).expect("the ordered pass to run");
     assert_eq!(ran.len(), 2, "both accepted operations ran");
     assert!(channels.input.try_recv().is_ok());
     assert!(channels.input.try_recv().is_ok());
@@ -3154,7 +3154,7 @@ fn the_private_host_never_drains_raw_ingress() {
         Some(crate::ActivationRefused::RawIngressRefusedUnderGate)
     );
     assert_eq!(
-        private.route_pending().expect("an empty ordered pass").len(),
+        private.route_pending(&service_keeper.lease()).expect("an empty ordered pass").len(),
         0,
         "nothing to run, and no raw source to find any in"
     );
@@ -3197,7 +3197,7 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
     let delivery = XAuthorityInputDeliveryId::from_raw(110);
     private
         .ingress()
-        .submit(motion_to(surface, delivery))
+        .submit(&service_keeper.lease(), motion_to(surface, delivery))
         .expect("an open coordinator to admit work");
 
     // The revision it was stamped under closes before the ordered pass runs.
@@ -3208,7 +3208,7 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
     })
     .expect("the gate");
 
-    private.route_pending().expect("the ordered pass to run");
+    private.route_pending(&service_keeper.lease()).expect("the ordered pass to run");
 
     // Asking only whether a coordinator exists would have delivered this.
     assert!(
@@ -3261,7 +3261,7 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
     let sent = 16u64;
     for delivery in 0..sent {
         sender
-            .submit(motion_to(
+            .submit(&service_keeper.lease(), motion_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(200 + delivery),
             ))
@@ -3273,7 +3273,7 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
     // difference, silently.
     let mut delivered = 0usize;
     for _ in 0..8 {
-        delivered += private.route_pending().expect("an ordered pass").len();
+        delivered += private.route_pending(&service_keeper.lease()).expect("an ordered pass").len();
     }
     assert_eq!(
         delivered, sent as usize,
@@ -3322,13 +3322,13 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
 
     // Open: accepted.
     private
-        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(300)))
+        .submit(&service_keeper.lease(), motion_to(surface, XAuthorityInputDeliveryId::from_raw(300)))
         .expect("an open coordinator to accept work");
 
     // Fill the bounded ingress. These are saturation, not policy.
     let mut saturated = false;
     for delivery in 301..320u64 {
-        match private.submit(motion_to(
+        match private.submit(&service_keeper.lease(), motion_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(delivery),
         )) {
@@ -3351,7 +3351,7 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
     })
     .expect("the gate");
 
-    match private.submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(330))) {
+    match private.submit(&service_keeper.lease(), motion_to(surface, XAuthorityInputDeliveryId::from_raw(330))) {
         Err(crate::PrivateSendError::Denied(_)) => {}
         other => panic!("a closed revision is a denial, not {other:?}"),
     }
@@ -3393,11 +3393,11 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
     // shared order rather than left in channels for a later pass to collect.
     private
         .ingress()
-        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(9001)))
+        .submit(&service_keeper.lease(), motion_to(surface, XAuthorityInputDeliveryId::from_raw(9001)))
         .expect("an open coordinator to accept work");
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(7),
@@ -3410,7 +3410,7 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
     // accepted is not allowed to disappear.
     let mut ran = 0usize;
     for _ in 0..6 {
-        ran += private.route_pending().expect("an ordered pass").len();
+        ran += private.route_pending(&service_keeper.lease()).expect("an ordered pass").len();
     }
     assert_eq!(ran, 2, "both accepted operations ran across the passes");
     assert!(channels.input.try_recv().is_ok(), "the input was delivered");
@@ -3458,14 +3458,14 @@ fn two_producer_classes_share_one_order() {
     let mut expected = Vec::new();
     for step in 0..4u64 {
         let at = input
-            .submit(motion_to(
+            .submit(&service_keeper.lease(), motion_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(400 + step),
             ))
             .expect("an open coordinator to accept input");
         expected.push(at.raw());
         let at = control
-            .submit(XAuthorityClientControlCommand {
+            .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
                 client,
                 command: XAuthorityControlCommand::FocusSurface {
                     transaction: TransactionId::from_raw(step + 1),
@@ -3481,7 +3481,7 @@ fn two_producer_classes_share_one_order() {
         expected.windows(2).all(|pair| pair[0] < pair[1]),
         "positions must rise in acceptance order across producers: {expected:?}"
     );
-    let ran = private.route_pending().expect("the shared order to run");
+    let ran = private.route_pending(&service_keeper.lease()).expect("the shared order to run");
     assert_eq!(ran.len(), 8);
 
     // What the CONSUMER took, not what the producers were told. A consumer
@@ -3576,21 +3576,30 @@ fn a_send_that_returned_is_never_overtaken_by_one_that_started_later() {
 
     // A's send completes before B's begins, enforced rather than hoped for.
     let a_at = first
-        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(500)))
+        .submit(&service_keeper.lease(), motion_to(surface, XAuthorityInputDeliveryId::from_raw(500)))
         .expect("an open coordinator to accept input");
     let gate_for_b = std::sync::Arc::clone(&barrier);
-    let b = std::thread::spawn(move || {
-        gate_for_b.wait();
-        second.submit(XAuthorityClientControlCommand {
-            client,
-            command: XAuthorityControlCommand::FocusSurface {
-                transaction: TransactionId::from_raw(9),
-                surface,
-            },
-        })
+    // SCOPED, because accepting work now asks for a live owner and a lease is
+    // a borrow of one. The thread's own act is what needs it, so the scope is
+    // where it belongs.
+    let b_at = std::thread::scope(|scope| {
+        let keeper = &service_keeper;
+        let b = scope.spawn(move || {
+            gate_for_b.wait();
+            second.submit(
+                &keeper.lease(),
+                XAuthorityClientControlCommand {
+                    client,
+                    command: XAuthorityControlCommand::FocusSurface {
+                        transaction: TransactionId::from_raw(9),
+                        surface,
+                    },
+                },
+            )
+        });
+        barrier.wait();
+        b.join().expect("the second producer").expect("accepted")
     });
-    barrier.wait();
-    let b_at = b.join().expect("the second producer").expect("accepted");
 
     assert!(
         a_at.raw() < b_at.raw(),
@@ -3599,7 +3608,7 @@ fn a_send_that_returned_is_never_overtaken_by_one_that_started_later() {
 
     // And the consumer sees that precedence, not just the numbers.
     let mut private = private;
-    let ran = private.route_pending().expect("the shared order to run");
+    let ran = private.route_pending(&service_keeper.lease()).expect("the shared order to run");
     let taken: Vec<_> = ran.iter().map(|run| run.sequence.raw()).collect();
     assert_eq!(taken, vec![a_at.raw(), b_at.raw()]);
 }
@@ -3638,13 +3647,13 @@ fn a_refused_control_comes_back_to_its_producer() {
         },
     };
 
-    control.submit(command(1)).expect("room for the first");
-    control.submit(command(2)).expect("room for the second");
+    control.submit(&service_keeper.lease(), command(1)).expect("room for the first");
+    control.submit(&service_keeper.lease(), command(2)).expect("room for the second");
 
     // Nothing has drained, so the third has nowhere to go. Controls have no
     // recovery ticket capping them, so this is reachable by ordinary use.
     let (refusal, returned) = control
-        .submit(command(3))
+        .submit(&service_keeper.lease(), command(3))
         .expect_err("the ordinary share is full");
     assert_eq!(refusal, crate::AdmissionRefusal::Saturated);
     assert_eq!(
@@ -3689,12 +3698,12 @@ fn producers_are_refused_once_their_consumer_is_gone() {
 
     // Accepting now would tell a producer its work is queued when nothing can
     // ever run it.
-    match input.submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(600))) {
+    match input.submit(&service_keeper.lease(), motion_to(surface, XAuthorityInputDeliveryId::from_raw(600))) {
         Err(crate::PrivateSendError::Disconnected(_)) => {}
         other => panic!("a gone consumer is a disconnection, not {other:?}"),
     }
     let (refusal, _returned) = control
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(1),
@@ -3738,7 +3747,7 @@ fn an_unreachable_queue_is_not_reported_as_a_finished_one() {
     // Accepted, and owed a run.
     private
         .ingress()
-        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(8201)))
+        .submit(&service_keeper.lease(), motion_to(surface, XAuthorityInputDeliveryId::from_raw(8201)))
         .expect("an open coordinator to accept work");
 
     // The queue becomes unreachable while that work is still in it.
@@ -3752,7 +3761,7 @@ fn an_unreachable_queue_is_not_reported_as_a_finished_one() {
     // Reporting an empty run here would say the pass finished while accepted
     // work sat in a queue nobody can open.
     assert!(
-        private.route_pending().is_err(),
+        private.route_pending(&service_keeper.lease()).is_err(),
         "an unreachable queue is not a drained one"
     );
     assert!(
@@ -3794,7 +3803,7 @@ fn accepted_work_is_answered_when_its_consumer_goes_away() {
     let delivery = XAuthorityInputDeliveryId::from_raw(8300);
     private
         .ingress()
-        .submit(motion_to(surface, delivery))
+        .submit(&service_keeper.lease(), motion_to(surface, delivery))
         .expect("an open coordinator to accept work");
 
     // The consumer goes away with that work still accepted and never run.
@@ -3848,23 +3857,30 @@ fn one_turn_of_service_is_bounded_while_a_producer_keeps_refilling() {
     let control = private.control_producer();
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let stop_for_producer = std::sync::Arc::clone(&stop);
-    let refiller = std::thread::spawn(move || {
-        let mut transaction = 1u64;
-        while !stop_for_producer.load(std::sync::atomic::Ordering::Acquire) {
-            let _ = control.submit(XAuthorityClientControlCommand {
-                client: XServerFrontendClientId(999),
-                command: XAuthorityControlCommand::FocusSurface {
-                    transaction: TransactionId::from_raw(transaction),
-                    surface: SurfaceId::new(61, 1),
-                },
-            });
-            transaction = transaction.wrapping_add(1);
-        }
+    // SCOPED, because accepting work asks for a live owner and a lease is a
+    // borrow of one. The producer thread's own acts are what need it.
+    let outcome = std::thread::scope(|scope| {
+        let keeper = &service_keeper;
+        scope.spawn(move || {
+            let mut transaction = 1u64;
+            while !stop_for_producer.load(std::sync::atomic::Ordering::Acquire) {
+                let _ = control.submit(
+                    &keeper.lease(),
+                    XAuthorityClientControlCommand {
+                        client: XServerFrontendClientId(999),
+                        command: XAuthorityControlCommand::FocusSurface {
+                            transaction: TransactionId::from_raw(transaction),
+                            surface: SurfaceId::new(61, 1),
+                        },
+                    },
+                );
+                transaction = transaction.wrapping_add(1);
+            }
+        });
+        let outcome = private.route_pending(&service_keeper.lease());
+        stop.store(true, std::sync::atomic::Ordering::Release);
+        outcome
     });
-
-    let outcome = private.route_pending();
-    stop.store(true, std::sync::atomic::Ordering::Release);
-    refiller.join().expect("the refilling producer");
 
     // Stopping on a routing failure is bounded too; the unbounded case is a
     // turn that runs for as long as a producer keeps feeding it.
@@ -3909,7 +3925,7 @@ fn accepted_control_is_acknowledged_when_its_consumer_goes_away() {
 
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(4242),
@@ -3967,7 +3983,7 @@ fn every_control_run_names_its_own_transaction() {
     // of all the others.
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::ClearFocus {
                 transaction: TransactionId::from_raw(5150),
@@ -3976,7 +3992,7 @@ fn every_control_run_names_its_own_transaction() {
         })
         .expect("the shared admission to accept control");
 
-    let ran = private.route_pending().expect("a turn");
+    let ran = private.route_pending(&service_keeper.lease()).expect("a turn");
     assert!(
         matches!(
             ran.first().map(|run| run.identity),
@@ -4022,7 +4038,7 @@ fn a_full_acknowledgement_channel_retains_the_obligation() {
 
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(777),
@@ -4083,7 +4099,7 @@ fn an_unresolved_target_is_handed_back_rather_than_attributed() {
     // No surface registered, so nothing resolves this target.
     private
         .ingress()
-        .submit(motion_to(
+        .submit(&service_keeper.lease(), motion_to(
             SurfaceId::new(65, 1),
             XAuthorityInputDeliveryId::from_raw(8400),
         ))
@@ -4129,7 +4145,7 @@ fn a_retained_handle_settles_once_the_channel_drains() {
         .unwrap();
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(910),
@@ -4222,16 +4238,16 @@ fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
             .registry
             .register_surface(client, namespace, surface, window)
             .unwrap();
-        (private, registration, channels)
+        (private, registration, channels, service_keeper)
     };
-    let (first, _r1, _c1) = build(first_ack, first_delivery, first_parts);
-    let (second, _r2, _c2) = build(second_ack, second_delivery, second_parts);
+    let (first, _r1, _c1, first_keeper) = build(first_ack, first_delivery, first_parts);
+    let (second, _r2, _c2, second_keeper) = build(second_ack, second_delivery, second_parts);
 
     // The same client id in both, which is ordinary: ids are unique per
     // frontend, not across frontends.
     first
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&first_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(1001),
@@ -4241,7 +4257,7 @@ fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
         .expect("the first frontend to accept");
     second
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&second_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(2002),
@@ -4300,7 +4316,7 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
         .unwrap();
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(1234),
@@ -4438,7 +4454,7 @@ fn review_settlement_queue(
         .unwrap();
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::ConfigureSurface {
                 transaction: TransactionId::from_raw(transaction),
@@ -4594,7 +4610,7 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
     assert!(
         third
             .control_producer()
-            .submit(XAuthorityClientControlCommand {
+            .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
                 client: XServerFrontendClientId(251),
                 command: XAuthorityControlCommand::ConfigureSurface {
                     transaction: TransactionId::from_raw(9802),
@@ -4707,7 +4723,7 @@ fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
     let submit = |transaction: u64| {
         private
             .control_producer()
-            .submit(XAuthorityClientControlCommand {
+            .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
                 client,
                 command: XAuthorityControlCommand::ConfigureSurface {
                     transaction: TransactionId::from_raw(transaction),
@@ -4807,7 +4823,7 @@ fn a_failed_instances_queue_can_still_be_answered() {
         .unwrap();
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::ConfigureSurface {
                 transaction: TransactionId::from_raw(9950),
@@ -4890,7 +4906,7 @@ fn recovering_a_failed_queue_takes_the_completion_record_before_it_answers() {
         .expect("a registry that issues completion records");
     private
         .control_producer()
-        .submit(configure(client, surface, 9970))
+        .submit(&service_keeper.lease(), configure(client, surface, 9970))
         .expect("the shared admission to accept control");
     assert_eq!(
         completion.outstanding(),
@@ -5127,7 +5143,7 @@ fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
 
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::ConfigureSurface {
                 transaction: TransactionId::from_raw(10201),
@@ -5145,7 +5161,7 @@ fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
 
     // The consumer routes it to the client's writer queue. Nothing has
     // acknowledged it.
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&service_keeper.lease()).expect("a turn").len(), 1);
     assert_eq!(
         durable.reserved().expect("a readable owner"),
         1,
@@ -5160,7 +5176,7 @@ fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
     // And the capacity is genuinely still held: the next admission is refused.
     let refused = private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::ConfigureSurface {
                 transaction: TransactionId::from_raw(10202),
@@ -5216,11 +5232,11 @@ fn review_terminal_recorded_then_observed_reclaims_exactly_once() {
     let delivery = XAuthorityInputDeliveryId::from_raw(10300);
     private
         .ingress()
-        .submit(motion_to(surface, delivery))
+        .submit(&service_keeper.lease(), motion_to(surface, delivery))
         .expect("an open coordinator to accept work");
     assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&service_keeper.lease()).expect("a turn").len(), 1);
     // Routed to the client, not yet delivered: the ledger still holds a
     // ticket for it, so the credit stays with the work.
     assert_eq!(private.reclaim_settled(), 0);
@@ -5292,9 +5308,9 @@ fn review_terminal_unreadable_recovery_cannot_prove_live_delivery_settled() {
         .unwrap();
     private
         .ingress()
-        .submit(motion_to(surface, XAuthorityInputDeliveryId::from_raw(10400)))
+        .submit(&service_keeper.lease(), motion_to(surface, XAuthorityInputDeliveryId::from_raw(10400)))
         .expect("an open coordinator to accept work");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&service_keeper.lease()).expect("a turn").len(), 1);
     assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // The ledger becomes unreadable while that delivery is still live.
@@ -5349,9 +5365,9 @@ fn independent_terminal_kept_shutdown_handle_reclaims_late_completion_once() {
     let delivery = XAuthorityInputDeliveryId::from_raw(10500);
     private
         .ingress()
-        .submit(motion_to(surface, delivery))
+        .submit(&service_keeper.lease(), motion_to(surface, delivery))
         .expect("an open coordinator to accept work");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&service_keeper.lease()).expect("a turn").len(), 1);
 
     // The instance goes away with that work routed and unanswered.
     let mut settlement = private.shutdown();
@@ -5417,9 +5433,9 @@ fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamat
     let delivery = XAuthorityInputDeliveryId::from_raw(10600);
     private
         .ingress()
-        .submit(motion_to(surface, delivery))
+        .submit(&service_keeper.lease(), motion_to(surface, delivery))
         .expect("an open coordinator to accept work");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&service_keeper.lease()).expect("a turn").len(), 1);
 
     let origin = private.broker.registry.clone();
     // Nothing is owed -- the admission queue was empty -- so the handle's own
@@ -5783,9 +5799,9 @@ fn a_control_credit_is_released_exactly_once_when_its_outcome_is_recorded() {
 
     private
         .control_producer()
-        .submit(configure(client, surface, 12001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 12001))
         .expect("the shared admission to accept control");
-    let ran = private.route_pending().expect("a turn");
+    let ran = private.route_pending(&owner_of_durable.lease()).expect("a turn");
     assert_eq!(ran.len(), 1);
 
     // Routed is not answered: the writer still has it.
@@ -5860,9 +5876,9 @@ fn a_refused_control_leaves_no_registration_to_answer_for_it() {
 
     let producer = private.control_producer();
     producer
-        .submit(configure(client, surface, 14001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 14001))
         .expect("the first to be accepted");
-    let refused = producer.submit(configure(client, surface, 14002));
+    let refused = producer.submit(&owner_of_durable.lease(), configure(client, surface, 14002));
     let Err((_, returned)) = refused else {
         panic!("the second to be refused once the owner is saturated");
     };
@@ -5966,9 +5982,9 @@ fn a_poisoned_registry_answers_for_nothing_and_frees_nothing() {
 
     private
         .control_producer()
-        .submit(configure(client, surface, 17001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 17001))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
 
     let registry = private
         .broker
@@ -6031,9 +6047,9 @@ fn a_command_queued_to_a_writer_is_never_cancelled_as_unexecuted() {
 
     private
         .control_producer()
-        .submit(configure(client, surface, 18001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 18001))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
     // It left the queue, so draining the queue at shutdown cannot reach it.
     assert!(
         channels
@@ -6080,7 +6096,7 @@ fn a_rejected_control_leaves_no_record_behind_to_answer_again() {
     // Accepted and never routed, so shutdown answers it from the queue.
     private
         .control_producer()
-        .submit(configure(client, surface, 19001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 19001))
         .expect("the shared admission to accept control");
 
     let report = private.shutdown();
@@ -6197,9 +6213,9 @@ fn a_recorded_outcome_is_republished_once_the_channel_drains() {
 
     private
         .control_producer()
-        .submit(configure(client, surface, 20001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 20001))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
 
     let routed = channels
         .control
@@ -6611,9 +6627,9 @@ fn a_writer_applies_a_control_and_its_credit_is_released_once() {
 
     private
         .control_producer()
-        .submit(configure(client, surface, 71001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 71001))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
     assert_eq!(durable.reserved().expect("a readable owner"), 1);
     assert_eq!(
         private.reclaim_settled(),
@@ -6663,9 +6679,9 @@ fn a_claimed_control_is_not_cancelled_out_from_under_its_writer() {
 
     private
         .control_producer()
-        .submit(configure(client, surface, 73001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 73001))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
 
     // Park the writer inside the operation: it has taken the command and
     // claimed it, and cannot reach the runtime until this lock is released.
@@ -6846,15 +6862,15 @@ fn a_full_channel_retains_the_outcome_of_an_effect_a_writer_really_applied() {
     );
     earlier
         .control_producer()
-        .submit(configure(earlier_client, earlier_surface, 72000))
+        .submit(&owner_of_durable.lease(), configure(earlier_client, earlier_surface, 72000))
         .expect("the shared admission to accept control");
     let _earlier = earlier.shutdown();
 
     private
         .control_producer()
-        .submit(configure(client, surface, 72001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 72001))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
     let (writer, mut peer) = writer_start(
         Some(&private.broker.registry),
         &state,
@@ -6922,7 +6938,7 @@ fn a_full_channel_retains_the_outcome_of_an_effect_a_writer_really_applied() {
     assert!(matches!(
         private
             .control_producer()
-            .submit(configure(client, surface, 72002)),
+            .submit(&owner_of_durable.lease(), configure(client, surface, 72002)),
         Err((crate::AdmissionRefusal::ConsumerGone, returned))
             if returned.command.transaction() == TransactionId::from_raw(72002)
     ));
@@ -6941,9 +6957,9 @@ fn transferring_an_unexecuted_command_moves_its_credit_rather_than_freeing_it() 
     // One operation reaches a writer and stays there.
     private
         .control_producer()
-        .submit(configure(client, surface, 75001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 75001))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
     assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // A second is accepted while the client is still there, and the client
@@ -6951,12 +6967,12 @@ fn transferring_an_unexecuted_command_moves_its_credit_rather_than_freeing_it() 
     // execution, because routing refuses before its first effect.
     private
         .control_producer()
-        .submit(configure(client, surface, 75002))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 75002))
         .expect("the shared admission to accept control");
     assert_eq!(durable.reserved().expect("a readable owner"), 2);
     drop(registration);
     assert!(matches!(
-        private.route_pending(),
+        private.route_pending(&owner_of_durable.lease()),
         Err(XServerFrontendRouteError::UnknownClient { .. })
     ));
 
@@ -7263,7 +7279,7 @@ fn a_producer_is_told_which_refusal_it_met() {
     assert!(matches!(
         private
             .control_producer()
-            .submit(configure(client, surface, 26001)),
+            .submit(&owner_of_durable.lease(), configure(client, surface, 26001)),
         Err((crate::AdmissionRefusal::ConsumerGone, returned))
             if returned.command.transaction() == TransactionId::from_raw(26001)
     ));
@@ -7278,7 +7294,7 @@ fn a_producer_is_told_which_refusal_it_met() {
     assert!(matches!(
         private
             .control_producer()
-            .submit(configure(elsewhere, surface, 26002)),
+            .submit(&owner_of_durable.lease(), configure(elsewhere, surface, 26002)),
         Err((crate::AdmissionRefusal::Exhausted, _))
     ));
 
@@ -7295,7 +7311,7 @@ fn a_producer_is_told_which_refusal_it_met() {
     assert!(matches!(
         private
             .control_producer()
-            .submit(configure(elsewhere, surface, 26003)),
+            .submit(&owner_of_durable.lease(), configure(elsewhere, surface, 26003)),
         Err((crate::AdmissionRefusal::Unavailable, _))
     ));
 }
@@ -7509,7 +7525,7 @@ fn a_real_submit_paused_before_acceptance_is_not_answered_by_a_close() {
     let (finished, refusals) = sync_channel(1);
     let producer = private.control_producer();
     let submitting = std::thread::spawn(move || {
-        let _ = finished.send(producer.submit(configure(client, surface, 83001)));
+        let _ = finished.send(producer.submit(&owner_of_durable.lease(), configure(client, surface, 83001)));
     });
     let limit = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while registry.outstanding().expect("a readable registry") == 0 && std::time::Instant::now() < limit {
@@ -7593,7 +7609,7 @@ fn a_producer_reserves_nothing_for_a_client_that_has_gone() {
     assert!(matches!(
         private
             .control_producer()
-            .submit(configure(client, surface, 84001)),
+            .submit(&owner_of_durable.lease(), configure(client, surface, 84001)),
         Err((crate::AdmissionRefusal::ConsumerGone, returned))
             if returned.command.transaction() == TransactionId::from_raw(84001)
     ));
@@ -7664,7 +7680,7 @@ fn a_publication_that_fails_leaves_the_reservation_with_its_producer() {
     let mut accepted_count = 0;
     let mut refused = None;
     for transaction in 31000..31100 {
-        match producer.submit(configure(client, surface, transaction)) {
+        match producer.submit(&owner_of_durable.lease(), configure(client, surface, transaction)) {
             Ok(_) => accepted_count += 1,
             Err(refusal) => {
                 refused = Some(refusal);
@@ -7729,7 +7745,7 @@ fn nothing_is_admitted_without_the_handover_it_was_accepted_for() {
     );
     assert_eq!(durable.reserved().expect("a readable owner"), 0, "and so does the credit it reserved");
     assert!(
-        private.route_pending().expect("a turn").is_empty(),
+        private.route_pending(&owner_of_durable.lease()).expect("a turn").is_empty(),
         "and nothing was queued"
     );
 }
@@ -7810,12 +7826,12 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
     // shared order.
     private
         .control_producer()
-        .submit(configure(client, surface, 33001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 33001))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
     private
         .control_producer()
-        .submit(configure(client, surface, 33002))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 33002))
         .expect("the shared admission to accept control");
     assert_eq!(durable.reserved().expect("a readable owner"), 2);
 
@@ -8165,7 +8181,7 @@ fn a_command_cannot_claim_execution_after_its_client_is_swept() {
     // Accepted while the client was being served, and still queued.
     private
         .control_producer()
-        .submit(configure(client, surface, 38001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 38001))
         .expect("the shared admission to accept control");
 
     // The writer goes. The producer's check and the claim at routing are
@@ -8180,7 +8196,7 @@ fn a_command_cannot_claim_execution_after_its_client_is_swept() {
     // Routing must not claim it now. A record left claimable after its sweep
     // would start producing effects for a client nothing is serving.
     assert!(matches!(
-        private.route_pending(),
+        private.route_pending(&owner_of_durable.lease()),
         Err(XServerFrontendRouteError::UnknownClient { .. })
     ));
     assert!(
@@ -8597,7 +8613,7 @@ fn a_parked_router_keeps_its_operation_answerable_while_its_writer_exits() {
 
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&owner_of_durable.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(43001),
@@ -8611,7 +8627,7 @@ fn a_parked_router_keeps_its_operation_answerable_while_its_writer_exits() {
     let focus_lock = Arc::clone(&private.broker.registry.focused_surface);
     let focused = focus_lock.lock().unwrap();
     let routed = std::thread::spawn(move || {
-        let outcome = private.route_pending();
+        let outcome = private.route_pending(&owner_of_durable.lease());
         (private, outcome)
     });
     let parked = std::time::Instant::now() + std::time::Duration::from_millis(200);
@@ -8999,7 +9015,7 @@ fn routing_a_focus_change_counts_the_focus_out_it_queues_elsewhere() {
     // record. Routing queues a FocusOut on the first client's writer.
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&owner_of_durable.lease(), XAuthorityClientControlCommand {
             client: claimant,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(46002),
@@ -9007,7 +9023,7 @@ fn routing_a_focus_change_counts_the_focus_out_it_queues_elsewhere() {
             },
         })
         .expect("the shared admission to accept control");
-    let ran = private.route_pending().expect("a turn");
+    let ran = private.route_pending(&owner_of_durable.lease()).expect("a turn");
     let Some(crate::PrivateIdentity::Control {
         completion: Some(token),
         ..
@@ -9257,9 +9273,9 @@ fn publishing_an_outcome_does_not_free_a_credit_while_its_focus_out_is_queued() 
     };
     private
         .control_producer()
-        .submit(command)
+        .submit(&owner_of_durable.lease(), command)
         .expect("the shared admission to accept control");
-    let ran = private.route_pending().expect("a turn");
+    let ran = private.route_pending(&owner_of_durable.lease()).expect("a turn");
     let Some(crate::PrivateIdentity::Control {
         completion: Some(token),
         ..
@@ -9385,7 +9401,7 @@ fn a_governed_focus_out_that_cannot_be_counted_is_not_queued() {
 
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&owner_of_durable.lease(), XAuthorityClientControlCommand {
             client: claimant,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(53002),
@@ -9398,7 +9414,7 @@ fn a_governed_focus_out_that_cannot_be_counted_is_not_queued() {
     let focus_lock = Arc::clone(&private.broker.registry.focused_surface);
     let focused_guard = focus_lock.lock().unwrap();
     let routed = std::thread::spawn(move || {
-        let outcome = private.route_pending();
+        let outcome = private.route_pending(&owner_of_durable.lease());
         (private, outcome)
     });
     let parked = std::time::Instant::now() + std::time::Duration::from_millis(200);
@@ -9580,9 +9596,9 @@ fn an_operation_that_finished_applying_reports_it_and_owes_nothing() {
         .expect("the empty slot");
     private
         .control_producer()
-        .submit(configure(client, surface, 56001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 56001))
         .expect("the shared admission to accept control");
-    let ran = private.route_pending().expect("a turn");
+    let ran = private.route_pending(&owner_of_durable.lease()).expect("a turn");
     let Some(crate::PrivateIdentity::Control {
         completion: Some(token),
         ..
@@ -9647,9 +9663,9 @@ fn an_operation_that_reported_finishing_is_still_not_proved_to_agree() {
         .expect("a private instance to install one");
     private
         .control_producer()
-        .submit(configure(client, surface, 59001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 59001))
         .expect("the shared admission to accept control");
-    let ran = private.route_pending().expect("a turn");
+    let ran = private.route_pending(&owner_of_durable.lease()).expect("a turn");
     let Some(crate::PrivateIdentity::Control {
         completion: Some(token),
         ..
@@ -9703,9 +9719,9 @@ fn an_operation_whose_first_step_never_began_owes_nothing() {
         .expect("a private instance to install one");
     private
         .control_producer()
-        .submit(configure(client, surface, 62001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 62001))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
 
     // It never began anything, and beginning is recorded before an effect can
     // happen, so this is evidence that nothing happened rather than an absence
@@ -9742,9 +9758,9 @@ fn an_operation_interrupted_inside_a_step_is_not_one_that_never_began() {
         .expect("a private instance to install one");
     private
         .control_producer()
-        .submit(configure(client, surface, 63001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 63001))
         .expect("the shared admission to accept control");
-    let ran = private.route_pending().expect("a turn");
+    let ran = private.route_pending(&owner_of_durable.lease()).expect("a turn");
     let Some(crate::PrivateIdentity::Control {
         completion: Some(token),
         ..
@@ -9786,9 +9802,9 @@ fn an_operation_caught_between_its_steps_keeps_its_obligation() {
         .expect("a private instance to install one");
     private
         .control_producer()
-        .submit(configure(client, surface, 57001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 57001))
         .expect("the shared admission to accept control");
-    let ran = private.route_pending().expect("a turn");
+    let ran = private.route_pending(&owner_of_durable.lease()).expect("a turn");
     let Some(crate::PrivateIdentity::Control {
         completion: Some(token),
         ..
@@ -9843,7 +9859,7 @@ fn a_kind_whose_steps_are_not_reported_is_retained_rather_than_discharged() {
         .expect("a private instance to install one");
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&owner_of_durable.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::CloseSurface {
                 transaction: TransactionId::from_raw(58001),
@@ -9851,7 +9867,7 @@ fn a_kind_whose_steps_are_not_reported_is_retained_rather_than_discharged() {
             },
         })
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
     registry.writer_started(client);
     registry.writer_stopped(client);
     assert_eq!(registry.reconcile_client(client).abandoned, 1);
@@ -9881,9 +9897,9 @@ fn an_unreadable_registry_settles_nothing_and_says_so() {
         .expect("a private instance to install one");
     private
         .control_producer()
-        .submit(configure(client, surface, 60001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 60001))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&owner_of_durable.lease()).expect("a turn").len(), 1);
     registry.writer_started(client);
     registry.writer_stopped(client);
     assert_eq!(registry.reconcile_client(client).abandoned, 1);
@@ -10105,9 +10121,9 @@ fn unstarted_after_its_writer_went(
         .expect("a private instance to install one");
     private
         .control_producer()
-        .submit(configure(client, surface, transaction))
+        .submit(&keeper.lease(), configure(client, surface, transaction))
         .expect("the shared admission to accept control");
-    assert_eq!(private.route_pending().expect("a turn").len(), 1);
+    assert_eq!(private.route_pending(&keeper.lease()).expect("a turn").len(), 1);
     registry.writer_started(client);
     registry.writer_stopped(client);
     assert_eq!(registry.reconcile_client(client).abandoned, 1);
@@ -10191,9 +10207,9 @@ fn an_interrupted_operation_keeps_its_credit_through_the_same_transfers() {
         .expect("a private instance to install one");
     private
         .control_producer()
-        .submit(configure(client, surface, 68001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 68001))
         .expect("the shared admission to accept control");
-    let ran = private.route_pending().expect("a turn");
+    let ran = private.route_pending(&owner_of_durable.lease()).expect("a turn");
     let Some(crate::PrivateIdentity::Control {
         completion: Some(token),
         ..
@@ -10251,9 +10267,9 @@ fn one_instances_reconciliation_does_not_reach_anothers_identical_identity() {
         .expect("a private instance to install one");
     theirs
         .control_producer()
-        .submit(configure(theirs_client, theirs_surface, 69001))
+        .submit(&owner_of_durable.lease(), configure(theirs_client, theirs_surface, 69001))
         .expect("the shared admission to accept control");
-    let ran = theirs.route_pending().expect("a turn");
+    let ran = theirs.route_pending(&owner_of_durable.lease()).expect("a turn");
     let Some(crate::PrivateIdentity::Control {
         completion: Some(their_token),
         ..
@@ -10451,7 +10467,7 @@ fn a_poisoned_owner_still_takes_pending_work_from_a_dropping_handle() {
         private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
-        .submit(configure(client, surface, 72001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 72001))
         .expect("the shared admission to accept control");
 
     let report = private.shutdown();
@@ -10511,7 +10527,7 @@ fn a_sweep_that_unwinds_leaves_its_work_owned_and_returnable() {
         private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
-        .submit(configure(client, surface, 73001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 73001))
         .expect("the shared admission to accept control");
     drop(private.shutdown());
     assert_eq!(durable.owed(), Some(1));
@@ -10575,7 +10591,7 @@ fn restoring_reaches_through_the_poison_the_interruption_caused() {
         private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
-        .submit(configure(client, surface, 75001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 75001))
         .expect("the shared admission to accept control");
     drop(private.shutdown());
 
@@ -10643,7 +10659,7 @@ fn an_unreadable_completion_registry_is_not_permission_to_answer() {
         .expect("a registry that issues completion records");
     private
         .control_producer()
-        .submit(configure(client, surface, 76001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 76001))
         .expect("the shared admission to accept control");
     drop(private.shutdown());
     assert_eq!(durable.owed(), Some(1));
@@ -10697,7 +10713,7 @@ fn an_attempt_interrupted_while_emitting_is_not_returned_as_retryable() {
         private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
-        .submit(configure(client, surface, 77001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 77001))
         .expect("the shared admission to accept control");
     drop(private.shutdown());
 
@@ -10834,7 +10850,7 @@ fn a_full_channel_is_congestion_and_the_obligation_survives_it() {
         private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
-        .submit(configure(client, surface, 79001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 79001))
         .expect("the shared admission to accept control");
     drop(private.shutdown());
 
@@ -10941,7 +10957,7 @@ fn a_dying_handle_parks_an_attempt_that_never_returned() {
         private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
-        .submit(configure(client, surface, 81001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 81001))
         .expect("the shared admission to accept control");
 
     // The channel has room, so shutdown answers it and the handle carries
@@ -11426,13 +11442,13 @@ fn two_detached_producers_reserve_against_one_authority() {
     // Detached is the point: each is handed off and used on its own, and they
     // contend for one order against one authority.
     let first_sequence = first
-        .submit(motion_to(
+        .submit(&service_keeper.lease(), motion_to(
             SurfaceId::new(511, 1),
             XAuthorityInputDeliveryId::from_raw(511),
         ))
         .expect("the first producer's work to be accepted");
     let second_sequence = second
-        .submit(motion_to(
+        .submit(&service_keeper.lease(), motion_to(
             SurfaceId::new(512, 1),
             XAuthorityInputDeliveryId::from_raw(512),
         ))
@@ -11452,7 +11468,7 @@ fn two_detached_producers_reserve_against_one_authority() {
     // refused rather than queued behind it. Recorded here as the property it
     // is -- a producer streaming input needs its requests executed, not just
     // accepted.
-    let again = first.submit(motion_to(
+    let again = first.submit(&service_keeper.lease(), motion_to(
         SurfaceId::new(511, 1),
         XAuthorityInputDeliveryId::from_raw(513),
     ));
@@ -11468,7 +11484,7 @@ fn two_detached_producers_reserve_against_one_authority() {
     // own grant and its own cell.
     assert!(
         matches!(
-            second.submit(motion_to(
+            second.submit(&service_keeper.lease(), motion_to(
                 SurfaceId::new(512, 1),
                 XAuthorityInputDeliveryId::from_raw(514),
             )),
@@ -11516,7 +11532,7 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
                 DeviceId::from_raw(index + 1),
             )
             .expect("a capability per filling producer");
-        let outcome = filler.submit(motion_to(
+        let outcome = filler.submit(&service_keeper.lease(), motion_to(
             SurfaceId::new(600, 1),
             XAuthorityInputDeliveryId::from_raw(800 + index),
         ));
@@ -11534,7 +11550,7 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
     let fresh = private
         .ingress_for(XServerFrontendClientId(699), DeviceId::from_raw(60))
         .expect("a capability for the fresh producer");
-    let refused = fresh.submit(motion_to(
+    let refused = fresh.submit(&service_keeper.lease(), motion_to(
         SurfaceId::new(699, 1),
         XAuthorityInputDeliveryId::from_raw(899),
     ));
@@ -11575,7 +11591,7 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
     // is not still tracked as live. Either one left behind would refuse this.
     assert!(
         fresh
-            .submit(motion_to(
+            .submit(&service_keeper.lease(), motion_to(
                 SurfaceId::new(699, 1),
                 XAuthorityInputDeliveryId::from_raw(899),
             ))
@@ -12362,7 +12378,7 @@ fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
         private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
-        .submit(configure(client, surface, 74001))
+        .submit(&owner_of_durable.lease(), configure(client, surface, 74001))
         .expect("the shared admission to accept control");
     drop(private.shutdown());
     assert_eq!(durable.owed(), Some(1));
@@ -12967,6 +12983,7 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
     let client = XServerFrontendClientId(2441);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -12990,7 +13007,7 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
                            button: u32,
                            pressed: bool| {
         ingress
-            .submit(button_to(
+            .submit(&keeper.lease(), button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 button,
@@ -13097,6 +13114,7 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
     let client = XServerFrontendClientId(2491);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -13113,8 +13131,9 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
     let watch = watch.as_ref().expect("a sealed watch");
 
     for (delivery, pressed) in [(2491u64, true), (2492u64, false)] {
+        let lease = keeper.lease();
         ingress
-            .submit(button_to(
+            .submit(&lease, button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 272,
@@ -13182,7 +13201,7 @@ fn noevent_run(
         pressed,
     );
     route.request.device = DeviceId::from_raw(device);
-    ingress.submit(route).expect("the order to accept it");
+    ingress.submit(&fixture.keeper.lease(), route).expect("the order to accept it");
     let PrivatePreparedRunner {
         frontend,
         keyboards,
@@ -13442,6 +13461,7 @@ fn a_retained_custody_refuses_the_next_operation_rather_than_being_replaced() {
     let client = XServerFrontendClientId(2561);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -13463,7 +13483,7 @@ fn a_retained_custody_refuses_the_next_operation_rather_than_being_replaced() {
                    button: u32,
                    pressed: bool| {
         ingress
-            .submit(button_to(
+            .submit(&keeper.lease(), button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 button,
@@ -13552,7 +13572,7 @@ fn fixture_run(
         button,
         pressed,
     );
-    fixture.ingress.submit(route).expect("the order to accept it");
+    fixture.ingress.submit(&fixture.keeper.lease(), route).expect("the order to accept it");
     let PrivatePreparedRunner {
         frontend,
         keyboards,
@@ -13739,6 +13759,7 @@ fn an_unresolved_head_blocks_its_connection_without_being_offered_again() {
     let client = XServerFrontendClientId(7561);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         channels,
@@ -13756,8 +13777,9 @@ fn an_unresolved_head_blocks_its_connection_without_being_offered_again() {
     let watch = watch.as_ref().expect("a sealed watch");
 
     for (delivery, button) in [(75610u64, 272u32), (75611, 273)] {
+        let lease = keeper.lease();
         ingress
-            .submit(button_to(
+            .submit(&lease, button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 button,
@@ -13829,6 +13851,7 @@ fn a_carried_older_press_is_handed_over_before_a_newer_held_press() {
     let client = XServerFrontendClientId(7551);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         channels,
@@ -13852,8 +13875,9 @@ fn a_carried_older_press_is_handed_over_before_a_newer_held_press() {
         (75511, 272, false),
         (75512, 273, true),
     ] {
+        let lease = keeper.lease();
         ingress
-            .submit(button_to(
+            .submit(&lease, button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 button,
@@ -13907,6 +13931,7 @@ fn a_final_release_carries_the_presss_own_custody_rather_than_replacing_it() {
     let client = XServerFrontendClientId(2551);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -13922,8 +13947,9 @@ fn a_final_release_carries_the_presss_own_custody_rather_than_replacing_it() {
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
 
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(2551),
             272,
@@ -13943,8 +13969,9 @@ fn a_final_release_carries_the_presss_own_custody_rather_than_replacing_it() {
         .clone()
         .expect("the press holds its own completion");
 
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(2552),
             272,
@@ -14047,6 +14074,7 @@ fn a_release_whose_answer_could_never_be_recognised_refuses_and_keeps_its_hold()
     let client = XServerFrontendClientId(2531);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -14063,8 +14091,9 @@ fn a_release_whose_answer_could_never_be_recognised_refuses_and_keeps_its_hold()
     let watch = watch.as_ref().expect("a sealed watch");
 
     // A real press through the ingress, so a hold exists with its obligation.
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(2531),
             272,
@@ -14141,6 +14170,7 @@ fn a_release_holds_the_completion_of_the_admission_it_was_recorded_for() {
     let client = XServerFrontendClientId(2521);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -14157,8 +14187,9 @@ fn a_release_holds_the_completion_of_the_admission_it_was_recorded_for() {
     let watch = watch.as_ref().expect("a sealed watch");
 
     for (delivery, pressed) in [(2521u64, true), (2522u64, false)] {
+        let lease = keeper.lease();
         ingress
-            .submit(button_to(
+            .submit(&lease, button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 272,
@@ -14236,7 +14267,7 @@ fn custody_of_the_answer_is_taken_before_the_handover_not_after_it_succeeds() {
     // attempted, so the answer must already be held.
     let client = XServerFrontendClientId(2511);
     let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner,
         ingress,
         registration,
@@ -14261,7 +14292,7 @@ fn custody_of_the_answer_is_taken_before_the_handover_not_after_it_succeeds() {
 
     for (delivery, pressed) in [(2511u64, true), (2512u64, false)] {
         ingress
-            .submit(button_to(
+            .submit(&keeper.lease(), button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 272,
@@ -14320,6 +14351,7 @@ fn a_reused_delivery_id_does_not_settle_the_debt_that_had_it_before() {
     let client = XServerFrontendClientId(2501);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -14336,8 +14368,9 @@ fn a_reused_delivery_id_does_not_settle_the_debt_that_had_it_before() {
     let watch = watch.as_ref().expect("a sealed watch");
 
     for (delivery, pressed) in [(2501u64, true), (2502u64, false)] {
+        let lease = keeper.lease();
         ingress
-            .submit(button_to(
+            .submit(&lease, button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 272,
@@ -14426,6 +14459,7 @@ fn a_receipt_settles_only_what_it_establishes_and_never_authorises_a_replay() {
     let client = XServerFrontendClientId(2481);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -14447,8 +14481,9 @@ fn a_receipt_settles_only_what_it_establishes_and_never_authorises_a_replay() {
         (2483, 273, true),
         (2484, 273, false),
     ] {
+        let lease = keeper.lease();
         ingress
-            .submit(button_to(
+            .submit(&lease, button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 button,
@@ -14539,7 +14574,7 @@ fn an_attempt_that_cannot_be_placed_is_given_back_and_keeps_its_capsule() {
     // so it has to own them rather than borrow them from a fixture that
     // outlives them.
     let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner,
         ingress,
         registration,
@@ -14564,7 +14599,7 @@ fn an_attempt_that_cannot_be_placed_is_given_back_and_keeps_its_capsule() {
 
     for (delivery, pressed) in [(2471u64, true), (2472u64, false)] {
         ingress
-            .submit(button_to(
+            .submit(&keeper.lease(), button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 272,
@@ -14742,6 +14777,7 @@ fn an_interrupted_handover_is_not_retried_just_because_its_slot_is_empty() {
     let client = XServerFrontendClientId(2451);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -14758,8 +14794,9 @@ fn an_interrupted_handover_is_not_retried_just_because_its_slot_is_empty() {
     let watch = watch.as_ref().expect("a sealed watch");
 
     for (delivery, pressed) in [(2451u64, true), (2452u64, false)] {
+        let lease = keeper.lease();
         ingress
-            .submit(button_to(
+            .submit(&lease, button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 272,
@@ -14826,6 +14863,7 @@ fn a_proof_recording_visit_is_charged_and_watched_like_any_other_step() {
     let client = XServerFrontendClientId(2431);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -14843,8 +14881,9 @@ fn a_proof_recording_visit_is_charged_and_watched_like_any_other_step() {
 
     // The press goes through the wrapper; the release is driven by hand so
     // the visit that follows it can be observed being charged.
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(2431),
             272,
@@ -14855,8 +14894,9 @@ fn a_proof_recording_visit_is_charged_and_watched_like_any_other_step() {
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
     private.deliver_turn(turn);
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(2432),
             272,
@@ -14953,7 +14993,7 @@ fn a_release_proof_is_recorded_by_service_rather_than_by_the_next_input() {
     let surface = *surface;
 
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(2421),
             272,
@@ -14964,7 +15004,7 @@ fn a_release_proof_is_recorded_by_service_rather_than_by_the_next_input() {
         runner.service_turn(&keeper.lease()).expect("a serviceable turn");
     }
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(2422),
             272,
@@ -15015,6 +15055,7 @@ fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
     let client = XServerFrontendClientId(2411);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         channels,
@@ -15032,8 +15073,9 @@ fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
     let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
 
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(2411),
             272,
@@ -15059,8 +15101,9 @@ fn a_final_release_carries_its_source_obligation_instead_of_dropping_it() {
         "the press left a source obligation on its record"
     );
 
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(2412),
             272,
@@ -15491,7 +15534,8 @@ fn a_release_whose_seat_projection_is_gone_retains_a_residual_rather_than_refusi
 fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
     let client = XServerFrontendClientId(801);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let PreparedOrderedFixture {
+        keeper, runner, surface, window, .. } = &mut fixture;
     let surface = *surface;
     let window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
@@ -15505,8 +15549,9 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
     // Sent through the producer. Nothing here builds custody by hand: the
     // reservation is made at submission, travels on the envelope, and is what
     // the consumer runs against.
+    let lease = keeper.lease();
     let sequence = ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(801),
             272,
@@ -15563,7 +15608,8 @@ fn work_sent_through_the_ingress_runs_from_the_order_it_was_accepted_into() {
 fn a_consumer_refusal_hands_back_the_custody_it_was_accepted_with() {
     let client = XServerFrontendClientId(811);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let PreparedOrderedFixture {
+        keeper, runner, surface, window, .. } = &mut fixture;
     let surface = *surface;
     let _window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
@@ -15580,7 +15626,8 @@ fn a_consumer_refusal_hands_back_the_custody_it_was_accepted_with() {
         keycode: 30,
         pressed: true,
     };
-    ingress.submit(key).expect("the order to accept it");
+    let lease = keeper.lease();
+    ingress.submit(&lease, key).expect("the order to accept it");
 
     let mut turn = private
         .route_pending_ordered(keyboards, watch)
@@ -15642,7 +15689,7 @@ fn unreserved_work_in_the_order_is_handed_back_rather_than_run() {
     // against a request that does not exist.
     private
         .ingress()
-        .submit(button_to(
+        .submit(&service_keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(821),
             272,
@@ -15710,7 +15757,7 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
     // completion registration and this path does not execute it.
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(8310),
@@ -15719,7 +15766,7 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
         })
         .expect("the order to accept the control");
     ingress
-        .submit(button_to(
+        .submit(&service_keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(831),
             272,
@@ -15783,7 +15830,8 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
 fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
     let client = XServerFrontendClientId(841);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let PreparedOrderedFixture {
+        keeper, runner, surface, window, .. } = &mut fixture;
     let surface = *surface;
     let _window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
@@ -15802,8 +15850,9 @@ fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
     );
 
     // Work is accepted with a reservation made for it.
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(841),
             272,
@@ -15813,7 +15862,8 @@ fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
 
     // The older route discards the reservation and applies without the
     // execution it exists for, so it must not drain this order alongside.
-    let refused = private.route_pending();
+    let lease = keeper.lease();
+    let refused = private.route_pending(&lease);
     assert!(
         matches!(
             refused,
@@ -15856,7 +15906,7 @@ fn a_turn_that_fails_part_way_keeps_what_it_already_took() {
     // identity the order never issued.
     private
         .ingress()
-        .submit(button_to(
+        .submit(&service_keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(851),
             272,
@@ -15919,7 +15969,8 @@ fn a_turn_that_fails_part_way_keeps_what_it_already_took() {
 fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
     let client = XServerFrontendClientId(861);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, ingress, channels, surface, window, .. } = &mut fixture;
+    let PreparedOrderedFixture {
+        keeper, runner, ingress, channels, surface, window, .. } = &mut fixture;
     let surface = *surface;
     let window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
@@ -15929,8 +15980,9 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
     // Registered with channels held, so a delivered event has somewhere to go.
 
     // Press, run, deliver.
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(861),
             272,
@@ -15975,8 +16027,9 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
     // half is the writer's outcome, and what the guarded code shows is that
     // the aggregate transition and the projection it moves happen in one
     // interval -- which is not the whole of native reconciliation.
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(862),
             272,
@@ -16019,8 +16072,9 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
     // And the same input still cannot press again. The release barrier stands
     // until the debt is genuinely closed, which needs a receipt this path
     // cannot yet obtain -- so the honest state is barred, not resumed.
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(863),
             272,
@@ -16075,7 +16129,7 @@ fn a_refusal_is_retained_by_delivery_rather_than_discarded() {
         keycode: 30,
         pressed: true,
     };
-    ingress.submit(key).expect("the order to accept it");
+    ingress.submit(&service_keeper.lease(), key).expect("the order to accept it");
 
     let turn = private
         .route_pending_ordered(&mut keyboards, &control_watchdog())
@@ -16110,7 +16164,8 @@ fn a_refusal_is_retained_by_delivery_rather_than_discarded() {
 fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
     let client = XServerFrontendClientId(881);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
+    let PreparedOrderedFixture {
+        keeper, runner, surface, window, .. } = &mut fixture;
     let surface = *surface;
     let _window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
@@ -16122,8 +16177,9 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
 
     // Staged as an interruption before the effect leaves it: an item taken
     // from the order, owned, with execution not attempted.
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(881),
             272,
@@ -16155,10 +16211,11 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
             XResourceId::new(0x200882, 1),
         )
         .expect("the second surface to register");
+    let lease = keeper.lease();
     private
         .ingress_for(other, DeviceId::from_raw(2))
         .expect("a second ingress")
-        .submit(button_to(
+        .submit(&lease, button_to(
             SurfaceId::new(882, 1),
             XAuthorityInputDeliveryId::from_raw(882),
             272,
@@ -16183,7 +16240,8 @@ fn a_later_turn_does_not_overwrite_an_unresolved_current_item() {
 fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() {
     let client = XServerFrontendClientId(891);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, ingress, channels, surface, window, .. } = &mut fixture;
+    let PreparedOrderedFixture {
+        keeper, runner, ingress, channels, surface, window, .. } = &mut fixture;
     let surface = *surface;
     let _window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
@@ -16198,7 +16256,7 @@ fn a_duplicate_that_owes_no_event_still_completes_so_its_hold_can_be_released() 
                                   delivery: u64,
                                   pressed: bool| {
         ingress
-            .submit(button_to(
+            .submit(&keeper.lease(), button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 272,
@@ -16315,7 +16373,7 @@ fn a_parked_operation_is_handed_to_the_durable_owner_at_shutdown() {
     // A control the ordered path does not execute, which parks the order.
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(9010),
@@ -16349,15 +16407,17 @@ fn a_parked_operation_is_handed_to_the_durable_owner_at_shutdown() {
 fn an_unreadable_observation_retains_its_entry_without_losing_the_event() {
     let client = XServerFrontendClientId(911);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, ingress, channels, surface, window, .. } = &mut fixture;
+    let PreparedOrderedFixture {
+        keeper, runner, ingress, channels, surface, window, .. } = &mut fixture;
     let surface = *surface;
     let _window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
 
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(911),
             272,
@@ -16474,7 +16534,7 @@ fn a_parked_control_is_answered_exactly_once_after_shutdown() {
 
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(9210),
@@ -16536,15 +16596,17 @@ fn a_parked_control_is_answered_exactly_once_after_shutdown() {
 fn an_accepted_handover_is_observed_rather_than_offered_again() {
     let client = XServerFrontendClientId(941);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, ingress, channels, surface, window, .. } = &mut fixture;
+    let PreparedOrderedFixture {
+        keeper, runner, ingress, channels, surface, window, .. } = &mut fixture;
     let surface = *surface;
     let _window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
 
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(941),
             272,
@@ -16671,7 +16733,7 @@ fn a_parked_control_whose_registry_is_unreadable_is_kept_whole() {
 
     private
         .control_producer()
-        .submit(XAuthorityClientControlCommand {
+        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
             client,
             command: XAuthorityControlCommand::FocusSurface {
                 transaction: TransactionId::from_raw(9510),
@@ -16721,7 +16783,8 @@ fn a_parked_control_whose_registry_is_unreadable_is_kept_whole() {
 fn what_an_instance_still_owes_reaches_the_durable_owner() {
     let client = XServerFrontendClientId(961);
     let mut fixture = prepared_ordered_fixture(client);
-    let PreparedOrderedFixture { runner, ingress, durable, registration: _, channels: _, surface, window, .. } = &mut fixture;
+    let PreparedOrderedFixture {
+        keeper, runner, ingress, durable, registration: _, channels: _, surface, window, .. } = &mut fixture;
     let surface = *surface;
     let _window = *window;
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = runner;
@@ -16730,8 +16793,9 @@ fn what_an_instance_still_owes_reaches_the_durable_owner() {
 
     // A press that begins a hold. Its plan is recorded, and the hold is an
     // obligation: a later release answers to what this press reached.
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(
+        .submit(&lease, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(961),
             272,
@@ -16785,7 +16849,7 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
     // keeping alive is gone. References into a fixture that outlived them
     // would answer that question about the fixture instead.
     let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner,
         ingress,
         durable,
@@ -16811,7 +16875,7 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
     // A press that begins a hold, delivered and its completion observed -- so
     // its custody is gone and only the hold plan is left.
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(971),
             272,
@@ -16883,7 +16947,7 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
     // And they go only when the obligations do -- and when the owner that
     // keeps the store and this connection's evidence goes with them.
     drop(durable);
-    drop(_keeper);
+    drop(keeper);
     assert!(projection.upgrade().is_none());
     assert!(common.upgrade().is_none());
 }
@@ -16988,7 +17052,7 @@ fn instance_handing_over_a_retained_hold(
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(delivery),
             button,
@@ -17091,6 +17155,7 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
     let client = XServerFrontendClientId(991);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         durable: _,
@@ -17106,8 +17171,9 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
     let watch = watch.as_ref().expect("a sealed watch");
     let delivery = XAuthorityInputDeliveryId::from_raw(991);
 
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&lease, button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     assert!(
         private
@@ -17285,6 +17351,7 @@ fn a_join_leaves_the_source_obligation_alone_so_a_later_press_still_runs() {
     let client = XServerFrontendClientId(2401);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         channels,
@@ -17309,7 +17376,7 @@ fn a_join_leaves_the_source_obligation_alone_so_a_later_press_still_runs() {
                    delivery: u64,
                    button: u32| {
         ingress
-            .submit(button_to(
+            .submit(&keeper.lease(), button_to(
                 surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 button,
@@ -17386,6 +17453,7 @@ fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
     let delivery = XAuthorityInputDeliveryId::from_raw(992);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         channels,
@@ -17406,8 +17474,9 @@ fn an_ordered_press_binds_its_delivery_to_the_client_that_receives_it() {
 
     // Before the turn the ledger tracks the delivery with no recipient: it
     // knows something was accepted, not who is waiting for it.
+    let lease = keeper.lease();
     ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&lease, button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     let press_cell = admitted_cell(private, 992);
     assert_eq!(
@@ -17477,7 +17546,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     let surface = SurfaceId::new(993, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(993);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, mut ingress, channels, deliveries, registration, durable,
         _acks,
         selections: _selections,
@@ -17501,7 +17570,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
         .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)
         .expect("the ledger to be readable");
     ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     assert!(
         private
@@ -17566,7 +17635,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     // the release finishes; one that was pressed would end a hold whose plan
     // this executor never recorded, and refuse.
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(9931),
             272,
@@ -17616,7 +17685,7 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, mut ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -17634,7 +17703,7 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
 
     // A press that lands while the client is there.
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(9941),
             272,
@@ -17681,7 +17750,7 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
         "the connection was there to lose"
     );
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(9942),
             272,
@@ -17746,7 +17815,7 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
     let namespace = NamespaceId::from_raw(client.raw());
     let delivery = XAuthorityInputDeliveryId::from_raw(995);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -17828,7 +17897,7 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
         .expect("the grab to take");
 
     ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     let press_cell = admitted_cell(private, 995);
     let mut inbox = OrderedInbox::default();
@@ -17889,7 +17958,7 @@ fn an_unreadable_ledger_is_not_a_delivery_that_ended() {
     let surface = SurfaceId::new(997, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(997);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -17903,7 +17972,7 @@ fn an_unreadable_ledger_is_not_a_delivery_that_ended() {
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
     ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
 
     // The ledger becomes unreadable while that delivery is still waiting its
@@ -17949,6 +18018,7 @@ fn an_unreadable_ledger_is_not_a_delivery_that_ended() {
 fn held_button(
     private: &mut crate::PrivateXServerFrontend,
     ingress: &crate::PrivateIngress,
+    service: &crate::PrivateServiceLease<'_>,
     keyboards: &mut crate::PrivateKeyboards,
     watch: &private_watchdog::PrivateWatchdogOwner,
     inbox: &mut OrderedInbox,
@@ -17957,7 +18027,7 @@ fn held_button(
     delivery: u64,
 ) -> (Arc<PrivateDeliveryCompletion>, XAuthorityOrderedDelivery) {
     ingress
-        .submit(button_to(
+        .submit(service, button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(delivery),
             272,
@@ -17988,7 +18058,7 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -18005,6 +18075,7 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
     let (_held_cell, _held_capsule) = held_button(
         private,
         &ingress,
+        &keeper.lease(),
         keyboards,
         watch,
         &mut inbox,
@@ -18016,7 +18087,7 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
     // The release is accepted, and then its own delivery ends while it waits
     // its turn.
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(9982),
             272,
@@ -18083,7 +18154,7 @@ fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -18100,6 +18171,7 @@ fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
     let (_held_cell, _held_capsule) = held_button(
         private,
         &ingress,
+        &keeper.lease(),
         keyboards,
         watch,
         &mut inbox,
@@ -18109,7 +18181,7 @@ fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
     );
 
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(9992),
             272,
@@ -18271,7 +18343,7 @@ fn an_ordered_turn_gives_its_claim_back() {
     let client = XServerFrontendClientId(1001);
     let delivery = XAuthorityInputDeliveryId::from_raw(1001);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner,
         ingress,
         channels,
@@ -18295,7 +18367,7 @@ fn an_ordered_turn_gives_its_claim_back() {
     let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     let press_cell = admitted_cell(private, 1001);
     let turn = private
@@ -18336,7 +18408,7 @@ fn a_release_whose_delivery_another_execution_holds_applies_nothing() {
     let seat = SeatId::from_raw(1);
     let release = XAuthorityInputDeliveryId::from_raw(10022);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -18353,6 +18425,7 @@ fn a_release_whose_delivery_another_execution_holds_applies_nothing() {
     let (_held_cell, _held_capsule) = held_button(
         private,
         &ingress,
+        &keeper.lease(),
         keyboards,
         watch,
         &mut inbox,
@@ -18362,7 +18435,7 @@ fn a_release_whose_delivery_another_execution_holds_applies_nothing() {
     );
 
     ingress
-        .submit(button_to(surface, release, 272, false))
+        .submit(&keeper.lease(), button_to(surface, release, 272, false))
         .expect("the order to accept it");
     // Something else holds this delivery. Its effect may be under way, and a
     // second one applied here would be a second effect for one request.
@@ -18412,7 +18485,7 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     let first = XAuthorityInputDeliveryId::from_raw(10031);
     let second = XAuthorityInputDeliveryId::from_raw(10032);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, registration, durable, selections: _, window: _,
         _acks,
         deliveries: _deliveries,
@@ -18429,6 +18502,7 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     let (_held_cell, _held_capsule) = held_button(
         private,
         &ingress,
+        &keeper.lease(),
         keyboards,
         watch,
         &mut inbox,
@@ -18493,7 +18567,7 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     // The same button again. The ledger joins the hold that exists: no new
     // hold, no new event, and the recipient is the one the hold already has.
     ingress
-        .submit(button_to(surface, second, 272, true))
+        .submit(&keeper.lease(), button_to(surface, second, 272, true))
         .expect("the order to accept it");
     let join_cell = admitted_cell(private, 10032);
     let turn = private
@@ -18565,7 +18639,7 @@ fn a_refusal_before_the_effect_resolves_the_claim_as_having_applied_nothing() {
     let mut fixture = ordered_ingress_fixture(client, surface);
     fixture
         .ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&fixture._keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
 
     // The admission goes, so the real boundary refuses this request before the
@@ -18776,7 +18850,7 @@ fn a_press_that_applied_cannot_be_revoked_afterwards() {
     let surface = SurfaceId::new(1203, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(1203);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, deliveries, registration, durable,
         _acks,
         selections: _selections,
@@ -18790,7 +18864,7 @@ fn a_press_that_applied_cannot_be_revoked_afterwards() {
     let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     let press_cell = admitted_cell(private, 1203);
     let turn = private
@@ -18855,7 +18929,7 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -18872,6 +18946,7 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     let (_held_cell, _held_capsule) = held_button(
         private,
         &ingress,
+        &keeper.lease(),
         keyboards,
         watch,
         &mut inbox,
@@ -18881,7 +18956,7 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     );
 
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(12012),
             272,
@@ -18970,7 +19045,7 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     let client = XServerFrontendClientId(1301);
     let surface = SurfaceId::new(1301, 1);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -18989,7 +19064,7 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
         .ingress_for(client, DeviceId::from_raw(2))
         .expect("a second ingress");
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(13011),
             272,
@@ -18997,7 +19072,7 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
         ))
         .expect("the order to accept it");
     second
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(13012),
             273,
@@ -19097,7 +19172,7 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
 fn a_blocked_order_takes_nothing_and_marks_nothing() {
     let client = XServerFrontendClientId(1302);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner,
         ingress: _,
         channels,
@@ -19123,7 +19198,7 @@ fn a_blocked_order_takes_nothing_and_marks_nothing() {
     // order parks behind it.
     private
         .control_producer()
-        .submit(configure(client, surface, 13021))
+        .submit(&keeper.lease(), configure(client, surface, 13021))
         .expect("the order to accept it");
     let step = private
         .step_once(keyboards, &mut |_, _| Ok(()), watch)
@@ -19154,7 +19229,7 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
     let namespace = NamespaceId::from_raw(client.raw());
     let delivery = XAuthorityInputDeliveryId::from_raw(1303);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, deliveries, registration, durable, window,
         _acks,
         selections: _selections,
@@ -19194,7 +19269,7 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
 
     // A press that applies, so its delivery can no longer be revoked.
     ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     let press_cell = admitted_cell(private, 1303);
     let turn = private
@@ -19250,7 +19325,7 @@ fn a_mark_that_panics_does_not_take_the_work_with_it() {
     let mut fixture = ordered_ingress_fixture(client, surface);
     fixture
         .ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&fixture._keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     let reserved_before = fixture.durable.reserved().expect("a readable owner");
     assert_eq!(reserved_before, 1, "the order accepted and reserved for it");
@@ -19316,7 +19391,7 @@ fn private_work_does_not_expire_because_it_waited() {
     let surface = SurfaceId::new(1401, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(1401);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, deliveries, registration, durable,
         _acks,
         selections: _selections,
@@ -19330,7 +19405,7 @@ fn private_work_does_not_expire_because_it_waited() {
     let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
     let press_cell = admitted_cell(private, 1401);
 
@@ -19407,7 +19482,7 @@ fn a_start_that_refuses_stops_before_the_effect() {
     let mut fixture = ordered_ingress_fixture(client, surface);
     fixture
         .ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&fixture._keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
 
     // Charging a start can refuse -- a budget is spent, and a spent budget is
@@ -19447,7 +19522,7 @@ fn nothing_runs_when_nothing_will_watch_it() {
     let mut fixture = ordered_ingress_fixture(client, surface);
     fixture
         .ingress
-        .submit(button_to(surface, delivery, 272, true))
+        .submit(&fixture._keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
 
     // A supervisor that has not been sealed will not take an execution. The
@@ -19684,7 +19759,7 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
     let client = XServerFrontendClientId(1601);
     let surface = SurfaceId::new(1601, 1);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -19701,7 +19776,7 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
         .ingress_for(client, DeviceId::from_raw(2))
         .expect("a second ingress");
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(16011),
             272,
@@ -19709,7 +19784,7 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
         ))
         .expect("the order to accept it");
     second
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(16012),
             273,
@@ -19808,7 +19883,7 @@ fn a_refused_entry_advancing_is_a_step_with_nothing_to_report() {
     fixture
         .private
         .control_producer()
-        .submit(configure(client, surface, 16031))
+        .submit(&fixture._keeper.lease(), configure(client, surface, 16031))
         .expect("the order to accept it");
     let turn = fixture
         .private
@@ -19849,7 +19924,7 @@ fn a_refused_charge_leaves_the_entry_where_it_was() {
     let mut fixture = ordered_ingress_fixture(client, surface);
     fixture
         .ingress
-        .submit(button_to(
+        .submit(&fixture._keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(1604),
             272,
@@ -20753,7 +20828,7 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
     let client = XServerFrontendClientId(1903);
     let surface = SurfaceId::new(1903, 1);
         let PreparedOrderedFixture {
-        keeper: _keeper,
+        keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -20768,7 +20843,7 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
     let mut inbox = OrderedInbox::default();
     let watch = watch.as_ref().expect("a sealed watch");
     ingress
-        .submit(button_to(
+        .submit(&keeper.lease(), button_to(
             surface,
             XAuthorityInputDeliveryId::from_raw(1903),
             272,
@@ -21011,7 +21086,7 @@ fn a_prepared_runner_presses_through_its_real_producer() {
         .ingress_for(&lease, client, DeviceId::from_raw(1))
         .expect("the runner exposes a producer");
     ingress
-        .submit(button_to(
+        .submit(&fixture.keeper.lease(), button_to(
             fixture.surface,
             XAuthorityInputDeliveryId::from_raw(2101),
             272,
@@ -21036,7 +21111,7 @@ fn a_prepared_runner_presses_through_its_real_producer() {
 // native guarded execution and completion observation. Terminal dispatch is
 // invoked separately to expose the scheduling state without unrelated work.
 fn attempt_run(f: &mut PreparedOrderedFixture, id: u64, button: u32, pressed: bool) {
-    f.ingress.submit(button_to(f.surface, XAuthorityInputDeliveryId::from_raw(id), button, pressed)).unwrap();
+    f.ingress.submit(&f.keeper.lease(), button_to(f.surface, XAuthorityInputDeliveryId::from_raw(id), button, pressed)).unwrap();
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut f.runner;
     let p = frontend.as_mut().unwrap();
     assert!(matches!(p.step_once(keyboards, &mut |_, _| Ok(()), watch.as_ref().unwrap()).unwrap(), PrivateOrderedStep::Decided(_)));
@@ -27490,7 +27565,7 @@ fn an_indeterminate_head_keeps_its_custody_while_another_recipient_progresses() 
 }
 
 fn output_refused(f:&mut PreparedOrderedFixture,route:XAuthorityRoutedInput)->PrivateExecutionRefusal {
-    f.ingress.submit(route).unwrap();
+    f.ingress.submit(&f.keeper.lease(), route).unwrap();
     let PrivatePreparedRunner{frontend,keyboards,watch,..}=&mut f.runner;let p=frontend.as_mut().unwrap();
     assert!(matches!(p.step_once(keyboards,&mut |_,_|Ok(()),watch.as_ref().unwrap()).unwrap(),PrivateOrderedStep::Decided(_)));
     let Some(PrivateOrderedItem::Refused{refusal,custody,..})=p.terminal.turn.pop() else{panic!("typed pre-effect refusal required")};
@@ -27614,7 +27689,7 @@ fn an_instrument_takes_the_admission_asked_for_and_keeps_the_others() {
         let mut cells = Vec::new();
         for (id, button, pressed) in [(76310u64, 272u32, true), (76311, 272, false), (76312, 273, true)] {
             f.ingress
-                .submit(button_to(
+                .submit(&f.keeper.lease(), button_to(
                     f.surface,
                     XAuthorityInputDeliveryId::from_raw(id),
                     button,
@@ -29450,7 +29525,7 @@ fn a_close_reports_backpressure_rather_than_retaining_past_its_bound() {
         let delivery = 78320 + index;
         let button = 273 + u32::try_from(index).expect("small");
         f.ingress
-            .submit(button_to(
+            .submit(&f.keeper.lease(), button_to(
                 f.surface,
                 XAuthorityInputDeliveryId::from_raw(delivery),
                 button,
@@ -35414,9 +35489,14 @@ fn a_payload_holding_the_store_is_a_chain_from_its_custodian() {
         "it is carrying a handle to this very store"
     );
 
-    // EVERY ORDINARY HOLDER GOES, and the custodian is not one of them: the
-    // operations, this control's pin, the connection's instance, the gate and
-    // the fixture's own store handle.
+    // THE OPERATIONS AND THIS CONTROL'S OWN HANDLES GO HERE: the commitment,
+    // the fencing, the reaping, the pin, this control's store handle, the
+    // worker's slot and exit and the connection's gate.
+    //
+    // THE FIXTURE IS STILL HOLDING ITS INSTANCE AND ITS OWN STORE HANDLE at
+    // this point, and the custodian with them. What the assertion below says
+    // is only that the chain is not yet broken -- the release comes after the
+    // fixture goes, which is the last drop in this control.
     drop(context);
     drop(fence);
     drop(record);
@@ -35894,12 +35974,22 @@ fn a_service_cannot_be_prepared_over_a_keeper_that_is_not_its_own() {
         ),
         "and no turn is served on one"
     );
+    // AND A MISMATCH IS NOT A DESTRUCTION. Both owners are alive; what is
+    // wrong is the association, and a caller told the keeper had gone would go
+    // looking for something that never happened.
     assert!(
         matches!(
             registration.registered_custody(&stranger.lease()),
-            Some(PrivateCustodyReach::KeeperGone)
+            Some(PrivateCustodyReach::ForeignKeeper)
         ),
         "and no custody is reached through one"
+    );
+    assert!(
+        matches!(
+            registration.registered_custody(&keeper.lease()),
+            Some(PrivateCustodyReach::Reached(_))
+        ),
+        "its own lease reaches it immediately, so nothing was destroyed"
     );
     // ITS OWN OWNER GETS PAST ALL THREE. What the participant then says about
     // this connection is its own business -- this control registered a route
@@ -36079,4 +36169,91 @@ fn a_registry_cannot_be_given_a_second_keeper() {
         "and it answers for nothing either"
     );
     drop((registration, private, keeper, substitute, durable));
+}
+
+#[test]
+fn a_producer_asks_again_at_every_acceptance() {
+    // ISSUANCE IS NOT A STANDING PERMISSION. A producer handed out while the
+    // keeper was alive goes on existing; what it must not do is go on
+    // ACCEPTING work once the lease it is offered is not this service's. Both
+    // producer classes are asked, because both take work into the service.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 2);
+    let stranger = service_owner(&durable, 2);
+    let mut private = private_over(&keeper, 2);
+    let client = XServerFrontendClientId(8515);
+    let surface = SurfaceId::new(8515, 1);
+    let namespace = NamespaceId::from_raw(8515);
+    let admission = namespaced(client, namespace);
+    private.participant.admit(client, admission).expect("admitted");
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admission))
+        .expect("a place, a keeper and a row");
+    private
+        .broker
+        .registry
+        .register_surface(client, namespace, surface, XResourceId::new(0x8515, 1))
+        .expect("the surface to register");
+    // The plain stamped ingress, not a reserving producer: taking one of
+    // those engages the ordered consumer, and this control drives the
+    // unprepared instance's own routing path below.
+    let ingress = private.ingress();
+    let control = private.control_producer();
+
+    // ITS OWN OWNER, AND THE WORK IS ACCEPTED.
+    assert!(
+        ingress
+            .submit(
+                &keeper.lease(),
+                button_to(surface, XAuthorityInputDeliveryId::from_raw(85150), 272, true),
+            )
+            .is_ok(),
+        "a live keeper accepts"
+    );
+
+    // A STRANGER'S LEASE, AND NOTHING IS ACCEPTED -- by either class. The work
+    // comes back in hand, unaccepted, which is what a refusal owes a producer.
+    let refused = ingress.submit(
+        &stranger.lease(),
+        button_to(surface, XAuthorityInputDeliveryId::from_raw(85151), 272, false),
+    );
+    assert!(
+        matches!(refused, Err(PrivateSendError::ForeignServiceOwner(_))),
+        "the input producer asks at acceptance: {refused:?}"
+    );
+    let control_refused = control.submit(
+        &stranger.lease(),
+        XAuthorityClientControlCommand {
+            client,
+            command: XAuthorityControlCommand::FocusSurface {
+                transaction: TransactionId::from_raw(8515),
+                surface,
+            },
+        },
+    );
+    assert!(
+        matches!(
+            control_refused,
+            Err((AdmissionRefusal::ForeignServiceOwner, _))
+        ),
+        "and so does the control producer"
+    );
+
+    // AND THE UNPREPARED INSTANCE'S OWN EXECUTION PATH ASKS TOO. This frontend
+    // was never prepared into a runner, so it carries no borrow of its owner;
+    // without this it would go on applying accepted work with no keeper.
+    assert!(
+        matches!(
+            private.route_pending(&stranger.lease()),
+            Err(XServerFrontendRouteError::ForeignServiceOwner)
+        ),
+        "an unprepared instance is not an unguarded one"
+    );
+    let ran = private
+        .route_pending(&keeper.lease())
+        .expect("its own owner runs it");
+    assert_eq!(ran.len(), 1, "the one accepted entry, and only it");
+    drop((ingress, control, registration, private, keeper, stranger));
 }

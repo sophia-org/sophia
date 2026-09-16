@@ -138,7 +138,7 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
     );
     let ingress = runner.ingress_for(&durable.lease(), client, DeviceId::from_raw(1)).unwrap();
     ingress
-        .submit(button_to(
+        .submit(&durable.lease(), button_to(
             SurfaceId::new(9000, 1),
             XAuthorityInputDeliveryId::from_raw(9000),
             272,
@@ -229,7 +229,7 @@ fn losing_a_prepared_runner_closes_its_producers_and_carries_its_hold() {
         )
         .unwrap();
     ingress
-        .submit(button_to(
+        .submit(&durable.lease(), button_to(
             SurfaceId::new(9000, 1),
             XAuthorityInputDeliveryId::from_raw(9001),
             272,
@@ -239,7 +239,7 @@ fn losing_a_prepared_runner_closes_its_producers_and_carries_its_hold() {
     assert_eq!(runner.service_turn(&durable.lease()).unwrap().observed, 1);
     drop(runner);
     assert!(matches!(
-        ingress.submit(button_to(
+        ingress.submit(&durable.lease(), button_to(
             SurfaceId::new(9000, 1),
             XAuthorityInputDeliveryId::from_raw(9002),
             272,
@@ -302,8 +302,9 @@ fn runner_accounts_a_park_once_and_never_charges_idle_or_blocked_reads() {
     }
     assert_eq!(runner.service.usage().starts, 0);
     let sequence = runner
-        .control_producer()
-        .submit(configure(
+        .control_producer(&_durable.lease())
+        .expect("its own owner")
+        .submit(&_durable.lease(), configure(
             XServerFrontendClientId::from_raw(9000),
             SurfaceId::new(9000, 1),
             91000,
@@ -335,7 +336,7 @@ fn runner_checks_its_allowance_before_taking_accepted_work() {
         )
         .unwrap();
     let sequence = ingress
-        .submit(button_to(
+        .submit(&durable.lease(), button_to(
             SurfaceId::new(9000, 1),
             XAuthorityInputDeliveryId::from_raw(91001),
             272,
@@ -388,7 +389,7 @@ fn unwatchable_work_finishes_accounting_without_becoming_an_effect() {
         )
         .unwrap();
     let sequence = ingress
-        .submit(button_to(
+        .submit(&durable.lease(), button_to(
             SurfaceId::new(9000, 1),
             XAuthorityInputDeliveryId::from_raw(91002),
             272,
@@ -433,7 +434,7 @@ fn runner_charges_common_wait_and_supervision_can_end_it_independently() {
         )
         .unwrap();
     let sequence = ingress
-        .submit(button_to(
+        .submit(&durable.lease(), button_to(
             SurfaceId::new(9000, 1),
             XAuthorityInputDeliveryId::from_raw(91004),
             272,
@@ -499,7 +500,7 @@ fn runner_failure_refuses_a_detached_producer_while_common_is_held() {
         )
         .unwrap();
     ingress
-        .submit(button_to(
+        .submit(&durable.lease(), button_to(
             SurfaceId::new(9000, 1),
             XAuthorityInputDeliveryId::from_raw(92001),
             272,
@@ -520,19 +521,29 @@ fn runner_failure_refuses_a_detached_producer_while_common_is_held() {
     let common = frontend.controller.common.clone();
     let held = common.lock().unwrap();
     let (answer, receive) = sync_channel(1);
-    let submitter = std::thread::spawn(move || {
-        answer
-            .send(ingress.submit(button_to(
-                SurfaceId::new(9000, 1),
-                XAuthorityInputDeliveryId::from_raw(92002),
-                272,
-                false,
-            )))
-            .unwrap();
+    // SCOPED, because accepting work asks for a live owner and a lease borrows
+    // one. The owner is not cloneable -- there is one of it, which is the
+    // point -- so the thread borrows it for the length of the scope.
+    let result = std::thread::scope(|scope| {
+        let keeper = &durable;
+        let submitter = scope.spawn(move || {
+            answer
+                .send(ingress.submit(
+                    &keeper.lease(),
+                    button_to(
+                        SurfaceId::new(9000, 1),
+                        XAuthorityInputDeliveryId::from_raw(92002),
+                        272,
+                        false,
+                    ),
+                ))
+                .unwrap();
+        });
+        let result = receive.recv_timeout(Duration::from_secs(2));
+        drop(held);
+        submitter.join().unwrap();
+        result
     });
-    let result = receive.recv_timeout(Duration::from_secs(2));
-    drop(held);
-    submitter.join().unwrap();
     assert!(matches!(
         result.unwrap(),
         Err(PrivateSendError::Disconnected(_))
@@ -626,7 +637,7 @@ fn idle_runner_loss_closes_an_actual_connection_attached_after_preparation() {
         .unwrap();
     worker.join().unwrap();
     assert!(matches!(
-        ingress.submit(button_to(
+        ingress.submit(&durable.lease(), button_to(
             SurfaceId::new(9000, 1),
             XAuthorityInputDeliveryId::from_raw(92003),
             272,
@@ -783,7 +794,7 @@ fn a_terminal_step_whose_watch_refuses_is_blocked_and_keeps_its_entry() {
     let client = XServerFrontendClientId::from_raw(9000);
     let ingress = runner.ingress_for(&durable.lease(), client, DeviceId::from_raw(1)).unwrap();
     let sequence = ingress
-        .submit(button_to(
+        .submit(&durable.lease(), button_to(
             SurfaceId::new(9000, 1),
             XAuthorityInputDeliveryId::from_raw(91004),
             272,
