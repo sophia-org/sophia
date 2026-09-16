@@ -51,13 +51,31 @@ case "$*" in
     *) exit 99 ;;
 esac''')
         self.script(self.fakebin / "cargo", 'echo build >> "$TEST_TRACE"')
+        self.wm_profile = self.base / "wm.kdl"
+        self.wm_profile.write_text('schema 1\nshortcut { profile "operator"; bind "Super+4" "policy:focus-workspace" "7"; }\n')
+        # Configuration executables are supplied effects in this launcher test.
+        # Rust desktop_probe controls cover the real parser/composition policy.
+        self.script(self.root / "target/release/sophia", '''
+[[ "$1" == config ]]
+case "$2" in
+  print-effective) [[ "$3" == --desktop-profile="$SOPHIA_DESKTOP_PROFILE" ]]; cat "$SOPHIA_DESKTOP_PROFILE" ;;
+  check) [[ -f "${3#--desktop-profile=}" ]] ;;
+  *) exit 99 ;;
+esac''')
+        examples = self.root / "target/release/examples"
+        examples.mkdir()
+        self.script(examples / "desktop_profile_probe", '''
+[[ "$#" == 2 ]]
+cat "$1"
+tail -n +2 "$2"''')
         self.script(self.tools / "lom_gpu_content_hardware_proof.sh", '''
 echo proof >> "$TEST_TRACE"
 [[ "$SOPHIA_LOM_GPU_PROOF_ARM" == 1 ]]
 exit "${TEST_PROOF_STATUS:-0}"''')
         self.script(self.tools / "run_sophia_session.sh", '''
 echo session >> "$TEST_TRACE"
-[[ "$*" == --max-runtime-ms=90000 ]]
+[[ "$#" == 2 && "$1" == --max-runtime-ms=90000 ]]
+[[ "$2" == --shell-process="$SOPHIA_LOM_TARGET_DIR/release/lom" ]]
 [[ "$SOPHIA_SESSION_WATCHDOG_SECONDS" == 110 && "$SOPHIA_SESSION_STARTUP" == none ]]
 [[ "$SOPHIA_REQUIRE_LOCAL_VT" == true && "$SOPHIA_MANAGE_KEYD" == true ]]
 mkdir -p "$SOPHIA_DIAGNOSTIC_DIR"
@@ -83,6 +101,7 @@ exit "${TEST_SESSION_STATUS:-0}"''')
         self.env = {**os.environ, "PATH": str(self.fakebin) + ":/usr/bin:/bin",
                     "SOPHIA_LOM_SOURCE": str(self.lom), "SOPHIA_LOM_TARGET_DIR": str(self.base / "target"),
                     "SOPHIA_HAGIA_BIN": str(self.base / "hagia"), "SOPHIA_LOM_NATIVE_GATE_ARM": "1",
+                    "SOPHIA_DESKTOP_PROFILE": str(self.wm_profile),
                     "SOPHIA_LOM_NATIVE_EVIDENCE_DIR": str(self.evidence),
                     "TEST_TRACE": str(self.base / "trace"), "TEST_HOST": str(self.base / "host.log"),
                     "TEST_CLIENT": str(self.base / "client.log")}
@@ -104,7 +123,18 @@ exit "${TEST_SESSION_STATUS:-0}"''')
         self.assertEqual(report["status"], "pass")
         self.assertEqual(report["memory"]["slot_bound"], 4)
         self.assertEqual((self.evidence / "native-outcome.txt").read_text(), "native_exit_status=0\n")
-        self.assertEqual((self.base / "trace").read_text().splitlines(), ["build", "build", "proof", "session"])
+        self.assertEqual((self.base / "trace").read_text().splitlines(), ["build", "build", "build", "proof", "session"])
+        self.assertEqual((self.evidence / "wm-profile.kdl").read_bytes(), self.wm_profile.read_bytes())
+        self.assertIn('bind "Super+4" "policy:focus-workspace" "7"', (self.evidence / "desktop.kdl").read_text())
+        self.assertIn("wm_profile_sha256=", (self.evidence / "identity.manifest").read_text())
+        self.assertIn("probe_overrides_sha256=", (self.evidence / "identity.manifest").read_text())
+
+    def test_missing_selected_wm_profile_never_launches_proof_or_session(self):
+        result = self.run_launcher(SOPHIA_DESKTOP_PROFILE=str(self.base / "missing.kdl"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("existing absolute WM profile", result.stderr)
+        self.assertNotIn("proof", (self.base / "trace").read_text())
+        self.assertNotIn("session", (self.base / "trace").read_text())
 
     def test_preconditions_stop_before_build_and_proof(self):
         for env in ({"TEST_TTY": "/dev/pts/1"}, {"SOPHIA_LOM_NATIVE_GATE_ARM": "0"}, {"TEST_DIRTY": " M fixture"}):
@@ -114,6 +144,7 @@ exit "${TEST_SESSION_STATUS:-0}"''')
 
     def test_failed_proof_never_launches_session(self):
         self.assertNotEqual(self.run_launcher(TEST_PROOF_STATUS="1").returncode, 0)
+        self.assertIn("proof", (self.base / "trace").read_text())
         self.assertNotIn("session", (self.base / "trace").read_text())
 
     def test_watchdog_is_failure_and_preserves_existing_evidence(self):
