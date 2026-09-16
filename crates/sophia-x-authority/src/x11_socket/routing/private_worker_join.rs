@@ -65,13 +65,27 @@ enum PrivateReapingPhase {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 struct PrivateJoinEvidence {
-    /// How far the claiming attempt has got.
+    /// WHETHER THE ONE RIGHT TO PUBLISH INTO THIS HOME IS STILL HERE.
+    ///
+    /// IT LIVES WHERE THE HOME LIVES, WHICH IS THE WHOLE POINT. When each
+    /// attempt kept its own claim, a second view over the same source and the
+    /// same custody arrived with a claim of its own, made an empty attempt,
+    /// and withdrew the phase of a join that had already completed: the result
+    /// stayed in storage and stopped being readable. Authority that a new view
+    /// can mint is not authority.
+    ///
+    /// TAKEN, NOT CHECKED. One exchange is the whole acquisition, so there is
+    /// no interval between finding it free and holding it. It goes back only
+    /// when an attempt consumed nothing; an attempt that took a handle keeps
+    /// it for good, whether it published a result or was lost before it could.
+    producer: std::sync::atomic::AtomicBool,
+    /// How far the attempt holding that right has got.
     phase: std::sync::atomic::AtomicU8,
     /// The result, written once by the attempt that claimed it.
     ///
     /// NOT A LOCK, AND NOT MERELY A TYPE THAT SAYS ONCE. What makes the write
     /// here uncontended is that exclusivity was established before the handle
-    /// was consumed: one claim, one writer, one write. Publication cannot wait
+    /// was consumed: one right, one writer, one write. Publication cannot wait
     /// on another holder, which is what a mutex taken after the join would
     /// have made it do.
     result: std::sync::OnceLock<PrivateJoinResult>,
@@ -80,6 +94,24 @@ struct PrivateJoinEvidence {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 impl PrivateJoinEvidence {
+    /// Take the one right to publish into this home, if it is here.
+    ///
+    /// WHOEVER GETS IT IS THIS HOME'S PRODUCER until it is given back, and
+    /// nothing else can become one in the meantime.
+    fn take_publication(&self) -> bool {
+        self.producer
+            .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    /// Give it back, which only an attempt that consumed nothing may do.
+    ///
+    /// THE CALLER IS THE HOLDER, so this is a release and not a race: nobody
+    /// else can be holding it to lose.
+    fn return_publication(&self) {
+        self.producer.store(true, Ordering::Release);
+    }
+
     fn phase(&self) -> PrivateReapingPhase {
         match self.phase.load(Ordering::Acquire) {
             0 => PrivateReapingPhase::NotBegun,
@@ -123,19 +155,27 @@ struct PrivateReapingRecord<'a> {
     /// a claim that it has been checked. What it does prevent is the pair
     /// being changed afterwards.
     exit: &'a PrivateWorkerExit,
-    /// Whether an attempt has claimed this record.
+    /// Whether an attempt has claimed THIS RECORD.
     ///
-    /// CLAIMED BEFORE ANYTHING IS TAKEN, so two asks cannot both reach a
-    /// handle. It is released again only by an attempt that consumed nothing:
-    /// once a handle has been taken through this record, no later ask may
-    /// reach for another.
+    /// RECORD-LOCAL, AND NOT THE AUTHORITY TO PUBLISH. It stops two asks on
+    /// this one record reaching a handle together, and it is released again
+    /// only by an attempt that consumed nothing. What decides which attempt
+    /// may write into the shared home is the right that lives in that home,
+    /// because a claim minted here is one a second view mints just as easily.
     claimed: AtomicBool,
     /// Where this join's evidence is published.
     ///
-    /// BORROWED FROM A CUSTODY THAT ALREADY OWNED IT. This record does not
-    /// make the home it publishes into: it is handed one whose owner is in a
-    /// scope outside this operation, so losing this record -- by returning, by
-    /// refusing, or by unwinding -- loses the record and not the result.
+    /// FROM A CUSTODY THAT ALREADY OWNED IT, AND STILL DOES. This record does
+    /// not make the home it publishes into: it is given one whose custodian is
+    /// in a scope outside this operation, so losing this record -- by
+    /// returning, by refusing, or by unwinding -- loses the record and not the
+    /// result.
+    ///
+    /// THIS HANDLE IS AN OWNING ONE. An `Arc` clone keeps what it points at
+    /// whatever it was cloned from, so what makes the custodian rather than
+    /// this record the keeper is not the handle: it is that the constructor
+    /// borrows the custody for as long as this record exists, so a record
+    /// cannot be left holding the last one.
     ///
     /// A home allocated here would have had its only handle in this frame, and
     /// handing it back afterwards would have offered a keeper rather than
@@ -165,6 +205,16 @@ enum PrivateReaped {
     /// This record has already been asked. Nothing was consumed, and whatever
     /// the first attempt established is left exactly as it was.
     AlreadyAsked,
+    /// This home's one publication right is somewhere else.
+    ///
+    /// ANOTHER VIEW HOLDS IT OR HAS USED IT, so this attempt is not the
+    /// producer for this home and may not write its phase, its result, or
+    /// withdraw what another attempt established. NOTHING WAS CONSUMED.
+    ///
+    /// NOT A STATEMENT ABOUT THE WORKER. A handle may still be sitting in the
+    /// slot; what this says is that publishing about it is not this view's to
+    /// do.
+    NotThePublisher,
 }
 
 /// What a worker's exit record said, read after the join result was retained.
@@ -215,8 +265,6 @@ struct PrivateReaping {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 impl<'a> PrivateReapingRecord<'a> {
-    /// A record for a join nobody has asked for yet, over this slot and this
-    /// worker's exit record.
     /// A record for a join nobody has asked for yet, over this slot, this
     /// worker's exit record, and a publication home somebody else keeps.
     ///
@@ -224,10 +272,19 @@ impl<'a> PrivateReapingRecord<'a> {
     /// this belongs to: a result is published into a home that already had an
     /// owner, so no frame here is the only thing standing between the evidence
     /// and nothing.
+    ///
+    /// AND THE BORROW IS WHAT ENFORCES IT. The custody is borrowed for as long
+    /// as this record exists, so a record cannot be returned from the scope
+    /// that holds its custodian and then be the last thing keeping the
+    /// evidence. Holding an owning handle would not have established that: an
+    /// `Arc` clone keeps what it points at no matter what it was cloned from,
+    /// so a record built from a custody that then went away would have gone on
+    /// working -- and losing that record would have lost the result the whole
+    /// component exists to protect.
     fn bound_to(
         slot: &'a Mutex<PrivateWorkerSlot>,
         exit: &'a PrivateWorkerExit,
-        custody: &PrivateEvidenceCustody,
+        custody: &'a PrivateEvidenceCustody,
     ) -> Self {
         Self {
             slot,
@@ -247,9 +304,14 @@ impl<'a> PrivateReapingRecord<'a> {
 
     /// The publication home this record was given.
     ///
-    /// FOR COMPARING, NOT FOR KEEPING. Whoever needs to know that this record
-    /// publishes into a particular custody's home asks for it and checks; what
-    /// keeps that home alive is the custody, not this and not the caller.
+    /// ASKED FOR IN ORDER TO COMPARE. Whoever needs to know that this record
+    /// publishes into a particular custody's home asks for it and checks.
+    ///
+    /// WHAT IT HANDS BACK IS AN OWNING HANDLE, and saying otherwise would be
+    /// wrong: an `Arc` clone keeps the home alive for as long as the clone
+    /// lasts, whoever made it. What makes the custodian the keeper is not this
+    /// handle but the borrow above it -- neither this record nor anything it
+    /// hands out can outlive the custody it was built from.
     fn join_evidence(&self) -> Arc<PrivateJoinEvidence> {
         Arc::clone(&self.evidence)
     }
@@ -292,6 +354,21 @@ impl<'a> PrivateReapingRecord<'a> {
                 exit: None,
             };
         }
+        // AND THE HOME'S ONE RIGHT TO PUBLISH, which is not this record's to
+        // assume. The claim above only stops this record being asked twice at
+        // once; what says this attempt may write into that home is holding the
+        // right that lives in it.
+        if !self.evidence.take_publication() {
+            // Nothing was consumed and nothing was written, so this record is
+            // exactly as it was found and may be asked again -- by which time
+            // the right may have come back.
+            self.claimed.store(false, Ordering::Release);
+            return PrivateReaping {
+                reaped: PrivateReaped::NotThePublisher,
+                slot_poisoned: false,
+                exit: None,
+            };
+        }
         // WRITE-AHEAD: the intent is recorded before a handle can be consumed, so
         // an attempt interrupted anywhere below leaves something that says a
         // handle may have been taken rather than nothing at all.
@@ -301,10 +378,17 @@ impl<'a> PrivateReapingRecord<'a> {
         let slot_poisoned = handoff.source_poisoned;
         let Some(handle) = handoff.handle else {
             // NOTHING WAS CONSUMED, so this attempt is not one: the intent is
-            // withdrawn and the claim released, and the record is exactly as it
-            // was found. A later ask may still find a handle here, because nothing
-            // here started or stopped anything.
+            // withdrawn, the right goes back to the home and the claim is
+            // released, and the record is exactly as it was found. A later ask
+            // may still find a handle here, because nothing here started or
+            // stopped anything.
+            //
+            // THE PHASE THIS WITHDRAWS IS ITS OWN. Holding the right is what
+            // established that: no other attempt could have written one while
+            // this one held it, and an attempt that never held it never got
+            // here.
             self.evidence.phase.store(0, Ordering::Release);
+            self.evidence.return_publication();
             self.claimed.store(false, Ordering::Release);
             return PrivateReaping {
                 reaped: match handoff.found {

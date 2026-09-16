@@ -41,6 +41,11 @@ struct PrivateEvidenceCustody {
     /// ALLOCATED HERE, BEFORE ANY HANDLE IS CONSUMED. What is published into
     /// it later goes into a home that already had an owner, so losing the
     /// operation that published it loses the operation and not the result.
+    ///
+    /// AND IT CARRIES ITS OWN PUBLICATION RIGHT. Sharing the home moved the
+    /// question of who may write it out of every operation: the one right sits
+    /// in here, an operation takes it or is refused, and it comes back only
+    /// from an attempt that consumed nothing.
     join: Arc<PrivateJoinEvidence>,
 }
 
@@ -63,6 +68,12 @@ impl PrivateEvidenceCustody {
             store: store.clone(),
             identity,
             join: Arc::new(PrivateJoinEvidence {
+                // THE RIGHT TO PUBLISH STARTS HERE, in the home, unheld. An
+                // operation acquires it from the home rather than arriving
+                // with one of its own, so a second view of the same home
+                // cannot mint the authority to write over what a first
+                // attempt established.
+                producer: std::sync::atomic::AtomicBool::new(true),
                 phase: std::sync::atomic::AtomicU8::new(0),
                 result: std::sync::OnceLock::new(),
             }),

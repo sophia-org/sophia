@@ -46,25 +46,28 @@ struct PrivateCommittedObligation {
     /// here can prevent that by inspecting the payload without discarding or
     /// special-casing it, and neither is acceptable.
     ///
-    /// SO THE KEEPER IS OUTSIDE. Committing hands its caller the strong
-    /// handle: the store names the evidence and something outside it keeps
-    /// that evidence alive. A payload holding a store handle then makes a
-    /// chain from the keeper rather than a ring through the store, and
-    /// everything releases when the keeper lets go.
+    /// SO THE KEEPER IS OUTSIDE, AND IT IS THE CUSTODIAN. The evidence home
+    /// belongs to the custody that existed before any of this ran; the store
+    /// names it and does not keep it. Committing hands its caller nothing --
+    /// the answer carries no handle at all -- because an obligation that
+    /// depended on the caller storing one returned would rest on something
+    /// this cannot check.
     ///
-    /// AND ONLY WHILE IT DOES. What is here survives the frames that made it
-    /// exactly as long as its keeper survives them; a keeper that drops or
-    /// unwinds takes the evidence with it, and the obligation then says the
-    /// evidence has gone -- which is not a disposition and not a fresh fact
-    /// about the join.
+    /// AND ONLY WHILE THE CUSTODIAN LASTS. What is here survives the frames
+    /// that made it exactly as long as that custodian survives them; when the
+    /// custodian goes, the obligation says the evidence has gone -- which is
+    /// not a disposition and not a fresh fact about the join. A payload
+    /// holding a store handle makes a chain from the custodian rather than a
+    /// ring through the store, and all of it releases together.
     ///
-    /// WHO THAT KEEPER IS, TODAY AND LATER. Today it is whoever asked for the
-    /// commitment, which in these controls is the caller. At integration it
-    /// must be the durable outer service owner -- the same authority that
-    /// keeps the store across service exits -- and that owner does not exist
-    /// yet. This is the narrower boundary that keeping an opaque payload
-    /// forced, named here rather than absorbed into a claim that one ownership
-    /// shape satisfied both requirements.
+    /// WHAT IS STILL MISSING. No production constructor makes a custody, so
+    /// nothing here establishes who holds one across the running server's
+    /// shutdown and error paths. At integration that must be the durable outer
+    /// service owner -- the same authority that keeps the store across service
+    /// exits -- and that owner does not exist yet. This is the narrower
+    /// boundary that keeping an opaque payload forced, named here rather than
+    /// absorbed into a claim that one ownership shape satisfied both
+    /// requirements.
     join: std::sync::Weak<PrivateJoinEvidence>,
 }
 
@@ -73,9 +76,6 @@ struct PrivateCommittedObligation {
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[must_use]
 enum PrivateCommitted {
-    /// The obligation is in this connection's destination and the duty is the
-    /// store's.
-    ///
     /// The obligation is in this connection's destination and the duty is the
     /// store's.
     ///

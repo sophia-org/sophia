@@ -32564,14 +32564,19 @@ where
     slot
 }
 
-/// The payload a reaping kept, as a string, if it kept one.
-fn panic_payload(record: &PrivateReapingRecord<'_>) -> Option<String> {
-    let PrivateJoinResult::Panicked(payload) = record.result()? else {
+/// The payload a publication home holds, as a string, if it holds one.
+fn panic_payload_of(evidence: &PrivateJoinEvidence) -> Option<String> {
+    let PrivateJoinResult::Panicked(payload) = evidence.result()? else {
         return None;
     };
     let held = payload.lock().expect("a readable payload");
     held.downcast_ref::<&str>()
         .map(|carried| (*carried).to_owned())
+}
+
+/// The payload a reaping kept, as a string, if it kept one.
+fn panic_payload(record: &PrivateReapingRecord<'_>) -> Option<String> {
+    panic_payload_of(&record.join_evidence())
 }
 
 #[test]
@@ -32811,6 +32816,11 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
     let f = worker_fixture(XServerFrontendClientId(8415));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
 
+    // ONE CUSTODY EACH, because these are four different sources. A
+    // publication home is one connection's, and its one right to publish goes
+    // to the attempt that consumes its handle; sharing a home across sources
+    // would mean the first join spent the right the others needed.
+
     // Never started.
     let unstarted = Mutex::new(PrivateWorkerSlot::empty());
     let custody = custody_for(&f);
@@ -32855,7 +32865,8 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
     let handle = hand_worker_to_joiner(&other)
         .handle
         .expect("the started worker's handle");
-    let second = PrivateReapingRecord::bound_to(&other, &exit, &custody);
+    let other_custody = custody_for(&f);
+    let second = PrivateReapingRecord::bound_to(&other, &exit, &other_custody);
     let elsewhere = second.reap();
     assert_eq!(elsewhere.reaped, PrivateReaped::HandedElsewhere);
     assert_eq!(second.phase(), PrivateReapingPhase::NotBegun);
@@ -32871,7 +32882,8 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
         departing: false,
         life: PrivateWorkerLife::Running,
     });
-    let third = PrivateReapingRecord::bound_to(&torn, &exit, &custody);
+    let torn_custody = custody_for(&f);
+    let third = PrivateReapingRecord::bound_to(&torn, &exit, &torn_custody);
     let missing = third.reap();
     assert_eq!(
         missing.reaped,
@@ -34895,6 +34907,194 @@ fn a_commitment_refuses_another_connections_evidence() {
 }
 
 #[test]
+fn a_completed_join_cannot_be_withdrawn_by_a_later_view() {
+    // WHAT SHARING THE HOME COST, AND WHAT PAYS FOR IT. When each record kept
+    // its own claim, a second view over the same source and the same custody
+    // arrived with a claim of its own, made an empty attempt and withdrew the
+    // phase of a join that had already completed: the result sat in storage
+    // and stopped being readable, and the obligation naming it read None.
+    //
+    // NO HOOK, NO SECOND WORKER, NO SCHEDULE. The first view is simply gone by
+    // the time the second one is made.
+    let c = commit_fixture(XServerFrontendClientId(8487), true);
+    let durable = c.g.f.fixture.durable.clone();
+    let custody = custody_for(&c.g.f);
+    let lease = lease_of(&c.g.f.fixture.registration);
+    {
+        let first = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
+        assert_eq!(first.reap().reaped, PrivateReaped::Joined);
+        let fence = PrivateFenceRecord::bound_to(&first, Arc::clone(&c.g.gate));
+        assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+        let destination = durable
+            .prepare_internal_holder(&lease)
+            .expect("its own destination");
+        let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
+        assert!(matches!(context.commit(), PrivateCommitted::Committed));
+    }
+    let stated = durable
+        .committed_obligation(c.place)
+        .expect("the obligation is stated");
+    assert!(
+        stated
+            .join()
+            .expect("its evidence is still kept")
+            .result()
+            .is_some(),
+        "the join it rests on is readable before the second view exists"
+    );
+
+    // A SECOND VIEW OF THE SAME SOURCE AND THE SAME CUSTODY. It is refused,
+    // because the one right to publish into that home went with the attempt
+    // that consumed the handle and is not something a new view can mint.
+    let second = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
+    let repeated = second.reap();
+    assert_eq!(repeated.reaped, PrivateReaped::NotThePublisher);
+    assert_eq!(repeated.exit, None, "it read nothing, having done nothing");
+    assert_eq!(
+        custody.join().phase(),
+        PrivateReapingPhase::Joined,
+        "a view that is not the producer cannot withdraw a completed phase"
+    );
+    assert!(
+        stated
+            .join()
+            .expect("its evidence is still kept")
+            .result()
+            .is_some(),
+        "and the obligation still reads the join it rests on"
+    );
+    assert_eq!(
+        panic_payload_of(custody.join()).as_deref(),
+        Some("what this connection's worker carried out with it"),
+        "the original result, and not a fresh one"
+    );
+    drop((c.g.f.fixture, custody));
+}
+
+#[test]
+fn two_views_of_one_home_do_not_both_publish() {
+    // TWO SEPARATE RECORDS OVER ONE HOME, ASKING TOGETHER. This is the case a
+    // record-local claim never covered: neither view has been asked before, so
+    // each would have claimed itself and gone on to write the other's phase.
+    //
+    // THE OVERLAP IS WITNESSED, NOT HOPED FOR. The worker is held until the
+    // slot itself says its handle has gone to a joiner and the refused view
+    // has come back.
+    let f = worker_fixture(XServerFrontendClientId(8488));
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let slot = started_worker(&f, move || {
+        let _ = held.recv();
+        panic!("what exactly one view keeps");
+    });
+    let custody = custody_for(&f);
+
+    // BOTH VIEWS REACH FOR THE RIGHT AT THE SAME MOMENT. Each is built before
+    // the rendezvous, so what the two threads do after it is the acquisition
+    // itself: a right that was looked at and then taken, rather than taken in
+    // one exchange, has its window here.
+    let together = std::sync::Barrier::new(2);
+    std::thread::scope(|scope| {
+        let (report, asked) = std::sync::mpsc::channel();
+        for _ in 0..2 {
+            let custody = &custody;
+            let slot = &slot;
+            let exit = &exit;
+            let together = &together;
+            let report = report.clone();
+            scope.spawn(move || {
+                let view = PrivateReapingRecord::bound_to(slot, exit, custody);
+                together.wait();
+                report.send(view.reap().reaped)
+            });
+        }
+        drop(report);
+
+        assert!(
+            waited_for(|| {
+                slot.lock().expect("a readable slot").life == PrivateWorkerLife::HandedToJoiner
+            }),
+            "one view took the handle while its worker is still running"
+        );
+        // AND THE OTHER IS ALREADY BACK, while that worker is still held: the
+        // only view that can return now is the one refused the right, because
+        // the one that took it is waiting on the thread.
+        assert_eq!(
+            asked
+                .recv_timeout(Duration::from_secs(3))
+                .expect("the refused view returned"),
+            PrivateReaped::NotThePublisher
+        );
+        assert_eq!(
+            custody.join().phase(),
+            PrivateReapingPhase::InProgress,
+            "a handle is consumed and no result is confirmed"
+        );
+        assert!(custody.join().result().is_none());
+
+        drop(release);
+        assert_eq!(
+            asked
+                .recv_timeout(Duration::from_secs(3))
+                .expect("the publishing view returned"),
+            PrivateReaped::Joined
+        );
+    });
+
+    assert_eq!(custody.join().phase(), PrivateReapingPhase::Joined);
+    assert_eq!(
+        panic_payload_of(custody.join()).as_deref(),
+        Some("what exactly one view keeps"),
+        "one join, one result"
+    );
+    let state = slot.lock().expect("a readable slot");
+    assert!(state.handle.is_none());
+    assert_eq!(state.life, PrivateWorkerLife::HandedToJoiner);
+    drop(state);
+    drop((f.fixture, custody));
+}
+
+#[test]
+fn a_view_that_consumed_nothing_leaves_the_right_for_the_next() {
+    // THE RIGHT IS NOT SPENT BY LOOKING. An attempt that found no handle
+    // consumed nothing, so it gives the right back and a later view of the
+    // same home still does the real join. Keeping it would have made one early
+    // look enough to leave a connection's evidence unpublishable for good.
+    let f = worker_fixture(XServerFrontendClientId(8489));
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
+    let slot = Mutex::new(PrivateWorkerSlot::empty());
+    let custody = custody_for(&f);
+
+    // A VIEW THAT ARRIVES BEFORE THE WORKER DOES, and is then gone.
+    {
+        let early = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
+        assert_eq!(early.reap().reaped, PrivateReaped::NothingStarted);
+        assert_eq!(custody.join().phase(), PrivateReapingPhase::NotBegun);
+    }
+    assert_eq!(
+        start_connection_worker(&slot, &f.stop, &f.wake, || {
+            std::thread::Builder::new().spawn(|| {})
+        }),
+        PrivateStartupOutcome::Started
+    );
+
+    // A LATER VIEW, WHICH IS A DIFFERENT RECORD, still publishes.
+    let later = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
+    assert_eq!(later.reap().reaped, PrivateReaped::Joined);
+    assert!(matches!(
+        custody.join().result(),
+        Some(PrivateJoinResult::Returned)
+    ));
+    assert_eq!(custody.join().phase(), PrivateReapingPhase::Joined);
+
+    // AND NOW IT IS SPENT, because that one consumed a handle.
+    let third = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
+    assert_eq!(third.reap().reaped, PrivateReaped::NotThePublisher);
+    assert_eq!(custody.join().phase(), PrivateReapingPhase::Joined);
+    drop((f.fixture, custody));
+}
+
+#[test]
 fn a_payload_holding_the_store_is_a_chain_from_its_custodian() {
     // THE CASE THE EXTERNAL KEEPER EXISTS FOR. A panic payload is whatever the
     // frame was carrying, and it may be a handle to this very store. If the
@@ -34904,25 +35104,37 @@ fn a_payload_holding_the_store_is_a_chain_from_its_custodian() {
     // It does not own it. The custodian does, so the chain runs custodian ->
     // evidence -> payload -> store, and letting the custodian go releases all
     // of it -- with nothing broken by hand in cleanup.
+    // EXACTLY ONE WORKER IS STARTED HERE, and this control joins it. A fixture
+    // that starts a worker of its own and then starts a second would be
+    // dropping its connection with a thread it never collected -- cancelling
+    // one is not joining it -- so this assembles the pieces from a worker
+    // fixture rather than taking a fixture that has already started one.
     let capability;
     let place;
     let custody;
     {
-        let c = commit_fixture(XServerFrontendClientId(8486), false);
-        let durable = c.g.f.fixture.durable.clone();
+        let f = worker_fixture(XServerFrontendClientId(8486));
+        f.permit();
+        let durable = f.fixture.durable.clone();
         capability = durable.settlement_ref();
-        place = c.place;
-        custody = custody_for(&c.g.f);
+        custody = custody_for(&f);
+        let named = f
+            .fixture
+            .registration
+            .maintenance_identity()
+            .expect("a place, so a name");
+        place = named.place();
+        let gate = f.fixture.registration.handover_gate();
 
         // A real worker panicking with a real handle to this store.
         let carried = durable.clone();
         let exit = Arc::new(PrivateWorkerExit::unstarted());
-        let slot = started_worker(&c.g.f, move || {
+        let slot = started_worker(&f, move || {
             std::panic::panic_any(carried);
         });
-        let lease = lease_of(&c.g.f.fixture.registration);
+        let lease = lease_of(&f.fixture.registration);
         let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
-        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
         let destination = durable
@@ -34946,8 +35158,9 @@ fn a_payload_holding_the_store_is_a_chain_from_its_custodian() {
             "it is carrying a handle to this very store"
         );
         // Every ordinary holder goes: the connection, its instance, the
-        // reaping and fencing records, and the fixture's own store handle.
-        drop((c.g.f.fixture, durable, slot, exit));
+        // reaping and fencing records, this connection's gate and the
+        // fixture's own store handle.
+        drop((f.fixture, durable, slot, exit, gate));
     }
     assert!(
         capability.owner().is_some(),
