@@ -3028,6 +3028,7 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
 
     // The coordinator exists before the broker does, so there is no interval
     // in which a handle could be taken from an ungated instance.
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3038,7 +3039,7 @@ fn a_frontend_built_private_stamps_from_the_gate_it_was_built_with() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     // The gate this instance derived from the authority it owns, not a
@@ -3081,6 +3082,7 @@ fn the_private_host_delivers_each_admitted_input_exactly_once() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3091,7 +3093,7 @@ fn the_private_host_delivers_each_admitted_input_exactly_once() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
@@ -3130,6 +3132,7 @@ fn the_private_host_never_drains_raw_ingress() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3140,7 +3143,7 @@ fn the_private_host_never_drains_raw_ingress() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
 
@@ -3166,6 +3169,7 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3176,7 +3180,7 @@ fn the_private_host_revokes_work_whose_revision_closed_before_it_ran() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     // The gate this instance derived from the authority it owns, not a
@@ -3232,6 +3236,7 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
     let (authority, issuer, submit) = private_authority();
     // Ingress capacity larger than the ready stream's ordinary share, so more
     // can be sent than one pass can admit.
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3242,7 +3247,7 @@ fn a_full_ready_stream_leaves_work_in_its_channel_rather_than_destroying_it() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
@@ -3290,6 +3295,7 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3300,7 +3306,7 @@ fn a_private_producer_is_told_denial_apart_from_saturation() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     // The gate this instance derived from the authority it owns, not a
@@ -3362,6 +3368,7 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
     let (authority, issuer, submit) = private_authority();
     // The production constructor at its smallest: ready capacity six, of
     // which four are held for cleanup, so ordinary work has room for two.
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3372,7 +3379,7 @@ fn nothing_accepted_is_lost_when_a_pass_cannot_admit_it_all() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
@@ -3422,6 +3429,7 @@ fn two_producer_classes_share_one_order() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3432,7 +3440,7 @@ fn two_producer_classes_share_one_order() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -3541,6 +3549,7 @@ fn a_send_that_returned_is_never_overtaken_by_one_that_started_later() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3551,7 +3560,7 @@ fn a_send_that_returned_is_never_overtaken_by_one_that_started_later() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -3603,6 +3612,7 @@ fn a_refused_control_comes_back_to_its_producer() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
     // Ordinary share of two at the smallest production size.
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3613,7 +3623,7 @@ fn a_refused_control_comes_back_to_its_producer() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     // A producer is refused for a client with no control writer, so a test
@@ -3651,6 +3661,7 @@ fn producers_are_refused_once_their_consumer_is_gone() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3661,7 +3672,7 @@ fn producers_are_refused_once_their_consumer_is_gone() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -3703,6 +3714,7 @@ fn an_unreachable_queue_is_not_reported_as_a_finished_one() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3713,7 +3725,7 @@ fn an_unreachable_queue_is_not_reported_as_a_finished_one() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
@@ -3758,6 +3770,7 @@ fn accepted_work_is_answered_when_its_consumer_goes_away() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3768,7 +3781,7 @@ fn accepted_work_is_answered_when_its_consumer_goes_away() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -3812,6 +3825,7 @@ fn one_turn_of_service_is_bounded_while_a_producer_keeps_refilling() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(4096);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3822,7 +3836,7 @@ fn one_turn_of_service_is_bounded_while_a_producer_keeps_refilling() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     // The constructor's own sizing at an ingress capacity of one.
@@ -3872,6 +3886,7 @@ fn accepted_control_is_acknowledged_when_its_consumer_goes_away() {
     let (control_ack_sender, control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3882,7 +3897,7 @@ fn accepted_control_is_acknowledged_when_its_consumer_goes_away() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -3926,6 +3941,7 @@ fn every_control_run_names_its_own_transaction() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(16);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3936,7 +3952,7 @@ fn every_control_run_names_its_own_transaction() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -3983,6 +3999,7 @@ fn a_full_acknowledgement_channel_retains_the_obligation() {
     let (control_ack_sender, control_ack_receiver) = sync_channel(1);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -3993,7 +4010,7 @@ fn a_full_acknowledgement_channel_retains_the_obligation() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -4048,6 +4065,7 @@ fn an_unresolved_target_is_handed_back_rather_than_attributed() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4058,7 +4076,7 @@ fn an_unresolved_target_is_handed_back_rather_than_attributed() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
 
@@ -4089,6 +4107,7 @@ fn a_retained_handle_settles_once_the_channel_drains() {
     let (control_ack_sender, control_ack_receiver) = sync_channel(1);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4099,7 +4118,7 @@ fn a_retained_handle_settles_once_the_channel_drains() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -4183,6 +4202,7 @@ fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
         sophia_input_authority::SubmitHandle,
     )| {
         let (authority, issuer, submit) = parts;
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
         let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4193,7 +4213,7 @@ fn two_frontends_with_colliding_client_ids_never_cross_receivers() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
         let (registration, channels) = private.broker.registry.register_client(client).unwrap();
@@ -4258,6 +4278,7 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
     let durable = crate::PrivateSettlementOwner::default();
+    let service_keeper = service_owner(&durable, 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4268,7 +4289,7 @@ fn an_abandoned_handle_leaves_its_work_with_a_durable_owner() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -4347,6 +4368,7 @@ fn an_unreadable_queue_is_owned_by_something_that_outlives_it() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
     let durable = crate::PrivateSettlementOwner::default();
+    let service_keeper = service_owner(&durable, 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4357,7 +4379,7 @@ fn an_unreadable_queue_is_owned_by_something_that_outlives_it() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
 
@@ -4379,7 +4401,7 @@ fn an_unreadable_queue_is_owned_by_something_that_outlives_it() {
 /// leaving the acknowledgement owed. Ported from the independent review.
 fn review_settlement_queue(
     sender: SyncSender<XAuthorityClientControlAck>,
-    durable: &crate::PrivateSettlementOwner,
+    keeper: &crate::PrivateServiceOwner,
     transaction: u64,
 ) -> (
     crate::PrivateSettlement,
@@ -4400,7 +4422,7 @@ fn review_settlement_queue(
             issuer,
             submit,
         },
-        durable,
+        keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (registration, channels) = private.broker.registry.register_client(client).unwrap();
@@ -4450,11 +4472,12 @@ fn review_settlement_two_pending_origins_reverse_retry_cannot_cross() {
     let durable = crate::PrivateSettlementOwner::default();
     let (sender_a, receiver_a) = sync_channel(1);
     let (sender_b, receiver_b) = sync_channel(1);
-    let (prefill_a, _r0a, _c0a) = review_settlement_queue(sender_a.clone(), &durable, 9500);
-    let (prefill_b, _r0b, _c0b) = review_settlement_queue(sender_b.clone(), &durable, 9600);
+    let owner_of_durable = service_owner(&durable, 16);
+    let (prefill_a, _r0a, _c0a) = review_settlement_queue(sender_a.clone(), &owner_of_durable, 9500);
+    let (prefill_b, _r0b, _c0b) = review_settlement_queue(sender_b.clone(), &owner_of_durable, 9600);
     assert!(prefill_a.is_settled() && prefill_b.is_settled());
-    let (mut a, _ra, _ca) = review_settlement_queue(sender_a.clone(), &durable, 9501);
-    let (mut b, _rb, _cb) = review_settlement_queue(sender_b.clone(), &durable, 9601);
+    let (mut a, _ra, _ca) = review_settlement_queue(sender_a.clone(), &owner_of_durable, 9501);
+    let (mut b, _rb, _cb) = review_settlement_queue(sender_b.clone(), &owner_of_durable, 9601);
     assert_eq!((a.owed(), b.owed()), (1, 1));
 
     // Both retained, with identical numeric client and surface identities.
@@ -4497,9 +4520,10 @@ fn review_settlement_two_pending_origins_reverse_retry_cannot_cross() {
 fn review_settlement_dropped_pending_handle_preserves_accepted_outcome() {
     let durable = crate::PrivateSettlementOwner::default();
     let (sender, receiver) = sync_channel(1);
-    let (prefill, _r0, _c0) = review_settlement_queue(sender.clone(), &durable, 9700);
+    let owner_of_durable = service_owner(&durable, 16);
+    let (prefill, _r0, _c0) = review_settlement_queue(sender.clone(), &owner_of_durable, 9700);
     assert!(prefill.is_settled());
-    let (pending, _r1, _c1) = review_settlement_queue(sender.clone(), &durable, 9701);
+    let (pending, _r1, _c1) = review_settlement_queue(sender.clone(), &owner_of_durable, 9701);
     assert_eq!(pending.owed(), 1);
     assert!(!pending.is_settled());
 
@@ -4537,13 +4561,14 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
 
     // The first settles straight away, filling the acknowledgement channel and
     // freeing its credit.
-    let (filled, _r0, _c0) = review_settlement_queue(sender.clone(), &durable, 9800);
+    let owner_of_durable = service_owner(&durable, 16);
+    let (filled, _r0, _c0) = review_settlement_queue(sender.clone(), &owner_of_durable, 9800);
     assert!(filled.is_settled());
     assert_eq!(durable.reserved().expect("a readable owner"), 0);
 
     // The second cannot settle, because the channel is now full, so it keeps
     // the only credit.
-    let (owed, _r1, _c1) = review_settlement_queue(sender.clone(), &durable, 9801);
+    let (owed, _r1, _c1) = review_settlement_queue(sender.clone(), &owner_of_durable, 9801);
     assert_eq!(owed.owed(), 1);
     assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
@@ -4552,6 +4577,7 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
     // work it was never told had been taken.
     let (authority, issuer, submit) = private_authority();
     let (delivery_sender, _delivery_receiver) = channel();
+    let service_keeper = service_owner(&durable, 16);
     let third = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4562,7 +4588,7 @@ fn settlement_storage_is_reserved_before_work_is_accepted() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     assert!(
@@ -4610,6 +4636,7 @@ fn a_failed_instance_hands_over_its_queue_not_a_tally() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
     let durable = crate::PrivateSettlementOwner::default();
+    let service_keeper = service_owner(&durable, 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4620,7 +4647,7 @@ fn a_failed_instance_hands_over_its_queue_not_a_tally() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
 
@@ -4651,6 +4678,7 @@ fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
     let client = XServerFrontendClientId(251);
     let (authority, issuer, submit) = private_authority();
     let (delivery_sender, _delivery_receiver) = channel();
+    let service_keeper = service_owner(&durable, 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4661,7 +4689,7 @@ fn review_owner_saturation_cannot_discard_two_already_accepted_controls() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -4752,6 +4780,7 @@ fn a_failed_instances_queue_can_still_be_answered() {
     let client = XServerFrontendClientId(251);
     let (authority, issuer, submit) = private_authority();
     let (delivery_sender, _delivery_receiver) = channel();
+    let service_keeper = service_owner(&durable, 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4762,7 +4791,7 @@ fn a_failed_instances_queue_can_still_be_answered() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -4827,6 +4856,7 @@ fn recovering_a_failed_queue_takes_the_completion_record_before_it_answers() {
     let client = XServerFrontendClientId(253);
     let (authority, issuer, submit) = private_authority();
     let (delivery_sender, _delivery_receiver) = channel();
+    let service_keeper = service_owner(&durable, 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4837,7 +4867,7 @@ fn recovering_a_failed_queue_takes_the_completion_record_before_it_answers() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -4911,6 +4941,7 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
 
+    let service_keeper = service_owner(&durable, 16);
     let first = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4921,7 +4952,7 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("the only failure slot: {refusal:?}"));
 
@@ -4931,6 +4962,7 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     // that existed and accepted work.
     let (second_delivery, _second_delivery_receiver) = channel();
     let (second_authority, second_issuer, second_submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
@@ -4942,7 +4974,7 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
             issuer: second_issuer,
             submit: second_submit,
         },
-        &durable,
+        &service_keeper,
     )
         .is_err(),
         "an instance without a failure slot must not be exposed"
@@ -4953,6 +4985,7 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
     drop(first);
     let (third_delivery, _third_delivery_receiver) = channel();
     let (third_authority, third_issuer, third_submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
@@ -4964,7 +4997,7 @@ fn a_failure_slot_is_reserved_before_an_instance_is_exposed() {
             issuer: third_issuer,
             submit: third_submit,
         },
-        &durable,
+        &service_keeper,
     )
         .is_ok(),
         "a slot returns when its instance closes without failing"
@@ -4984,6 +5017,7 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     // A is built, accepts nothing, and fails. Its slot is spent on a failure
     // that carries no credit, which is why failure slots are counted apart
     // from credits.
+    let service_keeper = service_owner(&durable, 16);
     let empty = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -4994,7 +5028,7 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("the only failure slot: {refusal:?}"));
     let admission = std::sync::Arc::clone(&empty.admission);
@@ -5012,6 +5046,7 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     // instance it never had.
     let (b_delivery, _b_delivery_receiver) = channel();
     let (b_authority, b_issuer, b_submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
@@ -5023,7 +5058,7 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
             issuer: b_issuer,
             submit: b_submit,
         },
-        &durable,
+        &service_keeper,
     )
         .is_err(),
         "B must not be exposed without room to hand over its queue"
@@ -5034,6 +5069,7 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
     assert_eq!(durable.failed_instances().expect("a readable owner"), 0);
     let (c_delivery, _c_delivery_receiver) = channel();
     let (c_authority, c_issuer, c_submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     assert!(
         crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
@@ -5045,7 +5081,7 @@ fn review_failed_empty_first_instance_cannot_evict_later_accepted_work() {
             issuer: c_issuer,
             submit: c_submit,
         },
-        &durable,
+        &service_keeper,
     )
         .is_ok(),
         "a resolved failure returns its slot"
@@ -5063,6 +5099,7 @@ fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
     let (authority, issuer, submit) = private_authority();
     let surface = SurfaceId::new(251, 1);
     let client = XServerFrontendClientId(251);
+    let service_keeper = service_owner(&durable, 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -5073,7 +5110,7 @@ fn review_credit_control_writer_pending_retains_credit_and_refuses_next() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner: {refusal:?}"));
     let (_registration, channels) = private.broker.registry.register_client(client).unwrap();
@@ -5155,6 +5192,7 @@ fn review_terminal_recorded_then_observed_reclaims_exactly_once() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -5165,7 +5203,7 @@ fn review_terminal_recorded_then_observed_reclaims_exactly_once() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -5232,6 +5270,7 @@ fn review_terminal_unreadable_recovery_cannot_prove_live_delivery_settled() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -5242,7 +5281,7 @@ fn review_terminal_unreadable_recovery_cannot_prove_live_delivery_settled() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -5287,6 +5326,7 @@ fn independent_terminal_kept_shutdown_handle_reclaims_late_completion_once() {
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -5297,7 +5337,7 @@ fn independent_terminal_kept_shutdown_handle_reclaims_late_completion_once() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -5354,6 +5394,7 @@ fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamat
     let (control_ack_sender, _control_ack_receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -5364,7 +5405,7 @@ fn independent_terminal_dropped_shutdown_handle_retains_late_completion_reclamat
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner: {refusal:?}"));
     let (_registration, _channels) = private.broker.registry.register_client(client).unwrap();
@@ -5669,7 +5710,7 @@ fn a_cancellation_edge_does_not_call_a_partly_applied_command_unexecuted() {
 #[cfg(unix)]
 fn private_with_client(
     acknowledgements: SyncSender<XAuthorityClientControlAck>,
-    durable: &crate::PrivateSettlementOwner,
+    keeper: &crate::PrivateServiceOwner,
     client: XServerFrontendClientId,
     surface: SurfaceId,
 ) -> (
@@ -5690,7 +5731,7 @@ fn private_with_client(
             issuer,
             submit,
         },
-        durable,
+        keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a failure slot: {refusal:?}"));
     let (registration, channels) = private.broker.registry.register_client(client).unwrap();
@@ -5736,8 +5777,9 @@ fn a_control_credit_is_released_exactly_once_when_its_outcome_is_recorded() {
     let surface = SurfaceId::new(252, 1);
     let (acknowledgements, ack_receiver) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, channels, _registration, _deliveries) =
-        private_with_client(acknowledgements.clone(), &durable, client, surface);
+        private_with_client(acknowledgements.clone(), &owner_of_durable, client, surface);
 
     private
         .control_producer()
@@ -5812,8 +5854,9 @@ fn a_refused_control_leaves_no_registration_to_answer_for_it() {
     let (acknowledgements, _ack_receiver) = sync_channel(8);
     // One credit for the whole owner, so the second submit is refused.
     let durable = crate::PrivateSettlementOwner::with_capacity(1);
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
 
     let producer = private.control_producer();
     producer
@@ -5917,8 +5960,9 @@ fn a_poisoned_registry_answers_for_nothing_and_frees_nothing() {
     let surface = SurfaceId::new(258, 1);
     let (acknowledgements, _ack_receiver) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
 
     private
         .control_producer()
@@ -5981,8 +6025,9 @@ fn a_command_queued_to_a_writer_is_never_cancelled_as_unexecuted() {
     let surface = SurfaceId::new(259, 1);
     let (acknowledgements, _ack_receiver) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
 
     private
         .control_producer()
@@ -6028,8 +6073,9 @@ fn a_rejected_control_leaves_no_record_behind_to_answer_again() {
     let surface = SurfaceId::new(260, 1);
     let (acknowledgements, ack_receiver) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
 
     // Accepted and never routed, so shutdown answers it from the queue.
     private
@@ -6145,8 +6191,9 @@ fn a_recorded_outcome_is_republished_once_the_channel_drains() {
     // One slot, filled, so the writer's acknowledgement cannot be published.
     let (acknowledgements, ack_receiver) = sync_channel(1);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, channels, _registration, _deliveries) =
-        private_with_client(acknowledgements.clone(), &durable, client, surface);
+        private_with_client(acknowledgements.clone(), &owner_of_durable, client, surface);
 
     private
         .control_producer()
@@ -6557,8 +6604,9 @@ fn a_writer_applies_a_control_and_its_credit_is_released_once() {
     let surface = SurfaceId::new(290, 1);
     let durable = crate::PrivateSettlementOwner::default();
     let (acknowledgements, acks) = sync_channel(2);
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, channels, _registration, _deliveries) =
-        private_with_client(acknowledgements.clone(), &durable, client, surface);
+        private_with_client(acknowledgements.clone(), &owner_of_durable, client, surface);
     let state = writer_runtime(surface);
 
     private
@@ -6606,8 +6654,9 @@ fn a_claimed_control_is_not_cancelled_out_from_under_its_writer() {
     let surface = SurfaceId::new(293, 1);
     let durable = crate::PrivateSettlementOwner::default();
     let (acknowledgements, acks) = sync_channel(4);
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, channels, _registration, _deliveries) =
-        private_with_client(acknowledgements.clone(), &durable, client, surface);
+        private_with_client(acknowledgements.clone(), &owner_of_durable, client, surface);
     let state = writer_runtime(surface);
     let windows = writer_windows(surface);
     let priority = Arc::new(AtomicUsize::new(0));
@@ -6783,14 +6832,15 @@ fn a_full_channel_retains_the_outcome_of_an_effect_a_writer_really_applied() {
     // One slot, filled by a real earlier instance's rejection rather than a
     // forged acknowledgement.
     let (acknowledgements, acks) = sync_channel(1);
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, channels, _registration, _deliveries) =
-        private_with_client(acknowledgements.clone(), &durable, client, surface);
+        private_with_client(acknowledgements.clone(), &owner_of_durable, client, surface);
     let state = writer_runtime(surface);
     let earlier_client = XServerFrontendClientId(292);
     let earlier_surface = SurfaceId::new(292, 1);
     let (earlier, _channels, _registration, _deliveries) = private_with_client(
         acknowledgements.clone(),
-        &durable,
+        &owner_of_durable,
         earlier_client,
         earlier_surface,
     );
@@ -6884,8 +6934,9 @@ fn transferring_an_unexecuted_command_moves_its_credit_rather_than_freeing_it() 
     let surface = SurfaceId::new(295, 1);
     let durable = crate::PrivateSettlementOwner::default();
     let (acknowledgements, acks) = sync_channel(8);
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, channels, registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
 
     // One operation reaches a writer and stays there.
     private
@@ -7115,8 +7166,9 @@ fn a_focus_control_that_cannot_claim_disturbs_no_one_elses_focus() {
     let claimant_surface = SurfaceId::new(313, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, held_channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, focused, focused_surface);
+        private_with_client(acknowledgements, &owner_of_durable, focused, focused_surface);
     let (claimant_registration, claimant_channels) = private
         .broker
         .registry
@@ -7195,8 +7247,9 @@ fn a_producer_is_told_which_refusal_it_met() {
     let surface = SurfaceId::new(314, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -7253,8 +7306,9 @@ fn a_reservation_is_its_producers_until_the_instance_accepts_it() {
     let surface = SurfaceId::new(316, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -7439,8 +7493,9 @@ fn a_real_submit_paused_before_acceptance_is_not_answered_by_a_close() {
     let surface = SurfaceId::new(319, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -7521,8 +7576,9 @@ fn a_producer_reserves_nothing_for_a_client_that_has_gone() {
     let surface = SurfaceId::new(320, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -7594,8 +7650,9 @@ fn a_publication_that_fails_leaves_the_reservation_with_its_producer() {
     let surface = SurfaceId::new(322, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -7644,8 +7701,9 @@ fn nothing_is_admitted_without_the_handover_it_was_accepted_for() {
     let surface = SurfaceId::new(323, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
 
     // A handover that cannot be prepared -- an unreadable registry, a record
     // already gone -- means the queue entry must not be published either.
@@ -7739,8 +7797,9 @@ fn a_registration_lost_while_its_writer_is_there_abandons_nothing() {
     let surface = SurfaceId::new(325, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, channels, registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -8094,8 +8153,9 @@ fn a_command_cannot_claim_execution_after_its_client_is_swept() {
     let surface = SurfaceId::new(332, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -8436,8 +8496,9 @@ fn a_registration_dropped_before_its_writer_spawns_cancels_the_expectation() {
     let surface = SurfaceId::new(337, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -8514,8 +8575,9 @@ fn a_parked_router_keeps_its_operation_answerable_while_its_writer_exits() {
     let surface = SurfaceId::new(339, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, channels, _registration, _deliveries) =
-        private_with_client(acknowledgements.clone(), &durable, client, surface);
+        private_with_client(acknowledgements.clone(), &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -8900,8 +8962,9 @@ fn routing_a_focus_change_counts_the_focus_out_it_queues_elsewhere() {
     let claimant_surface = SurfaceId::new(346, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, held_channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, focused, focused_surface);
+        private_with_client(acknowledgements, &owner_of_durable, focused, focused_surface);
     let (claimant_registration, claimant_channels) = private
         .broker
         .registry
@@ -9154,8 +9217,9 @@ fn publishing_an_outcome_does_not_free_a_credit_while_its_focus_out_is_queued() 
     let claimant_surface = SurfaceId::new(352, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, held_channels, _registration, _deliveries) =
-        private_with_client(acknowledgements.clone(), &durable, focused, focused_surface);
+        private_with_client(acknowledgements.clone(), &owner_of_durable, focused, focused_surface);
     let (claimant_registration, _claimant_channels) = private
         .broker
         .registry
@@ -9283,8 +9347,9 @@ fn a_governed_focus_out_that_cannot_be_counted_is_not_queued() {
     let claimant_surface = SurfaceId::new(355, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, held_channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, focused, focused_surface);
+        private_with_client(acknowledgements, &owner_of_durable, focused, focused_surface);
     let (claimant_registration, claimant_channels) = private
         .broker
         .registry
@@ -9495,8 +9560,9 @@ fn an_operation_that_finished_applying_reports_it_and_owes_nothing() {
     let surface = SurfaceId::new(358, 1);
     let (acknowledgements, acks) = sync_channel(1);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, channels, _registration, _deliveries) =
-        private_with_client(acknowledgements.clone(), &durable, client, surface);
+        private_with_client(acknowledgements.clone(), &owner_of_durable, client, surface);
     let state = writer_runtime(surface);
     let registry = private
         .broker
@@ -9571,8 +9637,9 @@ fn an_operation_that_reported_finishing_is_still_not_proved_to_agree() {
     let surface = SurfaceId::new(361, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -9626,8 +9693,9 @@ fn an_operation_whose_first_step_never_began_owes_nothing() {
     let surface = SurfaceId::new(364, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -9664,8 +9732,9 @@ fn an_operation_interrupted_inside_a_step_is_not_one_that_never_began() {
     let surface = SurfaceId::new(365, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -9707,8 +9776,9 @@ fn an_operation_caught_between_its_steps_keeps_its_obligation() {
     let surface = SurfaceId::new(359, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -9763,8 +9833,9 @@ fn a_kind_whose_steps_are_not_reported_is_retained_rather_than_discharged() {
     let surface = SurfaceId::new(360, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -9800,8 +9871,9 @@ fn an_unreadable_registry_settles_nothing_and_says_so() {
     let surface = SurfaceId::new(362, 1);
     let (acknowledgements, _acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -10013,7 +10085,7 @@ fn an_effect_whose_intent_cannot_be_recorded_does_not_happen() {
 /// around that state.
 #[cfg(unix)]
 fn unstarted_after_its_writer_went(
-    durable: &crate::PrivateSettlementOwner,
+    keeper: &crate::PrivateServiceOwner,
     acknowledgements: SyncSender<XAuthorityClientControlAck>,
     client: XServerFrontendClientId,
     surface: SurfaceId,
@@ -10025,7 +10097,7 @@ fn unstarted_after_its_writer_went(
     Receiver<XAuthorityClientInputDelivery>,
 ) {
     let (mut private, channels, registration, deliveries) =
-        private_with_client(acknowledgements, durable, client, surface);
+        private_with_client(acknowledgements, keeper, client, surface);
     let registry = private
         .broker
         .registry
@@ -10048,8 +10120,9 @@ fn the_never_started_proof_survives_shutdown_and_reaches_the_retained_handle() {
     let surface = SurfaceId::new(368, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, channels, _registration, _deliveries) =
-        unstarted_after_its_writer_went(&durable, acknowledgements, client, surface, 66001);
+        unstarted_after_its_writer_went(&owner_of_durable, acknowledgements, client, surface, 66001);
 
     // Shut down without reconciling first. The frontend is consumed, so
     // nothing that only it could do will ever be done.
@@ -10083,8 +10156,9 @@ fn the_never_started_proof_reaches_the_durable_owner_when_the_handle_goes() {
     let surface = SurfaceId::new(369, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        unstarted_after_its_writer_went(&durable, acknowledgements, client, surface, 67001);
+        unstarted_after_its_writer_went(&owner_of_durable, acknowledgements, client, surface, 67001);
 
     // The only handle goes before anything drives it, so the work is now the
     // durable owner's and the proof has to reach it there.
@@ -10107,8 +10181,9 @@ fn an_interrupted_operation_keeps_its_credit_through_the_same_transfers() {
     let surface = SurfaceId::new(370, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let registry = private
         .broker
         .registry
@@ -10159,14 +10234,16 @@ fn one_instances_reconciliation_does_not_reach_anothers_identical_identity() {
 
     // Two instances, each issuing its own registrations from its own counter,
     // so their local identities collide.
+    let owner_of_durable = service_owner(&durable, 16);
     let (mine, _channels, _registration, _deliveries) =
-        unstarted_after_its_writer_went(&durable, acknowledgements.clone(), client, surface, 69001);
+        unstarted_after_its_writer_went(&owner_of_durable, acknowledgements.clone(), client, surface, 69001);
     // The same client, surface and transaction as well as the same local
     // completion counter, so nothing but the origin distinguishes the two.
     let theirs_client = client;
     let theirs_surface = surface;
+    let owner_of_durable = service_owner(&durable, 16);
     let (mut theirs, _their_channels, _their_registration, _their_deliveries) =
-        private_with_client(acknowledgements, &durable, theirs_client, theirs_surface);
+        private_with_client(acknowledgements, &owner_of_durable, theirs_client, theirs_surface);
     let their_registry = theirs
         .broker
         .registry
@@ -10257,8 +10334,9 @@ fn a_poisoned_owner_still_takes_work_that_has_nowhere_else_to_go() {
     let surface = SurfaceId::new(374, 1);
     let (acknowledgements, acks) = sync_channel(8);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        unstarted_after_its_writer_went(&durable, acknowledgements, client, surface, 71001);
+        unstarted_after_its_writer_went(&owner_of_durable, acknowledgements, client, surface, 71001);
     assert_eq!(durable.reserved(), Some(1));
 
     let poisoner = durable.clone();
@@ -10368,8 +10446,9 @@ fn a_poisoned_owner_still_takes_pending_work_from_a_dropping_handle() {
         ))
         .expect("the empty slot");
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
         .submit(configure(client, surface, 72001))
@@ -10427,8 +10506,9 @@ fn a_sweep_that_unwinds_leaves_its_work_owned_and_returnable() {
         ))
         .expect("the empty slot");
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
         .submit(configure(client, surface, 73001))
@@ -10490,8 +10570,9 @@ fn restoring_reaches_through_the_poison_the_interruption_caused() {
         ))
         .expect("the empty slot");
     let durable = crate::PrivateSettlementOwner::with_capacities(2, 2);
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
         .submit(configure(client, surface, 75001))
@@ -10552,8 +10633,9 @@ fn an_unreadable_completion_registry_is_not_permission_to_answer() {
         ))
         .expect("the empty slot");
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let completion = private
         .broker
         .registry
@@ -10610,8 +10692,9 @@ fn an_attempt_interrupted_while_emitting_is_not_returned_as_retryable() {
         ))
         .expect("the empty slot");
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
         .submit(configure(client, surface, 77001))
@@ -10665,8 +10748,9 @@ fn an_obligation_a_live_record_still_answers_for_is_not_published_here() {
     let surface = SurfaceId::new(381, 1);
     let (acknowledgements, acks) = sync_channel(4);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let completion = private
         .broker
         .registry
@@ -10745,8 +10829,9 @@ fn a_full_channel_is_congestion_and_the_obligation_survives_it() {
         ))
         .expect("the empty slot");
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
         .submit(configure(client, surface, 79001))
@@ -10796,10 +10881,11 @@ fn a_token_from_another_registry_is_not_permission_and_is_not_taken() {
     let surface = SurfaceId::new(383, 1);
     let (acknowledgements, acks) = sync_channel(4);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (mine, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements.clone(), &durable, client, surface);
+        private_with_client(acknowledgements.clone(), &owner_of_durable, client, surface);
     let (theirs, _their_channels, _their_registration, _their_deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let their_completion = theirs
         .broker
         .registry
@@ -10850,8 +10936,9 @@ fn a_dying_handle_parks_an_attempt_that_never_returned() {
     let surface = SurfaceId::new(384, 1);
     let (acknowledgements, acks) = sync_channel(4);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
         .submit(configure(client, surface, 81001))
@@ -10891,8 +10978,9 @@ fn a_transfer_guard_pays_out_when_the_attempt_unwinds() {
     let surface = SurfaceId::new(385, 1);
     let (acknowledgements, acks) = sync_channel(4);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     let origin = private.broker.registry.clone();
     drop(private.shutdown());
     let _ = acks.try_recv();
@@ -10948,6 +11036,7 @@ fn an_emptied_failed_record_cannot_release_a_second_instances_slot() {
     let (delivery_sender, _delivery_receiver) = channel();
     // Kept alive for the whole test. Its failure slot was reserved before it
     // was exposed and it holds it for its life.
+    let service_keeper = service_owner(&durable, 16);
     let live = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -10958,11 +11047,12 @@ fn an_emptied_failed_record_cannot_release_a_second_instances_slot() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
 
     let (failing_authority, failing_issuer, failing_submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     let failing = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -10973,7 +11063,7 @@ fn an_emptied_failed_record_cannot_release_a_second_instances_slot() {
             issuer: failing_issuer,
             submit: failing_submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a second slot: {refusal:?}"));
     let failing_origin = failing.broker.registry.clone();
@@ -11029,6 +11119,7 @@ fn a_private_frontend_gates_the_authority_it_actually_owns() {
     let owned = authority
         .authority_identity(&issuer)
         .expect("an authority to name itself");
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -11039,7 +11130,7 @@ fn a_private_frontend_gates_the_authority_it_actually_owns() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
 
@@ -11141,7 +11232,7 @@ fn admit_role_client(
     registration
 }
 
-fn private_for_roles() -> crate::PrivateXServerFrontend {
+fn private_for_roles(keeper: &crate::PrivateServiceOwner) -> crate::PrivateXServerFrontend {
     let (sender, _receiver) = sync_channel(4);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
@@ -11155,7 +11246,7 @@ fn private_for_roles() -> crate::PrivateXServerFrontend {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"))
 }
@@ -11190,7 +11281,8 @@ fn role_connection(recipient: u64) -> sophia_input_authority::ConnectionIdentity
 
 #[test]
 fn one_producer_cannot_consume_another_producers_completion() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     // Admitted, because execution reads the live registration table rather
     // than trusting what the request remembers.
     let _first_admitted = admit_role_client(&private, XServerFrontendClientId(501));
@@ -11273,7 +11365,8 @@ fn a_controller_refuses_an_authority_paired_with_another_issuer() {
 
 #[test]
 fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let _admitted = admit_role_client(&private, XServerFrontendClientId(503));
     let _other_admitted = admit_role_client(&private, XServerFrontendClientId(504));
     let role = private
@@ -11319,7 +11412,8 @@ fn a_reservation_dropped_under_common_is_disposed_rather_than_deadlocking() {
 
 #[test]
 fn two_detached_producers_reserve_against_one_authority() {
-    let mut private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let mut private = private_for_roles(&service_keeper);
     let _first_admitted = admit_role_client(&private, XServerFrontendClientId(511));
     let _second_admitted = admit_role_client(&private, XServerFrontendClientId(512));
     let first = private
@@ -11389,6 +11483,7 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
     let (sender, _receiver) = sync_channel(64);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -11399,7 +11494,7 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
             issuer,
             submit,
         },
-        &crate::PrivateSettlementOwner::default(),
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
 
@@ -11491,7 +11586,8 @@ fn work_refused_by_the_order_takes_its_reservation_back() {
 
 #[test]
 fn a_deferred_disposal_records_and_pays_through_a_poisoned_debt_list() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let _admitted = admit_role_client(&private, XServerFrontendClientId(521));
     let _other_admitted = admit_role_client(&private, XServerFrontendClientId(522));
     let running = private
@@ -11535,7 +11631,8 @@ fn a_deferred_disposal_records_and_pays_through_a_poisoned_debt_list() {
 
 #[test]
 fn a_debt_already_recorded_is_paid_through_a_poisoned_list() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let _admitted = admit_role_client(&private, XServerFrontendClientId(523));
     let _other_admitted = admit_role_client(&private, XServerFrontendClientId(524));
     let running = private
@@ -11579,7 +11676,8 @@ fn a_debt_already_recorded_is_paid_through_a_poisoned_list() {
 
 #[test]
 fn recording_a_disposal_debt_does_not_allocate() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let _admitted = admit_role_client(&private, XServerFrontendClientId(525));
     let _other_admitted = admit_role_client(&private, XServerFrontendClientId(526));
     let reserved = private
@@ -11627,7 +11725,8 @@ fn recording_a_disposal_debt_does_not_allocate() {
 
 #[test]
 fn nothing_can_be_issued_for_a_client_the_boundary_never_admitted() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     // Registered with the frontend, deliberately not admitted to the boundary.
     // The old check would have found this client and called it current.
     let (_registration, _channels) = private
@@ -11663,7 +11762,8 @@ fn nothing_can_be_issued_for_a_client_the_boundary_never_admitted() {
 
 #[test]
 fn a_revoked_admission_stops_a_later_execution() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let _registration = admit_role_client(&private, XServerFrontendClientId(561));
     let role = private
         .reservation_role(XServerFrontendClientId(561), DeviceId::from_raw(1))
@@ -11755,7 +11855,8 @@ fn a_revoked_admission_stops_a_later_execution() {
 
 #[test]
 fn a_namespace_closes_every_binding_in_it_whatever_it_holds() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let namespace = NamespaceId::from_raw(571);
 
     // Three shapes in one namespace: one that never issued a grant, one whose
@@ -11819,7 +11920,8 @@ fn a_namespace_closes_every_binding_in_it_whatever_it_holds() {
 
 #[test]
 fn revoking_a_namespace_with_nothing_to_retire_still_closes_it() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let namespace = NamespaceId::from_raw(581);
     let client = XServerFrontendClientId(581);
     private
@@ -11847,7 +11949,8 @@ fn revoking_a_namespace_with_nothing_to_retire_still_closes_it() {
 
 #[test]
 fn a_boundary_nobody_can_read_is_not_a_client_nobody_admitted() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let _registration = admit_role_client(&private, XServerFrontendClientId(591));
     let role = private
         .reservation_role(XServerFrontendClientId(591), DeviceId::from_raw(1))
@@ -11876,7 +11979,8 @@ fn a_boundary_nobody_can_read_is_not_a_client_nobody_admitted() {
 
 #[test]
 fn a_binding_refuses_a_grant_it_could_not_account_for() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let client = XServerFrontendClientId(601);
     private
         .admission_participant()
@@ -11927,7 +12031,8 @@ fn a_binding_refuses_a_grant_it_could_not_account_for() {
 
 #[test]
 fn cleanup_left_unresolved_is_resumed_rather_than_revisited_by_revocation() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let namespace = NamespaceId::from_raw(611);
     let client = XServerFrontendClientId(611);
     private
@@ -12008,7 +12113,8 @@ fn cleanup_left_unresolved_is_resumed_rather_than_revisited_by_revocation() {
 
 #[test]
 fn keyboard_state_is_applied_on_this_thread_with_both_modifier_facts() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let mut keyboards = private.keyboards().expect("a keymap that compiles");
     let seat = SeatId::from_raw(1);
 
@@ -12067,8 +12173,10 @@ fn keyboard_state_is_applied_on_this_thread_with_both_modifier_facts() {
 
 #[test]
 fn keyboard_state_answers_for_one_instance_only() {
-    let first = private_for_roles();
-    let second = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let first = private_for_roles(&service_keeper);
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let second = private_for_roles(&service_keeper);
     let mut keyboards = first.keyboards().expect("a keymap that compiles");
 
     let first_identity = first.authority().identity().expect("an identity");
@@ -12104,7 +12212,8 @@ fn keyboard_state_answers_for_one_instance_only() {
 
 #[test]
 fn an_instance_hands_out_its_keyboard_history_once() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let mut keyboards = private.keyboards().expect("the instance's state");
     let seat = SeatId::from_raw(1);
     assert!(keyboards.prepare(seat));
@@ -12128,7 +12237,8 @@ fn an_instance_hands_out_its_keyboard_history_once() {
 
 #[test]
 fn an_unreadable_authority_is_not_reported_as_a_broken_keymap() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let poisoner = private.authority().clone();
     assert!(
         std::thread::spawn(move || {
@@ -12151,7 +12261,8 @@ fn an_unreadable_authority_is_not_reported_as_a_broken_keymap() {
 
 #[test]
 fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let _admitted = admit_role_client(&private, XServerFrontendClientId(541));
     let role = private
         .reservation_role(XServerFrontendClientId(541), DeviceId::from_raw(1))
@@ -12194,7 +12305,8 @@ fn losing_the_handle_for_executed_work_does_not_erase_its_outcome() {
 
 #[test]
 fn an_interrupted_execution_is_not_mistaken_for_one_that_never_ran() {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let _admitted = admit_role_client(&private, XServerFrontendClientId(551));
     let role = private
         .reservation_role(XServerFrontendClientId(551), DeviceId::from_raw(1))
@@ -12245,8 +12357,9 @@ fn a_sweep_leaves_its_inventory_the_buffer_it_reserved() {
         ))
         .expect("the empty slot");
     let durable = crate::PrivateSettlementOwner::with_capacity(8);
+    let owner_of_durable = service_owner(&durable, 16);
     let (private, _channels, _registration, _deliveries) =
-        private_with_client(acknowledgements, &durable, client, surface);
+        private_with_client(acknowledgements, &owner_of_durable, client, surface);
     private
         .control_producer()
         .submit(configure(client, surface, 74001))
@@ -12588,7 +12701,8 @@ fn a_key_press_refuses_rather_than_delivering_on_queued_focus() {
 
 #[test]
 fn another_instances_keyboard_history_cannot_drive_this_one() {
-    let other = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let other = private_for_roles(&service_keeper);
     let client = XServerFrontendClientId(721);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture { runner, surface, window, .. } = &mut fixture;
@@ -12631,8 +12745,12 @@ fn ordered_fixture(
     XServerFrontendClientRouteRegistration,
     crate::PrivateReservationRole,
     crate::PrivateKeyboards,
+    // The owner goes back to the caller: a fixture that kept it in its own
+    // frame would hand out a service whose keeper died as it returned.
+    crate::PrivateServiceOwner,
 ) {
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let registration = admit_role_client(&private, client);
     private
         .broker
@@ -12643,7 +12761,7 @@ fn ordered_fixture(
         .reservation_role(client, DeviceId::from_raw(1))
         .expect("a capability");
     let keyboards = private.keyboards().expect("this instance's state");
-    (private, registration, role, keyboards)
+    (private, registration, role, keyboards, service_keeper)
 }
 
 #[test]
@@ -14118,6 +14236,7 @@ fn custody_of_the_answer_is_taken_before_the_handover_not_after_it_succeeds() {
     // attempted, so the answer must already be held.
     let client = XServerFrontendClientId(2511);
     let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner,
         ingress,
         registration,
@@ -14420,6 +14539,7 @@ fn an_attempt_that_cannot_be_placed_is_given_back_and_keeps_its_capsule() {
     // so it has to own them rather than borrow them from a fixture that
     // outlives them.
     let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner,
         ingress,
         registration,
@@ -15500,7 +15620,8 @@ fn a_consumer_refusal_hands_back_the_custody_it_was_accepted_with() {
 fn unreserved_work_in_the_order_is_handed_back_rather_than_run() {
     let client = XServerFrontendClientId(821);
     let surface = SurfaceId::new(821, 1);
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let _registration = admit_role_client(&private, client);
     private
         .broker
@@ -15566,7 +15687,8 @@ fn unreserved_work_in_the_order_is_handed_back_rather_than_run() {
 fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
     let client = XServerFrontendClientId(831);
     let surface = SurfaceId::new(831, 1);
-    let mut private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let mut private = private_for_roles(&service_keeper);
     let _registration = admit_role_client(&private, client);
     private
         .broker
@@ -15713,7 +15835,8 @@ fn the_older_route_refuses_an_order_the_ordered_consumer_is_draining() {
 fn a_turn_that_fails_part_way_keeps_what_it_already_took() {
     let client = XServerFrontendClientId(851);
     let surface = SurfaceId::new(851, 1);
-    let private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let private = private_for_roles(&service_keeper);
     let _registration = admit_role_client(&private, client);
     private
         .broker
@@ -15928,7 +16051,8 @@ fn queuing_an_event_is_not_the_receipt_that_closes_a_release_debt() {
 fn a_refusal_is_retained_by_delivery_rather_than_discarded() {
     let client = XServerFrontendClientId(871);
     let surface = SurfaceId::new(871, 1);
-    let mut private = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let mut private = private_for_roles(&service_keeper);
     let _registration = admit_role_client(&private, client);
     private
         .broker
@@ -16152,6 +16276,7 @@ fn a_parked_operation_is_handed_to_the_durable_owner_at_shutdown() {
     let (sender, _receiver) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -16162,7 +16287,7 @@ fn a_parked_operation_is_handed_to_the_durable_owner_at_shutdown() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
     let (_registration, _channels) = private
@@ -16311,6 +16436,7 @@ fn a_parked_control_is_answered_exactly_once_after_shutdown() {
     let (sender, acks) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -16321,7 +16447,7 @@ fn a_parked_control_is_answered_exactly_once_after_shutdown() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
     let (_registration, _channels) = private
@@ -16507,6 +16633,7 @@ fn a_parked_control_whose_registry_is_unreadable_is_kept_whole() {
     let (sender, _acks) = sync_channel(8);
     let (delivery_sender, _delivery_receiver) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -16517,7 +16644,7 @@ fn a_parked_control_whose_registry_is_unreadable_is_kept_whole() {
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
     let (_registration, _channels) = private
@@ -16657,6 +16784,7 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
     // keeping alive is gone. References into a fixture that outlived them
     // would answer that question about the fixture instead.
     let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner,
         ingress,
         durable,
@@ -16751,8 +16879,10 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
     );
     assert_eq!(durable.terminal_inventories().expect("readable"), 1);
 
-    // And they go only when the obligations do.
+    // And they go only when the obligations do -- and when the owner that
+    // keeps the store and this connection's evidence goes with them.
     drop(durable);
+    drop(_keeper);
     assert!(projection.upgrade().is_none());
     assert!(common.upgrade().is_none());
 }
@@ -16761,7 +16891,7 @@ fn a_retained_hold_keeps_the_capabilities_needed_to_answer_it() {
 /// `durable`. Returns the authority that hold answers to, so a caller can ask
 /// which instance a retained inventory kept.
 fn instance_handing_over_a_retained_hold(
-    durable: &crate::PrivateSettlementOwner,
+    keeper: &crate::PrivateServiceOwner,
     client: XServerFrontendClientId,
     surface: SurfaceId,
     namespace: NamespaceId,
@@ -16781,7 +16911,7 @@ fn instance_handing_over_a_retained_hold(
             issuer,
             submit,
         },
-        durable,
+        keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
     let common = std::sync::Arc::clone(&private.authority().common);
@@ -16826,7 +16956,7 @@ fn instance_handing_over_a_retained_hold(
         .register_surface(client, namespace, surface, window)
         .expect("the surface to register");
     let mut runner = private
-        .prepare_runner(namespace)
+        .prepare_runner(namespace, keeper)
         .unwrap_or_else(|(cause, _)| panic!("runner refused: {cause:?}"));
     {
         let publication = runner
@@ -16894,10 +17024,11 @@ fn two_instances_owing_the_same_names_each_answer_through_their_own_origin() {
     let namespace = NamespaceId::from_raw(500);
     let seat = SeatId::from_raw(1);
     let durable = crate::PrivateSettlementOwner::default();
+    let owner_of_durable = service_owner(&durable, 16);
     // Different buttons, so a projection read through the wrong registry is
     // visible rather than indistinguishable.
     let first = instance_handing_over_a_retained_hold(
-        &durable,
+        &owner_of_durable,
         XServerFrontendClientId(981),
         surface,
         namespace,
@@ -16905,7 +17036,7 @@ fn two_instances_owing_the_same_names_each_answer_through_their_own_origin() {
         272,
     );
     let second = instance_handing_over_a_retained_hold(
-        &durable,
+        &owner_of_durable,
         XServerFrontendClientId(982),
         surface,
         namespace,
@@ -17052,6 +17183,8 @@ struct OrderedIngressFixture {
     channels: XServerFrontendClientRouteChannels,
     _acks: Receiver<XAuthorityClientControlAck>,
     deliveries: Receiver<XAuthorityClientInputDelivery>,
+    /// Kept for the same reason, and dropped after the instance that used it.
+    _keeper: crate::PrivateServiceOwner,
 }
 
 /// A sealed watchdog for a control that is not exercising the watch itself.
@@ -17073,6 +17206,7 @@ fn ordered_ingress_fixture(
     let (sender, acks) = sync_channel(8);
     let (delivery_sender, deliveries) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     let mut private = crate::PrivateXServerFrontend::new(
         crate::PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -17083,7 +17217,7 @@ fn ordered_ingress_fixture(
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"));
     let (registration, channels) = private
@@ -17110,6 +17244,7 @@ fn ordered_ingress_fixture(
         .expect("an ingress");
     let keyboards = private.keyboards().expect("this instance's state");
     OrderedIngressFixture {
+        _keeper: service_keeper,
         durable,
         private,
         ingress,
@@ -17341,6 +17476,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     let surface = SurfaceId::new(993, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(993);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, mut ingress, channels, deliveries, registration, durable,
         _acks,
         selections: _selections,
@@ -17479,6 +17615,7 @@ fn a_release_to_a_gone_recipient_still_lifts_the_button() {
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, mut ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -17608,6 +17745,7 @@ fn a_grabbed_press_binds_its_delivery_to_the_grab_owner_not_the_surface() {
     let namespace = NamespaceId::from_raw(client.raw());
     let delivery = XAuthorityInputDeliveryId::from_raw(995);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -17750,6 +17888,7 @@ fn an_unreadable_ledger_is_not_a_delivery_that_ended() {
     let surface = SurfaceId::new(997, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(997);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -17848,6 +17987,7 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -17942,6 +18082,7 @@ fn a_release_does_not_move_the_ledger_when_nobody_can_read_the_deliveries() {
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -18129,6 +18270,7 @@ fn an_ordered_turn_gives_its_claim_back() {
     let client = XServerFrontendClientId(1001);
     let delivery = XAuthorityInputDeliveryId::from_raw(1001);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner,
         ingress,
         channels,
@@ -18193,6 +18335,7 @@ fn a_release_whose_delivery_another_execution_holds_applies_nothing() {
     let seat = SeatId::from_raw(1);
     let release = XAuthorityInputDeliveryId::from_raw(10022);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -18268,6 +18411,7 @@ fn a_joining_press_binds_the_recipient_its_hold_reached_not_the_new_target() {
     let first = XAuthorityInputDeliveryId::from_raw(10031);
     let second = XAuthorityInputDeliveryId::from_raw(10032);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, registration, durable, selections: _, window: _,
         _acks,
         deliveries: _deliveries,
@@ -18631,6 +18775,7 @@ fn a_press_that_applied_cannot_be_revoked_afterwards() {
     let surface = SurfaceId::new(1203, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(1203);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, deliveries, registration, durable,
         _acks,
         selections: _selections,
@@ -18709,6 +18854,7 @@ fn a_retained_release_debt_is_named_the_way_the_ledger_names_it() {
     let namespace = NamespaceId::from_raw(client.raw());
     let seat = SeatId::from_raw(1);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -18823,6 +18969,7 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
     let client = XServerFrontendClientId(1301);
     let surface = SurfaceId::new(1301, 1);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -18949,6 +19096,7 @@ fn one_step_takes_one_item_and_marks_it_before_common() {
 fn a_blocked_order_takes_nothing_and_marks_nothing() {
     let client = XServerFrontendClientId(1302);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner,
         ingress: _,
         channels,
@@ -19005,6 +19153,7 @@ fn a_suppressed_revocation_still_cleans_up_the_connection_it_revoked() {
     let namespace = NamespaceId::from_raw(client.raw());
     let delivery = XAuthorityInputDeliveryId::from_raw(1303);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, deliveries, registration, durable, window,
         _acks,
         selections: _selections,
@@ -19166,6 +19315,7 @@ fn private_work_does_not_expire_because_it_waited() {
     let surface = SurfaceId::new(1401, 1);
     let delivery = XAuthorityInputDeliveryId::from_raw(1401);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, deliveries, registration, durable,
         _acks,
         selections: _selections,
@@ -19533,6 +19683,7 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
     let client = XServerFrontendClientId(1601);
     let surface = SurfaceId::new(1601, 1);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -20601,6 +20752,7 @@ fn a_recipient_taking_nothing_leaves_another_recipient_and_the_runner_working() 
     let client = XServerFrontendClientId(1903);
     let surface = SurfaceId::new(1903, 1);
         let PreparedOrderedFixture {
+        keeper: _keeper,
         mut runner, ingress, channels, registration, durable,
         _acks,
         deliveries: _deliveries,
@@ -20668,7 +20820,8 @@ fn a_request_carries_the_capability_it_was_reserved_under() {
     let client = XServerFrontendClientId(2001);
     let surface = SurfaceId::new(2001, 1);
     let window = XResourceId::new(0x202001, 1);
-    let (private, _registration, role, _keyboards) = ordered_fixture(client, surface, window);
+    let (private, _registration, role, _keyboards, _keeper) =
+        ordered_fixture(client, surface, window);
     let stamp = private.control_gate().stamp().expect("an open coordinator");
     let reserved = role.reserve(stamp, 1).expect("a reservation");
 
@@ -20718,6 +20871,13 @@ struct PreparedOrderedFixture {
     surface: SurfaceId,
     window: XResourceId,
     namespace: NamespaceId,
+    /// The owner that keeps this store and this connection's evidence.
+    ///
+    /// DECLARED LAST SO IT IS DROPPED LAST. Fields go in declaration order, so
+    /// the runner and its frontend end before this does -- which is the
+    /// ordering the service has in life: a service exits, and its keeper is
+    /// destroyed separately and afterwards.
+    keeper: crate::PrivateServiceOwner,
 }
 
 fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedFixture {
@@ -20728,6 +20888,7 @@ fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedF
     let (ack_sender, acks) = sync_channel(8);
     let (delivery_sender, deliveries) = channel();
     let (authority, issuer, submit) = private_authority();
+    let service_keeper = service_owner(&durable, 16);
     let private = PrivateXServerFrontend::new(
         PrivateFrontendParts {
             max_concurrent_clients: NonZeroUsize::new(16).unwrap(),
@@ -20738,7 +20899,7 @@ fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedF
             issuer,
             submit,
         },
-        &durable,
+        &service_keeper,
     )
     .unwrap_or_else(|(cause, _)| panic!("construction refused: {cause:?}"));
     let (registration, channels) = private
@@ -20790,7 +20951,7 @@ fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedF
         .expect("the surface registers");
 
     let mut runner = private
-        .prepare_runner(namespace)
+        .prepare_runner(namespace, &service_keeper)
         .unwrap_or_else(|(cause, _)| panic!("runner refused: {cause:?}"));
     let ingress = runner
         .ingress_for(client, DeviceId::from_raw(1))
@@ -20823,6 +20984,7 @@ fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedF
     }
 
     PreparedOrderedFixture {
+        keeper: service_keeper,
         runner,
         ingress,
         durable,
@@ -21465,7 +21627,8 @@ fn a_connections_ordered_output_is_retained_whole_when_its_registration_ends() {
     // the place reserved for it discarded accepted work nobody had answered
     // for.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8301);
     let (registration, channels) = private
         .broker
@@ -21564,7 +21727,8 @@ fn a_connections_own_reservation_keeps_the_store_it_must_dispose_into() {
     let (registration, cell, frames, wire_weak) = {
         let durable = PrivateSettlementOwner::default();
         capability = durable.settlement_ref();
-        let private = private_over(&durable, 2);
+        let service_keeper = service_owner(&durable, 2);
+        let private = private_over(&service_keeper, 2);
         let (registration, channels) = private
             .broker
             .registry
@@ -21666,18 +21830,25 @@ fn retain_into(
 /// through production construction -- the shape every control below starts
 /// from. The payload is in the home the reservation made from the moment the
 /// binding lands; nothing in these controls puts it there.
-fn converted_fixture(
-    durable: &PrivateSettlementOwner,
-    client: XServerFrontendClientId,
-    delivery: u64,
-) -> (
+/// A converted connection, its instance, and the owner that keeps both.
+type ConvertedFixture = (
     crate::PrivateXServerFrontend,
     XServerFrontendClientRouteRegistration,
     Arc<PrivateDeliveryCompletion>,
     Vec<Vec<u8>>,
     std::sync::Weak<X11WirePermission>,
-) {
-    let private = private_over(durable, 2);
+    crate::PrivateServiceOwner,
+);
+
+fn converted_fixture(
+    durable: &PrivateSettlementOwner,
+    client: XServerFrontendClientId,
+    delivery: u64,
+) -> ConvertedFixture {
+    // The owner is handed back rather than kept here: one that died as this
+    // returned would leave the caller holding a service with no keeper.
+    let service_keeper = service_owner(durable, 2);
+    let private = private_over(&service_keeper, 2);
     let (registration, channels) = private
         .broker
         .registry
@@ -21701,7 +21872,7 @@ fn converted_fixture(
     let frames = order_pass_frames(&capsule);
     gated_send(&sender, capsule).expect("an open endpoint");
     let wire_weak = Arc::downgrade(&wire);
-    (private, registration, cell, frames, wire_weak)
+    (private, registration, cell, frames, wire_weak, service_keeper)
 }
 
 /// The place a registration reserved, taken without ending the connection.
@@ -21802,7 +21973,7 @@ fn a_connections_output_lives_in_a_home_its_registration_does_not_own() {
     // without anything having been moved in between.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8381);
-    let (private, registration, cell, frames, wire_weak) =
+    let (private, registration, cell, frames, wire_weak, _private_keeper) =
         converted_fixture(&durable, client, 83810);
 
     // THE SAME HOME, not a copy: the registration's handle and the place's are
@@ -21874,7 +22045,7 @@ fn a_live_connections_home_is_not_driven_by_the_retained_drive() {
     // borrowing it. Standing is what separates them.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8382);
-    let (private, registration, cell, frames, wire_weak) =
+    let (private, registration, cell, frames, wire_weak, _private_keeper) =
         converted_fixture(&durable, client, 83820);
     assert_eq!(durable.continuations_reserved(), Some(1));
 
@@ -21945,7 +22116,7 @@ fn the_drive_does_not_hold_the_store_while_it_waits_on_one_connections_home() {
     // home either way, and what is asked is whether it waits holding the store.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8384);
-    let (private, registration, _cell, _frames, _wire) =
+    let (private, registration, _cell, _frames, _wire, _private_keeper) =
         converted_fixture(&durable, client, 83840);
     let home = Arc::clone(&registration.ordered_home);
     drop((registration, private));
@@ -21996,7 +22167,7 @@ fn a_running_connection_is_not_reported_as_retained_work() {
     // still using.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8385);
-    let (private, registration, cell, frames, _wire) =
+    let (private, registration, cell, frames, _wire, _private_keeper) =
         converted_fixture(&durable, client, 83850);
 
     assert!(
@@ -22054,7 +22225,8 @@ fn a_retained_home_refuses_a_binding_that_arrives_after_its_connection_ended() {
     // finishing what is in it. The offer comes back instead.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8383);
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let (registration, channels) = private
         .broker
         .registry
@@ -22128,7 +22300,7 @@ fn a_conversion_leaves_the_store_holding_the_place_its_connection_held() {
     let durable = PrivateSettlementOwner::default();
     let capability = durable.settlement_ref();
     let client = XServerFrontendClientId(8351);
-    let (private, registration, cell, frames, wire_weak) =
+    let (private, registration, cell, frames, wire_weak, _private_keeper) =
         converted_fixture(&durable, client, 83510);
     let place = registration
         .ordered_continuation
@@ -22188,10 +22360,11 @@ fn a_conversion_leaves_the_store_holding_the_place_its_connection_held() {
         &cell,
         &survived.finalizer().expect("carried").completion
     ));
-    drop((private, survived, cell, durable));
+    drop((private, survived, cell, durable, _private_keeper));
 
     // THE OUTER HOLDER IS THE CONVERSION'S CALLER, and nothing else: the
-    // connection, its instance and the caller's other binding are gone.
+    // connection, its instance, the service owner and the caller's other
+    // binding are gone.
     assert!(capability.owner().is_some());
     assert!(wire_weak.upgrade().is_some(), "with the work still in it");
 
@@ -22214,12 +22387,12 @@ fn a_store_owned_holder_left_in_its_store_does_not_keep_it_alive() {
     let durable = PrivateSettlementOwner::default();
     let capability = durable.settlement_ref();
     let client = XServerFrontendClientId(8352);
-    let (private, registration, cell, _frames, wire_weak) =
+    let (private, registration, cell, _frames, wire_weak, _private_keeper) =
         converted_fixture(&durable, client, 83520);
     let outer = hand_place_to_store(&durable, &registration);
     drop(registration);
     assert_eq!(durable.holders_taken(), Some(1), "and it is still in there");
-    drop((private, cell, durable));
+    drop((private, cell, durable, _private_keeper));
 
     assert!(
         capability.owner().is_some(),
@@ -22244,7 +22417,7 @@ fn a_refused_holder_preparation_leaves_the_lease_and_the_work_where_they_were() 
     // had nowhere to put it.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8353);
-    let (private, registration, cell, frames, _wire) =
+    let (private, registration, cell, frames, _wire, _private_keeper) =
         converted_fixture(&durable, client, 83530);
     let lease = lease_of(&registration);
     let place = lease.index;
@@ -22317,10 +22490,10 @@ fn a_conversion_with_a_foreign_destination_is_refused_without_touching_anything(
     let one = PrivateSettlementOwner::default();
     let two = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8360);
-    let (private_one, registration_one, cell, frames, _wire) =
+    let (private_one, registration_one, cell, frames, _wire, _private_one_keeper) =
         converted_fixture(&one, client, 83600);
     let other = XServerFrontendClientId(8361);
-    let (private_two, registration_two, _cell_two, _frames_two, _wire_two) =
+    let (private_two, registration_two, _cell_two, _frames_two, _wire_two, _private_two_keeper) =
         converted_fixture(&two, other, 83610);
     let lease = lease_of(&registration_one);
     let foreign_lease = lease_of(&registration_two);
@@ -22406,7 +22579,8 @@ fn a_promise_made_for_one_reservation_is_not_committed_against_its_successor() {
     // holder over a connection nobody prepared one for, made from a promise
     // that was for somebody else.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     // RESERVED WITHOUT BEING PUBLISHED, which is what relinquish_unexposed is
     // for: registering a client publishes its row, and a place given back
     // after that is not an unexposed one.
@@ -22426,7 +22600,7 @@ fn a_promise_made_for_one_reservation_is_not_committed_against_its_successor() {
 
     // THE SAME NUMBER, A DIFFERENT CONNECTION.
     let successor_id = XServerFrontendClientId(8372);
-    let (successor, successor_registration, cell, frames, wire_weak) =
+    let (successor, successor_registration, cell, frames, wire_weak, _successor_keeper) =
         converted_fixture(&durable, successor_id, 83720);
     let successor_lease = lease_of(&successor_registration);
     assert_eq!(successor_lease.index, index, "the place was handed on");
@@ -22480,7 +22654,8 @@ fn a_credit_over_a_place_whose_connection_never_bound_will_not_free_it() {
     // next connection takes it.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8369);
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let (registration, _channels) = private
         .broker
         .registry
@@ -22518,7 +22693,7 @@ fn a_credit_accounts_for_its_place_exactly_once() {
     // or discharge a duty the lease already discharged.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8354);
-    let (private, registration, _cell, _frames, _wire) =
+    let (private, registration, _cell, _frames, _wire, _private_keeper) =
         converted_fixture(&durable, client, 83540);
     let outer = hand_place_to_store(&durable, &registration);
     let named = durable.take_internal_holder(0).expect("a holder");
@@ -22545,7 +22720,7 @@ fn a_credit_refuses_to_free_a_place_that_still_owes_work() {
     // the precondition existed to prevent.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8355);
-    let (private, registration, cell, frames, wire_weak) =
+    let (private, registration, cell, frames, wire_weak, _private_keeper) =
         converted_fixture(&durable, client, 83550);
     let outer = hand_place_to_store(&durable, &registration);
     drop(registration);
@@ -22593,7 +22768,7 @@ fn a_credit_frees_a_place_whose_record_finished_owing_nothing() {
     // ended and its closure established.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8356);
-    let (private, registration, _cell, _frames, wire_weak) =
+    let (private, registration, _cell, _frames, wire_weak, _private_keeper) =
         converted_fixture(&durable, client, 83560);
     let outer = hand_place_to_store(&durable, &registration);
     drop(registration);
@@ -22653,7 +22828,7 @@ fn an_old_credit_cannot_reach_or_free_the_place_its_successor_took() {
     // settled, and the next connection to reserve one takes that same index.
     let durable = PrivateSettlementOwner::default();
     let first = XServerFrontendClientId(8364);
-    let (private, registration, _cell, _frames, _wire) =
+    let (private, registration, _cell, _frames, _wire, _private_keeper) =
         converted_fixture(&durable, first, 83640);
     let index = registration
         .ordered_continuation
@@ -22683,7 +22858,7 @@ fn an_old_credit_cannot_reach_or_free_the_place_its_successor_took() {
 
     // A SUCCESSOR TAKES THE SAME INDEX, through ordinary registration.
     let second = XServerFrontendClientId(8365);
-    let (successor, successor_registration, successor_cell, successor_frames, successor_wire) =
+    let (successor, successor_registration, successor_cell, successor_frames, successor_wire, _successor_keeper) =
         converted_fixture(&durable, second, 83650);
     let successor_place = successor_registration
         .ordered_continuation
@@ -22743,7 +22918,7 @@ fn a_returned_place_leaves_no_holder_behind_naming_it() {
     // a stale holder harmless; this keeps one from being left there at all.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8366);
-    let (private, registration, _cell, _frames, _wire) =
+    let (private, registration, _cell, _frames, _wire, _private_keeper) =
         converted_fixture(&durable, client, 83660);
     let outer = hand_place_to_store(&durable, &registration);
     drop(registration);
@@ -22788,12 +22963,12 @@ fn a_credits_operation_keeps_the_store_it_found_until_the_operation_ends() {
     let durable = PrivateSettlementOwner::default();
     let capability = durable.settlement_ref();
     let client = XServerFrontendClientId(8367);
-    let (private, registration, cell, frames, _wire) =
+    let (private, registration, cell, frames, _wire, _private_keeper) =
         converted_fixture(&durable, client, 83670);
     let outer = hand_place_to_store(&durable, &registration);
     drop(registration);
     let named = durable.take_internal_holder(0).expect("a holder");
-    drop((private, durable));
+    drop((private, durable, _private_keeper));
 
     let last = std::cell::Cell::new(Some(outer));
     let watch = capability.clone();
@@ -22847,7 +23022,8 @@ fn a_retained_continuation_outlives_its_instance_and_goes_with_its_store() {
     let capability = durable.settlement_ref();
     let client = XServerFrontendClientId(8321);
     let (cell, survived, wire_weak, output_weak, pending_weak) = {
-        let private = private_over(&durable, 2);
+        let service_keeper = service_owner(&durable, 2);
+        let private = private_over(&service_keeper, 2);
         let (registration, channels) = private
             .broker
             .registry
@@ -22947,7 +23123,8 @@ fn a_registration_that_ends_refuses_handovers_before_it_takes_its_queue_away() {
     // order will become observable when a driver receives from that queue, and
     // it is written fence-first for that reason rather than for this one.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8311);
     let (registration, channels) = private
         .broker
@@ -22991,7 +23168,8 @@ fn a_connection_whose_binding_refused_retains_its_queue_without_a_socket() {
     // deliver what is in it. That is the worse outcome, and it is recorded as
     // what it is.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8321);
     let (registration, channels) = private
         .broker
@@ -23047,7 +23225,8 @@ fn a_second_binding_is_refused_rather_than_replacing_the_first() {
     // discard them with nothing recording that they existed, so the second is
     // handed back to whoever offered it.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8331);
     let (registration, channels) = private
         .broker
@@ -23100,7 +23279,8 @@ fn a_receiver_only_connection_never_reports_an_ended_wire() {
     // because there was nothing to end with let the record read as settled and
     // handed the place back over a live wire with accepted work still on it.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8341);
     let (registration, channels) = private
         .broker
@@ -23171,7 +23351,8 @@ fn a_second_binding_hands_back_the_receiver_it_was_offered() {
     // offer it its own. The second binding SUCCEEDS and retention refuses it,
     // which is the arm that hands a bound transport's receiver back out.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let holder = XServerFrontendClientId(8351);
     let (registration, channels) = private
         .broker
@@ -23231,7 +23412,8 @@ fn a_bound_connection_keeps_its_queue_through_a_later_setup_refusal() {
     // place survived holding nothing. Here the binding has happened, and the
     // connection then ends the way a refusal ends it.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8361);
     let (registration, channels) = private
         .broker
@@ -23302,7 +23484,8 @@ fn a_retained_connection_carries_what_closing_it_established() {
     // this record, so the one moment the closure could be established is the
     // moment it was. Asking later is not available; carrying it is.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8391);
     let (registration, channels) = private
         .broker
@@ -23343,7 +23526,8 @@ fn a_connection_closed_over_a_panicking_handover_never_reads_as_settled() {
     // and sends nothing -- so it says nothing about recovering a half-made
     // handover, which is open work.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8401);
     let (registration, channels) = private
         .broker
@@ -23406,7 +23590,8 @@ fn a_connection_closed_cleanly_settles_once_its_work_is_gone() {
     // The same record with an established closure does finish, so the rule
     // above is the fence and not some other thing keeping the place.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8411);
     let (registration, channels) = private
         .broker
@@ -23502,7 +23687,8 @@ fn a_closure_someone_else_made_is_carried_as_already_established() {
     // teardown writes what ITS close established -- which is then
     // AlreadyEstablished, because the closure was already made.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8431);
     let (registration, channels) = private
         .broker
@@ -24207,7 +24393,8 @@ fn a_record_that_cannot_finish_says_which_things_are_stopping_it() {
     // the other, and collapsing them into "not finished" sends whoever reads
     // it looking for the wrong thing.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8551);
     let (registration, channels) = private
         .broker
@@ -24280,7 +24467,8 @@ fn a_reading_reports_an_ending_and_a_closure_that_were_established() {
     // The same reading over a connection that got everything it needed, so
     // the one above is not simply reporting sadness at everything.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8561);
     let (registration, channels) = private
         .broker
@@ -24327,7 +24515,8 @@ fn a_reading_reports_an_ending_and_a_closure_that_were_established() {
     // is unknown, so it is not given back -- but the place holds no record,
     // and there is no connection there to report. A reading that invented one
     // would put a row in front of an operator with nothing behind it.
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let never_bound = XServerFrontendClientId(8562);
     let (registration, channels) = private
         .broker
@@ -24967,7 +25156,8 @@ fn a_receiver_alone_is_not_something_to_promote() {
     // nothing to make an owner from. This says only that; the control below is
     // where a refusal INSIDE preparation is answered for.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8671);
     let (registration, channels) = private
         .broker
@@ -25020,7 +25210,8 @@ fn a_preparation_that_refuses_leaves_the_transport_and_its_queue_untouched() {
     // a capsule can be on it. Publication and attachment are different
     // boundaries and only the second is missing here.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8741);
     let (registration, channels) = private
         .broker
@@ -25464,7 +25655,8 @@ fn a_waiter_asleep_when_the_last_sender_goes_is_woken_by_it() {
     // would tell it is the receive it is not making. Nothing in the channel
     // wakes it, so the disappearance has to be published by whoever causes it.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8751);
     let (registration, channels) = private
         .broker
@@ -25521,7 +25713,8 @@ fn the_notice_is_published_only_after_the_last_sender_is_actually_gone() {
     // merely empty rather than finished, and sleeps again -- and the drop that
     // really ends it signals nobody.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8761);
     let (registration, channels) = private
         .broker
@@ -25576,7 +25769,8 @@ fn a_clone_going_is_not_the_senders_going() {
     // clones is dropped would wake an owner to find a queue that is perfectly
     // alive, over and over.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8771);
     let (registration, channels) = private
         .broker
@@ -25634,7 +25828,8 @@ fn a_refused_publication_does_not_disturb_the_live_connections_notice() {
     // minted inside the call that refuses and goes with it, so reading it
     // needs a hold on the mint itself, which this control does not have.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8781);
     let (first, channels) = private
         .broker
@@ -25755,7 +25950,8 @@ fn a_handover_interrupted_after_acceptance_still_publishes_its_notice() {
     // has no way to panic mid-producer without a hook, so the control arms the
     // real notice, sends through the real admission, and then unwinds.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8811);
     let (registration, channels) = private
         .broker
@@ -25843,7 +26039,8 @@ fn publishing_a_notice_needs_nothing_that_a_handover_holds() {
     // the one it would most obviously reach for is the gate it was armed
     // beside.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8831);
     let (registration, channels) = private
         .broker
@@ -31320,7 +31517,7 @@ fn a_stale_return_cannot_take_the_place_its_successor_holds() {
 /// owner or declares a bound: a fixture that did either would be certifying
 /// its own wiring rather than production's.
 fn private_over(
-    durable: &crate::PrivateSettlementOwner,
+    keeper: &crate::PrivateServiceOwner,
     clients: usize,
 ) -> crate::PrivateXServerFrontend {
     let (sender, _receiver) = sync_channel(4);
@@ -31336,7 +31533,7 @@ fn private_over(
             issuer,
             submit,
         },
-        durable,
+        keeper,
     )
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"))
 }
@@ -31353,7 +31550,8 @@ fn a_private_instance_takes_its_connection_bound_from_its_declared_client_limit(
         Some(0),
         "nothing is reserved before an instance exists"
     );
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
 
     let first = XServerFrontendClientId(8051);
     let one = private
@@ -31416,9 +31614,10 @@ fn a_registry_does_not_keep_the_store_it_takes_places_from_alive() {
     // rather than as a leak.
     let durable = PrivateSettlementOwner::default();
     let watch = Arc::downgrade(&durable.inner);
+    let owner_of_durable = service_owner(&durable, 16);
     let client = XServerFrontendClientId(8061);
     let common = instance_handing_over_a_retained_hold(
-        &durable,
+        &owner_of_durable,
         client,
         SurfaceId::new(0x8061, 1),
         NamespaceId::from_raw(client.raw()),
@@ -31433,10 +31632,13 @@ fn a_registry_does_not_keep_the_store_it_takes_places_from_alive() {
     assert!(watch.upgrade().is_some(), "the store is alive and in use");
     let answered_to = Arc::downgrade(&common);
 
-    // Everything that legitimately owns the store goes here. The registry
-    // inside the retained inventory does not own it, so it holds nothing back.
+    // Everything that legitimately owns the store goes here -- the service
+    // owner included, which keeps the store and the evidence it is about. The
+    // registry inside the retained inventory does not own it, so it holds
+    // nothing back.
     drop(common);
     drop(durable);
+    drop(owner_of_durable);
     assert!(
         watch.upgrade().is_none(),
         "a registry that owned its store back would keep the store, the \
@@ -31456,7 +31658,8 @@ fn a_registry_whose_store_is_gone_refuses_rather_than_exposing_a_connection() {
     // reserving was for.
     let registry = {
         let durable = PrivateSettlementOwner::default();
-        let private = private_over(&durable, 4);
+        let service_keeper = service_owner(&durable, 4);
+        let private = private_over(&service_keeper, 4);
         private.broker.registry.clone()
     };
     let client = XServerFrontendClientId(8101);
@@ -31489,7 +31692,8 @@ fn a_later_instance_does_not_move_the_bound_its_places_were_taken_against() {
     // held against the first, and moving the number under them would hand out
     // places a departed instance already accounted for.
     let durable = PrivateSettlementOwner::default();
-    let first_instance = private_over(&durable, 1);
+    let service_keeper = service_owner(&durable, 1);
+    let first_instance = private_over(&service_keeper, 1);
     let client = XServerFrontendClientId(8071);
     let registration = first_instance
         .broker
@@ -31505,7 +31709,8 @@ fn a_later_instance_does_not_move_the_bound_its_places_were_taken_against() {
         "the place is retained across the instance that took it"
     );
 
-    let second_instance = private_over(&durable, 8);
+    let service_keeper = service_owner(&durable, 8);
+    let second_instance = private_over(&service_keeper, 8);
     let later = XServerFrontendClientId(8072);
     let refused = second_instance
         .broker
@@ -31530,7 +31735,8 @@ fn a_refusal_before_publication_gives_its_place_back() {
     // existed -- and the store cannot tell later, because there is nothing to
     // ask.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8081);
     let registration = private
         .broker
@@ -31593,7 +31799,8 @@ fn a_registration_never_takes_the_settlement_store_beneath_the_client_table() {
     // gives the assertion its teeth, and a labelled hook at the reservation
     // boundary is what would establish arrival.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 4);
+    let service_keeper = service_owner(&durable, 4);
+    let private = private_over(&service_keeper, 4);
     let clients = private.broker.registry.clients.clone();
     let registry = private.broker.registry.clone();
     let client = XServerFrontendClientId(8091);
@@ -32533,14 +32740,23 @@ fn a_body_refuses_a_home_or_an_owner_it_may_not_serve() {
 /// THE ORDER IS THE SUBJECT. Every reaping below is handed a home this already
 /// owns, in a scope that outlives the operation -- which is what makes losing
 /// that operation cost the operation and not the result.
-fn custody_for(f: &PrivateWorkerFixture) -> PrivateEvidenceCustody {
-    let store = f.fixture.durable.clone();
-    let identity = f
+/// The custody this connection's REGISTRATION reserved, pinned.
+///
+/// NOT A FRESH ONE BESIDE IT. The home a control publishes into has to be the
+/// one the service owner set aside before this connection's row went in --
+/// otherwise every control would be exercising a custody no registration ever
+/// knew about, and the reservation this component exists for would be
+/// untested.
+fn custody_for(f: &PrivateWorkerFixture) -> PrivateCustodyPin {
+    let PrivateCustodyReach::Reached(pin) = f
         .fixture
         .registration
-        .maintenance_identity()
-        .expect("a place, so a name");
-    PrivateEvidenceCustody::prepared_for(&store, identity)
+        .registered_custody()
+        .expect("a private registration reserves a custody")
+    else {
+        panic!("its own service owner still keeps it")
+    };
+    pin
 }
 
 /// A started worker, through the real startup transaction, whose handle a
@@ -32816,10 +33032,11 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
     let f = worker_fixture(XServerFrontendClientId(8415));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
 
-    // ONE CUSTODY EACH, because these are four different sources. A
-    // publication home is one connection's, and its one right to publish goes
-    // to the attempt that consumes its handle; sharing a home across sources
-    // would mean the first join spent the right the others needed.
+    // ONE CONNECTION, ONE PUBLICATION HOME, AND THESE ARE ALL ITS VIEWS. The
+    // custody is the one its registration reserved, so the right to publish
+    // into it is spent by whichever attempt consumes a handle -- which is why
+    // every attempt that consumes NOTHING comes first, and the one that joins
+    // comes last.
 
     // Never started.
     let unstarted = Mutex::new(PrivateWorkerSlot::empty());
@@ -32833,26 +33050,6 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
         PrivateReapingPhase::NotBegun,
         "the intent is withdrawn: this attempt consumed nothing"
     );
-    // AND A LATER START IS STILL POSSIBLE, because nothing here stopped one.
-    assert_eq!(
-        start_connection_worker(&unstarted, &f.stop, &f.wake, || {
-            std::thread::Builder::new().spawn(|| {})
-        }),
-        PrivateStartupOutcome::Started
-    );
-    // AND THE SAME RECORD MAY ASK AGAIN, against the same bound slot. An
-    // attempt that consumed nothing is not an attempt: holding its claim would
-    // leave a record that could never reach the handle its connection went on
-    // to have.
-    assert_eq!(first.reap().reaped, PrivateReaped::Joined);
-    assert!(matches!(first.result(), Some(PrivateJoinResult::Returned)));
-    // AND THAT SLOT IS NOT STARTABLE AGAIN.
-    assert_eq!(
-        start_connection_worker(&unstarted, &f.stop, &f.wake, || {
-            std::thread::Builder::new().spawn(|| {})
-        }),
-        PrivateStartupOutcome::NoLongerStartable
-    );
 
     // Handed elsewhere, from a connection of its own.
     let other = Mutex::new(PrivateWorkerSlot::empty());
@@ -32865,8 +33062,7 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
     let handle = hand_worker_to_joiner(&other)
         .handle
         .expect("the started worker's handle");
-    let other_custody = custody_for(&f);
-    let second = PrivateReapingRecord::bound_to(&other, &exit, &other_custody);
+    let second = PrivateReapingRecord::bound_to(&other, &exit, &custody);
     let elsewhere = second.reap();
     assert_eq!(elsewhere.reaped, PrivateReaped::HandedElsewhere);
     assert_eq!(second.phase(), PrivateReapingPhase::NotBegun);
@@ -32882,8 +33078,7 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
         departing: false,
         life: PrivateWorkerLife::Running,
     });
-    let torn_custody = custody_for(&f);
-    let third = PrivateReapingRecord::bound_to(&torn, &exit, &torn_custody);
+    let third = PrivateReapingRecord::bound_to(&torn, &exit, &custody);
     let missing = third.reap();
     assert_eq!(
         missing.reaped,
@@ -32892,6 +33087,28 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
          would be wrong"
     );
     assert_eq!(third.phase(), PrivateReapingPhase::NotBegun);
+
+    // AND AFTER ALL OF THEM, A LATER START IS STILL POSSIBLE, because none of
+    // the above stopped one.
+    assert_eq!(
+        start_connection_worker(&unstarted, &f.stop, &f.wake, || {
+            std::thread::Builder::new().spawn(|| {})
+        }),
+        PrivateStartupOutcome::Started
+    );
+    // AND THE FIRST RECORD MAY ASK AGAIN, against the same bound slot. An
+    // attempt that consumed nothing is not an attempt: holding its claim would
+    // leave a record that could never reach the handle its connection went on
+    // to have, and its home's right to publish was never spent.
+    assert_eq!(first.reap().reaped, PrivateReaped::Joined);
+    assert!(matches!(first.result(), Some(PrivateJoinResult::Returned)));
+    // AND THAT SLOT IS NOT STARTABLE AGAIN.
+    assert_eq!(
+        start_connection_worker(&unstarted, &f.stop, &f.wake, || {
+            std::thread::Builder::new().spawn(|| {})
+        }),
+        PrivateStartupOutcome::NoLongerStartable
+    );
     drop(f.fixture);
 }
 
@@ -33427,7 +33644,8 @@ fn a_connections_obligation_is_named_and_housed_before_it_is_published() {
     // that ordering leaves: a registration that exists at all already has
     // both, on one credit.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8441);
     let (registration, _channels) = private
         .broker
@@ -33471,7 +33689,8 @@ fn every_connection_at_the_bound_already_has_its_destination() {
     // maintenance destination, so a store at its bound has a destination for
     // every connection it admitted and the conversion needs no extra credit.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let held: Vec<_> = [8442u64, 8443]
         .iter()
         .map(|raw| {
@@ -33521,7 +33740,8 @@ fn a_preparation_that_is_never_committed_leaves_the_destination_reserved() {
     // set aside for is still this connection's; handing it to somebody else
     // would leave a published connection with nowhere for its obligation.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8444);
     let (registration, _channels) = private
         .broker
@@ -33555,7 +33775,8 @@ fn an_unexposed_refusal_leaves_no_destination_behind() {
     // goes the same way, or the next connection to reserve would find one of
     // its entries already spoken for by a connection that never existed.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let lease = durable
         .reserve_ordered_continuation()
         .expect("a declared bound leaves a place");
@@ -33580,7 +33801,7 @@ fn a_name_outlives_its_connection_and_its_conversion() {
     // responsibility.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8445);
-    let (private, registration, cell, frames, _wire) =
+    let (private, registration, cell, frames, _wire, _private_keeper) =
         converted_fixture(&durable, client, 84450);
     let identity = registration
         .maintenance_identity()
@@ -33623,7 +33844,7 @@ fn a_name_stops_resolving_when_its_place_goes_back() {
     // would be acting on a place that is free.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8446);
-    let (private, registration, _cell, _frames, _wire) =
+    let (private, registration, _cell, _frames, _wire, _private_keeper) =
         converted_fixture(&durable, client, 84460);
     let identity = registration
         .maintenance_identity()
@@ -33676,7 +33897,7 @@ fn a_name_stops_resolving_when_its_place_goes_back() {
 
     // A SUCCESSOR TAKES THE SAME NUMBER AND GETS A DIFFERENT NAME.
     let second = XServerFrontendClientId(8447);
-    let (successor, successor_registration, successor_cell, successor_frames, _successor_wire) =
+    let (successor, successor_registration, successor_cell, successor_frames, _successor_wire, _successor_keeper) =
         converted_fixture(&durable, second, 84470);
     let successor_identity = successor_registration
         .maintenance_identity()
@@ -33721,8 +33942,10 @@ fn a_name_from_another_store_resolves_to_nothing_here() {
     // different stores, and neither is the other's.
     let one = PrivateSettlementOwner::default();
     let two = PrivateSettlementOwner::default();
-    let first = private_over(&one, 2);
-    let second = private_over(&two, 2);
+    let service_keeper = service_owner(&one, 2);
+    let first = private_over(&service_keeper, 2);
+    let service_keeper = service_owner(&two, 2);
+    let second = private_over(&service_keeper, 2);
     let a = XServerFrontendClientId(8448);
     let b = XServerFrontendClientId(8449);
     let (one_registration, _one_channels) = first
@@ -33774,7 +33997,8 @@ fn a_lookup_keeps_the_store_it_found_until_its_act_is_over() {
     let durable = PrivateSettlementOwner::default();
     let capability = durable.settlement_ref();
     let client = XServerFrontendClientId(8451);
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let (registration, _channels) = private
         .broker
         .registry
@@ -33782,9 +34006,11 @@ fn a_lookup_keeps_the_store_it_found_until_its_act_is_over() {
         .expect("a place and a row");
     let identity = registration.maintenance_identity().expect("a name");
     let home = Arc::clone(&registration.ordered_home);
-    // Every holder of the store that is not the lookup's own goes in here.
+    // Every holder of the store that is not the lookup's own goes in here --
+    // the service owner with them, because keeping the store is exactly what
+    // an owner is for.
     drop(registration);
-    let last = std::cell::Cell::new(Some((private, durable)));
+    let last = std::cell::Cell::new(Some((private, durable, service_keeper)));
     let watch = capability.clone();
 
     let reached = identity
@@ -33825,7 +34051,8 @@ fn a_name_whose_store_has_gone_says_so_and_holds_nothing_up() {
         let durable = PrivateSettlementOwner::default();
         capability = durable.settlement_ref();
         let client = XServerFrontendClientId(8450);
-        let private = private_over(&durable, 2);
+        let service_keeper = service_owner(&durable, 2);
+        let private = private_over(&service_keeper, 2);
         let (registration, _channels) = private
             .broker
             .registry
@@ -33875,7 +34102,8 @@ fn a_stale_preparations_drop_leaves_its_successors_promise_alone() {
     // Both generations use the same number deliberately; what separates them
     // is which home occupies the place.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let lease = durable
         .reserve_ordered_continuation()
         .expect("a declared bound leaves a place");
@@ -33927,7 +34155,7 @@ fn a_stale_lease_cannot_prepare_its_successors_destination() {
     // leaves the successor unable to prepare its own.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8453);
-    let (private, registration, _cell, _frames, _wire) =
+    let (private, registration, _cell, _frames, _wire, _private_keeper) =
         converted_fixture(&durable, client, 84530);
     let stale_lease = lease_of(&registration);
     let place = stale_lease.index;
@@ -33942,7 +34170,7 @@ fn a_stale_lease_cannot_prepare_its_successors_destination() {
 
     // A REAL SUCCESSOR TAKES THE NUMBER.
     let second = XServerFrontendClientId(8454);
-    let (successor, successor_registration, successor_cell, successor_frames, _wire) =
+    let (successor, successor_registration, successor_cell, successor_frames, _wire, _successor_keeper) =
         converted_fixture(&durable, second, 84540);
     let successor_lease = lease_of(&successor_registration);
     assert_eq!(successor_lease.index, place);
@@ -34008,7 +34236,7 @@ fn a_conversion_whose_place_moved_on_disturbs_nothing() {
     // part a caller depends on.
     let durable = PrivateSettlementOwner::default();
     let client = XServerFrontendClientId(8455);
-    let (private, registration, _cell, _frames, _wire) =
+    let (private, registration, _cell, _frames, _wire, _private_keeper) =
         converted_fixture(&durable, client, 84550);
     let lease = lease_of(&registration);
     let place = lease.index;
@@ -34024,7 +34252,7 @@ fn a_conversion_whose_place_moved_on_disturbs_nothing() {
 
     // A REAL SUCCESSOR AT THE SAME NUMBER, with its own destination reserved.
     let second = XServerFrontendClientId(8456);
-    let (successor, successor_registration, successor_cell, successor_frames, _wire) =
+    let (successor, successor_registration, successor_cell, successor_frames, _wire, _successor_keeper) =
         converted_fixture(&durable, second, 84560);
     assert_eq!(
         maintenance_destination(&durable, place),
@@ -34070,7 +34298,8 @@ fn a_publication_that_is_refused_leaves_exactly_the_first_connections_reservatio
     // destination were reserved -- and the existing unexposed release is what
     // gives both back. The first connection keeps exactly what it had.
     let durable = PrivateSettlementOwner::default();
-    let private = private_over(&durable, 2);
+    let service_keeper = service_owner(&durable, 2);
+    let private = private_over(&service_keeper, 2);
     let client = XServerFrontendClientId(8457);
     let (first, _channels) = private
         .broker
@@ -34315,10 +34544,24 @@ fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
     );
     drop(evidence);
 
-    // AND ONLY THE CUSTODIAN LETTING GO ENDS IT. The obligation then says the
-    // evidence has gone, which is not a disposition and not a fresh fact about
-    // the join.
+    // A READER LETTING GO IS NOT THE END OF IT. This pin was one handle among
+    // others; what keeps this home is the service owner's inventory, and it is
+    // still there.
     drop(custody);
+    assert!(
+        durable
+            .committed_obligation(place)
+            .expect("the obligation is still here")
+            .join()
+            .is_some(),
+        "an operation's handle going is not the keeper letting go"
+    );
+
+    // AND ONLY THE ULTIMATE OWNER LETTING GO ENDS IT. The fixture holds the
+    // service owner and drops it last, after the instance it kept for. The
+    // obligation then says the evidence has gone -- which is not a
+    // disposition and not a fresh fact about the join.
+    drop(c.g.f.fixture);
     assert!(
         durable
             .committed_obligation(place)
@@ -34327,7 +34570,6 @@ fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
             .is_none(),
         "the store named it and did not own it"
     );
-    drop(c.g.f.fixture);
 }
 
 #[test]
@@ -34619,7 +34861,7 @@ fn a_commitment_whose_place_moved_on_leaves_the_successor_alone() {
 
     // A REAL SUCCESSOR TAKES THE NUMBER.
     let second = XServerFrontendClientId(8471);
-    let (successor, successor_registration, successor_cell, successor_frames, _wire) =
+    let (successor, successor_registration, successor_cell, successor_frames, _wire, _successor_keeper) =
         converted_fixture(&durable, second, 84710);
     let abandoned_before = durable.continuations_abandoned();
     // THE SUCCESSOR PREPARES ITS OWN DESTINATION FIRST, which is what
@@ -34686,7 +34928,8 @@ fn a_commitment_with_a_destination_from_elsewhere_is_refused() {
 
     // Another store, with a connection and a destination of its own.
     let elsewhere = PrivateSettlementOwner::default();
-    let other_private = private_over(&elsewhere, 2);
+    let service_keeper = service_owner(&elsewhere, 2);
+    let other_private = private_over(&service_keeper, 2);
     let other = XServerFrontendClientId(8473);
     let (other_registration, _other_channels) = other_private
         .broker
@@ -35182,4 +35425,555 @@ fn a_payload_holding_the_store_is_a_chain_from_its_custodian() {
         capability.owner().is_none(),
         "a payload holding the store is a chain from outside, not a ring"
     );
+}
+
+/// An owner established over this store for this many connections.
+///
+/// THE OWNER IS THE CONTROL'S OWN LOCAL, declared before whatever it is about
+/// to build and dropped after it. That is the shape the construction path
+/// requires, and a control that let it go first would be testing a service
+/// whose keeper had already gone.
+fn service_owner(
+    store: &crate::PrivateSettlementOwner,
+    connections: usize,
+) -> crate::PrivateServiceOwner {
+    crate::PrivateServiceOwner::established_over(
+        store,
+        NonZeroUsize::new(connections).expect("a control declares a real bound"),
+    )
+    .expect("a readable store declares its bound")
+}
+
+#[test]
+fn a_connections_evidence_keeper_is_reserved_before_its_row_is_published() {
+    // THE INTERVAL, WITNESSED BY A REFUSAL RATHER THAN BY HINDSIGHT. Seeing a
+    // custody and a row both present afterwards says nothing about which came
+    // first. What says it is a publication that FAILS: the duplicate below is
+    // refused while holding the client table, and the attempt still has an
+    // evidence reservation of its own to give back -- which it could only have
+    // if that reservation was made before publication was attempted.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(8501);
+    let (first, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper and a row");
+    assert_eq!(keeper.custodies_kept(), 1);
+    assert_eq!(keeper.custody_capacity_remaining(), 3);
+    let PrivateCustodyReach::Reached(kept) =
+        first.registered_custody().expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let home = Arc::clone(kept.join());
+
+    // THE SAME CLIENT AGAIN. Registration prepares a place and a custody, then
+    // publication refuses on the client table.
+    let refused = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)));
+    assert!(matches!(
+        refused,
+        Err(XServerFrontendRouteError::DuplicateClient { client: same }) if same == client
+    ));
+
+    // AND ONLY THE UNPUBLISHED ATTEMPT'S RESERVATION WENT BACK. The live
+    // sibling it collided with keeps its custody, its home and its place.
+    assert_eq!(
+        keeper.custodies_kept(),
+        1,
+        "the refused attempt gave back exactly its own"
+    );
+    assert_eq!(keeper.custody_capacity_remaining(), 3);
+    let PrivateCustodyReach::Reached(again) =
+        first.registered_custody().expect("its own custody")
+    else {
+        panic!("its owner still keeps it")
+    };
+    assert!(
+        Arc::ptr_eq(again.join(), &home),
+        "the live connection's home is the one it always had"
+    );
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    drop((kept, again, first, private, keeper));
+}
+
+#[test]
+fn asking_a_registration_for_its_custody_twice_names_one_home() {
+    // A CAPABILITY, NOT A FACTORY. A registration that could make a
+    // publication home on demand would be deciding its connection's keeper
+    // after that connection was already exposed, and two operations could be
+    // publishing into two different homes for one join.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 2);
+    let private = private_over(&keeper, 2);
+    let client = XServerFrontendClientId(8502);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper and a row");
+    let mut homes = Vec::new();
+    for _ in 0..3 {
+        let PrivateCustodyReach::Reached(pin) =
+            registration.registered_custody().expect("its own custody")
+        else {
+            panic!("its owner keeps it")
+        };
+        homes.push(Arc::clone(pin.join()));
+    }
+    assert!(Arc::ptr_eq(&homes[0], &homes[1]) && Arc::ptr_eq(&homes[1], &homes[2]));
+    assert_eq!(
+        keeper.custodies_kept(),
+        1,
+        "asking is not reserving: three asks made no second entry"
+    );
+    // AND IT IS ABOUT THIS CONNECTION'S PLACE.
+    let PrivateCustodyReach::Reached(pin) =
+        registration.registered_custody().expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    assert!(
+        pin.identity()
+            .same_as(&registration.maintenance_identity().expect("a name")),
+        "the custody names the place this registration holds"
+    );
+    drop((pin, registration, private, keeper));
+}
+
+#[test]
+fn one_connections_keeper_is_not_another_connections() {
+    // BY NAME AND BY HOME, not by number. Two live connections of one service
+    // have two entries, and neither name reaches the other's evidence.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let mut kept = Vec::new();
+    for raw in [8503, 8504] {
+        let client = XServerFrontendClientId(raw);
+        let (registration, _channels) = private
+            .broker
+            .registry
+            .register_client_with_admission(client, Some(admitted(client)))
+            .expect("a place, a keeper and a row");
+        kept.push(registration);
+    }
+    assert_eq!(keeper.custodies_kept(), 2);
+    let pins: Vec<_> = kept
+        .iter()
+        .map(|registration| {
+            let PrivateCustodyReach::Reached(pin) =
+                registration.registered_custody().expect("its own custody")
+            else {
+                panic!("its owner keeps it")
+            };
+            pin
+        })
+        .collect();
+    assert!(
+        !Arc::ptr_eq(pins[0].join(), pins[1].join()),
+        "two connections, two homes"
+    );
+    assert!(!pins[0].identity().same_as(pins[1].identity()));
+    assert_ne!(pins[0].identity().place(), pins[1].identity().place());
+
+    // AND THE OWNER RESOLVES EACH NAME TO ITS OWN HOME, never to the other's.
+    for (registration, pin) in kept.iter().zip(pins.iter()) {
+        let named = registration.maintenance_identity().expect("a name");
+        let found = keeper.custody_named(&named).expect("its own entry");
+        assert!(Arc::ptr_eq(found.join(), pin.join()));
+    }
+    // A NAME FROM ANOTHER STORE ENTIRELY RESOLVES TO NOTHING HERE.
+    let elsewhere = PrivateSettlementOwner::default();
+    let stranger_keeper = service_owner(&elsewhere, 2);
+    let stranger = private_over(&stranger_keeper, 2);
+    let outsider = XServerFrontendClientId(8599);
+    let (foreign, _foreign_channels) = stranger
+        .broker
+        .registry
+        .register_client_with_admission(outsider, Some(admitted(outsider)))
+        .expect("a place, a keeper and a row");
+    assert!(
+        keeper
+            .custody_named(&foreign.maintenance_identity().expect("a name"))
+            .is_none(),
+        "one owner's inventory does not answer for another store's connection"
+    );
+    drop((pins, kept, private, keeper));
+    drop((foreign, stranger, stranger_keeper, elsewhere));
+}
+
+#[test]
+fn a_connection_whose_evidence_cannot_be_kept_is_not_exposed() {
+    // THE BOUND IS THE STORE'S, AND OUTSTANDING ENTRIES CONSUME IT. A place
+    // that goes back can be taken again; the evidence of what happened in it
+    // cannot be written over, so a service whose inventory is full refuses the
+    // next connection BEFORE its row goes in rather than admitting it and
+    // discarding somebody's result.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 2);
+    let private = private_over(&keeper, 2);
+    let mut live = Vec::new();
+    for raw in [8505, 8506] {
+        live.push(bound_on(&private, XServerFrontendClientId(raw)));
+    }
+    assert_eq!(keeper.custodies_kept(), 2);
+    assert_eq!(keeper.custody_capacity_remaining(), 0);
+
+    // BOTH PLACES GO BACK. The store has room again; the keeper does not.
+    let places: Vec<usize> = live
+        .iter()
+        .map(|registration| {
+            registration
+                .maintenance_identity()
+                .expect("a name")
+                .place()
+        })
+        .collect();
+    drop(live);
+    for place in places {
+        settle_and_return(&durable, place);
+    }
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(0),
+        "the store has its places back"
+    );
+    assert_eq!(
+        keeper.custodies_kept(),
+        2,
+        "and the evidence of those connections is still kept"
+    );
+
+    // SO THE NEXT CONNECTION IS REFUSED, AND NOTHING IS EXPOSED.
+    let later = XServerFrontendClientId(8507);
+    let refused = private
+        .broker
+        .registry
+        .register_client_with_admission(later, Some(admitted(later)));
+    assert!(
+        matches!(
+            refused,
+            Err(XServerFrontendRouteError::EvidenceCustodyUnavailable { client })
+                if client == later
+        ),
+        "refused for the keeper, and told so: {refused:?}",
+        refused = refused.as_ref().err()
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(0),
+        "the place the refused attempt took went back with it"
+    );
+    assert_eq!(keeper.custodies_kept(), 2, "and nothing was retired to fit");
+    assert_eq!(keeper.custody_capacity_remaining(), 0);
+    drop((private, keeper));
+}
+
+#[test]
+fn a_successor_at_one_number_does_not_take_its_predecessors_evidence() {
+    // A PLACE IS A NUMBER AND EVIDENCE IS NOT. The first connection's place
+    // goes back and the next connection takes the same index; its custody is
+    // its own, and the entry the first one left is untouched.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 3);
+    let private = private_over(&keeper, 3);
+    let first = bound_on(&private, XServerFrontendClientId(8508));
+    let PrivateCustodyReach::Reached(first_pin) =
+        first.registered_custody().expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let first_home = Arc::clone(first_pin.join());
+    let place = first.maintenance_identity().expect("a name").place();
+    drop((first_pin, first));
+    settle_and_return(&durable, place);
+
+    let next_client = XServerFrontendClientId(8509);
+    let (next, _next_channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(next_client, Some(admitted(next_client)))
+        .expect("a place, a keeper and a row");
+    assert_eq!(
+        next.maintenance_identity().expect("a name").place(),
+        place,
+        "the successor really did take that number"
+    );
+    let PrivateCustodyReach::Reached(next_pin) =
+        next.registered_custody().expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    assert!(
+        !Arc::ptr_eq(next_pin.join(), &first_home),
+        "a reused number is not a reused home"
+    );
+    assert_eq!(
+        keeper.custodies_kept(),
+        2,
+        "the predecessor's evidence is still kept beside the successor's"
+    );
+    assert_eq!(keeper.custody_capacity_remaining(), 1);
+    assert!(
+        Arc::strong_count(&first_home) >= 1 && first_home.result().is_none(),
+        "its home is still here, and still says nothing happened in it"
+    );
+    drop((next_pin, next, private, keeper));
+}
+
+#[test]
+fn a_service_that_ends_leaves_its_connections_evidence_with_its_owner() {
+    // SERVICE EXIT IS NOT SETTLEMENT. The frontend, the registration and every
+    // frame that used this connection go here; the custody, its published
+    // result and the payload it carries stay with the owner, which is the only
+    // thing whose destruction ends them.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 2);
+    let carried;
+    let home;
+    {
+        let private = private_over(&keeper, 2);
+        let client = XServerFrontendClientId(8510);
+        let (registration, _channels) = private
+            .broker
+            .registry
+            .register_client_with_admission(client, Some(admitted(client)))
+            .expect("a place, a keeper and a row");
+        let PrivateCustodyReach::Reached(pin) =
+            registration.registered_custody().expect("its own custody")
+        else {
+            panic!("its owner keeps it")
+        };
+        home = Arc::downgrade(pin.join());
+
+        // ONE REAL WORKER FOR THIS ONE SOURCE, joined here -- before the
+        // registration it belongs to goes anywhere.
+        let exit = Arc::new(PrivateWorkerExit::unstarted());
+        let slot = Mutex::new(PrivateWorkerSlot::empty());
+        let stop = Arc::new(AtomicBool::new(false));
+        let wake = Arc::new(PrivateOrderedWake::for_first_sender());
+        assert_eq!(
+            start_connection_worker(&slot, &stop, &wake, || {
+                std::thread::Builder::new().spawn(|| panic!("what this one carried"))
+            }),
+            PrivateStartupOutcome::Started
+        );
+        let record = PrivateReapingRecord::bound_to(&slot, &exit, &pin);
+        assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+        carried = panic_payload_of(pin.join()).expect("its payload");
+        assert_eq!(carried, "what this one carried");
+
+        // And the whole service scope ends: the record first, because it
+        // borrows the pin it publishes through and the compiler will not let
+        // it outlive one, then the pin, the registration and the frontend.
+        drop(record);
+        drop((pin, registration, private));
+    }
+
+    // THE KEEPER STILL HAS IT, and it still says what happened.
+    assert_eq!(keeper.custodies_kept(), 1);
+    let kept = home.upgrade().expect("its owner keeps this home");
+    assert_eq!(kept.phase(), PrivateReapingPhase::Joined);
+    assert_eq!(
+        panic_payload_of(&kept).as_deref(),
+        Some("what this one carried"),
+        "the exact result, after the service that produced it has gone"
+    );
+
+    // AND ONLY DESTROYING THE OWNER ENDS IT, which is a separate event.
+    drop(kept);
+    drop(keeper);
+    assert!(
+        home.upgrade().is_none(),
+        "the ultimate owner letting go is what releases the graph"
+    );
+    drop(durable);
+}
+
+#[test]
+fn a_service_cannot_be_prepared_over_a_keeper_that_is_not_its_own() {
+    // TWO OWNERS OVER ONE STORE ARE TWO INVENTORIES. A service built with one
+    // and prepared with the other would reserve evidence in one place and look
+    // for it in another, so the association is refused rather than carried.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 2);
+    let stranger = service_owner(&durable, 2);
+    let private = private_over(&keeper, 2);
+    let (cause, returned) = match private.prepare_runner(NamespaceId::from_raw(8511), &stranger) {
+        Ok(_) => panic!("a foreign owner prepared an execution scope"),
+        Err(refused) => refused,
+    };
+    assert_eq!(cause, PrivateRunnerRefusal::ForeignServiceOwner);
+
+    // REFUSED WITH NOTHING INSTALLED AND NOTHING CONSUMED: the caller still
+    // has its frontend, and its own owner still prepares.
+    let prepared = returned
+        .prepare_runner(NamespaceId::from_raw(8511), &keeper)
+        .map(|runner| runner.frontend.is_some());
+    assert_eq!(prepared.ok(), Some(true));
+
+    // AND AN OWNER CANNOT BE ESTABLISHED OVER A STORE NOBODY CAN READ. This
+    // is the one refusal establishing an owner has: the bound it must size
+    // itself to is the store's, so a store that cannot say what its bound is
+    // cannot have an owner made over it.
+    let unreadable = PrivateSettlementOwner::default();
+    let broken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = unreadable.records_even_if_poisoned();
+        panic!("poisoning this store's aggregate, and nothing else");
+    }));
+    assert!(broken.is_err(), "the store's lock is poisoned");
+    assert!(
+        crate::PrivateServiceOwner::established_over(
+            &unreadable,
+            NonZeroUsize::new(2).expect("a real bound"),
+        )
+        .is_none(),
+        "an owner is not established over a bound nobody could read"
+    );
+    drop((keeper, stranger, durable, unreadable));
+}
+
+/// A connection registered AND BOUND on this instance, the way a real one is,
+/// so that its place can afterwards be finished and returned.
+fn bound_on(
+    private: &crate::PrivateXServerFrontend,
+    client: XServerFrontendClientId,
+) -> XServerFrontendClientRouteRegistration {
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper and a row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    assert_eq!(
+        registration
+            .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+            .unwrap_or_else(|_| panic!("a fresh registration holds no custody")),
+        None
+    );
+    registration
+}
+
+
+#[test]
+fn an_inventory_refuses_a_second_home_and_a_foreign_name() {
+    // ASKED OF THE KEEPER DIRECTLY, which is the same capability the registry
+    // holds and reserves through. Registration reserves once per connection,
+    // so neither of these answers is reachable by registering: they are what
+    // the inventory says to a caller that asks twice, or asks about somebody
+    // else's store.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 3);
+    let private = private_over(&keeper, 3);
+    let client = XServerFrontendClientId(8511);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper and a row");
+    let named = registration.maintenance_identity().expect("a name");
+    let PrivateCustodyReach::Reached(pin) =
+        registration.registered_custody().expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let home = Arc::clone(pin.join());
+    assert_eq!(keeper.custodies_kept(), 1);
+
+    // A SECOND PREPARATION FOR ONE LIVE RESERVATION. The first home is
+    // preserved and the state it is in -- here, a join that has not happened
+    // -- is left exactly as it was.
+    let capability = keeper.keeper();
+    assert!(matches!(
+        capability.reserve_for(&named),
+        PrivateCustodyReserved::AlreadyKept
+    ));
+    assert_eq!(
+        keeper.custodies_kept(),
+        1,
+        "nothing was added and nothing was replaced"
+    );
+    let PrivateCustodyReach::Reached(again) =
+        registration.registered_custody().expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    assert!(
+        Arc::ptr_eq(again.join(), &home),
+        "the home this connection had is the home it has"
+    );
+    assert_eq!(again.join().phase(), PrivateReapingPhase::NotBegun);
+
+    // A NAME FROM ANOTHER STORE IS NOT THIS OWNER'S TO KEEP, however well
+    // formed it is.
+    let elsewhere = PrivateSettlementOwner::default();
+    let stranger_keeper = service_owner(&elsewhere, 2);
+    let stranger = private_over(&stranger_keeper, 2);
+    let outsider = XServerFrontendClientId(8512);
+    let (foreign, _foreign_channels) = stranger
+        .broker
+        .registry
+        .register_client_with_admission(outsider, Some(admitted(outsider)))
+        .expect("a place, a keeper and a row");
+    assert!(matches!(
+        capability.reserve_for(&foreign.maintenance_identity().expect("a name")),
+        PrivateCustodyReserved::Foreign
+    ));
+    assert_eq!(
+        keeper.custodies_kept(),
+        1,
+        "a refused name took no place in this inventory"
+    );
+    assert_eq!(stranger_keeper.custodies_kept(), 1, "and none in that one");
+    drop((pin, again, registration, private, keeper));
+    drop((foreign, stranger, stranger_keeper, elsewhere, durable));
+}
+
+#[test]
+fn a_registry_cannot_be_given_a_second_keeper() {
+    // ONE SERVICE, ONE INVENTORY. A registry that accepted a second keeper
+    // could put this connection's evidence in one owner's inventory and the
+    // next connection's in another, and afterwards nothing could say which
+    // owner was answerable for what.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 3);
+    let substitute = service_owner(&durable, 3);
+    let private = private_over(&keeper, 3);
+    assert!(
+        !private
+            .broker
+            .registry
+            .install_custody_keeper(substitute.keeper()),
+        "construction installed this registry's keeper already"
+    );
+
+    // AND CONNECTIONS STILL GO TO THE OWNER IT WAS BUILT WITH.
+    let client = XServerFrontendClientId(8513);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper and a row");
+    assert_eq!(keeper.custodies_kept(), 1);
+    assert_eq!(
+        substitute.custodies_kept(),
+        0,
+        "the substitute keeps nothing, which is what being refused means"
+    );
+    let named = registration.maintenance_identity().expect("a name");
+    assert!(keeper.custody_named(&named).is_some());
+    assert!(
+        substitute.custody_named(&named).is_none(),
+        "and it answers for nothing either"
+    );
+    drop((registration, private, keeper, substitute, durable));
 }

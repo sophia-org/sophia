@@ -1,13 +1,17 @@
 fn prepared_runner_fixture() -> (
     PrivatePreparedRunner,
-    PrivateSettlementOwner,
+    PrivateServiceOwner,
     XServerFrontendClientRouteRegistration,
     XServerFrontendClientRouteChannels,
     Receiver<XAuthorityClientControlAck>,
     Receiver<XAuthorityClientInputDelivery>,
 ) {
     let client = XServerFrontendClientId::from_raw(9000);
-    let durable = PrivateSettlementOwner::default();
+    let durable = PrivateServiceOwner::established_over(
+        &PrivateSettlementOwner::default(),
+        NonZeroUsize::new(16).unwrap(),
+    )
+    .expect("a readable store declares its bound");
     let (ack_sender, acks) = sync_channel(8);
     let (delivery_sender, deliveries) = channel();
     let (authority, issuer, submit) = private_authority();
@@ -75,7 +79,7 @@ fn prepared_runner_fixture() -> (
         )
         .unwrap();
     let runner = private
-        .prepare_runner(NamespaceId::from_raw(client.raw()))
+        .prepare_runner(NamespaceId::from_raw(client.raw()), &durable)
         .unwrap_or_else(|(cause, _)| panic!("runner refused: {cause:?}"));
 
     // The publication starts unavailable, and resolution refuses against an
@@ -177,7 +181,7 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
 
 #[test]
 fn native_preparation_is_retained_and_a_second_runner_cannot_replace_it() {
-    let (mut runner, _durable, _registration, _channels, _acks, _deliveries) =
+    let (mut runner, durable, _registration, _channels, _acks, _deliveries) =
         prepared_runner_fixture();
     let client = XServerFrontendClientId::from_raw(9000);
     let namespace = runner.namespace();
@@ -205,7 +209,7 @@ fn native_preparation_is_retained_and_a_second_runner_cannot_replace_it() {
     // No producer has escaped. Reaching this path must still refuse rather
     // than replace the allocation cloned by the original execution owner.
     let private = runner.frontend.take().unwrap();
-    let (cause, returned) = match private.prepare_runner(namespace) {
+    let (cause, returned) = match private.prepare_runner(namespace, &durable) {
         Ok(_) => panic!("second preparation replaced an existing native origin"),
         Err(refused) => refused,
     };
@@ -243,7 +247,7 @@ fn losing_a_prepared_runner_closes_its_producers_and_carries_its_hold() {
         )),
         Err(PrivateSendError::Disconnected(_))
     ));
-    let owned = durable.inner.lock().unwrap();
+    let owned = durable.store().inner.lock().unwrap();
     assert_eq!(owned.terminal.len(), 1);
     assert_eq!(owned.terminal[0].holds.len(), 1);
 }
@@ -538,7 +542,7 @@ fn runner_failure_refuses_a_detached_producer_while_common_is_held() {
         1,
         "the accepted envelope remains owned while new work is refused"
     );
-    assert_eq!(durable.reserved(), Some(1));
+    assert_eq!(durable.store().reserved(), Some(1));
     assert!(frontend.terminal.current.is_none());
     assert!(frontend.terminal.holds.is_empty());
 }
@@ -685,7 +689,8 @@ fn a_refused_actual_setup_returns_its_watchdog_slot() {
 fn unprepared_frontend_teardown_closes_actual_setup_before_waiting_for_common() {
     use std::io::{Read, Write};
     for explicit_shutdown in [false, true] {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         let registry = private.broker.registry.clone();
         let common = private.controller.common.clone();
         let state = Arc::new(X11CoreSocketServerState::new());

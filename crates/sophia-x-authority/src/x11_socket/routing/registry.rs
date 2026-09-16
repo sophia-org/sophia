@@ -10,6 +10,12 @@ struct XServerFrontendRouteRegistry {
     /// BEFORE it publishes that connection's sender. Unset elsewhere, where
     /// there is no ordered output to hand over.
     continuation_owner: Arc<std::sync::OnceLock<PrivateSettlementRef>>,
+    /// Who keeps this instance's connections' evidence custodies.
+    ///
+    /// Set for a private instance built over a service owner, so registering
+    /// can reserve a connection's external keeper BEFORE its row is
+    /// published. Held weakly, like the store above and for the same reason.
+    custody_keeper: Arc<std::sync::OnceLock<PrivateCustodyKeeper>>,
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
     focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
@@ -183,6 +189,17 @@ struct XServerFrontendClientRouteRegistration {
     /// visible instead of silent.
     #[allow(dead_code)]
     ordered_continuation: Mutex<Option<PrivateOrderedContinuationSlot>>,
+    /// This connection's way back to the evidence custody reserved for it.
+    ///
+    /// RESERVED BEFORE THIS ROW WAS PUBLISHED and kept by the service owner,
+    /// not here: this is a capability that names one custody, and asking it
+    /// twice names the same home. `None` where no service owner was installed,
+    /// which is not a claim that evidence is kept somewhere else.
+    ///
+    /// NOT RELEASED BY THIS REGISTRATION GOING. A connection ending is not its
+    /// evidence being disposed of, and an entry that vanished with the
+    /// registration would make a service exit look like a settlement.
+    ordered_custody: Option<PrivateRegisteredCustody>,
     /// Where this connection's ordered output lives, from binding onwards.
     ///
     /// A HANDLE, NOT A STORAGE OF ITS OWN. When there is a place, this is the
@@ -382,6 +399,31 @@ impl XServerFrontendRouteRegistry {
         Some(bound)
     }
 
+    /// Give this registry the owner that keeps its connections' evidence.
+    ///
+    /// BEFORE ANY ROW CAN BE PUBLISHED, for the same reason as the store: a
+    /// connection exposed first would be one whose external keeper was decided
+    /// after it was already admitted.
+    ///
+    /// ONCE, AND NOT AGAIN. A registry that could be given a second keeper
+    /// could put one connection's evidence in one owner's inventory and the
+    /// next connection's in another, and nothing afterwards could say which
+    /// owner was responsible for what.
+    pub(crate) fn install_custody_keeper(&self, keeper: PrivateCustodyKeeper) -> bool {
+        self.custody_keeper.set(keeper).is_ok()
+    }
+
+    /// Whether this registry's connections' evidence is kept by that owner.
+    ///
+    /// BY INVENTORY IDENTITY, not by store or by bound. Two owners over one
+    /// store are two separate inventories, and a service told they were
+    /// interchangeable would reserve into one and look in the other.
+    pub(crate) fn custody_keeper_is(&self, owner: &PrivateServiceOwner) -> bool {
+        self.custody_keeper
+            .get()
+            .is_some_and(|keeper| keeper.kept_by(owner))
+    }
+
     fn register_client_with_admission(
         &self,
         client: XServerFrontendClientId,
@@ -460,6 +502,41 @@ impl XServerFrontendRouteRegistry {
             Some(home) => home,
             None => Arc::new(PrivateOrderedHome::empty()),
         };
+        // AND THIS CONNECTION'S EXTERNAL KEEPER, on the same reservation and
+        // before the same boundary. The place and the maintenance destination
+        // above are storage inside the store; this is the custody outside it
+        // that will hold whatever this connection's worker leaves. All three
+        // are set aside before the row goes in, because after that this
+        // connection has work that can be accepted and nowhere honest to put
+        // the evidence of how it ended.
+        //
+        // NO KEEPER INSTALLED MEANS NO CUSTODY, which is the public frontend's
+        // shape: there is no private service owner, so there is nothing to
+        // reserve from and nothing is claimed about one.
+        let mut custody = match (self.custody_keeper.get(), continuation.as_ref()) {
+            (Some(keeper), Some(slot)) => {
+                match keeper.reserve_for(&slot.maintenance_identity()) {
+                    PrivateCustodyReserved::Reserved(registered) => Some(registered),
+                    // REFUSED BEFORE EXPOSURE, and the place above goes back
+                    // with it: this connection is not admitted at all rather
+                    // than admitted without a keeper. A saturated inventory is
+                    // a limitation to report, and nothing here retires another
+                    // connection's evidence to make room.
+                    PrivateCustodyReserved::AlreadyKept
+                    | PrivateCustodyReserved::Saturated
+                    | PrivateCustodyReserved::Foreign
+                    | PrivateCustodyReserved::Unreadable => {
+                        if let Some(unexposed) = continuation.take() {
+                            unexposed.relinquish_unexposed();
+                        }
+                        return Err(XServerFrontendRouteError::EvidenceCustodyUnavailable {
+                            client,
+                        });
+                    }
+                }
+            }
+            _ => None,
+        };
         let published = self.publish_registered_client(
             client,
             senders,
@@ -467,6 +544,7 @@ impl XServerFrontendRouteRegistry {
             &gate,
             &mut continuation,
             home,
+            &mut custody,
         );
         // The client table is released here, before the place is disposed of.
         //
@@ -477,6 +555,15 @@ impl XServerFrontendRouteRegistry {
         // registration holds it, and this is None.
         if let Some(unexposed) = continuation.take() {
             unexposed.relinquish_unexposed();
+        }
+        // THE SAME FOR THE KEEPER'S ENTRY, and only for an attempt that was
+        // never exposed. Publication takes it exactly as it takes the place,
+        // so this is None on success. A refusal here -- a duplicate client
+        // arriving after preparation, say -- gives back the entry THIS attempt
+        // reserved and nothing else: the live sibling this attempt collided
+        // with keeps its own custody, its own home and its own accounting.
+        if let Some(unexposed) = custody.take() {
+            unexposed.release_unexposed();
         }
         let registration = published?;
         Ok((
@@ -511,6 +598,7 @@ impl XServerFrontendRouteRegistry {
         gate: &Arc<PrivateHandoverGate>,
         continuation: &mut Option<PrivateOrderedContinuationSlot>,
         home: Arc<PrivateOrderedHome>,
+        custody: &mut Option<PrivateRegisteredCustody>,
     ) -> Result<XServerFrontendClientRouteRegistration, XServerFrontendRouteError> {
         let mut clients = self
             .clients
@@ -534,6 +622,11 @@ impl XServerFrontendRouteRegistry {
             // went: a place is returned when the work in it is gone, and until
             // then it belongs to this connection.
             ordered_continuation: Mutex::new(continuation.take()),
+            // TAKEN WITH THE ROW, like the place. What this registration gets
+            // is a capability naming the one custody reserved for it -- not a
+            // licence to make a publication home later, and not a handle that
+            // keeps one alive. Asking twice names the same home.
+            ordered_custody: custody.take(),
             // THE SAME HOME THE PLACE HOLDS, when there is a place: this is a
             // handle to it, not a second storage that teardown would have to
             // move out of. Empty until this connection's setup binds its

@@ -411,10 +411,16 @@ impl PrivateXServerFrontend {
     // allocation would happen on the path where something already went wrong.
     // The size is the cost of handing the caller everything it gave us.
     #[allow(clippy::result_large_err)]
+    /// THE OWNER IS REQUIRED, not offered. A private instance whose
+    /// connections' evidence had no keeper outside it would be one where an
+    /// operation frame is the only thing standing between a worker's result
+    /// and nothing, and an owner that construction could be built without is
+    /// an owner every existing path bypasses.
     pub fn new(
         parts: PrivateFrontendParts,
-        durable: &PrivateSettlementOwner,
+        owner: &PrivateServiceOwner,
     ) -> Result<Self, (AdmissionRefusal, PrivateFrontendParts)> {
+        let durable = owner.store();
         // Prepared before taking parts or reserving durable credit.
         let lifecycle_storage = match PrivateLifecycleOwner::prepare(parts.max_concurrent_clients) {
             Ok(storage) => storage,
@@ -436,7 +442,28 @@ impl PrivateXServerFrontend {
         // row. Declared, not imposed -- a durable store carrying places from
         // an earlier instance keeps the bound those were taken against.
         let connections = parts.max_concurrent_clients;
-        if durable.declare_connection_bound(connections).is_none() {
+        let Some(bound) = durable.declare_connection_bound(connections) else {
+            durable.release_failure_slot();
+            return Err((AdmissionRefusal::Unavailable, parts));
+        };
+        // AND THE OWNER MUST BE SIZED TO THAT SAME BOUND, so this instance's
+        // connections cannot take places counted against one limit while their
+        // evidence is counted against another.
+        //
+        // DEFENCE IN DEPTH, AND NO CONTROL REACHES IT. Establishing an owner
+        // sizes its inventory to the bound the store reports, and a store's
+        // bound is declared once, so the number here and the number there are
+        // the same number by construction. It is asked anyway because that
+        // argument rests on how owners happen to be made today, and this is
+        // the place where being wrong about it would admit connections whose
+        // evidence has nowhere to go.
+        //
+        // NOTHING HERE CHANGES WHAT A SECOND INSTANCE MAY DO WITH A SHARED
+        // STORE. That is a separate question with a separate defect: an
+        // instance whose own client limit differs from the bound in force is
+        // built exactly as it was before, and its inventory follows the bound
+        // in force rather than its limit.
+        if owner.custody_bound() != bound {
             durable.release_failure_slot();
             return Err((AdmissionRefusal::Unavailable, parts));
         }
@@ -538,6 +565,14 @@ impl PrivateXServerFrontend {
                 .install_continuation_owner(durable, connections)
                 .is_some(),
             "a freshly built broker has no continuation owner yet"
+        );
+        // AND THE KEEPER ITS CONNECTIONS' EVIDENCE GOES TO, installed in the
+        // same place and before the same boundary. A private registry that
+        // reserved places without one would admit connections whose worker
+        // results have no owner outside the frames that produce them.
+        assert!(
+            broker.registry.install_custody_keeper(owner.keeper()),
+            "a freshly built broker has no custody keeper yet"
         );
         let participant = PrivateAdmissionParticipant::new(controller.clone());
         let lifecycle = PrivateLifecycleOwner::from_prepared(participant.clone(), broker.registry.input_authority.clone(), broker.registry.pointer_state.clone(), lifecycle_storage);

@@ -33,7 +33,8 @@ fn lifecycle_drain(owner: &PrivateLifecycleOwner) {
 
 #[test]
 fn lifecycle_integration_query_cleanup_and_issue_execute_gate() {
-    let f = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
     let owner = f.terminal.lifecycle.clone();
     let client = XServerFrontendClientId(7601);
     let (registration, _channels) = lifecycle_integrated_route(&f, client);
@@ -77,7 +78,8 @@ fn lifecycle_integration_query_cleanup_and_issue_execute_gate() {
 
 #[test]
 fn lifecycle_integration_registration_drop_under_common_only_requests() {
-    let f = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
     let owner = f.terminal.lifecycle.clone();
     let client = XServerFrontendClientId(7602);
     let (registration, _channels) = lifecycle_integrated_route(&f, client);
@@ -111,7 +113,8 @@ fn lifecycle_integration_registration_drop_under_common_only_requests() {
 
 #[test]
 fn lifecycle_integration_old_lease_cannot_close_new_incarnation() {
-    let f = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
     let owner = f.terminal.lifecycle.clone();
     let client = XServerFrontendClientId(7603);
     f.admission_participant()
@@ -139,7 +142,8 @@ fn lifecycle_integration_old_lease_cannot_close_new_incarnation() {
 
 #[test]
 fn lifecycle_integration_capacity_refusal_does_not_publish_binding() {
-    let f = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
     for n in 0..16 {
         let client = XServerFrontendClientId(7700 + n);
         f.admission_participant()
@@ -167,7 +171,8 @@ fn lifecycle_integration_capacity_refusal_does_not_publish_binding() {
 
 #[test]
 fn lifecycle_integration_zero_hold_debt_survives_handle_and_durable_handover() {
-    let f = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
     let durable = f.durable.clone();
     let owner = f.terminal.lifecycle.clone();
     for n in 0..3 {
@@ -194,7 +199,8 @@ fn lifecycle_integration_zero_hold_debt_survives_handle_and_durable_handover() {
 
 #[test]
 fn lifecycle_integration_poison_is_unavailable_not_settled() {
-    let f = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
     let durable = f.durable.clone();
     let owner = f.terminal.lifecycle.clone();
     let client = XServerFrontendClientId(7606);
@@ -220,7 +226,8 @@ fn lifecycle_integration_poison_is_unavailable_not_settled() {
 
 #[test]
 fn lifecycle_integration_recovery_closure_runs_without_delivery_receipt() {
-    let f = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
     let client = XServerFrontendClientId(7607);
     let (registration, _channels) = lifecycle_integrated_route(&f, client);
     let owner = f.terminal.lifecycle.clone();
@@ -255,7 +262,8 @@ fn lifecycle_integration_recovery_closure_runs_without_delivery_receipt() {
 
 #[test]
 fn lifecycle_integration_query_owner_finish_and_drop_do_not_repeat_cleanup() {
-    let f = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
     let state = X11CoreSocketServerState::new();
     state
         .runtime
@@ -360,7 +368,8 @@ impl XServerFrontendAdmissionPolicy for LifecycleSetupPolicy {
 #[test]
 fn lifecycle_integration_actual_setup_both_orders_closes_exact_query_owner() {
     for big in [false, true] {
-        let f = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let f = private_for_roles(&service_keeper);
         let registry = f.broker.registry.clone();
         let owner = f.terminal.lifecycle.clone();
         let state = Arc::new(X11CoreSocketServerState::new());
@@ -454,7 +463,8 @@ fn lifecycle_integration_actual_setup_both_orders_closes_exact_query_owner() {
 
 #[test]
 fn lifecycle_integration_namespace_revocation_retains_exact_native_cleanup() {
-    let f = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
     let owner = f.terminal.lifecycle.clone();
     let first = XServerFrontendClientId(7611);
     let other = XServerFrontendClientId(7612);
@@ -486,7 +496,8 @@ fn lifecycle_integration_namespace_revocation_retains_exact_native_cleanup() {
 
 #[test]
 fn lifecycle_integration_live_origin_cannot_resolve_a_closing_recipient() {
-    let f = private_for_roles();
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
     let registry = &f.broker.registry;
     let namespace = NamespaceId::from_raw(7613);
     let sender = XServerFrontendClientId(7613);
@@ -561,7 +572,8 @@ fn lifecycle_integration_actual_setup_binds_before_its_first_fallible_attachment
     // refused at the first attachment after binding. Nothing is hooked or
     // patched to arrange it.
     let durable = PrivateSettlementOwner::with_capacities(4, 4);
-    let private = private_over(&durable, 1);
+    let service_keeper = service_owner(&durable, 1);
+    let private = private_over(&service_keeper, 1);
     let registry = private.broker.registry.clone();
 
     // The one lease, taken by a connection that keeps it.

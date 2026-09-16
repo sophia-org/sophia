@@ -29,11 +29,14 @@ mod private_native_tests {
         owner: Owner,
         role: PrivateReservationRole,
         sequence: Cell<u64>,
+        /// Last field, so it is dropped after the instance it keeps for.
+        _keeper: crate::PrivateServiceOwner,
     }
 
     impl Fixture {
         fn new() -> Self {
-            let private = private_for_roles();
+            let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+            let private = private_for_roles(&service_keeper);
             let admission = namespaced(client(), namespace());
             private.participant.admit(client(), admission).unwrap();
             let registration = private
@@ -114,6 +117,7 @@ mod private_native_tests {
                 owner,
                 role,
                 sequence: Cell::new(0),
+                _keeper: service_keeper,
             }
         }
 

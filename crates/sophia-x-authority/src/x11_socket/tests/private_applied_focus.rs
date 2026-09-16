@@ -11,6 +11,8 @@ mod private_applied_focus {
         state: X11CoreSocketServerState,
         projection: Arc<AtomicU64>,
         selections: Arc<Mutex<XCoreEventSelectionState>>,
+        /// Last field, so it is dropped after the instance it keeps for.
+        _keeper: crate::PrivateServiceOwner,
     }
     fn namespace() -> NamespaceId {
         NamespaceId::from_raw(252)
@@ -28,7 +30,8 @@ mod private_applied_focus {
         fixture_with_focus_preparation(true)
     }
     fn fixture_with_focus_preparation(prepare: bool) -> Fixture {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         let admission = namespaced(client(), namespace());
         private.participant.admit(client(), admission).unwrap();
         let (registration, channels) = private
@@ -72,6 +75,7 @@ mod private_applied_focus {
             state,
             projection,
             selections,
+            _keeper: service_keeper,
         }
     }
     impl Fixture {

@@ -24,7 +24,8 @@ mod private_xkb_selection_tests {
     #[test]
     fn actual_xkb_select_events_publishes_guarded_details_in_both_byte_orders() {
         for big in [false, true] {
-            let private = private_for_roles();
+            let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+            let private = private_for_roles(&service_keeper);
             let registry = private.broker.registry.clone();
             let state = Arc::new(X11CoreSocketServerState::new());
             state

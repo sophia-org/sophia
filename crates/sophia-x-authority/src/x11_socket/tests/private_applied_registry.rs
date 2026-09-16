@@ -36,7 +36,8 @@ mod private_applied_registry {
 
     #[test]
     fn setup_before_runner_preparation_retains_actual_state_and_does_not_publish_focus() {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         let registration = register(&private);
         let selections = selections();
         let focus = focus();
@@ -55,7 +56,7 @@ mod private_applied_registry {
         selections.lock().unwrap().update(window, Some(1), None);
         focus.store(window.local.raw(), Ordering::Release);
         let mut runner = private
-            .prepare_runner(namespace())
+            .prepare_runner(namespace(), &service_keeper)
             .unwrap_or_else(|(cause, _)| panic!("runner refused: {cause:?}"));
         let private = runner.frontend.as_ref().unwrap();
         private
@@ -86,9 +87,10 @@ mod private_applied_registry {
 
     #[test]
     fn setup_after_runner_preparation_binds_once_and_cannot_replace_its_projection() {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         let mut runner = private
-            .prepare_runner(namespace())
+            .prepare_runner(namespace(), &service_keeper)
             .unwrap_or_else(|(cause, _)| panic!("runner refused: {cause:?}"));
         let private = runner.frontend.as_ref().unwrap();
         let registration = register(private);
@@ -136,7 +138,8 @@ mod private_applied_registry {
 
     #[test]
     fn runner_preparation_refuses_unreadable_connection_state_and_returns_the_same_frontend() {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         let registration = register(&private);
         let selections = selections();
         private
@@ -150,7 +153,7 @@ mod private_applied_registry {
             let _held = selections.lock().unwrap();
             panic!("connection selections interrupted before runner preparation");
         }));
-        let (cause, returned) = match private.prepare_runner(namespace()) {
+        let (cause, returned) = match private.prepare_runner(namespace(), &service_keeper) {
             Ok(_) => panic!("runner must refuse unreadable connection state"),
             Err(refused) => refused,
         };
@@ -187,7 +190,8 @@ mod private_applied_registry {
 
     #[test]
     fn registration_drop_removes_discoverability_and_owns_no_historical_state_map() {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         install(&private);
         let registration = register(&private);
         let selections = selections();
@@ -221,8 +225,10 @@ mod private_applied_registry {
 
     #[test]
     fn foreign_registration_cannot_attach_under_colliding_client_names() {
-        let first = private_for_roles();
-        let second = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let first = private_for_roles(&service_keeper);
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let second = private_for_roles(&service_keeper);
         let _first_registration = register(&first);
         let second_registration = register(&second);
         assert_eq!(
@@ -244,8 +250,10 @@ mod private_applied_registry {
 
     #[test]
     fn colliding_origins_keep_their_actual_projection_and_refuse_a_foreign_guard() {
-        let first = private_for_roles();
-        let second = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let first = private_for_roles(&service_keeper);
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let second = private_for_roles(&service_keeper);
         let first_registration = register(&first);
         let second_registration = register(&second);
         let first_selections = selections();
@@ -320,7 +328,8 @@ mod private_applied_registry {
 
     #[test]
     fn stored_admission_cannot_substitute_for_a_replacement_or_closed_boundary_binding() {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         let registration = register(&private);
         private
             .broker
@@ -361,7 +370,8 @@ mod private_applied_registry {
 
     #[test]
     fn preparation_failure_keeps_partial_binding_unavailable_without_replacing_its_origin() {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         let registration = register(&private);
         let selections = selections();
         private
@@ -408,7 +418,8 @@ mod private_applied_registry {
 
     #[test]
     fn missing_setup_and_unreadable_publication_remain_distinct_refusals() {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         let registration = register(&private);
         private
             .participant
@@ -474,7 +485,8 @@ mod private_applied_registry {
 
     #[test]
     fn registration_without_admission_cannot_borrow_private_projection_authority() {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         let admission = namespaced(client(), namespace());
         private.participant.admit(client(), admission).unwrap();
         let (registration, _channels) = private.broker.registry.register_client(client()).unwrap();
@@ -502,7 +514,8 @@ mod private_applied_registry {
 
     #[test]
     fn poison_is_unavailable_even_when_a_caller_can_reach_retained_table_storage() {
-        let private = private_for_roles();
+        let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+        let private = private_for_roles(&service_keeper);
         let registration = register(&private);
         private
             .broker

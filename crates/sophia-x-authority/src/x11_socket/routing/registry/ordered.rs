@@ -369,6 +369,22 @@ impl XServerFrontendClientRouteRegistration {
             .map(PrivateOrderedContinuationSlot::maintenance_identity)
     }
 
+    /// Pin the evidence custody reserved for this connection.
+    ///
+    /// THE ONE RESERVED BEFORE THIS ROW WAS PUBLISHED, every time. This is not
+    /// a way to make a publication home: there is nothing here that allocates,
+    /// and a connection registered without a service owner has none and is
+    /// told so rather than given a fresh one.
+    ///
+    /// `None` MEANS NO CUSTODY WAS RESERVED FOR THIS REGISTRATION, which is a
+    /// fact about how this registry was built and not about the connection.
+    #[cfg_attr(not(test), allow(dead_code))] // Asked by a caller not attached yet.
+    pub(crate) fn registered_custody(&self) -> Option<PrivateCustodyReach> {
+        self.ordered_custody
+            .as_ref()
+            .map(PrivateRegisteredCustody::pin)
+    }
+
     /// Whether this endpoint is closed to handovers. `None` if unreadable.
     #[cfg_attr(not(test), allow(dead_code))] // Only controls ask this today.
     pub(crate) fn ordered_handovers_fenced(&self) -> Option<bool> {

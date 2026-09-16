@@ -416,6 +416,18 @@ pub enum XServerFrontendRouteError {
     ContinuationUnavailable {
         client: XServerFrontendClientId,
     },
+    /// No evidence custody could be reserved for this connection.
+    ///
+    /// Refused BEFORE anything is published, and for the same reason as the
+    /// place above: a connection exposed first would be one that discovered
+    /// afterwards that nothing outside it can keep what its worker leaves.
+    ///
+    /// DISTINCT FROM A MISSING PLACE. The place is storage inside the store;
+    /// this is the keeper outside it, and a caller told the wrong one would
+    /// look in the wrong direction.
+    EvidenceCustodyUnavailable {
+        client: XServerFrontendClientId,
+    },
     DuplicateSurface {
         surface: SurfaceId,
     },
@@ -573,6 +585,13 @@ impl core::fmt::Display for XServerFrontendRouteError {
                 write!(
                     formatter,
                     "no retained place is available for X11 route client {}",
+                    client.raw()
+                )
+            }
+            Self::EvidenceCustodyUnavailable { client } => {
+                write!(
+                    formatter,
+                    "no evidence custody is available for X11 route client {}",
                     client.raw()
                 )
             }

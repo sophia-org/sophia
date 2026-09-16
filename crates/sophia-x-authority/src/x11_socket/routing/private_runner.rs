@@ -4,6 +4,12 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrivateRunnerRefusal {
     ProducerAlreadyExposed,
+    /// The owner offered is not the one this frontend's registry keeps its
+    /// connections' evidence with.
+    ///
+    /// Distinct from every other refusal here: nothing is wrong with the
+    /// frontend or the thread, and what is refused is the association.
+    ForeignServiceOwner,
     /// A prepared native origin cannot be replaced, even before the first turn.
     AlreadyPrepared,
     Keyboard(PrivateKeyboardsRefusal),
@@ -137,13 +143,34 @@ impl PrivateXServerFrontend {
     /// Prepare on the thread that will execute turns, before granting an
     /// ingress. The instance's issuer supplies the seat; callers cannot choose
     /// a different seat for the same authority.
+    /// THE OWNER IS BORROWED FOR THE PREPARATION, and it must be the one this
+    /// frontend was built over. An execution scope that could be started with
+    /// no live keeper, or with a different one, would be a service whose
+    /// connections' evidence belongs to an inventory nobody can name from
+    /// here.
+    ///
+    /// WHAT THIS DOES NOT ESTABLISH. Borrowing here says a live owner exists
+    /// when the scope begins and that it is this frontend's; it does not make
+    /// the owner outlive the runner, which no signature on this type does
+    /// today. What a scope's ending cannot do -- however it ends -- is take
+    /// the custodies with it, because it never owned them.
     #[allow(clippy::result_large_err)] // Refusal returns the caller's owned frontend without boxing.
     pub fn prepare_runner(
         mut self,
         namespace: NamespaceId,
+        owner: &PrivateServiceOwner,
     ) -> Result<PrivatePreparedRunner, (PrivateRunnerRefusal, Self)> {
         if self.ordered_runner {
             return Err((PrivateRunnerRefusal::ProducerAlreadyExposed, self));
+        }
+        // ASKED BEFORE ANYTHING IS INSTALLED, so a refusal leaves the frontend
+        // exactly as it arrived.
+        if !self
+            .broker
+            .registry
+            .custody_keeper_is(owner)
+        {
+            return Err((PrivateRunnerRefusal::ForeignServiceOwner, self));
         }
         if self.native_owner.is_some() {
             return Err((PrivateRunnerRefusal::AlreadyPrepared, self));
