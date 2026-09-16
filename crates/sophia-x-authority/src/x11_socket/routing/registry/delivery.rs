@@ -801,7 +801,18 @@ impl XServerFrontendClientRouteRegistration {
         // Written onto the record while it is still in registration-owned
         // storage, so what is installed already carries it and nothing has to
         // reach into a place afterwards to finish the record off.
-        if let Some(PrivateOrderedContinuation::Setup { fence: recorded, .. }) = held.as_mut() {
+        //
+        // BOTH SHAPES, because both consult it. A record that reached a place
+        // without this would carry None for ever: nothing after installation
+        // can establish a closure, the gate being gone with the registration,
+        // so such a record could never settle however finished it was. Writing
+        // it for one shape and not the other would make a connection's fate
+        // depend on how far its setup happened to get.
+        if let Some(continuation) = held.as_mut() {
+            let recorded = match continuation {
+                PrivateOrderedContinuation::Setup { fence, .. }
+                | PrivateOrderedContinuation::Serving { fence, .. } => fence,
+            };
             *recorded = Some(fence);
         }
         slot.install(&mut held);

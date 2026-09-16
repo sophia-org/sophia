@@ -21416,8 +21416,9 @@ fn transport_continuation(
     PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Transport(Box::new(transport)),
         refusal: X11OrderedServingRefusal::Unserved,
-        // Torn down, with its endpoint closed: the only way a record
-        // reaches a place.
+        // A staged precondition: the value a torn-down record carries, set
+        // directly rather than observed, because this control is about what
+        // happens to a record that has one.
         fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
@@ -21902,11 +21903,9 @@ fn retained_fence(
     durable: &PrivateSettlementOwner,
     index: usize,
 ) -> Option<Option<PrivateHandoverFence>> {
-    durable.with_ordered_continuation(index, |continuation| {
-        let PrivateOrderedContinuation::Setup { fence, .. } = continuation else {
-            panic!("no owner is built yet")
-        };
-        *fence
+    durable.with_ordered_continuation(index, |continuation| match continuation {
+        PrivateOrderedContinuation::Setup { fence, .. }
+        | PrivateOrderedContinuation::Serving { fence, .. } => *fence,
     })
 }
 
@@ -22082,8 +22081,11 @@ fn a_serving_record_without_an_established_closure_never_settles_either() {
         .expect("a place, reserved before exposure");
     let mut source = Some(PrivateOrderedContinuation::Serving {
         owner: Box::new(owner),
-        // The close could not be established: a holder panicked inside the
-        // gate on the way out.
+        // STAGED, NOT OBSERVED. No holder panicked here and no teardown ran:
+        // this is the value such a record would arrive carrying, set directly
+        // so the guard below is about what a record with it does. What writes
+        // this value for real is teardown, and the controls named
+        // teardown_records_* are where that is established.
         fence: Some(PrivateHandoverFence::Unreadable),
     });
     slot.install(&mut source);
@@ -22159,6 +22161,153 @@ fn a_closure_someone_else_made_is_carried_as_already_established() {
         durable.continuations_reserved(),
         Some(0),
         "an already-established closure is a closure, so this place returns"
+    );
+}
+
+
+/// A serving owner over this connection's OWN receiver and socket.
+///
+/// No spare registration is borrowed for a receiver, so the places in the
+/// store belong to this connection alone and what a teardown does to them is
+/// readable. The conversion that would build one of these in production is not
+/// wired; this stands in for its hand-in, and for nothing after it -- the
+/// teardown that follows is the real one, and is the subject.
+fn serving_custody_for(
+    f: PreparedOrderedFixture,
+) -> (
+    X11OrderedServingOwner,
+    XServerFrontendClientRouteRegistration,
+    PrivatePreparedRunner,
+    PrivateSettlementOwner,
+    Arc<Mutex<UnixStream>>,
+) {
+    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let PreparedOrderedFixture {
+        registration,
+        runner,
+        channels,
+        durable,
+        ..
+    } = f;
+    let transport = XAuthorityOrderedTransport::bind(
+        &registration,
+        channels.ordered,
+        &output,
+        &wire,
+        &pending,
+        None,
+    )
+    .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    let owner = X11OrderedServingOwner::for_registration(
+        runner.frontend.as_ref().expect("a live runner"),
+        &registration,
+        transport,
+    )
+    .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
+    (owner, registration, runner, durable, output)
+}
+
+#[test]
+fn teardown_records_its_actual_close_on_a_serving_record_too() {
+    // A RECORD THAT REACHES A PLACE WITHOUT THIS CARRIES None FOR EVER.
+    // Nothing after installation can establish a closure -- the gate goes with
+    // the registration -- so a serving record left unwritten could never
+    // settle however finished it was, and its place would never come back.
+    let f = prepared_ordered_fixture(XServerFrontendClientId(8441));
+    let (owner, registration, runner, durable, _output) = serving_custody_for(f);
+    registration
+        .retain_ordered_setup(PrivateOrderedContinuation::Serving {
+            owner: Box::new(owner),
+            // A STAGED PRECONDITION, not an observation: no close has happened
+            // yet. What this control is about is what teardown writes over it.
+            fence: None,
+        })
+        .unwrap_or_else(|_| panic!("this registration holds no custody yet"));
+
+    // Its producers go, and then the real teardown runs.
+    drop(runner);
+    drop(registration);
+    assert_eq!(
+        retained_fence(&durable, 0),
+        Some(Some(PrivateHandoverFence::Established)),
+        "the actual teardown wrote what its own close established"
+    );
+
+    // And because it did, a record with nothing left can finish.
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(0),
+        "a finished serving record with an established closure returns its place"
+    );
+}
+
+#[test]
+fn teardown_records_an_unreadable_close_on_a_serving_record() {
+    // The other outcome through the same seam. A holder panicked inside the
+    // gate, so teardown's close establishes nothing, and the record says so
+    // rather than defaulting to success.
+    let f = prepared_ordered_fixture(XServerFrontendClientId(8451));
+    let (owner, registration, runner, durable, _output) = serving_custody_for(f);
+    registration
+        .retain_ordered_setup(PrivateOrderedContinuation::Serving {
+            owner: Box::new(owner),
+            fence: None,
+        })
+        .unwrap_or_else(|_| panic!("this registration holds no custody yet"));
+
+    let gate = registration.ordered_gate.clone();
+    let holder = std::thread::spawn(move || {
+        let _inside = gate.fenced.lock().expect("an open gate");
+        panic!("a handover panicked inside this gate");
+    });
+    assert!(holder.join().is_err(), "the holder panicked");
+
+    drop(runner);
+    drop(registration);
+    assert_eq!(
+        retained_fence(&durable, 0),
+        Some(Some(PrivateHandoverFence::Unreadable)),
+        "teardown established nothing, and wrote that rather than a success"
+    );
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "so this record keeps its place"
+    );
+}
+
+#[test]
+fn teardown_records_an_already_established_close_on_a_serving_record() {
+    // The third outcome through the same seam: the endpoint was closed by a
+    // caller before teardown reached it, and teardown says what it found.
+    let f = prepared_ordered_fixture(XServerFrontendClientId(8461));
+    let (owner, registration, runner, durable, _output) = serving_custody_for(f);
+    registration
+        .retain_ordered_setup(PrivateOrderedContinuation::Serving {
+            owner: Box::new(owner),
+            fence: None,
+        })
+        .unwrap_or_else(|_| panic!("this registration holds no custody yet"));
+    assert_eq!(
+        registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Established,
+        "closed through the real API, before teardown"
+    );
+
+    drop(runner);
+    drop(registration);
+    assert_eq!(
+        retained_fence(&durable, 0),
+        Some(Some(PrivateHandoverFence::AlreadyEstablished))
     );
 }
 
@@ -25600,8 +25749,9 @@ fn a_continuation_place_is_taken_before_exposure_and_kept_while_work_remains() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
-        // Torn down, with its endpoint closed: the only way a record
-        // reaches a place.
+        // A staged precondition: the value a torn-down record carries, set
+        // directly rather than observed, because this control is about what
+        // happens to a record that has one.
         fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
@@ -25757,8 +25907,10 @@ fn a_whole_serving_owner_moves_into_its_place_with_everything_it_held() {
         .expect("a place, reserved before this connection was exposed");
     let mut source = Some(PrivateOrderedContinuation::Serving {
         owner: Box::new(owner),
-        // Torn down with its endpoint closed, which is the only way a record
-        // reaches a place.
+        // STAGED, NOT OBSERVED. No teardown ran in this control; this is the
+        // value a record installed by one would carry, set directly because
+        // the subject here is what arrives in the place, not what writes this
+        // field.
         fence: Some(PrivateHandoverFence::Established),
     });
     slot.install(&mut source);
@@ -25842,8 +25994,9 @@ fn an_unreadable_owner_does_not_make_an_accepted_transfer_optional() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
-        // Torn down, with its endpoint closed: the only way a record
-        // reaches a place.
+        // A staged precondition: the value a torn-down record carries, set
+        // directly rather than observed, because this control is about what
+        // happens to a record that has one.
         fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
@@ -25884,8 +26037,9 @@ fn driving_a_continuation_does_not_hold_the_store_behind_it() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
-        // Torn down, with its endpoint closed: the only way a record
-        // reaches a place.
+        // A staged precondition: the value a torn-down record carries, set
+        // directly rather than observed, because this control is about what
+        // happens to a record that has one.
         fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
@@ -25952,8 +26106,9 @@ fn an_unwind_before_the_destination_is_held_leaves_the_work_with_its_source() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
-        // Torn down, with its endpoint closed: the only way a record
-        // reaches a place.
+        // A staged precondition: the value a torn-down record carries, set
+        // directly rather than observed, because this control is about what
+        // happens to a record that has one.
         fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
@@ -26140,8 +26295,9 @@ fn a_handover_waits_for_the_destination_reserved_for_it() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
-        // Torn down, with its endpoint closed: the only way a record
-        // reaches a place.
+        // A staged precondition: the value a torn-down record carries, set
+        // directly rather than observed, because this control is about what
+        // happens to a record that has one.
         fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
@@ -26211,8 +26367,9 @@ fn reading_the_store_does_not_take_a_record_beneath_it() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
-        // Torn down, with its endpoint closed: the only way a record
-        // reaches a place.
+        // A staged precondition: the value a torn-down record carries, set
+        // directly rather than observed, because this control is about what
+        // happens to a record that has one.
         fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
@@ -26293,8 +26450,9 @@ fn an_unreadable_retained_record_is_not_reported_as_absent() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
-        // Torn down, with its endpoint closed: the only way a record
-        // reaches a place.
+        // A staged precondition: the value a torn-down record carries, set
+        // directly rather than observed, because this control is about what
+        // happens to a record that has one.
         fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
@@ -26582,8 +26740,9 @@ fn a_stale_return_cannot_take_the_place_its_successor_holds() {
     let mut successor = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(second_channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
-        // Torn down, with its endpoint closed: the only way a record
-        // reaches a place.
+        // A staged precondition: the value a torn-down record carries, set
+        // directly rather than observed, because this control is about what
+        // happens to a record that has one.
         fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
