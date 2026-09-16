@@ -121,6 +121,88 @@ impl PrivateHandoverGate {
     }
 }
 
+/// What a connection's waiter is told, and by whom.
+///
+/// LEVELS, NOT EDGES. Each of these stays set until whoever acts on it clears
+/// it, so a notice cannot fall between a waiter deciding and a waiter
+/// sleeping: the waiter holds this lock across that decision, and the sleep is
+/// the atomic release.
+///
+/// NONE OF THEM IS EVIDENCE. `gone` says the senders are finished with; only
+/// the owner's own receive returning Disconnected establishes that, and only
+/// that may be recorded. A notice is a reason to look.
+#[cfg(unix)]
+#[derive(Debug)]
+struct PrivateWakeState {
+    /// Something may have been accepted since the last look.
+    ///
+    /// Set by the handover notification, which is not landed: only the
+    /// disappearance below publishes anything today.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pending: bool,
+    /// How many senders for this connection exist.
+    ///
+    /// COUNTED BY THE WRAPPER THAT MAKES THEM. Not an Arc strong count: that
+    /// answers how many references to a shared thing exist, which is a
+    /// different question with no owner, and it is nobody's decision point.
+    /// This moves in exactly two places -- a wrapper being cloned and a
+    /// wrapper being dropped -- so the step to zero happens once, where it can
+    /// be acted on.
+    senders: usize,
+    /// Every sender is gone. A HINT TO LOOK AGAIN, not a finding.
+    gone: bool,
+}
+
+/// One connection's waitable notice.
+///
+/// Minted with its queue and held by both halves, so there is exactly one per
+/// connection and the declared client limit already bounds how many exist.
+/// Carries no payload: what is waiting is on the queue, and only the queue's
+/// owner may take it.
+#[cfg(unix)]
+struct PrivateOrderedWake {
+    state: Mutex<PrivateWakeState>,
+    ready: std::sync::Condvar,
+}
+
+#[cfg(unix)]
+impl PrivateOrderedWake {
+    /// A notice for a connection whose first sender is being made.
+    fn for_first_sender() -> Self {
+        Self {
+            state: Mutex::new(PrivateWakeState {
+                pending: false,
+                senders: 1,
+                gone: false,
+            }),
+            ready: std::sync::Condvar::new(),
+        }
+    }
+
+    /// Say that the senders are finished with, and wake whoever is waiting.
+    ///
+    /// CALLED ONLY AFTER THE LAST SENDER IS ACTUALLY GONE. A notice published
+    /// while a sender still exists wakes a waiter that receives, finds the
+    /// queue merely empty, and goes back to sleep -- and the drop that follows
+    /// wakes nobody, which is the case this whole mechanism exists for.
+    ///
+    /// DOES NOT PANIC. A poisoned notice is recovered rather than unwrapped,
+    /// because this runs in a Drop that may be running during an unwind, where
+    /// a panic would abort. The signal happens whether or not the flag could
+    /// be set, and outside the lock, because a waiter that cannot be told the
+    /// reason must at least be made to look.
+    fn publish_disappearance(&self) {
+        {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.gone = true;
+        }
+        self.ready.notify_all();
+    }
+}
+
 /// A recipient's ordered queue, reached through its gate.
 ///
 /// The sender field is private, but that is a smaller guarantee than it looks:
@@ -131,10 +213,74 @@ impl PrivateHandoverGate {
 /// and has to be re-established as producers are added: the two production
 /// ordered sends that exist both go through `admit`.
 #[cfg(unix)]
-#[derive(Clone)]
 pub(crate) struct PrivateGatedOrderedSender {
-    sender: SyncSender<XAuthorityOrderedDelivery>,
+    /// `None` only while this wrapper is being dropped.
+    ///
+    /// Held in an Option so the drop order can be chosen rather than
+    /// inherited: a field destroyed automatically is destroyed AFTER the Drop
+    /// body, which is exactly the wrong side of the notification.
+    sender: Option<SyncSender<XAuthorityOrderedDelivery>>,
     gate: Arc<PrivateHandoverGate>,
+    wake: Arc<PrivateOrderedWake>,
+}
+
+/// COUNTED WHERE SENDERS ARE MADE. Cloning this is the only way another sender
+/// for a connection comes to exist, so the count moves here and nowhere else.
+///
+/// THAT IS A DISCIPLINE, NOT A BARRIER. These routing sources are textually
+/// included into one module, so anything in it could reach the raw sender and
+/// clone it behind this count. What holds today is checkable and was checked:
+/// the field is touched in exactly four places, all of them here -- this
+/// clone, the drop, the admission, and the send through it -- and nothing
+/// outside this file names it. A new caller that reaches past it would have to
+/// be added on purpose, and would make the count wrong silently, so this is
+/// re-established by reading rather than guaranteed by the type.
+#[cfg(unix)]
+impl Clone for PrivateGatedOrderedSender {
+    fn clone(&self) -> Self {
+        {
+            let mut state = self
+                .wake
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.senders = state.senders.saturating_add(1);
+        }
+        Self {
+            sender: self.sender.clone(),
+            gate: self.gate.clone(),
+            wake: self.wake.clone(),
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for PrivateGatedOrderedSender {
+    /// THE SENDER GOES FIRST, AND THEN THE NOTICE.
+    ///
+    /// A Drop body runs before this struct's fields are destroyed, so
+    /// decrementing and signalling here and letting the sender field fall away
+    /// afterwards publishes "they are all gone" while this one still exists. A
+    /// waiter woken then receives, finds the queue empty rather than finished,
+    /// and sleeps again -- and the drop that really ends it signals nobody.
+    ///
+    /// So the sender is taken out and dropped explicitly, and only then is the
+    /// count moved and the notice published.
+    fn drop(&mut self) {
+        drop(self.sender.take());
+        let last = {
+            let mut state = self
+                .wake
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.senders = state.senders.saturating_sub(1);
+            state.senders == 0
+        };
+        if last {
+            self.wake.publish_disappearance();
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -151,7 +297,10 @@ impl PrivateGatedOrderedSender {
             return Err(PrivateHandoverRefusal::Fenced);
         }
         Ok(PrivateHandoverAdmission {
-            sender: &self.sender,
+            sender: self
+                .sender
+                .as_ref()
+                .expect("a sender is present until its wrapper is dropped"),
             _held: fenced,
         })
     }

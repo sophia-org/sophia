@@ -53,6 +53,14 @@ struct XAuthorityOrderedReceiver {
     /// capacity, and anything that must reserve room for what this queue can
     /// deliver has to know the number rather than pick one.
     capacity: usize,
+    /// The notice this connection's senders publish to.
+    ///
+    /// Held by the receiving half so whoever owns this queue has something to
+    /// wait on. Nothing here waits yet -- the worker that would is not landed
+    /// -- and holding it keeps the notice alive for as long as the queue it
+    /// belongs to.
+    #[cfg_attr(not(test), allow(dead_code))] // Nothing waits on it yet.
+    wake: Arc<PrivateOrderedWake>,
 }
 
 #[cfg(unix)]

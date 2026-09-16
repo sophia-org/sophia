@@ -405,9 +405,13 @@ impl XServerFrontendRouteRegistry {
         // serialize with. Bound to this registration: a replacement for the
         // same client mints its own, and closing this endpoint cannot reach it.
         let gate = Arc::new(PrivateHandoverGate::open());
+        // Minted with the queue as well, and for the same reason: there is no
+        // moment at which this connection has a sender that nothing counts.
+        let wake = Arc::new(PrivateOrderedWake::for_first_sender());
         let ordered_sender = PrivateGatedOrderedSender {
-            sender: ordered_sender,
+            sender: Some(ordered_sender),
             gate: gate.clone(),
+            wake: wake.clone(),
         };
         // THE PLACE IS TAKEN BEFORE THE ROW IS PUBLISHED, and before the
         // client table is held. The senders above already exist; what
@@ -477,6 +481,7 @@ impl XServerFrontendRouteRegistry {
                     receiver: ordered,
                     registration: connection_state,
                     capacity: self.per_client_input_capacity.get(),
+                    wake,
                 },
             },
         ))

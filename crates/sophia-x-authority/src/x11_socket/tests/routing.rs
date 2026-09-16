@@ -24054,6 +24054,212 @@ fn a_payload_taken_from_poisoned_storage_says_so_in_its_place() {
     );
 }
 
+
+/// What a connection's notice currently says.
+fn wake_snapshot(wake: &Arc<PrivateOrderedWake>) -> (bool, usize, bool) {
+    let state = wake
+        .state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    (state.pending, state.senders, state.gone)
+}
+
+#[test]
+fn a_waiter_asleep_when_the_last_sender_goes_is_woken_by_it() {
+    // THE COUNTEREXAMPLE THIS EXISTS FOR. An owner that finds its queue empty
+    // and sleeps cannot notice its senders disappearing: the receive that
+    // would tell it is the receive it is not making. Nothing in the channel
+    // wakes it, so the disappearance has to be published by whoever causes it.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8751);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let wake = Arc::clone(&channels.ordered.wake);
+    assert_eq!(wake_snapshot(&wake), (false, 1, false), "one sender: the row's");
+
+    // A waiter asleep on an empty queue, exactly as an owner would be.
+    let waiting = Arc::clone(&wake);
+    let (woken, wakes) = sync_channel(1);
+    let waiter = std::thread::spawn(move || {
+        let mut state = waiting.state.lock().expect("a readable notice");
+        while !state.pending && !state.gone {
+            state = waiting.ready.wait(state).expect("a readable notice");
+        }
+        woken.send(state.gone).expect("the control is listening");
+    });
+    assert_eq!(
+        wakes.recv_timeout(std::time::Duration::from_millis(150)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout),
+        "nothing has happened yet, so it is asleep"
+    );
+
+    // Its senders go. The row's is the last one.
+    drop(registration);
+    assert_eq!(
+        wakes.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok(true),
+        "and the disappearance woke it"
+    );
+    waiter.join().expect("the waiting thread");
+
+    // THE NOTICE IS A HINT, NOT A FINDING. What establishes that the producers
+    // are finished is the owner's own receive, and it says so here.
+    assert!(matches!(
+        channels.ordered.receiver.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
+}
+
+#[test]
+fn the_notice_is_published_only_after_the_last_sender_is_actually_gone() {
+    // A DROP BODY RUNS BEFORE ITS FIELDS ARE DESTROYED. Publishing from there
+    // and letting the sender field fall away afterwards says "all gone" while
+    // this one still exists: a waiter woken then receives, finds the queue
+    // merely empty rather than finished, and sleeps again -- and the drop that
+    // really ends it signals nobody.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8761);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let wake = Arc::clone(&channels.ordered.wake);
+
+    // A waiter that does what an owner does: on waking, it RECEIVES, and
+    // reports what the channel told it.
+    let waiting = Arc::clone(&wake);
+    let (answered, answers) = sync_channel(1);
+    let receiver = channels.ordered.receiver;
+    let waiter = std::thread::spawn(move || {
+        let mut state = waiting.state.lock().expect("a readable notice");
+        while !state.pending && !state.gone {
+            state = waiting.ready.wait(state).expect("a readable notice");
+        }
+        drop(state);
+        answered
+            .send(matches!(
+                receiver.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Disconnected)
+            ))
+            .expect("the control is listening");
+    });
+
+    drop(registration);
+    assert_eq!(
+        answers.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok(true),
+        "woken by the notice, it finds the channel FINISHED and not merely empty"
+    );
+    waiter.join().expect("the waiting thread");
+
+    // WHAT THIS DOES NOT ESTABLISH. If the notice were published first and the
+    // sender dropped immediately after, this waiter would still almost always
+    // find the channel finished: it has to be woken, reacquire the notice and
+    // then receive, and the drop it is racing is the next instruction. The
+    // window is real but not observable from here without a rendezvous inside
+    // that Drop, which this crate has no way to place.
+    //
+    // So the order is written the way it is because the reasoning says so --
+    // a Drop body runs before its fields are destroyed -- and not because this
+    // control could tell the difference.
+}
+
+#[test]
+fn a_clone_going_is_not_the_senders_going() {
+    // A NOTICE PER DISAPPEARANCE, NOT PER DROP. Producers clone a connection's
+    // sender constantly; saying the senders are gone each time one of those
+    // clones is dropped would wake an owner to find a queue that is perfectly
+    // alive, over and over.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8771);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let wake = Arc::clone(&channels.ordered.wake);
+
+    // Producers take copies the way the real ones do.
+    let first = capture_gated_sender(&private, client);
+    let second = capture_gated_sender(&private, client);
+    assert_eq!(wake_snapshot(&wake), (false, 3, false));
+
+    drop(first);
+    assert_eq!(
+        wake_snapshot(&wake),
+        (false, 2, false),
+        "one producer finished, and the connection is not"
+    );
+    drop(second);
+    assert_eq!(wake_snapshot(&wake), (false, 1, false));
+
+    // The exact capsule on the queue is untouched by any of that.
+    let sender = capture_gated_sender(&private, client);
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(87710);
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    gated_send(&sender, capsule).expect("an open endpoint");
+    drop(sender);
+    assert_eq!(wake_snapshot(&wake), (false, 1, false));
+    let survived = channels
+        .ordered
+        .receiver
+        .try_recv()
+        .expect("still queued, and still exactly itself");
+    assert!(Arc::ptr_eq(
+        &cell,
+        &survived.finalizer().expect("carried").completion
+    ));
+
+    drop(registration);
+    assert!(wake_snapshot(&wake).2, "and only the last one says so");
+}
+
+#[test]
+fn a_connection_whose_publication_refused_still_says_its_senders_are_gone() {
+    // A ROW THAT WAS NEVER PUBLISHED HAS NO PRODUCERS EITHER, and whoever
+    // holds its receiver is owed that answer as much as a connection that ran.
+    // The refusal drops the senders it had built, which is a disappearance
+    // like any other.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8781);
+    let (first, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let wake = Arc::clone(&channels.ordered.wake);
+
+    // A duplicate: publication refuses after its senders were made.
+    let refused = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .err()
+        .expect("the client is already registered");
+    assert!(matches!(
+        refused,
+        XServerFrontendRouteError::DuplicateClient { .. }
+    ));
+
+    // ISOLATION: the refused attempt's senders were its own. This connection's
+    // notice is untouched by them going.
+    assert_eq!(
+        wake_snapshot(&wake),
+        (false, 1, false),
+        "the live connection still has its own sender and is not finished"
+    );
+    drop(first);
+    assert!(wake_snapshot(&wake).2);
+}
+
 #[test]
 fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
     let mut f=prepared_ordered_fixture(XServerFrontendClientId(7601));
