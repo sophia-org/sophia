@@ -22336,11 +22336,14 @@ fn a_connections_place_coming_back_answers_nothing_for_an_interrupted_handover()
     // separation of accountings under a supplied clean fence, and nothing it
     // says applies to a handover that actually unwound.
     //
-    // THE INTERRUPTION IS STAGED, not produced: the state below is what an
-    // unwind between the take and the send leaves, set directly because this
-    // crate has no way to unwind a producer mid-call without a hook. What is
-    // real is everything after it -- the producer's own refusal to re-offer,
-    // the teardown, and the drive.
+    // WHAT IS STAGED IS THE CUSTODY HALF, under a supplied healthy gate. It is
+    // not the state an unwind leaves: an unwind is inside the gate and poisons
+    // it, and the control below carries that composite. This one sets the
+    // custody side directly -- an empty slot under a phase that says a
+    // handover may have begun -- and leaves the gate untouched on purpose, so
+    // the separation it is about can be read without the closure question
+    // mixed into it. What is real is everything after: the producer's own
+    // refusal to re-offer, the teardown, the drive, and the answer.
     let mut f = prepared_ordered_fixture(XServerFrontendClientId(8491));
     attempt_run(&mut f, 84910, 272, true);
     let cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 84910);
@@ -22623,6 +22626,168 @@ fn a_release_meeting_a_gone_receiver_keeps_its_capsule_and_gives_the_attempt_bac
     assert!(
         cell.answer().is_none(),
         "a refused send answers nothing: the debt is exactly as owed as before"
+    );
+}
+
+
+/// One real grant from the ledger, taken the way the executor takes one.
+///
+/// Not a fabricated token: the authority chooses the debt and issues the
+/// claim, so what is held afterwards is the ledger's own slot.
+fn real_attempt_claim(
+    private: &crate::PrivateXServerFrontend,
+) -> sophia_input_authority::AttemptClaim {
+    let mut cursor = 0;
+    private
+        .authority()
+        .under_common_as_origin(|authority, issuer| {
+            authority.claim_next_attempt(issuer, &mut cursor)
+        })
+        .expect("a readable authority")
+        .expect("this issuer answers for it")
+        .expect("a debt to attempt")
+}
+
+#[test]
+fn an_unplaced_attempt_goes_back_and_the_ledger_hands_the_debt_out_again() {
+    // UNPLACED IS PROVABLY UNUSED. Nothing was written onto the record and
+    // nothing was taken, so this grant reached no recipient and may go back --
+    // and going back is what the LEDGER confirms, not what a cleared slot
+    // here suggests. The debt being offered again is the ledger saying so.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8521));
+    attempt_release(&mut f, 85210, 272);
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.dispatch_one_press(), Some(true));
+    assert_eq!(private.record_one_native(), Some(true));
+
+    let claim = real_attempt_claim(private);
+    let incarnation = claim.hold;
+    assert_eq!(
+        private.terminal.settling[0].incarnation(),
+        incarnation,
+        "the ledger chose this release's own debt"
+    );
+    private.terminal.attempt_custody = Some(PrivateAttemptCustody {
+        token: claim.token,
+        phase: PrivateAttemptPhase::Unplaced,
+    });
+
+    assert_eq!(
+        private.relinquish_one_attempt(),
+        Some(true),
+        "an unplaced grant goes back, and the ledger confirmed it"
+    );
+    assert!(
+        private.terminal.attempt_custody.is_none(),
+        "the executor stops naming it only once that confirmation landed"
+    );
+
+    // THE LEDGER'S OWN ACCOUNT, not this executor's. The same debt is granted
+    // again, which it could not be while an attempt on it was outstanding.
+    let again = real_attempt_claim(private);
+    assert_eq!(
+        again.hold, incarnation,
+        "the debt is outstanding again, so the return really did land"
+    );
+    private.relinquish_outstanding_attempt(again.token);
+}
+
+#[test]
+fn a_dispatching_attempt_is_never_given_back_as_unused() {
+    // DISPATCHING MEANS IT MAY HAVE REACHED THE RECIPIENT. The record names it
+    // and the phase says the handover was begun, so no path may hand this
+    // grant back as an unused reservation -- that would tell the ledger
+    // nothing happened for a delivery that may already be on a queue.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8531));
+    attempt_release(&mut f, 85310, 272);
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.dispatch_one_press(), Some(true));
+    assert_eq!(private.record_one_native(), Some(true));
+
+    let claim = real_attempt_claim(private);
+    let incarnation = claim.hold;
+    // The write-ahead state: named on the record, phase says begun. Staged,
+    // because an unwind is what leaves it and this crate cannot unwind a
+    // producer mid-call; the token and the debt are the ledger's own.
+    private.terminal.attempt_custody = Some(PrivateAttemptCustody {
+        token: claim.token,
+        phase: PrivateAttemptPhase::Dispatching,
+    });
+    private.terminal.settling[0].custody.attempt = Some(claim.token);
+    private.terminal.settling[0].custody.dispatch = PrivateDispatchPhase::Indeterminate;
+
+    assert!(
+        private.relinquish_one_attempt().is_none(),
+        "a grant that may have been used is not an unused reservation"
+    );
+    assert!(
+        private.terminal.attempt_custody.is_some(),
+        "and it stays held rather than being quietly dropped"
+    );
+
+    // THE LEDGER STILL HAS IT. The debt is not offered again, which is what an
+    // outstanding attempt looks like from the other side.
+    let mut cursor = 0;
+    let next = private
+        .authority()
+        .under_common_as_origin(|authority, issuer| {
+            authority.claim_next_attempt(issuer, &mut cursor)
+        })
+        .expect("a readable authority")
+        .expect("this issuer answers for it");
+    assert!(
+        next.is_none_or(|claim| claim.hold != incarnation),
+        "a debt with an attempt outstanding is not granted again"
+    );
+}
+
+
+#[test]
+fn an_attempt_whose_return_was_not_confirmed_stays_named_here() {
+    // THE LEDGER'S CONFIRMATION IS THE EVIDENCE, not the call. A give-back
+    // that got no answer has established nothing: the ledger may still hold
+    // the slot, and an executor that stopped naming the token on the strength
+    // of having asked would have lost the only handle on it.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8541));
+    attempt_release(&mut f, 85410, 272);
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.dispatch_one_press(), Some(true));
+    assert_eq!(private.record_one_native(), Some(true));
+    let claim = real_attempt_claim(private);
+    private.terminal.attempt_custody = Some(PrivateAttemptCustody {
+        token: claim.token,
+        phase: PrivateAttemptPhase::Unplaced,
+    });
+
+    // The authority cannot be read: a holder panicked inside it. Asking is
+    // still possible; getting an answer is not.
+    let common = Arc::clone(&private.authority().common);
+    let holder = std::thread::spawn(move || {
+        let _inside = common.lock().expect("a readable authority");
+        panic!("a holder unwound inside the authority");
+    });
+    assert!(holder.join().is_err(), "the holder unwound");
+
+    assert_eq!(
+        private.relinquish_one_attempt(),
+        Some(false),
+        "asked, and not answered"
+    );
+    assert_eq!(
+        private
+            .terminal
+            .attempt_custody
+            .map(|custody| custody.token),
+        Some(claim.token),
+        "so the executor goes on naming exactly that token, unchanged"
+    );
+    assert_eq!(
+        private
+            .terminal
+            .attempt_custody
+            .map(|custody| custody.phase),
+        Some(PrivateAttemptPhase::Unplaced),
+        "and goes on knowing it was never placed"
     );
 }
 
