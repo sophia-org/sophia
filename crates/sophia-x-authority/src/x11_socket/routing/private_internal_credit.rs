@@ -218,6 +218,7 @@ impl PrivateInternalCredit {
         }
         held.continuation_slots = held.continuation_slots.saturating_sub(1);
         held.continuations[self.index] = PrivateOrderedContinuationPlace::Free;
+        PrivateSettlementOwner::release_maintenance_destination(&mut held, self.index);
         self.armed = false;
         PrivateCreditRelease::Released
     }
@@ -273,6 +274,14 @@ struct PrivateStoreOwnedHolder {
 enum PrivateHolderPlace {
     /// Nobody's.
     Free,
+    /// Set aside with its connection's place, before that connection was
+    /// published, and not yet asked for.
+    ///
+    /// INERT AND OWED. It is this connection's destination and nobody else's;
+    /// it holds no obligation, names no driver and authorises nothing. What it
+    /// establishes is that when something does commit an obligation for this
+    /// connection, the room for it is already here.
+    Reserved(usize),
     /// Promised to a preparation that has not committed, for one named place.
     ///
     /// CARRIES WHICH PLACE. A holder exists to be responsible for a particular
@@ -352,7 +361,11 @@ impl Drop for PrivateHolderDestination {
             held.holders.get(self.index),
             Some(PrivateHolderPlace::Promised(_))
         ) {
-            held.holders[self.index] = PrivateHolderPlace::Free;
+            // BACK TO RESERVED, NOT FREE. Nothing was put in it, and the place
+            // it was set aside for is still this connection's: handing it out
+            // to somebody else would leave that connection exposed with
+            // nowhere for its obligation to go.
+            held.holders[self.index] = PrivateHolderPlace::Reserved(self.for_place);
             held.holders_taken = held.holders_taken.saturating_sub(1);
         }
     }
@@ -397,32 +410,26 @@ impl PrivateSettlementOwner {
         // capacity appearing.
         let for_place = lease.index;
         if held.holders.iter().any(|place| match place {
-            PrivateHolderPlace::Free => false,
             PrivateHolderPlace::Promised(promised) => *promised == for_place,
             PrivateHolderPlace::Taken(holder) => holder.credit.index == for_place,
+            PrivateHolderPlace::Free | PrivateHolderPlace::Reserved(_) => false,
         }) {
             return Err(PrivateHolderRefusal::AlreadyHeld);
         }
-        // A BACKSTOP, AND IT SAYS SO. One holder per place and one place per
-        // holder makes this unreachable from here: every promise and every
-        // holder names a distinct place, so there cannot be more of them than
-        // there are places, and a lease exists only because a place does. It
-        // is kept because the invariant it rests on lives in two methods and
-        // a caller should be refused rather than given a place off the end if
-        // they ever part company.
-        if !held.continuation_bound_declared || held.holders_taken >= held.continuation_capacity {
-            return Err(PrivateHolderRefusal::Saturated);
-        }
-        let index = match held
-            .holders
-            .iter()
-            .position(|place| matches!(place, PrivateHolderPlace::Free))
-        {
+        // THE DESTINATION IS ALREADY THERE, set aside with this lease's place
+        // before its connection was published. This finds it rather than
+        // making one: growing storage here would mean a connection could be
+        // exposed and only afterwards found to have nowhere for its obligation
+        // to go, which is what reserving it early exists to prevent.
+        let index = match held.holders.iter().position(|place| {
+            matches!(place, PrivateHolderPlace::Reserved(reserved) if *reserved == for_place)
+        }) {
             Some(index) => index,
-            None => {
-                held.holders.push(PrivateHolderPlace::Free);
-                held.holders.len() - 1
-            }
+            // A BACKSTOP, AND IT SAYS SO. A lease of this store always has a
+            // destination reserved with its place, so reaching this means the
+            // reservation and this preparation have parted company. A caller
+            // is refused rather than given storage that was nobody's.
+            None => return Err(PrivateHolderRefusal::Saturated),
         };
         held.holders[index] = PrivateHolderPlace::Promised(for_place);
         held.holders_taken = held.holders_taken.saturating_add(1);
@@ -458,6 +465,26 @@ impl PrivateSettlementOwner {
             unreachable!("just matched as taken")
         };
         Some(holder)
+    }
+
+    /// Give up the maintenance destination of a place that has gone.
+    ///
+    /// A DESTINATION BELONGS TO THE CONNECTION ITS PLACE WAS RESERVED FOR. Once
+    /// that place is returned there is no obligation left to commit, and
+    /// leaving it reserved would keep a successor from being given one of its
+    /// own -- the reservation looks for a free entry, and a stale one is not
+    /// free. Nothing is dropped here: a holder that is in it is taken out by
+    /// the caller and disposed of outside the store.
+    fn release_maintenance_destination(held: &mut AbandonedSettlements, index: usize) {
+        let Some(place) = held.holders.get_mut(index) else {
+            return;
+        };
+        if matches!(place, PrivateHolderPlace::Promised(_)) {
+            held.holders_taken = held.holders_taken.saturating_sub(1);
+        }
+        if !matches!(place, PrivateHolderPlace::Taken(_)) {
+            *place = PrivateHolderPlace::Free;
+        }
     }
 
     /// Retire the holder responsible for a place that has just been returned.

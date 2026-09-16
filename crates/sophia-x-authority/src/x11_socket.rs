@@ -86,6 +86,7 @@ include!("x11_socket/routing/private_startup.rs");
 include!("x11_socket/routing/private_worker_body.rs");
 include!("x11_socket/routing/private_worker_join.rs");
 include!("x11_socket/routing/private_fence_record.rs");
+include!("x11_socket/routing/private_maintenance_identity.rs");
 include!("x11_socket/routing/private_focus_runtime.rs");
 include!("x11_socket/routing/private_native.rs");
 #[cfg(unix)]
@@ -97,6 +98,7 @@ include!("x11_socket/routing/private_inventory.rs");
 include!("x11_socket/routing/private_settlement.rs");
 include!("x11_socket/routing/private_ordered_home.rs");
 include!("x11_socket/routing/private_ordered_continuation.rs");
+include!("x11_socket/routing/private_ordered_lease.rs");
 include!("x11_socket/routing/private_internal_credit.rs");
 include!("x11_socket/routing/private_retained_reading.rs");
 include!("x11_socket/routing/private_settlement_handle.rs");

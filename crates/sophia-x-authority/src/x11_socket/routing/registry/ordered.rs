@@ -347,6 +347,23 @@ impl XServerFrontendClientRouteRegistration {
         self.ordered_gate.clone()
     }
 
+    /// The name of this connection's obligation, if it has a place.
+    ///
+    /// FROM THE RESERVATION THAT MADE IT, so a caller gets the name this
+    /// connection was actually given rather than one assembled out of an
+    /// index, a home and a store it happened to be holding. `None` when this
+    /// registry has no continuation store: there is no place, so there is
+    /// nothing to name.
+    #[cfg_attr(not(test), allow(dead_code))] // Asked by a commitment not attached yet.
+    pub(crate) fn maintenance_identity(&self) -> Option<PrivateMaintenanceIdentity> {
+        let held = match self.ordered_continuation.lock() {
+            Ok(held) => held,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        held.as_ref()
+            .map(PrivateOrderedContinuationSlot::maintenance_identity)
+    }
+
     /// Whether this endpoint is closed to handovers. `None` if unreadable.
     #[cfg_attr(not(test), allow(dead_code))] // Only controls ask this today.
     pub(crate) fn ordered_handovers_fenced(&self) -> Option<bool> {

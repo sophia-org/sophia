@@ -33352,3 +33352,444 @@ fn a_fence_is_not_delayed_by_a_diagnostic_somebody_is_holding() {
     drop((payload_held, diagnostic_held));
     drop(f.fixture);
 }
+
+/// Which holder entry, if any, this store has set aside for a place.
+fn maintenance_destination(
+    durable: &PrivateSettlementOwner,
+    place: usize,
+) -> Option<&'static str> {
+    let held = durable.records_even_if_poisoned();
+    held.holders.iter().find_map(|entry| match entry {
+        PrivateHolderPlace::Reserved(reserved) if *reserved == place => Some("reserved"),
+        PrivateHolderPlace::Promised(promised) if *promised == place => Some("promised"),
+        PrivateHolderPlace::Taken(holder) if holder.credit.index == place => Some("taken"),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_connections_obligation_is_named_and_housed_before_it_is_published() {
+    // BEFORE THE ROW, WHICH IS THE WHOLE POINT. What will eventually fill this
+    // destination -- a joined worker, a closed gate, an obligation somebody
+    // commits -- all happens long after this connection is reachable. Finding
+    // storage for it then would mean a connection whose sender producers can
+    // already reach could be left unable to be finished for want of room.
+    //
+    // SOURCE ORDERING IS WHAT ESTABLISHES "BEFORE" HERE. The reservation runs
+    // inside register_client_with_admission ahead of publish_registered_client
+    // and ahead of the client table, and the destination is set aside in the
+    // same acquisition as the place. What this control observes is the state
+    // that ordering leaves: a registration that exists at all already has
+    // both, on one credit.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8441);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+
+    let identity = registration
+        .maintenance_identity()
+        .expect("this connection has a place, so it has a name");
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    assert_eq!(
+        maintenance_destination(&durable, identity.place()),
+        Some("reserved"),
+        "its destination was set aside with its place"
+    );
+    assert_eq!(
+        durable.holders_taken(),
+        Some(0),
+        "and nothing holds one: a reserved destination is inert"
+    );
+
+    // THE SAME NAME EVERY TIME, and it names this connection's own home.
+    let again = registration
+        .maintenance_identity()
+        .expect("the same connection");
+    assert!(identity.same_as(&again), "one connection, one name");
+    assert!(
+        identity
+            .with_home(|home| Arc::ptr_eq(home, &registration.ordered_home))
+            .reached()
+            .expect("its place is its own"),
+        "and the home it names is the one this registration binds into"
+    );
+    drop((registration, private));
+}
+
+#[test]
+fn every_connection_at_the_bound_already_has_its_destination() {
+    // NO SECOND POOL AND NO SECOND CHARGE. One connection place carries one
+    // maintenance destination, so a store at its bound has a destination for
+    // every connection it admitted and the conversion needs no extra credit.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let held: Vec<_> = [8442u64, 8443]
+        .iter()
+        .map(|raw| {
+            let client = XServerFrontendClientId(*raw);
+            private
+                .broker
+                .registry
+                .register_client_with_admission(client, Some(admitted(client)))
+                .expect("a place and a row")
+                .0
+        })
+        .collect();
+    assert_eq!(durable.continuations_reserved(), Some(2), "at the bound");
+    for registration in &held {
+        let place = registration
+            .maintenance_identity()
+            .expect("a place, so a name")
+            .place();
+        assert_eq!(maintenance_destination(&durable, place), Some("reserved"));
+    }
+
+    // AND THE APPROVED CONVERSION FINDS ITS DESTINATION ALREADY THERE, taking
+    // no further credit for it.
+    let lease = lease_of(&held[0]);
+    let before = durable.continuations_reserved();
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("the destination reserved with this place");
+    assert_eq!(durable.continuations_reserved(), before);
+    assert_eq!(
+        maintenance_destination(&durable, lease.index),
+        Some("promised")
+    );
+    let outer = durable.clone();
+    assert!(matches!(
+        lease.convert_to_internal(&outer, destination),
+        PrivateInternalConversion::Held
+    ));
+    assert_eq!(durable.continuations_reserved(), before, "and still none");
+    assert_eq!(durable.continuations_abandoned(), Some(0));
+    drop((held, private, outer));
+}
+
+#[test]
+fn a_preparation_that_is_never_committed_leaves_the_destination_reserved() {
+    // BACK TO RESERVED, NOT FREE. Nothing was put in it and the place it was
+    // set aside for is still this connection's; handing it to somebody else
+    // would leave a published connection with nowhere for its obligation.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8444);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let lease = lease_of(&registration);
+    {
+        let destination = durable
+            .prepare_internal_holder(&lease)
+            .expect("its own destination");
+        assert_eq!(
+            maintenance_destination(&durable, destination.for_place),
+            Some("promised")
+        );
+    }
+    assert_eq!(
+        maintenance_destination(&durable, lease.index),
+        Some("reserved"),
+        "the preparation went and the reservation stayed"
+    );
+    // And it can be prepared again, because it is still this connection's.
+    assert!(durable.prepare_internal_holder(&lease).is_ok());
+    drop((registration, private, lease));
+}
+
+#[test]
+fn an_unexposed_refusal_leaves_no_destination_behind() {
+    // A RESERVATION THAT PUBLISHED NOTHING GIVES BACK BOTH. The existing
+    // unexposed release returns the place; the destination set aside with it
+    // goes the same way, or the next connection to reserve would find one of
+    // its entries already spoken for by a connection that never existed.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let lease = durable
+        .reserve_ordered_continuation()
+        .expect("a declared bound leaves a place");
+    let place = lease.index;
+    assert_eq!(maintenance_destination(&durable, place), Some("reserved"));
+
+    lease.relinquish_unexposed();
+    assert_eq!(durable.continuations_reserved(), Some(0));
+    assert_eq!(
+        maintenance_destination(&durable, place),
+        None,
+        "and its destination went with it"
+    );
+    drop(private);
+}
+
+#[test]
+fn a_name_outlives_its_connection_and_its_conversion() {
+    // THE NAME IS WHAT THE OBLIGATION IS CALLED, so it has to survive the
+    // things that end a connection without ending what it owed: its
+    // registration being destroyed, and its place becoming the store's own
+    // responsibility.
+    let durable = PrivateSettlementOwner::default();
+    let client = XServerFrontendClientId(8445);
+    let (private, registration, cell, frames, _wire) =
+        converted_fixture(&durable, client, 84450);
+    let identity = registration
+        .maintenance_identity()
+        .expect("a place, so a name");
+
+    let outer = hand_place_to_store(&durable, &registration);
+    // A CONVERSION DOES NOT RENAME IT: same store, same place, same home.
+    let named = durable.take_internal_holder(0).expect("a holder");
+    assert!(
+        identity.same_as(&named.credit.maintenance_identity()),
+        "the store's own holder names the same obligation"
+    );
+
+    drop(registration);
+    // AND THE CONNECTION ENDING DOES NOT EITHER. The name still resolves, and
+    // the home it reaches still holds what was accepted for it.
+    let survived = identity
+        .with_home(|home| home.borrow(|continuation| continuation.queue().try_recv().ok()))
+        .reached()
+        .expect("its place is still its own")
+        .expect("its home")
+        .expect("the capsule accepted before it ended");
+    assert_eq!(
+        survived.delivery(),
+        XAuthorityInputDeliveryId::from_raw(84450)
+    );
+    assert_eq!(order_pass_frames(&survived), frames);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &survived.finalizer().expect("carried").completion
+    ));
+    drop((private, survived, cell, named, outer));
+}
+
+#[test]
+fn a_name_stops_resolving_when_its_place_goes_back() {
+    // A RETURNED PLACE IS NOBODY'S, INCLUDING ITS OWN. The name must stop
+    // resolving the moment the place goes back -- not when a successor
+    // arrives -- because between those two a caller acting on "still current"
+    // would be acting on a place that is free.
+    let durable = PrivateSettlementOwner::default();
+    let client = XServerFrontendClientId(8446);
+    let (private, registration, _cell, _frames, _wire) =
+        converted_fixture(&durable, client, 84460);
+    let identity = registration
+        .maintenance_identity()
+        .expect("a place, so a name");
+    let place = identity.place();
+    let outer = hand_place_to_store(&durable, &registration);
+    drop(registration);
+    let mut named = durable.take_internal_holder(0).expect("a holder");
+    assert!(matches!(
+        credit_receives(&named.credit),
+        PrivateCreditReach::Reached(Some(_))
+    ));
+    drop(private);
+
+    // The place is returned through the credit's own release.
+    let mut settled = false;
+    for _ in 0..8 {
+        let Some(finished) = named
+            .credit
+            .with_place(|continuation| {
+                continuation.visit();
+                continuation.settled()
+            })
+            .reached()
+        else {
+            panic!("the place is this credit's until it releases it")
+        };
+        settled = finished;
+        if settled {
+            break;
+        }
+    }
+    assert!(settled);
+    assert!(matches!(
+        named.credit.release(),
+        PrivateCreditRelease::Released
+    ));
+    assert_eq!(durable.continuations_reserved(), Some(0));
+
+    // NOTHING HAS TAKEN THE NUMBER YET, and the name is already stale.
+    assert!(matches!(
+        identity.with_home(|_| ()),
+        PrivateMaintenanceReach::Stale
+    ));
+    assert_eq!(
+        maintenance_destination(&durable, place),
+        None,
+        "and its destination is free for whoever comes next"
+    );
+
+    // A SUCCESSOR TAKES THE SAME NUMBER AND GETS A DIFFERENT NAME.
+    let second = XServerFrontendClientId(8447);
+    let (successor, successor_registration, successor_cell, successor_frames, _successor_wire) =
+        converted_fixture(&durable, second, 84470);
+    let successor_identity = successor_registration
+        .maintenance_identity()
+        .expect("a place, so a name");
+    assert_eq!(successor_identity.place(), place, "the same number");
+    assert!(
+        !identity.same_as(&successor_identity),
+        "and a different obligation"
+    );
+    assert!(matches!(
+        identity.with_home(|_| ()),
+        PrivateMaintenanceReach::Stale
+    ));
+    assert_eq!(
+        maintenance_destination(&durable, place),
+        Some("reserved"),
+        "the successor's own destination, set aside with its own place"
+    );
+
+    // AND THE OLD NAME REACHED NOTHING OF THE SUCCESSOR'S.
+    let capsule = successor_registration
+        .ordered_home
+        .borrow(|continuation| continuation.queue().try_recv().ok())
+        .expect("its own home")
+        .expect("the successor's own capsule");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(84470)
+    );
+    assert_eq!(order_pass_frames(&capsule), successor_frames);
+    assert!(Arc::ptr_eq(
+        &successor_cell,
+        &capsule.finalizer().expect("carried").completion
+    ));
+    assert!(successor_cell.answer().is_none());
+    drop((successor_registration, successor, capsule, named, outer));
+}
+
+#[test]
+fn a_name_from_another_store_resolves_to_nothing_here() {
+    // A NAME CARRIES ITS STORE. Two connections can hold the same number in
+    // different stores, and neither is the other's.
+    let one = PrivateSettlementOwner::default();
+    let two = PrivateSettlementOwner::default();
+    let first = private_over(&one, 2);
+    let second = private_over(&two, 2);
+    let a = XServerFrontendClientId(8448);
+    let b = XServerFrontendClientId(8449);
+    let (one_registration, _one_channels) = first
+        .broker
+        .registry
+        .register_client_with_admission(a, Some(admitted(a)))
+        .expect("a place and a row");
+    let (two_registration, _two_channels) = second
+        .broker
+        .registry
+        .register_client_with_admission(b, Some(admitted(b)))
+        .expect("a place and a row");
+    let here = one_registration.maintenance_identity().expect("a name");
+    let there = two_registration.maintenance_identity().expect("a name");
+
+    assert_eq!(here.place(), there.place(), "the same number");
+    assert!(!here.same_as(&there), "and different obligations");
+    assert!(
+        here.with_home(|home| Arc::ptr_eq(home, &one_registration.ordered_home))
+            .reached()
+            .expect("its own store"),
+        "each resolves in its own store"
+    );
+    assert!(
+        there
+            .with_home(|home| Arc::ptr_eq(home, &two_registration.ordered_home))
+            .reached()
+            .expect("its own store")
+    );
+    drop((one_registration, two_registration, first, second));
+}
+
+#[test]
+fn a_lookup_keeps_the_store_it_found_until_its_act_is_over() {
+    // A NAME HOLDS ITS STORE WEAKLY, so every lookup begins by upgrading. An
+    // operation that let that upgrade go before acting would be acting on a
+    // home whose store could disappear underneath it -- and the home survives
+    // in the handle the lookup pinned, so the act would finish and look like
+    // success.
+    //
+    // THE LAST HOLDER IS DROPPED FROM INSIDE THE ACT, which is precisely the
+    // interval. Nothing is injected and no thread is raced.
+    let durable = PrivateSettlementOwner::default();
+    let capability = durable.settlement_ref();
+    let client = XServerFrontendClientId(8451);
+    let private = private_over(&durable, 2);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let identity = registration.maintenance_identity().expect("a name");
+    let home = Arc::clone(&registration.ordered_home);
+    // Every holder of the store that is not the lookup's own goes in here.
+    drop(registration);
+    let last = std::cell::Cell::new(Some((private, durable)));
+    let watch = capability.clone();
+
+    let reached = identity
+        .with_home(|found| {
+            assert!(Arc::ptr_eq(found, &home));
+            drop(last.take());
+            // THE ASSERTION THAT SEPARATES THEM. A lookup that let its upgrade
+            // go would leave the store gone from here on, and the rest of this
+            // act would run against a home nobody could reach -- which reads
+            // exactly like success, because the home itself survives in the
+            // handle the lookup pinned.
+            watch.owner().is_some()
+        })
+        .reached()
+        .expect("its place is its own");
+    assert!(
+        reached,
+        "the lookup holds the store it found for as long as its act runs"
+    );
+
+    // AND ONLY UNTIL IT IS OVER.
+    assert!(capability.owner().is_none());
+    assert!(matches!(
+        identity.with_home(|_| ()),
+        PrivateMaintenanceReach::StoreGone
+    ));
+    drop(home);
+}
+
+#[test]
+fn a_name_whose_store_has_gone_says_so_and_holds_nothing_up() {
+    // A NAME IS A NAME, NOT CUSTODY. It holds its store weakly, so a store
+    // whose legitimate holders have all gone drops with everything in it --
+    // and the name says the store has gone rather than that the place moved.
+    let capability;
+    let identity;
+    {
+        let durable = PrivateSettlementOwner::default();
+        capability = durable.settlement_ref();
+        let client = XServerFrontendClientId(8450);
+        let private = private_over(&durable, 2);
+        let (registration, _channels) = private
+            .broker
+            .registry
+            .register_client_with_admission(client, Some(admitted(client)))
+            .expect("a place and a row");
+        identity = registration.maintenance_identity().expect("a name");
+        assert!(identity.with_home(|_| ()).reached().is_some());
+        drop((registration, private, durable));
+    }
+    assert!(
+        capability.owner().is_none(),
+        "a name does not keep a store alive"
+    );
+    assert!(matches!(
+        identity.with_home(|_| ()),
+        PrivateMaintenanceReach::StoreGone
+    ));
+}
