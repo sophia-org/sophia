@@ -46,6 +46,13 @@ enum PrivateRetainedEnding {
 struct PrivateRetainedDisposition {
     /// What closing this connection's endpoint established, if anything.
     closure: Option<PrivateHandoverFence>,
+    /// What became of the worker that was to serve it.
+    worker: PrivateOrderedWorkerExit,
+    /// Whether the storage this payload came from had been poisoned.
+    ///
+    /// Reported beside the others and never folded into them: it is not a
+    /// worker outcome, not a closure, and not an ending.
+    source_poisoned: bool,
     /// Where its wire stands.
     ending: PrivateRetainedEnding,
     /// Whether its producers are gone, established by the channel finishing
@@ -79,17 +86,17 @@ impl PrivateOrderedContinuation {
     /// at one of them needs to see the others.
     #[cfg_attr(not(test), allow(dead_code))] // Read by reporting that is not attached yet.
     fn disposition(&self) -> PrivateRetainedDisposition {
-        let (closure, ending, drained, retained, retries_exhausted) = match self {
+        let (evidence, ending, drained, retained, retries_exhausted) = match self {
             Self::Setup {
                 accepted,
-                fence,
+                evidence,
                 ending_refused,
                 ended,
                 drained,
                 retained,
                 refusal: _,
             } => (
-                *fence,
+                *evidence,
                 match (ended, ending_refused, accepted) {
                     (true, _, _) => PrivateRetainedEnding::Ended,
                     (false, Some(kind), _) => PrivateRetainedEnding::Refused(*kind),
@@ -105,8 +112,8 @@ impl PrivateOrderedContinuation {
                 // A setup record has no close of its own to spend attempts on.
                 false,
             ),
-            Self::Serving { owner, fence } => (
-                *fence,
+            Self::Serving { owner, evidence } => (
+                *evidence,
                 // AN ESTABLISHED ENDING IS THE ENDING, whatever else is
                 // recorded beside it. More than one path ends a wire and they
                 // do not all leave a close record -- ending a part-written
@@ -161,7 +168,9 @@ impl PrivateOrderedContinuation {
             ),
         };
         PrivateRetainedDisposition {
-            closure,
+            closure: evidence.fence,
+            worker: evidence.worker,
+            source_poisoned: evidence.source_poisoned,
             ending,
             drained,
             retained,

@@ -1,3 +1,22 @@
+/// What asking for a serving owner did.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Nothing starts one yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrivateOrderedPromotion {
+    /// An owner exists and nothing drives it.
+    Ready,
+    /// There is no bound transport here to promote.
+    Unbound,
+    /// One is already here, and it stands.
+    AlreadyServing,
+    /// This endpoint is closed or its wire is ended: nothing starts on it.
+    Closing,
+    /// Preparation refused. Everything is where it was.
+    Refused(X11OrderedServingRefusal),
+    /// The storage could not be read, so nothing was attempted.
+    Unreadable,
+}
+
 // One connection's ordered output, from the receiver a registration mints to
 // the binding that pairs it with that connection's socket, and the closing
 // that establishes nothing more will be handed over.
@@ -119,9 +138,10 @@ impl XServerFrontendClientRouteRegistration {
         match self.retain_ordered_setup(PrivateOrderedContinuation::Setup {
             accepted,
             refusal: refused,
-            // Nobody has closed this endpoint: the connection is being built,
-            // not torn down. Teardown writes what its close established.
-            fence: None,
+            // Nothing is established yet: the connection is being built, not
+            // torn down, and no worker has been started for it. Teardown
+            // writes what its close found and what became of any worker.
+            evidence: PrivateOrderedEvidence::unstarted(),
             // Nothing has been received off this queue. Receiving is how a
             // driver learns whether producers are gone, and nothing here is
             // driving.
@@ -145,6 +165,91 @@ impl XServerFrontendClientRouteRegistration {
                 unreachable!("this function builds a setup continuation")
             }
         }
+    }
+
+    /// Turn this connection's bound transport into a serving owner, in place.
+    ///
+    /// READY, AND DRIVEN BY NOBODY. What this makes is an owner that exists;
+    /// it does not start a worker, does not serve, does not receive, and does
+    /// not answer anything. A connection is in exactly one of two payload
+    /// states afterwards and the variant says which: a bound transport with no
+    /// owner, or an owner that has never been started.
+    ///
+    /// THE TRANSPORT IS BORROWED FIRST. Preparation reads what it needs from
+    /// it and does every fallible and allocating thing -- provenance, the
+    /// endpoint, the retention its queue implies, the home the owner will live
+    /// in -- while the transport is still in this registration's storage. Only
+    /// then is it taken out, and what runs between that take and the
+    /// assignment cannot fail and does not allocate.
+    ///
+    /// A REFUSAL CONSUMES NOTHING. The transport stays exactly where it was,
+    /// with whatever its queue is holding, and the connection is as it was.
+    ///
+    /// THE FIRST OWNER STANDS. A second promotion does not rebuild it, does
+    /// not reset its identity, close state, attempt budget, frame progress or
+    /// held admissions, and does not start anything: it is refused, and says
+    /// that an owner is already there.
+    #[cfg_attr(not(test), allow(dead_code))] // Nothing promotes in production yet.
+    pub(crate) fn promote_ordered_serving(
+        &self,
+        frontend: &crate::x11_socket::PrivateXServerFrontend,
+    ) -> PrivateOrderedPromotion {
+        let Ok(mut held) = self.ordered_setup.lock() else {
+            return PrivateOrderedPromotion::Unreadable;
+        };
+        match held.as_ref() {
+            Some(PrivateOrderedContinuation::Serving { .. }) => {
+                return PrivateOrderedPromotion::AlreadyServing;
+            }
+            Some(PrivateOrderedContinuation::Setup {
+                accepted: PrivateOrderedSetupCustody::Transport(_),
+                ended,
+                ending_refused,
+                evidence,
+                ..
+            }) if !*ended && ending_refused.is_none() && evidence.fence.is_none() => {}
+            // A connection whose endpoint has been closed, or whose wire has
+            // been ended or refused an ending, is not one anything may be
+            // started on.
+            Some(PrivateOrderedContinuation::Setup {
+                accepted: PrivateOrderedSetupCustody::Transport(_),
+                ..
+            }) => return PrivateOrderedPromotion::Closing,
+            // A receiver alone has no connection to serve, and nothing at all
+            // has nothing to promote.
+            Some(PrivateOrderedContinuation::Setup { .. }) | None => {
+                return PrivateOrderedPromotion::Unbound;
+            }
+        }
+        let prepared = {
+            let Some(PrivateOrderedContinuation::Setup {
+                accepted: PrivateOrderedSetupCustody::Transport(transport),
+                ..
+            }) = held.as_ref()
+            else {
+                unreachable!("checked above")
+            };
+            match X11OrderedServingOwner::prepare_for_registration(frontend, self, transport) {
+                Ok(prepared) => prepared,
+                Err(refusal) => return PrivateOrderedPromotion::Refused(refusal),
+            }
+        };
+        // FROM HERE TO THE ASSIGNMENT: no allocation, no call that can fail,
+        // no lock, no callback. The home was made during preparation and the
+        // evidence is carried across unchanged.
+        let Some(PrivateOrderedContinuation::Setup {
+            accepted: PrivateOrderedSetupCustody::Transport(transport),
+            evidence,
+            ..
+        }) = held.take()
+        else {
+            unreachable!("checked above")
+        };
+        *held = Some(PrivateOrderedContinuation::Serving {
+            owner: prepared.commit(*transport),
+            evidence,
+        });
+        PrivateOrderedPromotion::Ready
     }
 
     /// Take custody of this connection's ordered output.

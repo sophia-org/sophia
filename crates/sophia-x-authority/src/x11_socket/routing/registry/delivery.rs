@@ -782,9 +782,9 @@ impl XServerFrontendClientRouteRegistration {
         // while the place promised to it survived empty. The guard is what is
         // handed over; `install` takes from it only once it has somewhere to
         // put what it takes.
-        let mut held = match self.ordered_setup.lock() {
-            Ok(held) => held,
-            Err(poisoned) => poisoned.into_inner(),
+        let (mut held, source_poisoned) = match self.ordered_setup.lock() {
+            Ok(held) => (held, false),
+            Err(poisoned) => (poisoned.into_inner(), true),
         };
         if held.is_none() {
             // NO CUSTODY IS NOT NO WORK. This connection's row was published,
@@ -810,10 +810,19 @@ impl XServerFrontendClientRouteRegistration {
         // depend on how far its setup happened to get.
         if let Some(continuation) = held.as_mut() {
             let recorded = match continuation {
-                PrivateOrderedContinuation::Setup { fence, .. }
-                | PrivateOrderedContinuation::Serving { fence, .. } => fence,
+                PrivateOrderedContinuation::Setup { evidence, .. }
+                | PrivateOrderedContinuation::Serving { evidence, .. } => evidence,
             };
-            *recorded = Some(fence);
+            recorded.fence = Some(fence);
+            // WRITTEN WHERE IT WAS FOUND. The destination has a lock of its
+            // own and that lock knows nothing about this one, so moving the
+            // work into a readable place would otherwise launder the fact that
+            // the place it came from could not be read.
+            recorded.source_poisoned = source_poisoned;
+            // Nothing started a worker for this connection, so there is
+            // nothing to join and no join is manufactured. When a spawn
+            // exists, what it left is written here by whoever joined it.
+            recorded.worker = PrivateOrderedWorkerExit::NeverStarted;
         }
         slot.install(&mut held);
         debug_assert!(

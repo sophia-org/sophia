@@ -21419,7 +21419,10 @@ fn transport_continuation(
         // A staged precondition: the value a torn-down record carries, set
         // directly rather than observed, because this control is about what
         // happens to a record that has one.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -21904,8 +21907,8 @@ fn retained_fence(
     index: usize,
 ) -> Option<Option<PrivateHandoverFence>> {
     durable.with_ordered_continuation(index, |continuation| match continuation {
-        PrivateOrderedContinuation::Setup { fence, .. }
-        | PrivateOrderedContinuation::Serving { fence, .. } => *fence,
+        PrivateOrderedContinuation::Setup { evidence, .. }
+        | PrivateOrderedContinuation::Serving { evidence, .. } => evidence.fence,
     })
 }
 
@@ -22080,13 +22083,16 @@ fn a_serving_record_without_an_established_closure_never_settles_either() {
         .reserve_ordered_continuation()
         .expect("a place, reserved before exposure");
     let mut source = Some(PrivateOrderedContinuation::Serving {
-        owner: Box::new(owner),
+        owner: PrivateServingHome::holding(owner),
         // STAGED, NOT OBSERVED. No holder panicked here and no teardown ran:
         // this is the value such a record would arrive carrying, set directly
         // so the guard below is about what a record with it does. What writes
         // this value for real is teardown, and the controls named
         // teardown_records_* are where that is established.
-        fence: Some(PrivateHandoverFence::Unreadable),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Unreadable),
+            ..PrivateOrderedEvidence::unstarted()
+        },
     });
     slot.install(&mut source);
 
@@ -22140,8 +22146,8 @@ fn a_closure_someone_else_made_is_carried_as_already_established() {
             .expect("readable")
             .as_ref()
             .map(|continuation| match continuation {
-                PrivateOrderedContinuation::Setup { fence, .. } => *fence,
-                PrivateOrderedContinuation::Serving { fence, .. } => *fence,
+                PrivateOrderedContinuation::Setup { evidence, .. } => evidence.fence,
+                PrivateOrderedContinuation::Serving { evidence, .. } => evidence.fence,
             }),
         Some(None),
         "the record still says None: no teardown outcome has been recorded here"
@@ -22220,10 +22226,10 @@ fn teardown_records_its_actual_close_on_a_serving_record_too() {
     let (owner, registration, runner, durable, _output) = serving_custody_for(f);
     registration
         .retain_ordered_setup(PrivateOrderedContinuation::Serving {
-            owner: Box::new(owner),
+            owner: PrivateServingHome::holding(owner),
             // A STAGED PRECONDITION, not an observation: no close has happened
             // yet. What this control is about is what teardown writes over it.
-            fence: None,
+            evidence: PrivateOrderedEvidence::unstarted(),
         })
         .unwrap_or_else(|_| panic!("this registration holds no custody yet"));
 
@@ -22256,8 +22262,8 @@ fn teardown_records_an_unreadable_close_on_a_serving_record() {
     let (owner, registration, runner, durable, _output) = serving_custody_for(f);
     registration
         .retain_ordered_setup(PrivateOrderedContinuation::Serving {
-            owner: Box::new(owner),
-            fence: None,
+            owner: PrivateServingHome::holding(owner),
+            evidence: PrivateOrderedEvidence::unstarted(),
         })
         .unwrap_or_else(|_| panic!("this registration holds no custody yet"));
 
@@ -22293,8 +22299,8 @@ fn teardown_records_an_already_established_close_on_a_serving_record() {
     let (owner, registration, runner, durable, _output) = serving_custody_for(f);
     registration
         .retain_ordered_setup(PrivateOrderedContinuation::Serving {
-            owner: Box::new(owner),
-            fence: None,
+            owner: PrivateServingHome::holding(owner),
+            evidence: PrivateOrderedEvidence::unstarted(),
         })
         .unwrap_or_else(|_| panic!("this registration holds no custody yet"));
     assert_eq!(
@@ -22974,9 +22980,12 @@ fn serving_reading(
         .reserve_ordered_continuation()
         .expect("a place, reserved before exposure");
     let mut source = Some(PrivateOrderedContinuation::Serving {
-        owner: Box::new(owner),
+        owner: PrivateServingHome::holding(owner),
         // A staged precondition: what a torn-down record carries.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
     });
     slot.install(&mut source);
     let reading = durable
@@ -23139,8 +23148,11 @@ fn a_record_that_cannot_be_read_is_reported_as_unreadable() {
     let (socket, _peer) = UnixStream::pair().expect("a socket pair");
     let (owner, _output) = serving_owner_for(&mut f, socket);
     let mut source = Some(PrivateOrderedContinuation::Serving {
-        owner: Box::new(owner),
-        fence: Some(PrivateHandoverFence::Established),
+        owner: PrivateServingHome::holding(owner),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
     });
     slot.install(&mut source);
 
@@ -23335,8 +23347,11 @@ fn retained_refused_close(
         .reserve_ordered_continuation()
         .expect("a place, reserved before exposure");
     let mut source = Some(PrivateOrderedContinuation::Serving {
-        owner: Box::new(owner),
-        fence: Some(PrivateHandoverFence::Established),
+        owner: PrivateServingHome::holding(owner),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
     });
     slot.install(&mut source);
     durable
@@ -23501,6 +23516,380 @@ fn a_close_with_no_attempts_left_says_so_and_is_not_retried() {
     assert!(
         cell.answer().is_none(),
         "and nobody answered for it on the strength of a close that failed"
+    );
+}
+
+
+/// A prepared connection whose ordered output is bound, ready to promote.
+///
+/// Built on the ordered fixture because promotion asks the frontend for this
+/// connection's endpoint, and that is answerable only for a connection the
+/// instance has actually admitted and published.
+fn bound_connection(
+    client: XServerFrontendClientId,
+) -> (
+    XServerFrontendClientRouteRegistration,
+    PrivatePreparedRunner,
+    PrivateSettlementOwner,
+    Arc<Mutex<UnixStream>>,
+    UnixStream,
+) {
+    let f = prepared_ordered_fixture(client);
+    let PreparedOrderedFixture {
+        registration,
+        runner,
+        channels,
+        durable,
+        ..
+    } = f;
+    let (stream, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a fresh registration holds no custody"));
+    (registration, runner, durable, output, peer)
+}
+
+/// A registered connection with the attachments an endpoint lookup needs.
+///
+/// Promotion asks the frontend for this connection's endpoint, which is only
+/// answerable once its admission and connection state are attached -- so a
+/// fixture that skips those is asking about a connection the instance does not
+/// yet recognise.
+fn admitted_connection(
+    private: &crate::PrivateXServerFrontend,
+    client: XServerFrontendClientId,
+) -> (
+    XServerFrontendClientRouteRegistration,
+    XServerFrontendClientRouteChannels,
+) {
+    let namespace = NamespaceId::from_raw(client.raw());
+    let context = namespaced(client, namespace);
+    let registry = &private.broker.registry;
+    let (registration, channels) = registry
+        .register_client_with_admission(client, Some(context))
+        .expect("a place and a row");
+    registry
+        .attach_private_lifecycle(&registration, context)
+        .expect("this instance admits it");
+    registry
+        .attach_connection_state(
+            &registration,
+            namespace,
+            Arc::new(Mutex::new(XCoreEventSelectionState::default())),
+            Arc::new(AtomicU64::new(0)),
+        )
+        .expect("its connection state");
+    (registration, channels)
+}
+
+/// What this registration's ordered payload is, by shape.
+fn payload_shape(
+    registration: &XServerFrontendClientRouteRegistration,
+) -> Option<&'static str> {
+    registration
+        .ordered_setup
+        .lock()
+        .expect("readable")
+        .as_ref()
+        .map(|payload| match payload {
+            PrivateOrderedContinuation::Setup {
+                accepted: PrivateOrderedSetupCustody::Transport(_),
+                ..
+            } => "transport",
+            PrivateOrderedContinuation::Setup {
+                accepted: PrivateOrderedSetupCustody::Receiver(_),
+                ..
+            } => "receiver",
+            PrivateOrderedContinuation::Serving { .. } => "serving",
+        })
+}
+
+#[test]
+fn a_refused_promotion_leaves_the_transport_and_its_queue_exactly_where_they_were() {
+    // PREPARATION BORROWS. Everything that can fail happens against a borrow
+    // of the transport, so a refusal consumes nothing: the transport is still
+    // in this registration's storage, still holding whatever its queue holds,
+    // and the connection is as it was.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8671);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let other = XServerFrontendClientId(8672);
+    let (other_registration, other_channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(other, Some(admitted(other)))
+        .expect("a second place and row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    // Bound with a receiver another registration minted, so preparation's
+    // provenance check is what refuses.
+    registration
+        .bind_ordered_output(other_channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a fresh registration holds no custody"));
+    assert_eq!(payload_shape(&registration), Some("receiver"));
+
+    // A receiver alone is not a connection to serve.
+    assert_eq!(
+        registration.promote_ordered_serving(&private),
+        PrivateOrderedPromotion::Unbound
+    );
+    assert_eq!(
+        payload_shape(&registration),
+        Some("receiver"),
+        "and nothing moved"
+    );
+    drop(channels);
+    drop(registration);
+    drop(other_registration);
+}
+
+#[test]
+fn a_promoted_connection_is_ready_and_serves_nothing() {
+    // READY, DRIVEN BY NOBODY. Promotion makes an owner exist. It does not
+    // start a worker, receive anything, write anything or answer anything, and
+    // this checks each of those rather than the absence of a thread.
+    let client = XServerFrontendClientId(8681);
+    let (registration, runner, _durable, _output, peer) = bound_connection(client);
+    let private = runner.frontend.as_ref().expect("a live runner");
+
+    // A capsule is accepted for it before promotion, so there is something a
+    // promotion could wrongly consume.
+    let sender = capture_gated_sender(private, client);
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(86810);
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    gated_send(&sender, capsule).expect("an open endpoint");
+
+    assert_eq!(
+        registration.promote_ordered_serving(private),
+        PrivateOrderedPromotion::Ready
+    );
+    assert_eq!(payload_shape(&registration), Some("serving"));
+
+    let held = registration.ordered_setup.lock().expect("readable");
+    let PrivateOrderedContinuation::Serving { owner, evidence } =
+        held.as_ref().expect("its payload")
+    else {
+        panic!("promoted")
+    };
+    assert!(
+        owner.in_flight().is_none() && owner.refused().is_none(),
+        "it received nothing"
+    );
+    assert!(
+        owner.retained_unanswered().is_empty() && owner.retained_foreign().is_empty(),
+        "and is holding nothing"
+    );
+    assert!(owner.closing().is_none() && !owner.ending_ended());
+    assert_eq!(
+        evidence.worker,
+        PrivateOrderedWorkerExit::NeverStarted,
+        "nothing was started, and that is what is recorded"
+    );
+    assert!(evidence.fence.is_none() && !evidence.source_poisoned);
+    let mut byte = [0u8; 1];
+    assert_eq!(
+        (&peer).read(&mut byte).map_err(|error| error.kind()),
+        Err(std::io::ErrorKind::WouldBlock),
+        "it wrote nothing"
+    );
+    assert!(cell.answer().is_none(), "and answered nothing");
+    drop(held);
+    drop(registration);
+}
+
+#[test]
+fn a_second_promotion_leaves_the_first_owner_exactly_as_it_was() {
+    // THE FIRST OWNER STANDS. A second ask does not rebuild it and does not
+    // reset what it has been through: identity, close state, attempt budget
+    // and held admissions are the ones it had.
+    let client = XServerFrontendClientId(8691);
+    let (registration, runner, _durable, _output, _peer) = bound_connection(client);
+    let private = runner.frontend.as_ref().expect("a live runner");
+    assert_eq!(
+        registration.promote_ordered_serving(private),
+        PrivateOrderedPromotion::Ready
+    );
+
+    // Give the first owner a history: a close it began, with an attempt spent.
+    let first = {
+        let mut held = registration.ordered_setup.lock().expect("readable");
+        let PrivateOrderedContinuation::Serving { owner, .. } =
+            held.as_mut().expect("its payload")
+        else {
+            panic!("promoted")
+        };
+        owner.closing = Some(X11OrderedClosing {
+            cause: X11OrderedCloseCause::ConnectionEnded,
+            termination: X11OrderedTermination::Refused(std::io::ErrorKind::PermissionDenied),
+            attempts: 2,
+            answered: 0,
+            already: 0,
+            deferred: 0,
+            drained: false,
+        });
+        (
+            &**owner as *const X11OrderedServingOwner as usize,
+            owner.closing().expect("staged").termination,
+        )
+    };
+
+    assert_eq!(
+        registration.promote_ordered_serving(private),
+        PrivateOrderedPromotion::AlreadyServing,
+        "the second ask is refused rather than served"
+    );
+    let held = registration.ordered_setup.lock().expect("readable");
+    let PrivateOrderedContinuation::Serving { owner, .. } = held.as_ref().expect("its payload")
+    else {
+        panic!("still promoted")
+    };
+    assert_eq!(
+        &**owner as *const X11OrderedServingOwner as usize,
+        first.0,
+        "THE SAME OWNER, not a new one at the same address by luck"
+    );
+    let closing = owner.closing().expect("its close");
+    assert_eq!(closing.attempts, 2, "its attempt budget did not reset");
+    assert_eq!(
+        closing.termination, first.1,
+        "and neither did its close state"
+    );
+    drop(held);
+    drop(registration);
+}
+
+#[test]
+fn a_closed_endpoint_starts_nothing() {
+    // Nothing is started on a connection whose endpoint has been closed. Its
+    // payload keeps whatever it had rather than being promoted into something
+    // that would look serviceable.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8701);
+    let (registration, channels) = admitted_connection(&private, client);
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a fresh registration holds no custody"));
+    assert_eq!(
+        registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Established
+    );
+    // The fence alone does not write the payload's evidence -- teardown does
+    // -- so this control writes what teardown would, to ask the question it
+    // is about: a payload that knows its endpoint is closed.
+    {
+        let mut held = registration.ordered_setup.lock().expect("readable");
+        let PrivateOrderedContinuation::Setup { evidence, .. } =
+            held.as_mut().expect("its payload")
+        else {
+            panic!("bound")
+        };
+        evidence.fence = Some(PrivateHandoverFence::Established);
+    }
+
+    assert_eq!(
+        registration.promote_ordered_serving(&private),
+        PrivateOrderedPromotion::Closing
+    );
+    assert_eq!(
+        payload_shape(&registration),
+        Some("transport"),
+        "its transport is untouched"
+    );
+    drop(registration);
+}
+
+#[test]
+fn a_promoted_connection_torn_down_without_a_worker_retains_what_it_is() {
+    // NO WORKER, NO JOIN. A connection that was never served reaches retention
+    // by its own quiet path: nothing waits for a join nobody can perform, and
+    // no successful join is manufactured to make the account look complete.
+    let client = XServerFrontendClientId(8711);
+    let (registration, runner, durable, _output, _peer) = bound_connection(client);
+    assert_eq!(
+        registration.promote_ordered_serving(runner.frontend.as_ref().expect("live")),
+        PrivateOrderedPromotion::Ready
+    );
+    let private = runner;
+
+    drop(registration);
+    drop(private);
+    let reading = durable.retained_dispositions().expect("a readable store")[0]
+        .1
+        .expect("a readable record");
+    assert_eq!(
+        reading.closure,
+        Some(PrivateHandoverFence::Established),
+        "teardown closed the endpoint and carried that"
+    );
+    assert_eq!(
+        reading.worker,
+        PrivateOrderedWorkerExit::NeverStarted,
+        "and carried that nothing was ever started, rather than a join"
+    );
+    assert!(!reading.source_poisoned);
+}
+
+
+#[test]
+fn a_payload_taken_from_poisoned_storage_says_so_in_its_place() {
+    // THE POISON DOES NOT TRAVEL BY ITSELF. Teardown reads the payload out of
+    // storage that panicked, and puts it into a record with a lock of its own
+    // -- a readable one. That destination lock knows nothing about the source,
+    // so without carrying the fact, moving the work would launder it: the
+    // reading would show an ordinary row for a connection whose storage had
+    // been left mid-something.
+    //
+    // The work still moves. Refusing to move it would strand accepted work to
+    // make a point.
+    let client = XServerFrontendClientId(8721);
+    let (registration, runner, durable, _output, _peer) = bound_connection(client);
+
+    // A holder panics inside this connection's payload storage.
+    let storage = &registration.ordered_setup;
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _inside = storage.lock().expect("readable");
+        panic!("a holder unwound inside this payload's storage");
+    }));
+    assert!(panicked.is_err(), "the holder unwound");
+    assert!(
+        registration.ordered_setup.lock().is_err(),
+        "so the storage is poisoned"
+    );
+
+    drop(registration);
+    drop(runner);
+    let reading = durable.retained_dispositions().expect("a readable store")[0]
+        .1
+        .expect("the record itself is readable");
+    assert!(
+        reading.source_poisoned,
+        "and the reading says where this payload came from could not be read"
+    );
+    assert_eq!(
+        reading.closure,
+        Some(PrivateHandoverFence::Established),
+        "which is a separate fact from what closing established"
+    );
+    assert_eq!(
+        reading.worker,
+        PrivateOrderedWorkerExit::NeverStarted,
+        "and from what became of a worker, of which there was none"
     );
 }
 
@@ -26945,7 +27334,10 @@ fn a_continuation_place_is_taken_before_exposure_and_kept_while_work_remains() {
         // A staged precondition: the value a torn-down record carries, set
         // directly rather than observed, because this control is about what
         // happens to a record that has one.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -27099,12 +27491,15 @@ fn a_whole_serving_owner_moves_into_its_place_with_everything_it_held() {
         .reserve_ordered_continuation()
         .expect("a place, reserved before this connection was exposed");
     let mut source = Some(PrivateOrderedContinuation::Serving {
-        owner: Box::new(owner),
+        owner: PrivateServingHome::holding(owner),
         // STAGED, NOT OBSERVED. No teardown ran in this control; this is the
         // value a record installed by one would carry, set directly because
         // the subject here is what arrives in the place, not what writes this
         // field.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
     });
     slot.install(&mut source);
     assert!(source.is_none(), "it left the caller's slot");
@@ -27190,7 +27585,10 @@ fn an_unreadable_owner_does_not_make_an_accepted_transfer_optional() {
         // A staged precondition: the value a torn-down record carries, set
         // directly rather than observed, because this control is about what
         // happens to a record that has one.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -27233,7 +27631,10 @@ fn driving_a_continuation_does_not_hold_the_store_behind_it() {
         // A staged precondition: the value a torn-down record carries, set
         // directly rather than observed, because this control is about what
         // happens to a record that has one.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -27302,7 +27703,10 @@ fn an_unwind_before_the_destination_is_held_leaves_the_work_with_its_source() {
         // A staged precondition: the value a torn-down record carries, set
         // directly rather than observed, because this control is about what
         // happens to a record that has one.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -27406,7 +27810,10 @@ fn a_bound_transport_that_could_not_be_served_keeps_its_ending_handle() {
         refusal,
         // Torn down, with its endpoint closed: the only way a record reaches
         // a place.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -27491,7 +27898,10 @@ fn a_handover_waits_for_the_destination_reserved_for_it() {
         // A staged precondition: the value a torn-down record carries, set
         // directly rather than observed, because this control is about what
         // happens to a record that has one.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -27563,7 +27973,10 @@ fn reading_the_store_does_not_take_a_record_beneath_it() {
         // A staged precondition: the value a torn-down record carries, set
         // directly rather than observed, because this control is about what
         // happens to a record that has one.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -27646,7 +28059,10 @@ fn an_unreadable_retained_record_is_not_reported_as_absent() {
         // A staged precondition: the value a torn-down record carries, set
         // directly rather than observed, because this control is about what
         // happens to a record that has one.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -27936,7 +28352,10 @@ fn a_stale_return_cannot_take_the_place_its_successor_holds() {
         // A staged precondition: the value a torn-down record carries, set
         // directly rather than observed, because this control is about what
         // happens to a record that has one.
-        fence: Some(PrivateHandoverFence::Established),
+        evidence: PrivateOrderedEvidence {
+            fence: Some(PrivateHandoverFence::Established),
+            ..PrivateOrderedEvidence::unstarted()
+        },
         retained: Vec::new(),
         drained: false,
         ended: false,

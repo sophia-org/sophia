@@ -6,6 +6,70 @@
 // place for it costs before the connection is allowed to exist.
 
 
+/// What became of the worker that was to serve a connection.
+///
+/// A FACT ABOUT THE WORKER, not about the payload or the record it sits in. A
+/// worker can stop without poisoning anything, and a poisoned record is no
+/// proof that anyone joined; keeping this separate is what stops one being
+/// read as the other.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by reporting that is not attached yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrivateOrderedWorkerExit {
+    /// NOBODY EVER STARTED ONE. There is nothing to join, and no join is
+    /// manufactured to make the account look complete: a connection that was
+    /// never served reaches retention by its own quiet path.
+    ///
+    /// The outcomes of a worker that did run -- returned, panicked, unknown --
+    /// belong to the spawn, which is not landed. They are not written here in
+    /// advance of the thing that would establish them.
+    NeverStarted,
+}
+
+/// What is known about how a connection's ordered output reached its place.
+///
+/// FOUR SEPARATE FACTS, kept apart because each is established by a different
+/// thing and none implies another. What a close established is the producers'
+/// side. What became of a worker is the consumer's. Whether the storage it was
+/// taken from had been poisoned is neither: a panic can happen outside a visit
+/// without poisoning anything, and poison can be found with no join having
+/// happened at all.
+///
+/// CARRIED, NOT RECOMPUTED. It travels with the payload into the place,
+/// because after that nothing can establish any of it: the gate is gone with
+/// the registration, the worker is gone, and the storage it came from no
+/// longer exists.
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PrivateOrderedEvidence {
+    /// What closing this connection's endpoint established, at teardown.
+    ///
+    /// `None` means no teardown outcome was recorded here -- not that the
+    /// endpoint is open.
+    fence: Option<PrivateHandoverFence>,
+    /// What became of the worker that was to serve it.
+    worker: PrivateOrderedWorkerExit,
+    /// Whether the storage this payload was taken from had been poisoned.
+    ///
+    /// The work still moves -- refusing to move it would strand accepted work
+    /// to make a point -- but moving it into a readable place does not make it
+    /// readable, and the destination's own lock cannot carry a fact about the
+    /// source's. Recording it here is what stops the transfer laundering it.
+    source_poisoned: bool,
+}
+
+#[cfg(unix)]
+impl PrivateOrderedEvidence {
+    /// Nothing established yet: a connection being built.
+    fn unstarted() -> Self {
+        Self {
+            fence: None,
+            worker: PrivateOrderedWorkerExit::NeverStarted,
+            source_poisoned: false,
+        }
+    }
+}
+
 /// A connection's ordered output, retained whole.
 ///
 /// NOT UNPACKED, and not turned back into anything replayable. What is here
@@ -26,33 +90,8 @@ enum PrivateOrderedContinuation {
     Setup {
         accepted: PrivateOrderedSetupCustody,
         refusal: X11OrderedServingRefusal,
-        /// What closing this connection's endpoint established, at teardown.
-        ///
-        /// CARRIED, NOT RE-ASKED. The gate belongs to the registration that
-        /// minted it, and the registration is gone by the time anything drives
-        /// this; the one moment it could be closed is the moment it was. So
-        /// the outcome travels with the work, because it is a fact about the
-        /// work and not about the driver.
-        ///
-        /// An established closure is what makes the rest of this record
-        /// readable as complete: nothing further will be admitted, so a queue
-        /// that has finished is a queue that has finished for good. An
-        /// unreadable one leaves a handover possibly half-answered -- someone
-        /// panicked inside the gate -- and a record carrying that cannot be
-        /// read as closed no matter how quiet it goes.
-        ///
-        /// `None` MEANS NO TEARDOWN OUTCOME WAS RECORDED HERE. It does not
-        /// mean the endpoint is open: closing is a public act, and a caller
-        /// that closed this endpoint directly leaves the record still saying
-        /// None until teardown writes what ITS close established -- which
-        /// would then be AlreadyEstablished, not Established. The field is the
-        /// evidence teardown carried, not a report on the gate.
-        ///
-        /// Distinct from an unreadable close, which says someone tried and
-        /// could not establish it. A record reaches a place only through
-        /// teardown, and teardown closes first, so an installed record always
-        /// carries an answer.
-        fence: Option<PrivateHandoverFence>,
+        /// What is known about how this connection got here.
+        evidence: PrivateOrderedEvidence,
         /// Capsules taken off that queue and still owed an answer.
         ///
         /// RECEIVED INTO CUSTODY, never probed away. Asking a channel whether
@@ -88,20 +127,16 @@ enum PrivateOrderedContinuation {
     /// output, permission and stop handles, its independent shutdown handle,
     /// and whatever its close has established so far.
     Serving {
-        owner: Box<X11OrderedServingOwner>,
-        /// What closing this connection's endpoint established, at teardown.
+        /// The owner, in the home its preparation allocated for it.
+        owner: PrivateServingHome,
+        /// What is known about how this connection got here.
         ///
         /// THE SAME EVIDENCE, AND IT MUST NOT BE LOST IN THE CONVERSION. A
         /// serving owner answers for what it is holding; it says nothing about
-        /// whether anything can still be handed to the connection, and its own
-        /// termination is a different fact from the endpoint's closure. A
-        /// conversion from a setup record that dropped this would turn an
-        /// unresolved handover into a record that looks answerable, which is
-        /// exactly the thing the field exists to prevent.
-        ///
-        /// See the `Setup` field of the same name: `None` means no teardown
-        /// outcome was recorded here, not that nobody closed the endpoint.
-        fence: Option<PrivateHandoverFence>,
+        /// whether anything can still be handed to the connection, what became
+        /// of the worker that was to serve it, or whether the storage it came
+        /// from could be read.
+        evidence: PrivateOrderedEvidence,
     },
 }
 
@@ -449,7 +484,7 @@ impl PrivateOrderedContinuation {
                 retained,
                 drained,
                 ended,
-                fence,
+                evidence,
                 ..
             } => {
                 // AN ESTABLISHED CLOSURE IS PART OF BEING SETTLED, and it is
@@ -470,7 +505,7 @@ impl PrivateOrderedContinuation {
                 // producer still owes elsewhere is its own accounting, and no
                 // receipt or termination is inferred from a fence.
                 matches!(
-                    fence,
+                    evidence.fence,
                     Some(
                         PrivateHandoverFence::Established
                             | PrivateHandoverFence::AlreadyEstablished
@@ -479,7 +514,7 @@ impl PrivateOrderedContinuation {
                     && *ended
                     && retained.is_empty()
             }
-            Self::Serving { owner, fence } => {
+            Self::Serving { owner, evidence } => {
                 // THE SAME CLOSURE CONDITION AS A SETUP RECORD. An owner that
                 // has terminated has answered for what it held; the closure is
                 // the separate fact that the handover which produced this
@@ -487,7 +522,7 @@ impl PrivateOrderedContinuation {
                 // stand in for the other, and a conversion that dropped the
                 // closure would let the owner's own termination speak for it.
                 matches!(
-                    fence,
+                    evidence.fence,
                     Some(
                         PrivateHandoverFence::Established
                             | PrivateHandoverFence::AlreadyEstablished

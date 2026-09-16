@@ -129,6 +129,7 @@ impl XAuthorityOrderedTransport {
 
 }
 
+
 /// Why a connection's ordered output is being closed.
 ///
 /// DIAGNOSTIC ONLY, AND DELIBERATELY NOT AN OUTCOME. It never reaches the
@@ -352,6 +353,7 @@ impl X11OrderedServingOwner {
     /// admitted and answer for none of it. Nothing is moved into this owner
     /// until the fallible part has succeeded.
     #[allow(clippy::result_large_err)] // The transport travels out whole rather than being dropped.
+    #[cfg_attr(not(test), allow(dead_code))] // Superseded by prepare/commit.
     fn for_registration(
         frontend: &crate::x11_socket::PrivateXServerFrontend,
         registration: &XServerFrontendClientRouteRegistration,
