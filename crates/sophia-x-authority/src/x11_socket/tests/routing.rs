@@ -24485,6 +24485,210 @@ fn publishing_a_notice_needs_nothing_that_a_handover_holds() {
     drop(registration);
 }
 
+
+/// An attention roll with room for two connections, and both admitted.
+fn attention_for_two() -> (
+    Arc<PrivateAttention>,
+    PrivateAttentionIdentity,
+    PrivateAttentionIdentity,
+    std::time::Instant,
+) {
+    let now = std::time::Instant::now();
+    let roll = Arc::new(
+        PrivateAttention::with_connections(NonZeroUsize::new(2).unwrap(), now)
+            .expect("room for two connections"),
+    );
+    let first = roll.admit(0).expect("a slot");
+    let second = roll.admit(1).expect("a slot");
+    (roll, first, second, now)
+}
+
+#[test]
+fn a_release_during_a_failed_attempt_is_not_parked_away() {
+    // THE ERASURE THIS EXISTS TO PREVENT. A pass takes a slot, fails to take
+    // the record, and parks it -- while the holder released the record during
+    // that very attempt. Parking it then buries the one event that says it is
+    // worth trying again, and only a timer would ever find it.
+    //
+    // The interest is armed by the claim itself, before the attempt: the slot
+    // is in flight from that moment, so the release lands on something that
+    // remembers it.
+    let (roll, first, _second, _now) = attention_for_two();
+    assert!(roll.flag(first));
+    assert_eq!(roll.waiting(), Some(1));
+
+    let claim = roll.claim_next().expect("a slot waiting");
+    assert_eq!(claim.who(), first);
+    assert_eq!(
+        roll.state_of(first),
+        Some(PrivateAttentionState::InFlight { dirty: false })
+    );
+
+    // The holder releases while the attempt is in flight.
+    assert!(roll.released(first));
+    assert_eq!(
+        roll.state_of(first),
+        Some(PrivateAttentionState::InFlight { dirty: true })
+    );
+
+    // And the attempt then fails.
+    assert!(claim.could_not());
+    assert_eq!(
+        roll.state_of(first),
+        Some(PrivateAttentionState::Ready),
+        "the release survived the parking that followed it"
+    );
+    assert_eq!(roll.waiting(), Some(1));
+}
+
+#[test]
+fn a_notice_arriving_during_a_successful_pass_outlives_its_conclusion() {
+    // The same rule on the other outcome: a pass that succeeded concluded
+    // about what it saw, and something arrived after it looked.
+    let (roll, first, _second, _now) = attention_for_two();
+    assert!(roll.flag(first));
+    let claim = roll.claim_next().expect("a slot waiting");
+    assert!(roll.flag(first));
+    assert!(claim.took_it());
+    assert_eq!(
+        roll.state_of(first),
+        Some(PrivateAttentionState::Ready),
+        "done with what it saw, and there is something newer"
+    );
+}
+
+#[test]
+fn a_failed_attempt_with_nothing_new_parks_rather_than_spins() {
+    // WHAT STOPS THE SPIN. A slot that could not be taken is not counted as
+    // waiting, so a supervisor's predicate goes false and it has something to
+    // sleep on. A pass that re-marked it ready would take it again at once,
+    // for ever.
+    let (roll, first, _second, _now) = attention_for_two();
+    assert!(roll.flag(first));
+    let claim = roll.claim_next().expect("a slot waiting");
+    assert!(claim.could_not());
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Deferred));
+    assert_eq!(roll.waiting(), Some(0), "nothing is waiting to be looked at");
+    assert!(
+        roll.claim_next().is_none(),
+        "and a pass finds nothing to take"
+    );
+}
+
+#[test]
+fn a_pass_that_is_abandoned_parks_its_slot_rather_than_finishing_it() {
+    // A claim dropped without an outcome reported nothing. Treating that as
+    // done would record a connection as looked at by a pass that did not
+    // finish; it is parked instead, and anything that arrived still revives it.
+    let (roll, first, _second, _now) = attention_for_two();
+    assert!(roll.flag(first));
+    drop(roll.claim_next().expect("a slot waiting"));
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Deferred));
+}
+
+#[test]
+fn a_stale_pass_cannot_conclude_about_the_slot_it_no_longer_holds() {
+    // A slot can be retired and given to someone else while a pass is in
+    // flight. A conclusion written then would be written about a connection
+    // that pass never saw.
+    let (roll, first, _second, _now) = attention_for_two();
+    assert!(roll.flag(first));
+    let stale = roll.claim_next().expect("a slot waiting");
+
+    // Its occupant goes, and the slot is given to another.
+    assert!(roll.retire(first, false));
+    let successor = roll.admit(0).expect("the slot again");
+    assert_ne!(successor.generation, first.generation);
+    assert!(roll.flag(successor));
+
+    // The successor has a pass of its own in flight, which is the state a
+    // stale conclusion could actually damage: anything else is refused by the
+    // state check before the identity is even consulted.
+    let current = roll.claim_next().expect("the successor's own pass");
+    assert_eq!(current.who(), successor);
+    assert!(roll.flag(successor));
+    assert_eq!(
+        roll.state_of(successor),
+        Some(PrivateAttentionState::InFlight { dirty: true })
+    );
+
+    assert!(
+        !stale.took_it(),
+        "the stale pass is refused rather than applied"
+    );
+    assert_eq!(
+        roll.state_of(successor),
+        Some(PrivateAttentionState::InFlight { dirty: true }),
+        "and the successor's own pass is exactly where it was"
+    );
+
+    // Which its own conclusion then finishes, still carrying what arrived.
+    assert!(current.took_it());
+    assert_eq!(roll.state_of(successor), Some(PrivateAttentionState::Ready));
+    assert_eq!(roll.waiting(), Some(1));
+}
+
+#[test]
+fn a_slot_whose_generations_are_spent_is_retired_rather_than_wrapped() {
+    // A WRAPPED GENERATION IS A STALE NOTICE THAT PASSES THE CHECK. One
+    // connection's worth of capacity is a smaller cost than an identity that
+    // lies about who it is.
+    let now = std::time::Instant::now();
+    let roll = Arc::new(
+        PrivateAttention::with_connections(NonZeroUsize::new(1).unwrap(), now)
+            .expect("room for one"),
+    );
+    {
+        let mut held = roll.roll.lock().expect("readable");
+        held.slots[0].generation = Some(u32::MAX - 1);
+    }
+    let last = roll.admit(0).expect("the last generation");
+    assert_eq!(last.generation, u32::MAX);
+
+    // ASKED AT THE HANDING-OUT, not only at the giving-up: a slot sitting at
+    // the last generation refuses to name another occupant at all, so nothing
+    // depends on a retirement having happened first.
+    assert!(
+        roll.admit(0).is_none(),
+        "there is no next name for this slot"
+    );
+
+    assert!(roll.retire(last, false));
+    assert!(
+        roll.admit(0).is_none(),
+        "and giving it up does not make one either"
+    );
+}
+
+#[test]
+fn the_sweep_deadline_is_not_pushed_back_by_other_traffic() {
+    // A DEADLINE RECOMPUTED ON EVERY WAKE IS NEVER REACHED under load, and
+    // load is exactly when work nobody revived has been waiting longest.
+    let (roll, first, second, now) = attention_for_two();
+    assert!(roll.flag(first));
+    let claim = roll.claim_next().expect("a slot waiting");
+    assert!(claim.could_not());
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Deferred));
+
+    // Unrelated traffic, repeatedly, all before the deadline.
+    for _ in 0..8 {
+        assert!(roll.flag(second));
+        let other = roll.claim_next().expect("the other slot");
+        assert!(other.took_it());
+        assert!(!roll.sweep_due(now), "not due yet, and not rescheduled");
+    }
+    assert_eq!(
+        roll.state_of(first),
+        Some(PrivateAttentionState::Deferred),
+        "still parked, because nothing revived it"
+    );
+
+    // The deadline arrives on its own schedule, unmoved by any of that.
+    assert!(roll.sweep_due(now + std::time::Duration::from_millis(250)));
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Ready));
+    assert_eq!(roll.waiting(), Some(1));
+}
+
 #[test]
 fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
     let mut f=prepared_ordered_fixture(XServerFrontendClientId(7601));
