@@ -40,11 +40,17 @@ enum PrivateOrderedContinuation {
         /// panicked inside the gate -- and a record carrying that cannot be
         /// read as closed no matter how quiet it goes.
         ///
-        /// `None` UNTIL THE CONNECTION IS TORN DOWN, and not the same as an
-        /// unreadable close: one says nobody has closed this endpoint yet, the
-        /// other says someone tried and could not establish it. A record
-        /// reaches a place only through teardown, and teardown closes first,
-        /// so an installed record carries an answer.
+        /// `None` MEANS NO TEARDOWN OUTCOME WAS RECORDED HERE. It does not
+        /// mean the endpoint is open: closing is a public act, and a caller
+        /// that closed this endpoint directly leaves the record still saying
+        /// None until teardown writes what ITS close established -- which
+        /// would then be AlreadyEstablished, not Established. The field is the
+        /// evidence teardown carried, not a report on the gate.
+        ///
+        /// Distinct from an unreadable close, which says someone tried and
+        /// could not establish it. A record reaches a place only through
+        /// teardown, and teardown closes first, so an installed record always
+        /// carries an answer.
         fence: Option<PrivateHandoverFence>,
         /// Capsules taken off that queue and still owed an answer.
         ///
@@ -80,7 +86,22 @@ enum PrivateOrderedContinuation {
     /// capsules, unanswered records with their own finalizers, the shared
     /// output, permission and stop handles, its independent shutdown handle,
     /// and whatever its close has established so far.
-    Serving(Box<X11OrderedServingOwner>),
+    Serving {
+        owner: Box<X11OrderedServingOwner>,
+        /// What closing this connection's endpoint established, at teardown.
+        ///
+        /// THE SAME EVIDENCE, AND IT MUST NOT BE LOST IN THE CONVERSION. A
+        /// serving owner answers for what it is holding; it says nothing about
+        /// whether anything can still be handed to the connection, and its own
+        /// termination is a different fact from the endpoint's closure. A
+        /// conversion from a setup record that dropped this would turn an
+        /// unresolved handover into a record that looks answerable, which is
+        /// exactly the thing the field exists to prevent.
+        ///
+        /// See the `Setup` field of the same name: `None` means no teardown
+        /// outcome was recorded here, not that nobody closed the endpoint.
+        fence: Option<PrivateHandoverFence>,
+    },
 }
 
 /// What a connection had accepted when its setup refused.
@@ -288,7 +309,7 @@ impl PrivateOrderedContinuation {
                 accepted: PrivateOrderedSetupCustody::Transport(transport),
                 ..
             } => &transport.ordered,
-            Self::Serving(owner) => &owner.queue,
+            Self::Serving { owner, .. } => &owner.queue,
         }
     }
 }
@@ -385,7 +406,7 @@ impl PrivateOrderedContinuation {
             }
             return;
         }
-        let Self::Serving(owner) = self else {
+        let Self::Serving { owner, .. } = self else {
             return;
         };
         if owner.closing().is_none()
@@ -413,13 +434,23 @@ impl PrivateOrderedContinuation {
                 fence,
                 ..
             } => {
-                // AN ESTABLISHED CLOSURE IS PART OF BEING SETTLED. The other
-                // three say this connection's work is gone: its producers are
-                // gone, its wire is ended, and nothing was kept back. They say
-                // that about what reached the queue. The fence is what says
-                // there is nothing else to reach it, and nothing left
-                // half-handed-over -- without it, a quiet queue is only a
-                // queue nobody has written to yet.
+                // AN ESTABLISHED CLOSURE IS PART OF BEING SETTLED, and it is
+                // not what tells a finished channel from a quiet one. `drained`
+                // already does that: it is set from Disconnected, which means
+                // every sender is gone and no later send is possible. Nothing
+                // here needs the fence for that.
+                //
+                // What the fence adds is evidence about the OTHER side of a
+                // handover. A holder that panicked inside the gate may have
+                // left one half-answered, and no amount of quiet on this queue
+                // speaks to that. So an unestablished closure keeps the record
+                // open.
+                //
+                // And an established one is not a settlement of everything a
+                // producer holds. It says this endpoint admitted nothing
+                // further and nothing was interrupted in the act; what a
+                // producer still owes elsewhere is its own accounting, and no
+                // receipt or termination is inferred from a fence.
                 matches!(
                     fence,
                     Some(
@@ -430,8 +461,20 @@ impl PrivateOrderedContinuation {
                     && *ended
                     && retained.is_empty()
             }
-            Self::Serving(owner) => {
-                owner.retained_unanswered().is_empty()
+            Self::Serving { owner, fence } => {
+                // THE SAME CLOSURE CONDITION AS A SETUP RECORD. An owner that
+                // has terminated has answered for what it held; the closure is
+                // the separate fact that the handover which produced this
+                // connection's work was not left half-answered. One does not
+                // stand in for the other, and a conversion that dropped the
+                // closure would let the owner's own termination speak for it.
+                matches!(
+                    fence,
+                    Some(
+                        PrivateHandoverFence::Established
+                            | PrivateHandoverFence::AlreadyEstablished
+                    )
+                ) && owner.retained_unanswered().is_empty()
                     && owner.retained_foreign().is_empty()
                     && owner.in_flight().is_none()
                     && owner.refused().is_none()

@@ -21449,7 +21449,7 @@ fn retained_setup_kind(
             *drained,
             *ended,
         ),
-        PrivateOrderedContinuation::Serving(_) => panic!("no owner is built yet"),
+        PrivateOrderedContinuation::Serving { .. } => panic!("no owner is built yet"),
     })
 }
 
@@ -21942,15 +21942,21 @@ fn a_retained_connection_carries_what_closing_it_established() {
 
 #[test]
 fn a_connection_closed_over_a_panicking_handover_never_reads_as_settled() {
-    // A QUIET QUEUE IS NOT A CLOSED CONNECTION. Drained, ended and nothing
-    // retained say that what reached this queue is gone. They say nothing
-    // about a handover that was interrupted on its way here: someone panicked
-    // inside the gate, so the closure could not be established over resolved
-    // custody, and a record carrying that must not read as finished however
-    // quiet it goes.
+    // A FINISHED CHANNEL IS NOT A RESOLVED HANDOVER. Drained is set from
+    // Disconnected, so it already establishes that no later send is possible;
+    // that is not what the fence is for. The fence carries evidence about the
+    // other side: someone panicked inside the gate, so the closure could not
+    // be established over resolved custody, and a record carrying that must
+    // not read as finished however quiet its queue goes.
     //
     // Exclusion is not what failed. A poisoned lock is acquired and handed
     // back inside the error, so nothing was running beside the close.
+    //
+    // WHAT THIS CONTROL ESTABLISHES: that such a close is classified as
+    // unreadable, carried onto the record, and keeps the place. It does NOT
+    // exercise an interrupted capsule transfer -- it holds the gate's own lock
+    // and sends nothing -- so it says nothing about recovering a half-made
+    // handover, which is open work.
     let durable = PrivateSettlementOwner::default();
     let private = private_over(&durable, 2);
     let client = XServerFrontendClientId(8401);
@@ -22043,6 +22049,116 @@ fn a_connection_closed_cleanly_settles_once_its_work_is_gone() {
         durable.continuations_reserved(),
         Some(0),
         "an established closure over work that is gone returns the place"
+    );
+}
+
+
+#[test]
+fn a_serving_record_without_an_established_closure_never_settles_either() {
+    // THE EVIDENCE MUST SURVIVE THE CONVERSION. A serving owner answers for
+    // what it is holding, and its own termination is a different fact from the
+    // endpoint's closure: one says this writer finished, the other says
+    // nothing was left half-handed-over on the way to it. A conversion that
+    // dropped the closure would let the owner's termination speak for both.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8421));
+    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    // Its producers go, and then it closes: finished by its own account --
+    // nothing held, nothing in flight, an established termination over a
+    // drained queue.
+    drop(f);
+    close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
+    assert!(
+        owner.closing().is_some_and(|closing| {
+            closing.termination == X11OrderedTermination::Established && closing.drained
+        }),
+        "this owner terminated and its queue finished"
+    );
+    assert!(owner.retained_unanswered().is_empty() && owner.in_flight().is_none());
+
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+    let slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+    let mut source = Some(PrivateOrderedContinuation::Serving {
+        owner: Box::new(owner),
+        // The close could not be established: a holder panicked inside the
+        // gate on the way out.
+        fence: Some(PrivateHandoverFence::Unreadable),
+    });
+    slot.install(&mut source);
+
+    assert!(
+        !durable
+            .with_ordered_continuation(0, |continuation| continuation.settled())
+            .expect("the place holds it"),
+        "an owner that finished is not a connection whose handovers resolved"
+    );
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "so the place stays held"
+    );
+}
+
+#[test]
+fn a_closure_someone_else_made_is_carried_as_already_established() {
+    // None IS NOT "THE ENDPOINT IS OPEN". Closing is a public act: a caller
+    // that closed this endpoint directly leaves the record saying None until
+    // teardown writes what ITS close established -- which is then
+    // AlreadyEstablished, because the closure was already made.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8431);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a fresh registration holds no custody"));
+
+    // Closed by a caller, through the real API, while the registration lives.
+    assert_eq!(
+        registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Established
+    );
+    assert_eq!(
+        registration
+            .ordered_setup
+            .lock()
+            .expect("readable")
+            .as_ref()
+            .map(|continuation| match continuation {
+                PrivateOrderedContinuation::Setup { fence, .. } => *fence,
+                PrivateOrderedContinuation::Serving { fence, .. } => *fence,
+            }),
+        Some(None),
+        "the record still says None: no teardown outcome has been recorded here"
+    );
+
+    drop(registration);
+    drop(private);
+    assert_eq!(
+        retained_fence(&durable, 0),
+        Some(Some(PrivateHandoverFence::AlreadyEstablished)),
+        "teardown's own close found the closure already made, and says so"
+    );
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(0),
+        "an already-established closure is a closure, so this place returns"
     );
 }
 
@@ -25639,7 +25755,12 @@ fn a_whole_serving_owner_moves_into_its_place_with_everything_it_held() {
     let slot = durable
         .reserve_ordered_continuation()
         .expect("a place, reserved before this connection was exposed");
-    let mut source = Some(PrivateOrderedContinuation::Serving(Box::new(owner)));
+    let mut source = Some(PrivateOrderedContinuation::Serving {
+        owner: Box::new(owner),
+        // Torn down with its endpoint closed, which is the only way a record
+        // reaches a place.
+        fence: Some(PrivateHandoverFence::Established),
+    });
     slot.install(&mut source);
     assert!(source.is_none(), "it left the caller's slot");
     assert_eq!(durable.continuations_retained(), Some(1));
@@ -25647,7 +25768,7 @@ fn a_whole_serving_owner_moves_into_its_place_with_everything_it_held() {
     // EVERYTHING ARRIVED. Read through a borrow of the stored record.
     let checked = durable
         .with_ordered_continuation(0, |continuation| {
-            let PrivateOrderedContinuation::Serving(owner) = continuation else {
+            let PrivateOrderedContinuation::Serving { owner, .. } = continuation else {
                 panic!("a serving owner was installed")
             };
             let held = owner.in_flight().expect("its in-flight record");

@@ -141,7 +141,7 @@ impl XServerFrontendClientRouteRegistration {
                 accepted: PrivateOrderedSetupCustody::Transport(transport),
                 ..
             }) => Err(transport.ordered),
-            Err(PrivateOrderedContinuation::Serving(_)) => {
+            Err(PrivateOrderedContinuation::Serving { .. }) => {
                 unreachable!("this function builds a setup continuation")
             }
         }
