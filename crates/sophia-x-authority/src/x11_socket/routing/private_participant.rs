@@ -86,11 +86,13 @@ struct PrivateAdmissionBindings {
 /// asks a caller to assert currency, and nothing caches an answer to be
 /// checked later.
 ///
-/// THE EDGE THIS EXISTS TO AVOID is the client table beneath common: a caller
-/// holding the client table and then reaching in here would let a revocation
-/// wait behind a table that something else is waiting to cross this boundary
-/// to release. That one is forbidden outright, and the ordered producers
-/// observe it -- each releases the client table before anything takes common.
+/// THE EDGE THIS EXISTS TO AVOID is taking common while the client table is
+/// held. A caller holding the table and then reaching in here would let a
+/// revocation wait behind a table that something else is waiting to cross this
+/// boundary to release. The other nesting -- the table taken beneath common,
+/// which is what this boundary itself does -- is the allowed one. That edge is
+/// forbidden outright, and the ordered producers observe it: each releases the
+/// client table before anything takes common.
 ///
 /// NOT EVERY REGISTRY-OWNED LOCK IS THAT EDGE, and the blanket wording this
 /// once carried no longer describes the callers. Promotion holds a
