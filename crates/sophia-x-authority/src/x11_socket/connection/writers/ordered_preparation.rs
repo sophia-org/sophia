@@ -33,6 +33,9 @@ impl PreparedOrderedServing {
         let mut home = self.home;
         *home = Some(X11OrderedServingOwner {
             served: self.served,
+            // Cloned before the receiver is taken: taking it leaves the minted
+            // wrapper behind, and this notice with it.
+            wake: transport.ordered.wake.clone(),
             queue: transport.ordered.into_receiver(),
             output: transport.output,
             shutdown: transport.shutdown,

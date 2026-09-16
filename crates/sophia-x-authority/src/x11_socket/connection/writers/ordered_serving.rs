@@ -272,6 +272,18 @@ enum X11OrderedCloseStep {
 struct X11OrderedServingOwner {
     served: XAuthorityServedConnection,
     queue: Receiver<XAuthorityOrderedDelivery>,
+    /// The notice this connection's senders publish to.
+    ///
+    /// CARRIED ACROSS THE CONVERSION. Taking the receiver out of its minted
+    /// wrapper leaves the wrapper behind, and the notice with it; an owner
+    /// that let that happen would hold a queue it could be told about and no
+    /// way to be told. It is cloned out before the receiver is taken, so this
+    /// is the same notice the senders were counted against and not a fresh one
+    /// that nothing publishes to.
+    ///
+    /// Nothing here waits on it yet.
+    #[cfg_attr(not(test), allow(dead_code))] // The worker that waits is not landed.
+    wake: Arc<PrivateOrderedWake>,
     output: Arc<Mutex<UnixStream>>,
     shutdown: UnixStream,
     wire: Arc<X11WirePermission>,
@@ -388,6 +400,9 @@ impl X11OrderedServingOwner {
         }
         Ok(Self {
             served: XAuthorityServedConnection::retained(endpoint),
+            // Before the receiver is taken, because taking it leaves the
+            // wrapper -- and the notice -- behind.
+            wake: transport.ordered.wake.clone(),
             queue: transport.ordered.into_receiver(),
             output: transport.output,
             shutdown: transport.shutdown,

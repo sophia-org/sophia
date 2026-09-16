@@ -56,9 +56,13 @@ struct XAuthorityOrderedReceiver {
     /// The notice this connection's senders publish to.
     ///
     /// Held by the receiving half so whoever owns this queue has something to
-    /// wait on. Nothing here waits yet -- the worker that would is not landed
-    /// -- and holding it keeps the notice alive for as long as the queue it
-    /// belongs to.
+    /// wait on. Nothing here waits yet: the worker that would is not landed.
+    ///
+    /// IT DOES NOT OUTLIVE THIS WRAPPER BY ITSELF. Taking the receiver out
+    /// leaves the wrapper behind and this handle with it, so whoever takes the
+    /// receiver must carry the notice across too -- which the serving owner's
+    /// construction does, cloning it before the take. The senders hold the
+    /// other end, so the notice itself lives as long as any of them does.
     #[cfg_attr(not(test), allow(dead_code))] // Nothing waits on it yet.
     wake: Arc<PrivateOrderedWake>,
 }

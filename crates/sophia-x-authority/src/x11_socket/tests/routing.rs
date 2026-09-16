@@ -24091,10 +24091,14 @@ fn a_waiter_asleep_when_the_last_sender_goes_is_woken_by_it() {
         }
         woken.send(state.gone).expect("the control is listening");
     });
+    // WHAT THIS OBSERVES: no answer has arrived. It does NOT establish that
+    // the waiter reached the condvar, or even that it has been scheduled --
+    // an answer that has not arrived looks the same from here whatever the
+    // waiter is doing. Arrival needs a handshake this control does not have.
     assert_eq!(
         wakes.recv_timeout(std::time::Duration::from_millis(150)),
         Err(std::sync::mpsc::RecvTimeoutError::Timeout),
-        "nothing has happened yet, so it is asleep"
+        "no answer yet"
     );
 
     // Its senders go. The row's is the last one.
@@ -24107,7 +24111,9 @@ fn a_waiter_asleep_when_the_last_sender_goes_is_woken_by_it() {
     waiter.join().expect("the waiting thread");
 
     // THE NOTICE IS A HINT, NOT A FINDING. What establishes that the producers
-    // are finished is the owner's own receive, and it says so here.
+    // are finished is a receive, and this one is the parent's, after the
+    // waiter joined -- so it says the channel is finished, not that the waiter
+    // saw it finished at the moment it woke.
     assert!(matches!(
         channels.ordered.receiver.try_recv(),
         Err(std::sync::mpsc::TryRecvError::Disconnected)
@@ -24207,6 +24213,10 @@ fn a_clone_going_is_not_the_senders_going() {
     gated_send(&sender, capsule).expect("an open endpoint");
     drop(sender);
     assert_eq!(wake_snapshot(&wake), (false, 1, false));
+    // Taken here, BEFORE the last sender goes. So what this shows is that
+    // producers finishing does not disturb queued work -- not that work
+    // survives the final disappearance, which is a different moment and is
+    // not covered by this control.
     let survived = channels
         .ordered
         .receiver
@@ -24222,11 +24232,14 @@ fn a_clone_going_is_not_the_senders_going() {
 }
 
 #[test]
-fn a_connection_whose_publication_refused_still_says_its_senders_are_gone() {
-    // A ROW THAT WAS NEVER PUBLISHED HAS NO PRODUCERS EITHER, and whoever
-    // holds its receiver is owed that answer as much as a connection that ran.
-    // The refusal drops the senders it had built, which is a disappearance
-    // like any other.
+fn a_refused_publication_does_not_disturb_the_live_connections_notice() {
+    // ISOLATION IS WHAT THIS ESTABLISHES. A publication that refuses drops the
+    // senders it had built, and those were its own: this connection's notice
+    // is not touched by them going.
+    //
+    // It does NOT observe the refused attempt's own notice. That notice is
+    // minted inside the call that refuses and goes with it, so reading it
+    // needs a hold on the mint itself, which this control does not have.
     let durable = PrivateSettlementOwner::default();
     let private = private_over(&durable, 2);
     let client = XServerFrontendClientId(8781);
@@ -24258,6 +24271,55 @@ fn a_connection_whose_publication_refused_still_says_its_senders_are_gone() {
     );
     drop(first);
     assert!(wake_snapshot(&wake).2);
+}
+
+
+#[test]
+fn a_promoted_owner_keeps_the_notice_its_senders_publish_to() {
+    // TAKING THE RECEIVER LEAVES ITS WRAPPER BEHIND, and the notice with it.
+    // An owner built that way would hold a queue it could be told about and no
+    // way to be told: every disappearance would be published to a notice
+    // nothing was holding.
+    let client = XServerFrontendClientId(8791);
+    let (registration, runner, _durable, _output, _peer) = bound_connection(client);
+    let private = runner.frontend.as_ref().expect("a live runner");
+
+    // The notice the senders were counted against, taken from the row.
+    let minted = {
+        let guard = private
+            .broker
+            .registry
+            .clients
+            .lock()
+            .expect("a readable registry");
+        Arc::clone(&guard.get(&client).expect("its row").ordered.wake)
+    };
+
+    assert_eq!(
+        registration.promote_ordered_serving(private),
+        PrivateOrderedPromotion::Ready
+    );
+
+    let held = registration.ordered_setup.lock().expect("readable");
+    let PrivateOrderedContinuation::Serving { owner, .. } = held.as_ref().expect("its payload")
+    else {
+        panic!("promoted")
+    };
+    assert!(
+        Arc::ptr_eq(&owner.wake, &minted),
+        "THE SAME NOTICE, not a fresh one nothing publishes to"
+    );
+
+    // And it is live: a disappearance published by the senders reaches it.
+    let before = wake_snapshot(&owner.wake);
+    assert!(!before.2 && before.1 > 0);
+    drop(held);
+    drop(runner);
+    drop(registration);
+    assert!(
+        wake_snapshot(&minted).2,
+        "the senders going published to the notice the owner is holding"
+    );
 }
 
 #[test]
