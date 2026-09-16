@@ -871,3 +871,47 @@ the existing revision 6) and C corpus coverage missing existing extension rows.
 The generator now validates the full existing r6 message set; the independent
 C codec covers all sixteen current record rows, including the new policy key.
 No archived revision-3 bytes or archive digests were changed.
+
+## 2026-09-16: workspace-switch bar continuity
+
+The subsequent immutable `20260916T114128Z` capture has fifteen issued,
+acknowledged and admitted clicks (six on logical output 1, nine on output 2),
+zero transport failures/runtime fatals and native exit 0. The operator observed
+correct mouse/keyboard switching and disjoint workspace labels, but a flash of
+both bars on switching. The complete 40-action workload was not performed;
+its verifier remains failed for the action count, not accepted by inference.
+
+Source inspection found a separate composition omission: the policy-update CPU
+callback rebuilt surface chrome, tab bars and outlines locally, omitting shell
+content and descriptor overlays. At 11:42:19.209Z the capture queues frames 26/27
+with the empty-scene checksum on both outputs; at .254Z retained composition
+queues the bar-bearing successors. Those are queued-frame observations, not
+independent pixel/scanout measurements. They corroborate the reported flash but
+do not substitute for attended verification of the repair.
+
+Policy-cycle capture and retained/ordinary repaints now use one complete,
+output-local composition builder. The captured CPU inputs keep actual owned
+shell sources while coordinator/output borrows run; historical metadata cannot
+stand in for those leases. The application → decoration → shell → descriptor
+overlay order and output confinement are preserved. Native queue/retirement,
+input and revocation semantics are unchanged.
+
+Controls exercise the production capture/builder, Engine lowering, real owned
+queue and simulated completion while no replacement shell frame arrives. Both
+bars survive repeated empty-workspace cycles and refused queue admission. A
+second control preserves application/shell/overlay ordering and retains the
+captured source until exact resource release after it drops. Restoring the
+shell omission compiles and fails the continuity control. This is not execution
+of the physical owner loop or KMS. Existing delayed/mirror/1000-cycle controls
+remain distinct evidence.
+
+Lom separately compares resolved output-local visual state. A revision-only
+interaction update reuses its existing immutable resource through a new paced
+candidate; it does not perform GPU render/readback/upload or retire that resource.
+Targets still change only at exact Presented. Candidates requiring fresh native
+retirement still receive it, including identical raster candidates. Candidate
+logs add `raster_source=rendered|reused`; this is client work evidence, not a
+native completion timestamp. No shell-wire change or Lom-specific compositor
+policy was added. The next authorized `lom-test` must establish no visible flash,
+continued click/shortcut correctness on both monitors, complete workload
+outcomes, stable connection/resource ownership and clean shutdown.

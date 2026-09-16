@@ -20,6 +20,7 @@ mod compositor_graphics;
 #[path = "../tests/support/lifecycle_tests.rs"]
 mod lifecycle_tests;
 mod ordinary_repaint;
+mod output_composition;
 use composition_target::NativeCompositionTarget;
 mod native;
 mod ownership;
@@ -747,19 +748,13 @@ impl LiveProductionVisualRuntime {
             })
             .collect::<Vec<_>>();
         self.observe_content_ordered_resource_releases(authority_envelope);
-        let head_plan_orders = self.presentation_orders_by_output();
+        let head_plan_composition = output_composition::OutputCompositionSnapshot::capture(self);
         let ordinary_repaints_pending = &mut self.ordinary_repaints_pending;
         let (production, outputs) = (&mut self.production, &mut self.outputs);
         let output_count = outputs.output_count();
         let primary_output = outputs.primary_output();
         let event_count = authority_transaction_count_for_groups(&rebased_groups);
         let surface_metadata = self.surface_metadata.clone();
-        let head_plan_chrome = self.chrome_surfaces.clone();
-        let head_plan_focus = self.focused_surface;
-        let head_plan_style = self.surface_chrome_style;
-        let head_plan_outline = self.floating_outline;
-        let head_plan_indicator_publication = self.indicator_publication.clone();
-        let head_plan_tabs = self.tab_bars.clone();
         let indicator_strip_cache = &self.indicator_strip_cache;
         let text_cache = &self.text_cache;
         let mut native_scanout = native_scanout;
@@ -811,38 +806,7 @@ impl LiveProductionVisualRuntime {
                             );
                             Ok(match native_scanout.as_deref_mut() {
                                 Some(native_scanout) => {
-                                    let mut display_list =
-                                        sophia_engine::surface_chrome_display_list_for_surfaces(
-                                            output_id,
-                                            &head_plan_orders[&output_id],
-                                            &head_plan_chrome,
-                                            snapshot,
-                                            head_plan_focus,
-                                            head_plan_style,
-                                        )?;
-                                    if let Some(publication) = head_plan_indicator_publication.as_ref() {
-                                        sophia_engine::append_tab_bars(&mut display_list.commands, &publication.tab_groups, publication.generation, &head_plan_tabs, output_id);
-                                    }
-                                    if let Some(outline) = head_plan_outline {
-                                        if display_list.commands.len()
-                                            >= sophia_engine::MAX_COMPOSITOR_DISPLAY_COMMANDS
-                                        {
-                                            return Err(
-                                                "native head plan display-list capacity exceeded"
-                                                    .into(),
-                                            );
-                                        }
-                                        let border = sophia_engine::compositor_floating_outline(
-                                            outline.surface,
-                                            outline.geometry,
-                                            head_plan_style.focus_ring.width.max(2),
-                                            head_plan_style.focus_ring.color,
-                                        )
-                                        .ok_or("native head plan rejected the floating outline")?;
-                                        display_list.commands.push(
-                                            sophia_engine::CompositorDisplayCommand::Border(border),
-                                        );
-                                    }
+                                    let display_list = head_plan_composition.display_list(output_id, snapshot)?;
                                     let scene = sophia_engine::output_scene_snapshot_from_committed_in_view(
                                         output_id,
                                         cycle.max(1),

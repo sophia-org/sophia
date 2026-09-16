@@ -624,74 +624,17 @@ impl LiveProductionVisualRuntime {
         presentation_order: &[SurfaceId],
     ) -> Result<CompositorDisplayList, CompositorDisplayListError> {
         let owned = self.surface_order_for_output(output, presentation_order);
-        let mut display_list = surface_chrome_display_list_for_surfaces(
-            output,
-            &owned,
-            &self.chrome_surfaces,
-            committed_surfaces,
-            self.focused_surface,
-            self.surface_chrome_style,
-        )?;
-        if let Some(publication) = self.indicator_publication.as_ref() {
-            sophia_engine::append_tab_bars(
-                &mut display_list.commands,
-                &publication.tab_groups,
-                publication.generation,
-                &self.tab_bars,
-                output,
-            );
+        super::output_composition::OutputComposition {
+            chrome_surfaces: &self.chrome_surfaces,
+            focused_surface: self.focused_surface,
+            surface_chrome_style: self.surface_chrome_style,
+            floating_outline: self.floating_outline,
+            indicator_publication: self.indicator_publication.as_ref(),
+            tab_bars: &self.tab_bars,
+            shell_content: &self.shell_content,
+            descriptor_overlay: self.descriptor_overlay.as_ref(),
         }
-        if let Some(outline) = self.floating_outline {
-            if display_list.commands.len() >= MAX_COMPOSITOR_DISPLAY_COMMANDS {
-                return Err(CompositorDisplayListError::CapacityExceeded);
-            }
-            let border = compositor_floating_outline(
-                outline.surface,
-                outline.geometry,
-                self.surface_chrome_style.focus_ring.width.max(2),
-                self.surface_chrome_style.focus_ring.color,
-            )
-            .ok_or(CompositorDisplayListError::InvalidSurface)?;
-            display_list
-                .commands
-                .push(CompositorDisplayCommand::Border(border));
-        }
-        if let Some(content) = self.shell_content.get(&output) {
-            let content = &content.frame;
-            if display_list
-                .commands
-                .len()
-                .saturating_add(content.images.len())
-                > MAX_COMPOSITOR_DISPLAY_COMMANDS
-            {
-                return Err(CompositorDisplayListError::CapacityExceeded);
-            }
-            display_list.commands.extend(
-                content
-                    .images
-                    .iter()
-                    .cloned()
-                    .map(CompositorDisplayCommand::ContentImage),
-            );
-        }
-        if let Some(overlay) = self
-            .descriptor_overlay
-            .as_ref()
-            .filter(|overlay| overlay.output == output)
-        {
-            if display_list
-                .commands
-                .len()
-                .saturating_add(overlay.commands.len())
-                > MAX_COMPOSITOR_DISPLAY_COMMANDS
-            {
-                return Err(CompositorDisplayListError::CapacityExceeded);
-            }
-            display_list
-                .commands
-                .extend(overlay.commands.iter().cloned());
-        }
-        Ok(display_list)
+        .display_list(output, committed_surfaces, &owned)
     }
 
     /// Installs one Engine-validated shell projection and queues a retained
