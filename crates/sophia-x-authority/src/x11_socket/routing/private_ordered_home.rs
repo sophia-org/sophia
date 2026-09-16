@@ -119,16 +119,33 @@ impl PrivateOrderedHome {
         self.held().payload.as_mut().map(act)
     }
 
-    /// Read what is here, saying separately that it could not be read.
+    /// Read what a RETAINED home holds, saying separately that it could not
+    /// be read.
     ///
-    /// `None` means a holder panicked inside this home: there may well be a
-    /// connection in it, and what there is not is a reading of it. `borrow`
-    /// deliberately does not make that distinction -- an act that has to go
-    /// ahead regardless uses the poisoned guard, as everything else in this
-    /// tree does -- and this exists for the caller whose whole subject is
-    /// what can be read.
-    fn peek<R>(&self, act: impl FnOnce(&PrivateOrderedContinuation) -> R) -> Option<Option<R>> {
+    /// THREE ANSWERS, AND THE MIDDLE ONE IS NEW. `None` means a holder
+    /// panicked inside this home: there may well be a connection in it, and
+    /// what there is not is a reading of it. `Some(None)` means this home is
+    /// not what a retained reader is asking about -- it is live, or it is
+    /// empty -- and a reader of retained work must leave it out rather than
+    /// describe it. `Some(Some(_))` is a reading.
+    ///
+    /// THE PAIR IS READ UNDER ONE ACQUISITION. A binding now populates a LIVE
+    /// home, so occupancy alone no longer tells a retained reader anything;
+    /// asking the two separately would let them disagree and report a
+    /// connection that ended between the questions, or one that had not.
+    ///
+    /// `borrow` deliberately makes neither distinction -- an act that has to
+    /// go ahead regardless uses the poisoned guard, as everything else in this
+    /// tree does -- and this exists for the caller whose whole subject is what
+    /// is retained and what can be read.
+    fn peek_retained<R>(
+        &self,
+        act: impl FnOnce(&PrivateOrderedContinuation) -> R,
+    ) -> Option<Option<R>> {
         let held = self.state.lock().ok()?;
+        if held.standing != PrivateHomeStanding::Retained {
+            return Some(None);
+        }
         Some(held.payload.as_ref().map(act))
     }
 

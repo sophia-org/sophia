@@ -173,31 +173,29 @@ struct XServerFrontendClientRouteChannels {
 #[cfg(unix)]
 struct XServerFrontendClientRouteRegistration {
     lifecycle: Mutex<Option<PrivateConnectionLifecycle>>,
-    /// The place this connection's ordered continuation will go, reserved
-    /// before this connection was exposed.
+    /// The place this connection's home sits in, reserved before this
+    /// connection was exposed.
     ///
-    /// Taken by this connection's teardown, which hands its ordered output
-    /// over into the place. A slot dropped without being disposed of is
-    /// counted as abandoned rather than handed out again, so a connection that
-    /// ended with nobody accounting for it is visible instead of silent.
+    /// Taken by this connection's teardown, which accounts for the place once
+    /// the home has said whether anything is owed through it. A lease dropped
+    /// without being disposed of is counted as abandoned rather than handed
+    /// out again, so a connection that ended with nobody accounting for it is
+    /// visible instead of silent.
     #[allow(dead_code)]
     ordered_continuation: Mutex<Option<PrivateOrderedContinuationSlot>>,
-    /// This connection's ordered output, from binding until teardown.
+    /// Where this connection's ordered output lives, from binding onwards.
     ///
-    /// HELD BY THE REGISTRATION because the registration owns the place it
-    /// will go into. A guard in the connection's own frame would have to be
-    /// declared in exactly the right order among a dozen other locals to be
-    /// dropped before the registration, and every early return out of setup is
-    /// a path where accepted work would be lost if it were not. Here there is
-    /// one owner for both halves of the move.
+    /// A HANDLE, NOT A STORAGE OF ITS OWN. When there is a place, this is the
+    /// very home that place holds: the reservation makes it, and the
+    /// registration is handed the same one. So the output is reachable from
+    /// the place from the moment it binds rather than from teardown onwards,
+    /// and teardown has nothing to move -- which is what lets anything else
+    /// borrow this connection's output without owning this registration.
     ///
-    /// STORED IN THE SHAPE IT WILL BE HANDED OVER IN, rather than assembled at
-    /// teardown. Assembling it there meant taking the custody out into a local
-    /// and building around it, so the work crossed the store and record
-    /// acquisitions inside a caller's stack frame -- and an unwind anywhere in
-    /// that interval destroyed it while the place it was promised survived
-    /// empty. `install` takes from source-owned storage only once it holds the
-    /// destination, and this is that storage.
+    /// A REGISTRY WITH NO CONTINUATION STORE STILL HAS ONE. There is no place
+    /// for it to sit in, so it is this registration's alone and goes when the
+    /// registration does, which is what a connection with nowhere to hand over
+    /// to has always done.
     ordered_home: Arc<PrivateOrderedHome>,
     /// Where this registration's handovers are serialized with its closing.
     ///

@@ -231,10 +231,17 @@ impl PrivateSettlementOwner {
             places
                 .into_iter()
                 .filter_map(|(index, record)| {
-                    match record.peek(PrivateOrderedContinuation::disposition) {
+                    // RETAINED ONLY, AND THE HOME IS WHAT SAYS SO. A binding
+                    // populates a live home, so a reader that asked only
+                    // whether anything was there would describe every running
+                    // connection as retained work -- and a caller acting on
+                    // that would be acting on a connection that has not ended.
+                    match record.peek_retained(PrivateOrderedContinuation::disposition) {
                         Some(reading) => reading.map(|disposition| (index, Some(disposition))),
                         // Held by something that panicked. There may well be a
-                        // connection here; what there is not is a reading of it.
+                        // connection here; what there is not is a reading of
+                        // it, and that is reported rather than turned into a
+                        // live or empty answer nobody established.
                         None => Some((index, None)),
                     }
                 })

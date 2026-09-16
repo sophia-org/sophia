@@ -21841,8 +21841,10 @@ fn a_live_connections_home_is_not_driven_by_the_retained_drive() {
         );
     }
 
-    // UNTOUCHED: the capsule is still on the queue, nothing was ended, and the
-    // connection still holds its own binding.
+    // UNTOUCHED, AND THE PAYLOAD SAYS SO, not only the flags: the exact
+    // capsule is still on the queue with its frames and its unanswered
+    // completion. Flags alone would hold equally over a queue the drive had
+    // received from and thrown away.
     assert!(
         registration
             .ordered_home
@@ -21854,6 +21856,21 @@ fn a_live_connections_home_is_not_driven_by_the_retained_drive() {
             .expect("its own home"),
         "the drive neither ended its wire nor drained its queue"
     );
+    let survived = registration
+        .ordered_home
+        .borrow(|continuation| continuation.queue().try_recv().ok())
+        .expect("its own home")
+        .expect("the capsule the drive did not take");
+    assert_eq!(
+        survived.delivery(),
+        XAuthorityInputDeliveryId::from_raw(83820)
+    );
+    assert_eq!(order_pass_frames(&survived), frames);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &survived.finalizer().expect("carried").completion
+    ));
+    assert!(cell.answer().is_none());
     assert!(wire_weak.upgrade().is_some());
     assert_eq!(durable.continuations_reserved(), Some(1));
 
@@ -21864,8 +21881,123 @@ fn a_live_connections_home_is_not_driven_by_the_retained_drive() {
         driven += durable.drive_ordered_continuations(4);
     }
     assert!(driven > 0, "a retained home is this drive's business");
-    let _ = (cell, frames);
-    drop(private);
+    drop((private, survived, cell));
+}
+
+#[test]
+fn the_drive_does_not_hold_the_store_while_it_waits_on_one_connections_home() {
+    // TWO LOCKS, ONE ORDER. A home may reach the store while it is held -- a
+    // close running under a home's lock can reserve a place, which the helper
+    // controls here already do -- so home-then-store is a permitted edge.
+    // Asking a home anything while holding the store is that edge reversed,
+    // and a scan that did it put every other connection behind whichever home
+    // happened to be contended.
+    //
+    // WHAT THIS ESTABLISHES: that with one connection's home held, the store
+    // itself stays acquirable while the drive is waiting on it. It does NOT
+    // establish where the driving thread has got to -- nothing here can say
+    // that -- and it is not a deadlock observation: the drive waits on that
+    // home either way, and what is asked is whether it waits holding the store.
+    let durable = PrivateSettlementOwner::default();
+    let client = XServerFrontendClientId(8384);
+    let (private, registration, _cell, _frames, _wire) =
+        converted_fixture(&durable, client, 83840);
+    let home = Arc::clone(&registration.ordered_home);
+    drop((registration, private));
+    assert_eq!(durable.continuations_retained(), Some(1));
+
+    let blocker = home.state.lock().expect("hold this connection's home");
+    let driving = durable.clone();
+    let (started, wait) = std::sync::mpsc::channel();
+    let driver = std::thread::spawn(move || {
+        started.send(()).expect("started");
+        driving.drive_ordered_continuations(4)
+    });
+    wait.recv().expect("the driving thread started");
+    std::thread::sleep(Duration::from_millis(50));
+
+    // The store is taken and released here many times over while the drive is
+    // waiting on a home it cannot have.
+    let mut acquired = 0usize;
+    for _ in 0..2_000 {
+        if durable.inner.try_lock().is_ok() {
+            acquired += 1;
+            if acquired == 8 {
+                break;
+            }
+        }
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        acquired, 8,
+        "a contended home must not hold the whole store behind it"
+    );
+
+    drop(blocker);
+    assert!(
+        driver.join().expect("the driving thread finished") > 0,
+        "and the drive takes it once the home is free"
+    );
+}
+
+#[test]
+fn a_running_connection_is_not_reported_as_retained_work() {
+    // A BINDING POPULATES A LIVE HOME NOW. Before the relocation, anything in
+    // a place had been put there by a teardown, so occupancy alone meant
+    // retention. A reader that still asked only whether something was there
+    // would describe every running connection as work owed to whoever drives
+    // retained records -- and a caller acting on that would be acting on a
+    // connection that has not ended, through a record its own registration is
+    // still using.
+    let durable = PrivateSettlementOwner::default();
+    let client = XServerFrontendClientId(8385);
+    let (private, registration, cell, frames, _wire) =
+        converted_fixture(&durable, client, 83850);
+
+    assert!(
+        registration.ordered_home.occupied(),
+        "bound, and in its home"
+    );
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    assert_eq!(durable.continuations_retained(), Some(0));
+    assert!(
+        durable
+            .retained_dispositions()
+            .expect("a readable store")
+            .is_empty(),
+        "a live connection is not a retained row"
+    );
+
+    // AND THE READING TOUCHED NOTHING. Asking a channel whether it is finished
+    // means receiving from it, so a reader that reached into a live queue
+    // would answer the question by emptying it.
+    let survived = registration
+        .ordered_home
+        .borrow(|continuation| continuation.queue().try_recv().ok())
+        .expect("its own home")
+        .expect("its capsule is still there");
+    assert_eq!(
+        survived.delivery(),
+        XAuthorityInputDeliveryId::from_raw(83850)
+    );
+    assert_eq!(order_pass_frames(&survived), frames);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &survived.finalizer().expect("carried").completion
+    ));
+    assert!(cell.answer().is_none());
+
+    // ONCE IT HAS ENDED, the same reader has a row for it.
+    drop(registration);
+    assert_eq!(durable.continuations_retained(), Some(1));
+    let readings = durable.retained_dispositions().expect("a readable store");
+    assert_eq!(readings.len(), 1);
+    assert_eq!(readings[0].0, 0);
+    assert!(
+        readings[0].1.is_some(),
+        "and it is a reading, not an unreadable row"
+    );
+    drop((private, survived, cell));
 }
 
 #[test]
@@ -21883,6 +22015,15 @@ fn a_retained_home_refuses_a_binding_that_arrives_after_its_connection_ended() {
         .registry
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place and a row");
+    // A capsule is accepted into this connection's queue before it ends, so
+    // what the refused binding carries is real work rather than an empty
+    // shape.
+    let sender = capture_gated_sender(&private, client);
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(83830);
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    let frames = order_pass_frames(&capsule);
+    gated_send(&sender, capsule).expect("an open endpoint");
+    drop(sender);
     let home = Arc::clone(&registration.ordered_home);
     drop(registration);
     assert_eq!(home.standing(), PrivateHomeStanding::Retained);
@@ -21903,8 +22044,10 @@ fn a_retained_home_refuses_a_binding_that_arrives_after_its_connection_ended() {
     let PrivateHomeBinding::Ended(returned) = home.bind(late) else {
         panic!("a retained home takes no binding")
     };
-    // AND IT COMES BACK WHOLE. Reporting a refusal by dropping the offer would
-    // answer a question about a queue by destroying the queue.
+    // AND IT COMES BACK WHOLE -- the exact capsule, its frames and its
+    // unanswered completion, not merely something of the right shape.
+    // Reporting a refusal by dropping the offer would answer a question about
+    // a queue by destroying the queue.
     assert!(matches!(
         returned,
         PrivateOrderedContinuation::Setup {
@@ -21912,8 +22055,22 @@ fn a_retained_home_refuses_a_binding_that_arrives_after_its_connection_ended() {
             ..
         }
     ));
+    let carried = returned
+        .queue()
+        .try_recv()
+        .expect("the capsule accepted before it ended");
+    assert_eq!(
+        carried.delivery(),
+        XAuthorityInputDeliveryId::from_raw(83830)
+    );
+    assert_eq!(order_pass_frames(&carried), frames);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &carried.finalizer().expect("carried").completion
+    ));
+    assert!(cell.answer().is_none());
     assert!(!home.occupied(), "and nothing was put in it");
-    drop((private, output, wire, pending, returned));
+    drop((private, output, wire, pending, returned, carried, cell));
 }
 
 #[test]
@@ -30472,91 +30629,6 @@ fn driving_a_continuation_does_not_hold_the_store_behind_it() {
 }
 
 #[test]
-fn an_unwind_before_the_destination_is_held_leaves_the_work_with_its_source() {
-    // install took the continuation by value, so it lived in a stack frame
-    // from the caller's expression until it reached the store. An unwind in
-    // between -- acquiring the store above all -- dropped accepted work while
-    // the reservation for it survived: a place promised against a payload that
-    // no longer existed.
-    let client = XServerFrontendClientId(7961);
-    let f = prepared_ordered_fixture(client);
-    let sender = f
-        .runner
-        .frontend
-        .as_ref()
-        .unwrap()
-        .broker
-        .registry
-        .clients
-        .lock()
-        .unwrap()
-        .get(&client)
-        .expect("this connection's row")
-        .ordered
-        .clone();
-    let (emission, _endpoint) =
-        private_native_tests::emission_and_endpoint_for_writer_fixture(79610);
-    let accepted = XAuthorityOrderedDelivery::from_emission(emission).unwrap();
-    gated_send(&sender, accepted).expect("accepted into its queue");
-
-    let durable = PrivateSettlementOwner::with_capacities(2, 2);
-    let slot = durable
-        .reserve_ordered_continuation()
-        .expect("a place, reserved before exposure");
-    let PreparedOrderedFixture { channels, .. } = f;
-
-    // THE SOURCE SLOT IS THE CALLER'S. An unwind here leaves the continuation
-    // in it rather than in a frame that is going.
-    let mut source = Some(PrivateOrderedContinuation::Setup {
-        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
-        refusal: X11OrderedServingRefusal::TransportUnavailable,
-        // A staged precondition: the value a torn-down record carries, set
-        // directly rather than observed, because this control is about what
-        // happens to a record that has one.
-        evidence: PrivateOrderedEvidence {
-            fence: Some(PrivateHandoverFence::Established),
-            ..PrivateOrderedEvidence::unstarted()
-        },
-        retained: Vec::new(),
-        drained: false,
-        ended: false,
-        ending_refused: None,
-    });
-    // WHAT THIS CONTROL ESTABLISHES, exactly: that a caller which decides to
-    // hand over and then fails before calling install still has the work. It
-    // panics in a closure that never enters install, so it says nothing about
-    // install's own acquisition order -- the control below is what holds the
-    // destination first.
-    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _slot = &slot;
-        panic!("intentional unwind before install is called");
-    }));
-    assert!(unwound.is_err());
-    assert!(
-        source.is_some(),
-        "the work stayed in the caller's slot, not in the frame that went"
-    );
-
-    // And it still holds what was accepted.
-    assert_eq!(retain_into(slot, &mut source), PrivateContinuationCommit::Retained);
-    let survived = durable
-        .with_ordered_continuation(0, |continuation| {
-            continuation
-                .queue()
-                .try_recv()
-                .map(|capsule| capsule.delivery())
-        })
-        .expect("the place holds it");
-    assert_eq!(
-        survived.expect("the accepted admission"),
-        XAuthorityInputDeliveryId::from_raw(79610)
-    );
-    // Identity of what travels is the whole-owner control's subject; what this
-    // one establishes is that an unwind on the way to the store leaves the
-    // work with its source rather than in the frame that went.
-}
-
-#[test]
 fn a_bound_transport_that_could_not_be_served_keeps_its_ending_handle() {
     // How far setup got decides what there is to keep. A receiver that was
     // published but never bound has its queue; one that was bound has the
@@ -30683,12 +30755,16 @@ fn a_handover_waits_for_the_destination_reserved_for_it() {
         .reserve_ordered_continuation()
         .expect("a place, reserved before exposure");
 
-    // WHAT THIS ESTABLISHES: that the destination storage exists and is empty
-    // at reservation, that a hand-over does not COMPLETE while that record is
-    // held, and that it completes once released. It does NOT establish the
-    // order of the take against the acquisition -- a take-first hand-over
-    // would also wait here before reporting -- and the signal before install
-    // plus a sleep proves neither entry nor ordering.
+    // WHAT THIS ESTABLISHES: that a home exists and is empty from the moment
+    // its place is reserved, that a binding does not COMPLETE while something
+    // holds that home, and that it completes once released. One owner, and a
+    // handle is a way to ask rather than a way in.
+    //
+    // It does NOT establish where the other thread has got to -- a signal
+    // before the attempt plus a sleep proves neither entry nor ordering -- and
+    // there is no longer any take to order against an acquisition: the payload
+    // goes into its home when the connection binds and is never anywhere
+    // else.
     let record = {
         let held = durable.records_even_if_poisoned();
         let PrivateOrderedContinuationPlace::Taken(record) = &held.continuations[0] else {
@@ -30728,16 +30804,16 @@ fn a_handover_waits_for_the_destination_reserved_for_it() {
         assert_eq!(retain_into(slot, &mut source), PrivateContinuationCommit::Retained);
         checked.send(source.is_none()).expect("reported");
     });
-    wait.recv().expect("the installing thread started");
+    wait.recv().expect("the binding thread started");
     std::thread::sleep(Duration::from_millis(100));
     assert!(
         report.try_recv().is_err(),
-        "the hand-over does not complete while its destination is held"
+        "a binding does not complete while something holds the home"
     );
     drop(blocker);
-    let took = report.recv().expect("the hand-over finished");
-    installer.join().expect("the installing thread finished");
-    assert!(took, "and then it moved the work in");
+    let took = report.recv().expect("the binding finished");
+    installer.join().expect("the binding thread finished");
+    assert!(took, "and then it went in");
 
     assert_eq!(durable.continuations_retained(), Some(1));
     assert_eq!(durable.continuations_abandoned(), Some(0));

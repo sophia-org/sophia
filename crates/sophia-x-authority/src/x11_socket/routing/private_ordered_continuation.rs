@@ -811,34 +811,55 @@ impl PrivateSettlementOwner {
     fn drive_ordered_continuations(&self, visits: usize) -> usize {
         let mut driven = 0usize;
         for _ in 0..visits {
-            let (index, record) = {
-                let mut held = self.records_even_if_poisoned();
+            // CANDIDATES ARE PINNED, NOT QUESTIONED, UNDER THE AGGREGATE.
+            // Asking a home anything takes that home's lock, and a home may
+            // legitimately reach the store while it is held -- a close can
+            // reserve a place. Asking here would put store-then-home against
+            // that home-then-store, which is a cycle however briefly it is
+            // held, and one contended home would hold every other connection
+            // behind it. Taking a handle is a reference count and asks nothing.
+            //
+            // In cursor order, so what is chosen below is still the round
+            // robin this drive has always done.
+            let candidates: Vec<(usize, Arc<PrivateOrderedHome>)> = {
+                let held = self.records_even_if_poisoned();
                 let places = held.continuations.len();
                 if places == 0 {
                     return driven;
                 }
-                let mut found = None;
-                for step in 0..places {
-                    let index = (held.continuation_cursor + step) % places;
-                    if let PrivateOrderedContinuationPlace::Taken(record) =
-                        &held.continuations[index]
-                    {
-                        // Retained only: see the note below on whose home this
-                        // drive may touch.
-                        if record.standing() == PrivateHomeStanding::Retained {
-                            found = Some((index, record.clone()));
-                            break;
+                (0..places)
+                    .filter_map(|step| {
+                        let index = (held.continuation_cursor + step) % places;
+                        match &held.continuations[index] {
+                            PrivateOrderedContinuationPlace::Taken(home) => {
+                                Some((index, home.clone()))
+                            }
+                            PrivateOrderedContinuationPlace::Free => None,
                         }
-                    }
-                }
-                held.continuation_cursor = found
-                    .as_ref()
-                    .map_or(held.continuation_cursor, |(index, _)| (index + 1) % places);
-                match found {
-                    Some(found) => found,
-                    None => return driven,
-                }
+                    })
+                    .collect()
             };
+            // ASKED WITH THE STORE RELEASED, which is the only order this may
+            // be asked in. The first retained one in cursor order is this
+            // visit's, and the rest are left where they are.
+            let Some((index, record)) = candidates
+                .into_iter()
+                .find(|(_, home)| home.standing() == PrivateHomeStanding::Retained)
+            else {
+                return driven;
+            };
+            {
+                // A FAIRNESS HINT, AND ONLY THAT. It is written in an
+                // acquisition of its own because the choice could not be made
+                // in the one that read it, so what it says is where the next
+                // round should begin rather than an invariant anything rests
+                // on. Nothing here reads it except the scan above.
+                let mut held = self.records_even_if_poisoned();
+                let places = held.continuations.len();
+                if places > 0 {
+                    held.continuation_cursor = (index + 1) % places;
+                }
+            }
             // Driven with the store released.
             //
             // A LIVE HOME IS NOT THIS DRIVE'S TO TOUCH. Its connection is

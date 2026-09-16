@@ -765,11 +765,16 @@ impl XServerFrontendClientRouteRegistration {
         let fence = self.fence_ordered_handovers();
         // NOTHING IS MOVED HERE, AND THERE IS NOTHING TO MOVE. This
         // connection's output has lived in its home since it bound, and the
-        // home has been in the place since the place was reserved. Teardown
-        // used to take the payload into this frame and carry it across the
-        // store and record acquisitions inside the hand-over, with every early
-        // return on the way somewhere it could be lost. What is left to do is
-        // write what this teardown knows and say the connection has ended.
+        // home has been in the place since the place was reserved. What is
+        // left to do is write what this teardown knows and say the connection
+        // has ended.
+        //
+        // WHAT THE MOVE COST WHILE IT EXISTED was not only the risk of losing
+        // work on the way: it was that until teardown ran, the only thing able
+        // to reach this connection's output was this registration. Anything
+        // meant to borrow it later would have had to be handed the payload
+        // rather than a way to reach it, and the hand-over would have
+        // invalidated whatever it was holding.
         //
         // WRITTEN WHERE IT LIVES. Both shapes carry evidence and both consult
         // it: a record that reached retention without it would carry None for
