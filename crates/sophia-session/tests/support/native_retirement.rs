@@ -405,3 +405,55 @@ fn absent_retiring_slot_does_not_authorize_a_successor_of_a_live_owner() {
     assert_eq!(original.id, 101);
     assert_eq!(successor.requested.get(), 0);
 }
+
+#[test]
+fn pre_return_completion_requires_device_authority_and_keeps_owners_on_revocation() {
+    for active in [false, true] {
+        let bytes = Arc::new(vec![1_u8; 2048]);
+        let mut held = Some(bytes.clone());
+        let mut calls = Vec::new();
+        // The production completion block uses this same gate before topology,
+        // drain, and presentation release. Effects here are supplied, not KMS.
+        let result = with_active_device_authority(active, || {
+            calls.extend(["topology", "drain", "release"]);
+            held.take()
+        });
+        if active {
+            assert_eq!(calls, ["topology", "drain", "release"]);
+            assert!(held.is_none());
+            drop(result);
+            assert_eq!(Arc::strong_count(&bytes), 1);
+        } else {
+            assert!(calls.is_empty());
+            assert!(result.is_none());
+            assert!(held.is_some());
+            assert_eq!(Arc::strong_count(&bytes), 2);
+        }
+    }
+}
+
+#[test]
+fn replacement_waits_for_retained_runtime_even_after_native_join() {
+    let value = owner(103);
+    value.joined.set(true);
+    value.disposed.set(true);
+    let bytes = value.bytes.clone();
+    let mut retirement = NativeRetirement::default();
+    retirement
+        .begin(&mut Some(value), RetirementMode::DeviceRevoked, "revoked")
+        .unwrap();
+    let disposed = Rc::new(Cell::new(false));
+    let runtime = RenderOwner {
+        _bytes: Arc::new(vec![2; 1024]),
+        drains: Rc::new(Cell::new(0)),
+        disposed: disposed.clone(),
+    };
+    assert!(finish_before_replacement(Some(&runtime), &mut retirement).is_err());
+    assert_eq!(Arc::strong_count(&bytes), 2);
+    assert!(retirement.completion().is_err());
+    disposed.set(true);
+    finish_before_replacement(Some(&runtime), &mut retirement).unwrap();
+    assert_eq!(retirement.completion().unwrap().identity, 103);
+    assert_eq!(Arc::strong_count(&bytes), 1);
+    assert_eq!(runtime.drains.get(), 0);
+}

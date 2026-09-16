@@ -18,6 +18,26 @@ pub(super) trait RenderRetirement<O> {
     fn disposition(&self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
+pub(super) fn finish_before_replacement<O: RetirementOwner, R: RenderRetirement<O>>(
+    runtime: Option<&R>,
+    retirement: &mut NativeRetirement<O>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(runtime) = runtime {
+        runtime.disposition()?;
+    }
+    retirement.finish_completed()?;
+    Ok(())
+}
+
+/// Gate the actual pre-return completion effects, before the outer retirement
+/// continuation runs. Unknown/revoked device authority executes no closure.
+pub(super) fn with_active_device_authority<T>(
+    active: bool,
+    completion: impl FnOnce() -> T,
+) -> Option<T> {
+    active.then(completion)
+}
+
 impl RenderRetirement<LiveProductionNativeScanout>
     for sophia_backend_live::LiveProductionVisualRuntime
 {

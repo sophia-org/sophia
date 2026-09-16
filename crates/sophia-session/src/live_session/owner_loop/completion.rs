@@ -53,6 +53,7 @@
         presentations_shutdown: runtime.is_none(),
         ..Default::default()
     };
+    let _ = native_owner_retirement::with_active_device_authority(render_owners.seat_active, || {
     let mut topology_rollback_established = false;
     if let Some(native_scanout) = native_scanout.as_mut()
         && native_scanout.output_topology_preparation_active()
@@ -299,7 +300,7 @@
             }
         }
         cpu_visual_progress.observe_native_scanout(native_scanout, Instant::now());
-        if detach_established {
+        if detach_established && runtime.validate_native_retirement_disposition().is_ok() {
             match native_scanout.clear_renderer_images() {
                 Ok(evicted_renderer_images) => {
                     fatal_cleanup.renderer_images_cleared = true;
@@ -314,15 +315,19 @@
             }
         } else {
             crate::session_println!(
-                "sophia_live_renderer_images schema=1 status=retained reason=native_detach_not_established"
+                "sophia_live_renderer_images schema=1 status=retained reason=native_disposition_not_established"
             );
             cleanup_failures.push(
-                "renderer images retained because native detach was not established".to_owned(),
+                "renderer images retained because native disposition was not established".to_owned(),
             );
         }
     }
     if let Some(runtime) = runtime.as_mut() {
-        match runtime.shutdown_presentations() {
+        let shutdown = runtime
+            .validate_native_retirement_disposition()
+            .map_err(Box::<dyn std::error::Error>::from)
+            .and_then(|()| runtime.shutdown_presentations());
+        match shutdown {
             Ok(report) => {
                 fatal_cleanup.presentations_shutdown = true;
                 match present_observer.drain_pending_feedback(runtime, &mut present_feedback) {
@@ -338,6 +343,7 @@
             }
         }
     }
+    });
     if let Some((schema, source, original)) = terminal_client_error
         .as_ref()
         .map(|(source, original)| ("client_fatal", *source, original))

@@ -105,7 +105,7 @@
                             Err(error) => {
                                 seat_release_prepared = false;
                                 if !native_recovery_allowed!() { continue; }
-                                native_retirement.finish()?;
+                                native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
                 let resumed =
                                     LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                                         &controller.device_opener(),
@@ -192,7 +192,7 @@
             {
                 requested_virtual_terminal = None;
                 seat_release_prepared = false;
-                native_retirement.finish()?;
+                native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
                 let resumed =
                     LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                         &controller.device_opener(),
@@ -313,7 +313,7 @@
                 && native_recovery_allowed!()
             {
                 crate::session_println!("sophia_live_seat schema=1 status=acquire_pending");
-                native_retirement.finish()?;
+                native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
                 let resumed =
                     LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
                         &controller.device_opener(),

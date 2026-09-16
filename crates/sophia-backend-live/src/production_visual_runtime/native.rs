@@ -287,7 +287,7 @@ impl LiveProductionVisualRuntime {
     fn detach_native_scanout(
         &mut self,
         native_scanout: Option<&mut LiveProductionNativeScanout>,
-        outputs: &[sophia_engine::HeadlessOutput],
+        _outputs: &[sophia_engine::HeadlessOutput],
         outcome: LiveProductionNativeSuspendOutcome,
     ) -> Result<LiveProductionNativeSuspendReport, Box<dyn std::error::Error>> {
         let abandoned_scanouts = reduce_live_production_abandoned_scanout_count(
@@ -309,11 +309,10 @@ impl LiveProductionVisualRuntime {
             .unwrap_or(0)
             .checked_add(1)
             .expect("presented input epoch exhausted");
-        self.outputs = LiveProductionOutputRuntimeSet::new(
-            outputs,
-            self.production.committed_surfaces(),
-            None,
-        )?;
+        // Revocation removes presentation/input authority, not ownership.
+        // Keep the actual submitted/displayed/cleanup payloads in this set
+        // until disposition is established; an empty replacement would make
+        // the retirement check vacuous. Resume checks before replacing it.
         self.content_layout_generation = self
             .content_layout_generation
             .checked_add(1)
@@ -353,6 +352,7 @@ impl LiveProductionVisualRuntime {
         scene: &LiveProductionCpuScene,
         renderer_handoff: Option<&LiveProductionRendererImageHandoff>,
     ) -> Result<usize, Box<dyn std::error::Error>> {
+        self.validate_native_retirement_disposition()?;
         let retained = self.retained_renderer_image_ids();
         validate_renderer_image_resume_admission(
             &retained,
@@ -483,6 +483,9 @@ impl LiveProductionVisualRuntime {
         outputs: &[sophia_engine::HeadlessOutput],
         logical_viewports: &[(OutputId, Rect)],
     ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.native_suspended {
+            self.validate_native_retirement_disposition()?;
+        }
         if !self.topology_rebind_quiescent() {
             return Err(
                 "native topology runtime rebind requires quiescent presentation ownership".into(),

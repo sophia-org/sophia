@@ -724,6 +724,24 @@ mutation fails its no-call assertion. These controls do not execute native
 KMS or establish an attended shutdown result. Frozen review, canonical validation
 and native acceptance remain separate pending gates.
 
+Frozen b85 review found two retirement integration gaps despite its canonical
+PASS: the old pre-return completion path could still call native cleanup after
+revocation, and revoked detach replaced the output runtimes before their affine
+custody was inspected. The successor gates the actual completion effect groups
+on retained seat authority and keeps the existing output-runtime owners during
+detach while invalidating input projections separately. Renderer-image clear
+also requires output custody disposition, not merely a detach report.
+
+Resume and topology rebind reject unresolved suspended custody before constructing
+replacement output state, enabling workers, importing images or assigning a new
+set. Session also checks retained runtime disposition before constructing a
+replacement native owner. This is retain-and-report behavior: an unresolved
+revoked owner can refuse recovery and remain in the terminal error carrier.
+It does not introduce a revoked-resource release protocol or establish successful
+VT resume. The adopted real-runtime Arc control covers retained displayed custody
+through repeated revoked detach; shared completion-gate effects are simulated.
+Frozen review and a new exact-source canonical run are pending for this successor.
+
 ### t101
 
 Support one combined content/descriptor shell in the shared client boundary,

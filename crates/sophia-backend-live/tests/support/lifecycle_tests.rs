@@ -894,3 +894,74 @@ fn topology_change_cannot_reinterpret_old_presented_pixels_with_a_new_origin() {
         ContentPointerDisposition::Captured
     );
 }
+
+#[test]
+fn revoked_suspend_keeps_displayed_custody_for_owned_retirement() {
+    use std::{num::NonZeroU32, sync::Arc};
+    let outputs = outputs();
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    assert!(runtime.validate_native_retirement_disposition().is_ok());
+    let bytes = Arc::new(vec![0_u8; 4096]);
+    let submission = crate::LiveRenderedPrimaryPlaneScanoutSubmission {
+        scanout_buffer: bytes.clone(),
+        correlation: None,
+        primary_plane: crate::LibdrmNativePrimaryPlaneScanoutSubmission {
+            resources: crate::LibdrmNativePrimaryPlaneResourceBundle::new(
+                NonZeroU32::new(10).unwrap().into(),
+                None,
+                outputs[0].size,
+            ),
+            completion_fence: None,
+        },
+        submitted_after_page_flip_serial: None,
+        layout_witness: None,
+    };
+    assert!(
+        runtime
+            .outputs
+            .values_mut()
+            .next()
+            .unwrap()
+            .runtime
+            .adopt_presented_rendered_primary_plane_scanout(submission)
+    );
+    assert_eq!(Arc::strong_count(&bytes), 2);
+    assert!(runtime.validate_native_retirement_disposition().is_err());
+    let report = runtime.suspend_revoked_native_scanout(&outputs).unwrap();
+    assert_eq!(
+        report.outcome,
+        crate::LiveProductionNativeSuspendOutcome::ForcedDetachRevoked
+    );
+    assert!(runtime.validate_native_retirement_disposition().is_err());
+    assert!(runtime.native_suspended);
+    assert!(
+        runtime
+            .input_projections
+            .iter()
+            .all(|projection| projection.content.is_none() && projection.layers.is_empty())
+    );
+    // No native owner, worker, or device is constructed here. This reaches
+    // the production logical-runtime transition before any worker join or
+    // outside-loop retirement transfer can have occurred.
+    assert_eq!(
+        Arc::strong_count(&bytes),
+        2,
+        "revoked suspend dropped displayed custody before the owned retirement transition"
+    );
+    for _ in 0..3 {
+        runtime.suspend_revoked_native_scanout(&outputs).unwrap();
+        assert!(runtime.validate_native_retirement_disposition().is_err());
+        assert_eq!(Arc::strong_count(&bytes), 2);
+    }
+}
+
+#[test]
+fn revoked_suspend_without_affine_owners_remains_disposed() {
+    let outputs = outputs();
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    for _ in 0..3 {
+        runtime.suspend_revoked_native_scanout(&outputs).unwrap();
+        assert!(runtime.validate_native_retirement_disposition().is_ok());
+        assert_eq!(runtime.outputs.output_count(), outputs.len());
+    }
+}

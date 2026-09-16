@@ -133,7 +133,7 @@
         close_native_owner!("topology_rebuild", retirement_mode);
 
         if !native_recovery_allowed!() { continue; }
-        native_retirement.finish()?;
+        native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
         let replacement = match seat_controller.as_ref() {
             Some(controller) => {
                 LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(

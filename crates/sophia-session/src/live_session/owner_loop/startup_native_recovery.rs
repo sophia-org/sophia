@@ -16,7 +16,7 @@ native_evidence.observe_settlement(suspended.outcome.drained(), suspended.abando
 )?);
 close_native_owner!("startup_recovery", RetirementMode::from_suspend(suspended.outcome));
 if !native_recovery_allowed!() { continue; }
-        native_retirement.finish()?;
+        native_owner_retirement::finish_before_replacement(runtime.as_ref(), native_retirement)?;
 let replacement = LiveProductionNativeScanout::new_with_seat_mirroring_mapping_and_cursor(
     &seat_controller
         .as_ref()
