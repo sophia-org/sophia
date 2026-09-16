@@ -130,7 +130,7 @@ SOPHIA_SESSION_STARTUP=none \
 SOPHIA_SESSION_WATCHDOG_SECONDS=110 \
 SOPHIA_DIAGNOSTIC_DIR="$EVIDENCE_DIR/session" \
 SOPHIA_UNTRUSTED_SESSION_OUTPUT_LOG="$EVIDENCE_DIR/session/untrusted-session-output.log" \
-    "$ROOT_DIR/tools/run_sophia_session.sh" --max-runtime-ms=90000 --shell-process="$LOM_BIN"
+    "$ROOT_DIR/tools/run_sophia_session.sh" --max-runtime-ms=90000 --shell-process="$LOM_BIN" --wm-process="$HAGIA_BIN"
 native_status=$?
 set -e
 printf 'native_exit_status=%s\n' "$native_status" > "$EVIDENCE_DIR/native-outcome.txt"

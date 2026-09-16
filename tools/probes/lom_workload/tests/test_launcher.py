@@ -81,8 +81,10 @@ echo proof >> "$TEST_TRACE"
 exit "${TEST_PROOF_STATUS:-0}"''')
         self.script(self.tools / "run_sophia_session.sh", '''
 echo session >> "$TEST_TRACE"
-[[ "$#" == 2 && "$1" == --max-runtime-ms=90000 ]]
+[[ "$#" == 3 && "$1" == --max-runtime-ms=90000 ]]
 [[ "$2" == --shell-process="$SOPHIA_LOM_TARGET_DIR/release/lom" ]]
+[[ "$3" == --wm-process="$SOPHIA_HAGIA_BIN" ]]
+[[ "$SOPHIA_HAGIA_BIN" == "$SOPHIA_LOM_NATIVE_EVIDENCE_DIR/hagia" ]]
 [[ "$SOPHIA_SESSION_WATCHDOG_SECONDS" == 110 && "$SOPHIA_SESSION_STARTUP" == none ]]
 [[ "$SOPHIA_REQUIRE_LOCAL_VT" == true && "$SOPHIA_MANAGE_KEYD" == true ]]
 mkdir -p "$SOPHIA_DIAGNOSTIC_DIR"
