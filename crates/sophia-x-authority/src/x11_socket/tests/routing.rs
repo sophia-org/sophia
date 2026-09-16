@@ -25202,15 +25202,22 @@ fn a_worker_not_yet_at_its_first_look_is_not_stranded_by_the_handoff() {
         slotted.handle = Some(started);
         slotted.life = PrivateWorkerLife::Running;
     }
-    // Permit it, still holding the notice, so the worker has not observed it.
+    // Permit it, and KEEP HOLDING THE NOTICE. Releasing here would let the
+    // worker reach its predicate before the handoff, which is exactly the
+    // ordering this control is about -- and a release followed by a handoff
+    // establishes nothing about a worker that has not looked, because it may
+    // well have.
     let mut state = held_notice;
     state.started = true;
-    drop(state);
 
-    // And hand the handle on before the worker has looked.
+    // The handle goes while the notice is still held, so the worker provably
+    // has not observed anything. Handing on does not take this notice, which
+    // is why holding it across the call is possible at all.
     let handed = hand_worker_to_joiner(&slot).handle.expect("its handle");
 
-    // It is not stranded: the grant it was given is still there.
+    // Only now may it look. It is not stranded: the grant it was given is
+    // still there.
+    drop(state);
     wake.ready.notify_all();
     assert_eq!(
         seen.recv_timeout(std::time::Duration::from_secs(5)),
