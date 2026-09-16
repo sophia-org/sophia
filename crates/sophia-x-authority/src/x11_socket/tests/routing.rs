@@ -23635,9 +23635,14 @@ fn a_preparation_that_refuses_leaves_the_transport_and_its_queue_untouched() {
     // refusal reached before preparation runs proves nothing about what
     // preparation does with what it borrows.
     //
-    // It refuses because this connection was never admitted or published, so
-    // the endpoint lookup has nothing to answer with -- a real refusal from
-    // the real path, not an injected one.
+    // It refuses because this connection's private lifecycle and connection
+    // state were never attached, so the endpoint lookup has nothing to answer
+    // with -- a real refusal from the real path, not an injected one.
+    //
+    // Its ROW is published, by the registration itself, and that is exactly
+    // why this control can hold accepted custody: the queue is reachable, so
+    // a capsule can be on it. Publication and attachment are different
+    // boundaries and only the second is missing here.
     let durable = PrivateSettlementOwner::default();
     let private = private_over(&durable, 2);
     let client = XServerFrontendClientId(8741);
@@ -23708,31 +23713,45 @@ fn a_preparation_that_refuses_leaves_the_transport_and_its_queue_untouched() {
     assert_eq!(order_pass_frames(&survived), frames);
     assert!(cell.answer().is_none());
 
-    // And the connection is still a connection. The ending capability that a
-    // refused preparation would have destroyed outlives the registration: the
-    // retained record holds it, which is what the whole retention is for.
+    // AND THE ENDING CAPABILITY IS USED, not inferred from dropping things.
+    // Letting go of every descriptor would end the socket whatever handle the
+    // transport had kept -- including one for some other connection -- so the
+    // retained handle is called while the real output is still open, and the
+    // peer this connection belongs to is the one that has to see the end.
     let mut byte = [0u8; 1];
     assert_eq!(
         (&peer).read(&mut byte).map_err(|error| error.kind()),
         Err(std::io::ErrorKind::WouldBlock),
         "still connected"
     );
-    drop(registration);
-    assert_eq!(
-        (&peer).read(&mut byte).map_err(|error| error.kind()),
-        Err(std::io::ErrorKind::WouldBlock),
-        "STILL CONNECTED AFTER TEARDOWN, because its place now holds the \
-         handle that could end it"
+    {
+        let held = registration.ordered_setup.lock().expect("readable");
+        let Some(PrivateOrderedContinuation::Setup {
+            accepted: PrivateOrderedSetupCustody::Transport(transport),
+            ..
+        }) = held.as_ref()
+        else {
+            panic!("its transport is still here")
+        };
+        transport
+            .shutdown
+            .shutdown(Shutdown::Both)
+            .expect("the retained handle ends this connection");
+    }
+    assert!(
+        Arc::strong_count(&output) >= 2,
+        "the real output is still open, so nothing ended by being dropped"
     );
-    drop(sender);
-    drop(private);
-    drop(durable);
-    drop(output);
     assert_eq!(
         (&peer).read(&mut byte).ok(),
         Some(0),
-        "and only when everything holding it goes does the peer see the end"
+        "and THIS connection's peer sees the end, so the handle kept was its own"
     );
+    drop(sender);
+    drop(registration);
+    drop(private);
+    drop(durable);
+    drop(output);
 }
 
 #[test]

@@ -86,9 +86,24 @@ struct PrivateAdmissionBindings {
 /// asks a caller to assert currency, and nothing caches an answer to be
 /// checked later.
 ///
-/// A caller must reach this before taking its own registry or launch-origin
-/// locks. Calling in while holding those would put this boundary beneath them,
-/// which is the edge the whole arrangement exists to avoid.
+/// THE EDGE THIS EXISTS TO AVOID is the client table beneath common: a caller
+/// holding the client table and then reaching in here would let a revocation
+/// wait behind a table that something else is waiting to cross this boundary
+/// to release. That one is forbidden outright, and the ordered producers
+/// observe it -- each releases the client table before anything takes common.
+///
+/// NOT EVERY REGISTRY-OWNED LOCK IS THAT EDGE, and the blanket wording this
+/// once carried no longer describes the callers. Promotion holds a
+/// registration's endpoint gate and its payload storage and then reaches in
+/// here, through the endpoint lookup; the whole order on that path is the
+/// endpoint gate, then the payload storage, then common, then the bindings,
+/// then the client table -- which is acyclic against the producers and the
+/// teardown, because none of them holds a later lock while waiting for an
+/// earlier one.
+///
+/// It is not free. A promotion waiting for common keeps that endpoint's gate
+/// and payload occupied, so handovers and closing for THAT connection wait
+/// behind it. Nothing here bounds how long any of that takes.
 #[cfg(unix)]
 #[derive(Clone)]
 pub struct PrivateAdmissionParticipant {
