@@ -32531,25 +32531,15 @@ fn a_body_refuses_a_home_or_an_owner_it_may_not_serve() {
 /// A started worker, through the real startup transaction, whose handle a
 /// reaping can take.
 ///
-/// THE ACTUAL PAIR: this connection's body runs in the thread the startup
-/// transaction spawned, writing its departure into the exit record the reaping
-/// below reads. Nothing here asserts that pairing from the types -- they
-/// cannot establish it -- which is why it is built from one startup rather
-/// than assembled from parts.
-fn started_worker<F>(
-    f: &PrivateWorkerFixture,
-    exit: &Arc<PrivateWorkerExit>,
-    body: F,
-) -> Mutex<PrivateWorkerSlot>
+/// THE ACTUAL PAIR: the body runs in the thread the startup transaction
+/// spawned, writing its departure into the exit record the reaping reads.
+/// Nothing asserts that pairing from the types -- they cannot establish it --
+/// which is why it is built from one startup rather than assembled from parts.
+fn started_worker<F>(f: &PrivateWorkerFixture, body: F) -> Mutex<PrivateWorkerSlot>
 where
     F: FnOnce() + Send + 'static,
 {
     let slot = Mutex::new(PrivateWorkerSlot::empty());
-    // The exit record is the caller's to pair with this thread: the body is
-    // handed its handle by whoever writes the closure, and nothing in these
-    // types checks that the record a reaping is given belongs to the thread
-    // this slot holds.
-    let _ = exit;
     assert_eq!(
         start_connection_worker(&slot, &f.stop, &f.wake, || {
             std::thread::Builder::new().spawn(body)
@@ -32557,6 +32547,16 @@ where
         PrivateStartupOutcome::Started
     );
     slot
+}
+
+/// The payload a reaping kept, as a string, if it kept one.
+fn panic_payload(record: &PrivateReapingRecord<'_>) -> Option<String> {
+    let PrivateJoinResult::Panicked(payload) = record.result()? else {
+        return None;
+    };
+    let held = payload.lock().expect("a readable payload");
+    held.downcast_ref::<&str>()
+        .map(|carried| (*carried).to_owned())
 }
 
 #[test]
@@ -32567,10 +32567,9 @@ fn a_reaping_keeps_what_a_worker_that_returned_actually_returned() {
     let f = worker_fixture(XServerFrontendClientId(8411));
     f.permit();
     let exit = Arc::new(PrivateWorkerExit::unstarted());
-    let record = PrivateReapingRecord::unasked();
     let (home, wake, stop, sequence) = f.handles();
     let running = Arc::clone(&exit);
-    let slot = started_worker(&f, &exit, move || {
+    let slot = started_worker(&f, move || {
         PrivateWorkerBody {
             home: &home,
             wake: &wake,
@@ -32582,10 +32581,11 @@ fn a_reaping_keeps_what_a_worker_that_returned_actually_returned() {
         }
         .run();
     });
+    let record = PrivateReapingRecord::bound_to(&slot, &exit);
     assert_eq!(record.phase(), PrivateReapingPhase::NotBegun);
 
     cancel_connection_worker(&f.stop, &f.wake);
-    let reaping = reap_connection_worker(&slot, &exit, &record);
+    let reaping = record.reap();
 
     assert_eq!(reaping.reaped, PrivateReaped::Joined);
     assert!(!reaping.slot_poisoned);
@@ -32594,9 +32594,7 @@ fn a_reaping_keeps_what_a_worker_that_returned_actually_returned() {
         matches!(record.result(), Some(PrivateJoinResult::Returned)),
         "the frame returned, and the record says which"
     );
-    // THE BODY'S OWN EVIDENCE IS BESIDE IT, not derived from the join. A join
-    // that returned says the thread finished; what it was doing is the body's
-    // to have said.
+    // THE BODY'S OWN EVIDENCE IS BESIDE IT, not derived from the join.
     let Some(PrivateExitReading::Classified(outcome)) = reaping.exit else {
         panic!("the body left a classification: {:?}", reaping.exit)
     };
@@ -32604,31 +32602,25 @@ fn a_reaping_keeps_what_a_worker_that_returned_actually_returned() {
         stopped_by_cancellation(&outcome),
         "the owner's own word: {outcome:?}"
     );
-    assert!(exit.left());
     drop(f.fixture);
 }
 
 #[test]
 fn a_reaping_keeps_the_payload_a_worker_panicked_with() {
     // A JOIN THAT REPORTS A PANIC IS A COMPLETED JOIN, and what the frame was
-    // carrying is kept rather than reduced to the fact that it panicked. What
-    // to do with it is whoever reads this record's business; discarding it
-    // here would decide that for them.
+    // carrying is kept rather than reduced to the fact that it panicked.
     let f = worker_fixture(XServerFrontendClientId(8412));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
-    let record = PrivateReapingRecord::unasked();
-    let slot = started_worker(&f, &exit, || {
+    let slot = started_worker(&f, || {
         panic!("a worker frame carried this out with it");
     });
-    let reaping = reap_connection_worker(&slot, &exit, &record);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let reaping = record.reap();
 
     assert_eq!(reaping.reaped, PrivateReaped::Joined);
     assert_eq!(record.phase(), PrivateReapingPhase::Joined);
-    let Some(PrivateJoinResult::Panicked(payload)) = record.result() else {
-        panic!("a completed join reporting a panic")
-    };
     assert_eq!(
-        payload.downcast_ref::<&str>().copied(),
+        panic_payload(&record).as_deref(),
         Some("a worker frame carried this out with it"),
         "the exact payload, still there to be read"
     );
@@ -32640,28 +32632,32 @@ fn a_reaping_keeps_the_payload_a_worker_panicked_with() {
 
 #[test]
 fn a_departure_noticed_is_not_a_thread_collected() {
-    // LEFT IS A HINT, NOT A JOIN. A body publishes its departure as its frame
-    // goes, which is before the thread has finished going; only the join says
-    // the thread is quiescent. A reaper that took `left` for quiescence would
-    // be reading a scheduling notice as a collection.
+    // LEFT IS A HINT, NOT A JOIN. A departure is published as a frame goes,
+    // which is before the thread has finished going; only the join says the
+    // thread is quiescent.
     //
-    // THE THREAD IS HELD OPEN AFTER THE DEPARTURE IS PUBLISHED, deliberately,
-    // so the two facts are separated in time rather than argued about.
+    // WHAT THIS ESTABLISHES is that the two facts are separate and that a
+    // reaping does not take the first for the second. It does NOT establish
+    // that an active reaper waits on a still-running worker: this control
+    // releases the thread before asking. The control beside it, where two
+    // threads ask at once, is where a reaping runs against a live worker.
+    //
+    // THE GUARD IS INSTALLED BY HAND, so the departure can be published while
+    // the thread is deliberately held open. No body runs here.
     let f = worker_fixture(XServerFrontendClientId(8413));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
-    let record = PrivateReapingRecord::unasked();
     let (release, held) = std::sync::mpsc::channel::<()>();
     let departing = Arc::clone(&exit);
-    let slot = started_worker(&f, &exit, move || {
+    let slot = started_worker(&f, move || {
         {
             let _leaving = PrivateWorkerLeaving(&departing);
         }
-        // The departure is published and the thread is still here.
         let _ = held.recv();
     });
+    let record = PrivateReapingRecord::bound_to(&slot, &exit);
     assert!(
         waited_for(|| exit.left()),
-        "the body published that its frame had gone"
+        "the frame published that it had gone"
     );
     assert_eq!(
         exit.reading(),
@@ -32675,7 +32671,7 @@ fn a_departure_noticed_is_not_a_thread_collected() {
     );
 
     drop(release);
-    let reaping = reap_connection_worker(&slot, &exit, &record);
+    let reaping = record.reap();
     assert_eq!(reaping.reaped, PrivateReaped::Joined);
     assert!(
         matches!(record.result(), Some(PrivateJoinResult::Returned)),
@@ -32690,34 +32686,71 @@ fn a_departure_noticed_is_not_a_thread_collected() {
 }
 
 #[test]
+fn two_asks_at_once_join_a_worker_once() {
+    // ONE ATTEMPT OWNS THE HANDLE, and this is the case the claim exists for:
+    // two threads asking the same record at the same time, against a worker
+    // that is still running when they ask.
+    let f = worker_fixture(XServerFrontendClientId(8418));
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let slot = started_worker(&f, move || {
+        let _ = held.recv();
+        panic!("what exactly one of them keeps");
+    });
+    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+
+    let (first, second) = std::thread::scope(|scope| {
+        let record = &record;
+        let one = scope.spawn(move || record.reap());
+        let two = scope.spawn(move || record.reap());
+        // Both are asking a worker that has not finished.
+        drop(release);
+        (
+            one.join().expect("the first ask finished"),
+            two.join().expect("the second ask finished"),
+        )
+    });
+
+    let outcomes = [first.reaped, second.reaped];
+    assert!(
+        outcomes.contains(&PrivateReaped::Joined)
+            && outcomes.contains(&PrivateReaped::AlreadyAsked),
+        "exactly one joined and the other found it taken: {outcomes:?}"
+    );
+    assert_eq!(record.phase(), PrivateReapingPhase::Joined);
+    assert_eq!(
+        panic_payload(&record).as_deref(),
+        Some("what exactly one of them keeps"),
+        "one join, one result"
+    );
+    let held = slot.lock().expect("a readable slot");
+    assert!(held.handle.is_none());
+    assert_eq!(held.life, PrivateWorkerLife::HandedToJoiner);
+    drop(held);
+    drop(f.fixture);
+}
+
+#[test]
 fn a_second_ask_joins_nothing_and_changes_nothing() {
-    // ONE ATTEMPT OWNS THE HANDLE. A second ask must not join twice, detach
-    // another handle, overwrite what the first established, or leave the slot
-    // looking startable over a thread that has already run.
+    // A second ask must not join twice, detach another handle, overwrite what
+    // the first established, or leave the slot looking startable over a thread
+    // that has already run.
     let f = worker_fixture(XServerFrontendClientId(8414));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
-    let record = PrivateReapingRecord::unasked();
-    let slot = started_worker(&f, &exit, || {
+    let slot = started_worker(&f, || {
         panic!("what the first ask keeps");
     });
-    assert_eq!(
-        reap_connection_worker(&slot, &exit, &record).reaped,
-        PrivateReaped::Joined
-    );
+    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
 
-    let again = reap_connection_worker(&slot, &exit, &record);
+    let again = record.reap();
     assert_eq!(again.reaped, PrivateReaped::AlreadyAsked);
     assert_eq!(again.exit, None, "it read nothing, having done nothing");
     assert_eq!(record.phase(), PrivateReapingPhase::Joined);
-    let Some(PrivateJoinResult::Panicked(payload)) = record.result() else {
-        panic!("the first ask's result, untouched")
-    };
     assert_eq!(
-        payload.downcast_ref::<&str>().copied(),
+        panic_payload(&record).as_deref(),
         Some("what the first ask keeps")
     );
-    // THE SLOT IS NOT STARTABLE AGAIN. Its handle went to a joiner and its
-    // history says so.
     let held = slot.lock().expect("a readable slot");
     assert!(held.handle.is_none());
     assert_eq!(held.life, PrivateWorkerLife::HandedToJoiner);
@@ -32727,17 +32760,15 @@ fn a_second_ask_joins_nothing_and_changes_nothing() {
 
 #[test]
 fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
-    // THREE DIFFERENT NOTHINGS. A connection that never started a worker, one
-    // whose handle has already gone elsewhere, and a record already asked are
-    // separate findings, and a caller deciding whether to expect a join needs
-    // them apart. None of them consumes anything.
+    // FOUR DIFFERENT NOTHINGS, and a caller deciding whether to expect a join
+    // needs them apart. None of them consumes anything.
     let f = worker_fixture(XServerFrontendClientId(8415));
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
 
     // Never started.
     let unstarted = Mutex::new(PrivateWorkerSlot::empty());
-    let exit = Arc::new(PrivateWorkerExit::unstarted());
-    let first = PrivateReapingRecord::unasked();
-    let reaping = reap_connection_worker(&unstarted, &exit, &first);
+    let first = PrivateReapingRecord::bound_to(&unstarted, &exit);
+    let reaping = first.reap();
     assert_eq!(reaping.reaped, PrivateReaped::NothingStarted);
     assert_eq!(reaping.exit, None);
     assert_eq!(
@@ -32752,18 +32783,13 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
         }),
         PrivateStartupOutcome::Started
     );
-    // AND THE SAME RECORD MAY ASK AGAIN. An attempt that consumed nothing is
-    // not an attempt: holding its claim would leave a record that can never
-    // reach the handle its connection now has, for no reason but having looked
-    // too early.
-    let later = reap_connection_worker(&unstarted, &exit, &first);
-    assert_eq!(later.reaped, PrivateReaped::Joined);
-    assert_eq!(first.phase(), PrivateReapingPhase::Joined);
+    // AND THE SAME RECORD MAY ASK AGAIN, against the same bound slot. An
+    // attempt that consumed nothing is not an attempt: holding its claim would
+    // leave a record that could never reach the handle its connection went on
+    // to have.
+    assert_eq!(first.reap().reaped, PrivateReaped::Joined);
     assert!(matches!(first.result(), Some(PrivateJoinResult::Returned)));
-
-    // AND A SLOT WHOSE HANDLE WENT TO A JOINER IS NOT STARTABLE AGAIN, which
-    // is what stops a second worker existing over a connection that already
-    // had one.
+    // AND THAT SLOT IS NOT STARTABLE AGAIN.
     assert_eq!(
         start_connection_worker(&unstarted, &f.stop, &f.wake, || {
             std::thread::Builder::new().spawn(|| {})
@@ -32771,8 +32797,7 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
         PrivateStartupOutcome::NoLongerStartable
     );
 
-    // Handed elsewhere: a handle that goes to a joiner which is not this
-    // record, from a connection of its own.
+    // Handed elsewhere, from a connection of its own.
     let other = Mutex::new(PrivateWorkerSlot::empty());
     assert_eq!(
         start_connection_worker(&other, &f.stop, &f.wake, || {
@@ -32780,14 +32805,34 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
         }),
         PrivateStartupOutcome::Started
     );
-    let handoff = hand_worker_to_joiner(&other);
-    let handle = handoff.handle.expect("the started worker's handle");
-    let second = PrivateReapingRecord::unasked();
-    let elsewhere = reap_connection_worker(&other, &exit, &second);
+    let handle = hand_worker_to_joiner(&other)
+        .handle
+        .expect("the started worker's handle");
+    let second = PrivateReapingRecord::bound_to(&other, &exit);
+    let elsewhere = second.reap();
     assert_eq!(elsewhere.reaped, PrivateReaped::HandedElsewhere);
     assert_eq!(second.phase(), PrivateReapingPhase::NotBegun);
     assert!(second.result().is_none());
     handle.join().expect("this control joins what it took");
+
+    // A handle gone with nothing saying it was handed on. STAGED, and only
+    // this: the slot is written into the state something would leave if it
+    // took a handle without recording that it had. No path here produces it,
+    // which is why it is written rather than reached.
+    let torn = Mutex::new(PrivateWorkerSlot {
+        handle: None,
+        departing: false,
+        life: PrivateWorkerLife::Running,
+    });
+    let third = PrivateReapingRecord::bound_to(&torn, &exit);
+    let missing = third.reap();
+    assert_eq!(
+        missing.reaped,
+        PrivateReaped::HandleMissing,
+        "neither never-started nor handed on, and a caller told either \
+         would be wrong"
+    );
+    assert_eq!(third.phase(), PrivateReapingPhase::NotBegun);
     drop(f.fixture);
 }
 
@@ -32795,12 +32840,10 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
 fn a_poisoned_slot_still_gives_up_its_handle_and_says_it_was_poisoned() {
     // A THREAD LEFT UNJOINABLE BECAUSE SOMEBODY PANICKED NEAR ITS SLOT IS THE
     // WORSE OUTCOME. The slot is recovered far enough to get the handle out,
-    // and the poison is reported beside the answer rather than absorbed into
-    // it or turned into a refusal.
+    // and the poison is reported beside the answer rather than absorbed.
     let f = worker_fixture(XServerFrontendClientId(8416));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
-    let record = PrivateReapingRecord::unasked();
-    let slot = started_worker(&f, &exit, || {});
+    let slot = started_worker(&f, || {});
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _held = slot.lock().expect("a readable slot");
@@ -32811,7 +32854,8 @@ fn a_poisoned_slot_still_gives_up_its_handle_and_says_it_was_poisoned() {
     );
     assert!(slot.is_poisoned());
 
-    let reaping = reap_connection_worker(&slot, &exit, &record);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let reaping = record.reap();
     assert_eq!(reaping.reaped, PrivateReaped::Joined);
     assert!(reaping.slot_poisoned, "and the poison is reported");
     assert!(matches!(record.result(), Some(PrivateJoinResult::Returned)));
@@ -32819,32 +32863,43 @@ fn a_poisoned_slot_still_gives_up_its_handle_and_says_it_was_poisoned() {
 }
 
 #[test]
-fn a_joined_result_outlives_an_unreadable_exit_record() {
+fn a_joined_result_publishes_while_its_exit_record_is_held() {
     // THE RESULT IS NOT HOSTAGE TO A DIAGNOSTIC. The exit record is read after
     // the join result has been retained and published, and never as a
-    // condition of it -- so a record nobody can read costs a caller the
-    // diagnostic and not the join.
+    // condition of it -- so a record another thread is holding costs a caller
+    // the diagnostic and not the join.
+    //
+    // HELD ACROSS THE REAPING, not merely poisoned: a reaping that took this
+    // lock on its way to publishing would wait here, and the phase would not
+    // move until it was released.
     let f = worker_fixture(XServerFrontendClientId(8417));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
-    let record = PrivateReapingRecord::unasked();
-    let slot = started_worker(&f, &exit, || {});
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _held = exit.outcome.lock().expect("a readable exit record");
-            panic!("a holder unwound inside this worker's exit record");
-        }))
-        .is_err(),
-        "the holder unwound"
-    );
+    let slot = started_worker(&f, || {});
+    let record = PrivateReapingRecord::bound_to(&slot, &exit);
 
-    let reaping = reap_connection_worker(&slot, &exit, &record);
+    let reaping = std::thread::scope(|scope| {
+        let (taken, wait) = std::sync::mpsc::channel();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let holder = Arc::clone(&exit);
+        let keeper = scope.spawn(move || {
+            let _guard = holder.outcome.lock().expect("a readable exit record");
+            taken.send(()).expect("the exit record is held");
+            let _ = held.recv();
+        });
+        wait.recv().expect("the exit record is held");
+        let record = &record;
+        let reaper = scope.spawn(move || record.reap());
+        // The join and its publication happen while the diagnostic is held.
+        assert!(
+            waited_for(|| record.phase() == PrivateReapingPhase::Joined),
+            "the result is published without waiting for the exit record"
+        );
+        drop(release);
+        keeper.join().expect("the holder finished");
+        reaper.join().expect("the reaping finished")
+    });
+
     assert_eq!(reaping.reaped, PrivateReaped::Joined);
-    assert_eq!(record.phase(), PrivateReapingPhase::Joined);
     assert!(matches!(record.result(), Some(PrivateJoinResult::Returned)));
-    assert_eq!(
-        reaping.exit,
-        Some(PrivateExitReading::Unreadable),
-        "unreadable, which is neither absent nor a classification"
-    );
     drop(f.fixture);
 }
