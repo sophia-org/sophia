@@ -24640,7 +24640,7 @@ fn a_slot_whose_generations_are_spent_is_retired_rather_than_wrapped() {
     );
     {
         let mut held = roll.roll.lock().expect("readable");
-        held.slots[0].generation = Some(u32::MAX - 1);
+        held.slots[0].next_generation = Some(u32::MAX);
     }
     let last = roll.admit(0).expect("the last generation");
     assert_eq!(last.generation, u32::MAX);
@@ -24670,12 +24670,20 @@ fn the_sweep_deadline_is_not_pushed_back_by_other_traffic() {
     assert!(claim.could_not());
     assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Deferred));
 
-    // Unrelated traffic, repeatedly, all before the deadline.
-    for _ in 0..8 {
+    // Unrelated traffic, repeatedly, at ADVANCING times -- all before the
+    // deadline. Asking with one frozen instant would pass equally against a
+    // deadline that was being pushed back on every ask, which is the thing
+    // this is about.
+    for step in 1..=6 {
         assert!(roll.flag(second));
         let other = roll.claim_next().expect("the other slot");
         assert!(other.took_it());
-        assert!(!roll.sweep_due(now), "not due yet, and not rescheduled");
+        let later = now + std::time::Duration::from_millis(40 * step);
+        assert!(
+            !roll.sweep_due(later),
+            "not due yet at {}ms, and not rescheduled by any of this",
+            40 * step
+        );
     }
     assert_eq!(
         roll.state_of(first),
@@ -24687,6 +24695,129 @@ fn the_sweep_deadline_is_not_pushed_back_by_other_traffic() {
     assert!(roll.sweep_due(now + std::time::Duration::from_millis(250)));
     assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Ready));
     assert_eq!(roll.waiting(), Some(1));
+}
+
+
+#[test]
+fn a_second_admission_does_not_move_into_a_live_connections_place() {
+    // OCCUPANCY IS NOT A STATE. A slot with nothing to do and a slot with
+    // nobody in it look identical from the state alone, and treating them as
+    // one let a second admission walk into a live connection's place -- taking
+    // its name, its readiness and everything it had been told, while the
+    // connection it took them from was still there.
+    let (roll, first, _second, _now) = attention_for_two();
+    assert!(roll.flag(first));
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Ready));
+    assert_eq!(roll.waiting(), Some(1));
+
+    assert!(
+        roll.admit(0).is_none(),
+        "somebody lives here, so there is nothing to hand out"
+    );
+    assert_eq!(
+        roll.state_of(first),
+        Some(PrivateAttentionState::Ready),
+        "and the occupant keeps its name and its notice"
+    );
+    assert_eq!(roll.waiting(), Some(1), "and its readiness");
+
+    // The same while a pass is in flight, which is the worse case: a pass with
+    // a claim outstanding for an occupant that was replaced under it.
+    let claim = roll.claim_next().expect("a slot waiting");
+    assert!(roll.admit(0).is_none());
+    assert_eq!(claim.who(), first);
+    assert!(claim.took_it());
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Idle));
+}
+
+#[test]
+fn a_retired_occupants_notices_stop_counting_immediately() {
+    // GONE AT ONCE, not when a successor arrives. Leaving the name valid in
+    // between let a late notice make an empty slot ready, and a pass then took
+    // it -- work invented for a connection that had already left, before
+    // anybody had moved in.
+    let (roll, first, _second, _now) = attention_for_two();
+    assert!(roll.retire(first, false));
+    assert_eq!(
+        roll.state_of(first),
+        None,
+        "its name means nothing the moment it goes"
+    );
+
+    // The interval with nobody in the slot at all.
+    assert!(
+        !roll.released(first),
+        "a release for somebody who has gone is refused"
+    );
+    assert!(!roll.flag(first), "and so is a notice");
+    assert_eq!(roll.waiting(), Some(0));
+    assert!(
+        roll.claim_next().is_none(),
+        "so no pass is manufactured for an empty slot"
+    );
+
+    // Retiring again says nothing happened, because nothing did.
+    assert!(!roll.retire(first, false), "there is nobody to retire");
+
+    // And a successor is a different connection, not a continuation.
+    let successor = roll.admit(0).expect("the slot is free now");
+    assert_ne!(successor.generation, first.generation);
+    assert!(!roll.flag(first), "the old name still means nothing");
+    assert_eq!(roll.waiting(), Some(0));
+    assert!(roll.flag(successor));
+    assert_eq!(roll.waiting(), Some(1));
+}
+
+#[test]
+fn a_pass_outstanding_when_its_occupant_goes_concludes_about_nobody() {
+    // A claim held across a retirement is a pass for a connection that has
+    // left. Whatever it reports -- and whether it reports at all, or is simply
+    // dropped -- it must not touch the slot it no longer holds.
+    let (roll, first, _second, _now) = attention_for_two();
+    assert!(roll.flag(first));
+    let outstanding = roll.claim_next().expect("a slot waiting");
+    assert!(roll.retire(first, false));
+
+    // Dropped without an outcome: the abandoned-pass path, over a slot with
+    // nobody in it.
+    drop(outstanding);
+    assert_eq!(roll.state_of(first), None);
+    assert_eq!(roll.waiting(), Some(0));
+    assert!(
+        roll.claim_next().is_none(),
+        "nothing was parked, because there was nobody to park"
+    );
+
+    // And the same for a pass that does report.
+    let successor = roll.admit(0).expect("the slot is free");
+    assert!(roll.flag(successor));
+    let reporting = roll.claim_next().expect("the successor's pass");
+    assert!(roll.retire(successor, false));
+    assert!(!reporting.could_not(), "refused, not applied");
+    assert_eq!(roll.waiting(), Some(0));
+}
+
+
+#[test]
+fn no_pass_is_made_for_a_slot_with_nobody_in_it() {
+    // DEFENCE IN DEPTH, AND STAGED AS SUCH. Retirement clears the state as
+    // well as the occupant, so a slot that is waiting with nobody in it is not
+    // reachable through the ordinary operations -- this control sets that
+    // state directly to check the guard that would catch it if some later path
+    // did produce it. Manufacturing a pass for an empty slot hands a
+    // supervisor a connection that is not there.
+    let (roll, first, _second, _now) = attention_for_two();
+    assert!(roll.retire(first, false));
+    {
+        let mut held = roll.roll.lock().expect("readable");
+        held.slots[0].state = PrivateAttentionState::Ready;
+        held.ready = 1;
+    }
+    assert_eq!(roll.waiting(), Some(1), "the roll believes one is waiting");
+    assert!(
+        roll.claim_next().is_none(),
+        "and no pass is made for it, because nobody lives there"
+    );
 }
 
 #[test]

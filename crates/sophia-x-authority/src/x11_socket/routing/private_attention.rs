@@ -40,11 +40,37 @@ enum PrivateAttentionState {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // No supervisor consults this yet.
 struct PrivateAttentionSlot {
-    /// Which occupant this slot currently is.
+    /// The occupant living here now, if any.
     ///
-    /// `None` once the slot has been retired for good.
-    generation: Option<u32>,
+    /// OCCUPANCY IS NOT A STATE. A slot with nothing to do and a slot with
+    /// nobody in it look the same from the state alone, and treating them as
+    /// one let a second admission walk into a live connection's place --
+    /// taking its readiness, its notices and its identity with it.
+    ///
+    /// Cleared the moment its occupant is retired, which is what makes every
+    /// notice still in flight for that occupant stale immediately rather than
+    /// when somebody happens to move in.
+    occupant: Option<u32>,
+    /// The name the next occupant would be given.
+    ///
+    /// Kept when the occupant goes, because the history is what stops a
+    /// successor being mistaken for its predecessor. `None` once this slot can
+    /// name nobody else.
+    next_generation: Option<u32>,
     state: PrivateAttentionState,
+}
+
+#[cfg(unix)]
+impl PrivateAttentionSlot {
+    /// Whether this identity is the occupant living here now.
+    ///
+    /// EVERY IDENTITY OPERATION ASKS THIS. A generation that matches a slot
+    /// nobody lives in is not a match: it is a notice for someone who has
+    /// gone, and acting on it manufactures work for a connection that does not
+    /// exist.
+    fn is_occupant(&self, who: PrivateAttentionIdentity) -> bool {
+        self.occupant == Some(who.generation)
+    }
 }
 
 /// Who a notice or a claim is about.
@@ -160,7 +186,8 @@ impl PrivateAttention {
         let mut slots = Vec::new();
         slots.try_reserve_exact(connections.get()).ok()?;
         slots.resize_with(connections.get(), || PrivateAttentionSlot {
-            generation: Some(0),
+            occupant: None,
+            next_generation: Some(0),
             state: PrivateAttentionState::Idle,
         });
         Some(Self {
@@ -183,12 +210,18 @@ impl PrivateAttention {
     fn admit(&self, slot: usize) -> Option<PrivateAttentionIdentity> {
         let mut roll = self.roll.lock().ok()?;
         let held = roll.slots.get_mut(slot)?;
-        let generation = held.generation?.checked_add(1)?;
-        if held.state == PrivateAttentionState::Ready {
-            roll.ready = roll.ready.saturating_sub(1);
+        // SOMEBODY LIVES HERE. A second admission is refused rather than
+        // served: moving in over a live connection takes its identity, its
+        // readiness and everything it had been told, and the connection it
+        // took them from is still there.
+        if held.occupant.is_some() {
+            return None;
         }
-        let held = roll.slots.get_mut(slot)?;
-        held.generation = Some(generation);
+        let generation = held.next_generation?;
+        held.occupant = Some(generation);
+        // Spent when it is handed out, so the next one is refused at the
+        // handing-out rather than wrapping into a name already used.
+        held.next_generation = generation.checked_add(1);
         held.state = PrivateAttentionState::Idle;
         Some(PrivateAttentionIdentity { slot, generation })
     }
@@ -206,7 +239,7 @@ impl PrivateAttention {
         let Some(held) = roll.slots.get_mut(who.slot) else {
             return false;
         };
-        if held.generation != Some(who.generation) {
+        if !held.is_occupant(who) {
             return false;
         }
         match held.state {
@@ -235,6 +268,14 @@ impl PrivateAttention {
     /// THE SUPERVISOR DOES NOT CALL THIS. It took the record because it was
     /// told to; finishing with the record is not news, and a reader that
     /// re-announced itself would keep its own predicate true for ever.
+    ///
+    /// A KNOWN ROUGH EDGE: this makes a slot ready even when nobody was
+    /// waiting on the record -- an actor releasing one that no pass had
+    /// deferred on still says so. That costs a pass that finds nothing, which
+    /// is harmless here and would not be once an actor schedules on it: a
+    /// visit that finds nothing and releases, announcing itself as it goes, is
+    /// a loop with no progress in it. Whoever wires that scheduling has to
+    /// narrow this to releases somebody is actually waiting on.
     fn released(&self, who: PrivateAttentionIdentity) -> bool {
         self.flag(who)
     }
@@ -244,13 +285,20 @@ impl PrivateAttention {
     /// ARMS THE RELEASE INTEREST as it goes: from here until an outcome, this
     /// slot is InFlight, which is what lets a release or a notice arriving
     /// during the attempt be remembered rather than lost.
+    /// NO FAIRNESS HERE, and none claimed. It takes the first waiting slot it
+    /// finds, so a connection whose slot sits above a steadily busy one is
+    /// reached only when that one falls quiet. That is a scheduling property
+    /// and belongs with whoever schedules; this says only which slots are
+    /// waiting.
     fn claim_next(self: &Arc<Self>) -> Option<PrivateAttentionClaim> {
         let mut roll = self.roll.lock().ok()?;
         let slot = roll
             .slots
             .iter()
             .position(|held| held.state == PrivateAttentionState::Ready)?;
-        let generation = roll.slots[slot].generation?;
+        // A slot nobody lives in cannot be waiting for anything, and if it
+        // somehow is, no pass may be made for it.
+        let generation = roll.slots[slot].occupant?;
         roll.slots[slot].state = PrivateAttentionState::InFlight { dirty: false };
         roll.ready = roll.ready.saturating_sub(1);
         Some(PrivateAttentionClaim {
@@ -268,7 +316,7 @@ impl PrivateAttention {
     fn state_of(&self, who: PrivateAttentionIdentity) -> Option<PrivateAttentionState> {
         let roll = self.roll.lock().ok()?;
         let held = roll.slots.get(who.slot)?;
-        (held.generation == Some(who.generation)).then_some(held.state)
+        held.is_occupant(who).then_some(held.state)
     }
 
     /// Finish a claim, one way or the other.
@@ -284,7 +332,7 @@ impl PrivateAttention {
         let Some(held) = roll.slots.get_mut(who.slot) else {
             return false;
         };
-        if held.generation != Some(who.generation) {
+        if !held.is_occupant(who) {
             return false;
         }
         let PrivateAttentionState::InFlight { dirty } = held.state else {
@@ -344,13 +392,17 @@ impl PrivateAttention {
         let Some(held) = roll.slots.get_mut(who.slot) else {
             return false;
         };
-        if held.generation != Some(who.generation) {
+        if !held.is_occupant(who) {
             return false;
         }
         let was_ready = held.state == PrivateAttentionState::Ready;
+        // GONE AT ONCE, not when a successor arrives. Leaving the name valid
+        // in between let a late notice make an empty slot ready, and a pass
+        // then took it -- work invented for a connection that had left.
+        held.occupant = None;
         held.state = PrivateAttentionState::Idle;
-        if forever || who.generation == u32::MAX {
-            held.generation = None;
+        if forever {
+            held.next_generation = None;
         }
         if was_ready {
             roll.ready = roll.ready.saturating_sub(1);
