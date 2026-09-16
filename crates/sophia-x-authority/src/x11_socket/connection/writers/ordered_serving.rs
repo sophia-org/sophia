@@ -281,6 +281,19 @@ struct X11OrderedServingOwner {
     /// Set once this connection's wire could not be ended after a frame was
     /// left part-written. Nothing may be written through it again: the bytes
     /// on the wire are the beginning of an event nobody can finish.
+    /// Whether this connection's wire has actually been ended.
+    ///
+    /// A FACT OF ITS OWN, set wherever a shutdown succeeds, because the paths
+    /// that end a wire do not all leave a close record: ending a part-written
+    /// frame ends the wire and writes nothing, and a close that succeeds after
+    /// an earlier attempt refused leaves the earlier cause standing beside it.
+    /// Reading the ending off either of those meant reporting a wire that had
+    /// been ended as never attempted, or as refused because it once was.
+    ///
+    /// Set only by an established ending, and never cleared. It authorises
+    /// nothing on its own: it does not settle anything, does not reopen this
+    /// connection's output, and does not discharge a cause recorded beside it.
+    ending_established: bool,
     unterminated: bool,
     /// Why this wire was left unterminated.
     ///
@@ -381,6 +394,7 @@ impl X11OrderedServingOwner {
             stop: transport.stop,
             in_flight: None,
             refused: None,
+            ending_established: false,
             unterminated: false,
             unterminated_cause: None,
             closing: None,
@@ -501,6 +515,9 @@ impl X11OrderedServingOwner {
                 None
             };
             drop(socket);
+            if refused.is_none() {
+                self.ending_established = true;
+            }
             if let Some(kind) = refused {
                 self.unterminated = true;
                 self.unterminated_cause = Some(X11OrderedUnterminatedCause::Shutdown(kind));
@@ -610,6 +627,7 @@ impl X11OrderedServingOwner {
             }
         }
         closing.termination = X11OrderedTermination::Established;
+        self.ending_established = true;
         // A capsule already classified as another endpoint's moves into this
         // owner's keeping, still unanswered. Room for it was reserved when the
         // owner was built.
@@ -747,6 +765,36 @@ impl X11OrderedServingOwner {
         (self.unanswered.capacity(), self.foreign.capacity())
     }
 
+    /// Stage a close refusal, for a control that cannot make one happen.
+    ///
+    /// This host gives no honest way to make a shutdown refuse, so the field
+    /// `begin_close`'s own failure branch writes is written directly. Nothing
+    /// in production calls this.
+    #[cfg_attr(not(test), allow(dead_code))] // Only controls stage a refusal.
+    fn staged_close_refusal(&mut self, kind: std::io::ErrorKind) {
+        self.closing = Some(X11OrderedClosing {
+            cause: X11OrderedCloseCause::ConnectionEnded,
+            termination: X11OrderedTermination::Refused(kind),
+            attempts: 1,
+            answered: 0,
+            already: 0,
+            deferred: 0,
+            drained: false,
+        });
+    }
+
+    /// Stage an unterminated cause recorded by an earlier attempt.
+    #[cfg_attr(not(test), allow(dead_code))] // Only controls stage a cause.
+    fn staged_unterminated(&mut self, cause: X11OrderedUnterminatedCause) {
+        self.unterminated = true;
+        self.unterminated_cause = Some(cause);
+    }
+
+    /// Whether this connection's wire has been ended, by any path.
+    fn ending_ended(&self) -> bool {
+        self.ending_established
+    }
+
     fn unterminated_cause(&self) -> Option<X11OrderedUnterminatedCause> {
         self.unterminated_cause
     }
@@ -802,8 +850,10 @@ impl X11OrderedServingOwner {
     /// waiting for the rest of an event that is not coming.
     fn end_partial_frame(&mut self) {
         match self.shutdown.shutdown(Shutdown::Both) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotConnected => {}
+            Ok(()) => self.ending_established = true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotConnected => {
+                self.ending_established = true;
+            }
             Err(error) => {
                 self.unterminated = true;
                 self.unterminated_cause =

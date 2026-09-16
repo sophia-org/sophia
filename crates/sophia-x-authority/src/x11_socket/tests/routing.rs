@@ -22865,10 +22865,11 @@ fn a_record_that_cannot_finish_says_which_things_are_stopping_it() {
     let readings = durable
         .retained_dispositions()
         .expect("a readable store");
-    let (_, stuck) = readings
+    let stuck = readings
         .iter()
-        .find(|(index, _)| *index == 0)
-        .expect("the connection that could not finish");
+        .find_map(|(index, reading)| (*index == 0).then_some(reading))
+        .expect("the connection that could not finish")
+        .expect("and it is readable");
     assert_eq!(
         stuck.ending,
         PrivateRetainedEnding::NoCapability,
@@ -22913,16 +22914,14 @@ fn a_reading_reports_an_ending_and_a_closure_that_were_established() {
     // Read before it is driven: closed, nothing ended yet, nothing held.
     let before = durable.retained_dispositions().expect("a readable store");
     assert_eq!(before.len(), 1);
+    let reading = before[0].1.expect("a readable record");
+    assert_eq!(reading.closure, Some(PrivateHandoverFence::Established));
     assert_eq!(
-        before[0].1.closure,
-        Some(PrivateHandoverFence::Established)
-    );
-    assert_eq!(
-        before[0].1.ending,
+        reading.ending,
         PrivateRetainedEnding::Unattempted,
         "it has a handle and has not used it: that is not the same as having none"
     );
-    assert!(!before[0].1.settled);
+    assert!(!reading.settled);
 
     // Driven, and then gone: a settled record returns its place, so there is
     // nothing left to report.
@@ -22962,6 +22961,193 @@ fn a_reading_reports_an_ending_and_a_closure_that_were_established() {
             .expect("a readable store")
             .is_empty(),
         "and yet there is no connection there to read"
+    );
+}
+
+
+/// A reading of one serving record, installed in a store of its own.
+fn serving_reading(
+    owner: X11OrderedServingOwner,
+) -> (PrivateSettlementOwner, PrivateRetainedDisposition) {
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+    let slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+    let mut source = Some(PrivateOrderedContinuation::Serving {
+        owner: Box::new(owner),
+        // A staged precondition: what a torn-down record carries.
+        fence: Some(PrivateHandoverFence::Established),
+    });
+    slot.install(&mut source);
+    let reading = durable
+        .retained_dispositions()
+        .expect("a readable store")[0]
+        .1
+        .expect("a readable record");
+    (durable, reading)
+}
+
+#[test]
+fn a_refused_ending_is_reported_as_refused_and_not_as_untried() {
+    // A CLOSE THAT TRIED AND WAS REFUSED IS NOT A CLOSE THAT NEVER TRIED. The
+    // refusal is written on the close record itself, and a reading that only
+    // consulted the owner's separate cause reported it as unattempted --
+    // sending whoever read it looking for a syscall that had already happened
+    // and failed.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8571));
+    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    // Staged: this host gives no honest way to make a shutdown refuse, so the
+    // close record is written as begin_close's own failure branch writes it --
+    // one attempt made, refused, and no ending established.
+    owner.staged_close_refusal(std::io::ErrorKind::PermissionDenied);
+    assert!(
+        !owner.ending_ended(),
+        "nothing ended this wire, which is the state being reported"
+    );
+    assert!(
+        owner.unterminated_cause().is_none(),
+        "and the owner carries no separate cause, so the close record is the \
+         only thing that knows"
+    );
+
+    let (_durable, reading) = serving_reading(owner);
+    assert_eq!(
+        reading.ending,
+        PrivateRetainedEnding::Refused(std::io::ErrorKind::PermissionDenied),
+        "the close record says it was refused, and that is what is reported"
+    );
+}
+
+#[test]
+fn an_ending_that_was_established_outranks_a_cause_recorded_before_it() {
+    // A LATER ESTABLISHED ENDING IS THE ENDING. An earlier attempt that
+    // refused leaves its cause standing on the owner; reading that first
+    // reported a wire as unterminated after it had actually been ended.
+    //
+    // The cause is not discharged by being outranked: it still says what
+    // happened, and the report saying Ended authorises nothing about it.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8581));
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    // Staged history: an earlier attempt refused.
+    owner.staged_unterminated(X11OrderedUnterminatedCause::Shutdown(
+        std::io::ErrorKind::PermissionDenied,
+    ));
+    // And then a real close, over a real peer that really goes.
+    drop(peer);
+    owner
+        .begin_close(X11OrderedCloseCause::ConnectionEnded)
+        .expect("this socket ends");
+
+    assert!(
+        owner.unterminated_cause().is_some(),
+        "the earlier cause is still on the owner, undischarged"
+    );
+    let (_durable, reading) = serving_reading(owner);
+    assert_eq!(
+        reading.ending,
+        PrivateRetainedEnding::Ended,
+        "what is reported is the ending that was established"
+    );
+}
+
+#[test]
+fn an_ending_through_a_part_written_frame_is_reported_as_an_ending() {
+    // THIS PATH LEAVES NO CLOSE RECORD. Ending a part-written frame ends the
+    // wire and writes nothing about having done so, and a reading that looked
+    // only at close records called that unattempted.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8591));
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    drop(peer);
+    owner.end_partial_frame();
+    assert!(
+        owner.closing().is_none(),
+        "no close was begun, which is the whole point of this path"
+    );
+
+    let (_durable, reading) = serving_reading(owner);
+    assert_eq!(reading.ending, PrivateRetainedEnding::Ended);
+}
+
+#[test]
+fn a_reading_counts_every_slot_that_is_holding_something() {
+    // A CAPSULE HELD IN THE REFUSED SLOT IS CUSTODY. It is unanswered and it
+    // is this owner's to answer for, exactly as one in the retained list is,
+    // and a count that left it out reported nothing held while an unanswered
+    // completion sat in the writer.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8601));
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+    let sender = f
+        .runner
+        .frontend
+        .as_ref()
+        .unwrap()
+        .broker
+        .registry
+        .clients
+        .lock()
+        .expect("a readable registry")
+        .get(&f.client)
+        .expect("its row")
+        .ordered
+        .clone();
+    let (foreign, _endpoint, _recovery, _receipts) = answerable_capsule(86010);
+    let cell = Arc::clone(&foreign.finalizer().expect("carried").completion);
+    gated_send(&sender, foreign).expect("this owner's queue accepts it");
+    assert!(matches!(
+        owner.serve_one(XByteOrder::LittleEndian, 7),
+        X11OrderedServeStep::AdmissionRefused(_)
+    ));
+    assert!(
+        owner.refused().is_some(),
+        "the writer is holding it, unanswered"
+    );
+    assert!(cell.answer().is_none());
+
+    let (_durable, reading) = serving_reading(owner);
+    assert_eq!(
+        reading.retained, 1,
+        "so the reading says one thing is held, rather than nothing"
+    );
+    assert!(!reading.settled);
+}
+
+#[test]
+fn a_record_that_cannot_be_read_is_reported_as_unreadable() {
+    // NOT SKIPPED, AND NOT GUESSED AT. A poisoned record may well hold a
+    // connection; what it does not hold is a reading. Treating it as a normal
+    // row would put an account in front of a reader with nothing behind it,
+    // and skipping it would lose a connection from the account entirely.
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+    let slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8611));
+    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
+    let (owner, _output) = serving_owner_for(&mut f, socket);
+    let mut source = Some(PrivateOrderedContinuation::Serving {
+        owner: Box::new(owner),
+        fence: Some(PrivateHandoverFence::Established),
+    });
+    slot.install(&mut source);
+
+    // A holder panics inside this record.
+    let record = durable.record_handle(0).expect("its place holds a record");
+    let holder = std::thread::spawn(move || {
+        let _inside = record.lock().expect("a readable record");
+        panic!("a holder unwound inside this record");
+    });
+    assert!(holder.join().is_err(), "the holder unwound");
+
+    let readings = durable.retained_dispositions().expect("a readable store");
+    assert_eq!(readings.len(), 1, "the connection is still in the account");
+    assert!(
+        readings[0].1.is_none(),
+        "and is reported as unreadable rather than as anything in particular"
     );
 }
 
