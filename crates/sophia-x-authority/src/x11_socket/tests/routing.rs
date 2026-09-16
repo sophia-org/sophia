@@ -23468,22 +23468,36 @@ fn a_close_with_no_attempts_left_says_so_and_is_not_retried() {
         "NOTHING IS PUBLISHED BEFORE A CONFIRMED TERMINATION: the place stays"
     );
 
-    // AND NEITHER IS WHAT IT HOLDS. The capsule is still the exact one, still
-    // in the same slot, and its completion is still unanswered: a close that
-    // could not establish an ending offered nothing derived from one.
+    // AND NEITHER IS WHAT IT HOLDS. THE EXACT CAPSULE, BY IDENTITY: a delivery
+    // number is not an identity -- another real admission can carry the same
+    // one -- so what is compared is the completion this capsule was built
+    // with, by pointer.
+    //
+    // WHAT THIS CAPSULE IS: another endpoint's, refused on admission and held
+    // unanswered. So what is established here is that a close which could not
+    // establish an ending offers nothing derived from one, over FOREIGN
+    // custody. It is not independently the publication guard for this
+    // endpoint's own admission.
     assert_eq!(reading.retained, 1);
     let still = durable
         .with_ordered_continuation(0, |continuation| {
             let PrivateOrderedContinuation::Serving { owner, .. } = continuation else {
                 panic!("a serving record")
             };
-            owner
-                .refused()
-                .map(|held| held.delivery().delivery())
+            owner.refused().map(|held| {
+                (
+                    held.delivery().delivery(),
+                    Arc::clone(&held.delivery().finalizer().expect("carried").completion),
+                )
+            })
         })
         .expect("the place holds it")
         .expect("and the writer still holds the capsule");
-    assert_eq!(still, delivery, "the exact one, not a rebuilt copy");
+    assert_eq!(still.0, delivery);
+    assert!(
+        Arc::ptr_eq(&still.1, &cell),
+        "the exact one, by the completion it was built with"
+    );
     assert!(
         cell.answer().is_none(),
         "and nobody answered for it on the strength of a close that failed"
