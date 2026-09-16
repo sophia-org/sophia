@@ -214,7 +214,7 @@ impl PrivateSettlementOwner {
         // The aggregate lock finds the records; each record's own lock reads
         // it. Holding the aggregate across those would put the whole store
         // behind one connection.
-        let places: Vec<(usize, Arc<Mutex<Option<PrivateOrderedContinuation>>>)> = {
+        let places: Vec<(usize, Arc<PrivateOrderedHome>)> = {
             let held = self.inner.lock().ok()?;
             held.continuations
                 .iter()
@@ -230,13 +230,13 @@ impl PrivateSettlementOwner {
         Some(
             places
                 .into_iter()
-                .filter_map(|(index, record)| match record.lock() {
-                    Ok(held) => held
-                        .as_ref()
-                        .map(|continuation| (index, Some(continuation.disposition()))),
-                    // Held by something that panicked. There may well be a
-                    // connection here; what there is not is a reading of it.
-                    Err(_) => Some((index, None)),
+                .filter_map(|(index, record)| {
+                    match record.peek(PrivateOrderedContinuation::disposition) {
+                        Some(reading) => reading.map(|disposition| (index, Some(disposition))),
+                        // Held by something that panicked. There may well be a
+                        // connection here; what there is not is a reading of it.
+                        None => Some((index, None)),
+                    }
                 })
                 .collect(),
         )

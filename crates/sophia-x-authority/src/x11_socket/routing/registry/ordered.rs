@@ -230,9 +230,7 @@ impl XServerFrontendClientRouteRegistration {
                 return PrivateOrderedPromotion::EndpointUnreadable;
             }
         };
-        let Ok(mut held) = self.ordered_setup.lock() else {
-            return PrivateOrderedPromotion::Unreadable;
-        };
+        let Some(promotion) = self.ordered_home.occupy(|held| {
         match held.as_ref() {
             Some(PrivateOrderedContinuation::Serving { .. }) => {
                 return PrivateOrderedPromotion::AlreadyServing;
@@ -290,9 +288,12 @@ impl XServerFrontendClientRouteRegistration {
             owner: prepared.commit(*transport),
             evidence,
         });
-        drop(held);
-        drop(entered);
         PrivateOrderedPromotion::Ready
+        }) else {
+            return PrivateOrderedPromotion::Unreadable;
+        };
+        drop(entered);
+        promotion
     }
 
     /// Take custody of this connection's ordered output.
@@ -309,14 +310,16 @@ impl XServerFrontendClientRouteRegistration {
         &self,
         custody: PrivateOrderedContinuation,
     ) -> Result<(), PrivateOrderedContinuation> {
-        let Ok(mut held) = self.ordered_setup.lock() else {
-            return Err(custody);
-        };
-        if held.is_some() {
-            return Err(custody);
+        // INTO THE HOME THE PLACE ALREADY HOLDS. What binds here is reachable
+        // from the place from this moment, not from teardown onwards, which is
+        // what lets anything else borrow this connection's output later
+        // without owning this registration.
+        match self.ordered_home.bind(custody) {
+            PrivateHomeBinding::Bound => Ok(()),
+            PrivateHomeBinding::Occupied(custody) | PrivateHomeBinding::Ended(custody) => {
+                Err(custody)
+            }
         }
-        *held = Some(custody);
-        Ok(())
     }
 
     /// Close this endpoint to further handovers, irreversibly.

@@ -763,80 +763,69 @@ impl XServerFrontendClientRouteRegistration {
         // moved under that must not read as closed, so the outcome goes with
         // it rather than being discarded here.
         let fence = self.fence_ordered_handovers();
-        // The place was taken before this connection was exposed. Taking the
-        // slot out is what says this registration is done with it.
-        let slot = match self.ordered_continuation.lock() {
-            Ok(mut held) => held.take(),
-            Err(poisoned) => poisoned.into_inner().take(),
-        };
-        let Some(slot) = slot else {
-            // No place. Either this registry has no continuation store, or the
-            // place has already been disposed of; in both cases there is
-            // nothing to install into and nothing here may invent one.
-            return;
-        };
-        // THE WORK STAYS IN REGISTRATION-OWNED STORAGE until the destination
-        // is held. Taking it into a local here and building around it would
-        // put it in this frame across the store and record acquisitions inside
-        // `install`, and an unwind anywhere in that interval would destroy it
-        // while the place promised to it survived empty. The guard is what is
-        // handed over; `install` takes from it only once it has somewhere to
-        // put what it takes.
-        let (mut held, source_poisoned) = match self.ordered_setup.lock() {
-            Ok(held) => (held, false),
-            Err(poisoned) => (poisoned.into_inner(), true),
-        };
-        if held.is_none() {
-            // NO CUSTODY IS NOT NO WORK. This connection's row was published,
-            // so capsules may have been accepted into a queue whose receiver
-            // went somewhere this registration cannot see -- setup may never
-            // have reached the binding, or the receiver may be held by whoever
-            // called. The disposition of anything on it is unknown, and
-            // unknown is retained: the slot's own drop accounts for the place
-            // rather than returning it as though nothing had been exposed.
-            drop(held);
-            drop(slot);
-            return;
-        }
-        // Written onto the record while it is still in registration-owned
-        // storage, so what is installed already carries it and nothing has to
-        // reach into a place afterwards to finish the record off.
+        // NOTHING IS MOVED HERE, AND THERE IS NOTHING TO MOVE. This
+        // connection's output has lived in its home since it bound, and the
+        // home has been in the place since the place was reserved. Teardown
+        // used to take the payload into this frame and carry it across the
+        // store and record acquisitions inside the hand-over, with every early
+        // return on the way somewhere it could be lost. What is left to do is
+        // write what this teardown knows and say the connection has ended.
         //
-        // BOTH SHAPES, because both consult it. A record that reached a place
-        // without this would carry None for ever: nothing after installation
-        // can establish a closure, the gate being gone with the registration,
-        // so such a record could never settle however finished it was. Writing
-        // it for one shape and not the other would make a connection's fate
-        // depend on how far its setup happened to get.
-        if let Some(continuation) = held.as_mut() {
+        // WRITTEN WHERE IT LIVES. Both shapes carry evidence and both consult
+        // it: a record that reached retention without it would carry None for
+        // ever, because nothing afterwards can establish a closure -- the gate
+        // goes with the registration -- so such a record could never settle
+        // however finished it was. Writing it for one shape and not the other
+        // would make a connection's fate depend on how far its setup got.
+        // Asked before the borrow below, which goes ahead through the
+        // poisoned guard the way everything that must go ahead does.
+        let source_poisoned = self.ordered_home.unreadable();
+        let wrote = self.ordered_home.borrow(|continuation| {
             let recorded = match continuation {
                 PrivateOrderedContinuation::Setup { evidence, .. }
                 | PrivateOrderedContinuation::Serving { evidence, .. } => evidence,
             };
             recorded.fence = Some(fence);
-            // WRITTEN WHERE IT WAS FOUND. The destination has a lock of its
-            // own and that lock knows nothing about this one, so moving the
-            // work into a readable place would otherwise launder the fact that
-            // the place it came from could not be read.
+            // A home that could not be read is a fact about this connection,
+            // not something to launder by writing elsewhere. The home borrows
+            // through the poisoned guard, as everything that must go ahead
+            // regardless does, and records that it did.
             recorded.source_poisoned = source_poisoned;
             // Nothing started a worker for this connection, so there is
             // nothing to join and no join is manufactured. When a spawn
             // exists, what it left is written here by whoever joined it.
             recorded.worker = PrivateOrderedWorkerExit::NeverStarted;
-        }
-        match slot.install(&mut held) {
-            PrivateContinuationInstall::Installed => debug_assert!(
-                held.is_none(),
-                "an installed continuation leaves its source empty"
-            ),
-            // Already marked abandoned by the hand-over itself. The work drops
-            // here: no place holds it and no driver will come back for it, so
-            // there is nothing left that could read it again.
-            PrivateContinuationInstall::NoPlace
-            | PrivateContinuationInstall::NothingHandedOver => {
-                drop(held.take());
-            }
-        }
+        });
+        let _ = wrote;
+        // THE CONNECTION HAS ENDED, and that is said whether or not this
+        // registration still holds the place. A conversion may have taken the
+        // lease already and left the store's own holder responsible for it;
+        // the home is the same home either way, and a holder that never
+        // learned its connection had gone would be waiting for a producer that
+        // is not coming.
+        //
+        // AND IT IS SAID BEFORE THE PLACE IS ACCOUNTED FOR, so nothing can
+        // find the place disposed of over a home that still reads as live.
+        let owed = self.ordered_home.retain();
+
+        // The place was taken before this connection was exposed. Taking the
+        // lease out is what says this registration is done with it.
+        let slot = match self.ordered_continuation.lock() {
+            Ok(mut held) => held.take(),
+            Err(poisoned) => poisoned.into_inner().take(),
+        };
+        let Some(slot) = slot else {
+            // No place of this registration's to account for. Either this
+            // registry has no continuation store, or the lease has already
+            // gone to whoever is responsible now. Nothing here may invent one.
+            //
+            // NO CUSTODY IS NOT NO WORK, either: this connection's row was
+            // published, so capsules may have been accepted into a queue whose
+            // receiver went somewhere this registration cannot see. What is
+            // owed is recorded in the home above, for whoever holds the place.
+            return;
+        };
+        let _ = slot.commit(owed);
     }
 }
 

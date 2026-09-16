@@ -182,7 +182,7 @@ enum PrivateOrderedContinuationPlace {
     /// connection's write, and would take common beneath settlement. The
     /// record has its own lock, so the aggregate one is held only long enough
     /// to find it.
-    Taken(Arc<Mutex<Option<PrivateOrderedContinuation>>>),
+    Taken(Arc<PrivateOrderedHome>),
 }
 
 /// A reserved place for one connection's ordered continuation.
@@ -239,7 +239,7 @@ struct PrivateOrderedContinuationSlot {
     /// and a lease that kept a record alive would keep retained work alive
     /// past the store responsible for it. A weak handle keeps the allocation,
     /// so the address stays this record's while this lease exists.
-    record: std::sync::Weak<Mutex<Option<PrivateOrderedContinuation>>>,
+    record: std::sync::Weak<PrivateOrderedHome>,
     /// Whether this slot still has to be disposed of.
     ///
     /// Cleared by whichever disposal actually happens, so the fallback in Drop
@@ -247,101 +247,83 @@ struct PrivateOrderedContinuationSlot {
     armed: bool,
 }
 
-/// Where a hand-over actually put the work.
+/// What committing a connection's place found.
 ///
-/// SAID, NOT ASSUMED. Two of these three leave the source holding what it came
-/// with, and a caller that treated every return as an installation would be
-/// asserting a premise rather than reading a result. It decides custody, so
-/// discarding it is discarding the answer to where accepted work went.
+/// SAID, NOT ASSUMED. A caller that treated every return as a retention would
+/// be asserting a premise rather than reading a result, and what is being
+/// decided is whether anything is owed through this place at all.
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[must_use]
-enum PrivateContinuationInstall {
-    /// Into the place reserved for it. The source is empty.
-    Installed,
-    /// The place was not there. Marked abandoned; the source keeps its work.
+enum PrivateContinuationCommit {
+    /// The place is retained: its home holds this connection's output, and
+    /// what is in it is owed to whoever drives it.
+    Retained,
+    /// The place is not this lease's any more. Nothing was touched.
     NoPlace,
-    /// The source held nothing. Marked abandoned.
-    NothingHandedOver,
+    /// The home is empty -- this connection never bound. Marked abandoned.
+    NothingBound,
 }
 
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
 impl PrivateOrderedContinuationSlot {
-    /// Put this connection's continuation in the place reserved for it.
+    /// Say that this connection has ended, and leave its place holding what
+    /// it accepted.
     ///
-    /// TAKEN FROM A SOURCE-OWNED SLOT, NOT BY VALUE. A continuation passed by
-    /// value is in a stack frame from the caller's expression until this
-    /// reaches its destination, and an unwind anywhere in between -- acquiring
-    /// the store, above all -- drops accepted work while the reservation for
-    /// it survives. It stays in the caller's slot until the destination is
-    /// held, and is taken out only once there is somewhere for it to go.
+    /// NOTHING MOVES, WHICH IS THE POINT. This used to take the payload out of
+    /// the registration and put it in the place -- a move across the store's
+    /// lock and the record's, with accepted work in a stack frame for the
+    /// length of it, and every early return on the way a place where it could
+    /// be lost. The payload has been in its home since this connection bound,
+    /// and the home has been in this place since the place was reserved. What
+    /// ends here is the connection, not the work's residence.
     ///
-    /// The storage itself was made when the place was reserved, so between the
-    /// take and the installation there is nothing fallible, no allocation and
-    /// no callback.
+    /// THE HOME IS CHECKED, NOT THE NUMBER. A place that has gone on to
+    /// another connection is not this lease's to commit; saying it were would
+    /// retain that connection's home on this one's account.
     ///
-    /// An unreadable owner does not make this optional. The work has been
-    /// accepted and the place is this connection's; skipping the move would
-    /// drop it, so the poisoned guard is used exactly as every other
-    /// already-accepted move here uses it.
+    /// WHAT IS OWED IS THE HOME'S ANSWER, not this lease's guess. Teardown
+    /// says the connection has ended and the home says whether anything is in
+    /// it; this accounts for the place on that answer. Asking again here would
+    /// be a second reading of a thing that has already changed hands.
     ///
-    /// CONSUMES THE CAPABILITY. A slot that stayed usable after installing had
-    /// only a debug assertion between a second call and overwriting held work,
-    /// and that protection is not there in a release build.
-    fn install(
-        mut self,
-        source: &mut Option<PrivateOrderedContinuation>,
-    ) -> PrivateContinuationInstall {
-        // The record was made when this place was reserved. Finding it is a
-        // reference count, not an allocation, and it happens while the work is
-        // still the caller's.
-        let record = {
+    /// CONSUMES THE LEASE. A place is accounted for once, and a lease that
+    /// stayed usable afterwards could account for it twice.
+    fn commit(mut self, owed: bool) -> PrivateContinuationCommit {
+        let home = {
             let held = self.owner.records_even_if_poisoned();
             match held.continuations.get(self.index) {
-                // THE RECORD, NOT THE NUMBER. A place that has moved on to
-                // another connection is not this one's to install into: doing
-                // so would put this connection's queue where that one's
-                // teardown will overwrite it, and neither would ever be read.
-                Some(PrivateOrderedContinuationPlace::Taken(record))
-                    if std::ptr::eq(Arc::as_ptr(record), self.record.as_ptr()) =>
+                Some(PrivateOrderedContinuationPlace::Taken(home))
+                    if std::ptr::eq(Arc::as_ptr(home), self.record.as_ptr()) =>
                 {
-                    record.clone()
+                    home.clone()
                 }
                 _ => {
-                    // No place to install into. Nothing is taken, so the work
-                    // stays with its source and this is reported rather than
-                    // quietly counted as done.
+                    // Not this lease's place. Nothing is retained and nothing
+                    // is marked -- whoever holds it now accounts for it.
                     drop(held);
-                    self.abandon();
-                    return PrivateContinuationInstall::NoPlace;
+                    self.armed = false;
+                    return PrivateContinuationCommit::NoPlace;
                 }
             }
         };
-        // THE DESTINATION IS HELD FIRST. From here to the assignment there is
-        // no allocation, no callback and nothing that can fail.
-        //
-        // No control here discriminates this order: once install is entered
-        // the source is inside it, and the interval between a take and an
-        // assignment is not observable from outside without reaching in. What
-        // the control beside it establishes is that a hand-over WAITS for its
-        // destination rather than completing; the ordering itself rests on
-        // this being the only take, textually after the acquisition.
-        let mut destination = record
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let Some(continuation) = source.take() else {
-            // Nothing was handed over. The place is not installed into and not
-            // returned either -- no holder and no driver remains for it -- so
-            // it is recorded as what it is rather than left looking taken by
-            // someone who will come back for it.
-            drop(destination);
+        // The home is not consulted again here -- see above -- but it is held
+        // so that what is accounted for is demonstrably the place's own home
+        // and not whatever the number points at by now.
+        let _ = &home;
+        if owed {
+            // The place stays taken and nothing is marked: what is in the home
+            // is owed, and whoever drives it will say when it is not.
+            self.armed = false;
+            PrivateContinuationCommit::Retained
+        } else {
+            // Reserved, exposed, and never bound. Nothing was accepted through
+            // this place, but nothing disposed of it either, so it is recorded
+            // as what it is rather than handed out again.
             self.abandon();
-            return PrivateContinuationInstall::NothingHandedOver;
-        };
-        *destination = Some(continuation);
-        self.armed = false;
-        PrivateContinuationInstall::Installed
+            PrivateContinuationCommit::NothingBound
+        }
     }
 
     /// Give up this place without disposing of it, and say so.
@@ -366,12 +348,29 @@ impl PrivateOrderedContinuationSlot {
         self.armed = false;
     }
 
+    /// The home this lease's place holds, if the place is still its own.
+    ///
+    /// A HANDLE, NOT THE PAYLOAD. Whoever asks gets a way to reach this
+    /// connection's output, which is the same way the place reaches it and the
+    /// same way a later borrower will; nothing is copied and nothing moves.
+    fn home(&self) -> Option<Arc<PrivateOrderedHome>> {
+        let held = self.owner.records_even_if_poisoned();
+        match held.continuations.get(self.index) {
+            Some(PrivateOrderedContinuationPlace::Taken(home))
+                if std::ptr::eq(Arc::as_ptr(home), self.record.as_ptr()) =>
+            {
+                Some(home.clone())
+            }
+            _ => None,
+        }
+    }
+
     /// Whether the place still holds the record this lease was made for.
     fn holds(&self, held: &AbandonedSettlements) -> bool {
         matches!(
             held.continuations.get(self.index),
-            Some(PrivateOrderedContinuationPlace::Taken(record))
-                if std::ptr::eq(Arc::as_ptr(record), self.record.as_ptr())
+            Some(PrivateOrderedContinuationPlace::Taken(home))
+                if std::ptr::eq(Arc::as_ptr(home), self.record.as_ptr())
         )
     }
 
@@ -741,7 +740,7 @@ impl PrivateSettlementOwner {
         };
         // The record is made HERE, before this connection is exposed, so the
         // hand-over later is a move into storage that already exists.
-        let record = Arc::new(Mutex::new(None));
+        let record = Arc::new(PrivateOrderedHome::empty());
         held.continuations[index] = PrivateOrderedContinuationPlace::Taken(Arc::clone(&record));
         held.continuation_slots = held.continuation_slots.saturating_add(1);
         drop(held);
@@ -786,10 +785,7 @@ impl PrivateSettlementOwner {
         };
         let mut retained = 0usize;
         for record in records {
-            let Ok(record) = record.lock() else {
-                return None;
-            };
-            retained += usize::from(record.is_some());
+            retained += usize::from(record.retaining()?);
         }
         Some(retained)
     }
@@ -827,8 +823,12 @@ impl PrivateSettlementOwner {
                     if let PrivateOrderedContinuationPlace::Taken(record) =
                         &held.continuations[index]
                     {
-                        found = Some((index, record.clone()));
-                        break;
+                        // Retained only: see the note below on whose home this
+                        // drive may touch.
+                        if record.standing() == PrivateHomeStanding::Retained {
+                            found = Some((index, record.clone()));
+                            break;
+                        }
                     }
                 }
                 held.continuation_cursor = found
@@ -840,17 +840,23 @@ impl PrivateSettlementOwner {
                 }
             };
             // Driven with the store released.
+            //
+            // A LIVE HOME IS NOT THIS DRIVE'S TO TOUCH. Its connection is
+            // still there and may still be bound into, and something else may
+            // be borrowing it; driving it would close a wire and drain a queue
+            // out from under whoever is using it. This drive exists to finish
+            // what connections left behind, and a connection that has not left
+            // has not left anything.
             let settled = {
-                let mut record = record
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                let Some(continuation) = record.as_mut() else {
-                    // Reserved but never handed anything over. Nothing to
-                    // drive, and not this drive's business to reclaim.
+                let Some(settled) = record.borrow(|continuation| {
+                    continuation.visit();
+                    continuation.settled()
+                }) else {
+                    // Reserved but never bound. Nothing to drive, and not this
+                    // drive's business to reclaim.
                     continue;
                 };
-                continuation.visit();
-                continuation.settled()
+                settled
             };
             driven += 1;
             if settled {
@@ -862,11 +868,7 @@ impl PrivateSettlementOwner {
 
     /// Give a place back, once the work in it is gone.
     #[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
-    fn return_ordered_continuation(
-        &self,
-        index: usize,
-        record: &Arc<Mutex<Option<PrivateOrderedContinuation>>>,
-    ) {
+    fn return_ordered_continuation(&self, index: usize, record: &Arc<PrivateOrderedHome>) {
         let mut held = self.records_even_if_poisoned();
         let PrivateOrderedContinuationPlace::Taken(place) = &held.continuations[index] else {
             return;
@@ -928,8 +930,7 @@ impl PrivateSettlementOwner {
         // waits on its output would invert it and put every other retained
         // connection behind that write. The record is borrowed in its own
         // storage instead -- it is never moved into a local here.
-        let mut record = record.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        Some(act(record.as_mut()?))
+        record.borrow(act)
     }
 }
 

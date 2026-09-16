@@ -198,7 +198,7 @@ struct XServerFrontendClientRouteRegistration {
     /// that interval destroyed it while the place it was promised survived
     /// empty. `install` takes from source-owned storage only once it holds the
     /// destination, and this is that storage.
-    ordered_setup: Mutex<Option<PrivateOrderedContinuation>>,
+    ordered_home: Arc<PrivateOrderedHome>,
     /// Where this registration's handovers are serialized with its closing.
     ///
     /// Held here as well as in the row, because closing is this
@@ -453,12 +453,22 @@ impl XServerFrontendRouteRegistry {
             ordered: ordered_sender,
             control_writer_gone: Arc::new(AtomicBool::new(false)),
         };
+        // THE HOME THE RESERVATION MADE, when there is one. A reservation
+        // allocates the home along with the place, so the registration and the
+        // place hold the same one and nothing has to be moved between them
+        // later. Without a store there is no place, so this connection gets a
+        // home of its own that goes when it does.
+        let home = match continuation.as_ref().and_then(PrivateOrderedContinuationSlot::home) {
+            Some(home) => home,
+            None => Arc::new(PrivateOrderedHome::empty()),
+        };
         let published = self.publish_registered_client(
             client,
             senders,
             &connection_state,
             &gate,
             &mut continuation,
+            home,
         );
         // The client table is released here, before the place is disposed of.
         //
@@ -502,6 +512,7 @@ impl XServerFrontendRouteRegistry {
         connection_state: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
         gate: &Arc<PrivateHandoverGate>,
         continuation: &mut Option<PrivateOrderedContinuationSlot>,
+        home: Arc<PrivateOrderedHome>,
     ) -> Result<XServerFrontendClientRouteRegistration, XServerFrontendRouteError> {
         let mut clients = self
             .clients
@@ -525,10 +536,18 @@ impl XServerFrontendRouteRegistry {
             // went: a place is returned when the work in it is gone, and until
             // then it belongs to this connection.
             ordered_continuation: Mutex::new(continuation.take()),
-            // Empty until this connection's setup binds its queue. A
-            // connection that never gets that far still holds a place, and
-            // what goes into it is then the receiver alone.
-            ordered_setup: Mutex::new(None),
+            // THE SAME HOME THE PLACE HOLDS, when there is a place: this is a
+            // handle to it, not a second storage that teardown would have to
+            // move out of. Empty until this connection's setup binds its
+            // queue, and reachable from the place for as long as the place
+            // exists -- which is what lets anything else borrow this
+            // connection's output after the registration has gone.
+            //
+            // A REGISTRY WITH NO CONTINUATION STORE STILL NEEDS ONE. There is
+            // no place for it to be in, so it is this registration's alone and
+            // goes when the registration does, which is what a connection with
+            // nowhere to hand over to has always done.
+            ordered_home: home,
             // The registration's own gate, so closing is exact by
             // construction rather than by looking anything up.
             ordered_gate: gate.clone(),

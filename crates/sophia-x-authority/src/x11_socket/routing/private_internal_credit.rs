@@ -43,7 +43,7 @@ struct PrivateInternalCredit {
     /// component is for. It is enough for the comparison -- a weak handle
     /// keeps the allocation alive, so its address stays this record's and
     /// nothing else can be allotted it while this credit exists.
-    record: std::sync::Weak<Mutex<Option<PrivateOrderedContinuation>>>,
+    record: std::sync::Weak<PrivateOrderedHome>,
     /// Whether this credit still has to be disposed of.
     ///
     /// Cleared by whichever disposal actually happens, so a credit cannot
@@ -123,8 +123,8 @@ impl PrivateInternalCredit {
     fn ours(&self, held: &AbandonedSettlements) -> bool {
         matches!(
             held.continuations.get(self.index),
-            Some(PrivateOrderedContinuationPlace::Taken(record))
-                if std::ptr::eq(Arc::as_ptr(record), self.record.as_ptr())
+            Some(PrivateOrderedContinuationPlace::Taken(home))
+                if std::ptr::eq(Arc::as_ptr(home), self.record.as_ptr())
         )
     }
 
@@ -149,7 +149,7 @@ impl PrivateInternalCredit {
         // Upgraded under the store, where the place is holding it: a record
         // that is in its place is there to be taken hold of, and finding
         // otherwise would mean the place did not hold what it says it does.
-        let Some(record) = ({
+        let Some(home) = ({
             let held = owner.records_even_if_poisoned();
             if !self.ours(&held) {
                 return PrivateCreditReach::Moved;
@@ -158,11 +158,8 @@ impl PrivateInternalCredit {
         }) else {
             return PrivateCreditReach::Moved;
         };
-        let mut destination = record
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        match destination.as_mut() {
-            Some(continuation) => PrivateCreditReach::Reached(act(continuation)),
+        match home.borrow(act) {
+            Some(value) => PrivateCreditReach::Reached(value),
             None => PrivateCreditReach::Empty,
         }
     }
@@ -198,7 +195,7 @@ impl PrivateInternalCredit {
             self.armed = false;
             return PrivateCreditRelease::StoreGone;
         };
-        let Some(record) = ({
+        let Some(home) = ({
             let held = owner.records_even_if_poisoned();
             if !self.ours(&held) {
                 return PrivateCreditRelease::NotOurs;
@@ -207,15 +204,10 @@ impl PrivateInternalCredit {
         }) else {
             return PrivateCreditRelease::NotOurs;
         };
-        let standing = {
-            let destination = record
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            match destination.as_ref() {
-                None => PrivateCreditRelease::NotHandedOver,
-                Some(continuation) if continuation.settled() => PrivateCreditRelease::Released,
-                Some(_) => PrivateCreditRelease::StillOwed,
-            }
+        let standing = match home.borrow(|continuation| continuation.settled()) {
+            None => PrivateCreditRelease::NotHandedOver,
+            Some(true) => PrivateCreditRelease::Released,
+            Some(false) => PrivateCreditRelease::StillOwed,
         };
         if !matches!(standing, PrivateCreditRelease::Released) {
             return standing;
@@ -337,7 +329,7 @@ struct PrivateHolderDestination {
     /// number could be committed against a successor's lease -- a holder over
     /// a connection nobody prepared one for. The record is the identity, and
     /// it is compared at commitment.
-    for_record: std::sync::Weak<Mutex<Option<PrivateOrderedContinuation>>>,
+    for_record: std::sync::Weak<PrivateOrderedHome>,
     /// Whether this destination still has to be released.
     armed: bool,
 }
@@ -483,7 +475,7 @@ impl PrivateSettlementOwner {
     fn retire_holder_for(
         held: &mut AbandonedSettlements,
         index: usize,
-        record: &Arc<Mutex<Option<PrivateOrderedContinuation>>>,
+        record: &Arc<PrivateOrderedHome>,
     ) -> Option<PrivateStoreOwnedHolder> {
         let found = held.holders.iter().position(|place| match place {
             PrivateHolderPlace::Taken(holder) => {
@@ -508,11 +500,15 @@ impl PrivateSettlementOwner {
 enum PrivateInternalConversion {
     /// The work is in the place, and the store keeps a holder naming it.
     Held,
-    /// The hand-over did not install, so no holder was made.
+    /// The place is not this lease's, so there was nothing to be responsible
+    /// for. The holder place is released and the lease comes back.
     ///
-    /// The holder place is released -- nothing is left in it -- and what the
-    /// lease did about its own place is what it says here.
-    NotInstalled(PrivateContinuationInstall),
+    /// NO CONTROL REACHES THIS, and it is here so the class cannot return: the
+    /// only way a live lease outlives its place was a credit releasing one
+    /// early, which the release rules refuse. Carrying the lease back rather
+    /// than dropping it is what keeps a conversion that found nothing from
+    /// also disposing of whatever the lease does name.
+    NoPlace(#[allow(dead_code)] PrivateOrderedContinuationSlot),
     /// Refused before anything was touched. The lease comes back armed over
     /// the same place, and the source still holds its work.
     Foreign(PrivateOrderedContinuationSlot),
@@ -535,12 +531,12 @@ impl PrivateOrderedContinuationSlot {
     /// borrow and not an assumed caller lifetime; it is a live handle that
     /// outlives this call by construction.
     ///
-    /// THE HOLDER IS WRITTEN BEFORE THE HAND-OVER. The other half of the same
-    /// problem: the work must not be out of the caller's slot while the place
-    /// it went into has nothing naming it. Written first, an unwind between
-    /// the two leaves a holder over a record that is still empty and the work
-    /// still in the caller's hands, which is recoverable; written second, the
-    /// same unwind leaves installed work that nothing names.
+    /// NOTHING IS HANDED OVER HERE, AND NOTHING IS RETAINED. The connection's
+    /// output is in its home and stays there; what changes is who is
+    /// responsible for the place it sits in. A conversion that also said the
+    /// connection had ended would retire a connection that is still running
+    /// and hand its home to a drive that may close its wire underneath it --
+    /// the home's standing is teardown's to write, and only teardown's.
     ///
     /// THE SAME PLACE AND THE SAME CREDIT CROSS. The index is carried, not
     /// re-taken: no capacity is charged for the conversion, none is freed, and
@@ -551,7 +547,6 @@ impl PrivateOrderedContinuationSlot {
         mut self,
         outer: &PrivateSettlementOwner,
         mut destination: PrivateHolderDestination,
-        source: &mut Option<PrivateOrderedContinuation>,
     ) -> PrivateInternalConversion {
         // CHECKED, NOT ASSERTED. A destination prepared against another store
         // names an index in that store's holders; committing it here would
@@ -583,10 +578,11 @@ impl PrivateOrderedContinuationSlot {
             // be this thread waiting for itself.
         };
         let Some(record) = found else {
-            // No place of this lease's to be responsible for. The hand-over
-            // says the same thing and accounts for the lease as it always
-            // would, now that the guard is gone.
-            return PrivateInternalConversion::NotInstalled(self.install(source));
+            // No place of this lease's to be responsible for. The lease comes
+            // back armed over whatever it names, and nothing is accounted for
+            // here: a conversion that cannot find its place has not changed
+            // whose the place is.
+            return PrivateInternalConversion::NoPlace(self);
         };
         {
             let mut held = outer.records_even_if_poisoned();
@@ -629,31 +625,6 @@ impl PrivateOrderedContinuationSlot {
             // anywhere. It is the store's now.
             self.armed = false;
             destination.armed = false;
-        }
-        let installed = self.install(source);
-        if installed != PrivateContinuationInstall::Installed {
-            // Nothing was handed over, so there is nothing for a holder to be
-            // responsible for. The credit is taken out and dropped STILL
-            // ARMED, because it is what holds the duty now: the hand-over
-            // above gave it up when the credit was published, and a refusal
-            // does not hand it back.
-            //
-            // AND IT MAY NOT BE HERE TO TAKE. Between publication and this
-            // line the holder is in the store and anything that can read the
-            // store can take it; whoever has it then holds the duty and
-            // discharges it when they drop it. Either way it is discharged
-            // once, by whichever of them actually has it -- which is why this
-            // does not disarm anything and does not mark anything itself.
-            //
-            // Dropped after the store is released: a credit's own disposal
-            // takes the store, and dropping one under this guard would be
-            // this thread waiting for itself.
-            let retired = {
-                let mut held = outer.records_even_if_poisoned();
-                PrivateSettlementOwner::retire_holder_for(&mut held, index, &record)
-            };
-            drop(retired);
-            return PrivateInternalConversion::NotInstalled(installed);
         }
         PrivateInternalConversion::Held
     }
