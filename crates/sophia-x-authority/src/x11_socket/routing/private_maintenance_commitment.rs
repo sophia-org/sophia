@@ -26,6 +26,11 @@ struct PrivateCommittedObligation {
     /// nobody made. It is also not a reason to refuse to record the
     /// responsibility -- something is still owed, and that case is the one
     /// this retention exists for.
+    ///
+    /// AND UNREADABLE SAYS CLOSURE WAS NOT ESTABLISHED, which is not the same
+    /// as saying the gate is open. The lock WAS acquired -- that is what
+    /// poisoning means -- so nothing here licenses a reader to conclude that
+    /// handovers are still being admitted.
     closed: PrivateHandoverFence,
     /// The join this obligation rests on: the evidence itself, named weakly.
     ///
@@ -43,11 +48,16 @@ struct PrivateCommittedObligation {
     /// special-casing it, and neither is acceptable.
     ///
     /// SO THE KEEPER IS OUTSIDE. Committing hands its caller the strong
-    /// handle, exactly as converting hands its caller the store: the store
-    /// names the evidence and something outside it keeps the evidence alive.
-    /// A payload holding a store handle then makes a chain from that keeper
-    /// and not a ring through the store, and everything releases when the
-    /// keeper lets go.
+    /// handle: the store names the evidence and something outside it keeps
+    /// that evidence alive. A payload holding a store handle then makes a
+    /// chain from the keeper rather than a ring through the store, and
+    /// everything releases when the keeper lets go.
+    ///
+    /// AND ONLY WHILE IT DOES. What is here survives the frames that made it
+    /// exactly as long as its keeper survives them; a keeper that drops or
+    /// unwinds takes the evidence with it, and the obligation then says the
+    /// evidence has gone -- which is not a disposition and not a fresh fact
+    /// about the join.
     ///
     /// WHO THAT KEEPER IS, TODAY AND LATER. Today it is whoever asked for the
     /// commitment, which in these controls is the caller. At integration it
@@ -67,11 +77,16 @@ enum PrivateCommitted {
     /// The obligation is in this connection's destination and the duty is the
     /// store's.
     ///
-    /// CARRIES THE EVIDENCE, and the caller must keep it. The store names the
+    /// CARRIES THE EVIDENCE, AND THE CALLER MUST KEEP IT. The store names the
     /// join evidence rather than owning it -- see the obligation's own field
     /// for why an opaque payload forces that -- so whoever commits is its
-    /// keeper from here. Returning it means a caller cannot end up with none
-    /// by omission.
+    /// keeper from here.
+    ///
+    /// HANDING IT OVER PROVIDES A KEEPER; IT DOES NOT ENFORCE ONE. A caller
+    /// may drop this, or unwind holding it, and the evidence goes with it
+    /// while the obligation stays outstanding. Making that impossible is the
+    /// durable owner's job at its own boundary, and nothing here should be
+    /// read as having done it.
     Committed(Arc<PrivateJoinEvidence>),
     /// The evidence this rests on is not complete yet.
     ///
@@ -267,6 +282,12 @@ impl<'a> PrivateCommitmentContext<'a> {
 /// lock, so anything it did -- resolving the identity, reading the payload --
 /// was another acquisition underneath this one. Everything here is cheap to
 /// copy, so nothing is lost by taking it out first.
+///
+/// IT PINS NOTHING. The store was held by whoever asked for this, and stays
+/// held only for as long as they hold it; the evidence is named weakly here as
+/// it is in the obligation. Resolving the identity upgrades and pins the store
+/// for that act, and asking for the evidence upgrades it for the caller -- but
+/// holding this is not holding either.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 struct PrivateCommittedSnapshot {

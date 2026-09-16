@@ -34174,10 +34174,9 @@ fn a_commitment_waits_for_the_evidence_it_rests_on() {
     // NEITHER JOINED NOR FENCED.
     let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
     assert!(matches!(context.commit(), PrivateCommitted::NotYetEvidenced));
-    // NOTHING WAS CONSUMED AND NOTHING WAS CHANGED. The lease comes back armed
-    // over the same place, and the destination it was offered goes back to
-    // reserved -- still this connection's, still preparable -- so the same
-    // context asks again by preparing again.
+    // NOTHING WAS CONSUMED AND NOTHING WAS CHANGED. The lease and the prepared
+    // destination both stay in this context -- the destination still promised
+    // to this place -- so the same context simply asks again.
     assert_eq!(
         maintenance_destination(&durable, c.place),
         Some("promised"),
@@ -34488,9 +34487,16 @@ fn a_second_commitment_replaces_nothing() {
 
 #[test]
 fn a_commitment_leaves_no_store_self_cycle() {
-    // AN OBLIGATION IS KEPT BY THE STORE, so what it keeps must not keep the
-    // store. The evidence it holds is a completed join's result and a recorded
-    // close; neither reaches back.
+    // AN OBLIGATION IS KEPT BY THE STORE, so nothing it names may keep the
+    // store. WHAT ACTUALLY MAKES THAT TRUE is the weak edge: the obligation
+    // names its evidence rather than owning it, and its identity names the
+    // store weakly too.
+    //
+    // AND THIS CONTROL COVERS THE RETURNED CASE ONLY. A join that panicked
+    // carries whatever the frame was carrying, which may be anything at all
+    // including a handle to this store; that the graph still releases then
+    // rests on the keeper being outside it, which is the control beside this
+    // one, not on anything a Returned join can show.
     let capability;
     let outer;
     {
