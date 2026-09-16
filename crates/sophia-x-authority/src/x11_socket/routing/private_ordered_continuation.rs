@@ -840,6 +840,15 @@ impl PrivateSettlementOwner {
         }
         held.continuations[index] = PrivateOrderedContinuationPlace::Free;
         held.continuation_slots = held.continuation_slots.saturating_sub(1);
+        // A RETURNED PLACE LEAVES NO HOLDER BEHIND NAMING IT. The next
+        // connection to reserve takes this index, and a holder still pointing
+        // at it would be reading that connection's queue and could free its
+        // place. Taken out here and dropped after the store is released: a
+        // credit's disposal takes the store, and dropping one under this guard
+        // would be this thread waiting for itself.
+        let retired = Self::retire_holder_for(&mut held, index, record);
+        drop(held);
+        drop(retired);
     }
 
     /// Borrow one retained continuation, if the place holds one.
