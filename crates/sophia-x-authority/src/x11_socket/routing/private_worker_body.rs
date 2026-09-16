@@ -94,9 +94,11 @@ struct PrivateWorkerOutcome {
     /// the last ordinary step taken, which is not nothing: a body that used
     /// its whole budget has been serving.
     ///
-    /// `None` MEANS NEVER ASKED, and only that: ineligible before any visit,
-    /// or startup ended before serving began. It is not a way of saying the
-    /// owner had nothing to say.
+    /// `None` MEANS NO ASK WAS EVER MADE OR ATTEMPTED, which is narrower than
+    /// it sounds. An ineligible body carries its refusal here, so that is not
+    /// one of these. What is left is startup ending before serving began, and
+    /// a budget of no steps at all -- which exhausts without asking anything.
+    /// It is never a way of saying the owner had nothing to say.
     last: Option<PrivateWorkerAsk>,
 }
 
@@ -181,11 +183,15 @@ struct PrivateWorkerBody<'a> {
     sequence: &'a Arc<AtomicU16>,
     /// Where this body's departure goes.
     exit: &'a PrivateWorkerExit,
-    /// The most steps this body will take.
+    /// The most ordinary serving steps this body will take.
     ///
     /// A COUNT OF STEPS, NOT A DURATION. Nothing here bounds how long a step
     /// takes: a visit writes to a socket and a wait sleeps until it is woken.
-    /// What this bounds is how many times this body asks.
+    ///
+    /// AND NOT EVERY ASK, EITHER. A departure asks the owner once more after
+    /// the loop, and that ask is outside this count: a body told to stop on
+    /// its last permitted step must still be able to find out what stopping
+    /// means for this connection.
     steps: usize,
 }
 

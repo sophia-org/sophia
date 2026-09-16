@@ -31615,12 +31615,18 @@ impl Drop for PrivateWorkerStopper<'_> {
     }
 }
 
-/// Wait until this connection's body is demonstrably in its idle wait.
+/// Wait until this connection's body has been through its idle wait.
 ///
-/// A HANDSHAKE, NOT A SLEEP. The level is published under the predicate mutex
-/// and this returns when it has been consumed -- and only the waiter consumes
-/// it, under that same mutex, on the way out of the wait. A body that had not
-/// reached the wait would leave it set.
+/// A HANDSHAKE, NOT A SLEEP, and it establishes exactly one thing: that the
+/// body reached the wait and consumed the level, because only a waiter
+/// consumes it and only under that wait's own mutex. A body that had not got
+/// there would leave it set.
+///
+/// WHAT IT DOES NOT ESTABLISH is where the body is when this returns.
+/// Consuming the level is how the wait ENDS: the body goes on to another
+/// ordinary visit and, if that is idle again, to another wait. So this says a
+/// wait happened, never that one is happening now -- and a control that acts
+/// on the second reading is racing a legal schedule.
 ///
 /// Bounded, because a control that never finishes reports nothing.
 fn waited_and_consumed(wake: &Arc<PrivateOrderedWake>) -> bool {
@@ -31950,7 +31956,11 @@ fn an_unpermitted_body_serves_nothing_until_it_is_permitted() {
             .run()
         });
         let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
-        // Long enough that a body which never asked would have served it.
+        // A WINDOW, AND ONLY A WINDOW. There is work in front of this body and
+        // a budget to serve it with, so one that never asked for a permit had
+        // every opportunity here and took none. It does NOT establish that the
+        // body has reached its startup wait -- that wait consumes no level a
+        // handshake could use, and a sleep cannot say where a thread is.
         std::thread::sleep(Duration::from_millis(100));
         assert!(cell.answer().is_none(), "it served nothing");
         assert!(!exit.left(), "and is still waiting to be allowed to");
@@ -32002,10 +32012,9 @@ fn a_body_that_finds_nothing_waits_and_is_woken_by_an_actual_producer() {
     // on this connection's notice; what ends the wait is the production
     // producer publishing to that same notice, not a timeout and not a poll.
     //
-    // AND IT IS GENUINELY ASLEEP. Its departure is not published while it
-    // waits, which a body spinning on a sticky permit or an unconsumed level
-    // would have reached long before -- it had eight steps and nothing to do
-    // with them.
+    // AND IT WAITS RATHER THAN SPINNING. A body that woke on the sticky permit
+    // or on a level nothing cleared would have spent its whole budget and
+    // left; this one has been through a wait and has not.
     let mut f = worker_fixture(XServerFrontendClientId(8393));
     f.permit();
     attempt_run(&mut f.fixture, 83930, 272, true);
@@ -32028,13 +32037,17 @@ fn a_body_that_finds_nothing_waits_and_is_woken_by_an_actual_producer() {
             .run()
         });
         let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
-        // Long enough that a body taking steps would have taken all of them.
-        std::thread::sleep(Duration::from_millis(100));
+        // IT WENT THROUGH A WAIT, established rather than timed: a level
+        // published under that wait's own mutex, consumed only by a waiter.
+        assert!(
+            waited_and_consumed(&f.wake),
+            "the body reached its idle wait"
+        );
         assert!(
             !exit.left(),
-            "it is waiting, not working through a budget on nothing"
+            "and has not spent its budget: a spinning body would be gone"
         );
-        assert!(cell.answer().is_none(), "and has served nothing");
+        assert!(cell.answer().is_none(), "having served nothing");
 
         // The production producer, which arms this connection's notice itself.
         assert_eq!(
@@ -32091,8 +32104,18 @@ fn a_body_told_to_stop_while_idle_asks_its_owner_what_that_means() {
             .run()
         });
         let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
-        // THE ACTUAL STOP AND ITS WAKE, which is how a running worker is told:
-        // a bare write into a sleeping body reaches nothing.
+        // A WAIT HAPPENED FIRST, so this is a stop told to a body that got
+        // past startup -- not one that happened to land before it. Where the
+        // body is when the stop arrives is not established and nothing here
+        // rests on it: a stop is asked before every visit and inside every
+        // wait, so either finds it.
+        assert!(
+            waited_and_consumed(&f.wake),
+            "the body has been through its idle wait"
+        );
+        // THROUGH THE PRODUCTION CANCELLATION, which is how a running worker
+        // is told: a bare write beside the predicate mutex can be lost by a
+        // waiter between its check and its wait.
         cancel_connection_worker(&f.stop, &f.wake);
         let outcome = worker.join().expect("the body finished");
         assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped);
@@ -32112,22 +32135,25 @@ fn a_body_that_cannot_read_its_notice_stops_the_connection_and_asks_once() {
     // with nothing able to wake it. So the same authoritative stop is set and
     // the notice woken -- the connection's own stop, not a fresh flag -- and
     // the owner is asked once for its departure.
-    for on_reacquisition in [false, true] {
+    for while_running in [false, true] {
         let f = worker_fixture(XServerFrontendClientId(8397));
         f.permit();
         let exit = PrivateWorkerExit::unstarted();
-        if on_reacquisition {
-            // Poisoned while the body is asleep in the wait, so what it finds
-            // is the reacquisition after a wake rather than the way in.
+        if while_running {
+            // POISONED WHILE THE BODY IS RUNNING, after it has been through a
+            // wait. WHICH ACQUISITION FINDS IT IS NOT ESTABLISHED: consuming
+            // the handshake level ends a wait, so the body may take another
+            // ordinary visit and meet the poison on the next wait's initial
+            // lock rather than on a Condvar reacquisition. Both are the same
+            // classification and this control does not separate them. That the
+            // reacquisition branch itself is taken is established elsewhere,
+            // not here.
             std::thread::scope(|scope| {
                 let body = f.body(&exit, 16);
                 let worker = scope.spawn(move || body.run());
-                // REACHED THE WAIT FIRST, so the poison below lands on a
-                // reacquisition rather than on the way in -- which is the
-                // whole difference between this arm and the one beside it.
                 assert!(
                     waited_and_consumed(&f.wake),
-                    "the body is in its idle wait"
+                    "the body has been through its idle wait"
                 );
                 assert!(
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -32260,43 +32286,39 @@ fn a_departure_that_cannot_ask_its_owner_says_so_rather_than_nothing() {
     // A REFUSAL IS NOT AN ABSENCE. When a departure's ask cannot be made --
     // the home unreadable by the time the body is told to stop -- reporting
     // "nothing said" loses the one fact a caller has to act on, and leaves the
-    // departure looking ordinary. What could not be asked, and why, is kept
-    // beside the trigger.
+    // departure looking ordinary.
+    //
+    // THE SEAM IS CALLED DIRECTLY, and the control says so rather than
+    // pretending to reach it through a running body. Poisoning a home under a
+    // running worker does not decide which of two legal things happens: a body
+    // that meets the poison on its next ordinary visit refuses eligibly and
+    // never departs at all, which is correct and is not what this is about.
+    // Waiting for a schedule to produce the one is a race, not a witness.
+    //
+    // WHAT IS REAL HERE: the connection, its owner, its home, the poison and
+    // the cancellation. What is staged is only which of the body's own
+    // entry points is entered.
     let f = worker_fixture(XServerFrontendClientId(8405));
     f.permit();
     let exit = PrivateWorkerExit::unstarted();
-    let (home, wake, stop, sequence) = f.handles();
-    let outcome = std::thread::scope(|scope| {
-        let exit = &exit;
-        let worker = scope.spawn(move || {
-            PrivateWorkerBody {
-                home: &home,
-                wake: &wake,
-                stop: &stop,
-                byte_order: XByteOrder::LittleEndian,
-                sequence: &sequence,
-                exit,
-                steps: 16,
-            }
-            .run()
-        });
-        let _stopper = PrivateWorkerStopper(&f.stop, &f.wake);
-        // Credentials already succeeded and the body is in its idle wait, so
-        // what follows happens to a body that was serving this connection
-        // perfectly well a moment ago.
-        assert!(waited_and_consumed(&f.wake), "the body is in its idle wait");
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _held = f.home.state.lock().expect("a readable home");
-                panic!("a holder unwound inside this connection's home");
-            }))
-            .is_err(),
-            "the holder unwound"
-        );
-        assert!(f.home.unreadable());
-        cancel_connection_worker(&f.stop, &f.wake);
-        worker.join().expect("the body finished")
-    });
+    let body = f.body(&exit, 16);
+    assert!(
+        body.credentials().is_ok(),
+        "this body may serve this connection, a moment before it cannot"
+    );
+
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = f.home.state.lock().expect("a readable home");
+            panic!("a holder unwound inside this connection's home");
+        }))
+        .is_err(),
+        "the holder unwound"
+    );
+    assert!(f.home.unreadable());
+    cancel_connection_worker(&f.stop, &f.wake);
+
+    let outcome = body.depart(PrivateWorkerTrigger::Stopped);
     assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped);
     assert_eq!(
         outcome.last,
