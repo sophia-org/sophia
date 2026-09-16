@@ -35146,14 +35146,16 @@ fn a_commitment_refuses_another_connections_evidence() {
     // belong to the same store, so the store comparison cannot refuse either.
     let c = commit_fixture(XServerFrontendClientId(8484), false);
     let durable = c.g.f.fixture.durable.clone();
-    // A SIBLING OF THE SAME STORE: its own reserved place, its own home.
+    // A SIBLING OF THE SAME STORE, AND ITS OWN REGISTERED CUSTODY -- the one
+    // its registration reserved, not one made beside it. Its place, its home,
+    // its slot and its exit record are all that connection's.
     let sibling = spare_registration(&c.g.f.fixture);
-    let sibling_custody = PrivateEvidenceCustody::prepared_for(
-        &durable,
-        sibling
-            .maintenance_identity()
-            .expect("a second place, so a second name"),
-    );
+    let PrivateCustodyReach::Reached(sibling_custody) = sibling
+        .registered_custody(&c.g.f.fixture.keeper.lease())
+        .expect("a sibling registration reserves a custody of its own")
+    else {
+        panic!("the same owner keeps it")
+    };
     // BOTH CUSTODIES BEFORE THE LEASE IS TAKEN: a name is handed out from the
     // registration's lease, so a custody asked for after the lease has gone
     // has nothing to be about.
@@ -35200,20 +35202,39 @@ fn a_commitment_refuses_another_connections_evidence() {
     );
     assert!(durable.committed_obligation(c.place).is_none());
 
-    // AND THE REFUSED CONTEXT KEPT WHAT IT WAS GIVEN, so a correct commitment
-    // is still possible from here.
+    // AND THE REFUSED CONTEXT KEPT WHAT IT WAS GIVEN, so the correct
+    // commitment still happens -- which is what makes the two refusals above
+    // refusals rather than breakage.
     let (lease, destination) = wrong_home.into_parts().expect("nothing was consumed");
-    drop((lease, destination));
 
-    // THIS CONNECTION'S OWN WORKER IS JOINED THROUGH ITS OWN CUSTODY before
-    // its registration goes anywhere. That is this control's obligation to the
-    // thread it started, not a claim about commitment.
+    // THIS CONNECTION'S OWN WORKER, joined through its own custody. That is
+    // also this control's obligation to the thread it started.
     let own = PrivateReapingRecord::bound_to(&twin);
     assert_eq!(
         own.reap().reaped,
         PrivateReaped::Joined,
         "its own handle was never the sibling's to take"
     );
+    let own_fence = PrivateFenceRecord::bound_to(&own, Arc::clone(&c.g.gate));
+    assert_eq!(own_fence.record_fence(), PrivateFenced::Recorded);
+    let context = PrivateCommitmentContext::bound_to(&twin, &own_fence, lease, destination);
+    assert!(
+        matches!(context.commit(), PrivateCommitted::Committed),
+        "its own name over its own home commits"
+    );
+    let stated = durable
+        .committed_obligation(c.place)
+        .expect("the obligation is stated now");
+    assert!(
+        Arc::ptr_eq(
+            &stated.join().expect("its custodian owns it"),
+            twin.join()
+        ),
+        "over the home its own custody has owned throughout"
+    );
+    drop(stated);
+    drop(context);
+    drop(own_fence);
     drop(own);
     drop((sibling_custody, twin));
     drop((c.g.f.fixture, sibling));
@@ -36248,10 +36269,19 @@ fn a_producer_asks_again_at_every_acceptance() {
 }
 
 #[test]
-fn a_connections_worker_source_exists_before_its_row_is_published() {
-    // RESERVED WITH THE HOME, ON THE SAME CREDIT. A connection whose result
-    // had an external keeper and whose HANDLE had none would still be leaving
-    // its worker with whichever frame started it.
+fn a_connections_worker_source_is_inert_and_names_one_slot_sink_and_home() {
+    // WHAT THIS ESTABLISHES, AND WHAT IT DOES NOT. It looks at the source the
+    // moment a registration returns: the slot is empty, the exit record says
+    // nothing, the home says nothing, and asking again names the same three.
+    //
+    // IT IS NOT AN OBSERVATION OF THE INTERVAL. That the source was allocated
+    // BEFORE the row went in is established by the order of the source --
+    // reserve_for runs before publish_registered_client, and a refused
+    // publication has an entry of its own to give back, which
+    // a_connections_evidence_keeper_is_reserved_before_its_row_is_published
+    // observes from inside the client table. Nothing here watches that
+    // interval, and a control that inspected afterwards and called it proof
+    // would be reading a state and claiming a schedule.
     let durable = PrivateSettlementOwner::default();
     let keeper = service_owner(&durable, 3);
     let private = private_over(&keeper, 3);
@@ -36313,10 +36343,15 @@ fn a_started_worker_stays_with_its_source_after_the_view_that_started_it_ends() 
     // started it can end -- ordinarily -- and a completely fresh view finds
     // that exact thread and joins it, publishing the original result into the
     // original home.
+    //
+    // OBSERVED FIRST, COLLECTED, AND ONLY THEN COMPARED. The worker is held on
+    // a channel, so an assertion that failed while it was still blocked would
+    // leave this control's own joiner waiting on it.
     let f = worker_fixture(XServerFrontendClientId(8602));
     f.permit();
     let (release, held) = std::sync::mpsc::channel::<()>();
     let home;
+    let started_into_the_slot;
     {
         // ONE STARTUP VIEW, which ends here and takes nothing with it.
         let starting = custody_for(&f, &f.fixture.keeper);
@@ -36325,33 +36360,41 @@ fn a_started_worker_stays_with_its_source_after_the_view_that_started_it_ends() 
             let _ = held.recv();
             panic!("what this connection's worker carried out with it");
         });
-        assert!(
-            starting
-                .worker_slot()
-                .lock()
-                .expect("a readable slot")
-                .handle
-                .is_some(),
-            "the handle went into the registered slot, not into this frame"
-        );
+        started_into_the_slot = starting
+            .worker_slot()
+            .lock()
+            .expect("a readable slot")
+            .handle
+            .is_some();
     }
 
-    // THE HANDLE IS STILL THERE, seen through a view that had nothing to do
-    // with starting it.
+    // WHAT A FRESH VIEW FINDS, taken while the worker is still blocked.
     let later = custody_for(&f, &f.fixture.keeper);
-    {
+    let found = {
         let slot = later.worker_slot().lock().expect("a readable slot");
-        assert!(slot.handle.is_some(), "its owner still holds the thread");
-        assert_eq!(slot.life, PrivateWorkerLife::Running);
-    }
-    assert!(Arc::ptr_eq(later.join(), &home), "and the same home for it");
+        (slot.handle.is_some(), slot.life)
+    };
+    let same_home = Arc::ptr_eq(later.join(), &home);
 
-    // AND IT JOINS THROUGH THAT VIEW, publishing the original payload.
+    // RELEASED AND COLLECTED THROUGH THAT VIEW, before anything can fail.
     drop(release);
     let record = PrivateReapingRecord::bound_to(&later);
-    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    let reaped = record.reap().reaped;
+    let payload = panic_payload_of(&home);
+
+    assert!(
+        started_into_the_slot,
+        "the handle went into the registered slot, not into the starting frame"
+    );
     assert_eq!(
-        panic_payload_of(&home).as_deref(),
+        found,
+        (true, PrivateWorkerLife::Running),
+        "its owner still held the thread after the starting view ended"
+    );
+    assert!(same_home, "and the same home for it");
+    assert_eq!(reaped, PrivateReaped::Joined);
+    assert_eq!(
+        payload.as_deref(),
         Some("what this connection's worker carried out with it"),
         "the original result, in the home the source has owned throughout"
     );
@@ -36366,6 +36409,12 @@ fn a_caller_that_unwinds_after_startup_leaves_the_handle_with_its_owner() {
     // than claiming anything about an interruption inside a spawn. What it
     // establishes is that losing the frame that started a worker does not lose
     // the worker.
+    //
+    // NOTHING IS ASSERTED UNTIL THE WORKER HAS BEEN COLLECTED. Every
+    // observation below is taken into a local first; the thread is released
+    // and joined; and only then does anything compare. An assertion that fails
+    // earlier would leave a blocked thread and this control's joiner waiting
+    // on each other, and the failure would read as a hang.
     let f = worker_fixture(XServerFrontendClientId(8603));
     f.permit();
     let (release, held) = std::sync::mpsc::channel::<()>();
@@ -36376,29 +36425,27 @@ fn a_caller_that_unwinds_after_startup_leaves_the_handle_with_its_owner() {
         });
         panic!("the frame that started it goes here");
     }));
-    assert!(unwound.is_err(), "the caller really did unwind");
 
-    // THE WORKER IS RELEASED FIRST, WHATEVER HAPPENS NEXT. An assertion that
-    // failed before this would leave a blocked thread and a joiner waiting on
-    // it, and the control would hang instead of failing.
-    drop(release);
     let after = custody_for(&f, &f.fixture.keeper);
-    let held_handle = {
+    let observed = {
         let slot = after.worker_slot().lock().expect("a readable slot");
         (slot.handle.is_some(), slot.life)
     };
+
+    // RELEASED AND COLLECTED, before anything can fail.
+    drop(release);
     let record = PrivateReapingRecord::bound_to(&after);
     let reaped = record.reap().reaped;
+    let published = matches!(after.join().result(), Some(PrivateJoinResult::Returned));
+
+    assert!(unwound.is_err(), "the caller really did unwind");
     assert_eq!(
-        held_handle,
+        observed,
         (true, PrivateWorkerLife::Running),
         "an unwound starter does not take the handle with it"
     );
     assert_eq!(reaped, PrivateReaped::Joined);
-    assert!(matches!(
-        after.join().result(),
-        Some(PrivateJoinResult::Returned)
-    ));
+    assert!(published, "and its result went into its own home");
     drop(record);
     drop(after);
     drop(f.fixture);
