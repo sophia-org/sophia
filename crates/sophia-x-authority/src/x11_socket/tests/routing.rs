@@ -23355,6 +23355,11 @@ fn a_refused_close_is_attempted_again_by_the_next_visit() {
 
     // One visit, and the attempt is made again -- for real, on a real socket,
     // which is why it succeeds this time.
+    //
+    // WHAT THIS CONTROL DOES NOT COVER: this owner is holding nothing, so what
+    // it establishes about publication is that a place is kept, not that
+    // custody was withheld. The exhausted control beside it holds a real
+    // capsule and an unanswered completion, and is where that is said.
     durable.drive_ordered_continuations(1);
     let held = durable
         .with_ordered_continuation(0, |continuation| {
@@ -23388,8 +23393,38 @@ fn a_close_with_no_attempts_left_says_so_and_is_not_retried() {
     // amount of driving changes it. Reporting both as refused leaves a reader
     // waiting for a retry that is never coming.
     let mut f = prepared_ordered_fixture(XServerFrontendClientId(8661));
-    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
-    let (owner, _output) = serving_owner_for(&mut f, socket);
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_nonblocking(true).expect("a readable peer");
+    let (mut owner, _output) = serving_owner_for(&mut f, socket);
+
+    // IT IS HOLDING SOMETHING. Without custody this control could only say a
+    // place was kept, which is not the same as saying nothing was offered from
+    // it. A real capsule goes onto its queue and into its refused slot, with a
+    // completion nobody has answered.
+    let sender = f
+        .runner
+        .frontend
+        .as_ref()
+        .unwrap()
+        .broker
+        .registry
+        .clients
+        .lock()
+        .expect("a readable registry")
+        .get(&f.client)
+        .expect("its row")
+        .ordered
+        .clone();
+    let (held_capsule, _endpoint, _recovery, _receipts) = answerable_capsule(86610);
+    let delivery = held_capsule.delivery();
+    let cell = Arc::clone(&held_capsule.finalizer().expect("carried").completion);
+    gated_send(&sender, held_capsule).expect("this owner's queue accepts it");
+    assert!(matches!(
+        owner.serve_one(XByteOrder::LittleEndian, 7),
+        X11OrderedServeStep::AdmissionRefused(_)
+    ));
+    assert!(owner.refused().is_some(), "the writer is holding it");
+
     let durable = retained_refused_close(owner, X11_ORDERED_CLOSE_ATTEMPTS);
 
     for _ in 0..8 {
@@ -23431,6 +23466,27 @@ fn a_close_with_no_attempts_left_says_so_and_is_not_retried() {
         durable.continuations_reserved(),
         Some(1),
         "NOTHING IS PUBLISHED BEFORE A CONFIRMED TERMINATION: the place stays"
+    );
+
+    // AND NEITHER IS WHAT IT HOLDS. The capsule is still the exact one, still
+    // in the same slot, and its completion is still unanswered: a close that
+    // could not establish an ending offered nothing derived from one.
+    assert_eq!(reading.retained, 1);
+    let still = durable
+        .with_ordered_continuation(0, |continuation| {
+            let PrivateOrderedContinuation::Serving { owner, .. } = continuation else {
+                panic!("a serving record")
+            };
+            owner
+                .refused()
+                .map(|held| held.delivery().delivery())
+        })
+        .expect("the place holds it")
+        .expect("and the writer still holds the capsule");
+    assert_eq!(still, delivery, "the exact one, not a rebuilt copy");
+    assert!(
+        cell.answer().is_none(),
+        "and nobody answered for it on the strength of a close that failed"
     );
 }
 
