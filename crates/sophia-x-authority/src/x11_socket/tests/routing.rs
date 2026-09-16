@@ -32528,6 +32528,21 @@ fn a_body_refuses_a_home_or_an_owner_it_may_not_serve() {
 }
 
 
+/// Take custody of this connection's evidence, before anything produces any.
+///
+/// THE ORDER IS THE SUBJECT. Every reaping below is handed a home this already
+/// owns, in a scope that outlives the operation -- which is what makes losing
+/// that operation cost the operation and not the result.
+fn custody_for(f: &PrivateWorkerFixture) -> PrivateEvidenceCustody {
+    let store = f.fixture.durable.clone();
+    let identity = f
+        .fixture
+        .registration
+        .maintenance_identity()
+        .expect("a place, so a name");
+    PrivateEvidenceCustody::prepared_for(&store, identity)
+}
+
 /// A started worker, through the real startup transaction, whose handle a
 /// reaping can take.
 ///
@@ -32581,7 +32596,8 @@ fn a_reaping_keeps_what_a_worker_that_returned_actually_returned() {
         }
         .run();
     });
-    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let custody = custody_for(&f);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert_eq!(record.phase(), PrivateReapingPhase::NotBegun);
 
     cancel_connection_worker(&f.stop, &f.wake);
@@ -32614,7 +32630,8 @@ fn a_reaping_keeps_the_payload_a_worker_panicked_with() {
     let slot = started_worker(&f, || {
         panic!("a worker frame carried this out with it");
     });
-    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let custody = custody_for(&f);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     let reaping = record.reap();
 
     assert_eq!(reaping.reaped, PrivateReaped::Joined);
@@ -32654,7 +32671,8 @@ fn a_departure_noticed_is_not_a_thread_collected() {
         }
         let _ = held.recv();
     });
-    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let custody = custody_for(&f);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert!(
         waited_for(|| exit.left()),
         "the frame published that it had gone"
@@ -32702,7 +32720,8 @@ fn two_asks_at_once_join_a_worker_once() {
         let _ = held.recv();
         panic!("what exactly one of them keeps");
     });
-    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let custody = custody_for(&f);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
 
     std::thread::scope(|scope| {
         let (report, asked) = std::sync::mpsc::channel();
@@ -32766,7 +32785,8 @@ fn a_second_ask_joins_nothing_and_changes_nothing() {
     let slot = started_worker(&f, || {
         panic!("what the first ask keeps");
     });
-    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let custody = custody_for(&f);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
 
     let again = record.reap();
@@ -32793,7 +32813,8 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
 
     // Never started.
     let unstarted = Mutex::new(PrivateWorkerSlot::empty());
-    let first = PrivateReapingRecord::bound_to(&unstarted, &exit);
+    let custody = custody_for(&f);
+    let first = PrivateReapingRecord::bound_to(&unstarted, &exit, &custody);
     let reaping = first.reap();
     assert_eq!(reaping.reaped, PrivateReaped::NothingStarted);
     assert_eq!(reaping.exit, None);
@@ -32834,7 +32855,7 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
     let handle = hand_worker_to_joiner(&other)
         .handle
         .expect("the started worker's handle");
-    let second = PrivateReapingRecord::bound_to(&other, &exit);
+    let second = PrivateReapingRecord::bound_to(&other, &exit, &custody);
     let elsewhere = second.reap();
     assert_eq!(elsewhere.reaped, PrivateReaped::HandedElsewhere);
     assert_eq!(second.phase(), PrivateReapingPhase::NotBegun);
@@ -32850,7 +32871,7 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
         departing: false,
         life: PrivateWorkerLife::Running,
     });
-    let third = PrivateReapingRecord::bound_to(&torn, &exit);
+    let third = PrivateReapingRecord::bound_to(&torn, &exit, &custody);
     let missing = third.reap();
     assert_eq!(
         missing.reaped,
@@ -32880,7 +32901,8 @@ fn a_poisoned_slot_still_gives_up_its_handle_and_says_it_was_poisoned() {
     );
     assert!(slot.is_poisoned());
 
-    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let custody = custody_for(&f);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     let reaping = record.reap();
     assert_eq!(reaping.reaped, PrivateReaped::Joined);
     assert!(reaping.slot_poisoned, "and the poison is reported");
@@ -32901,7 +32923,8 @@ fn a_joined_result_publishes_while_its_exit_record_is_held() {
     let f = worker_fixture(XServerFrontendClientId(8417));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let slot = started_worker(&f, || {});
-    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let custody = custody_for(&f);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
 
     let reaping = std::thread::scope(|scope| {
         let (taken, wait) = std::sync::mpsc::channel();
@@ -32979,7 +33002,8 @@ fn a_fence_waits_for_the_join_that_makes_it_eligible() {
     // still being served: a departure published, an empty slot, an attempt
     // that may have taken a handle.
     let g = fence_fixture(XServerFrontendClientId(8421));
-    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+    let custody = custody_for(&g.f);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
 
     // ASKED TOO EARLY: nothing is entered and nothing is spent.
@@ -33013,7 +33037,8 @@ fn an_unconfirmed_join_is_not_a_joined_one() {
     // says InProgress, its slot says the handle has gone, and neither is a
     // reason to close anything.
     let g = fence_fixture(XServerFrontendClientId(8422));
-    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+    let custody = custody_for(&g.f);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
 
     std::thread::scope(|scope| {
@@ -33074,7 +33099,8 @@ fn a_join_that_reported_a_panic_is_a_completed_join() {
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let gate = f.fixture.registration.handover_gate();
     let slot = started_worker(&f, || panic!("what the join kept"));
-    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let custody = custody_for(&f);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
 
@@ -33103,7 +33129,8 @@ fn a_fence_keeps_the_three_things_a_gate_can_say() {
     let established = {
         let g = fence_fixture(XServerFrontendClientId(8424));
         cancel_connection_worker(&g.f.stop, &g.f.wake);
-        let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+        let custody = custody_for(&g.f);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
@@ -33118,7 +33145,8 @@ fn a_fence_keeps_the_three_things_a_gate_can_say() {
     let already = {
         let g = fence_fixture(XServerFrontendClientId(8425));
         cancel_connection_worker(&g.f.stop, &g.f.wake);
-        let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+        let custody = custody_for(&g.f);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         assert_eq!(
             g.f.fixture.registration.fence_ordered_handovers(),
@@ -33139,7 +33167,8 @@ fn a_fence_keeps_the_three_things_a_gate_can_say() {
     let unreadable = {
         let g = fence_fixture(XServerFrontendClientId(8426));
         cancel_connection_worker(&g.f.stop, &g.f.wake);
-        let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+        let custody = custody_for(&g.f);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -33169,7 +33198,8 @@ fn a_second_fencing_asks_nothing_and_replaces_nothing() {
     // into one it merely found.
     let g = fence_fixture(XServerFrontendClientId(8427));
     cancel_connection_worker(&g.f.stop, &g.f.wake);
-    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+    let custody = custody_for(&g.f);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
@@ -33192,7 +33222,8 @@ fn a_fencing_that_waits_on_a_handover_leaves_its_evidence_readable() {
     // still read the join result and this attempt's standing.
     let g = fence_fixture(XServerFrontendClientId(8428));
     cancel_connection_worker(&g.f.stop, &g.f.wake);
-    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+    let custody = custody_for(&g.f);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
 
@@ -33253,7 +33284,8 @@ fn fencing_one_connection_leaves_another_connections_gate_open() {
     // for it below stays queued: a running body would serve it, which is that
     // component's business and not this one's.
     cancel_connection_worker(&g.f.stop, &g.f.wake);
-    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+    let custody = custody_for(&g.f);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
 
     let queued = [(&g.f, 84290u64), (&other, 84300u64)].map(|(f, delivery)| {
@@ -33334,7 +33366,8 @@ fn a_fence_is_not_delayed_by_a_diagnostic_somebody_is_holding() {
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let gate = f.fixture.registration.handover_gate();
     let slot = started_worker(&f, || panic!("held while the gate is closed"));
-    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    let custody = custody_for(&f);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
 
@@ -34159,8 +34192,9 @@ fn a_commitment_waits_for_the_evidence_it_rests_on() {
     // and neither is a reason to go and produce one.
     let c = commit_fixture(XServerFrontendClientId(8461), false);
     let durable = c.g.f.fixture.durable.clone();
+    let custody = custody_for(&c.g.f);
     let lease = lease_of(&c.g.f.fixture.registration);
-    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
     let destination = durable
         .prepare_internal_holder(&lease)
@@ -34172,7 +34206,7 @@ fn a_commitment_waits_for_the_evidence_it_rests_on() {
     let abandoned_before = durable.continuations_abandoned();
 
     // NEITHER JOINED NOR FENCED.
-    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+    let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
     assert!(matches!(context.commit(), PrivateCommitted::NotYetEvidenced));
     // NOTHING WAS CONSUMED AND NOTHING WAS CHANGED. The lease and the prepared
     // destination both stay in this context -- the destination still promised
@@ -34196,12 +34230,9 @@ fn a_commitment_waits_for_the_evidence_it_rests_on() {
 
     // AND WHEN THE FENCE HAS RECORDED, THE SAME CONTEXT COMMITS.
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
-    let PrivateCommitted::Committed(evidence) = context.commit() else {
-        panic!("its own evidence is complete")
-    };
+    assert!(matches!(context.commit(), PrivateCommitted::Committed));
     // A SECOND VISIT REPLACES NOTHING.
     assert!(matches!(context.commit(), PrivateCommitted::AlreadyCommitted));
-    let _ = evidence;
     assert!(
         durable
             .committed_obligation(c.place)
@@ -34213,37 +34244,38 @@ fn a_commitment_waits_for_the_evidence_it_rests_on() {
 
 #[test]
 fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
-    // WHAT A COMMITTED OBLIGATION NAMES IS THE EVIDENCE, NOT A COPY OF ITS
-    // SHAPE. A worker that panicked was carrying something, and an obligation
-    // that recorded only "it panicked" while the payload went with the
-    // caller's record would have kept the wrong thing.
+    // WHAT KEEPS THE EVIDENCE IS THE CUSTODY, TAKEN BEFORE ANY OF THIS BEGAN.
+    // A worker that panicked was carrying something; an obligation that
+    // recorded only "it panicked" while the payload went with the caller's
+    // record would have kept the wrong thing, and a commitment that HANDED the
+    // only handle back would have offered a keeper rather than made one.
     //
-    // AND THE STORE NAMES IT RATHER THAN OWNING IT. A panic payload is
-    // whatever the frame was carrying and may hold a strong handle to this
-    // very store, so a store that owned one could be on a ring with itself.
-    // The commitment hands its caller the evidence and the caller is its
-    // keeper; this control is that keeper.
+    // NOTHING IS RETURNED HERE. Every frame that produced this evidence --
+    // the reaping record, the fencing record, the commitment context, the
+    // borrowed view -- goes away below, and the payload is read afterwards out
+    // of the home the custody has owned throughout.
     let c = commit_fixture(XServerFrontendClientId(8462), true);
     let durable = c.g.f.fixture.durable.clone();
-    let outer = durable.clone();
     let place = c.place;
-    let kept = {
+    let custody = custody_for(&c.g.f);
+    {
+        let view = custody.view();
+        // A view reaches everything the custody has, and owns none of it.
+        assert!(view.identity().same_as(custody.identity()));
+        assert!(Arc::ptr_eq(view.join(), custody.join()));
         let lease = lease_of(&c.g.f.fixture.registration);
-        let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+        let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
         let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
-        let destination = durable
+        let destination = view
+            .store()
             .prepare_internal_holder(&lease)
             .expect("its own destination");
-        let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
-        let PrivateCommitted::Committed(evidence) = context.commit() else {
-            panic!("its own evidence is complete")
-        };
-        evidence
-        // The reaping and fencing records, and the commitment context, all go
-        // here. The exit record goes with the fixture at the end.
-    };
+        let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
+        assert!(matches!(context.commit(), PrivateCommitted::Committed));
+        // And the borrowed view ends here, which is the end of a borrow.
+    }
 
     let obligation = durable
         .committed_obligation(place)
@@ -34252,10 +34284,10 @@ fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
     assert_eq!(obligation.identity().place(), place);
     let evidence = obligation
         .join()
-        .expect("its keeper still has the evidence");
+        .expect("its custodian still owns the evidence");
     assert!(
-        Arc::ptr_eq(&evidence, &kept),
-        "the very evidence the commitment handed back, not a copy"
+        Arc::ptr_eq(&evidence, custody.join()),
+        "the very home the custody has owned since before the join"
     );
     let PrivateJoinResult::Panicked(payload) = evidence.result().expect("a completed join") else {
         panic!("this worker panicked")
@@ -34267,13 +34299,14 @@ fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
             .downcast_ref::<&str>()
             .copied(),
         Some("what this connection's worker carried out with it"),
-        "the exact payload, after every frame that joined it has gone"
+        "the exact payload, after every frame that made it has gone"
     );
     drop(evidence);
 
-    // AND WHEN ITS KEEPER LETS GO, the obligation says the evidence has gone
-    // rather than that the join said nothing.
-    drop(kept);
+    // AND ONLY THE CUSTODIAN LETTING GO ENDS IT. The obligation then says the
+    // evidence has gone, which is not a disposition and not a fresh fact about
+    // the join.
+    drop(custody);
     assert!(
         durable
             .committed_obligation(place)
@@ -34282,7 +34315,7 @@ fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
             .is_none(),
         "the store named it and did not own it"
     );
-    drop((c.g.f.fixture, outer));
+    drop(c.g.f.fixture);
 }
 
 #[test]
@@ -34326,8 +34359,9 @@ fn a_commitment_records_what_the_gate_said_whichever_it_was() {
         let c = commit_fixture(XServerFrontendClientId(client), false);
         let durable = c.g.f.fixture.durable.clone();
         let outer = durable.clone();
+        let custody = custody_for(&c.g.f);
         let lease = lease_of(&c.g.f.fixture.registration);
-        let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         if let Some(arrange) = arrange {
             arrange(&c);
@@ -34338,10 +34372,8 @@ fn a_commitment_records_what_the_gate_said_whichever_it_was() {
             .prepare_internal_holder(&lease)
             .expect("its own destination");
         let context =
-            PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
-        let PrivateCommitted::Committed(_evidence) = context.commit() else {
-            panic!("its own evidence is complete")
-        };
+            PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
+        assert!(matches!(context.commit(), PrivateCommitted::Committed));
         assert_eq!(
             durable
                 .committed_obligation(c.place)
@@ -34362,8 +34394,9 @@ fn a_commitment_is_not_gated_by_a_diagnostic_somebody_is_holding() {
     let c = commit_fixture(XServerFrontendClientId(8466), true);
     let durable = c.g.f.fixture.durable.clone();
     let outer = durable.clone();
+    let custody = custody_for(&c.g.f);
     let lease = lease_of(&c.g.f.fixture.registration);
-    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
@@ -34376,9 +34409,9 @@ fn a_commitment_is_not_gated_by_a_diagnostic_somebody_is_holding() {
     };
     let payload_held = payload.lock().expect("a readable payload");
     let diagnostic_held = c.g.exit.outcome.lock().expect("a readable exit record");
-    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+    let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
     assert!(
-        matches!(context.commit(), PrivateCommitted::Committed(_)),
+        matches!(context.commit(), PrivateCommitted::Committed),
         "neither lock is on the way to the obligation"
     );
     drop((payload_held, diagnostic_held, c.g.f.fixture, outer));
@@ -34401,18 +34434,17 @@ fn a_commitment_takes_no_further_credit_and_moves_the_duty_once() {
         .expect("a name");
     let reserved_before = durable.continuations_reserved();
     let abandoned_before = durable.continuations_abandoned();
+    let custody = custody_for(&c.g.f);
     let lease = lease_of(&c.g.f.fixture.registration);
-    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
     let destination = durable
         .prepare_internal_holder(&lease)
         .expect("its own destination");
-    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
-    let PrivateCommitted::Committed(_evidence) = context.commit() else {
-        panic!("its own evidence is complete")
-    };
+    let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
+    assert!(matches!(context.commit(), PrivateCommitted::Committed));
 
     assert_eq!(durable.continuations_reserved(), reserved_before);
     assert_eq!(durable.continuations_abandoned(), abandoned_before);
@@ -34446,18 +34478,17 @@ fn a_second_commitment_replaces_nothing() {
     let c = commit_fixture(XServerFrontendClientId(8468), false);
     let durable = c.g.f.fixture.durable.clone();
     let outer = durable.clone();
+    let custody = custody_for(&c.g.f);
     let lease = lease_of(&c.g.f.fixture.registration);
-    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
     let destination = durable
         .prepare_internal_holder(&lease)
         .expect("its own destination");
-    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
-    let PrivateCommitted::Committed(_evidence) = context.commit() else {
-        panic!("its own evidence is complete")
-    };
+    let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
+    assert!(matches!(context.commit(), PrivateCommitted::Committed));
 
     // THERE IS NO SECOND LEASE TO ASK WITH: the first commitment consumed it,
     // and the registration has none to give.
@@ -34495,8 +34526,10 @@ fn a_commitment_leaves_no_store_self_cycle() {
     // AND THIS CONTROL COVERS THE RETURNED CASE ONLY. A join that panicked
     // carries whatever the frame was carrying, which may be anything at all
     // including a handle to this store; that the graph still releases then
-    // rests on the keeper being outside it, which is the control beside this
-    // one, not on anything a Returned join can show.
+    // rests on the custodian being outside it. The control that shows THAT is
+    // a_payload_holding_the_store_is_a_chain_from_its_custodian, where the
+    // payload really is a store handle -- not the neighbouring panic controls,
+    // whose payloads are strings and establish nothing about this graph.
     let capability;
     let outer;
     {
@@ -34504,8 +34537,9 @@ fn a_commitment_leaves_no_store_self_cycle() {
         let durable = c.g.f.fixture.durable.clone();
         capability = durable.settlement_ref();
         outer = durable.clone();
+        let custody = custody_for(&c.g.f);
         let lease = lease_of(&c.g.f.fixture.registration);
-        let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
         let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
@@ -34513,10 +34547,8 @@ fn a_commitment_leaves_no_store_self_cycle() {
             .prepare_internal_holder(&lease)
             .expect("its own destination");
         let context =
-            PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
-        let PrivateCommitted::Committed(_evidence) = context.commit() else {
-            panic!("its own evidence is complete")
-        };
+            PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
+        assert!(matches!(context.commit(), PrivateCommitted::Committed));
         drop((c.g.f.fixture, durable));
     }
     assert!(
@@ -34543,8 +34575,9 @@ fn a_commitment_whose_place_moved_on_leaves_the_successor_alone() {
     let mut c = commit_fixture(XServerFrontendClientId(8470), false);
     let durable = c.g.f.fixture.durable.clone();
     let outer = durable.clone();
+    let custody = custody_for(&c.g.f);
     let lease = lease_of(&c.g.f.fixture.registration);
-    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
@@ -34587,7 +34620,7 @@ fn a_commitment_whose_place_moved_on_leaves_the_successor_alone() {
         .expect("the successor's own destination");
     assert_eq!(maintenance_destination(&durable, place), Some("promised"));
 
-    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+    let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
     assert!(matches!(context.commit(), PrivateCommitted::Stale));
     assert_eq!(
         maintenance_destination(&durable, place),
@@ -34632,8 +34665,9 @@ fn a_commitment_with_a_destination_from_elsewhere_is_refused() {
     let c = commit_fixture(XServerFrontendClientId(8472), false);
     let durable = c.g.f.fixture.durable.clone();
     let outer = durable.clone();
+    let custody = custody_for(&c.g.f);
     let lease = lease_of(&c.g.f.fixture.registration);
-    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
@@ -34653,7 +34687,7 @@ fn a_commitment_with_a_destination_from_elsewhere_is_refused() {
         .expect("the other store's own destination");
 
     let foreign_context =
-        PrivateCommitmentContext::bound_to(&outer, &fence, lease, foreign);
+        PrivateCommitmentContext::bound_to(&custody, &fence, lease, foreign);
     assert!(matches!(foreign_context.commit(), PrivateCommitted::Foreign));
     assert!(durable.committed_obligation(c.place).is_none());
     assert_eq!(
@@ -34670,10 +34704,8 @@ fn a_commitment_with_a_destination_from_elsewhere_is_refused() {
     let destination = durable
         .prepare_internal_holder(&lease)
         .expect("its own destination");
-    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
-    let PrivateCommitted::Committed(_evidence) = context.commit() else {
-        panic!("its own evidence is complete")
-    };
+    let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
+    assert!(matches!(context.commit(), PrivateCommitted::Committed));
     drop((
         c.g.f.fixture,
         other_registration,
@@ -34681,4 +34713,260 @@ fn a_commitment_with_a_destination_from_elsewhere_is_refused() {
         other_lease,
         outer,
     ));
+}
+
+#[test]
+fn an_operation_that_unwinds_loses_the_operation_and_not_the_result() {
+    // THE WHOLE POINT OF TAKING CUSTODY FIRST. A reaping publishes into a home
+    // its custodian already owned, so a frame that returns -- or one that
+    // unwinds -- takes itself away and leaves the result where it was.
+    //
+    // THE UNWIND IS THE CALLER'S, AFTER THE REAL OPERATION RETURNED. It
+    // establishes that boundary and no other: nothing here witnesses an
+    // arbitrary instruction inside a reaping.
+    let f = worker_fixture(XServerFrontendClientId(8481));
+    let custody = custody_for(&f);
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
+    let slot = started_worker(&f, || panic!("what the custodian keeps"));
+
+    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
+        assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+        panic!("the frame that did the reaping goes here");
+    }));
+    assert!(unwound.is_err(), "the operation's frame unwound");
+
+    // AND THE RESULT IS EXACTLY WHERE IT WAS PUBLISHED.
+    let PrivateJoinResult::Panicked(payload) =
+        custody.join().result().expect("a completed join")
+    else {
+        panic!("this worker panicked")
+    };
+    assert_eq!(
+        payload
+            .lock()
+            .expect("a readable payload")
+            .downcast_ref::<&str>()
+            .copied(),
+        Some("what the custodian keeps"),
+        "the exact payload, after the frame that joined it unwound"
+    );
+    drop(f.fixture);
+}
+
+#[test]
+fn losing_an_operation_before_a_result_exists_invents_none() {
+    // AN UNWIND BEFORE PUBLICATION MUST NOT LEAVE A RESULT. What the home says
+    // then is what it said before: not begun, or an attempt that may have
+    // consumed a handle -- readable states of this same home, and neither a
+    // join outcome.
+    let f = worker_fixture(XServerFrontendClientId(8482));
+    let custody = custody_for(&f);
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let slot = started_worker(&f, move || {
+        let _ = held.recv();
+    });
+
+    assert_eq!(custody.join().phase(), PrivateReapingPhase::NotBegun);
+    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
+        panic!("the frame goes before it ever asks");
+    }));
+    assert!(unwound.is_err());
+    assert_eq!(
+        custody.join().phase(),
+        PrivateReapingPhase::NotBegun,
+        "nothing was begun, so nothing says it was"
+    );
+    assert!(custody.join().result().is_none(), "and no result was invented");
+
+    // The worker is released and joined before the registration goes, because
+    // teardown is not worker-aware.
+    drop(release);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    drop(f.fixture);
+}
+
+#[test]
+fn a_commitment_needs_no_returned_handle_to_keep_its_evidence() {
+    // COMMITTING RETURNS NOTHING TO KEEP. The custody owned this home before
+    // the reaping began and still does; there is nothing a caller could drop
+    // or unwind holding that would cost the result.
+    let c = commit_fixture(XServerFrontendClientId(8483), true);
+    let durable = c.g.f.fixture.durable.clone();
+    let place = c.place;
+    let custody = custody_for(&c.g.f);
+    let lease = lease_of(&c.g.f.fixture.registration);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination");
+    let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
+    // The outcome is a word, not a handle: there is nothing here to discard.
+    assert!(matches!(context.commit(), PrivateCommitted::Committed));
+
+    // AND THE COMMITTED NAME RESOLVES THE EXACT ORIGINAL HOME.
+    let named = durable
+        .committed_obligation(place)
+        .expect("an obligation")
+        .join()
+        .expect("its custodian owns it");
+    assert!(Arc::ptr_eq(&named, custody.join()));
+    drop((c.g.f.fixture, custody));
+}
+
+#[test]
+fn a_commitment_refuses_another_connections_evidence() {
+    // A COMMITMENT CANNOT BE GIVEN ANY LIVE KEEPER. Its custody must be about
+    // the connection whose place it is committing, by name AND by home.
+    //
+    // TWO SEPARATE MISTAKES, and each is made here with everything else right,
+    // so neither is caught by a check that was already there. Both custodies
+    // belong to the same store, so the store comparison cannot refuse either.
+    let c = commit_fixture(XServerFrontendClientId(8484), false);
+    let durable = c.g.f.fixture.durable.clone();
+    // A SIBLING OF THE SAME STORE: its own reserved place, its own home.
+    let sibling = spare_registration(&c.g.f.fixture);
+    let sibling_custody = PrivateEvidenceCustody::prepared_for(
+        &durable,
+        sibling
+            .maintenance_identity()
+            .expect("a second place, so a second name"),
+    );
+    // BOTH CUSTODIES BEFORE THE LEASE IS TAKEN: a name is handed out from the
+    // registration's lease, so a custody asked for after the lease has gone
+    // has nothing to be about.
+    let twin = custody_for(&c.g.f);
+    let lease = lease_of(&c.g.f.fixture.registration);
+
+    // (1) THE WRONG NAME. The whole operation runs against the sibling's
+    // custody, so the fencing's evidence IS the home this context names, and
+    // the sibling's store is this store. Only the name says this reservation
+    // is not the one that custody is about.
+    let misnamed = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &sibling_custody);
+    let misfence = PrivateFenceRecord::bound_to(&misnamed, Arc::clone(&c.g.gate));
+    assert_eq!(misnamed.reap().reaped, PrivateReaped::Joined);
+    assert_eq!(misfence.record_fence(), PrivateFenced::Recorded);
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination");
+    let wrong_name =
+        PrivateCommitmentContext::bound_to(&sibling_custody, &misfence, lease, destination);
+    assert!(
+        matches!(wrong_name.commit(), PrivateCommitted::Foreign),
+        "the store and the home matched, and the name did not"
+    );
+    assert!(
+        durable.committed_obligation(c.place).is_none(),
+        "nothing was stated about this connection"
+    );
+
+    // (2) THE WRONG HOME. This custody has the RIGHT name -- it is about this
+    // very connection -- but it is not the keeper the fencing published into,
+    // so an obligation naming its home would name a home holding nothing.
+    let (lease, destination) = wrong_name.into_parts().expect("nothing was consumed");
+    assert!(twin.identity().same_as(&lease.maintenance_identity()));
+    let wrong_home = PrivateCommitmentContext::bound_to(&twin, &misfence, lease, destination);
+    assert!(
+        matches!(wrong_home.commit(), PrivateCommitted::Foreign),
+        "the store and the name matched, and the home did not"
+    );
+    assert!(durable.committed_obligation(c.place).is_none());
+
+    // AND ITS OWN CUSTODY, over its own fencing, refuses for the honest
+    // reason: the sibling's reaping took the one join, so this connection's
+    // own custody has no evidence of its own to commit.
+    let (lease, destination) = wrong_home.into_parts().expect("nothing was consumed");
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &twin);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    assert_eq!(record.reap().reaped, PrivateReaped::HandedElsewhere);
+    assert_eq!(fence.record_fence(), PrivateFenced::JoinIncomplete);
+    let context = PrivateCommitmentContext::bound_to(&twin, &fence, lease, destination);
+    assert!(
+        matches!(context.commit(), PrivateCommitted::NotYetEvidenced),
+        "a different refusal, and not a foreign one"
+    );
+    drop((c.g.f.fixture, sibling, sibling_custody, twin));
+}
+
+#[test]
+fn a_payload_holding_the_store_is_a_chain_from_its_custodian() {
+    // THE CASE THE EXTERNAL KEEPER EXISTS FOR. A panic payload is whatever the
+    // frame was carrying, and it may be a handle to this very store. If the
+    // store owned the evidence, that would be a ring with itself: store,
+    // holder, obligation, evidence, payload, store.
+    //
+    // It does not own it. The custodian does, so the chain runs custodian ->
+    // evidence -> payload -> store, and letting the custodian go releases all
+    // of it -- with nothing broken by hand in cleanup.
+    let capability;
+    let place;
+    let custody;
+    {
+        let c = commit_fixture(XServerFrontendClientId(8486), false);
+        let durable = c.g.f.fixture.durable.clone();
+        capability = durable.settlement_ref();
+        place = c.place;
+        custody = custody_for(&c.g.f);
+
+        // A real worker panicking with a real handle to this store.
+        let carried = durable.clone();
+        let exit = Arc::new(PrivateWorkerExit::unstarted());
+        let slot = started_worker(&c.g.f, move || {
+            std::panic::panic_any(carried);
+        });
+        let lease = lease_of(&c.g.f.fixture.registration);
+        let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
+        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+        assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+        assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+        let destination = durable
+            .prepare_internal_holder(&lease)
+            .expect("its own destination");
+        let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
+        assert!(matches!(context.commit(), PrivateCommitted::Committed));
+
+        // The payload really is a store handle.
+        let evidence = custody.join();
+        let PrivateJoinResult::Panicked(payload) = evidence.result().expect("a completed join")
+        else {
+            panic!("this worker panicked")
+        };
+        assert!(
+            payload
+                .lock()
+                .expect("a readable payload")
+                .downcast_ref::<PrivateSettlementOwner>()
+                .is_some(),
+            "it is carrying a handle to this very store"
+        );
+        // Every ordinary holder goes: the connection, its instance, the
+        // reaping and fencing records, and the fixture's own store handle.
+        drop((c.g.f.fixture, durable, slot, exit));
+    }
+    assert!(
+        capability.owner().is_some(),
+        "the custodian's chain keeps the store"
+    );
+    assert!(
+        custody
+            .store()
+            .committed_obligation(place)
+            .expect("the obligation is still here")
+            .join()
+            .is_some(),
+        "and the obligation still reaches its evidence"
+    );
+
+    // AND THE CUSTODIAN LETTING GO RELEASES ALL OF IT.
+    drop(custody);
+    assert!(
+        capability.owner().is_none(),
+        "a payload holding the store is a chain from outside, not a ring"
+    );
 }

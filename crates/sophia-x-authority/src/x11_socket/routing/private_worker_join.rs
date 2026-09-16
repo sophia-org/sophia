@@ -132,12 +132,14 @@ struct PrivateReapingRecord<'a> {
     claimed: AtomicBool,
     /// Where this join's evidence is published.
     ///
-    /// OWNED IN ITS OWN RIGHT, AND ALLOCATED HERE -- before any handle is
-    /// consumed, which is what keeps the interval between a join returning and
-    /// its result being kept free of allocation. Something that goes on to
-    /// keep this evidence clones the handle; it does not have to keep this
-    /// record, the worker's slot, its exit diagnostics or its registration
-    /// alive in order to hold what a completed join returned.
+    /// BORROWED FROM A CUSTODY THAT ALREADY OWNED IT. This record does not
+    /// make the home it publishes into: it is handed one whose owner is in a
+    /// scope outside this operation, so losing this record -- by returning, by
+    /// refusing, or by unwinding -- loses the record and not the result.
+    ///
+    /// A home allocated here would have had its only handle in this frame, and
+    /// handing it back afterwards would have offered a keeper rather than
+    /// making one.
     evidence: Arc<PrivateJoinEvidence>,
 }
 
@@ -215,15 +217,23 @@ struct PrivateReaping {
 impl<'a> PrivateReapingRecord<'a> {
     /// A record for a join nobody has asked for yet, over this slot and this
     /// worker's exit record.
-    fn bound_to(slot: &'a Mutex<PrivateWorkerSlot>, exit: &'a PrivateWorkerExit) -> Self {
+    /// A record for a join nobody has asked for yet, over this slot, this
+    /// worker's exit record, and a publication home somebody else keeps.
+    ///
+    /// THE CUSTODY IS TAKEN BEFORE ANY HANDLE IS. That order is the component
+    /// this belongs to: a result is published into a home that already had an
+    /// owner, so no frame here is the only thing standing between the evidence
+    /// and nothing.
+    fn bound_to(
+        slot: &'a Mutex<PrivateWorkerSlot>,
+        exit: &'a PrivateWorkerExit,
+        custody: &PrivateEvidenceCustody,
+    ) -> Self {
         Self {
             slot,
             exit,
             claimed: AtomicBool::new(false),
-            evidence: Arc::new(PrivateJoinEvidence {
-                phase: std::sync::atomic::AtomicU8::new(0),
-                result: std::sync::OnceLock::new(),
-            }),
+            evidence: Arc::clone(custody.join()),
         }
     }
 
@@ -235,11 +245,11 @@ impl<'a> PrivateReapingRecord<'a> {
         self.evidence.result()
     }
 
-    /// A handle on this join's evidence, for something that will keep it.
+    /// The publication home this record was given.
     ///
-    /// THE EVIDENCE, NOT THE RECORD. What a committed obligation needs is what
-    /// the join returned; keeping this record would keep a caller's frame, its
-    /// worker's slot and its exit diagnostics alive for the sake of it.
+    /// FOR COMPARING, NOT FOR KEEPING. Whoever needs to know that this record
+    /// publishes into a particular custody's home asks for it and checks; what
+    /// keeps that home alive is the custody, not this and not the caller.
     fn join_evidence(&self) -> Arc<PrivateJoinEvidence> {
         Arc::clone(&self.evidence)
     }
