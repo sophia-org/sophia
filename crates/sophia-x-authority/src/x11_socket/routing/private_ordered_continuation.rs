@@ -347,10 +347,20 @@ impl PrivateOrderedContinuationSlot {
     /// Give up this place without disposing of it, and say so.
     fn abandon(&mut self) {
         let mut held = self.owner.records_even_if_poisoned();
-        // Only over a place that is still this lease's. A place that has gone
-        // on to another connection is accounted for by whoever holds it now,
-        // and marking here would charge an abandonment against them.
-        if self.holds(&held) {
+        // ONLY IF THIS LEASE STILL HOLDS THE DUTY, and only over a place that
+        // is still its own.
+        //
+        // `armed` is not bookkeeping about whether a disposal has run: it is
+        // who owes one. A lease that handed the duty on -- to the credit a
+        // conversion published over the same place -- owes nothing, and a
+        // refusal arriving afterwards must not mark what the new holder will
+        // mark. Ignoring it here meant one refused conversion was counted
+        // twice: once by a lease that had already given the duty away, and
+        // once by whoever ended up disposing of the credit.
+        //
+        // And a place that has gone on to another connection is accounted for
+        // by whoever holds it now; marking would charge them an abandonment.
+        if self.armed && self.holds(&held) {
             held.continuations_abandoned = held.continuations_abandoned.saturating_add(1);
         }
         self.armed = false;

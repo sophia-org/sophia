@@ -612,14 +612,17 @@ impl PrivateOrderedContinuationSlot {
                     armed: true,
                 },
             });
-            // THE DUTY MOVES HERE, IN ONE WRITE UNDER ONE LOCK. Publishing an
-            // armed credit while the lease was still armed would leave two
-            // disposers over one reserved place: an unwind before the
-            // hand-over finished had them both mark it, and one place would be
-            // abandoned twice. Disarming the lease afterwards instead would
-            // leave a window with neither. Here there is exactly one holder of
-            // the duty at every instant, and no interleaving in between,
-            // because the store is held across both.
+            // THE DUTY MOVES HERE: two assignments, serialized under one
+            // acquisition of the store. Not one write -- they are two -- but
+            // nothing can observe the store between them, and neither can
+            // fail.
+            //
+            // The order matters if they are ever separated. Publishing the
+            // credit armed and then disarming the lease leaves both armed in
+            // between, so one reserved place gets marked twice. Disarming
+            // first and then publishing leaves neither armed, so a place with
+            // work still owed against it gets marked by nobody. Held together,
+            // there is exactly one holder of the duty at every instant.
             //
             // The lease is DISARMED, not disposed of: the place is not given
             // back and not counted abandoned, because it is not going
@@ -630,18 +633,25 @@ impl PrivateOrderedContinuationSlot {
         let installed = self.install(source);
         if installed != PrivateContinuationInstall::Installed {
             // Nothing was handed over, so there is nothing for a holder to be
-            // responsible for. The hand-over has already accounted for the
-            // place -- it is the one duty, handed straight back by the same
-            // call that refused -- so the credit is taken out disarmed and a
-            // second mark is not made. Dropped after the store is released:
-            // a credit's own disposal takes it.
-            let mut retired = {
+            // responsible for. The credit is taken out and dropped STILL
+            // ARMED, because it is what holds the duty now: the hand-over
+            // above gave it up when the credit was published, and a refusal
+            // does not hand it back.
+            //
+            // AND IT MAY NOT BE HERE TO TAKE. Between publication and this
+            // line the holder is in the store and anything that can read the
+            // store can take it; whoever has it then holds the duty and
+            // discharges it when they drop it. Either way it is discharged
+            // once, by whichever of them actually has it -- which is why this
+            // does not disarm anything and does not mark anything itself.
+            //
+            // Dropped after the store is released: a credit's own disposal
+            // takes the store, and dropping one under this guard would be
+            // this thread waiting for itself.
+            let retired = {
                 let mut held = outer.records_even_if_poisoned();
                 PrivateSettlementOwner::retire_holder_for(&mut held, index, &record)
             };
-            if let Some(holder) = retired.as_mut() {
-                holder.credit.armed = false;
-            }
             drop(retired);
             return PrivateInternalConversion::NotInstalled(installed);
         }

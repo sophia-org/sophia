@@ -21724,6 +21724,25 @@ fn lease_and_source(
     (lease, source)
 }
 
+/// Wait until the store holds a published holder, and say so rather than
+/// waiting a while and assuming.
+///
+/// The record's lock is what stops a hand-over completing; this is what
+/// establishes that a holder was published before it could. Bounded, because a
+/// control that never finishes reports nothing.
+fn holder_published(durable: &PrivateSettlementOwner) -> bool {
+    for _ in 0..20_000 {
+        if matches!(
+            durable.records_even_if_poisoned().holders.first(),
+            Some(PrivateHolderPlace::Taken(_))
+        ) {
+            return true;
+        }
+        std::thread::yield_now();
+    }
+    false
+}
+
 /// Read one capsule out of the place a credit names, through the credit.
 fn credit_receives(credit: &PrivateInternalCredit) -> PrivateCreditReach<Option<XAuthorityOrderedDelivery>> {
     credit.with_place(|continuation| continuation.queue().try_recv().ok())
@@ -22103,24 +22122,16 @@ fn a_holder_is_in_place_before_the_work_leaves_its_caller() {
         (outcome, source)
     });
     wait.recv().expect("the converting thread started");
-    // WHAT THIS WAIT ESTABLISHES, exactly: the record's lock is held here, so
-    // the hand-over cannot complete, and a holder observed in the meantime was
-    // published before installation could finish. It does NOT establish that
-    // the other thread has reached the lock -- a sleep cannot say that -- and
-    // nothing below rests on its having done so.
-    std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(
-        durable.holders_taken(),
-        Some(1),
+    // WHAT THIS ESTABLISHES, exactly: the record's lock is held here, so the
+    // hand-over cannot complete, and a holder seen in the meantime was
+    // published before installation could. The holder being there is the
+    // rendezvous -- not elapsed time, which would say nothing about where the
+    // other thread had got to.
+    assert!(
+        holder_published(&durable),
         "the place is named before the work can be installed"
     );
-    assert!(
-        matches!(
-            durable.records_even_if_poisoned().holders[0],
-            PrivateHolderPlace::Taken(_)
-        ),
-        "and it is a holder, not still a promise"
-    );
+    assert_eq!(durable.holders_taken(), Some(1));
     assert!(
         blocker.is_none(),
         "while the record it names is still empty"
@@ -22251,14 +22262,14 @@ fn a_promise_made_for_one_reservation_is_not_committed_against_its_successor() {
     // through the ordinary path for a connection that was never exposed, and
     // the successor is an ordinary registration.
     let durable = PrivateSettlementOwner::default();
-    let client = XServerFrontendClientId(8371);
     let private = private_over(&durable, 2);
-    let (first, _first_channels) = private
-        .broker
-        .registry
-        .register_client_with_admission(client, Some(admitted(client)))
-        .expect("a place and a row");
-    let lease = lease_of(&first);
+    // RESERVED WITHOUT BEING PUBLISHED, which is what relinquish_unexposed is
+    // for: registering a client publishes its row, and a place given back
+    // after that is not an unexposed one. The bound comes from the real
+    // instance above; the reservation is the same call registration makes.
+    let lease = durable
+        .reserve_ordered_continuation()
+        .expect("a declared bound leaves a place");
     let index = lease.index;
     let stale = durable
         .prepare_internal_holder(&lease)
@@ -22267,7 +22278,7 @@ fn a_promise_made_for_one_reservation_is_not_committed_against_its_successor() {
     assert_eq!(
         durable.continuations_reserved(),
         Some(0),
-        "a connection that published nothing gives its place back"
+        "a reservation that published nothing gives its place back"
     );
 
     // THE SAME NUMBER, A DIFFERENT CONNECTION.
@@ -22313,7 +22324,102 @@ fn a_promise_made_for_one_reservation_is_not_committed_against_its_successor() {
         &cell,
         &landed.finalizer().expect("carried").completion
     ));
-    drop((first, successor_registration, private, successor, named, outer));
+    drop((successor_registration, private, successor, named, outer));
+}
+
+#[test]
+fn a_refused_conversion_marks_its_place_once_whoever_ends_up_holding_it() {
+    // ONE PLACE, ONE MARK, ACROSS THE REFUSAL. The hand-over gives the duty up
+    // when the credit is published, so a refusal arriving afterwards must not
+    // mark what the credit's holder will mark. It did: the hand-over's own
+    // refusal path marked regardless of whether the lease still owed one, and
+    // the credit marked again -- one reserved place, abandoned twice.
+    //
+    // NO HOOK AND NO STAGING. The record's own lock stops the hand-over where
+    // it must take it, the published holder is taken through the ordinary API
+    // while it cannot complete, and the empty source is the supported refusal
+    // the control beside this one already uses. The connection's actual
+    // accepted work is kept aside, where a caller would have it.
+    let durable = PrivateSettlementOwner::default();
+    let client = XServerFrontendClientId(8373);
+    let (private, registration, cell, frames, _wire) =
+        converted_fixture(&durable, client, 83730);
+    let (lease, kept) = lease_and_source(&registration);
+    let index = lease.index;
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("a holder place");
+    let record = {
+        let held = durable.records_even_if_poisoned();
+        let PrivateOrderedContinuationPlace::Taken(record) = &held.continuations[index] else {
+            panic!("its place holds the record")
+        };
+        Arc::clone(record)
+    };
+
+    let blocker = record.lock().expect("hold the destination");
+    let converting = durable.clone();
+    let outer = durable.clone();
+    let converter = std::thread::spawn(move || {
+        let mut empty = None;
+        lease.convert_to_internal(&converting, destination, &mut empty)
+    });
+    assert!(
+        holder_published(&durable),
+        "the holder is published before the hand-over can refuse"
+    );
+
+    // TAKEN BY SOMETHING THAT IS NOT THE CONVERSION, which is the whole point:
+    // from publication the holder is in the store and anything that reads the
+    // store can have it. Whoever has it holds the duty.
+    let taken = durable
+        .take_internal_holder(0)
+        .expect("the published holder");
+    assert_eq!(durable.continuations_abandoned(), Some(0));
+    drop(taken);
+    assert_eq!(
+        durable.continuations_abandoned(),
+        Some(1),
+        "the holder's own disposal discharges it"
+    );
+
+    // AND THE REFUSAL DOES NOT MARK IT AGAIN.
+    drop(blocker);
+    let outcome = converter.join().expect("the conversion finished");
+    assert!(matches!(
+        outcome,
+        PrivateInternalConversion::NotInstalled(PrivateContinuationInstall::NothingHandedOver)
+    ));
+    assert_eq!(
+        durable.continuations_abandoned(),
+        Some(1),
+        "one reserved place, one mark"
+    );
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    assert_eq!(durable.holders_taken(), Some(0));
+
+    // And the work the caller kept is untouched: the exact capsule, its frames
+    // and its unanswered completion.
+    let PrivateOrderedContinuation::Setup { .. } = kept.as_ref().expect("kept by its caller") else {
+        panic!("the custody this registration bound")
+    };
+    let capsule = kept
+        .as_ref()
+        .expect("kept by its caller")
+        .queue()
+        .try_recv()
+        .expect("the capsule accepted before any of this");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(83730)
+    );
+    assert_eq!(order_pass_frames(&capsule), frames);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &capsule.finalizer().expect("carried").completion
+    ));
+    assert!(cell.answer().is_none());
+    drop((registration, private, kept, capsule, cell, outer));
 }
 
 #[test]
