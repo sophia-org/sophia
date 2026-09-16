@@ -22689,7 +22689,15 @@ fn an_unplaced_attempt_goes_back_and_the_ledger_hands_the_debt_out_again() {
         again.hold, incarnation,
         "the debt is outstanding again, so the return really did land"
     );
-    private.relinquish_outstanding_attempt(again.token);
+    assert_ne!(
+        again.token, claim.token,
+        "and it is a new grant, not the old token handed back"
+    );
+    assert!(
+        private.relinquish_outstanding_attempt(again.token),
+        "this control's own cleanup is confirmed too, so it leaves the ledger \
+         as it found it"
+    );
 }
 
 #[test]
@@ -22720,9 +22728,18 @@ fn a_dispatching_attempt_is_never_given_back_as_unused() {
         private.relinquish_one_attempt().is_none(),
         "a grant that may have been used is not an unused reservation"
     );
-    assert!(
-        private.terminal.attempt_custody.is_some(),
-        "and it stays held rather than being quietly dropped"
+    assert_eq!(
+        private
+            .terminal
+            .attempt_custody
+            .map(|custody| (custody.token, custody.phase)),
+        Some((claim.token, PrivateAttemptPhase::Dispatching)),
+        "it stays held, as exactly the token and phase it was"
+    );
+    assert_eq!(
+        private.terminal.settling[0].custody.attempt,
+        Some(claim.token),
+        "and the record goes on naming that same token"
     );
 
     // THE LEDGER STILL HAS IT. The debt is not offered again, which is what an
@@ -22735,10 +22752,14 @@ fn a_dispatching_attempt_is_never_given_back_as_unused() {
         })
         .expect("a readable authority")
         .expect("this issuer answers for it");
+    // One debt, one attempt: with that attempt outstanding there is nothing
+    // left for the ledger to grant at all.
     assert!(
-        next.is_none_or(|claim| claim.hold != incarnation),
-        "a debt with an attempt outstanding is not granted again"
+        next.is_none(),
+        "a debt with an attempt outstanding is not granted again, and this \
+         fixture has no other debt to offer"
     );
+    let _ = incarnation;
 }
 
 
@@ -22788,6 +22809,159 @@ fn an_attempt_whose_return_was_not_confirmed_stays_named_here() {
             .map(|custody| custody.phase),
         Some(PrivateAttemptPhase::Unplaced),
         "and goes on knowing it was never placed"
+    );
+}
+
+
+#[test]
+fn a_record_that_cannot_finish_says_which_things_are_stopping_it() {
+    // THE REASONS COEXIST AND ARE REPORTED SEPARATELY. A connection can have
+    // no way to end its wire AND a closure nobody could establish. They are
+    // independent facts of one bounded record: reporting either alone loses
+    // the other, and collapsing them into "not finished" sends whoever reads
+    // it looking for the wrong thing.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8551);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let other = XServerFrontendClientId(8552);
+    let (other_registration, other_channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(other, Some(admitted(other)))
+        .expect("a second place and row");
+
+    // A real refusal leaves it holding a receiver and no way to reach the
+    // connection at all.
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    assert_eq!(
+        registration
+            .bind_ordered_output(other_channels.ordered, &output, &wire, &pending)
+            .unwrap_or_else(|_| panic!("a fresh registration holds no custody")),
+        Some(X11OrderedServingRefusal::ForeignReceiver)
+    );
+    // And a producer unwinds inside its gate, so the closure establishes
+    // nothing either.
+    let gate = registration.ordered_gate.clone();
+    let holder = std::thread::spawn(move || {
+        let _inside = gate.fenced.lock().expect("an open gate");
+        panic!("a handover unwound inside this gate");
+    });
+    assert!(holder.join().is_err(), "the holder unwound");
+    drop(channels);
+    drop(registration);
+    drop(other_registration);
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+
+    let readings = durable
+        .retained_dispositions()
+        .expect("a readable store");
+    let (_, stuck) = readings
+        .iter()
+        .find(|(index, _)| *index == 0)
+        .expect("the connection that could not finish");
+    assert_eq!(
+        stuck.ending,
+        PrivateRetainedEnding::NoCapability,
+        "no handle on the connection: not a refused shutdown, and not an ending"
+    );
+    assert_eq!(
+        stuck.closure,
+        Some(PrivateHandoverFence::Unreadable),
+        "and separately, a closure nobody could establish"
+    );
+    assert!(!stuck.settled, "so it owes something");
+    assert_eq!(
+        (stuck.drained, stuck.retained),
+        (true, 0),
+        "while its queue did finish and it is holding nothing, which is why \
+         neither of those can be what a reader is told"
+    );
+}
+
+#[test]
+fn a_reading_reports_an_ending_and_a_closure_that_were_established() {
+    // The same reading over a connection that got everything it needed, so
+    // the one above is not simply reporting sadness at everything.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8561);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a fresh registration holds no custody"));
+    drop(registration);
+    drop(private);
+
+    // Read before it is driven: closed, nothing ended yet, nothing held.
+    let before = durable.retained_dispositions().expect("a readable store");
+    assert_eq!(before.len(), 1);
+    assert_eq!(
+        before[0].1.closure,
+        Some(PrivateHandoverFence::Established)
+    );
+    assert_eq!(
+        before[0].1.ending,
+        PrivateRetainedEnding::Unattempted,
+        "it has a handle and has not used it: that is not the same as having none"
+    );
+    assert!(!before[0].1.settled);
+
+    // Driven, and then gone: a settled record returns its place, so there is
+    // nothing left to report.
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    assert!(
+        durable
+            .retained_dispositions()
+            .expect("a readable store")
+            .is_empty(),
+        "a place that came back is not a connection, and is not reported as one"
+    );
+
+    // NEITHER IS A PLACE THAT WAS PROMISED AND NEVER FILLED. A connection that
+    // ended without ever binding keeps its place -- what was accepted for it
+    // is unknown, so it is not given back -- but the place holds no record,
+    // and there is no connection there to report. A reading that invented one
+    // would put a row in front of an operator with nothing behind it.
+    let private = private_over(&durable, 2);
+    let never_bound = XServerFrontendClientId(8562);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(never_bound, Some(admitted(never_bound)))
+        .expect("a place and a row");
+    drop(channels);
+    drop(registration);
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "its place is held, because what was accepted for it is unknown"
+    );
+    assert!(
+        durable
+            .retained_dispositions()
+            .expect("a readable store")
+            .is_empty(),
+        "and yet there is no connection there to read"
     );
 }
 

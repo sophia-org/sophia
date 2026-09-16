@@ -5,6 +5,57 @@
 // connection's ordered output IS when it is handed over, and what reserving a
 // place for it costs before the connection is allowed to exist.
 
+/// Why a retained connection's wire is where it is.
+///
+/// FOUR DIFFERENT FACTS, and they are not degrees of one. Having no way to end
+/// a wire is not a shutdown that refused; a shutdown that refused is not one
+/// that has not been tried; and none of them is an ending. Reporting them as
+/// one number would make an operator read "not ended" and go looking for a
+/// syscall that never happened.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by reporting that is not attached yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrivateRetainedEnding {
+    /// The wire was ended, and the ending was established.
+    Ended,
+    /// There is nothing here able to end it. A receiver alone carries no
+    /// handle on the connection, so this record cannot end that wire and
+    /// cannot say anything about its state either.
+    NoCapability,
+    /// Ending it was tried and refused, with the kind that refused.
+    Refused(std::io::ErrorKind),
+    /// It has an ending capability and has not used it yet.
+    Unattempted,
+}
+
+/// What one retained connection is, as far as anything can establish.
+///
+/// A READING, NOT A DECISION. Every field is a fact something already
+/// established -- a syscall, a channel, a close -- and nothing here advances,
+/// answers or disposes of anything. What it is for is the case this whole
+/// mechanism keeps producing: a record that cannot finish, which must then be
+/// legible enough that its reasons can be told apart without guessing.
+///
+/// THE REASONS COEXIST. A connection can have no way to end its wire AND an
+/// unconfirmed closure; these are independent facts of one bounded record, not
+/// alternatives, and reporting either alone would lose the other.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by reporting that is not attached yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PrivateRetainedDisposition {
+    /// What closing this connection's endpoint established, if anything.
+    closure: Option<PrivateHandoverFence>,
+    /// Where its wire stands.
+    ending: PrivateRetainedEnding,
+    /// Whether its producers are gone, established by the channel finishing
+    /// rather than by its being quiet.
+    drained: bool,
+    /// How many capsules this record is holding for it.
+    retained: usize,
+    /// Whether all of the above amounts to a connection that owes nothing.
+    settled: bool,
+}
+
 /// A connection's ordered output, retained whole.
 ///
 /// NOT UNPACKED, and not turned back into anything replayable. What is here
@@ -421,6 +472,67 @@ impl PrivateOrderedContinuation {
         owner.advance_close(XByteOrder::LittleEndian, 0);
     }
 
+    /// Read this record, without changing or concluding anything.
+    ///
+    /// Everything here was established by something else: a close, a syscall,
+    /// a channel that finished. This only puts them side by side, because the
+    /// reasons a record cannot finish are independent and an operator looking
+    /// at one of them needs to see the others.
+    #[cfg_attr(not(test), allow(dead_code))] // Read by reporting that is not attached yet.
+    fn disposition(&self) -> PrivateRetainedDisposition {
+        let (closure, ending, drained, retained) = match self {
+            Self::Setup {
+                accepted,
+                fence,
+                ending_refused,
+                ended,
+                drained,
+                retained,
+                refusal: _,
+            } => (
+                *fence,
+                match (ended, ending_refused, accepted) {
+                    (true, _, _) => PrivateRetainedEnding::Ended,
+                    (false, Some(kind), _) => PrivateRetainedEnding::Refused(*kind),
+                    (false, None, PrivateOrderedSetupCustody::Receiver(_)) => {
+                        PrivateRetainedEnding::NoCapability
+                    }
+                    (false, None, PrivateOrderedSetupCustody::Transport(_)) => {
+                        PrivateRetainedEnding::Unattempted
+                    }
+                },
+                *drained,
+                retained.len(),
+            ),
+            Self::Serving { owner, fence } => (
+                *fence,
+                match (owner.unterminated_cause(), owner.closing()) {
+                    (Some(X11OrderedUnterminatedCause::Shutdown(kind)), _) => {
+                        PrivateRetainedEnding::Refused(kind)
+                    }
+                    (Some(_), _) => PrivateRetainedEnding::Unattempted,
+                    (None, Some(closing))
+                        if closing.termination == X11OrderedTermination::Established =>
+                    {
+                        PrivateRetainedEnding::Ended
+                    }
+                    (None, _) => PrivateRetainedEnding::Unattempted,
+                },
+                owner
+                    .closing()
+                    .is_some_and(|closing| closing.drained),
+                owner.retained_unanswered().len() + owner.retained_foreign().len(),
+            ),
+        };
+        PrivateRetainedDisposition {
+            closure,
+            ending,
+            drained,
+            retained,
+            settled: self.settled(),
+        }
+    }
+
     /// ASKS NOTHING OF THE QUEUE. Receiving is the only way to question a
     /// channel, so a predicate that questioned one would consume what was
     /// waiting and report on work it had just destroyed. Everything here was
@@ -514,6 +626,47 @@ impl PrivateSettlementRef {
 
 #[cfg(unix)]
 impl PrivateSettlementOwner {
+    /// Read every retained connection this store is holding.
+    ///
+    /// ONE READING PER PLACE THAT HOLDS SOMETHING. Free places and places that
+    /// were reserved and never filled are not connections and are not
+    /// reported; what comes back is what is actually being kept, with the
+    /// index it is kept under so a later reading can be matched to this one.
+    ///
+    /// Nothing is driven, received, ended or disposed of here. A store that
+    /// cannot be read reports nothing rather than an empty account.
+    #[cfg_attr(not(test), allow(dead_code))] // Read by reporting that is not attached yet.
+    fn retained_dispositions(&self) -> Option<Vec<(usize, PrivateRetainedDisposition)>> {
+        // The aggregate lock finds the records; each record's own lock reads
+        // it. Holding the aggregate across those would put the whole store
+        // behind one connection.
+        let places: Vec<(usize, Arc<Mutex<Option<PrivateOrderedContinuation>>>)> = {
+            let held = self.inner.lock().ok()?;
+            held.continuations
+                .iter()
+                .enumerate()
+                .filter_map(|(index, place)| match place {
+                    PrivateOrderedContinuationPlace::Taken(record) => {
+                        Some((index, record.clone()))
+                    }
+                    PrivateOrderedContinuationPlace::Free => None,
+                })
+                .collect()
+        };
+        Some(
+            places
+                .into_iter()
+                .filter_map(|(index, record)| {
+                    let held = record
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    held.as_ref()
+                        .map(|continuation| (index, continuation.disposition()))
+                })
+                .collect(),
+        )
+    }
+
     /// A handle to this store that does not keep it alive.
     ///
     /// WEAK BY CONSTRUCTION, and it has to be. The store retains records that
