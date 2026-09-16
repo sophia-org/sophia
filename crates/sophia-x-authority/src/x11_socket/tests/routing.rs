@@ -32929,3 +32929,367 @@ fn a_joined_result_publishes_while_its_exit_record_is_held() {
     assert!(matches!(record.result(), Some(PrivateJoinResult::Returned)));
     drop(f.fixture);
 }
+
+/// A connection whose worker has been started, run and joined, with its gate
+/// captured while the registration still had one to give.
+///
+/// THE PAIRING IS THE CALLER'S: the gate is this registration's own and the
+/// join is over the thread that was serving through it. Nothing in the types
+/// establishes that, which is why it is built from one connection here.
+struct PrivateFenceFixture {
+    f: PrivateWorkerFixture,
+    exit: Arc<PrivateWorkerExit>,
+    slot: Mutex<PrivateWorkerSlot>,
+    gate: Arc<PrivateHandoverGate>,
+}
+
+fn fence_fixture(client: XServerFrontendClientId) -> PrivateFenceFixture {
+    let f = worker_fixture(client);
+    f.permit();
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
+    let gate = f.fixture.registration.handover_gate();
+    let (home, wake, stop, sequence) = f.handles();
+    let running = Arc::clone(&exit);
+    let slot = started_worker(&f, move || {
+        PrivateWorkerBody {
+            home: &home,
+            wake: &wake,
+            stop: &stop,
+            byte_order: XByteOrder::LittleEndian,
+            sequence: &sequence,
+            exit: &running,
+            steps: 16,
+        }
+        .run();
+    });
+    PrivateFenceFixture {
+        f,
+        exit,
+        slot,
+        gate,
+    }
+}
+
+#[test]
+fn a_fence_waits_for_the_join_that_makes_it_eligible() {
+    // A JOINED THREAD IS ONE THAT WILL NOT HAND ANYTHING OVER AGAIN, and that
+    // is the only sign strong enough to close a producer gate on. Every weaker
+    // one -- a departure published, an empty slot, an attempt that may have
+    // taken a handle -- leaves a thread that could still be inside the gate.
+    let g = fence_fixture(XServerFrontendClientId(8421));
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+
+    // ASKED TOO EARLY: nothing is entered and nothing is spent.
+    assert_eq!(fence.record_fence(), PrivateFenced::JoinIncomplete);
+    assert_eq!(fence.phase(), PrivateFencePhase::NotAttempted);
+    assert_eq!(fence.fence(), None);
+    assert_eq!(
+        g.f.fixture.registration.ordered_handovers_fenced(),
+        Some(false),
+        "the gate is untouched and this connection still admits handovers"
+    );
+
+    // THE SAME RECORD IS STILL ELIGIBLE once that same join completes.
+    cancel_connection_worker(&g.f.stop, &g.f.wake);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    assert_eq!(fence.phase(), PrivateFencePhase::FenceRecorded);
+    assert_eq!(fence.fence(), Some(PrivateHandoverFence::Established));
+    assert_eq!(
+        g.f.fixture.registration.ordered_handovers_fenced(),
+        Some(true),
+        "and now it does not"
+    );
+    drop(g.f.fixture);
+}
+
+#[test]
+fn an_unconfirmed_join_is_not_a_joined_one() {
+    // AN ATTEMPT THAT MAY HAVE TAKEN A HANDLE IS NOT A FINISHED THREAD. The
+    // worker is held here, so the reaping is genuinely in flight: its record
+    // says InProgress, its slot says the handle has gone, and neither is a
+    // reason to close anything.
+    let g = fence_fixture(XServerFrontendClientId(8422));
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+
+    std::thread::scope(|scope| {
+        let record = &record;
+        let reaper = scope.spawn(move || record.reap());
+        assert!(
+            waited_for(|| record.phase() == PrivateReapingPhase::InProgress),
+            "a handle is consumed and no result is confirmed"
+        );
+        assert_eq!(
+            g.slot.lock().expect("a readable slot").life,
+            PrivateWorkerLife::HandedToJoiner
+        );
+
+        assert_eq!(
+            fence.record_fence(),
+            PrivateFenced::JoinIncomplete,
+            "an unconfirmed attempt is not a completed join"
+        );
+        assert_eq!(fence.phase(), PrivateFencePhase::NotAttempted);
+        assert_eq!(
+            g.f.fixture.registration.ordered_handovers_fenced(),
+            Some(false),
+            "and the gate is untouched"
+        );
+
+        cancel_connection_worker(&g.f.stop, &g.f.wake);
+        assert_eq!(
+            reaper.join().expect("the reaping finished").reaped,
+            PrivateReaped::Joined
+        );
+    });
+
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    assert_eq!(fence.fence(), Some(PrivateHandoverFence::Established));
+    drop(g.f.fixture);
+}
+
+#[test]
+fn a_join_that_reported_a_panic_is_a_completed_join() {
+    // BOTH RESULTS ARE COMPLETED JOINS. A thread that panicked is as finished
+    // as one that returned, and the payload is neither inspected nor locked to
+    // decide it -- a fence that had to read one would be hostage to whoever
+    // was reading the payload at the time.
+    let f = worker_fixture(XServerFrontendClientId(8423));
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
+    let gate = f.fixture.registration.handover_gate();
+    let slot = started_worker(&f, || panic!("what the join kept"));
+    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
+
+    // The payload is held by this control for the whole of the fencing, which
+    // a fence that needed it could not have got past.
+    let PrivateJoinResult::Panicked(payload) = record.result().expect("a completed join") else {
+        panic!("this worker panicked")
+    };
+    let held = payload.lock().expect("a readable payload");
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    assert_eq!(fence.fence(), Some(PrivateHandoverFence::Established));
+    assert_eq!(
+        held.downcast_ref::<&str>().copied(),
+        Some("what the join kept"),
+        "and the payload is exactly as it was"
+    );
+    drop(held);
+    drop(f.fixture);
+}
+
+#[test]
+fn a_fence_keeps_the_three_things_a_gate_can_say() {
+    // ESTABLISHED, ALREADY ESTABLISHED AND UNREADABLE ARE THREE FACTS. A
+    // closure somebody else made is not one this made, and a gate whose lock
+    // carried a panic out of somebody's handover is not a fence at all.
+    let established = {
+        let g = fence_fixture(XServerFrontendClientId(8424));
+        cancel_connection_worker(&g.f.stop, &g.f.wake);
+        let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+        assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+        assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+        let seen = fence.fence();
+        drop(g.f.fixture);
+        seen
+    };
+    assert_eq!(established, Some(PrivateHandoverFence::Established));
+
+    // ALREADY ESTABLISHED, reached by a real close this component did not
+    // make: the registration's own fencing runs first.
+    let already = {
+        let g = fence_fixture(XServerFrontendClientId(8425));
+        cancel_connection_worker(&g.f.stop, &g.f.wake);
+        let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+        assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+        assert_eq!(
+            g.f.fixture.registration.fence_ordered_handovers(),
+            PrivateHandoverFence::Established,
+            "somebody else closed it first, through the real API"
+        );
+        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+        assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+        let seen = fence.fence();
+        drop(g.f.fixture);
+        seen
+    };
+    assert_eq!(already, Some(PrivateHandoverFence::AlreadyEstablished));
+
+    // UNREADABLE: a holder panicked inside the gate. The lock is acquired --
+    // that is what poisoning means -- and what could not be established is
+    // closure over custody nobody stands behind.
+    let unreadable = {
+        let g = fence_fixture(XServerFrontendClientId(8426));
+        cancel_connection_worker(&g.f.stop, &g.f.wake);
+        let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+        assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _inside = g.gate.fenced.lock().expect("a readable gate");
+                panic!("a holder unwound inside this connection's gate");
+            }))
+            .is_err(),
+            "the holder unwound"
+        );
+        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+        assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+        let seen = fence.fence();
+        // NOT CLEARED AND NOT REOPENED: the gate is left exactly as it was
+        // found.
+        assert!(g.gate.fenced.is_poisoned());
+        drop(g.f.fixture);
+        seen
+    };
+    assert_eq!(unreadable, Some(PrivateHandoverFence::Unreadable));
+}
+
+#[test]
+fn a_second_fencing_asks_nothing_and_replaces_nothing() {
+    // A REPEATED ASK MUST NOT ASK THE GATE AGAIN. The second call would get
+    // AlreadyEstablished from a gate this record itself had closed, and
+    // writing that over the first Established would turn a closure this made
+    // into one it merely found.
+    let g = fence_fixture(XServerFrontendClientId(8427));
+    cancel_connection_worker(&g.f.stop, &g.f.wake);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+
+    assert_eq!(fence.record_fence(), PrivateFenced::AlreadyAttempted);
+    assert_eq!(
+        fence.fence(),
+        Some(PrivateHandoverFence::Established),
+        "the first attempt's answer, not a second one over the top of it"
+    );
+    assert_eq!(fence.phase(), PrivateFencePhase::FenceRecorded);
+    drop(g.f.fixture);
+}
+
+#[test]
+fn a_fencing_that_waits_on_a_handover_leaves_its_evidence_readable() {
+    // THE GATE MAY BLOCK, and the point is what stays readable while it does.
+    // A handover admitted before this asks holds the gate until it is done;
+    // nothing of this connection's is held behind that wait, so a caller can
+    // still read the join result and this attempt's standing.
+    let g = fence_fixture(XServerFrontendClientId(8428));
+    cancel_connection_worker(&g.f.stop, &g.f.wake);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+
+    std::thread::scope(|scope| {
+        let (admitted, wait) = std::sync::mpsc::channel();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let sender = g.f.sender.clone();
+        let producer = scope.spawn(move || {
+            let _inside = sender.admit().expect("an open endpoint");
+            admitted.send(()).expect("inside the gate");
+            let _ = held.recv();
+        });
+        wait.recv().expect("a handover is inside the gate");
+
+        let fence = &fence;
+        let fencing = scope.spawn(move || fence.record_fence());
+        // WHAT IS OBSERVED, exactly: while that handover holds the gate, no
+        // fence is published, and the join result and this attempt's standing
+        // are both readable. It does NOT establish that the fencing thread has
+        // reached the gate's lock -- nothing here can say that.
+        assert!(
+            waited_for(|| fence.phase() == PrivateFencePhase::InProgress),
+            "the attempt claimed this record"
+        );
+        assert_eq!(fence.fence(), None, "and has published nothing");
+        assert!(
+            matches!(record.result(), Some(PrivateJoinResult::Returned)),
+            "the join result is readable throughout"
+        );
+        assert_eq!(record.phase(), PrivateReapingPhase::Joined);
+
+        drop(release);
+        producer.join().expect("the handover finished");
+        assert_eq!(
+            fencing.join().expect("the fencing finished"),
+            PrivateFenced::Recorded
+        );
+    });
+    assert_eq!(fence.fence(), Some(PrivateHandoverFence::Established));
+    drop(g.f.fixture);
+}
+
+#[test]
+fn fencing_one_connection_leaves_another_connections_gate_open() {
+    // A GATE IS ONE CONNECTION'S. This record holds the one it was bound to
+    // and reaches nothing by lookup, so closing it says nothing about anybody
+    // else's endpoint.
+    let g = fence_fixture(XServerFrontendClientId(8429));
+    let other = worker_fixture(XServerFrontendClientId(8430));
+    cancel_connection_worker(&g.f.stop, &g.f.wake);
+    let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+
+    assert_eq!(
+        g.f.fixture.registration.ordered_handovers_fenced(),
+        Some(true)
+    );
+    assert_eq!(
+        other.fixture.registration.ordered_handovers_fenced(),
+        Some(false),
+        "the other connection still admits handovers"
+    );
+    // AND ITS QUEUE IS UNTOUCHED: a capsule accepted for it is still there,
+    // unanswered, with its own peer having seen nothing.
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(84300);
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    produced_send(&other.sender, capsule);
+    assert!(cell.answer().is_none());
+    assert!(
+        other
+            .home
+            .borrow_live(|payload| {
+                let PrivateOrderedContinuation::Serving { owner, .. } = payload else {
+                    panic!("promoted")
+                };
+                owner.queue.try_recv().is_ok()
+            })
+            .acted()
+            .expect("its own home"),
+        "its own queue still holds what was accepted for it"
+    );
+    drop((g.f.fixture, other.fixture, cell));
+}
+
+#[test]
+fn a_fence_is_not_delayed_by_a_diagnostic_somebody_is_holding() {
+    // A PUBLISHED JOIN IS ENOUGH, AND IT IS READ DIRECTLY. Whether the reaping
+    // that produced it has finished reading its optional exit diagnostics, or
+    // whether anybody is holding that record or the panic payload, has nothing
+    // to do with whether this connection's worker has finished.
+    let f = worker_fixture(XServerFrontendClientId(8431));
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
+    let gate = f.fixture.registration.handover_gate();
+    let slot = started_worker(&f, || panic!("held while the gate is closed"));
+    let record = PrivateReapingRecord::bound_to(&slot, &exit);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
+
+    let PrivateJoinResult::Panicked(payload) = record.result().expect("a completed join") else {
+        panic!("this worker panicked")
+    };
+    let payload_held = payload.lock().expect("a readable payload");
+    let diagnostic_held = exit.outcome.lock().expect("a readable exit record");
+    assert_eq!(
+        fence.record_fence(),
+        PrivateFenced::Recorded,
+        "neither lock is on the way to the gate"
+    );
+    assert_eq!(fence.fence(), Some(PrivateHandoverFence::Established));
+    drop((payload_held, diagnostic_held));
+    drop(f.fixture);
+}

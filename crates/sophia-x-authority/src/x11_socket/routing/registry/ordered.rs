@@ -336,6 +336,17 @@ impl XServerFrontendClientRouteRegistration {
         self.ordered_gate.close()
     }
 
+    /// This connection's gate, for a holder that will close it later.
+    ///
+    /// THE CAPABILITY, NOT THE REGISTRATION. Something that fences after this
+    /// connection's worker has been joined needs the gate and nothing else;
+    /// keeping the registration alive to reach one would hold a whole row open
+    /// for the sake of a handle it has already published.
+    #[cfg_attr(not(test), allow(dead_code))] // Held by a fencing not attached yet.
+    pub(crate) fn handover_gate(&self) -> Arc<PrivateHandoverGate> {
+        self.ordered_gate.clone()
+    }
+
     /// Whether this endpoint is closed to handovers. `None` if unreadable.
     #[cfg_attr(not(test), allow(dead_code))] // Only controls ask this today.
     pub(crate) fn ordered_handovers_fenced(&self) -> Option<bool> {
