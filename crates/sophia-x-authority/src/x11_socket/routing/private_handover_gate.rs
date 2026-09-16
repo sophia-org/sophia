@@ -92,6 +92,26 @@ impl PrivateHandoverGate {
         PrivateHandoverFence::Established
     }
 
+    /// Hold this gate for something that is not a handover.
+    ///
+    /// SAME SERIALIZATION, DIFFERENT PURPOSE. A close and a handover are put
+    /// in one order by this gate; so is anything else that must not straddle a
+    /// close. The guard is what makes a check and the act that depends on it
+    /// one thing rather than two with a window between them.
+    ///
+    /// Refuses a closed endpoint and an unreadable gate differently, because
+    /// they are different: one says this endpoint is done, the other says a
+    /// holder panicked inside and what the flag says cannot be trusted.
+    fn entered(&self) -> Result<std::sync::MutexGuard<'_, bool>, PrivateHandoverRefusal> {
+        let Ok(fenced) = self.fenced.lock() else {
+            return Err(PrivateHandoverRefusal::Unreadable);
+        };
+        if *fenced {
+            return Err(PrivateHandoverRefusal::Fenced);
+        }
+        Ok(fenced)
+    }
+
     /// Whether this registration's closure has been made.
     ///
     /// `None` for a gate that cannot be read, which is neither answer.

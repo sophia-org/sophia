@@ -60,19 +60,6 @@ impl PreparedOrderedServing {
 struct PrivateServingHome(Box<Option<X11OrderedServingOwner>>);
 
 #[cfg(unix)]
-impl PrivateServingHome {
-    /// A home holding an owner that was made some other way.
-    ///
-    /// For controls that build an owner directly. Production makes one only
-    /// through `commit`, where the allocation happens before any custody is
-    /// taken.
-    #[cfg_attr(not(test), allow(dead_code))] // Only controls build one directly.
-    fn holding(owner: X11OrderedServingOwner) -> Self {
-        Self(Box::new(Some(owner)))
-    }
-}
-
-#[cfg(unix)]
 impl std::ops::Deref for PrivateServingHome {
     type Target = X11OrderedServingOwner;
 

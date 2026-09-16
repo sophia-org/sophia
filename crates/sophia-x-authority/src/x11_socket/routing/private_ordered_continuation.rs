@@ -28,7 +28,7 @@ enum PrivateOrderedWorkerExit {
 
 /// What is known about how a connection's ordered output reached its place.
 ///
-/// FOUR SEPARATE FACTS, kept apart because each is established by a different
+/// THREE SEPARATE FACTS, kept apart because each is established by a different
 /// thing and none implies another. What a close established is the producers'
 /// side. What became of a worker is the consumer's. Whether the storage it was
 /// taken from had been poisoned is neither: a panic can happen outside a visit

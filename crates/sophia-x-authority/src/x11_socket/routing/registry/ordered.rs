@@ -9,8 +9,13 @@ enum PrivateOrderedPromotion {
     Unbound,
     /// One is already here, and it stands.
     AlreadyServing,
-    /// This endpoint is closed or its wire is ended: nothing starts on it.
+    /// This endpoint is closed to handovers, or its wire is ended: nothing
+    /// starts on it.
     Closing,
+    /// The endpoint's gate could not be read, so whether it is closed was not
+    /// established. Distinct from a closure: one is a decision, the other is
+    /// the absence of one.
+    EndpointUnreadable,
     /// Preparation refused. Everything is where it was.
     Refused(X11OrderedServingRefusal),
     /// The storage could not be read, so nothing was attempted.
@@ -194,6 +199,25 @@ impl XServerFrontendClientRouteRegistration {
         &self,
         frontend: &crate::x11_socket::PrivateXServerFrontend,
     ) -> PrivateOrderedPromotion {
+        // THE LIVE ENDPOINT, NOT WHAT TEARDOWN ONCE SAW. The evidence on a
+        // payload records what a close established at teardown; it says
+        // nothing about whether this endpoint is open now, and a close made
+        // through the real interface while the registration lives leaves it
+        // untouched. Reading eligibility from it admitted an owner onto an
+        // endpoint that was already closed.
+        //
+        // HELD ACROSS THE CHECK AND THE COMMIT. The gate is what puts a close
+        // and everything that must not straddle one into a single order, so
+        // taking it here means a concurrent close either happens before this
+        // -- and refuses it -- or after, with the owner already made. There is
+        // no window between asking and acting.
+        let entered = match self.ordered_gate.entered() {
+            Ok(entered) => entered,
+            Err(PrivateHandoverRefusal::Fenced) => return PrivateOrderedPromotion::Closing,
+            Err(PrivateHandoverRefusal::Unreadable) => {
+                return PrivateOrderedPromotion::EndpointUnreadable;
+            }
+        };
         let Ok(mut held) = self.ordered_setup.lock() else {
             return PrivateOrderedPromotion::Unreadable;
         };
@@ -207,7 +231,12 @@ impl XServerFrontendClientRouteRegistration {
                 ending_refused,
                 evidence,
                 ..
-            }) if !*ended && ending_refused.is_none() && evidence.fence.is_none() => {}
+            }) if !*ended && ending_refused.is_none() => {
+                // The payload's own history still matters: a wire that has
+                // been ended, or refused an ending, is not one to start on
+                // however open the endpoint is.
+                let _ = evidence;
+            }
             // A connection whose endpoint has been closed, or whose wire has
             // been ended or refused an ending, is not one anything may be
             // started on.
@@ -249,6 +278,8 @@ impl XServerFrontendClientRouteRegistration {
             owner: prepared.commit(*transport),
             evidence,
         });
+        drop(held);
+        drop(entered);
         PrivateOrderedPromotion::Ready
     }
 
