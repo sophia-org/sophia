@@ -22311,6 +22311,135 @@ fn teardown_records_an_already_established_close_on_a_serving_record() {
     );
 }
 
+
+#[test]
+fn a_connections_place_coming_back_answers_nothing_for_an_interrupted_handover() {
+    // THE TWO ACCOUNTINGS ARE SEPARATE, and this is where that matters most.
+    // A handover interrupted between taking the capsule out of custody and
+    // handing it over leaves a delivery nobody can resolve from here: the slot
+    // is empty, the phase says a handover may have begun, and whether the
+    // capsule reached the queue is not knowable from either side. Meanwhile
+    // the CONNECTION can finish perfectly well -- its producers go, its wire
+    // ends, its closure is established -- and its place comes back.
+    //
+    // WHAT THIS ESTABLISHES: the delivery is answered by the client going, and
+    // answered as that; the place returning neither produces that answer nor
+    // revises it; and nothing anywhere rebuilds or re-offers the capsule. What
+    // it does NOT establish is anything about where that capsule went, which
+    // is the thing nobody can establish.
+    //
+    // THE INTERRUPTION IS STAGED, not produced: the state below is what an
+    // unwind between the take and the send leaves, set directly because this
+    // crate has no way to unwind a producer mid-call without a hook. What is
+    // real is everything after it -- the producer's own refusal to re-offer,
+    // the teardown, and the drive.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8491));
+    attempt_run(&mut f, 84910, 272, true);
+    let cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 84910);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let recovery = private.broker.registry.input_recovery.clone();
+    {
+        let record = &mut private.terminal.holds[0];
+        let emission = record
+            .native
+            .as_mut()
+            .unwrap()
+            .take_press_emission()
+            .expect("its own press emission");
+        PrivateXServerFrontend::stow_press_capsule(
+            &mut record.custody,
+            emission,
+            &recovery,
+            f.client,
+        );
+        // The write-ahead, then the take -- and then nothing, which is the
+        // interruption.
+        record.custody.dispatch = PrivateDispatchPhase::Indeterminate;
+        let taken = record.custody.pending.take();
+        assert!(
+            matches!(taken, Some(PrivatePendingDelivery::Capsule(_))),
+            "there was a capsule, and this is where it is lost"
+        );
+        drop(taken);
+    }
+
+    // THE PRODUCER NEVER OFFERS IT AGAIN. The phase authorises, not the slot,
+    // and an empty slot under Indeterminate is exactly what an interrupted
+    // handover looks like from here.
+    for _ in 0..8 {
+        let _ = f
+            .runner
+            .frontend
+            .as_mut()
+            .unwrap()
+            .deliver_one(&mut |_, _| Ok(()));
+    }
+    assert!(
+        f.channels.ordered.try_recv().is_err(),
+        "nothing is rebuilt and nothing is re-offered"
+    );
+    let private = f.runner.frontend.as_ref().unwrap();
+    assert_eq!(
+        handover_phase(private, &cell),
+        Some(PrivateDispatchPhase::Indeterminate),
+        "and the phase still says a handover may have begun"
+    );
+    assert!(cell.answer().is_none(), "nobody has answered for it");
+
+    // Now the connection ends and finishes: bound, torn down, closed,
+    // producers gone, wire ended.
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let PreparedOrderedFixture {
+        registration,
+        runner,
+        channels,
+        durable,
+        ..
+    } = f;
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a registration that holds no custody yet"));
+    drop(runner);
+    drop(registration);
+    assert_eq!(
+        retained_fence(&durable, 0),
+        Some(Some(PrivateHandoverFence::Established))
+    );
+
+    // WHAT ANSWERED IT IS THE DISCONNECT, AND WHAT IT SAYS IS THE DISCONNECT.
+    // The client is gone, so this delivery can never be confirmed; recording
+    // that is an honest terminal outcome and not a receipt. Nothing claims it
+    // was written, flushed or seen.
+    let answer = cell
+        .answer()
+        .expect("the client going is itself an outcome for what it was owed");
+    assert_eq!(answer.delivery, XAuthorityInputDeliveryId::from_raw(84910));
+    assert_eq!(
+        answer.outcome,
+        XAuthorityInputDeliveryOutcome::ClientDisconnected,
+        "the outcome is that the client went, not that anything reached it"
+    );
+
+    // AND THE PLACE COMING BACK CHANGES NOTHING ABOUT IT. A place is about a
+    // connection's ordered output; it is not an answer, and it does not revise
+    // one. This is the separation: two accountings, each finishing on its own
+    // evidence, neither standing in for the other.
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(0),
+        "the connection's own accounting completes: its place comes back"
+    );
+    let after = cell.answer().expect("still answered, once");
+    assert_eq!(after.outcome, answer.outcome, "and answered the same way");
+    assert_eq!(after.delivery, answer.delivery);
+}
+
 #[test]
 fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
     let mut f=prepared_ordered_fixture(XServerFrontendClientId(7601));
