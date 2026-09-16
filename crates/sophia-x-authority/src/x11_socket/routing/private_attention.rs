@@ -258,26 +258,51 @@ impl PrivateAttention {
 
     /// Say that a record somebody may be waiting on has been released.
     ///
-    /// CALLED BY WHOEVER WAS HOLDING IT, after actually unlocking it. The
-    /// interest that makes this matter was armed by the claim itself, before
-    /// the attempt to take the record: the slot is InFlight from that moment,
-    /// so a release that lands during a failing attempt is remembered as
-    /// dirty and the defer that follows does not park it. A release that lands
-    /// after the attempt gave up finds it Deferred and makes it Ready.
+    /// CALLED BY WHOEVER WAS HOLDING IT, after actually unlocking it, and NEWS
+    /// ONLY WHEN SOMEBODY IS WAITING ON IT. The state already says who that
+    /// is: a pass is in flight and may be failing to take the record, or one
+    /// gave up and parked it. Those are the two it acts on.
     ///
-    /// THE SUPERVISOR DOES NOT CALL THIS. It took the record because it was
-    /// told to; finishing with the record is not news, and a reader that
-    /// re-announced itself would keep its own predicate true for ever.
+    /// AN IDLE OR READY SLOT GETS NOTHING FROM THIS, and that is the whole
+    /// point of the narrowing. Idle is the state an actor's own concluded pass
+    /// leaves behind: announcing a release into it would make the slot ready,
+    /// be claimed again, find nothing again, and announce again -- a loop with
+    /// no progress in it. Ready already has something to look at and does not
+    /// need a second reason.
     ///
-    /// A KNOWN ROUGH EDGE: this makes a slot ready even when nobody was
-    /// waiting on the record -- an actor releasing one that no pass had
-    /// deferred on still says so. That costs a pass that finds nothing, which
-    /// is harmless here and would not be once an actor schedules on it: a
-    /// visit that finds nothing and releases, announcing itself as it goes, is
-    /// a loop with no progress in it. Whoever wires that scheduling has to
-    /// narrow this to releases somebody is actually waiting on.
+    /// THE SUPERVISOR DOES NOT CALL THIS AT ALL. It took the record because it
+    /// was told to, and finishing with it is not news; the state cannot tell
+    /// whose unlock this is, so the exclusion has to be the caller's rule
+    /// rather than something inferred here.
+    ///
+    /// Identity is checked and the transition is made under one acquisition,
+    /// so a release cannot be attributed to a slot that changed hands between
+    /// the two.
+    ///
+    /// Reports whether the identity was live. A live identity with nothing to
+    /// do is still live.
     fn released(&self, who: PrivateAttentionIdentity) -> bool {
-        self.flag(who)
+        let Ok(mut roll) = self.roll.lock() else {
+            return false;
+        };
+        let Some(held) = roll.slots.get_mut(who.slot) else {
+            return false;
+        };
+        if !held.is_occupant(who) {
+            return false;
+        }
+        match held.state {
+            PrivateAttentionState::InFlight { .. } => {
+                held.state = PrivateAttentionState::InFlight { dirty: true };
+            }
+            PrivateAttentionState::Deferred => {
+                held.state = PrivateAttentionState::Ready;
+                roll.ready = roll.ready.saturating_add(1);
+                self.ready.notify_all();
+            }
+            PrivateAttentionState::Idle | PrivateAttentionState::Ready => {}
+        }
+        true
     }
 
     /// Take the next slot waiting to be looked at.

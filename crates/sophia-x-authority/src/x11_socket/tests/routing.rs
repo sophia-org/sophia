@@ -25271,6 +25271,76 @@ fn a_poisoned_slot_still_hands_over_the_worker_it_owns() {
     handle.join().expect("the worker");
 }
 
+
+#[test]
+fn a_release_is_news_only_where_somebody_is_waiting_on_it() {
+    // EVERY STATE, because the narrowing is about which of them a release
+    // means anything in. Announcing into a slot an actor's own pass just
+    // finished with would make it ready, be claimed again, find nothing again,
+    // and announce again -- a loop with no progress in it.
+    let (roll, first, second, _now) = attention_for_two();
+
+    // Idle: an actor's own concluded pass leaves this. Nothing to tell.
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Idle));
+    assert!(roll.released(first), "the identity is live");
+    assert_eq!(
+        roll.state_of(first),
+        Some(PrivateAttentionState::Idle),
+        "and stays idle: no new readiness from a release nobody awaited"
+    );
+    assert_eq!(roll.waiting(), Some(0));
+
+    // Ready: already has a reason to be looked at, and does not need two.
+    assert!(roll.flag(first));
+    assert_eq!(roll.waiting(), Some(1));
+    assert!(roll.released(first));
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Ready));
+    assert_eq!(roll.waiting(), Some(1), "counted once, not twice");
+
+    // InFlight: a pass is running and may be failing to take the record, so a
+    // release is exactly what it needs to know.
+    let claim = roll.claim_next().expect("a slot waiting");
+    assert_eq!(
+        roll.state_of(first),
+        Some(PrivateAttentionState::InFlight { dirty: false })
+    );
+    assert!(roll.released(first));
+    assert_eq!(
+        roll.state_of(first),
+        Some(PrivateAttentionState::InFlight { dirty: true })
+    );
+    assert!(claim.could_not());
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Ready));
+
+    // Deferred: a pass gave up, and the release is what revives it.
+    let parked = roll.claim_next().expect("a slot waiting");
+    assert!(parked.could_not());
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Deferred));
+    assert_eq!(roll.waiting(), Some(0));
+    assert!(roll.released(first));
+    assert_eq!(roll.state_of(first), Some(PrivateAttentionState::Ready));
+    assert_eq!(roll.waiting(), Some(1));
+
+    // A stale identity is refused outright, whatever the slot is doing now.
+    let claim = roll.claim_next().expect("a slot waiting");
+    assert!(claim.could_not());
+    assert!(roll.retire(first, false));
+    let successor = roll.admit(0).expect("the slot is free");
+    assert!(roll.flag(successor));
+    let current = roll.claim_next().expect("the successor's pass");
+    assert!(
+        !roll.released(first),
+        "a release for somebody who has gone is not a release"
+    );
+    assert_eq!(
+        roll.state_of(successor),
+        Some(PrivateAttentionState::InFlight { dirty: false }),
+        "and the occupant's own pass is untouched by it"
+    );
+    assert!(current.took_it());
+    let _ = second;
+}
+
 #[test]
 fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
     let mut f=prepared_ordered_fixture(XServerFrontendClientId(7601));
