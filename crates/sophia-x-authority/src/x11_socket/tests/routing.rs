@@ -24841,9 +24841,21 @@ fn permit_waiter(
     saw: std::sync::mpsc::SyncSender<&'static str>,
 ) -> impl FnOnce() + Send + 'static {
     move || {
-        let mut state = wake.state.lock().expect("a readable notice");
+        // A POISONED NOTICE IS RECOVERED HERE, NOT UNWRAPPED. A worker that
+        // panicked on one would take a cancellation it was meant to observe
+        // and turn it into a second failure. What a real worker does with a
+        // poisoned notice -- leave and report it -- is policy that belongs
+        // with the worker, which is not landed; this fixture only has to stay
+        // alive long enough to see its stop.
+        let mut state = wake
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         while !state.started && !stop.load(std::sync::atomic::Ordering::Acquire) {
-            state = wake.ready.wait(state).expect("a readable notice");
+            state = wake
+                .ready
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
         }
         // STOP IS ASKED FIRST AND WINS. A permit says a transaction finished,
         // never that a worker should still be running.
@@ -25057,6 +25069,112 @@ fn a_stop_after_a_permit_still_takes_the_worker_out() {
     );
     let handle = slot.lock().expect("readable").handle.take().expect("owned");
     handle.join().expect("the worker");
+}
+
+
+#[test]
+fn a_worker_that_cannot_be_permitted_is_cancelled_rather_than_declared_started() {
+    // A PERMIT TAKEN FROM A POISONED NOTICE IS NOT A PERMIT. Recovering that
+    // guard and writing into it grants a worker permission on the strength of
+    // a lock whose contents nobody stands behind -- and reports Started, with
+    // the connection's stop never set, over a thread that is actually running.
+    //
+    // The poisoning is real and happens inside the spawner, which then returns
+    // a real worker: exactly the window between the store and the commit that
+    // I had claimed nothing could refuse in.
+    let (slot, stop, wake) = startup_fixture();
+    let (saw, seen) = sync_channel(1);
+    let body = permit_waiter(Arc::clone(&stop), Arc::clone(&wake), saw);
+    let poisoning = Arc::clone(&wake);
+    let outcome = start_connection_worker(&slot, &stop, &wake, move || {
+        let holder = std::thread::spawn(move || {
+            let _inside = poisoning.state.lock().expect("a readable notice");
+            panic!("a holder unwound inside this notice");
+        });
+        assert!(holder.join().is_err(), "the holder unwound");
+        std::thread::Builder::new().spawn(body)
+    });
+
+    assert_eq!(
+        outcome,
+        PrivateStartupOutcome::PermitRefused,
+        "its own answer: a worker exists and could not be permitted"
+    );
+    assert!(
+        stop.load(std::sync::atomic::Ordering::Acquire),
+        "the connection's own stop is set"
+    );
+    let state = wake
+        .state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert!(!state.started, "and nothing was permitted");
+    drop(state);
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("stopped"),
+        "so the worker leaves"
+    );
+    let handle = slot
+        .lock()
+        .expect("readable")
+        .handle
+        .take()
+        .expect("and its handle is here to be joined");
+    handle.join().expect("the worker");
+}
+
+#[test]
+fn a_worker_handed_on_to_be_joined_does_not_leave_its_slot_free() {
+    // AN EMPTY SLOT IS NOT AN UNUSED ONE. Handing a handle to whoever joins it
+    // empties the slot while the thread is still running, and a slot that read
+    // that as "nobody was ever started" would start a second worker for a
+    // connection whose first is alive.
+    let (slot, stop, wake) = startup_fixture();
+    let (saw, seen) = sync_channel(2);
+    let body = permit_waiter(Arc::clone(&stop), Arc::clone(&wake), saw);
+    assert_eq!(
+        start_connection_worker(&slot, &stop, &wake, || {
+            std::thread::Builder::new().spawn(body)
+        }),
+        PrivateStartupOutcome::Started
+    );
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("permitted")
+    );
+
+    // The handle goes to a joiner, and nothing is joined yet.
+    let handed = hand_worker_to_joiner(&slot, &wake).expect("its handle");
+    assert!(
+        !slot.lock().expect("readable").running(),
+        "the slot holds no handle now"
+    );
+    assert!(
+        !wake
+            .state
+            .lock()
+            .expect("readable")
+            .started,
+        "and the permit went with it, so nothing can inherit one"
+    );
+
+    let mut spawned_again = false;
+    let outcome = start_connection_worker(&slot, &stop, &wake, || {
+        spawned_again = true;
+        std::thread::Builder::new().spawn(|| {})
+    });
+    assert_eq!(
+        outcome,
+        PrivateStartupOutcome::NoLongerStartable,
+        "the slot remembers that it had one"
+    );
+    assert!(!spawned_again, "and nothing was attempted");
+
+    // Both threads are accounted for before anything is concluded.
+    stop.store(true, std::sync::atomic::Ordering::Release);
+    wake.publish_recheck();
+    handed.join().expect("the first worker");
 }
 
 #[test]

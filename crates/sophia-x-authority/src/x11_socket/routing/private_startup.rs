@@ -15,13 +15,41 @@
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Nothing starts a worker yet.
 struct PrivateWorkerSlot {
-    /// The running worker, if there is one.
+    /// The worker whose handle this slot owns, if it still owns one.
     ///
-    /// POST-SPAWN STATUS IS READ FROM HERE and not from a flag beside it. A
-    /// separate "spawned" boolean can be stale in exactly the window that
-    /// matters -- set late, or missed on an unwind -- and would then say no
-    /// worker exists while one does.
+    /// WITHIN A TRANSACTION, this is what says whether a spawn succeeded: a
+    /// separate boolean can be stale in exactly the window that matters -- set
+    /// late, or missed on an unwind -- and would then say no worker exists
+    /// while one does.
+    ///
+    /// ACROSS A LIFETIME IT SAYS LESS. A handle handed to whoever joins it
+    /// leaves this empty while the thread is still running, so emptiness here
+    /// is not "nobody was ever started"; that is what the lifecycle beside it
+    /// is for.
     handle: Option<std::thread::JoinHandle<()>>,
+    /// What has become of this slot's worker, for as long as the slot lives.
+    ///
+    /// DURABLE, because the handle is not. Reading an empty handle as "never
+    /// started" let a second worker be started for a connection whose first
+    /// was alive and merely handed on to be joined.
+    life: PrivateWorkerLife,
+}
+
+/// What has become of a connection's worker.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Nothing starts a worker yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrivateWorkerLife {
+    /// Nobody has ever been started here.
+    NeverStarted,
+    /// One exists and this slot holds its handle.
+    Running,
+    /// One exists and its handle has gone to whoever joins it.
+    ///
+    /// The state after that -- joined, and with what result -- belongs to
+    /// whoever joins, which is not landed. It is not written here in advance
+    /// of the thing that would establish it.
+    HandedToJoiner,
 }
 
 /// What asking for a worker did.
@@ -31,10 +59,19 @@ struct PrivateWorkerSlot {
 enum PrivateStartupOutcome {
     /// A worker exists, its handle is owned, and it has been permitted.
     Started,
-    /// One is already here. The first stands.
+    /// One is here now. The first stands.
     AlreadyStarted,
     /// Nothing could be spawned. Nothing exists to stop or join.
     SpawnRefused,
+    /// A worker exists and could not be permitted.
+    ///
+    /// ITS OWN ANSWER, because the alternatives all lie: SpawnRefused would
+    /// say nothing was attempted while a thread is running, and an unreadable
+    /// destination would say the same. A worker exists, is cancelled, and is
+    /// waiting to be joined.
+    PermitRefused,
+    /// A worker has existed here, and this slot does not start another.
+    NoLongerStartable,
     /// The destination could not be read, so nothing was attempted.
     Unreadable,
 }
@@ -82,13 +119,50 @@ impl Drop for PrivateStartupGuard<'_> {
 #[cfg_attr(not(test), allow(dead_code))] // Nothing starts a worker yet.
 impl PrivateWorkerSlot {
     fn empty() -> Self {
-        Self { handle: None }
+        Self {
+            handle: None,
+            life: PrivateWorkerLife::NeverStarted,
+        }
     }
 
     /// Whether a worker's handle is owned here.
+    ///
+    /// A question about THIS MOMENT, used inside a transaction. Whether a
+    /// worker has ever existed is `life`, and the two stop agreeing the moment
+    /// a handle is handed on.
     fn running(&self) -> bool {
         self.handle.is_some()
     }
+}
+
+/// Give this connection's worker to whoever will join it.
+///
+/// THE SLOT REMEMBERS THAT IT HAD ONE. Handing the handle on empties it, and
+/// an empty slot that had forgotten would start a second worker for a
+/// connection whose first is still running.
+///
+/// The permit goes with it: a worker that has been handed on is not a worker
+/// anything may still be permitted by, and leaving the old permit set would
+/// let a later arrival inherit one nobody granted it.
+///
+/// NO JOIN HERE, and no lock held across one. What comes back is the handle;
+/// joining it is the caller's, after this returns.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Nothing joins a worker yet.
+fn hand_worker_to_joiner(
+    slot: &Mutex<PrivateWorkerSlot>,
+    wake: &Arc<PrivateOrderedWake>,
+) -> Option<std::thread::JoinHandle<()>> {
+    let mut held = slot.lock().ok()?;
+    let handle = held.handle.take()?;
+    held.life = PrivateWorkerLife::HandedToJoiner;
+    drop(held);
+    let mut state = wake
+        .state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    state.started = false;
+    Some(handle)
 }
 
 /// Start one connection's worker, owning its handle from the moment it exists.
@@ -120,6 +194,15 @@ where
     let Ok(mut held) = slot.lock() else {
         return PrivateStartupOutcome::Unreadable;
     };
+    // ASKED OF THE LIFECYCLE, not only of the handle. A slot whose worker has
+    // been handed on to be joined is empty and is not free.
+    match held.life {
+        PrivateWorkerLife::NeverStarted => {}
+        PrivateWorkerLife::Running => return PrivateStartupOutcome::AlreadyStarted,
+        PrivateWorkerLife::HandedToJoiner => {
+            return PrivateStartupOutcome::NoLongerStartable;
+        }
+    }
     if held.running() {
         return PrivateStartupOutcome::AlreadyStarted;
     }
@@ -142,13 +225,25 @@ where
     // STORED FIRST, into the destination already held, with nothing between
     // the spawn returning and this.
     guard.slot.handle = Some(handle);
+    guard.slot.life = PrivateWorkerLife::Running;
     // And only now the permit, which is the last thing and a separate lock.
-    {
-        let mut state = wake
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        state.started = true;
+    //
+    // IT CAN REFUSE. A permit taken from a notice somebody panicked inside is
+    // not a permit: recovering that guard and writing into it would grant a
+    // worker permission on the strength of a lock whose contents nobody stands
+    // behind. Nothing is recovered here -- the poisoned guard is not taken at
+    // all, so nothing is held when the cancellation below reacquires it.
+    let permitted = match wake.state.lock() {
+        Ok(mut state) => {
+            state.started = true;
+            true
+        }
+        Err(_) => false,
+    };
+    if !permitted {
+        // The guard is not committed, so its own path runs: the connection's
+        // stop is set, it is woken, and the handle stays here to be joined.
+        return PrivateStartupOutcome::PermitRefused;
     }
     wake.ready.notify_all();
     guard.committed = true;
