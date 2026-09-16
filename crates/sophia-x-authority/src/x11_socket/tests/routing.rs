@@ -22324,9 +22324,17 @@ fn a_connections_place_coming_back_answers_nothing_for_an_interrupted_handover()
     //
     // WHAT THIS ESTABLISHES: the delivery is answered by the client going, and
     // answered as that; the place returning neither produces that answer nor
-    // revises it; and nothing anywhere rebuilds or re-offers the capsule. What
-    // it does NOT establish is anything about where that capsule went, which
-    // is the thing nobody can establish.
+    // revises it; and nothing anywhere rebuilds or re-offers the capsule.
+    //
+    // WHAT IT DOES NOT ESTABLISH, and the precondition is the reason: the
+    // capsule is taken and dropped here OUTSIDE the gate, which leaves the
+    // gate healthy, so teardown establishes a closure and the place comes
+    // back. A real unwind is not like that -- a producer is INSIDE the gate
+    // from before the take until after the owned report, so unwinding there
+    // poisons it, teardown then establishes nothing, and the place is kept.
+    // The control below carries that state instead. This one is about the
+    // separation of accountings under a supplied clean fence, and nothing it
+    // says applies to a handover that actually unwound.
     //
     // THE INTERRUPTION IS STAGED, not produced: the state below is what an
     // unwind between the take and the send leaves, set directly because this
@@ -22367,12 +22375,12 @@ fn a_connections_place_coming_back_answers_nothing_for_an_interrupted_handover()
     // and an empty slot under Indeterminate is exactly what an interrupted
     // handover looks like from here.
     for _ in 0..8 {
-        let _ = f
-            .runner
+        f.runner
             .frontend
             .as_mut()
             .unwrap()
-            .deliver_one(&mut |_, _| Ok(()));
+            .deliver_one(&mut |_, _| Ok(()))
+            .expect("the executor keeps running");
     }
     assert!(
         f.channels.ordered.try_recv().is_err(),
@@ -22438,6 +22446,184 @@ fn a_connections_place_coming_back_answers_nothing_for_an_interrupted_handover()
     let after = cell.answer().expect("still answered, once");
     assert_eq!(after.outcome, answer.outcome, "and answered the same way");
     assert_eq!(after.delivery, answer.delivery);
+}
+
+
+#[test]
+fn a_handover_that_unwound_inside_the_gate_keeps_its_place() {
+    // WHAT AN ACTUAL UNWIND LEAVES. A producer is inside the gate from before
+    // it takes the capsule until after it writes down what came back, so an
+    // unwind anywhere in there poisons the gate as it goes. Teardown then
+    // establishes no closure, and the place is KEPT -- the opposite of the
+    // clean-fence case beside this one, and the reason that case cannot be
+    // read as covering this one.
+    //
+    // BOTH HALVES ARE STAGED HERE, and deliberately together, because that is
+    // what makes the state the one an unwind produces: the interrupted custody
+    // AND the poisoned gate. This crate cannot unwind a producer mid-call
+    // without a hook; what it can do is refuse to pretend that half the state
+    // is the whole of it.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8501));
+    attempt_run(&mut f, 85010, 272, true);
+    let cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 85010);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let recovery = private.broker.registry.input_recovery.clone();
+    {
+        let record = &mut private.terminal.holds[0];
+        let emission = record
+            .native
+            .as_mut()
+            .unwrap()
+            .take_press_emission()
+            .expect("its own press emission");
+        PrivateXServerFrontend::stow_press_capsule(
+            &mut record.custody,
+            emission,
+            &recovery,
+            f.client,
+        );
+        record.custody.dispatch = PrivateDispatchPhase::Indeterminate;
+        drop(record.custody.pending.take());
+    }
+    // The other half: a producer that unwound inside the gate leaves it
+    // poisoned.
+    let gate = f.registration.ordered_gate.clone();
+    let holder = std::thread::spawn(move || {
+        let _inside = gate.fenced.lock().expect("an open gate");
+        panic!("a handover unwound inside this gate");
+    });
+    assert!(holder.join().is_err(), "the holder unwound");
+
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let PreparedOrderedFixture {
+        registration,
+        runner,
+        channels,
+        durable,
+        ..
+    } = f;
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a registration that holds no custody yet"));
+    drop(runner);
+    drop(registration);
+
+    assert_eq!(
+        retained_fence(&durable, 0),
+        Some(Some(PrivateHandoverFence::Unreadable)),
+        "teardown established nothing, because the gate had been unwound through"
+    );
+    let answer = cell.answer().expect("the client going is still an outcome");
+    assert_eq!(
+        answer.outcome,
+        XAuthorityInputDeliveryOutcome::ClientDisconnected,
+        "answered as the client going, exactly as in the clean case"
+    );
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    let (_kind, _refusal, retained, drained, ended) =
+        retained_setup_kind(&durable, 0).expect("the place this connection held");
+    assert_eq!(
+        (retained, drained, ended),
+        (0, true, true),
+        "its queue finished and its wire ended, as far as those go"
+    );
+    assert!(
+        !durable
+            .with_ordered_continuation(0, |continuation| continuation.settled())
+            .expect("the place holds it")
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "AND THE PLACE STAYS HELD. An unwound handover is not a finished one, \
+         however quiet everything around it goes"
+    );
+}
+
+
+#[test]
+fn a_release_meeting_a_gone_receiver_keeps_its_capsule_and_gives_the_attempt_back() {
+    // KNOWN NOT ENQUEUED, the other way. A full queue and a gone receiver are
+    // both exact answers from the channel: neither took the capsule, so both
+    // leave it offerable and both give the attempt back. The existing control
+    // for an unplaceable attempt drops the whole registration, so it refuses
+    // at the row lookup before the gate; this one keeps the row and the gate
+    // and lets the SEND be what refuses.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8511));
+    attempt_release(&mut f, 85110, 272);
+    {
+        let private = f.runner.frontend.as_mut().unwrap();
+        assert_eq!(private.dispatch_one_press(), Some(true));
+        assert_eq!(private.record_one_native(), Some(true));
+    }
+    let cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 85111);
+
+    // Its receiver goes while its row stays. A spare registration supplies a
+    // receiver to put in its place so the fixture stays whole; the spare's own
+    // row goes with it and is nothing to do with this claim.
+    let spare = XServerFrontendClientId(f.client.raw() + 900_000);
+    let spare_ordered = f
+        .runner
+        .frontend
+        .as_ref()
+        .unwrap()
+        .broker
+        .registry
+        .register_client_with_admission(spare, Some(admitted(spare)))
+        .expect("a spare registration to borrow a receiver from")
+        .1
+        .ordered;
+    drop(std::mem::replace(&mut f.channels.ordered, spare_ordered));
+
+    let private = f.runner.frontend.as_mut().unwrap();
+    let index = private
+        .terminal
+        .settling
+        .iter()
+        .position(|release| release.completion().is_some_and(|held| Arc::ptr_eq(held, &cell)))
+        .expect("the release this control is about");
+    assert_eq!(
+        private.attempt_one_delivery(),
+        Some(false),
+        "the send itself refused: there is no receiver left"
+    );
+
+    // EXACTLY WHAT A FULL QUEUE LEAVES. The capsule is the one the release
+    // decided -- not rebuilt, not reselected -- the phase says it is offerable
+    // again, and the attempt went back rather than being spent on a delivery
+    // nobody will make.
+    assert_eq!(
+        handover_phase(private, &cell),
+        Some(PrivateDispatchPhase::Pending),
+        "known not enqueued, so it may be offered again"
+    );
+    match private.terminal.settling[index].custody.pending.as_ref() {
+        Some(PrivatePendingDelivery::Capsule(capsule)) => {
+            assert_eq!(
+                capsule.delivery(),
+                XAuthorityInputDeliveryId::from_raw(85111)
+            );
+            assert!(Arc::ptr_eq(&cell, &capsule.finalizer().unwrap().completion));
+        }
+        _ => panic!("the refusal handed the exact capsule back"),
+    }
+    assert!(
+        private.terminal.settling[index].custody.attempt.is_none(),
+        "the record stops naming an attempt once the ledger confirmed it back"
+    );
+    assert!(
+        private.terminal.attempt_custody.is_none(),
+        "and nothing holds the ledger's slot for a delivery nobody will make"
+    );
+    assert!(
+        cell.answer().is_none(),
+        "a refused send answers nothing: the debt is exactly as owed as before"
+    );
 }
 
 #[test]
