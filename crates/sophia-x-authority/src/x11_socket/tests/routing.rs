@@ -21716,6 +21716,51 @@ fn lease_of(
         .expect("the place reserved before this connection was exposed")
 }
 
+/// Wait for a delivery's completion to be published on its own cell.
+///
+/// A FINISHED WRITE IS NOT A RECEIPT. The step that puts the last byte of an
+/// event on the wire can return Advanced; finalising it is the step after
+/// that. A control that read the bytes and then stopped the body would be
+/// asking for a receipt nobody had written yet -- and bytes, a stop and a join
+/// cannot supply one between them.
+///
+/// Bounded, because a control that never finishes reports nothing.
+fn published(cell: &Arc<PrivateDeliveryCompletion>) -> bool {
+    waited_for(|| cell.answer().is_some())
+}
+
+/// Poll for an observation, bounded.
+///
+/// THE BOUND IS NOT THE EVIDENCE. What a caller establishes is whatever it
+/// asked about, and this only decides how long to keep asking before giving
+/// up; a control that never finished would report nothing at all. Yielding
+/// alone is not enough on a machine running the rest of the suite beside it --
+/// a spin can exhaust itself while the thread it is waiting on has not been
+/// scheduled.
+fn waited_for(mut observed: impl FnMut() -> bool) -> bool {
+    for _ in 0..3_000 {
+        if observed() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    false
+}
+
+/// Whether a body left because this control cancelled it.
+///
+/// TWO LEGAL ANSWERS, and which one a run gives is the scheduler's. A body
+/// told to stop before its own check departs itself; one told between that
+/// check and its visit has the OWNER observe the stop, and the trigger is then
+/// the owner's step. Both carry the owner's own word, which is the fact worth
+/// asserting -- the trigger alone is a race.
+fn stopped_by_cancellation(outcome: &PrivateWorkerOutcome) -> bool {
+    matches!(
+        outcome.trigger,
+        PrivateWorkerTrigger::Stopped | PrivateWorkerTrigger::OwnerStep
+    ) && outcome.last == Some(PrivateWorkerAsk::Said(X11OrderedServeStep::Stopped))
+}
+
 /// Read one capsule out of the place a credit names, through the credit.
 fn credit_receives(
     credit: &PrivateInternalCredit,
@@ -31631,18 +31676,13 @@ impl Drop for PrivateWorkerStopper<'_> {
 /// Bounded, because a control that never finishes reports nothing.
 fn waited_and_consumed(wake: &Arc<PrivateOrderedWake>) -> bool {
     wake.publish_recheck();
-    for _ in 0..20_000 {
-        if !wake
+    waited_for(|| {
+        !wake
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .pending
-        {
-            return true;
-        }
-        std::thread::yield_now();
-    }
-    false
+    })
 }
 
 /// Hand a capsule over the way a production producer does: the recheck level
@@ -31850,6 +31890,12 @@ fn a_body_serves_an_admitted_delivery_to_real_bytes_and_answers_for_it() {
             "its own sequence, little-endian as supplied"
         );
 
+        // AND ITS RECEIPT IS PUBLISHED, observed before anything is cancelled.
+        // The step that finishes the write can return Advanced; finalising it
+        // is the step after, and a body stopped in between would leave a
+        // control asking for a receipt nobody had written.
+        assert!(published(&cell), "the delivery is answered for");
+
         // AND THEN IT IS STOPPED AND JOINED, before anything is dropped: a
         // registration going while a borrower is still in its home is the
         // integration boundary, not this body's to cross.
@@ -31859,7 +31905,10 @@ fn a_body_serves_an_admitted_delivery_to_real_bytes_and_answers_for_it() {
     let answer = cell.answer().expect("and the delivery is answered for");
     assert_eq!(answer.delivery, XAuthorityInputDeliveryId::from_raw(83910));
     assert_eq!(answer.outcome, XAuthorityInputDeliveryOutcome::Flushed);
-    assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped, "{outcome:?}");
+    assert!(
+        stopped_by_cancellation(&outcome),
+        "the owner's own word, whichever of the two saw the stop: {outcome:?}"
+    );
     assert_eq!(exit.outcome(), Some(outcome));
     assert!(exit.left(), "and its frame is gone");
     drop(f.fixture);
@@ -31884,9 +31933,15 @@ fn a_body_will_not_serve_work_queued_before_its_permit() {
     );
 
     // Stopped rather than permitted, so the body leaves startup without ever
-    // serving.
+    // serving. The trigger is not a race here and is asserted strictly: the
+    // stop is set before the body runs at all, and the permit wait asks about
+    // it first.
+    //
+    // SET DIRECTLY, NOT THROUGH THE CANCELLATION, and for this control only.
+    // Nothing is running that could miss a signal, and the cancellation
+    // publishes a recheck of its own -- which is the very level this control
+    // goes on to assert the body left alone.
     f.stop.store(true, Ordering::SeqCst);
-    f.wake.ready.notify_all();
     let exit = PrivateWorkerExit::unstarted();
     let outcome = f.body(&exit, 8).run();
 
@@ -31971,10 +32026,15 @@ fn an_unpermitted_body_serves_nothing_until_it_is_permitted() {
         std::io::Read::read_exact(&mut (&f.peer), &mut seen)
             .expect("its peer reads what the permitted body sent");
         assert_eq!(seen[0], 4);
+        assert!(
+            published(&cell),
+            "and answered for it, which is a step after the write"
+        );
         cancel_connection_worker(&f.stop, &f.wake);
-        assert_eq!(
-            worker.join().expect("the body finished").trigger,
-            PrivateWorkerTrigger::Stopped
+        let outcome = worker.join().expect("the body finished");
+        assert!(
+            stopped_by_cancellation(&outcome),
+            "the owner's own word, whichever of the two saw the stop: {outcome:?}"
         );
     });
     assert!(cell.answer().is_some());
@@ -32012,9 +32072,12 @@ fn a_body_that_finds_nothing_waits_and_is_woken_by_an_actual_producer() {
     // on this connection's notice; what ends the wait is the production
     // producer publishing to that same notice, not a timeout and not a poll.
     //
-    // AND IT WAITS RATHER THAN SPINNING. A body that woke on the sticky permit
-    // or on a level nothing cleared would have spent its whole budget and
-    // left; this one has been through a wait and has not.
+    // AND IT WAITS RATHER THAN RETURNING AT ONCE. A body that woke on the
+    // sticky permit, or on a level nothing cleared, would not have needed this
+    // control's level to get through its wait. WHAT IS OBSERVED is that the
+    // level was consumed and the body had not left. That it still has steps in
+    // hand is NOT observed -- a paused body looks the same -- and nothing here
+    // rests on it.
     let mut f = worker_fixture(XServerFrontendClientId(8393));
     f.permit();
     attempt_run(&mut f.fixture, 83930, 272, true);
@@ -32045,7 +32108,7 @@ fn a_body_that_finds_nothing_waits_and_is_woken_by_an_actual_producer() {
         );
         assert!(
             !exit.left(),
-            "and has not spent its budget: a spinning body would be gone"
+            "and has not left, so it did not run its budget out on nothing"
         );
         assert!(cell.answer().is_none(), "having served nothing");
 
@@ -32065,14 +32128,20 @@ fn a_body_that_finds_nothing_waits_and_is_woken_by_an_actual_producer() {
         std::io::Read::read_exact(&mut (&f.peer), &mut seen)
             .expect("its peer reads what the woken body sent");
         assert_eq!(seen[0], 4);
+        // ITS RECEIPT, BEFORE THE CANCELLATION. Finalising is the step after
+        // the one that finishes the write, so a body stopped between them
+        // would be asked for something nobody had written.
+        assert!(
+            published(&cell),
+            "the woken body answered for what it served"
+        );
         cancel_connection_worker(&f.stop, &f.wake);
         let outcome = worker.join().expect("the body finished");
-        assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped, "{outcome:?}");
+        assert!(
+            stopped_by_cancellation(&outcome),
+            "the owner's own word, whichever of the two saw the stop: {outcome:?}"
+        );
     });
-    assert!(
-        cell.answer().is_some(),
-        "the woken body served what the producer put there"
-    );
     assert!(
         f.wake.state.lock().expect("a readable notice").started,
         "while the permit stayed set, having never been a reason to wake"
@@ -32118,11 +32187,14 @@ fn a_body_told_to_stop_while_idle_asks_its_owner_what_that_means() {
         // waiter between its check and its wait.
         cancel_connection_worker(&f.stop, &f.wake);
         let outcome = worker.join().expect("the body finished");
-        assert_eq!(outcome.trigger, PrivateWorkerTrigger::Stopped);
-        assert_eq!(
-            outcome.last,
-            Some(PrivateWorkerAsk::Said(X11OrderedServeStep::Stopped)),
-            "and the owner is what said so"
+        // EITHER OF TWO LEGAL ANSWERS. A body told to stop before its own
+        // check departs itself; one told between that check and its visit has
+        // the owner observe the stop instead. Requiring one of them asserts a
+        // schedule. What both carry is the owner's own word, which is what
+        // this control is about.
+        assert!(
+            stopped_by_cancellation(&outcome),
+            "the owner is what said so: {outcome:?}"
         );
     });
     drop(f.fixture);
