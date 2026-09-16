@@ -351,9 +351,14 @@ impl XServerFrontendClientRouteRegistration {
     ///
     /// FROM THE RESERVATION THAT MADE IT, so a caller gets the name this
     /// connection was actually given rather than one assembled out of an
-    /// index, a home and a store it happened to be holding. `None` when this
-    /// registry has no continuation store: there is no place, so there is
-    /// nothing to name.
+    /// index, a home and a store it happened to be holding.
+    ///
+    /// `None` MEANS THIS REGISTRATION IS NOT HOLDING A LEASE, which is not the
+    /// same as there being no store or no place. A registry with no
+    /// continuation store never had one; a connection whose lease has been
+    /// taken for a conversion, or consumed by its own teardown, has not got
+    /// one here any more. In neither case does this establish anything about
+    /// what the store holds.
     #[cfg_attr(not(test), allow(dead_code))] // Asked by a commitment not attached yet.
     pub(crate) fn maintenance_identity(&self) -> Option<PrivateMaintenanceIdentity> {
         let held = match self.ordered_continuation.lock() {

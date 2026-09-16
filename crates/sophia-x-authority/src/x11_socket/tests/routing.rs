@@ -33693,6 +33693,12 @@ fn a_name_from_another_store_resolves_to_nothing_here() {
     let here = one_registration.maintenance_identity().expect("a name");
     let there = two_registration.maintenance_identity().expect("a name");
 
+    // WHAT THIS ESTABLISHES is structural: each name carries its own store
+    // weakly and resolves in that one, so two connections holding the same
+    // number in different stores are different obligations and neither
+    // resolves into the other. There is no receiving store to refuse a
+    // foreign name -- with_home has nowhere to be asked from -- and this does
+    // not claim such a refusal exists.
     assert_eq!(here.place(), there.place(), "the same number");
     assert!(!here.same_as(&there), "and different obligations");
     assert!(
@@ -33792,4 +33798,280 @@ fn a_name_whose_store_has_gone_says_so_and_holds_nothing_up() {
         identity.with_home(|_| ()),
         PrivateMaintenanceReach::StoreGone
     ));
+}
+
+/// Settle a connection's retained place through the real drive, so it goes
+/// back and its number becomes available to a successor.
+///
+/// Every step is production's: the connection ends, its own teardown retains
+/// what it owed, and the store's drive finishes and returns it.
+fn settle_and_return(durable: &PrivateSettlementOwner, place: usize) {
+    for _ in 0..16 {
+        durable.drive_ordered_continuations(4);
+        if matches!(
+            durable.records_even_if_poisoned().continuations.get(place),
+            Some(PrivateOrderedContinuationPlace::Free)
+        ) {
+            return;
+        }
+    }
+    panic!("the drive did not return this place");
+}
+
+#[test]
+fn a_stale_preparations_drop_leaves_its_successors_promise_alone() {
+    // A DESTINATION ENTRY IS REUSABLE NOW, which is what makes this possible:
+    // returning a place frees its destination at once, so a successor can be
+    // reserved and prepared while an old preparation is still in somebody's
+    // hand. A drop that recognised only "promised" would put that successor's
+    // promise back to reserved and give its count away, and the successor
+    // could then be prepared twice over.
+    //
+    // Both generations use the same number deliberately; what separates them
+    // is which home occupies the place.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let lease = durable
+        .reserve_ordered_continuation()
+        .expect("a declared bound leaves a place");
+    let place = lease.index;
+    let stale = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination");
+    lease.relinquish_unexposed();
+    assert_eq!(durable.continuations_reserved(), Some(0));
+
+    // A REAL SUCCESSOR AT THE SAME NUMBER, with a preparation of its own.
+    let client = XServerFrontendClientId(8452);
+    let (successor, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let successor_lease = lease_of(&successor);
+    assert_eq!(successor_lease.index, place, "the number was handed on");
+    let kept = durable
+        .prepare_internal_holder(&successor_lease)
+        .expect("the successor's own destination");
+    assert_eq!(durable.holders_taken(), Some(1));
+
+    // THE OLD PREPARATION GOES, and takes nothing of the successor's with it.
+    drop(stale);
+    assert_eq!(
+        maintenance_destination(&durable, place),
+        Some("promised"),
+        "the successor's promise is still its own"
+    );
+    assert_eq!(durable.holders_taken(), Some(1), "and still counted once");
+    assert!(
+        matches!(
+            durable.prepare_internal_holder(&successor_lease),
+            Err(PrivateHolderRefusal::AlreadyHeld)
+        ),
+        "so it cannot be prepared a second time"
+    );
+    drop((kept, successor, channels, successor_lease, private));
+}
+
+#[test]
+fn a_stale_lease_cannot_prepare_its_successors_destination() {
+    // A LEASE CAN OUTLIVE ITS PLACE. The drive returns a place whose work is
+    // settled and does not consult the lease that reserved it, so a caller
+    // holding one after that is holding a number somebody else now has.
+    // Preparing on the strength of it takes the successor's destination and
+    // leaves the successor unable to prepare its own.
+    let durable = PrivateSettlementOwner::default();
+    let client = XServerFrontendClientId(8453);
+    let (private, registration, _cell, _frames, _wire) =
+        converted_fixture(&durable, client, 84530);
+    let stale_lease = lease_of(&registration);
+    let place = stale_lease.index;
+    // Its capsule is taken out, so the drive can finish the record.
+    assert!(registration
+        .ordered_home
+        .borrow(|continuation| continuation.queue().try_recv().is_ok())
+        .expect("its own home"));
+    drop(registration);
+    settle_and_return(&durable, place);
+    assert_eq!(durable.continuations_reserved(), Some(0));
+
+    // A REAL SUCCESSOR TAKES THE NUMBER.
+    let second = XServerFrontendClientId(8454);
+    let (successor, successor_registration, successor_cell, successor_frames, _wire) =
+        converted_fixture(&durable, second, 84540);
+    let successor_lease = lease_of(&successor_registration);
+    assert_eq!(successor_lease.index, place);
+
+    // THE STALE LEASE IS REFUSED, and the successor is untouched.
+    assert!(
+        matches!(
+            durable.prepare_internal_holder(&stale_lease),
+            Err(PrivateHolderRefusal::Stale)
+        ),
+        "a lease whose place has gone back prepares nothing"
+    );
+    assert_eq!(
+        maintenance_destination(&durable, place),
+        Some("reserved"),
+        "the successor's destination is still reserved for it"
+    );
+    assert!(
+        durable.prepare_internal_holder(&successor_lease).is_ok(),
+        "and the successor can still prepare its own"
+    );
+    let capsule = successor_registration
+        .ordered_home
+        .borrow(|continuation| continuation.queue().try_recv().ok())
+        .expect("its own home")
+        .expect("the successor's own capsule");
+    assert_eq!(
+        capsule.delivery(),
+        XAuthorityInputDeliveryId::from_raw(84540)
+    );
+    assert_eq!(order_pass_frames(&capsule), successor_frames);
+    assert!(Arc::ptr_eq(
+        &successor_cell,
+        &capsule.finalizer().expect("carried").completion
+    ));
+    assert!(successor_cell.answer().is_none());
+    drop((
+        private,
+        successor,
+        successor_registration,
+        successor_lease,
+        stale_lease,
+        capsule,
+    ));
+}
+
+#[test]
+fn a_conversion_whose_place_moved_on_disturbs_nothing() {
+    // THE CHECK AND THE PUBLICATION ARE TWO ACQUISITIONS, with the store
+    // released in between. A place whose work settles in that gap goes back,
+    // and the next connection takes the number and prepares a destination of
+    // its own -- so publishing on the strength of the earlier check would
+    // replace that connection's promise with a holder naming a home it never
+    // had.
+    //
+    // WHAT THIS CONTROL ACTUALLY REACHES, said plainly: the place goes back
+    // before the conversion is asked at all, so the FIRST of the two checks
+    // catches it and the answer is NoPlace. The revalidation in the second
+    // acquisition -- the one that matters when the place moves in the gap --
+    // is not reached from here, and cannot be: the gap is inside one call and
+    // closing it needs a schedule this control cannot impose. That the
+    // successor is left untouched is established either way, and it is the
+    // part a caller depends on.
+    let durable = PrivateSettlementOwner::default();
+    let client = XServerFrontendClientId(8455);
+    let (private, registration, _cell, _frames, _wire) =
+        converted_fixture(&durable, client, 84550);
+    let lease = lease_of(&registration);
+    let place = lease.index;
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination");
+    assert!(registration
+        .ordered_home
+        .borrow(|continuation| continuation.queue().try_recv().is_ok())
+        .expect("its own home"));
+    drop(registration);
+    settle_and_return(&durable, place);
+
+    // A REAL SUCCESSOR AT THE SAME NUMBER, with its own destination reserved.
+    let second = XServerFrontendClientId(8456);
+    let (successor, successor_registration, successor_cell, successor_frames, _wire) =
+        converted_fixture(&durable, second, 84560);
+    assert_eq!(
+        maintenance_destination(&durable, place),
+        Some("reserved"),
+        "the successor's own"
+    );
+
+    // THE OLD CONVERSION IS ASKED AND REFUSES.
+    let outer = durable.clone();
+    let PrivateInternalConversion::NoPlace(lease) = lease.convert_to_internal(&outer, destination)
+    else {
+        panic!("a place that moved on is not this lease's to commit")
+    };
+    assert_eq!(
+        maintenance_destination(&durable, place),
+        Some("reserved"),
+        "the successor's destination is untouched"
+    );
+    assert!(durable.take_internal_holder(0).is_none(), "no holder was made");
+    assert_eq!(
+        durable.continuations_abandoned(),
+        Some(0),
+        "and nothing was marked against the successor"
+    );
+    let capsule = successor_registration
+        .ordered_home
+        .borrow(|continuation| continuation.queue().try_recv().ok())
+        .expect("its own home")
+        .expect("the successor's own capsule");
+    assert_eq!(order_pass_frames(&capsule), successor_frames);
+    assert!(Arc::ptr_eq(
+        &successor_cell,
+        &capsule.finalizer().expect("carried").completion
+    ));
+    assert!(successor_cell.answer().is_none());
+    drop((private, successor, successor_registration, lease, outer, capsule));
+}
+
+#[test]
+fn a_publication_that_is_refused_leaves_exactly_the_first_connections_reservation() {
+    // THE REFUSAL PRODUCTION ACTUALLY HAS. A second registration for a client
+    // that already has one is refused at publication, after its own place and
+    // destination were reserved -- and the existing unexposed release is what
+    // gives both back. The first connection keeps exactly what it had.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8457);
+    let (first, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let identity = first.maintenance_identity().expect("a name");
+    assert_eq!(durable.continuations_reserved(), Some(1));
+
+    assert!(
+        matches!(
+            private
+                .broker
+                .registry
+                .register_client_with_admission(client, Some(admitted(client))),
+            Err(XServerFrontendRouteError::DuplicateClient { .. })
+        ),
+        "a client that already has a row is refused"
+    );
+
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "the refused registration gave its place back"
+    );
+    assert_eq!(
+        maintenance_destination(&durable, identity.place()),
+        Some("reserved"),
+        "and exactly the first connection's destination is left"
+    );
+    assert_eq!(
+        durable
+            .records_even_if_poisoned()
+            .holders
+            .iter()
+            .filter(|place| !matches!(place, PrivateHolderPlace::Free))
+            .count(),
+        1,
+        "one destination, not two"
+    );
+    assert!(
+        identity
+            .with_home(|home| Arc::ptr_eq(home, &first.ordered_home))
+            .reached()
+            .expect("still its own"),
+        "and the first connection's name still resolves to its own home"
+    );
+    drop((first, private));
 }

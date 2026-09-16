@@ -91,10 +91,11 @@ impl PrivateMaintenanceIdentity {
     /// the act would run against that connection's home on the strength of a
     /// check that passed for a different one.
     ///
-    /// THE STORE IS HELD FOR THE WHOLE ACT, and released before the act runs.
-    /// A name holds its store weakly, so an operation that let the upgrade go
-    /// would be acting on a home whose store could disappear underneath it;
-    /// keeping the aggregate instead would put every other connection behind
+    /// TWO DIFFERENT THINGS, and they go opposite ways. The upgraded store
+    /// OWNER is held for the whole act: a name holds its store weakly, so an
+    /// operation that let that go would be acting on a home whose store could
+    /// disappear underneath it. The store's AGGREGATE GUARD is released before
+    /// the act runs: keeping it would put every other connection behind
     /// whatever this does with the home.
     ///
     /// AND IT ESTABLISHES REACHABILITY, NOTHING MORE. That this place was this

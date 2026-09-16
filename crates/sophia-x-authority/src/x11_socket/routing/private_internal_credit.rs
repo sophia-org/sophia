@@ -309,6 +309,15 @@ enum PrivateHolderRefusal {
     /// Not a capacity answer: retrying changes nothing until whoever holds
     /// that one is done with it.
     AlreadyHeld,
+    /// This lease's place has moved on to another connection.
+    ///
+    /// NOTHING WAS INSPECTED AND NOTHING WAS CHANGED. A lease can outlive its
+    /// place -- the drive returns a place whose work is settled, and the lease
+    /// that reserved it is not consulted -- and the next connection takes the
+    /// same number. Preparing on the strength of that number would take the
+    /// successor's destination and leave the successor unable to prepare its
+    /// own.
+    Stale,
     /// The lease is not this store's.
     Foreign,
 }
@@ -348,19 +357,37 @@ impl Drop for PrivateHolderDestination {
     /// A destination that never committed gives its place back.
     ///
     /// Nothing was ever put in it -- a promised place holds no holder and no
-    /// credit -- so there is no work to account for and the capacity is free.
-    /// This is the refusal path's other half: a preparation that is not used
-    /// must not spend a holder place, or leave a place looking as though it
-    /// already had a holder, on a holder that was never made.
+    /// credit -- so there is no work to account for. It goes back to RESERVED
+    /// rather than free: the connection it was set aside for still has its
+    /// place, and freeing it would let the entry be handed to somebody else
+    /// while a published connection still needed it. This is the refusal
+    /// path's other half: a preparation that is not used must not spend a
+    /// destination, or leave a place looking as though it already had a
+    /// holder, on a holder that was never made.
     fn drop(&mut self) {
         if !self.armed {
             return;
         }
         let mut held = self.owner.records_even_if_poisoned();
-        if matches!(
+        // WHOSE PROMISE, AND WHOSE PLACE, IN ONE ACQUISITION. A destination
+        // entry can be reserved again for a successor while an old
+        // preparation is still in a caller's hand -- returning a place frees
+        // its destination now -- so a drop that recognised only the variant
+        // would put the SUCCESSOR's promise back to reserved and give its
+        // count away, and the successor could then be prepared twice.
+        //
+        // The number is not enough on its own: both generations use it
+        // deliberately. What separates them is the home this preparation was
+        // made for still occupying that place. A stale drop changes nothing.
+        let ours = matches!(
             held.holders.get(self.index),
-            Some(PrivateHolderPlace::Promised(_))
-        ) {
+            Some(PrivateHolderPlace::Promised(promised)) if *promised == self.for_place
+        ) && matches!(
+            held.continuations.get(self.for_place),
+            Some(PrivateOrderedContinuationPlace::Taken(home))
+                if std::ptr::eq(Arc::as_ptr(home), self.for_record.as_ptr())
+        );
+        if ours {
             // BACK TO RESERVED, NOT FREE. Nothing was put in it, and the place
             // it was set aside for is still this connection's: handing it out
             // to somebody else would leave that connection exposed with
@@ -391,10 +418,11 @@ impl PrivateSettlementOwner {
     /// the same live place would leave one holder naming something another
     /// holder owns.
     ///
-    /// The storage is grown here rather than at commitment, so what follows is
-    /// an assignment into a place that already exists. That is a matter of
-    /// where the allocation happens, not a refusal this can report: growing a
-    /// `Vec` aborts rather than returning, and nothing here can catch that.
+    /// NOTHING IS GROWN HERE ANY MORE. The destination was set aside with this
+    /// connection's place, before that connection was published; this finds it
+    /// and promises it. A preparation that allocated would mean a connection
+    /// could be exposed and only afterwards found to have nowhere for its
+    /// obligation to go.
     fn prepare_internal_holder(
         &self,
         lease: &PrivateOrderedContinuationSlot,
@@ -405,10 +433,18 @@ impl PrivateSettlementOwner {
         let Ok(mut held) = self.inner.lock() else {
             return Err(PrivateHolderRefusal::Unavailable);
         };
-        // ASKED FIRST, because it is the answer that is true regardless of
+        // WHOSE PLACE, BEFORE ANYTHING ELSE IS LOOKED AT. A lease carries a
+        // number and the home it was made for, and only the second says the
+        // place is still its own. Asking about preparation state on the
+        // strength of the number alone lets a lease whose place has gone back
+        // take the destination reserved for whoever has it now.
+        let for_place = lease.index;
+        if !lease.holds(&held) {
+            return Err(PrivateHolderRefusal::Stale);
+        }
+        // ASKED NEXT, because it is the answer that is true regardless of
         // room: a place that already has a holder does not acquire one by
         // capacity appearing.
-        let for_place = lease.index;
         if held.holders.iter().any(|place| match place {
             PrivateHolderPlace::Promised(promised) => *promised == for_place,
             PrivateHolderPlace::Taken(holder) => holder.credit.index == for_place,
@@ -530,15 +566,29 @@ enum PrivateInternalConversion {
     /// The place is not this lease's, so there was nothing to be responsible
     /// for. The holder place is released and the lease comes back.
     ///
-    /// NO CONTROL REACHES THIS, and it is here so the class cannot return: the
-    /// only way a live lease outlives its place was a credit releasing one
-    /// early, which the release rules refuse. Carrying the lease back rather
-    /// than dropping it is what keeps a conversion that found nothing from
-    /// also disposing of whatever the lease does name.
+    /// A LEASE CAN OUTLIVE ITS PLACE, and the ordinary way is not a defect:
+    /// the drive returns a place whose work is settled and does not consult
+    /// the lease that reserved it. An earlier note here said the only route
+    /// was a credit releasing early, which the release rules refuse; that was
+    /// wrong, and a real teardown-and-drive schedule reaches this. Carrying
+    /// the lease back rather than dropping it is what keeps a conversion that
+    /// found nothing from also disposing of whatever the lease does name.
     NoPlace(#[allow(dead_code)] PrivateOrderedContinuationSlot),
     /// Refused before anything was touched. The lease comes back armed over
     /// the same place, and the source still holds its work.
     Foreign(PrivateOrderedContinuationSlot),
+    /// The place moved on between the lookup and the publication.
+    ///
+    /// NOTHING WAS DISTURBED. The successor keeps its place, its destination
+    /// and its work, and nothing is marked abandoned on its account; the lease
+    /// comes back to say for itself what became of whatever it still names.
+    ///
+    /// NO CONTROL OF MINE REACHES THIS. It is returned by the revalidation in
+    /// the acquisition that publishes, which only fires when the place moves
+    /// between the two acquisitions -- a gap inside one call, which no control
+    /// here can schedule. A place that moved before the conversion was asked
+    /// at all is caught by the first lookup and answered `NoPlace`.
+    Moved(#[allow(dead_code)] PrivateOrderedContinuationSlot),
 }
 
 #[cfg(unix)]
@@ -613,21 +663,35 @@ impl PrivateOrderedContinuationSlot {
         };
         {
             let mut held = outer.records_even_if_poisoned();
-            // THE PLACE IS FOUND BEFORE THE HOLDER IS BUILT, and found without
-            // indexing. A credit's own Drop takes the store, so a credit that
-            // comes into existence under this guard and is then dropped -- by
-            // an index that was out of range, which is the shape a missing
-            // provenance check leaves -- would be this thread waiting for
-            // itself. Asking for the place first means nothing that can fail
-            // happens once the credit exists.
-            let Some(place) = held.holders.get_mut(destination.index) else {
-                // Unreachable from the checks above, which is why it refuses
-                // rather than asserting: a destination whose index this store
-                // does not have is not one to commit, however it got here.
+            // ASKED AGAIN, IN THE ACQUISITION THAT PUBLISHES. The occupant was
+            // checked in an acquisition of its own further up, and the store
+            // was released in between; a place whose work settled in that gap
+            // goes back, and the next connection takes the number and prepares
+            // a destination of its own. Publishing on the strength of the
+            // earlier check would replace that connection's promise with a
+            // holder naming a home it never had.
+            //
+            // BOTH HALVES. That this place is still this lease's, and that the
+            // destination still holds the promise this preparation made.
+            let current = matches!(
+                held.continuations.get(index),
+                Some(PrivateOrderedContinuationPlace::Taken(home))
+                    if std::ptr::eq(Arc::as_ptr(home), self.record.as_ptr())
+            );
+            let promised = matches!(
+                held.holders.get(destination.index),
+                Some(PrivateHolderPlace::Promised(promised))
+                    if *promised == destination.for_place
+            );
+            if !current || !promised {
                 drop(held);
-                return PrivateInternalConversion::Foreign(self);
-            };
-            *place = PrivateHolderPlace::Taken(PrivateStoreOwnedHolder {
+                return PrivateInternalConversion::Moved(self);
+            }
+            // AND ONLY NOW IS A CREDIT BUILT. Its own Drop takes the store, so
+            // one that came into existence under this guard and was then
+            // dropped would be this thread waiting for itself; everything that
+            // can refuse has already happened.
+            let holder = PrivateHolderPlace::Taken(PrivateStoreOwnedHolder {
                 credit: PrivateInternalCredit {
                     owner: outer.settlement_ref(),
                     index,
@@ -635,6 +699,7 @@ impl PrivateOrderedContinuationSlot {
                     armed: true,
                 },
             });
+            held.holders[destination.index] = holder;
             // THE DUTY MOVES HERE: two assignments, serialized under one
             // acquisition of the store. Not one write -- they are two -- but
             // nothing can observe the store between them, and neither can
