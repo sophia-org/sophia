@@ -136,8 +136,10 @@ impl PrivateHandoverGate {
 struct PrivateWakeState {
     /// Something may have been accepted since the last look.
     ///
-    /// Set by the handover notification, which is not landed: only the
-    /// disappearance below publishes anything today.
+    /// Published by a handover's notice as that handover ends, whatever came
+    /// of it. Nothing reads it yet -- the worker that would wait on it is not
+    /// landed -- and it is set rather than signalled alone because a signal
+    /// reaches only whoever is already waiting.
     #[cfg_attr(not(test), allow(dead_code))]
     pending: bool,
     /// How many senders for this connection exist.
@@ -350,10 +352,6 @@ impl Drop for PrivateGatedOrderedSender {
 
 #[cfg(unix)]
 impl PrivateGatedOrderedSender {
-    /// Ask to hand over, BEFORE taking custody of anything.
-    ///
-    /// The admission is held for the handover and for writing down what came
-    /// back, so a close cannot land between the send and the record of it.
     /// Arm this connection's notice for a handover about to be attempted.
     ///
     /// DECLARED BEFORE THE ADMISSION BY ITS CALLERS, so that the drop order --
@@ -365,6 +363,10 @@ impl PrivateGatedOrderedSender {
         }
     }
 
+    /// Ask to hand over, BEFORE taking custody of anything.
+    ///
+    /// The admission is held for the handover and for writing down what came
+    /// back, so a close cannot land between the send and the record of it.
     fn admit(&self) -> Result<PrivateHandoverAdmission<'_>, PrivateHandoverRefusal> {
         let Ok(fenced) = self.gate.fenced.lock() else {
             return Err(PrivateHandoverRefusal::Unreadable);
