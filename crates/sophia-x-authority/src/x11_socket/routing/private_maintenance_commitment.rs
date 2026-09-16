@@ -27,29 +27,36 @@ struct PrivateCommittedObligation {
     /// responsibility -- something is still owed, and that case is the one
     /// this retention exists for.
     closed: PrivateHandoverFence,
-    /// The join this obligation rests on, kept rather than copied.
+    /// The join this obligation rests on: the evidence itself, named weakly.
     ///
-    /// THE EVIDENCE ITSELF, so a worker that panicked still has its payload
-    /// here after the frames that joined it have gone. A copied flag with the
-    /// payload dropped alongside the caller's record would be a different and
-    /// much weaker thing.
-    join: Arc<PrivateJoinEvidence>,
-}
-
-#[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a driver no production site has yet.
-impl PrivateCommittedObligation {
-    fn identity(&self) -> &PrivateMaintenanceIdentity {
-        &self.identity
-    }
-
-    fn closed(&self) -> PrivateHandoverFence {
-        self.closed
-    }
-
-    fn join(&self) -> &Arc<PrivateJoinEvidence> {
-        &self.join
-    }
+    /// THE EVIDENCE AND NOT A COPY OF ITS SHAPE, so a worker that panicked
+    /// still has its payload here after the frames that joined it have gone. A
+    /// copied flag with the payload dropped alongside the caller's record
+    /// would be a different and much weaker thing.
+    ///
+    /// AND NAMED, NOT OWNED, FOR A REASON THAT IS WORTH STATING PLAINLY. A
+    /// panic payload is whatever the panicking frame was carrying -- `Any +
+    /// Send` and nothing more -- so it may itself hold a strong handle to this
+    /// very store. A store that OWNED such a payload would be on a ring with
+    /// itself: store, holder, obligation, evidence, payload, store. Nothing
+    /// here can prevent that by inspecting the payload without discarding or
+    /// special-casing it, and neither is acceptable.
+    ///
+    /// SO THE KEEPER IS OUTSIDE. Committing hands its caller the strong
+    /// handle, exactly as converting hands its caller the store: the store
+    /// names the evidence and something outside it keeps the evidence alive.
+    /// A payload holding a store handle then makes a chain from that keeper
+    /// and not a ring through the store, and everything releases when the
+    /// keeper lets go.
+    ///
+    /// WHO THAT KEEPER IS, TODAY AND LATER. Today it is whoever asked for the
+    /// commitment, which in these controls is the caller. At integration it
+    /// must be the durable outer service owner -- the same authority that
+    /// keeps the store across service exits -- and that owner does not exist
+    /// yet. This is the narrower boundary that keeping an opaque payload
+    /// forced, named here rather than absorbed into a claim that one ownership
+    /// shape satisfied both requirements.
+    join: std::sync::Weak<PrivateJoinEvidence>,
 }
 
 /// What a commitment did.
@@ -59,27 +66,89 @@ impl PrivateCommittedObligation {
 enum PrivateCommitted {
     /// The obligation is in this connection's destination and the duty is the
     /// store's.
-    Committed,
+    ///
+    /// CARRIES THE EVIDENCE, and the caller must keep it. The store names the
+    /// join evidence rather than owning it -- see the obligation's own field
+    /// for why an opaque payload forces that -- so whoever commits is its
+    /// keeper from here. Returning it means a caller cannot end up with none
+    /// by omission.
+    Committed(Arc<PrivateJoinEvidence>),
     /// The evidence this rests on is not complete yet.
     ///
-    /// NOTHING WAS CONSUMED AND NOTHING WAS CHANGED. No duty moved, no
-    /// destination was touched, and this same context may ask again when its
-    /// evidence arrives. Nothing here joins, closes, cancels or retries to
-    /// make itself eligible.
-    NotYetEvidenced(PrivateOrderedContinuationSlot),
+    /// NOTHING WAS CONSUMED AND NOTHING WAS CHANGED, the prepared destination
+    /// included: it stays in this context, still promised to this place, so
+    /// the same context asks again when its evidence arrives. Nothing here
+    /// joins, closes, cancels or retries to make itself eligible.
+    NotYetEvidenced,
     /// This connection's place is not the lease's any more, or the destination
     /// is not the one prepared for it.
     ///
     /// The successor keeps its place, its destination and its work, and
     /// nothing is marked against it.
-    Stale(PrivateOrderedContinuationSlot),
+    Stale,
     /// The destination or the outer holder is not of this lease's store.
-    Foreign(PrivateOrderedContinuationSlot),
+    Foreign,
+    /// This context has already committed. Its evidence stands.
+    AlreadyCommitted,
+}
+
+/// One connection's commitment, bound once to everything it acts on.
+///
+/// CAPTURED, NOT PASSED PER VISIT. A commitment that took a destination and a
+/// fence at every call is a context with no connection of its own: an early
+/// visit hands the lease back, and the next visit can be given another
+/// connection's recorded fence -- committing this connection's obligation on
+/// the strength of a thread that served a different one, with this
+/// connection's gate still open. There is no substitute to pass here.
+///
+/// THE PREPARED DESTINATION STAYS. An early visit is retryable on this same
+/// context, so the destination it was given is kept rather than dropped and
+/// re-prepared; dropping it would put the entry back to reserved and change
+/// the very accounting the outcome says it has not touched.
+///
+/// THAT THE PARTS BELONG TO ONE CONNECTION IS THE CALLER'S OBLIGATION, as
+/// everywhere else here: binding them once prevents the set being changed
+/// afterwards, which is a smaller and different thing from establishing that
+/// it was right to begin with.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Built by a caller no production site has yet.
+struct PrivateCommitmentContext<'a> {
+    /// The store, held by the caller in its own frame throughout.
+    outer: &'a PrivateSettlementOwner,
+    /// The fencing whose recorded answer this commitment rests on, and which
+    /// already names the join beneath it.
+    fence: &'a PrivateFenceRecord<'a>,
+    /// This connection's lease and the destination prepared for it, until a
+    /// commitment consumes them.
+    held: Mutex<Option<(PrivateOrderedContinuationSlot, PrivateHolderDestination)>>,
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Committed by a caller no production site has yet.
-impl PrivateOrderedContinuationSlot {
+#[cfg_attr(not(test), allow(dead_code))] // Built by a caller no production site has yet.
+impl<'a> PrivateCommitmentContext<'a> {
+    fn bound_to(
+        outer: &'a PrivateSettlementOwner,
+        fence: &'a PrivateFenceRecord<'a>,
+        lease: PrivateOrderedContinuationSlot,
+        destination: PrivateHolderDestination,
+    ) -> Self {
+        Self {
+            outer,
+            fence,
+            held: Mutex::new(Some((lease, destination))),
+        }
+    }
+
+    /// Take back what this context was holding, if it has not committed.
+    ///
+    /// For a caller whose commitment was refused and which has something else
+    /// to do with the lease and the destination it prepared.
+    fn into_parts(self) -> Option<(PrivateOrderedContinuationSlot, PrivateHolderDestination)> {
+        self.held
+            .into_inner()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Commit this connection's maintenance obligation into the destination
     /// reserved for it.
     ///
@@ -96,122 +165,152 @@ impl PrivateOrderedContinuationSlot {
     /// commitment that waited on either would be hostage to whoever was
     /// reading them.
     ///
-    /// THE FENCE ALREADY NAMES ITS JOIN, which is why no join is passed
-    /// separately: a commitment that accepted one alongside could be given an
-    /// unrelated completed join as though it were this connection's evidence.
-    ///
     /// ONE ACCOUNTING TRANSITION. The occupant and the expected promise are
-    /// checked again in the acquisition that installs the obligation and
-    /// transfers the duty, for the same reason the conversion beside it does:
-    /// a place whose work settled in the gap goes back, and the next
-    /// connection takes the number. At the moment this becomes observable the
-    /// identity and the evidence are already in place, the lease owes nothing,
-    /// and exactly one holder owes this place's disposal.
+    /// checked in the acquisition that installs the obligation and transfers
+    /// the duty, for the same reason the conversion beside it does: a place
+    /// whose work settled in the gap goes back, and the next connection takes
+    /// the number. At the moment this becomes observable the identity and the
+    /// evidence are already in place, the lease owes nothing, and exactly one
+    /// holder owes this place's disposal.
     ///
-    /// AND IT AUTHORISES NOBODY. The home's standing is untouched, no
-    /// teardown evidence is written, no attention is retired, and nothing is
-    /// taught to drive this record.
-    fn commit_maintenance_obligation(
-        mut self,
-        outer: &PrivateSettlementOwner,
-        mut destination: PrivateHolderDestination,
-        fence: &PrivateFenceRecord<'_>,
-    ) -> PrivateCommitted {
-        if !outer.is_same_store(&self.owner)
-            || !destination.owner.is_same_store(&self.owner)
-            || destination.for_place != self.index
-            || !std::ptr::eq(destination.for_record.as_ptr(), self.record.as_ptr())
-        {
-            return PrivateCommitted::Foreign(self);
-        }
-        // ASKED BEFORE ANYTHING IS CLAIMED OR CONSUMED, so an early request
-        // leaves this context exactly as it found it.
-        let Some(closed) = fence.fence() else {
-            return PrivateCommitted::NotYetEvidenced(self);
+    /// AND IT AUTHORISES NOBODY. The home's standing is untouched, no teardown
+    /// evidence is written, no attention is retired, and nothing is taught to
+    /// drive this record.
+    fn commit(&self) -> PrivateCommitted {
+        let mut held = self
+            .held
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some((lease, destination)) = held.as_mut() else {
+            return PrivateCommitted::AlreadyCommitted;
         };
-        let join = fence.join_evidence();
-        if join.result().is_none() {
+        if !self.outer.is_same_store(&lease.owner)
+            || !destination.owner.is_same_store(&lease.owner)
+            || destination.for_place != lease.index
+            || !std::ptr::eq(destination.for_record.as_ptr(), lease.record.as_ptr())
+        {
+            return PrivateCommitted::Foreign;
+        }
+        // ASKED BEFORE ANYTHING IS CONSUMED, so an early visit leaves this
+        // context exactly as it found it -- its lease and its prepared
+        // destination included.
+        let Some(closed) = self.fence.fence() else {
+            return PrivateCommitted::NotYetEvidenced;
+        };
+        let evidence = self.fence.join_evidence();
+        if evidence.result().is_none() {
             // DEFENCE IN DEPTH, AND NO CONTROL REACHES IT. A fencing refuses
             // to ask the gate until its own join has published, so a recorded
             // fence already implies a published result. It is asked anyway
-            // because what this obligation keeps is the join's evidence, and a
-            // commitment that stated one over an empty result home would be
-            // resting on the fence's guard rather than on what it is storing.
-            return PrivateCommitted::NotYetEvidenced(self);
+            // because this obligation NAMES that evidence, and resting on the
+            // fence's guard instead would be resting on somebody else's check.
+            return PrivateCommitted::NotYetEvidenced;
         }
-        // EVERYTHING FALLIBLE IS DONE. What follows is one acquisition, two
-        // assignments and nothing that can refuse.
-        let identity = self.maintenance_identity();
-        let index = self.index;
+        let identity = lease.maintenance_identity();
+        let index = lease.index;
         {
-            let mut held = outer.records_even_if_poisoned();
-            // BOTH HALVES ARE ASKED, and only one of them is reachable on its
-            // own. Returning a place frees its destination in the same act, so
-            // every schedule that moves the occupant also breaks the promise,
-            // and no control here can separate them. The occupant is asked
-            // regardless: what this installs is an obligation naming a home,
-            // and a promise surviving while the home it was made for did not
-            // is exactly the case that must not be committed into.
+            let mut store = self.outer.records_even_if_poisoned();
+            // BOTH HALVES ARE ASKED, AND EITHER CAN FAIL ALONE. A place whose
+            // work settled goes back, the next connection takes the number and
+            // prepares a destination of its own -- and that promise matches by
+            // number while the home does not. A commitment that asked only
+            // about the promise would find it satisfied and state this
+            // connection's obligation into the successor's destination.
             let current = matches!(
-                held.continuations.get(index),
+                store.continuations.get(index),
                 Some(PrivateOrderedContinuationPlace::Taken(home))
-                    if std::ptr::eq(Arc::as_ptr(home), self.record.as_ptr())
+                    if std::ptr::eq(Arc::as_ptr(home), lease.record.as_ptr())
             );
             let promised = matches!(
-                held.holders.get(destination.index),
+                store.holders.get(destination.index),
                 Some(PrivateHolderPlace::Promised(promised))
                     if *promised == destination.for_place
             );
             if !current || !promised {
-                drop(held);
-                return PrivateCommitted::Stale(self);
+                drop(store);
+                return PrivateCommitted::Stale;
             }
             // Built only now: a credit's own Drop re-enters the store, so one
             // that came into existence under this guard and was then dropped
-            // would be this thread waiting for itself.
+            // would be this thread waiting for itself. Everything that can
+            // refuse has already happened.
             let holder = PrivateHolderPlace::Taken(PrivateStoreOwnedHolder {
                 credit: PrivateInternalCredit {
-                    owner: outer.settlement_ref(),
+                    owner: self.outer.settlement_ref(),
                     index,
-                    record: Arc::downgrade(&self.record.upgrade().unwrap_or_else(|| {
-                        unreachable!("the occupant check above upgraded this home")
-                    })),
+                    record: lease.record.clone(),
                     armed: true,
                 },
                 obligation: Some(PrivateCommittedObligation {
                     identity,
                     closed,
-                    join,
+                    join: Arc::downgrade(&evidence),
                 }),
             });
-            held.holders[destination.index] = holder;
+            store.holders[destination.index] = holder;
             // THE DUTY MOVES HERE, in the same acquisition: the credit is
             // armed and the lease is disarmed together, so there is exactly
             // one holder of it at every instant.
-            self.armed = false;
+            lease.armed = false;
             destination.armed = false;
         }
-        PrivateCommitted::Committed
+        // Consumed: this context has committed and cannot do so again.
+        *held = None;
+        PrivateCommitted::Committed(evidence)
+    }
+}
+
+/// What a store says about one connection's committed obligation.
+///
+/// A SNAPSHOT, TAKEN UNDER THE AGGREGATE AND READ OUTSIDE IT. Handing a
+/// borrowed obligation to a callback ran that callback beneath the store's own
+/// lock, so anything it did -- resolving the identity, reading the payload --
+/// was another acquisition underneath this one. Everything here is cheap to
+/// copy, so nothing is lost by taking it out first.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
+struct PrivateCommittedSnapshot {
+    identity: PrivateMaintenanceIdentity,
+    closed: PrivateHandoverFence,
+    join: std::sync::Weak<PrivateJoinEvidence>,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
+impl PrivateCommittedSnapshot {
+    fn identity(&self) -> &PrivateMaintenanceIdentity {
+        &self.identity
+    }
+
+    fn closed(&self) -> PrivateHandoverFence {
+        self.closed
+    }
+
+    fn join(&self) -> Option<Arc<PrivateJoinEvidence>> {
+        self.join.upgrade()
     }
 }
 
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 impl PrivateSettlementOwner {
-    /// The obligation committed for a place, if one has been.
+    /// What this store says about the obligation committed for a place.
     ///
-    /// BORROWED UNDER THE STORE and answered as a copy of what it says rather
-    /// than by handing the record out: an obligation belongs to the store that
-    /// keeps it.
-    fn committed_obligation<R>(
-        &self,
-        index: usize,
-        act: impl FnOnce(&PrivateCommittedObligation) -> R,
-    ) -> Option<R> {
+    /// TAKEN OUT, NOT ACTED ON UNDER THE STORE. The aggregate is released
+    /// before a caller does anything with this; the store stays pinned because
+    /// the caller is holding one.
+    fn committed_obligation(&self, index: usize) -> Option<PrivateCommittedSnapshot> {
         let held = self.records_even_if_poisoned();
         let PrivateHolderPlace::Taken(holder) = held.holders.get(index)? else {
             return None;
         };
-        holder.obligation.as_ref().map(act)
+        holder
+            .obligation
+            .as_ref()
+            .map(|obligation| PrivateCommittedSnapshot {
+                identity: obligation.identity.clone(),
+                closed: obligation.closed,
+                join: obligation.join.clone(),
+            })
     }
 }

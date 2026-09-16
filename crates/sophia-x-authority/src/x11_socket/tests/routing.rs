@@ -34172,46 +34172,40 @@ fn a_commitment_waits_for_the_evidence_it_rests_on() {
     let abandoned_before = durable.continuations_abandoned();
 
     // NEITHER JOINED NOR FENCED.
-    let PrivateCommitted::NotYetEvidenced(lease) =
-        lease.commit_maintenance_obligation(&outer, destination, &fence)
-    else {
-        panic!("no evidence yet")
-    };
+    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+    assert!(matches!(context.commit(), PrivateCommitted::NotYetEvidenced));
     // NOTHING WAS CONSUMED AND NOTHING WAS CHANGED. The lease comes back armed
     // over the same place, and the destination it was offered goes back to
     // reserved -- still this connection's, still preparable -- so the same
     // context asks again by preparing again.
     assert_eq!(
         maintenance_destination(&durable, c.place),
-        Some("reserved"),
-        "the destination is this connection's again, not spent"
+        Some("promised"),
+        "the prepared destination stayed in this context, not spent and not \
+         handed back"
     );
     assert_eq!(durable.continuations_abandoned(), abandoned_before);
-    assert!(lease.armed);
 
-    // JOINED BUT NOT FENCED: still not enough.
+    // JOINED BUT NOT FENCED: still not enough, and still the same context.
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
-    let destination = durable
-        .prepare_internal_holder(&lease)
-        .expect("its own destination again");
-    let PrivateCommitted::NotYetEvidenced(lease) =
-        lease.commit_maintenance_obligation(&outer, destination, &fence)
-    else {
-        panic!("a join alone is not this connection's evidence")
-    };
+    assert!(matches!(context.commit(), PrivateCommitted::NotYetEvidenced));
+    assert_eq!(
+        maintenance_destination(&durable, c.place),
+        Some("promised"),
+        "the prepared destination stayed in this context across both refusals"
+    );
 
     // AND WHEN THE FENCE HAS RECORDED, THE SAME CONTEXT COMMITS.
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
-    let destination = durable
-        .prepare_internal_holder(&lease)
-        .expect("its own destination again");
-    assert!(matches!(
-        lease.commit_maintenance_obligation(&outer, destination, &fence),
-        PrivateCommitted::Committed
-    ));
+    let PrivateCommitted::Committed(evidence) = context.commit() else {
+        panic!("its own evidence is complete")
+    };
+    // A SECOND VISIT REPLACES NOTHING.
+    assert!(matches!(context.commit(), PrivateCommitted::AlreadyCommitted));
+    let _ = evidence;
     assert!(
         durable
-            .committed_obligation(c.place, |obligation| obligation.closed())
+            .committed_obligation(c.place)
             .is_some(),
         "the obligation is in this connection's own destination"
     );
@@ -34220,15 +34214,21 @@ fn a_commitment_waits_for_the_evidence_it_rests_on() {
 
 #[test]
 fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
-    // WHAT A COMMITTED OBLIGATION KEEPS IS THE EVIDENCE, NOT A COPY OF ITS
+    // WHAT A COMMITTED OBLIGATION NAMES IS THE EVIDENCE, NOT A COPY OF ITS
     // SHAPE. A worker that panicked was carrying something, and an obligation
     // that recorded only "it panicked" while the payload went with the
     // caller's record would have kept the wrong thing.
+    //
+    // AND THE STORE NAMES IT RATHER THAN OWNING IT. A panic payload is
+    // whatever the frame was carrying and may hold a strong handle to this
+    // very store, so a store that owned one could be on a ring with itself.
+    // The commitment hands its caller the evidence and the caller is its
+    // keeper; this control is that keeper.
     let c = commit_fixture(XServerFrontendClientId(8462), true);
     let durable = c.g.f.fixture.durable.clone();
     let outer = durable.clone();
     let place = c.place;
-    {
+    let kept = {
         let lease = lease_of(&c.g.f.fixture.registration);
         let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
         let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
@@ -34237,34 +34237,51 @@ fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
         let destination = durable
             .prepare_internal_holder(&lease)
             .expect("its own destination");
-        assert!(matches!(
-            lease.commit_maintenance_obligation(&outer, destination, &fence),
-            PrivateCommitted::Committed
-        ));
-        // The reaping and fencing records, and the exit record, all go here.
-    }
+        let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+        let PrivateCommitted::Committed(evidence) = context.commit() else {
+            panic!("its own evidence is complete")
+        };
+        evidence
+        // The reaping and fencing records, and the commitment context, all go
+        // here. The exit record goes with the fixture at the end.
+    };
 
-    let carried = durable
-        .committed_obligation(place, |obligation| {
-            assert_eq!(obligation.closed(), PrivateHandoverFence::Established);
-            assert_eq!(obligation.identity().place(), place);
-            let PrivateJoinResult::Panicked(payload) =
-                obligation.join().result().expect("a completed join")
-            else {
-                panic!("this worker panicked")
-            };
-            payload
-                .lock()
-                .expect("a readable payload")
-                .downcast_ref::<&str>()
-                .copied()
-                .map(str::to_owned)
-        })
-        .expect("the store keeps this connection's obligation");
+    let obligation = durable
+        .committed_obligation(place)
+        .expect("the store names this connection's obligation");
+    assert_eq!(obligation.closed(), PrivateHandoverFence::Established);
+    assert_eq!(obligation.identity().place(), place);
+    let evidence = obligation
+        .join()
+        .expect("its keeper still has the evidence");
+    assert!(
+        Arc::ptr_eq(&evidence, &kept),
+        "the very evidence the commitment handed back, not a copy"
+    );
+    let PrivateJoinResult::Panicked(payload) = evidence.result().expect("a completed join") else {
+        panic!("this worker panicked")
+    };
     assert_eq!(
-        carried.as_deref(),
+        payload
+            .lock()
+            .expect("a readable payload")
+            .downcast_ref::<&str>()
+            .copied(),
         Some("what this connection's worker carried out with it"),
         "the exact payload, after every frame that joined it has gone"
+    );
+    drop(evidence);
+
+    // AND WHEN ITS KEEPER LETS GO, the obligation says the evidence has gone
+    // rather than that the join said nothing.
+    drop(kept);
+    assert!(
+        durable
+            .committed_obligation(place)
+            .expect("the obligation is still here")
+            .join()
+            .is_none(),
+        "the store named it and did not own it"
     );
     drop((c.g.f.fixture, outer));
 }
@@ -34321,14 +34338,16 @@ fn a_commitment_records_what_the_gate_said_whichever_it_was() {
         let destination = durable
             .prepare_internal_holder(&lease)
             .expect("its own destination");
-        assert!(matches!(
-            lease.commit_maintenance_obligation(&outer, destination, &fence),
-            PrivateCommitted::Committed
-        ));
+        let context =
+            PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+        let PrivateCommitted::Committed(_evidence) = context.commit() else {
+            panic!("its own evidence is complete")
+        };
         assert_eq!(
             durable
-                .committed_obligation(c.place, PrivateCommittedObligation::closed)
-                .expect("an obligation"),
+                .committed_obligation(c.place)
+                .expect("an obligation")
+                .closed(),
             expected,
             "exactly what the gate said"
         );
@@ -34358,11 +34377,9 @@ fn a_commitment_is_not_gated_by_a_diagnostic_somebody_is_holding() {
     };
     let payload_held = payload.lock().expect("a readable payload");
     let diagnostic_held = c.g.exit.outcome.lock().expect("a readable exit record");
+    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
     assert!(
-        matches!(
-            lease.commit_maintenance_obligation(&outer, destination, &fence),
-            PrivateCommitted::Committed
-        ),
+        matches!(context.commit(), PrivateCommitted::Committed(_)),
         "neither lock is on the way to the obligation"
     );
     drop((payload_held, diagnostic_held, c.g.f.fixture, outer));
@@ -34393,18 +34410,20 @@ fn a_commitment_takes_no_further_credit_and_moves_the_duty_once() {
     let destination = durable
         .prepare_internal_holder(&lease)
         .expect("its own destination");
-    assert!(matches!(
-        lease.commit_maintenance_obligation(&outer, destination, &fence),
-        PrivateCommitted::Committed
-    ));
+    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+    let PrivateCommitted::Committed(_evidence) = context.commit() else {
+        panic!("its own evidence is complete")
+    };
 
     assert_eq!(durable.continuations_reserved(), reserved_before);
     assert_eq!(durable.continuations_abandoned(), abandoned_before);
     assert!(
-        durable
-            .committed_obligation(c.place, |obligation| identity
-                .same_as(obligation.identity()))
-            .expect("an obligation"),
+        identity.same_as(
+            durable
+                .committed_obligation(c.place)
+                .expect("an obligation")
+                .identity()
+        ),
         "the same name it was reserved under"
     );
     // ONE HOLDER OWES THIS PLACE. Taking it out and dropping it marks the
@@ -34436,10 +34455,10 @@ fn a_second_commitment_replaces_nothing() {
     let destination = durable
         .prepare_internal_holder(&lease)
         .expect("its own destination");
-    assert!(matches!(
-        lease.commit_maintenance_obligation(&outer, destination, &fence),
-        PrivateCommitted::Committed
-    ));
+    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+    let PrivateCommitted::Committed(_evidence) = context.commit() else {
+        panic!("its own evidence is complete")
+    };
 
     // THERE IS NO SECOND LEASE TO ASK WITH: the first commitment consumed it,
     // and the registration has none to give.
@@ -34459,8 +34478,9 @@ fn a_second_commitment_replaces_nothing() {
     // THE OBLIGATION IS THE FIRST ONE, with its own evidence.
     assert_eq!(
         durable
-            .committed_obligation(c.place, PrivateCommittedObligation::closed)
-            .expect("an obligation"),
+            .committed_obligation(c.place)
+            .expect("an obligation")
+            .closed(),
         PrivateHandoverFence::Established
     );
     drop((c.g.f.fixture, outer));
@@ -34486,10 +34506,11 @@ fn a_commitment_leaves_no_store_self_cycle() {
         let destination = durable
             .prepare_internal_holder(&lease)
             .expect("its own destination");
-        assert!(matches!(
-            lease.commit_maintenance_obligation(&outer, destination, &fence),
-            PrivateCommitted::Committed
-        ));
+        let context =
+            PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+        let PrivateCommitted::Committed(_evidence) = context.commit() else {
+            panic!("its own evidence is complete")
+        };
         drop((c.g.f.fixture, durable));
     }
     assert!(
@@ -34550,21 +34571,27 @@ fn a_commitment_whose_place_moved_on_leaves_the_successor_alone() {
     let (successor, successor_registration, successor_cell, successor_frames, _wire) =
         converted_fixture(&durable, second, 84710);
     let abandoned_before = durable.continuations_abandoned();
+    // THE SUCCESSOR PREPARES ITS OWN DESTINATION FIRST, which is what
+    // separates the two halves of the check: the entry is Promised for this
+    // number again, so a commitment that asked only about the promise would
+    // find it satisfied. What differs is the home.
+    let successor_lease = lease_of(&successor_registration);
+    let successors_own = durable
+        .prepare_internal_holder(&successor_lease)
+        .expect("the successor's own destination");
+    assert_eq!(maintenance_destination(&durable, place), Some("promised"));
 
-    let PrivateCommitted::Stale(lease) =
-        lease.commit_maintenance_obligation(&outer, destination, &fence)
-    else {
-        panic!("a place that moved on is not this lease's to commit into")
-    };
-    assert!(lease.armed);
+    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+    assert!(matches!(context.commit(), PrivateCommitted::Stale));
     assert_eq!(
         maintenance_destination(&durable, place),
-        Some("reserved"),
-        "the successor's destination is untouched"
+        Some("promised"),
+        "the successor's own promise is untouched"
     );
-    assert!(durable
-        .committed_obligation(place, |_| ())
-        .is_none(), "and nothing was committed into it");
+    assert!(
+        durable.committed_obligation(place).is_none(),
+        "and nothing was committed into it"
+    );
     assert_eq!(
         durable.continuations_abandoned(),
         abandoned_before,
@@ -34581,7 +34608,14 @@ fn a_commitment_whose_place_moved_on_leaves_the_successor_alone() {
         &capsule.finalizer().expect("carried").completion
     ));
     assert!(successor_cell.answer().is_none());
-    drop((successor, successor_registration, capsule, lease, outer));
+    drop((
+        successor,
+        successor_registration,
+        successor_lease,
+        successors_own,
+        capsule,
+        outer,
+    ));
 }
 
 #[test]
@@ -34612,27 +34646,28 @@ fn a_commitment_with_a_destination_from_elsewhere_is_refused() {
         .prepare_internal_holder(&other_lease)
         .expect("the other store's own destination");
 
-    let PrivateCommitted::Foreign(lease) =
-        lease.commit_maintenance_obligation(&outer, foreign, &fence)
-    else {
-        panic!("a destination from another store is not this one's to commit into")
-    };
-    assert!(lease.armed);
-    assert!(durable.committed_obligation(c.place, |_| ()).is_none());
+    let foreign_context =
+        PrivateCommitmentContext::bound_to(&outer, &fence, lease, foreign);
+    assert!(matches!(foreign_context.commit(), PrivateCommitted::Foreign));
+    assert!(durable.committed_obligation(c.place).is_none());
     assert_eq!(
         maintenance_destination(&durable, c.place),
         Some("reserved"),
         "this connection's own destination was never touched"
     );
 
-    // And its own destination still commits.
+    // And a context over its own destination still commits.
+    let lease = foreign_context
+        .into_parts()
+        .expect("nothing was consumed")
+        .0;
     let destination = durable
         .prepare_internal_holder(&lease)
         .expect("its own destination");
-    assert!(matches!(
-        lease.commit_maintenance_obligation(&outer, destination, &fence),
-        PrivateCommitted::Committed
-    ));
+    let context = PrivateCommitmentContext::bound_to(&outer, &fence, lease, destination);
+    let PrivateCommitted::Committed(_evidence) = context.commit() else {
+        panic!("its own evidence is complete")
+    };
     drop((
         c.g.f.fixture,
         other_registration,

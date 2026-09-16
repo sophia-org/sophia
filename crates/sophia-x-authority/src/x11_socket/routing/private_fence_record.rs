@@ -49,22 +49,7 @@ enum PrivateFenced {
     AlreadyAttempted,
 }
 
-/// Where one connection's fence evidence is kept, owned by whoever asked.
-///
-/// BOUND ONCE, TO ONE JOIN AND ONE GATE. A fencing that took a join record and
-/// a gate at every visit would be a record with no connection of its own: it
-/// could be given one connection's completed join and another's gate, and
-/// close a gate on the strength of a thread that was never serving through it.
-/// There is no substitute to pass here.
-///
-/// THAT THE TWO BELONG TOGETHER IS THE CALLER'S OBLIGATION. Nothing in these
-/// types establishes that this gate is the gate of the connection whose worker
-/// that record joined; binding them once prevents the pair being changed
-/// afterwards, which is a different and smaller thing.
-///
-/// THE GATE IS HELD, THE REGISTRATION IS NOT. What this needs is the
-/// capability, and keeping a registration alive to reach one would keep a
-/// connection's whole row alive for the sake of a handle it already published.
+/// Where a fencing's answer is published, owned in its own right.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 struct PrivateFenceEvidence {
@@ -92,6 +77,22 @@ impl PrivateFenceEvidence {
     }
 }
 
+/// Where one connection's fence evidence is kept, owned by whoever asked.
+///
+/// BOUND ONCE, TO ONE JOIN AND ONE GATE. A fencing that took a join record and
+/// a gate at every visit would be a record with no connection of its own: it
+/// could be given one connection's completed join and another's gate, and
+/// close a gate on the strength of a thread that was never serving through it.
+/// There is no substitute to pass here.
+///
+/// THAT THE TWO BELONG TOGETHER IS THE CALLER'S OBLIGATION. Nothing in these
+/// types establishes that this gate is the gate of the connection whose worker
+/// that record joined; binding them once prevents the pair being changed
+/// afterwards, which is a different and smaller thing.
+///
+/// THE GATE IS HELD, THE REGISTRATION IS NOT. What this needs is the
+/// capability, and keeping a registration alive to reach one would keep a
+/// connection's whole row alive for the sake of a handle it already published.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 struct PrivateFenceRecord<'a> {
