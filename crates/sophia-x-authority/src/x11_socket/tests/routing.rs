@@ -23196,11 +23196,18 @@ fn an_ordinary_stop_ends_nothing_and_is_not_reported_as_an_ending() {
         !owner.ending_ended(),
         "nothing attempted an ending, so nothing may record one"
     );
+    assert!(
+        !owner.wire.barred(),
+        "the connection's own permission was never barred"
+    );
     let (_durable, reading) = serving_reading(owner);
     assert_eq!(reading.ending, PrivateRetainedEnding::Unattempted);
 
-    // AND THE CONNECTION REALLY IS STILL THERE. Its wire was never barred and
-    // never shut down, so bytes written now arrive.
+    // AND THE CONNECTION REALLY IS STILL THERE. Two separate facts: the
+    // permission was never barred, and the socket was never shut down. The
+    // write below goes through the raw output and so proves only the second;
+    // the permission is asked directly, because a writer going through
+    // admission would be stopped by a bar this control must rule out itself.
     let mut byte = [0u8; 1];
     assert_eq!(
         (&peer).read(&mut byte).map_err(|error| error.kind()),
@@ -23299,6 +23306,131 @@ fn an_ending_this_owner_made_itself_is_reported_as_one() {
         (&peer).read(&mut byte).ok(),
         Some(0),
         "the wire really was ended"
+    );
+}
+
+
+/// A serving record installed in a store, with its close staged as refused.
+///
+/// The refusal is staged -- this host gives no honest way to make a shutdown
+/// fail -- and written exactly as begin_close's own failure branch writes it,
+/// with the attempts already spent. Everything after it is real: the retry is
+/// the production visit, and the shutdown it makes is a real one.
+fn retained_refused_close(
+    owner: X11OrderedServingOwner,
+    attempts: u8,
+) -> PrivateSettlementOwner {
+    let mut owner = owner;
+    owner.closing = Some(X11OrderedClosing {
+        cause: X11OrderedCloseCause::ConnectionEnded,
+        termination: X11OrderedTermination::Refused(std::io::ErrorKind::PermissionDenied),
+        attempts,
+        answered: 0,
+        already: 0,
+        deferred: 0,
+        drained: false,
+    });
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+    let slot = durable
+        .reserve_ordered_continuation()
+        .expect("a place, reserved before exposure");
+    let mut source = Some(PrivateOrderedContinuation::Serving {
+        owner: Box::new(owner),
+        fence: Some(PrivateHandoverFence::Established),
+    });
+    slot.install(&mut source);
+    durable
+}
+
+#[test]
+fn a_refused_close_is_attempted_again_by_the_next_visit() {
+    // NOBODY WAS RETRYING. The visit asked for a close only when none existed,
+    // so a close whose shutdown refused was never attempted again: serving
+    // excluded, the wire possibly still carrying bytes, and the recipient
+    // waiting for an ending that was not coming.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8651));
+    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
+    let (owner, _output) = serving_owner_for(&mut f, socket);
+    let durable = retained_refused_close(owner, 1);
+
+    // One visit, and the attempt is made again -- for real, on a real socket,
+    // which is why it succeeds this time.
+    durable.drive_ordered_continuations(1);
+    let held = durable
+        .with_ordered_continuation(0, |continuation| {
+            let PrivateOrderedContinuation::Serving { owner, .. } = continuation else {
+                panic!("a serving record")
+            };
+            let closing = owner.closing().expect("its close");
+            (closing.cause, closing.termination, closing.attempts)
+        })
+        .expect("the place holds it");
+    assert_eq!(
+        held.1,
+        X11OrderedTermination::Established,
+        "the retry established the termination the first attempt could not"
+    );
+    assert_eq!(
+        held.0,
+        X11OrderedCloseCause::ConnectionEnded,
+        "THE ORIGINAL CAUSE, not the one the visit would have opened with"
+    );
+    assert_eq!(
+        held.2, 2,
+        "and the attempt count carried on rather than starting again"
+    );
+}
+
+#[test]
+fn a_close_with_no_attempts_left_says_so_and_is_not_retried() {
+    // EXHAUSTION IS EXPLICIT. A close that refused with attempts left will be
+    // tried again by the next visit; one with none left will not, and no
+    // amount of driving changes it. Reporting both as refused leaves a reader
+    // waiting for a retry that is never coming.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8661));
+    let (socket, _peer) = UnixStream::pair().expect("a socket pair");
+    let (owner, _output) = serving_owner_for(&mut f, socket);
+    let durable = retained_refused_close(owner, X11_ORDERED_CLOSE_ATTEMPTS);
+
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    let held = durable
+        .with_ordered_continuation(0, |continuation| {
+            let PrivateOrderedContinuation::Serving { owner, .. } = continuation else {
+                panic!("a serving record")
+            };
+            let closing = owner.closing().expect("its close");
+            (closing.termination, closing.attempts, owner.ending_ended())
+        })
+        .expect("the place holds it");
+    assert_eq!(
+        held.0,
+        X11OrderedTermination::Refused(std::io::ErrorKind::PermissionDenied),
+        "the original refusal stands, with its original cause"
+    );
+    assert_eq!(
+        held.1, X11_ORDERED_CLOSE_ATTEMPTS,
+        "NO ATTEMPT WAS MADE and none was invented: the count did not move"
+    );
+    assert!(!held.2, "and nothing was ended");
+
+    let reading = durable.retained_dispositions().expect("a readable store")[0]
+        .1
+        .expect("a readable record");
+    assert!(
+        reading.retries_exhausted,
+        "so the reading says the retries are spent, not merely that it refused"
+    );
+    assert_eq!(
+        reading.ending,
+        PrivateRetainedEnding::Refused(std::io::ErrorKind::PermissionDenied)
+    );
+    assert!(!reading.settled, "and it is not finished");
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "NOTHING IS PUBLISHED BEFORE A CONFIRMED TERMINATION: the place stays"
     );
 }
 

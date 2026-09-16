@@ -410,13 +410,30 @@ impl PrivateOrderedContinuation {
         let Self::Serving { owner, .. } = self else {
             return;
         };
-        if owner.closing().is_none()
-            && owner
-                .begin_close(X11OrderedCloseCause::SupervisorStopped)
-                .is_err()
+        // ASKED AGAIN WHILE IT IS NOT ESTABLISHED. A close whose shutdown was
+        // refused left this record with serving excluded, a wire possibly
+        // still carrying bytes, and nothing that would ever try again: the
+        // guard only asked when no close existed, so the first refusal was the
+        // last attempt. A retained connection that nobody retries is one whose
+        // recipient waits for an ending that is not coming.
+        //
+        // WHAT A RETRY IS NOT. It is not a new close: the original cause and
+        // identity are the ones already recorded, and asking again does not
+        // replace them. It does not reset the attempt count, so the effort
+        // this owner may spend locally is the effort it had left. It does not
+        // unbar the wire, replay anything, or publish anything -- an ending is
+        // offered only once the termination is established, which is asked
+        // for separately and not assumed from having tried.
+        //
+        // Nothing here bounds how long an attempt takes. What it bounds is how
+        // many are made from this owner.
+        if owner
+            .begin_close(X11OrderedCloseCause::SupervisorStopped)
+            .is_err()
         {
-            // Termination is not established, so nothing is offered. The
-            // reason is on the owner and the place stays taken.
+            // Either it refused again or there are no attempts left. Both
+            // leave termination unestablished, so nothing is offered and the
+            // place stays taken; which of the two it was is on the record.
             return;
         }
         owner.advance_close(XByteOrder::LittleEndian, 0);

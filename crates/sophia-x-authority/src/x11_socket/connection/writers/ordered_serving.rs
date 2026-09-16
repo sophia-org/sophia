@@ -546,10 +546,12 @@ impl X11OrderedServingOwner {
             shutdown: false,
         } = step
         else {
-            // THE OTHER ORDINARY EXIT. A delivery that found its producer gone
-            // ends the wire where it discovers it and reports the ending in
-            // the step, so this owner never runs the shutdown below and must
-            // take the fact from what it was told instead.
+            // THE OTHER ORDINARY EXIT. A write that failed ends the wire where
+            // the failure was found and reports the ending in the step, so
+            // this owner never runs the shutdown below and takes the fact from
+            // what it was told instead. A producer that disappeared is the
+            // other case and does NOT end anything here: it comes back with
+            // the ending unestablished and is ended by the fallback below.
             if matches!(
                 step,
                 X11OrderedServeStep::Ended {

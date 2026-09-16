@@ -53,6 +53,18 @@ struct PrivateRetainedDisposition {
     drained: bool,
     /// How many capsules this record is holding for it.
     retained: usize,
+    /// Whether this record has spent every close attempt it may make here.
+    ///
+    /// EXPLICIT, because the difference matters to whoever reads it. A close
+    /// that refused and has attempts left will be tried again by the next
+    /// visit; one that has none left will not, and no amount of driving will
+    /// change it. Reporting both as "refused" leaves a reader waiting for a
+    /// retry that is never coming.
+    ///
+    /// It bounds effort HERE and nothing else: it does not establish
+    /// termination, does not finish the close, and does not say what anyone
+    /// else may still do about this connection.
+    retries_exhausted: bool,
     /// Whether all of the above amounts to a connection that owes nothing.
     settled: bool,
 }
@@ -67,7 +79,7 @@ impl PrivateOrderedContinuation {
     /// at one of them needs to see the others.
     #[cfg_attr(not(test), allow(dead_code))] // Read by reporting that is not attached yet.
     fn disposition(&self) -> PrivateRetainedDisposition {
-        let (closure, ending, drained, retained) = match self {
+        let (closure, ending, drained, retained, retries_exhausted) = match self {
             Self::Setup {
                 accepted,
                 fence,
@@ -90,6 +102,8 @@ impl PrivateOrderedContinuation {
                 },
                 *drained,
                 retained.len(),
+                // A setup record has no close of its own to spend attempts on.
+                false,
             ),
             Self::Serving { owner, fence } => (
                 *fence,
@@ -140,6 +154,10 @@ impl PrivateOrderedContinuation {
                     + owner.retained_foreign().len()
                     + usize::from(owner.in_flight().is_some())
                     + usize::from(owner.refused().is_some()),
+                owner.closing().is_some_and(|closing| {
+                    closing.termination != X11OrderedTermination::Established
+                        && closing.attempts >= X11_ORDERED_CLOSE_ATTEMPTS
+                }),
             ),
         };
         PrivateRetainedDisposition {
@@ -147,6 +165,7 @@ impl PrivateOrderedContinuation {
             ending,
             drained,
             retained,
+            retries_exhausted,
             settled: self.settled(),
         }
     }
