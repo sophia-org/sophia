@@ -32972,10 +32972,12 @@ fn fence_fixture(client: XServerFrontendClientId) -> PrivateFenceFixture {
 
 #[test]
 fn a_fence_waits_for_the_join_that_makes_it_eligible() {
-    // A JOINED THREAD IS ONE THAT WILL NOT HAND ANYTHING OVER AGAIN, and that
-    // is the only sign strong enough to close a producer gate on. Every weaker
-    // one -- a departure published, an empty slot, an attempt that may have
-    // taken a handle -- leaves a thread that could still be inside the gate.
+    // A JOINED THREAD IS ONE WHOSE OWN SERVING HAS FINISHED, which is the
+    // sequencing this component waits for. It is not a claim that nothing can
+    // hand anything over afterwards -- producers are what the gate holds back,
+    // and they outlive a consumer. Every weaker sign leaves this connection
+    // still being served: a departure published, an empty slot, an attempt
+    // that may have taken a handle.
     let g = fence_fixture(XServerFrontendClientId(8421));
     let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
@@ -33017,13 +33019,25 @@ fn an_unconfirmed_join_is_not_a_joined_one() {
     std::thread::scope(|scope| {
         let record = &record;
         let reaper = scope.spawn(move || record.reap());
+        // ARMED BEFORE ANY ASSERTION THAT CAN FAIL. A failing assertion below
+        // would otherwise skip the cancellation, and the scope would join a
+        // reaper that is waiting on a worker nothing had told to stop.
+        let _stopper = PrivateWorkerStopper(&g.f.stop, &g.f.wake);
+        // THE SLOT IS WHAT SAYS THE HANDLE HAS GONE, not the record's phase.
+        // The intent is written BEFORE the handoff -- that is what write-ahead
+        // means -- so a reaping paused between them has an InProgress record
+        // over a slot that is still Running with its handle in it. Waiting on
+        // the phase and then asserting the slot would be asserting a schedule.
         assert!(
-            waited_for(|| record.phase() == PrivateReapingPhase::InProgress),
-            "a handle is consumed and no result is confirmed"
+            waited_for(|| {
+                g.slot.lock().expect("a readable slot").life == PrivateWorkerLife::HandedToJoiner
+            }),
+            "the reaping took the handle"
         );
         assert_eq!(
-            g.slot.lock().expect("a readable slot").life,
-            PrivateWorkerLife::HandedToJoiner
+            record.phase(),
+            PrivateReapingPhase::InProgress,
+            "a handle is consumed and no result is confirmed"
         );
 
         assert_eq!(
@@ -33225,14 +33239,33 @@ fn a_fencing_that_waits_on_a_handover_leaves_its_evidence_readable() {
 fn fencing_one_connection_leaves_another_connections_gate_open() {
     // A GATE IS ONE CONNECTION'S. This record holds the one it was bound to
     // and reaches nothing by lookup, so closing it says nothing about anybody
-    // else's endpoint.
+    // else's endpoint -- and nothing about anybody's queue, custody or wire,
+    // its own included.
+    //
+    // THE WORK IS QUEUED BEFORE THE FENCE, on both connections, so what is
+    // compared afterwards is the same capsule that was there: a capsule
+    // inserted after a closure and then found could have been anything.
+    // Fixture capsules, carrying their own completions; no claim is made that
+    // either recipient would have admitted them.
     let g = fence_fixture(XServerFrontendClientId(8429));
     let other = worker_fixture(XServerFrontendClientId(8430));
+    // The target's own worker is stopped and joined first, so what is queued
+    // for it below stays queued: a running body would serve it, which is that
+    // component's business and not this one's.
     cancel_connection_worker(&g.f.stop, &g.f.wake);
     let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+
+    let queued = [(&g.f, 84290u64), (&other, 84300u64)].map(|(f, delivery)| {
+        let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(delivery);
+        let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+        let frames = order_pass_frames(&capsule);
+        produced_send(&f.sender, capsule);
+        (cell, frames)
+    });
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    assert_eq!(fence.fence(), Some(PrivateHandoverFence::Established));
 
     assert_eq!(
         g.f.fixture.registration.ordered_handovers_fenced(),
@@ -33243,34 +33276,60 @@ fn fencing_one_connection_leaves_another_connections_gate_open() {
         Some(false),
         "the other connection still admits handovers"
     );
-    // AND ITS QUEUE IS UNTOUCHED: a capsule accepted for it is still there,
-    // unanswered, with its own peer having seen nothing.
-    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(84300);
-    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
-    produced_send(&other.sender, capsule);
-    assert!(cell.answer().is_none());
-    assert!(
-        other
+
+    // AND NEITHER QUEUE WAS TOUCHED. The exact capsules, their frames and
+    // their completion cells, on the fenced connection and on its neighbour
+    // alike: closing a gate receives nothing and answers nothing.
+    for (f, (cell, frames), delivery) in [
+        (&g.f, &queued[0], 84290u64),
+        (&other, &queued[1], 84300u64),
+    ] {
+        let survived = f
             .home
             .borrow_live(|payload| {
                 let PrivateOrderedContinuation::Serving { owner, .. } = payload else {
                     panic!("promoted")
                 };
-                owner.queue.try_recv().is_ok()
+                owner.queue.try_recv().ok()
             })
             .acted()
-            .expect("its own home"),
-        "its own queue still holds what was accepted for it"
-    );
-    drop((g.f.fixture, other.fixture, cell));
+            .expect("its own home")
+            .expect("what was accepted for it before the fencing");
+        assert_eq!(
+            survived.delivery(),
+            XAuthorityInputDeliveryId::from_raw(delivery)
+        );
+        assert_eq!(order_pass_frames(&survived), *frames);
+        assert!(Arc::ptr_eq(
+            cell,
+            &survived.finalizer().expect("carried").completion
+        ));
+        assert!(cell.answer().is_none(), "and nothing answered for it");
+        // AND NOTHING REACHED EITHER PEER. A fence writes no bytes.
+        let mut byte = [0u8; 1];
+        assert_eq!(
+            std::io::Read::read(&mut (&f.peer), &mut byte)
+                .expect_err("nothing was written")
+                .kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        assert_eq!(
+            f.home.standing(),
+            PrivateHomeStanding::Live,
+            "and no standing was changed"
+        );
+    }
+    drop((g.f.fixture, other.fixture));
 }
 
 #[test]
 fn a_fence_is_not_delayed_by_a_diagnostic_somebody_is_holding() {
-    // A PUBLISHED JOIN IS ENOUGH, AND IT IS READ DIRECTLY. Whether the reaping
-    // that produced it has finished reading its optional exit diagnostics, or
-    // whether anybody is holding that record or the panic payload, has nothing
-    // to do with whether this connection's worker has finished.
+    // A PUBLISHED JOIN IS ENOUGH, AND NEITHER OPTIONAL LOCK IS ON THE WAY TO
+    // THE GATE. WHAT THIS ESTABLISHES, exactly: a fencing completes while both
+    // the panic payload and the exit diagnostic are held by somebody else. It
+    // does NOT establish that a fencing can run before the reaping call has
+    // returned from its own diagnostic read -- the reap here finishes first --
+    // and that is a separate claim needing a separate control.
     let f = worker_fixture(XServerFrontendClientId(8431));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let gate = f.fixture.registration.handover_gate();

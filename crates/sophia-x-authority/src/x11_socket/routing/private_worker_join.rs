@@ -140,7 +140,10 @@ enum PrivateExitReading {
     /// classification BEFORE publishing the departure, so this is not a body
     /// caught between two writes -- it is one that never reached the first,
     /// or one whose record was written by something other than a body's own
-    /// run. What says which is the join, and the join alone.
+    /// run.
+    ///
+    /// What says whether a frame panicked is the join's own Returned or
+    /// Panicked outcome. Not this, and not who wrote this.
     Unclassified,
     /// It had not published a departure when this was read.
     NotLeft,

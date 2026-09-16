@@ -117,14 +117,25 @@ impl<'a> PrivateFenceRecord<'a> {
 
     /// Close this connection's gate to further handovers, and keep the answer.
     ///
-    /// ELIGIBILITY IS THE PUBLISHED JOIN RESULT AND NOTHING ELSE. A thread
-    /// that has been joined is one that is not going to hand anything over
-    /// again; every other sign is weaker. A departure notice says a frame
-    /// went, an empty slot says nobody is holding a handle, and an unconfirmed
-    /// attempt says somebody may have taken one -- none of them says the
-    /// thread has finished. A join that reported a panic says it as surely as
-    /// one that returned, so both are eligible and the payload is neither
-    /// inspected nor locked to decide it.
+    /// ELIGIBILITY IS THE PUBLISHED JOIN RESULT AND NOTHING ELSE, and that is
+    /// a sequencing rule rather than a claim about who the gate holds back.
+    ///
+    /// TWO SEPARATE FACTS, which an earlier account of this ran together. The
+    /// gate serializes closure against PRODUCERS -- whatever is handing
+    /// capsules into this connection's queue -- and producers can exist after
+    /// a worker has been joined, which is precisely why closing is an act and
+    /// not a consequence. The worker is the CONSUMER: joining it says nothing
+    /// about who may still hand something over, and closing the gate is what
+    /// says that.
+    ///
+    /// What the join buys is that this connection's own serving has finished
+    /// before its endpoint is closed, so nothing here is fencing a wire its
+    /// own worker is still writing to. Every weaker sign leaves that open: a
+    /// departure notice says a frame went, an empty slot says nobody is
+    /// holding a handle, and an unconfirmed attempt says somebody may have
+    /// taken one -- none of them says the thread has finished. A join that
+    /// reported a panic says it as surely as one that returned, so both are
+    /// eligible and the payload is neither inspected nor locked to decide it.
     ///
     /// READ FROM THE PUBLISHED EVIDENCE DIRECTLY. Whether the reaping that
     /// produced it has finished reading its optional exit diagnostics is
