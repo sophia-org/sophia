@@ -309,9 +309,12 @@ impl<'a> PrivateReapingRecord<'a> {
     ///
     /// WHAT IT HANDS BACK IS AN OWNING HANDLE, and saying otherwise would be
     /// wrong: an `Arc` clone keeps the home alive for as long as the clone
-    /// lasts, whoever made it. What makes the custodian the keeper is not this
-    /// handle but the borrow above it -- neither this record nor anything it
-    /// hands out can outlive the custody it was built from.
+    /// lasts, whoever made it. What the borrow above establishes is about THIS
+    /// RECORD -- it cannot outlive the custody it was built from -- and not
+    /// about what it hands out. A caller may keep this clone after both are
+    /// gone and still read the result through it. That is a reader holding
+    /// evidence, which is allowed; what the component rules out is an
+    /// OPERATION being the only thing that kept it.
     fn join_evidence(&self) -> Arc<PrivateJoinEvidence> {
         Arc::clone(&self.evidence)
     }

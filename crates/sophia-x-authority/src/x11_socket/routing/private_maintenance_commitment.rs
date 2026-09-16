@@ -53,12 +53,15 @@ struct PrivateCommittedObligation {
     /// depended on the caller storing one returned would rest on something
     /// this cannot check.
     ///
-    /// AND ONLY WHILE THE CUSTODIAN LASTS. What is here survives the frames
-    /// that made it exactly as long as that custodian survives them; when the
-    /// custodian goes, the obligation says the evidence has gone -- which is
-    /// not a disposition and not a fresh fact about the join. A payload
-    /// holding a store handle makes a chain from the custodian rather than a
-    /// ring through the store, and all of it releases together.
+    /// FOR AT LEAST AS LONG AS THE CUSTODIAN LASTS, which is a floor and not
+    /// an instant. The custodian guarantees the evidence is here while it
+    /// lives; it does not decide when the evidence goes, because a reader may
+    /// be holding a strong handle of its own. This weak name stops resolving
+    /// when the LAST strong owner lets go, whichever that turns out to be --
+    /// which is not a disposition and not a fresh fact about the join. A
+    /// payload holding a store handle makes a chain from those owners rather
+    /// than a ring through the store, and the store is released when the last
+    /// of them goes.
     ///
     /// WHAT IS STILL MISSING. No production constructor makes a custody, so
     /// nothing here establishes who holds one across the running server's
