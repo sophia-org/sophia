@@ -118,9 +118,15 @@ struct PrivateWorkerExit {
     /// left, not that the thread has been collected, and a caller that treated
     /// it as one would be reading a departure as a reaping.
     ///
-    /// AND ITS ABSENCE OF A CLASSIFICATION IS NOT PROOF OF A PANIC. A body
-    /// that has published this without an outcome may have unwound, or may be
-    /// between the two writes. What establishes a panic is the join.
+    /// AND ITS ABSENCE OF A CLASSIFICATION IS NOT PROOF OF A PANIC -- though
+    /// not for the reason this once gave. A normal return writes the
+    /// classification FIRST, so a record carrying this without one is not a
+    /// body caught between two writes: it is one that never reached the first,
+    /// which an unwind is only one way to do.
+    ///
+    /// What establishes a panic is the join, and specifically the Returned or
+    /// Panicked outcome it returns -- not who wrote this record, and not what
+    /// this record does or does not say.
     left: AtomicBool,
 }
 

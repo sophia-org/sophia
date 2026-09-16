@@ -32688,8 +32688,13 @@ fn a_departure_noticed_is_not_a_thread_collected() {
 #[test]
 fn two_asks_at_once_join_a_worker_once() {
     // ONE ATTEMPT OWNS THE HANDLE, and this is the case the claim exists for:
-    // two threads asking the same record at the same time, against a worker
-    // that is still running when they ask.
+    // two threads asking the same record while the worker is still running.
+    //
+    // THE OVERLAP IS WITNESSED, NOT HOPED FOR. The worker is held until the
+    // slot itself says its handle has gone to a joiner AND the losing ask has
+    // come back; releasing it and trusting the scheduler would let both asks
+    // run serially after the thread had already finished, which would prove
+    // nothing about either.
     let f = worker_fixture(XServerFrontendClientId(8418));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let (release, held) = std::sync::mpsc::channel::<()>();
@@ -32699,24 +32704,45 @@ fn two_asks_at_once_join_a_worker_once() {
     });
     let record = PrivateReapingRecord::bound_to(&slot, &exit);
 
-    let (first, second) = std::thread::scope(|scope| {
-        let record = &record;
-        let one = scope.spawn(move || record.reap());
-        let two = scope.spawn(move || record.reap());
-        // Both are asking a worker that has not finished.
+    std::thread::scope(|scope| {
+        let (report, asked) = std::sync::mpsc::channel();
+        for _ in 0..2 {
+            let record = &record;
+            let report = report.clone();
+            scope.spawn(move || report.send(record.reap()));
+        }
+        drop(report);
+
+        // ONE OF THEM HAS THE HANDLE, said by the slot rather than assumed.
+        assert!(
+            waited_for(|| {
+                slot.lock().expect("a readable slot").life == PrivateWorkerLife::HandedToJoiner
+            }),
+            "an ask took the handle while its worker is still running"
+        );
+        // AND THE OTHER HAS ALREADY COME BACK, while that worker is still
+        // held: the only ask that can return now is the one that found the
+        // record taken, because the one that joined is waiting on the thread.
+        let losing = asked
+            .recv_timeout(Duration::from_secs(3))
+            .expect("the losing ask returned");
+        assert_eq!(losing.reaped, PrivateReaped::AlreadyAsked);
+        assert_eq!(losing.exit, None, "it read nothing, having done nothing");
+        assert_eq!(
+            record.phase(),
+            PrivateReapingPhase::InProgress,
+            "a handle is consumed and no result is confirmed"
+        );
+        assert!(record.result().is_none());
+
+        // Only now may the worker finish.
         drop(release);
-        (
-            one.join().expect("the first ask finished"),
-            two.join().expect("the second ask finished"),
-        )
+        let winning = asked
+            .recv_timeout(Duration::from_secs(3))
+            .expect("the joining ask returned");
+        assert_eq!(winning.reaped, PrivateReaped::Joined);
     });
 
-    let outcomes = [first.reaped, second.reaped];
-    assert!(
-        outcomes.contains(&PrivateReaped::Joined)
-            && outcomes.contains(&PrivateReaped::AlreadyAsked),
-        "exactly one joined and the other found it taken: {outcomes:?}"
-    );
     assert_eq!(record.phase(), PrivateReapingPhase::Joined);
     assert_eq!(
         panic_payload(&record).as_deref(),
