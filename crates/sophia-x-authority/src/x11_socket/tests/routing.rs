@@ -21550,111 +21550,107 @@ fn a_connections_ordered_output_is_retained_whole_when_its_registration_ends() {
 }
 
 #[test]
-fn a_reserved_place_does_not_keep_the_store_that_issued_it_alive() {
-    // A CREDIT IS NOT A CLAIM ON ITS ISSUER. A place lives inside the store
-    // that issued it, so a place holding that store strongly is a ring with
-    // itself: store, entry, holder, store. The registry's handle is weak and
-    // is not on that ring, so it does not open it. Nothing would ever drop,
-    // and every obligation inside would stay readable for ever -- which reads
-    // as an instance still settling rather than as a leak.
-    //
-    // THE RING IS BUILT HERE DELIBERATELY. The reservation is real, the only
-    // strong holder is dropped while the place is still held, and what is
-    // asked afterwards is whether the store is still there.
-    for dispose_explicitly in [false, true] {
-        let capability;
-        let slot = {
-            let durable = PrivateSettlementOwner::default();
-            assert_eq!(
-                durable.declare_connection_bound(NonZeroUsize::new(2).expect("nonzero")),
-                Some(2)
-            );
-            let slot = durable
-                .reserve_ordered_continuation()
-                .expect("a declared bound leaves a place");
-            assert_eq!(durable.continuations_reserved(), Some(1));
-            capability = durable.settlement_ref();
-            assert!(
-                capability.owner().is_some(),
-                "while its maker holds it, the store is there"
-            );
-            slot
-        };
-        // THE MAKER IS GONE AND THE PLACE IS STILL HELD. This is the whole
-        // question: if the place kept the store, it would answer here.
-        assert!(
-            capability.owner().is_none(),
-            "a held place must not be the reason its store exists"
-        );
-
-        // AND DISPOSING OF IT IS NOT AN ERROR. There is no counter left to
-        // move and nowhere to give the place back to, so both disposals do
-        // nothing rather than failing -- and nothing is owed, because the
-        // account an obligation would have been written into is the thing
-        // that disappeared.
-        if dispose_explicitly {
-            slot.relinquish_unexposed();
-        } else {
-            drop(slot);
-        }
-        assert!(capability.owner().is_none());
-    }
-}
-
-#[test]
-fn a_handover_into_a_place_whose_store_has_gone_keeps_its_work_and_says_so() {
-    // THE CONTRACT IS THAT THIS CANNOT HAPPEN -- the store outlives every
-    // connection it issued a place to, which is why the constructor takes it
-    // by reference. What this establishes is what the hand-over does if it
-    // happens anyway: it says the store is gone and leaves the work where it
-    // was, rather than reporting an installation into a place that is not
-    // there and letting accepted work disappear under the word "installed".
-    let live = PrivateSettlementOwner::default();
-    let private = private_over(&live, 2);
-    let client = XServerFrontendClientId(8331);
-    let (_registration, channels) = private
-        .broker
-        .registry
-        .register_client_with_admission(client, Some(admitted(client)))
-        .expect("a place and a row");
-
-    // A SECOND STORE, whose only holder goes while its place is still held.
+fn a_connections_own_reservation_keeps_the_store_it_must_dispose_into() {
+    // AN EXPOSED CONNECTION CARRIES ITS OWN GUARANTEE. Its registration holds
+    // a place in the store and work can already be accepted for it, so the
+    // store has to be there when that place is disposed of. Nothing else makes
+    // it so: the constructor takes the store by reference, but a reference
+    // parameter does not bind the instance -- or the registrations it hands
+    // out -- to the caller's binding, and a caller may drop its own holder
+    // while a connection is live. A reservation that did not hold it would
+    // find, at teardown, that the place it was promised had gone.
     let capability;
-    let slot = {
-        let doomed = PrivateSettlementOwner::with_capacities(2, 2);
-        let slot = doomed
-            .reserve_ordered_continuation()
-            .expect("a place, reserved before exposure");
-        capability = doomed.settlement_ref();
-        slot
+    let client = XServerFrontendClientId(8341);
+    let (registration, cell, frames, wire_weak) = {
+        let durable = PrivateSettlementOwner::default();
+        capability = durable.settlement_ref();
+        let private = private_over(&durable, 2);
+        let (registration, channels) = private
+            .broker
+            .registry
+            .register_client_with_admission(client, Some(admitted(client)))
+            .expect("a place and a row");
+        let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+        let output = Arc::new(Mutex::new(stream));
+        let wire = Arc::new(X11WirePermission::open());
+        let pending = Arc::new(AtomicUsize::new(0));
+        assert_eq!(
+            registration
+                .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+                .unwrap_or_else(|_| panic!("a fresh registration holds no custody")),
+            None
+        );
+        // A capsule is accepted for this connection before anything is
+        // dropped. It is a fixture capsule carrying its own completion: it is
+        // here to be work on this queue, and no claim is made that this
+        // recipient would have admitted it.
+        let sender = capture_gated_sender(&private, client);
+        let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(83410);
+        let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+        let frames = order_pass_frames(&capsule);
+        gated_send(&sender, capsule).expect("an open endpoint");
+        let wire_weak = Arc::downgrade(&wire);
+        (registration, cell, frames, wire_weak)
     };
-    assert!(capability.owner().is_none(), "its only holder has gone");
-
-    // A real receiver, minted by a real registration, in the shape teardown
-    // hands over. Nothing about it is staged except which store it is aimed at.
-    let mut source = Some(PrivateOrderedContinuation::Setup {
-        accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
-        refusal: X11OrderedServingRefusal::Unserved,
-        evidence: PrivateOrderedEvidence::unstarted(),
-        retained: Vec::new(),
-        drained: false,
-        ended: false,
-        ending_refused: None,
-    });
-    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::NoStore);
+    // EVERY HOLDER OUTSIDE THE CONNECTION IS NOW GONE -- the caller's own
+    // binding and the instance that cloned it -- and the connection is live.
     assert!(
-        source.is_some(),
-        "work is taken only once there is somewhere for it to go"
+        capability.owner().is_some(),
+        "an exposed connection's reservation is a legitimate owner of its store"
     );
+
+    // Read through an upgraded owner, so what teardown does is observed rather
+    // than inferred from the connection having ended quietly.
+    let kept = capability.owner().expect("held by the live reservation");
+    drop(registration);
+    assert_eq!(kept.continuations_retained(), Some(1));
+    let survived = kept
+        .with_ordered_continuation(0, |continuation| {
+            let PrivateOrderedContinuation::Setup { accepted, .. } = continuation else {
+                panic!("no owner is built yet")
+            };
+            let PrivateOrderedSetupCustody::Transport(transport) = accepted else {
+                panic!("this connection bound")
+            };
+            transport.ordered.receiver.try_recv().ok()
+        })
+        .expect("the place this connection held")
+        .expect("the capsule accepted before anything was dropped");
+    assert_eq!(
+        survived.delivery(),
+        XAuthorityInputDeliveryId::from_raw(83410)
+    );
+    assert_eq!(order_pass_frames(&survived), frames);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &survived.finalizer().expect("carried").completion
+    ));
+    assert!(cell.answer().is_none(), "and nothing answered for it");
+    assert!(
+        wire_weak.upgrade().is_some(),
+        "the binding is retained with the queue, not merely the capsules"
+    );
+
+    // AND THIS IS ONE END OF A LIFETIME, NOT A RING. The connection has gone
+    // and disposed of its place; when the last reader lets go, so does the
+    // store, and the binding it retained goes with it.
+    drop((survived, cell, kept));
+    assert!(capability.owner().is_none());
+    assert!(wire_weak.upgrade().is_none());
 }
 
 #[test]
 fn a_retained_continuation_outlives_its_instance_and_goes_with_its_store() {
-    // WHO KEEPS THE STORE ALIVE: whoever made it. The constructor takes it by
-    // reference and clones a holder for the instance, so an instance that ends
-    // does not take the store with it -- that is what durable means, and it is
-    // why this control holds the store itself rather than reaching for one
-    // through the instance.
+    // AN INSTANCE THAT ENDS DOES NOT TAKE THE STORE WITH IT. The constructor
+    // takes it by reference and clones a holder, so a caller that keeps its
+    // own holder still has the store -- and the work retained into it -- after
+    // the instance is gone. That is what durable means.
+    //
+    // WHAT THIS DOES NOT ESTABLISH: anything about a ring. The connection here
+    // disposes of its place at teardown, so no reservation is live when the
+    // last holder goes, and a store that held a place-reference of its own
+    // would not be caught by this. That is a separate audit, for a holder that
+    // does not exist yet.
     let durable = PrivateSettlementOwner::default();
     let capability = durable.settlement_ref();
     let client = XServerFrontendClientId(8321);
@@ -21730,19 +21726,17 @@ fn a_retained_continuation_outlives_its_instance_and_goes_with_its_store() {
     ));
     drop((capsule, cell));
 
-    // NOW THE LEGITIMATE HOLDERS GO. Nothing inside the store is holding the
-    // store, so the store drops and takes the record it retained with it.
+    // AND WHEN THE LAST HOLDER GOES, so does what it was holding. The place
+    // was disposed of at teardown, so this is the store's own lifetime ending
+    // and the binding being released with it -- not evidence about rings.
     assert!(capability.owner().is_some());
     drop(durable);
-    assert!(
-        capability.owner().is_none(),
-        "no holder remains, so nothing self-referential keeps the store"
-    );
+    assert!(capability.owner().is_none(), "no holder remains");
     assert!(
         wire_weak.upgrade().is_none()
             && output_weak.upgrade().is_none()
             && pending_weak.upgrade().is_none(),
-        "a store that drops takes the bindings it retained with it"
+        "a store that drops releases the binding it retained"
     );
 }
 
@@ -22291,7 +22285,7 @@ fn a_serving_record_without_an_established_closure_never_settles_either() {
             ..PrivateOrderedEvidence::unstarted()
         },
     });
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
 
     assert!(
         !durable
@@ -23184,7 +23178,7 @@ fn serving_reading(
             ..PrivateOrderedEvidence::unstarted()
         },
     });
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
     let reading = durable
         .retained_dispositions()
         .expect("a readable store")[0]
@@ -23351,7 +23345,7 @@ fn a_record_that_cannot_be_read_is_reported_as_unreadable() {
             ..PrivateOrderedEvidence::unstarted()
         },
     });
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
 
     // A holder panics inside this record.
     let record = {
@@ -23550,7 +23544,7 @@ fn retained_refused_close(
             ..PrivateOrderedEvidence::unstarted()
         },
     });
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
     durable
 }
 
@@ -29157,7 +29151,7 @@ fn a_continuation_place_is_taken_before_exposure_and_kept_while_work_remains() {
         ended: false,
         ending_refused: None,
     });
-    second.install(&mut source);
+    assert_eq!(second.install(&mut source), PrivateContinuationInstall::Installed);
     assert!(source.is_none(), "it left the caller's slot");
     // AND IT IS STILL THERE. The queue came with the place, so an admission
     // accepted before a serving owner existed is not lost with the setup that
@@ -29315,7 +29309,7 @@ fn a_whole_serving_owner_moves_into_its_place_with_everything_it_held() {
             ..PrivateOrderedEvidence::unstarted()
         },
     });
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
     assert!(source.is_none(), "it left the caller's slot");
     assert_eq!(durable.continuations_retained(), Some(1));
 
@@ -29408,7 +29402,7 @@ fn an_unreadable_owner_does_not_make_an_accepted_transfer_optional() {
         ended: false,
         ending_refused: None,
     });
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
 
     // It went in anyway, and can be read back through the same fail-closed
     // discipline every other already-accepted move here uses.
@@ -29454,7 +29448,7 @@ fn driving_a_continuation_does_not_hold_the_store_behind_it() {
         ended: false,
         ending_refused: None,
     });
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
 
     // Asked from inside the callback, about the real store.
     let store_free = durable
@@ -29542,7 +29536,7 @@ fn an_unwind_before_the_destination_is_held_leaves_the_work_with_its_source() {
     );
 
     // And it still holds what was accepted.
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
     let survived = durable
         .with_ordered_continuation(0, |continuation| {
             continuation
@@ -29633,7 +29627,7 @@ fn a_bound_transport_that_could_not_be_served_keeps_its_ending_handle() {
         ended: false,
         ending_refused: None,
     });
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
     assert!(source.is_none());
 
     let ended = durable
@@ -29727,7 +29721,7 @@ fn a_handover_waits_for_the_destination_reserved_for_it() {
     let (checked, report) = std::sync::mpsc::channel();
     let installer = std::thread::spawn(move || {
         started.send(()).expect("started");
-        slot.install(&mut source);
+        assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
         checked.send(source.is_none()).expect("reported");
     });
     wait.recv().expect("the installing thread started");
@@ -29755,7 +29749,7 @@ fn a_handover_with_nothing_to_hand_over_is_recorded_rather_than_counted_done() {
         .reserve_ordered_continuation()
         .expect("a place, reserved before exposure");
     let mut empty = None;
-    slot.install(&mut empty);
+    assert_eq!(slot.install(&mut empty), PrivateContinuationInstall::NothingHandedOver);
     assert_eq!(durable.continuations_retained(), Some(0), "nothing installed");
     assert_eq!(
         durable.continuations_reserved(),
@@ -29796,7 +29790,7 @@ fn reading_the_store_does_not_take_a_record_beneath_it() {
         ended: false,
         ending_refused: None,
     });
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
 
     let record = {
         let held = durable.records_even_if_poisoned();
@@ -29882,7 +29876,7 @@ fn an_unreadable_retained_record_is_not_reported_as_absent() {
         ended: false,
         ending_refused: None,
     });
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
     assert_eq!(durable.continuations_retained(), Some(1));
 
     // A real panic while a record is borrowed poisons only that record.
@@ -29963,7 +29957,7 @@ fn a_quiet_continuation_keeps_its_place_and_does_not_starve_the_others() {
         // stayed would be a producer still holding a sender, which is the one
         // thing that keeps a queue from finishing.
         drop(registration);
-        slot.install(&mut source);
+        assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
         places.push(());
     }
     assert_eq!(durable.continuations_reserved(), Some(2));
@@ -30053,7 +30047,7 @@ fn asking_whether_a_continuation_is_settled_destroys_nothing() {
     } = f;
     let mut source = Some(transport_continuation(&registration, channels.ordered));
     drop(registration);
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
 
     // ASKED REPEATEDLY, WITHOUT DRIVING. Nothing may be consumed by the
     // question, and the place may not come back while that admission exists.
@@ -30128,7 +30122,7 @@ fn a_stale_return_cannot_take_the_place_its_successor_holds() {
     // Bound, so a visit can establish an ending and this place can come back
     // at all. A receiver alone has nothing to end with.
     let mut source = Some(transport_continuation(&one_registration, channels.ordered));
-    slot.install(&mut source);
+    assert_eq!(slot.install(&mut source), PrivateContinuationInstall::Installed);
 
     // A visit's view of that record, captured before the place moves on.
     let stale = {
@@ -30175,7 +30169,7 @@ fn a_stale_return_cannot_take_the_place_its_successor_holds() {
         ended: false,
         ending_refused: None,
     });
-    replacement.install(&mut successor);
+    assert_eq!(replacement.install(&mut successor), PrivateContinuationInstall::Installed);
     assert_eq!(durable.continuations_reserved(), Some(1));
 
     // THE STALE RETURN ARRIVES. It names a record that is no longer there.

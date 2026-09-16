@@ -685,12 +685,7 @@ fn a_refused_actual_setup_returns_its_watchdog_slot() {
 fn unprepared_frontend_teardown_closes_actual_setup_before_waiting_for_common() {
     use std::io::{Read, Write};
     for explicit_shutdown in [false, true] {
-        // OVER A STORE THIS CONTROL KEEPS. The instance goes away below while
-        // a connection is still registered, and that connection's teardown
-        // needs the place it reserved to still exist. A store the instance was
-        // the only holder of would go with it.
-        let durable = PrivateSettlementOwner::default();
-        let private = private_over(&durable, 16);
+        let private = private_for_roles();
         let registry = private.broker.registry.clone();
         let common = private.controller.common.clone();
         let state = Arc::new(X11CoreSocketServerState::new());
