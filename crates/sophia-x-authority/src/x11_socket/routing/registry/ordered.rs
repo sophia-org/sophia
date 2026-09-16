@@ -379,10 +379,13 @@ impl XServerFrontendClientRouteRegistration {
     /// `None` MEANS NO CUSTODY WAS RESERVED FOR THIS REGISTRATION, which is a
     /// fact about how this registry was built and not about the connection.
     #[cfg_attr(not(test), allow(dead_code))] // Asked by a caller not attached yet.
-    pub(crate) fn registered_custody(&self) -> Option<PrivateCustodyReach> {
+    pub(crate) fn registered_custody<'o>(
+        &self,
+        service: &PrivateServiceLease<'o>,
+    ) -> Option<PrivateCustodyReach<'o>> {
         self.ordered_custody
             .as_ref()
-            .map(PrivateRegisteredCustody::pin)
+            .map(|registered| registered.pin(service))
     }
 
     /// Whether this endpoint is closed to handovers. `None` if unreadable.

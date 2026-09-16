@@ -432,6 +432,12 @@ pub enum XServerFrontendRouteError {
         surface: SurfaceId,
     },
     RegistryPoisoned,
+    /// The service owner offered for this act is not the one keeping this
+    /// service's connections' evidence.
+    ///
+    /// Refused before anything is taken or advanced. Not a fact about any
+    /// connection: what is refused is the association.
+    ForeignServiceOwner,
     /// The XKB worker's command queue is full. Distinct from a poisoned lock:
     /// the worker is alive and behind, not broken.
     XkbWorkerSaturated,
@@ -586,6 +592,12 @@ impl core::fmt::Display for XServerFrontendRouteError {
                     formatter,
                     "no retained place is available for X11 route client {}",
                     client.raw()
+                )
+            }
+            Self::ForeignServiceOwner => {
+                write!(
+                    formatter,
+                    "this X11 route service is kept by a different owner"
                 )
             }
             Self::EvidenceCustodyUnavailable { client } => {

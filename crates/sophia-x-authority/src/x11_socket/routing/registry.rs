@@ -418,6 +418,14 @@ impl XServerFrontendRouteRegistry {
     /// BY INVENTORY IDENTITY, not by store or by bound. Two owners over one
     /// store are two separate inventories, and a service told they were
     /// interchangeable would reserve into one and look in the other.
+    /// Whether this lease is on the owner that keeps this registry's
+    /// connections' evidence.
+    pub(crate) fn leased_by(&self, service: &PrivateServiceLease<'_>) -> bool {
+        self.custody_keeper
+            .get()
+            .is_some_and(|keeper| service.keeps_for(keeper))
+    }
+
     pub(crate) fn custody_keeper_is(&self, owner: &PrivateServiceOwner) -> bool {
         self.custody_keeper
             .get()

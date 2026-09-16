@@ -1,3 +1,20 @@
+/// Why an act that continues a service was refused.
+///
+/// TWO DIFFERENT KINDS OF REFUSAL, kept apart. One is about this connection's
+/// admission and is the participant's own answer; the other is about the
+/// SERVICE -- the owner offered is not the one keeping this service's
+/// connections' evidence -- and is decided before the participant is asked at
+/// all. A caller told the wrong one would look at the wrong thing.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivateServiceRefusal {
+    /// The owner offered is not this service's keeper. Nothing was reserved,
+    /// taken or advanced.
+    ForeignServiceOwner,
+    /// The participant's own answer about this connection.
+    Admission(PrivateAdmissionRefusal),
+}
+
 /// Why a frontend could not become an execution runner. The frontend is
 /// returned intact; no producer is exposed by a failed preparation.
 #[cfg(unix)]
@@ -149,11 +166,16 @@ impl PrivateXServerFrontend {
     /// connections' evidence belongs to an inventory nobody can name from
     /// here.
     ///
-    /// WHAT THIS DOES NOT ESTABLISH. Borrowing here says a live owner exists
-    /// when the scope begins and that it is this frontend's; it does not make
-    /// the owner outlive the runner, which no signature on this type does
-    /// today. What a scope's ending cannot do -- however it ends -- is take
-    /// the custodies with it, because it never owned them.
+    /// AND THE ACTS THAT CONTINUE THE SERVICE ASK AGAIN. Preparing says a live
+    /// owner existed when the scope began; it does not by itself stop that
+    /// owner being dropped afterwards, and a runner that went on taking
+    /// ingresses and serving turns with no keeper would be accepting work
+    /// whose evidence nothing outside it holds. So every such act takes a
+    /// lease of its own: the borrow is what makes serving without a live
+    /// keeper impossible to write, rather than merely unsupported.
+    ///
+    /// WHAT A SCOPE'S ENDING CANNOT DO, however it ends, is take the custodies
+    /// with it, because it never owned them.
     #[allow(clippy::result_large_err)] // Refusal returns the caller's owned frontend without boxing.
     pub fn prepare_runner(
         mut self,
@@ -455,24 +477,51 @@ impl PrivatePreparedRunner {
             .control_producer()
     }
 
+    /// THE OWNER IS BORROWED FOR THIS ACT, and for every one like it. A
+    /// producer handed out here reserves work for a connection whose evidence
+    /// this service does not keep, so a runner that could issue one after its
+    /// keeper had gone would be accepting work it could never leave an
+    /// account of.
+    ///
+    /// AND IT MUST BE THIS SERVICE'S OWNER. A lease on some other owner proves
+    /// that some other keeper is alive, which is not the same fact.
     pub fn ingress_for(
         &mut self,
+        service: &PrivateServiceLease<'_>,
         client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
-    ) -> Result<PrivateIngress, PrivateAdmissionRefusal> {
-        self.frontend
-            .as_mut()
-            .expect("live runner")
+    ) -> Result<PrivateIngress, PrivateServiceRefusal> {
+        let frontend = self.frontend.as_mut().expect("live runner");
+        if !frontend.broker.registry.leased_by(service) {
+            return Err(PrivateServiceRefusal::ForeignServiceOwner);
+        }
+        frontend
             .ingress_for(client, device)
+            .map_err(PrivateServiceRefusal::Admission)
     }
 
     /// Consume the actual shared order using this runner's continuing state.
     /// Writer settlement is supplied by the terminal owner, not inferred from
     /// a turn returning or from a successful queue handoff.
+    /// THE OWNER IS BORROWED FOR THE WHOLE TURN, for the same reason: a turn
+    /// takes accepted work and advances connections whose evidence lives
+    /// outside this service, and one that could run with no keeper would be
+    /// serving connections nothing can afterwards answer for.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn service_turn(
         &mut self,
+        service: &PrivateServiceLease<'_>,
     ) -> Result<PrivateRunnerProgress, XServerFrontendRouteError> {
+        if !self
+            .frontend
+            .as_ref()
+            .expect("live runner")
+            .broker
+            .registry
+            .leased_by(service)
+        {
+            return Err(XServerFrontendRouteError::ForeignServiceOwner);
+        }
         // Reap only a supervisor already known to have returned. This never
         // waits for a running supervisor or a client worker, and its result
         // cannot reopen the admission gate or settle accepted work.

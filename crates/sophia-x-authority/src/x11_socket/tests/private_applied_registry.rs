@@ -82,7 +82,7 @@ mod private_applied_registry {
                 );
             })
             .unwrap();
-        assert!(runner.ingress_for(client(), DeviceId::from_raw(1)).is_ok());
+        assert!(runner.ingress_for(&service_keeper.lease(), client(), DeviceId::from_raw(1)).is_ok());
     }
 
     #[test]
@@ -133,7 +133,7 @@ mod private_applied_registry {
             ),
             Err(PrivateAppliedRegistryRefusal::DifferentConnectionState)
         );
-        assert!(runner.ingress_for(client(), DeviceId::from_raw(1)).is_ok());
+        assert!(runner.ingress_for(&service_keeper.lease(), client(), DeviceId::from_raw(1)).is_ok());
     }
 
     #[test]

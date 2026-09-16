@@ -69,9 +69,9 @@ enum PrivateCustodyReserved {
 /// What reaching for a registered custody found.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
-enum PrivateCustodyReach {
+enum PrivateCustodyReach<'o> {
     /// The custody is here, pinned for the length of this act.
-    Reached(PrivateCustodyPin),
+    Reached(PrivateCustodyPin<'o>),
     /// The owner that kept it has gone.
     ///
     /// SEPARATE FROM EVERY OTHER ANSWER, and it is not a fact about the join.
@@ -89,7 +89,18 @@ enum PrivateCustodyReach {
 /// worker or its obligation.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Held by a caller no production site has yet.
-struct PrivateCustodyPin(Arc<PrivateEvidenceCustody>);
+struct PrivateCustodyPin<'o> {
+    custody: Arc<PrivateEvidenceCustody>,
+    /// THE OWNER THIS WAS REACHED THROUGH, borrowed for as long as this pin
+    /// exists.
+    ///
+    /// AN OWNING HANDLE IS NOT AN ENFORCED ONE. Holding the `Arc` above keeps
+    /// this custody alive wherever it came from, which is exactly how an
+    /// operation could outlive the owner and become the last keeper of the
+    /// evidence it published -- the opposite of what this component is for.
+    /// The borrow is what makes that impossible to write.
+    owner: std::marker::PhantomData<&'o PrivateServiceOwner>,
+}
 
 /// A pin reads as the custody it pins, because that is all it is.
 ///
@@ -98,11 +109,11 @@ struct PrivateCustodyPin(Arc<PrivateEvidenceCustody>);
 /// gone keeps this custody alive without keeping the inventory.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Held by a caller no production site has yet.
-impl std::ops::Deref for PrivateCustodyPin {
+impl std::ops::Deref for PrivateCustodyPin<'_> {
     type Target = PrivateEvidenceCustody;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.custody
     }
 }
 
@@ -152,7 +163,14 @@ impl PrivateRegisteredCustody {
     /// that argument is about how entries are released today, and the cost of
     /// it being wrong is one connection's operation publishing into another
     /// connection's home.
-    fn pin(&self) -> PrivateCustodyReach {
+    fn pin<'o>(&self, service: &PrivateServiceLease<'o>) -> PrivateCustodyReach<'o> {
+        // THE LEASE IS THE OWNER, BORROWED. Asking for it is what ties every
+        // act that follows to an owner that is still there: a caller with no
+        // live owner cannot produce one, and a caller holding what this
+        // returns cannot let that owner go.
+        if !service.keeps(&self.inventory) {
+            return PrivateCustodyReach::KeeperGone;
+        }
         let Some(inventory) = self.inventory.upgrade() else {
             return PrivateCustodyReach::KeeperGone;
         };
@@ -171,7 +189,10 @@ impl PrivateRegisteredCustody {
             // with.
         };
         match found {
-            Some(custody) => PrivateCustodyReach::Reached(PrivateCustodyPin(custody)),
+            Some(custody) => PrivateCustodyReach::Reached(PrivateCustodyPin {
+                custody,
+                owner: std::marker::PhantomData,
+            }),
             None => PrivateCustodyReach::Replaced,
         }
     }
@@ -255,9 +276,18 @@ impl PrivateCustodyKeeper {
         let Some(index) = kept.places.iter().position(Option::is_none) else {
             return PrivateCustodyReserved::Saturated;
         };
-        // The home is made here, before this connection is exposed, and it
-        // goes straight into the owner's storage: at no point is the only
-        // handle to it in this frame.
+        // The home is made here, before this connection is exposed, and goes
+        // into the owner's storage on the next line.
+        //
+        // THERE IS AN INTERVAL, AND IT IS NOT THE ONE THAT MATTERS. Between
+        // this line and the assignment below, the only strong handle to this
+        // custody is the local -- so an unwind in between would take it. What
+        // it would take is an empty home belonging to a connection that has
+        // not been published, whose worker does not exist and whose join has
+        // not happened: there is no result to lose, and the caller is refused.
+        // What the component rules out is losing a home somebody has already
+        // published INTO, and by the time anything can, this home has an
+        // owner that is not a frame.
         let custody = Arc::new(PrivateEvidenceCustody::prepared_for(
             &inventory.store,
             identity.clone(),
@@ -275,6 +305,42 @@ impl PrivateCustodyKeeper {
     /// Whether this keeper is that owner's.
     fn kept_by(&self, owner: &PrivateServiceOwner) -> bool {
         std::ptr::eq(self.inventory.as_ptr(), Arc::as_ptr(&owner.inventory))
+    }
+}
+
+/// One live borrow of a service's owner.
+///
+/// WHAT IT IS FOR. Every act that continues a service -- taking an ingress,
+/// serving a turn, reaching a connection's custody -- asks for one of these,
+/// and the only way to have one is to borrow an owner that is still there.
+/// That is the difference between a service whose keeper is alive and a
+/// service that merely remembers having had one.
+///
+/// AND IT IS THIS OWNER, NOT AN OWNER. Two owners over one store are two
+/// inventories; a lease on the wrong one proves the wrong thing, so every act
+/// that takes one compares it with the inventory it is about to use.
+///
+/// NOTHING IS OWNED HERE, and holding one authorises nothing by itself: it
+/// says the keeper is there, not that anything may be started, joined, driven
+/// or disposed of.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Held by a caller no production site has yet.
+#[derive(Clone, Copy)]
+pub struct PrivateServiceLease<'o> {
+    owner: &'o PrivateServiceOwner,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Asked by a caller no production site has yet.
+impl PrivateServiceLease<'_> {
+    /// Whether this lease's owner is the one keeping that inventory.
+    fn keeps(&self, inventory: &std::sync::Weak<PrivateCustodyInventory>) -> bool {
+        std::ptr::eq(inventory.as_ptr(), Arc::as_ptr(&self.owner.inventory))
+    }
+
+    /// Whether this lease's owner is the one that registry reserves through.
+    fn keeps_for(&self, keeper: &PrivateCustodyKeeper) -> bool {
+        self.keeps(&keeper.inventory)
     }
 }
 
@@ -312,7 +378,11 @@ impl PrivateServiceOwner {
     /// is the number those were taken against. The inventory is sized to THAT,
     /// so there is one limit here and not two that can disagree.
     ///
-    /// Refuses only for a store that cannot be read.
+    /// TWO REFUSALS, AND BOTH ARE ABOUT ESTABLISHING, NOT ABOUT ANY
+    /// CONNECTION. A store whose bound cannot be read has nothing to size an
+    /// inventory to; and the storage for that many places is asked for
+    /// up front, so an allocation that will not be made is refused here rather
+    /// than found later by a connection that was already admitted.
     pub fn established_over(
         store: &PrivateSettlementOwner,
         connections: NonZeroUsize,
@@ -333,6 +403,15 @@ impl PrivateServiceOwner {
     /// The store this owner keeps.
     pub(crate) fn store(&self) -> &PrivateSettlementOwner {
         &self.store
+    }
+
+    /// A live borrow of this owner, for the acts that require one.
+    ///
+    /// THE OWNER IS THE SCOPE. A caller that has one of these is holding this
+    /// owner borrowed, so nothing it reaches through the lease can outlive the
+    /// keeper it came from.
+    pub fn lease(&self) -> PrivateServiceLease<'_> {
+        PrivateServiceLease { owner: self }
     }
 
     /// A registry's way back to this owner's inventory, held weakly.
@@ -383,7 +462,7 @@ impl PrivateServiceOwner {
     /// successor has a different home, so a successor's name does not find its
     /// predecessor's evidence and cannot be used to reach it.
     #[cfg_attr(not(test), allow(dead_code))]
-    fn custody_named(&self, identity: &PrivateMaintenanceIdentity) -> Option<PrivateCustodyPin> {
+    fn custody_named(&self, identity: &PrivateMaintenanceIdentity) -> Option<PrivateCustodyPin<'_>> {
         let kept = match self.inventory.kept.lock() {
             Ok(kept) => kept,
             Err(poisoned) => poisoned.into_inner(),
@@ -395,6 +474,9 @@ impl PrivateServiceOwner {
             .find(|custody| custody.identity().same_as(identity))
             .map(Arc::clone);
         drop(kept);
-        found.map(PrivateCustodyPin)
+        found.map(|custody| PrivateCustodyPin {
+            custody,
+            owner: std::marker::PhantomData,
+        })
     }
 }

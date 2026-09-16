@@ -14944,6 +14944,7 @@ fn a_release_proof_is_recorded_by_service_rather_than_by_the_next_input() {
     let client = XServerFrontendClientId(2421);
     let mut fixture = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
+        keeper,
         runner,
         ingress,
         surface,
@@ -14960,7 +14961,7 @@ fn a_release_proof_is_recorded_by_service_rather_than_by_the_next_input() {
         ))
         .expect("the order to accept the press");
     for _ in 0..4 {
-        runner.service_turn().expect("a serviceable turn");
+        runner.service_turn(&keeper.lease()).expect("a serviceable turn");
     }
     ingress
         .submit(button_to(
@@ -14976,7 +14977,7 @@ fn a_release_proof_is_recorded_by_service_rather_than_by_the_next_input() {
     let mut recorded = 0;
     for _ in 0..12 {
         recorded += runner
-            .service_turn()
+            .service_turn(&keeper.lease())
             .expect("a serviceable turn")
             .recorded;
     }
@@ -16981,7 +16982,7 @@ fn instance_handing_over_a_retained_hold(
             .expect("the clear applies");
     }
     let ingress = runner
-        .ingress_for(client, DeviceId::from_raw(1))
+        .ingress_for(&keeper.lease(), client, DeviceId::from_raw(1))
         .expect("an ingress");
     let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
@@ -20954,7 +20955,7 @@ fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedF
         .prepare_runner(namespace, &service_keeper)
         .unwrap_or_else(|(cause, _)| panic!("runner refused: {cause:?}"));
     let ingress = runner
-        .ingress_for(client, DeviceId::from_raw(1))
+        .ingress_for(&service_keeper.lease(), client, DeviceId::from_raw(1))
         .expect("the runner exposes a producer");
 
     // A real initial clear through the publication the runner installed,
@@ -21004,9 +21005,10 @@ fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedF
 fn a_prepared_runner_presses_through_its_real_producer() {
     let client = XServerFrontendClientId(2101);
     let mut fixture = prepared_ordered_fixture(client);
+    let lease = fixture.keeper.lease();
     let ingress = fixture
         .runner
-        .ingress_for(client, DeviceId::from_raw(1))
+        .ingress_for(&lease, client, DeviceId::from_raw(1))
         .expect("the runner exposes a producer");
     ingress
         .submit(button_to(
@@ -21020,7 +21022,7 @@ fn a_prepared_runner_presses_through_its_real_producer() {
     // Driven through the runner's own turn, which is what production drives.
     let progress = fixture
         .runner
-        .service_turn()
+        .service_turn(&lease)
         .expect("a readable order");
     assert_eq!(progress.taken, 1, "the runner took the submitted work");
     assert_eq!(progress.refused, 0, "and did not refuse it");
@@ -32747,11 +32749,18 @@ fn a_body_refuses_a_home_or_an_owner_it_may_not_serve() {
 /// otherwise every control would be exercising a custody no registration ever
 /// knew about, and the reservation this component exists for would be
 /// untested.
-fn custody_for(f: &PrivateWorkerFixture) -> PrivateCustodyPin {
+fn custody_for<'o>(
+    f: &PrivateWorkerFixture,
+    keeper: &'o crate::PrivateServiceOwner,
+) -> PrivateCustodyPin<'o> {
+    // THE KEEPER IS BORROWED, NOT THE FIXTURE. A pin tied to the whole fixture
+    // would stop a control touching anything else in it, which is a borrow
+    // about this helper's shape rather than about the owner this pin depends
+    // on.
     let PrivateCustodyReach::Reached(pin) = f
         .fixture
         .registration
-        .registered_custody()
+        .registered_custody(&keeper.lease())
         .expect("a private registration reserves a custody")
     else {
         panic!("its own service owner still keeps it")
@@ -32817,7 +32826,7 @@ fn a_reaping_keeps_what_a_worker_that_returned_actually_returned() {
         }
         .run();
     });
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert_eq!(record.phase(), PrivateReapingPhase::NotBegun);
 
@@ -32851,7 +32860,7 @@ fn a_reaping_keeps_the_payload_a_worker_panicked_with() {
     let slot = started_worker(&f, || {
         panic!("a worker frame carried this out with it");
     });
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     let reaping = record.reap();
 
@@ -32892,7 +32901,7 @@ fn a_departure_noticed_is_not_a_thread_collected() {
         }
         let _ = held.recv();
     });
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert!(
         waited_for(|| exit.left()),
@@ -32941,7 +32950,7 @@ fn two_asks_at_once_join_a_worker_once() {
         let _ = held.recv();
         panic!("what exactly one of them keeps");
     });
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
 
     std::thread::scope(|scope| {
@@ -33006,7 +33015,7 @@ fn a_second_ask_joins_nothing_and_changes_nothing() {
     let slot = started_worker(&f, || {
         panic!("what the first ask keeps");
     });
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
 
@@ -33040,7 +33049,7 @@ fn an_ask_that_consumes_nothing_says_which_nothing_it_found() {
 
     // Never started.
     let unstarted = Mutex::new(PrivateWorkerSlot::empty());
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let first = PrivateReapingRecord::bound_to(&unstarted, &exit, &custody);
     let reaping = first.reap();
     assert_eq!(reaping.reaped, PrivateReaped::NothingStarted);
@@ -33130,7 +33139,7 @@ fn a_poisoned_slot_still_gives_up_its_handle_and_says_it_was_poisoned() {
     );
     assert!(slot.is_poisoned());
 
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     let reaping = record.reap();
     assert_eq!(reaping.reaped, PrivateReaped::Joined);
@@ -33152,7 +33161,7 @@ fn a_joined_result_publishes_while_its_exit_record_is_held() {
     let f = worker_fixture(XServerFrontendClientId(8417));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let slot = started_worker(&f, || {});
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
 
     let reaping = std::thread::scope(|scope| {
@@ -33231,7 +33240,7 @@ fn a_fence_waits_for_the_join_that_makes_it_eligible() {
     // still being served: a departure published, an empty slot, an attempt
     // that may have taken a handle.
     let g = fence_fixture(XServerFrontendClientId(8421));
-    let custody = custody_for(&g.f);
+    let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
 
@@ -33266,7 +33275,7 @@ fn an_unconfirmed_join_is_not_a_joined_one() {
     // says InProgress, its slot says the handle has gone, and neither is a
     // reason to close anything.
     let g = fence_fixture(XServerFrontendClientId(8422));
-    let custody = custody_for(&g.f);
+    let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
 
@@ -33328,7 +33337,7 @@ fn a_join_that_reported_a_panic_is_a_completed_join() {
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let gate = f.fixture.registration.handover_gate();
     let slot = started_worker(&f, || panic!("what the join kept"));
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
@@ -33358,7 +33367,7 @@ fn a_fence_keeps_the_three_things_a_gate_can_say() {
     let established = {
         let g = fence_fixture(XServerFrontendClientId(8424));
         cancel_connection_worker(&g.f.stop, &g.f.wake);
-        let custody = custody_for(&g.f);
+        let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
@@ -33374,7 +33383,7 @@ fn a_fence_keeps_the_three_things_a_gate_can_say() {
     let already = {
         let g = fence_fixture(XServerFrontendClientId(8425));
         cancel_connection_worker(&g.f.stop, &g.f.wake);
-        let custody = custody_for(&g.f);
+        let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         assert_eq!(
@@ -33396,7 +33405,7 @@ fn a_fence_keeps_the_three_things_a_gate_can_say() {
     let unreadable = {
         let g = fence_fixture(XServerFrontendClientId(8426));
         cancel_connection_worker(&g.f.stop, &g.f.wake);
-        let custody = custody_for(&g.f);
+        let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         assert!(
@@ -33427,7 +33436,7 @@ fn a_second_fencing_asks_nothing_and_replaces_nothing() {
     // into one it merely found.
     let g = fence_fixture(XServerFrontendClientId(8427));
     cancel_connection_worker(&g.f.stop, &g.f.wake);
-    let custody = custody_for(&g.f);
+    let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
@@ -33451,7 +33460,7 @@ fn a_fencing_that_waits_on_a_handover_leaves_its_evidence_readable() {
     // still read the join result and this attempt's standing.
     let g = fence_fixture(XServerFrontendClientId(8428));
     cancel_connection_worker(&g.f.stop, &g.f.wake);
-    let custody = custody_for(&g.f);
+    let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
@@ -33513,7 +33522,7 @@ fn fencing_one_connection_leaves_another_connections_gate_open() {
     // for it below stays queued: a running body would serve it, which is that
     // component's business and not this one's.
     cancel_connection_worker(&g.f.stop, &g.f.wake);
-    let custody = custody_for(&g.f);
+    let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&g.slot, &g.exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
 
@@ -33595,7 +33604,7 @@ fn a_fence_is_not_delayed_by_a_diagnostic_somebody_is_holding() {
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let gate = f.fixture.registration.handover_gate();
     let slot = started_worker(&f, || panic!("held while the gate is closed"));
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
@@ -34433,7 +34442,7 @@ fn a_commitment_waits_for_the_evidence_it_rests_on() {
     // and neither is a reason to go and produce one.
     let c = commit_fixture(XServerFrontendClientId(8461), false);
     let durable = c.g.f.fixture.durable.clone();
-    let custody = custody_for(&c.g.f);
+    let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
@@ -34498,7 +34507,7 @@ fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
     let c = commit_fixture(XServerFrontendClientId(8462), true);
     let durable = c.g.f.fixture.durable.clone();
     let place = c.place;
-    let custody = custody_for(&c.g.f);
+    let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     {
         let view = custody.view();
         // A view reaches everything the custody has, and owns none of it.
@@ -34613,7 +34622,7 @@ fn a_commitment_records_what_the_gate_said_whichever_it_was() {
         let c = commit_fixture(XServerFrontendClientId(client), false);
         let durable = c.g.f.fixture.durable.clone();
         let outer = durable.clone();
-        let custody = custody_for(&c.g.f);
+        let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
         let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
@@ -34648,7 +34657,7 @@ fn a_commitment_is_not_gated_by_a_diagnostic_somebody_is_holding() {
     let c = commit_fixture(XServerFrontendClientId(8466), true);
     let durable = c.g.f.fixture.durable.clone();
     let outer = durable.clone();
-    let custody = custody_for(&c.g.f);
+    let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
@@ -34668,7 +34677,11 @@ fn a_commitment_is_not_gated_by_a_diagnostic_somebody_is_holding() {
         matches!(context.commit(), PrivateCommitted::Committed),
         "neither lock is on the way to the obligation"
     );
-    drop((payload_held, diagnostic_held, c.g.f.fixture, outer));
+    // The pin goes before the keeper it borrows, which is the order the
+    // borrow checker now insists on and the order the thing itself has.
+    drop((payload_held, diagnostic_held, outer));
+    drop(custody);
+    drop(c.g.f.fixture);
 }
 
 #[test]
@@ -34688,7 +34701,7 @@ fn a_commitment_takes_no_further_credit_and_moves_the_duty_once() {
         .expect("a name");
     let reserved_before = durable.continuations_reserved();
     let abandoned_before = durable.continuations_abandoned();
-    let custody = custody_for(&c.g.f);
+    let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
@@ -34732,7 +34745,7 @@ fn a_second_commitment_replaces_nothing() {
     let c = commit_fixture(XServerFrontendClientId(8468), false);
     let durable = c.g.f.fixture.durable.clone();
     let outer = durable.clone();
-    let custody = custody_for(&c.g.f);
+    let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
@@ -34791,7 +34804,7 @@ fn a_commitment_leaves_no_store_self_cycle() {
         let durable = c.g.f.fixture.durable.clone();
         capability = durable.settlement_ref();
         outer = durable.clone();
-        let custody = custody_for(&c.g.f);
+        let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
         let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
         let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
@@ -34829,7 +34842,7 @@ fn a_commitment_whose_place_moved_on_leaves_the_successor_alone() {
     let mut c = commit_fixture(XServerFrontendClientId(8470), false);
     let durable = c.g.f.fixture.durable.clone();
     let outer = durable.clone();
-    let custody = custody_for(&c.g.f);
+    let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
@@ -34919,7 +34932,7 @@ fn a_commitment_with_a_destination_from_elsewhere_is_refused() {
     let c = commit_fixture(XServerFrontendClientId(8472), false);
     let durable = c.g.f.fixture.durable.clone();
     let outer = durable.clone();
-    let custody = custody_for(&c.g.f);
+    let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
@@ -34980,7 +34993,7 @@ fn an_operation_that_unwinds_loses_the_operation_and_not_the_result() {
     // establishes that boundary and no other: nothing here witnesses an
     // arbitrary instruction inside a reaping.
     let f = worker_fixture(XServerFrontendClientId(8481));
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let slot = started_worker(&f, || panic!("what the custodian keeps"));
 
@@ -35016,7 +35029,7 @@ fn losing_an_operation_before_a_result_exists_invents_none() {
     // consumed a handle -- readable states of this same home, and neither a
     // join outcome.
     let f = worker_fixture(XServerFrontendClientId(8482));
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let (release, held) = std::sync::mpsc::channel::<()>();
     let slot = started_worker(&f, move || {
@@ -35052,7 +35065,7 @@ fn a_commitment_needs_no_returned_handle_to_keep_its_evidence() {
     let c = commit_fixture(XServerFrontendClientId(8483), true);
     let durable = c.g.f.fixture.durable.clone();
     let place = c.place;
-    let custody = custody_for(&c.g.f);
+    let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
     let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
@@ -35072,7 +35085,8 @@ fn a_commitment_needs_no_returned_handle_to_keep_its_evidence() {
         .join()
         .expect("its custodian owns it");
     assert!(Arc::ptr_eq(&named, custody.join()));
-    drop((c.g.f.fixture, custody));
+    drop(custody);
+    drop(c.g.f.fixture);
 }
 
 #[test]
@@ -35096,7 +35110,7 @@ fn a_commitment_refuses_another_connections_evidence() {
     // BOTH CUSTODIES BEFORE THE LEASE IS TAKEN: a name is handed out from the
     // registration's lease, so a custody asked for after the lease has gone
     // has nothing to be about.
-    let twin = custody_for(&c.g.f);
+    let twin = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
 
     // (1) THE WRONG NAME. The whole operation runs against the sibling's
@@ -35146,7 +35160,8 @@ fn a_commitment_refuses_another_connections_evidence() {
         matches!(context.commit(), PrivateCommitted::NotYetEvidenced),
         "a different refusal, and not a foreign one"
     );
-    drop((c.g.f.fixture, sibling, sibling_custody, twin));
+    drop((sibling_custody, twin));
+    drop((c.g.f.fixture, sibling));
 }
 
 #[test]
@@ -35161,7 +35176,7 @@ fn a_completed_join_cannot_be_withdrawn_by_a_later_view() {
     // the time the second one is made.
     let c = commit_fixture(XServerFrontendClientId(8487), true);
     let durable = c.g.f.fixture.durable.clone();
-    let custody = custody_for(&c.g.f);
+    let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     {
         let first = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit, &custody);
@@ -35211,7 +35226,8 @@ fn a_completed_join_cannot_be_withdrawn_by_a_later_view() {
         Some("what this connection's worker carried out with it"),
         "the original result, and not a fresh one"
     );
-    drop((c.g.f.fixture, custody));
+    drop(custody);
+    drop(c.g.f.fixture);
 }
 
 #[test]
@@ -35230,7 +35246,7 @@ fn two_views_of_one_home_do_not_both_publish() {
         let _ = held.recv();
         panic!("what exactly one view keeps");
     });
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
 
     // BOTH VIEWS REACH FOR THE RIGHT AT THE SAME MOMENT. Each is built before
     // the rendezvous, so what the two threads do after it is the acquisition
@@ -35294,7 +35310,8 @@ fn two_views_of_one_home_do_not_both_publish() {
     assert!(state.handle.is_none());
     assert_eq!(state.life, PrivateWorkerLife::HandedToJoiner);
     drop(state);
-    drop((f.fixture, custody));
+    drop(custody);
+    drop(f.fixture);
 }
 
 #[test]
@@ -35306,7 +35323,7 @@ fn a_view_that_consumed_nothing_leaves_the_right_for_the_next() {
     let f = worker_fixture(XServerFrontendClientId(8489));
     let exit = Arc::new(PrivateWorkerExit::unstarted());
     let slot = Mutex::new(PrivateWorkerSlot::empty());
-    let custody = custody_for(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
 
     // A VIEW THAT ARRIVES BEFORE THE WORKER DOES, and is then gone.
     {
@@ -35334,7 +35351,8 @@ fn a_view_that_consumed_nothing_leaves_the_right_for_the_next() {
     let third = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
     assert_eq!(third.reap().reaped, PrivateReaped::NotThePublisher);
     assert_eq!(custody.join().phase(), PrivateReapingPhase::Joined);
-    drop((f.fixture, custody));
+    drop(custody);
+    drop(f.fixture);
 }
 
 #[test]
@@ -35352,75 +35370,79 @@ fn a_payload_holding_the_store_is_a_chain_from_its_custodian() {
     // dropping its connection with a thread it never collected -- cancelling
     // one is not joining it -- so this assembles the pieces from a worker
     // fixture rather than taking a fixture that has already started one.
-    let capability;
-    let place;
-    let custody;
-    {
-        let f = worker_fixture(XServerFrontendClientId(8486));
-        f.permit();
-        let durable = f.fixture.durable.clone();
-        capability = durable.settlement_ref();
-        custody = custody_for(&f);
-        let named = f
-            .fixture
-            .registration
-            .maintenance_identity()
-            .expect("a place, so a name");
-        place = named.place();
-        let gate = f.fixture.registration.handover_gate();
+    let f = worker_fixture(XServerFrontendClientId(8486));
+    f.permit();
+    let durable = f.fixture.durable.clone();
+    let capability = durable.settlement_ref();
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let place = f
+        .fixture
+        .registration
+        .maintenance_identity()
+        .expect("a place, so a name")
+        .place();
+    let gate = f.fixture.registration.handover_gate();
 
-        // A real worker panicking with a real handle to this store.
-        let carried = durable.clone();
-        let exit = Arc::new(PrivateWorkerExit::unstarted());
-        let slot = started_worker(&f, move || {
-            std::panic::panic_any(carried);
-        });
-        let lease = lease_of(&f.fixture.registration);
-        let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
-        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
-        assert_eq!(record.reap().reaped, PrivateReaped::Joined);
-        assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
-        let destination = durable
-            .prepare_internal_holder(&lease)
-            .expect("its own destination");
-        let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
-        assert!(matches!(context.commit(), PrivateCommitted::Committed));
+    // A real worker panicking with a real handle to this store.
+    let carried = durable.clone();
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
+    let slot = started_worker(&f, move || {
+        std::panic::panic_any(carried);
+    });
+    let lease = lease_of(&f.fixture.registration);
+    let record = PrivateReapingRecord::bound_to(&slot, &exit, &custody);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination");
+    let context = PrivateCommitmentContext::bound_to(&custody, &fence, lease, destination);
+    assert!(matches!(context.commit(), PrivateCommitted::Committed));
 
-        // The payload really is a store handle.
-        let evidence = custody.join();
-        let PrivateJoinResult::Panicked(payload) = evidence.result().expect("a completed join")
-        else {
-            panic!("this worker panicked")
-        };
-        assert!(
-            payload
-                .lock()
-                .expect("a readable payload")
-                .downcast_ref::<PrivateSettlementOwner>()
-                .is_some(),
-            "it is carrying a handle to this very store"
-        );
-        // Every ordinary holder goes: the connection, its instance, the
-        // reaping and fencing records, this connection's gate and the
-        // fixture's own store handle.
-        drop((f.fixture, durable, slot, exit, gate));
-    }
+    // The payload really is a store handle.
+    let evidence = Arc::clone(custody.join());
+    let PrivateJoinResult::Panicked(payload) = evidence.result().expect("a completed join") else {
+        panic!("this worker panicked")
+    };
+    assert!(
+        payload
+            .lock()
+            .expect("a readable payload")
+            .downcast_ref::<PrivateSettlementOwner>()
+            .is_some(),
+        "it is carrying a handle to this very store"
+    );
+
+    // EVERY ORDINARY HOLDER GOES, and the custodian is not one of them: the
+    // operations, this control's pin, the connection's instance, the gate and
+    // the fixture's own store handle.
+    drop(context);
+    drop(fence);
+    drop(record);
+    drop(custody);
+    drop((durable, slot, exit, gate));
     assert!(
         capability.owner().is_some(),
         "the custodian's chain keeps the store"
     );
+    let still_here = f
+        .fixture
+        .keeper
+        .store()
+        .committed_obligation(place)
+        .expect("the obligation is still here");
     assert!(
-        custody
-            .store()
-            .committed_obligation(place)
-            .expect("the obligation is still here")
-            .join()
-            .is_some(),
+        still_here.join().is_some(),
         "and the obligation still reaches its evidence"
     );
+    drop(still_here);
 
-    // AND THE CUSTODIAN LETTING GO RELEASES ALL OF IT.
-    drop(custody);
+    // AND THE CUSTODIAN LETTING GO RELEASES ALL OF IT -- once this reader's
+    // own owning handle on the evidence goes too, which is allowed to outlive
+    // it and is not what keeps the graph.
+    drop(evidence);
+    drop(f.fixture);
     assert!(
         capability.owner().is_none(),
         "a payload holding the store is a chain from outside, not a ring"
@@ -35446,12 +35468,12 @@ fn service_owner(
 
 #[test]
 fn a_connections_evidence_keeper_is_reserved_before_its_row_is_published() {
-    // THE INTERVAL, WITNESSED BY A REFUSAL RATHER THAN BY HINDSIGHT. Seeing a
-    // custody and a row both present afterwards says nothing about which came
-    // first. What says it is a publication that FAILS: the duplicate below is
-    // refused while holding the client table, and the attempt still has an
-    // evidence reservation of its own to give back -- which it could only have
-    // if that reservation was made before publication was attempted.
+    // THE INTERVAL, OBSERVED FROM INSIDE IT. Seeing a custody and a row both
+    // present afterwards says nothing about which came first, and counting one
+    // before and one after says only that the total did not change. This holds
+    // the client table itself -- the lock publication must take -- so a second
+    // registration is stopped exactly between preparing and publishing, and
+    // its OWN entry is counted while it waits there.
     let durable = PrivateSettlementOwner::default();
     let keeper = service_owner(&durable, 4);
     let private = private_over(&keeper, 4);
@@ -35463,34 +35485,56 @@ fn a_connections_evidence_keeper_is_reserved_before_its_row_is_published() {
         .expect("a place, a keeper and a row");
     assert_eq!(keeper.custodies_kept(), 1);
     assert_eq!(keeper.custody_capacity_remaining(), 3);
-    let PrivateCustodyReach::Reached(kept) =
-        first.registered_custody().expect("its own custody")
-    else {
-        panic!("its owner keeps it")
+    let home = {
+        let PrivateCustodyReach::Reached(kept) = first
+            .registered_custody(&keeper.lease())
+            .expect("its own custody")
+        else {
+            panic!("its owner keeps it")
+        };
+        Arc::clone(kept.join())
     };
-    let home = Arc::clone(kept.join());
 
-    // THE SAME CLIENT AGAIN. Registration prepares a place and a custody, then
-    // publication refuses on the client table.
-    let refused = private
-        .broker
-        .registry
-        .register_client_with_admission(client, Some(admitted(client)));
+    let registry = private.broker.registry.clone();
+    let refused = std::thread::scope(|scope| {
+        // THE REAL CLIENT TABLE, held by this control. Nothing is hooked: the
+        // registration below runs its ordinary path and stops where it would
+        // stop against any other publisher.
+        let table = registry.clients.lock().expect("a readable client table");
+        let attempt = scope.spawn(|| {
+            registry.register_client_with_admission(client, Some(admitted(client)))
+        });
+        // ITS OWN ENTRY IS HERE WHILE PUBLICATION CANNOT HAVE HAPPENED.
+        assert!(
+            waited_for(|| keeper.custodies_kept() == 2),
+            "the attempt reserved its evidence before reaching publication"
+        );
+        assert_eq!(keeper.custody_capacity_remaining(), 2);
+        assert_eq!(
+            durable.continuations_reserved(),
+            Some(2),
+            "and its place, on the same reservation"
+        );
+        drop(table);
+        attempt.join().expect("the attempt returned")
+    });
+
+    // AND PUBLICATION REFUSED IT, so both of that attempt's reservations went
+    // back and the live sibling it collided with kept everything of its own.
     assert!(matches!(
         refused,
         Err(XServerFrontendRouteError::DuplicateClient { client: same }) if same == client
     ));
-
-    // AND ONLY THE UNPUBLISHED ATTEMPT'S RESERVATION WENT BACK. The live
-    // sibling it collided with keeps its custody, its home and its place.
     assert_eq!(
         keeper.custodies_kept(),
         1,
         "the refused attempt gave back exactly its own"
     );
     assert_eq!(keeper.custody_capacity_remaining(), 3);
-    let PrivateCustodyReach::Reached(again) =
-        first.registered_custody().expect("its own custody")
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    let PrivateCustodyReach::Reached(again) = first
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
     else {
         panic!("its owner still keeps it")
     };
@@ -35498,8 +35542,8 @@ fn a_connections_evidence_keeper_is_reserved_before_its_row_is_published() {
         Arc::ptr_eq(again.join(), &home),
         "the live connection's home is the one it always had"
     );
-    assert_eq!(durable.continuations_reserved(), Some(1));
-    drop((kept, again, first, private, keeper));
+    drop(again);
+    drop((first, private, registry, keeper));
 }
 
 #[test]
@@ -35520,7 +35564,7 @@ fn asking_a_registration_for_its_custody_twice_names_one_home() {
     let mut homes = Vec::new();
     for _ in 0..3 {
         let PrivateCustodyReach::Reached(pin) =
-            registration.registered_custody().expect("its own custody")
+            registration.registered_custody(&keeper.lease()).expect("its own custody")
         else {
             panic!("its owner keeps it")
         };
@@ -35534,7 +35578,7 @@ fn asking_a_registration_for_its_custody_twice_names_one_home() {
     );
     // AND IT IS ABOUT THIS CONNECTION'S PLACE.
     let PrivateCustodyReach::Reached(pin) =
-        registration.registered_custody().expect("its own custody")
+        registration.registered_custody(&keeper.lease()).expect("its own custody")
     else {
         panic!("its owner keeps it")
     };
@@ -35543,7 +35587,8 @@ fn asking_a_registration_for_its_custody_twice_names_one_home() {
             .same_as(&registration.maintenance_identity().expect("a name")),
         "the custody names the place this registration holds"
     );
-    drop((pin, registration, private, keeper));
+    drop(pin);
+    drop((registration, private, keeper));
 }
 
 #[test]
@@ -35568,7 +35613,7 @@ fn one_connections_keeper_is_not_another_connections() {
         .iter()
         .map(|registration| {
             let PrivateCustodyReach::Reached(pin) =
-                registration.registered_custody().expect("its own custody")
+                registration.registered_custody(&keeper.lease()).expect("its own custody")
             else {
                 panic!("its owner keeps it")
             };
@@ -35604,7 +35649,8 @@ fn one_connections_keeper_is_not_another_connections() {
             .is_none(),
         "one owner's inventory does not answer for another store's connection"
     );
-    drop((pins, kept, private, keeper));
+    drop(pins);
+    drop((kept, private, keeper));
     drop((foreign, stranger, stranger_keeper, elsewhere));
 }
 
@@ -35685,7 +35731,7 @@ fn a_successor_at_one_number_does_not_take_its_predecessors_evidence() {
     let private = private_over(&keeper, 3);
     let first = bound_on(&private, XServerFrontendClientId(8508));
     let PrivateCustodyReach::Reached(first_pin) =
-        first.registered_custody().expect("its own custody")
+        first.registered_custody(&keeper.lease()).expect("its own custody")
     else {
         panic!("its owner keeps it")
     };
@@ -35706,7 +35752,7 @@ fn a_successor_at_one_number_does_not_take_its_predecessors_evidence() {
         "the successor really did take that number"
     );
     let PrivateCustodyReach::Reached(next_pin) =
-        next.registered_custody().expect("its own custody")
+        next.registered_custody(&keeper.lease()).expect("its own custody")
     else {
         panic!("its owner keeps it")
     };
@@ -35724,7 +35770,8 @@ fn a_successor_at_one_number_does_not_take_its_predecessors_evidence() {
         Arc::strong_count(&first_home) >= 1 && first_home.result().is_none(),
         "its home is still here, and still says nothing happened in it"
     );
-    drop((next_pin, next, private, keeper));
+    drop(next_pin);
+    drop((next, private, keeper));
 }
 
 #[test]
@@ -35746,7 +35793,7 @@ fn a_service_that_ends_leaves_its_connections_evidence_with_its_owner() {
             .register_client_with_admission(client, Some(admitted(client)))
             .expect("a place, a keeper and a row");
         let PrivateCustodyReach::Reached(pin) =
-            registration.registered_custody().expect("its own custody")
+            registration.registered_custody(&keeper.lease()).expect("its own custody")
         else {
             panic!("its owner keeps it")
         };
@@ -35815,13 +35862,68 @@ fn a_service_cannot_be_prepared_over_a_keeper_that_is_not_its_own() {
     // has its frontend, and its own owner still prepares.
     let prepared = returned
         .prepare_runner(NamespaceId::from_raw(8511), &keeper)
-        .map(|runner| runner.frontend.is_some());
-    assert_eq!(prepared.ok(), Some(true));
+        .map_err(|(cause, _)| cause);
+    assert!(prepared.is_ok(), "its own owner prepares it");
 
-    // AND AN OWNER CANNOT BE ESTABLISHED OVER A STORE NOBODY CAN READ. This
-    // is the one refusal establishing an owner has: the bound it must size
-    // itself to is the store's, so a store that cannot say what its bound is
-    // cannot have an owner made over it.
+    // AND A LEASE ON THE WRONG OWNER UNLOCKS NOTHING. A lease proves that SOME
+    // keeper is alive; every act asks whether it is THIS service's, because a
+    // stranger's liveness is not this service's liveness. The stranger here is
+    // an owner over the very same store, which is the closest a wrong one can
+    // be.
+    let mut runner = prepared.expect("its own owner prepared it");
+    let client = XServerFrontendClientId(8514);
+    let (registration, _channels) = runner
+        .frontend
+        .as_ref()
+        .expect("a live runner")
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper and a row");
+    assert_eq!(
+        runner
+            .ingress_for(&stranger.lease(), client, DeviceId::from_raw(1))
+            .err(),
+        Some(PrivateServiceRefusal::ForeignServiceOwner),
+        "a producer is not handed out on somebody else's keeper"
+    );
+    assert!(
+        matches!(
+            runner.service_turn(&stranger.lease()),
+            Err(XServerFrontendRouteError::ForeignServiceOwner)
+        ),
+        "and no turn is served on one"
+    );
+    assert!(
+        matches!(
+            registration.registered_custody(&stranger.lease()),
+            Some(PrivateCustodyReach::KeeperGone)
+        ),
+        "and no custody is reached through one"
+    );
+    // ITS OWN OWNER GETS PAST ALL THREE. What the participant then says about
+    // this connection is its own business -- this control registered a route
+    // and did not admit one -- and an admission refusal is not a refusal about
+    // the service.
+    assert!(
+        !matches!(
+            runner.ingress_for(&keeper.lease(), client, DeviceId::from_raw(1)),
+            Err(PrivateServiceRefusal::ForeignServiceOwner)
+        ),
+        "its own owner is this service's keeper"
+    );
+    assert!(runner.service_turn(&keeper.lease()).is_ok());
+    assert!(matches!(
+        registration.registered_custody(&keeper.lease()),
+        Some(PrivateCustodyReach::Reached(_))
+    ));
+    drop((registration, runner));
+
+    // AND AN OWNER CANNOT BE ESTABLISHED OVER A STORE NOBODY CAN READ. The
+    // bound it must size itself to is the store's, so a store that cannot say
+    // what its bound is cannot have an owner made over it. (Establishing also
+    // refuses when the storage for that many places cannot be allocated, which
+    // this control does not arrange.)
     let unreadable = PrivateSettlementOwner::default();
     let broken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _held = unreadable.records_even_if_poisoned();
@@ -35882,7 +35984,7 @@ fn an_inventory_refuses_a_second_home_and_a_foreign_name() {
         .expect("a place, a keeper and a row");
     let named = registration.maintenance_identity().expect("a name");
     let PrivateCustodyReach::Reached(pin) =
-        registration.registered_custody().expect("its own custody")
+        registration.registered_custody(&keeper.lease()).expect("its own custody")
     else {
         panic!("its owner keeps it")
     };
@@ -35903,7 +36005,7 @@ fn an_inventory_refuses_a_second_home_and_a_foreign_name() {
         "nothing was added and nothing was replaced"
     );
     let PrivateCustodyReach::Reached(again) =
-        registration.registered_custody().expect("its own custody")
+        registration.registered_custody(&keeper.lease()).expect("its own custody")
     else {
         panic!("its owner keeps it")
     };
@@ -35934,7 +36036,8 @@ fn an_inventory_refuses_a_second_home_and_a_foreign_name() {
         "a refused name took no place in this inventory"
     );
     assert_eq!(stranger_keeper.custodies_kept(), 1, "and none in that one");
-    drop((pin, again, registration, private, keeper));
+    drop((pin, again));
+    drop((registration, private, keeper));
     drop((foreign, stranger, stranger_keeper, elsewhere, durable));
 }
 

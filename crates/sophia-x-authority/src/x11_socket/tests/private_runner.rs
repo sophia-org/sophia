@@ -113,7 +113,7 @@ fn prepared_runner_fixture() -> (
 
 #[test]
 fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
-    let (mut runner, _durable, _registration, channels, _acks, _deliveries) =
+    let (mut runner, durable, _registration, channels, _acks, _deliveries) =
         prepared_runner_fixture();
     let client = XServerFrontendClientId::from_raw(9000);
     let seat = SeatId::from_raw(1);
@@ -136,7 +136,7 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
             .unwrap()
             .contains_key(&(runner.namespace(), seat))
     );
-    let ingress = runner.ingress_for(client, DeviceId::from_raw(1)).unwrap();
+    let ingress = runner.ingress_for(&durable.lease(), client, DeviceId::from_raw(1)).unwrap();
     ingress
         .submit(button_to(
             SurfaceId::new(9000, 1),
@@ -145,7 +145,7 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
             true,
         ))
         .unwrap();
-    let first = runner.service_turn().unwrap();
+    let first = runner.service_turn(&durable.lease()).unwrap();
     assert_eq!(first.taken, 1);
     assert_eq!(
         first.starts, 3,
@@ -172,7 +172,7 @@ fn a_prepared_runner_owns_state_before_exposing_its_real_producer() {
         queued[0].delivery(),
         XAuthorityInputDeliveryId::from_raw(9000)
     );
-    let second = runner.service_turn().unwrap();
+    let second = runner.service_turn(&durable.lease()).unwrap();
     assert_eq!(second.taken, 0);
     assert_eq!(second.enqueued, 0);
     assert_eq!(second.starts, 0);
@@ -223,7 +223,7 @@ fn losing_a_prepared_runner_closes_its_producers_and_carries_its_hold() {
     let (mut runner, durable, _registration, _channels, _acks, _deliveries) =
         prepared_runner_fixture();
     let ingress = runner
-        .ingress_for(
+        .ingress_for(&durable.lease(), 
             XServerFrontendClientId::from_raw(9000),
             DeviceId::from_raw(1),
         )
@@ -236,7 +236,7 @@ fn losing_a_prepared_runner_closes_its_producers_and_carries_its_hold() {
             true,
         ))
         .unwrap();
-    assert_eq!(runner.service_turn().unwrap().observed, 1);
+    assert_eq!(runner.service_turn(&durable.lease()).unwrap().observed, 1);
     drop(runner);
     assert!(matches!(
         ingress.submit(button_to(
@@ -326,10 +326,10 @@ fn runner_accounts_a_park_once_and_never_charges_idle_or_blocked_reads() {
 fn runner_checks_its_allowance_before_taking_accepted_work() {
     use sophia_input_authority::{CleanupReadiness, ServiceBudget, ServiceLimits, ServiceWork};
     use std::time::Duration;
-    let (mut runner, _durable, _registration, _channels, _acks, _deliveries) =
+    let (mut runner, durable, _registration, _channels, _acks, _deliveries) =
         prepared_runner_fixture();
     let ingress = runner
-        .ingress_for(
+        .ingress_for(&durable.lease(), 
             XServerFrontendClientId::from_raw(9000),
             DeviceId::from_raw(1),
         )
@@ -379,10 +379,10 @@ fn runner_checks_its_allowance_before_taking_accepted_work() {
 
 #[test]
 fn unwatchable_work_finishes_accounting_without_becoming_an_effect() {
-    let (mut runner, _durable, _registration, _channels, _acks, _deliveries) =
+    let (mut runner, durable, _registration, _channels, _acks, _deliveries) =
         prepared_runner_fixture();
     let ingress = runner
-        .ingress_for(
+        .ingress_for(&durable.lease(), 
             XServerFrontendClientId::from_raw(9000),
             DeviceId::from_raw(1),
         )
@@ -424,10 +424,10 @@ fn unwatchable_work_finishes_accounting_without_becoming_an_effect() {
 fn runner_charges_common_wait_and_supervision_can_end_it_independently() {
     use std::io::Read;
     use std::time::Duration;
-    let (mut runner, _durable, _registration, _channels, _acks, _deliveries) =
+    let (mut runner, durable, _registration, _channels, _acks, _deliveries) =
         prepared_runner_fixture();
     let ingress = runner
-        .ingress_for(
+        .ingress_for(&durable.lease(), 
             XServerFrontendClientId::from_raw(9000),
             DeviceId::from_raw(1),
         )
@@ -493,7 +493,7 @@ fn runner_failure_refuses_a_detached_producer_while_common_is_held() {
     let (mut runner, durable, _registration, _channels, _acks, _deliveries) =
         prepared_runner_fixture();
     let ingress = runner
-        .ingress_for(
+        .ingress_for(&durable.lease(), 
             XServerFrontendClientId::from_raw(9000),
             DeviceId::from_raw(1),
         )
@@ -550,10 +550,10 @@ fn runner_failure_refuses_a_detached_producer_while_common_is_held() {
 #[test]
 fn idle_runner_loss_closes_an_actual_connection_attached_after_preparation() {
     use std::io::{Read, Write};
-    let (mut runner, _durable, _registration, _channels, _acks, _deliveries) =
+    let (mut runner, durable, _registration, _channels, _acks, _deliveries) =
         prepared_runner_fixture();
     let ingress = runner
-        .ingress_for(
+        .ingress_for(&durable.lease(), 
             XServerFrontendClientId::from_raw(9000),
             DeviceId::from_raw(1),
         )
@@ -778,10 +778,10 @@ fn a_terminal_step_whose_watch_refuses_is_blocked_and_keeps_its_entry() {
     // exactly what makes the terminal visit's own begin_dequeued refuse: one
     // watched execution at a time is the rule it enforces. No replacement
     // watch is installed and no step is assigned a blocked result.
-    let (mut runner, _durable, _registration, channels, _acks, deliveries) =
+    let (mut runner, durable, _registration, channels, _acks, deliveries) =
         prepared_runner_fixture();
     let client = XServerFrontendClientId::from_raw(9000);
-    let ingress = runner.ingress_for(client, DeviceId::from_raw(1)).unwrap();
+    let ingress = runner.ingress_for(&durable.lease(), client, DeviceId::from_raw(1)).unwrap();
     let sequence = ingress
         .submit(button_to(
             SurfaceId::new(9000, 1),
@@ -873,7 +873,7 @@ fn a_terminal_step_whose_watch_refuses_is_blocked_and_keeps_its_entry() {
     // like, so what the turn actually did is checked too: one admitted start,
     // the same refusal, naming the same entry.
     let before = runner.service.usage();
-    let turn = runner.service_turn().unwrap();
+    let turn = runner.service_turn(&durable.lease()).unwrap();
     assert_eq!(
         turn.terminal_steps, 0,
         "the turn stops at the failure rather than taking another step"
