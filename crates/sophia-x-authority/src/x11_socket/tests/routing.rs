@@ -21416,6 +21416,9 @@ fn transport_continuation(
     PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Transport(Box::new(transport)),
         refusal: X11OrderedServingRefusal::Unserved,
+        // Torn down, with its endpoint closed: the only way a record
+        // reaches a place.
+        fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -21890,6 +21893,156 @@ fn a_bound_connection_keeps_its_queue_through_a_later_setup_refusal() {
     assert!(
         cell.answer().is_none(),
         "nobody answered for it, which is why losing it was losing something"
+    );
+}
+
+
+/// The fence a retained record carries, read from the place it went into.
+fn retained_fence(
+    durable: &PrivateSettlementOwner,
+    index: usize,
+) -> Option<Option<PrivateHandoverFence>> {
+    durable.with_ordered_continuation(index, |continuation| {
+        let PrivateOrderedContinuation::Setup { fence, .. } = continuation else {
+            panic!("no owner is built yet")
+        };
+        *fence
+    })
+}
+
+#[test]
+fn a_retained_connection_carries_what_closing_it_established() {
+    // THE OUTCOME TRAVELS WITH THE WORK. The gate belongs to the registration
+    // that minted it and the registration is gone by the time anything drives
+    // this record, so the one moment the closure could be established is the
+    // moment it was. Asking later is not available; carrying it is.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8391);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a fresh registration holds no custody"));
+
+    drop(registration);
+    assert_eq!(
+        retained_fence(&durable, 0),
+        Some(Some(PrivateHandoverFence::Established)),
+        "teardown closed this endpoint, and the record says so"
+    );
+}
+
+#[test]
+fn a_connection_closed_over_a_panicking_handover_never_reads_as_settled() {
+    // A QUIET QUEUE IS NOT A CLOSED CONNECTION. Drained, ended and nothing
+    // retained say that what reached this queue is gone. They say nothing
+    // about a handover that was interrupted on its way here: someone panicked
+    // inside the gate, so the closure could not be established over resolved
+    // custody, and a record carrying that must not read as finished however
+    // quiet it goes.
+    //
+    // Exclusion is not what failed. A poisoned lock is acquired and handed
+    // back inside the error, so nothing was running beside the close.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8401);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a fresh registration holds no custody"));
+
+    // A producer panics inside the gate, the way one would if a handover
+    // failed mid-flight.
+    let gate = registration.ordered_gate.clone();
+    let holder = std::thread::spawn(move || {
+        let _inside = gate.fenced.lock().expect("an open gate");
+        panic!("a handover panicked inside this gate");
+    });
+    assert!(holder.join().is_err(), "the holder panicked");
+
+    drop(registration);
+    drop(private);
+    assert_eq!(
+        retained_fence(&durable, 0),
+        Some(Some(PrivateHandoverFence::Unreadable)),
+        "the close could not be established, and the record carries that"
+    );
+
+    // Everything else about this record says finished: the producers are gone
+    // with the registry, the wire ends on the first visit, and nothing was
+    // kept back.
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    let (_kind, _refusal, retained, drained, ended) =
+        retained_setup_kind(&durable, 0).expect("the place this connection held");
+    assert_eq!(
+        (retained, drained, ended),
+        (0, true, true),
+        "drained, ended, and nothing retained"
+    );
+    assert!(
+        !durable
+            .with_ordered_continuation(0, |continuation| continuation.settled())
+            .expect("the place holds it"),
+        "and still not settled, because the closure was never established"
+    );
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "so the place stays held"
+    );
+}
+
+#[test]
+fn a_connection_closed_cleanly_settles_once_its_work_is_gone() {
+    // The same record with an established closure does finish, so the rule
+    // above is the fence and not some other thing keeping the place.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8411);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let (stream, _peer) = UnixStream::pair().expect("a socket pair");
+    let output = Arc::new(Mutex::new(stream));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    registration
+        .bind_ordered_output(channels.ordered, &output, &wire, &pending)
+        .unwrap_or_else(|_| panic!("a fresh registration holds no custody"));
+
+    drop(registration);
+    drop(private);
+    assert_eq!(
+        retained_fence(&durable, 0),
+        Some(Some(PrivateHandoverFence::Established))
+    );
+    for _ in 0..8 {
+        durable.drive_ordered_continuations(4);
+    }
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(0),
+        "an established closure over work that is gone returns the place"
     );
 }
 
@@ -25331,6 +25484,9 @@ fn a_continuation_place_is_taken_before_exposure_and_kept_while_work_remains() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        // Torn down, with its endpoint closed: the only way a record
+        // reaches a place.
+        fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -25565,6 +25721,9 @@ fn an_unreadable_owner_does_not_make_an_accepted_transfer_optional() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        // Torn down, with its endpoint closed: the only way a record
+        // reaches a place.
+        fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -25604,6 +25763,9 @@ fn driving_a_continuation_does_not_hold_the_store_behind_it() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        // Torn down, with its endpoint closed: the only way a record
+        // reaches a place.
+        fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -25669,6 +25831,9 @@ fn an_unwind_before_the_destination_is_held_leaves_the_work_with_its_source() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        // Torn down, with its endpoint closed: the only way a record
+        // reaches a place.
+        fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -25770,6 +25935,9 @@ fn a_bound_transport_that_could_not_be_served_keeps_its_ending_handle() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Transport(Box::new(returned)),
         refusal,
+        // Torn down, with its endpoint closed: the only way a record reaches
+        // a place.
+        fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -25851,6 +26019,9 @@ fn a_handover_waits_for_the_destination_reserved_for_it() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        // Torn down, with its endpoint closed: the only way a record
+        // reaches a place.
+        fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -25919,6 +26090,9 @@ fn reading_the_store_does_not_take_a_record_beneath_it() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        // Torn down, with its endpoint closed: the only way a record
+        // reaches a place.
+        fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -25998,6 +26172,9 @@ fn an_unreadable_retained_record_is_not_reported_as_absent() {
     let mut source = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        // Torn down, with its endpoint closed: the only way a record
+        // reaches a place.
+        fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
         ended: false,
@@ -26284,6 +26461,9 @@ fn a_stale_return_cannot_take_the_place_its_successor_holds() {
     let mut successor = Some(PrivateOrderedContinuation::Setup {
         accepted: PrivateOrderedSetupCustody::Receiver(Box::new(second_channels.ordered)),
         refusal: X11OrderedServingRefusal::TransportUnavailable,
+        // Torn down, with its endpoint closed: the only way a record
+        // reaches a place.
+        fence: Some(PrivateHandoverFence::Established),
         retained: Vec::new(),
         drained: false,
         ended: false,

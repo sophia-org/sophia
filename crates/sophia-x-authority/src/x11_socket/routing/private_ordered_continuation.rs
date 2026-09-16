@@ -25,6 +25,27 @@ enum PrivateOrderedContinuation {
     Setup {
         accepted: PrivateOrderedSetupCustody,
         refusal: X11OrderedServingRefusal,
+        /// What closing this connection's endpoint established, at teardown.
+        ///
+        /// CARRIED, NOT RE-ASKED. The gate belongs to the registration that
+        /// minted it, and the registration is gone by the time anything drives
+        /// this; the one moment it could be closed is the moment it was. So
+        /// the outcome travels with the work, because it is a fact about the
+        /// work and not about the driver.
+        ///
+        /// An established closure is what makes the rest of this record
+        /// readable as complete: nothing further will be admitted, so a queue
+        /// that has finished is a queue that has finished for good. An
+        /// unreadable one leaves a handover possibly half-answered -- someone
+        /// panicked inside the gate -- and a record carrying that cannot be
+        /// read as closed no matter how quiet it goes.
+        ///
+        /// `None` UNTIL THE CONNECTION IS TORN DOWN, and not the same as an
+        /// unreadable close: one says nobody has closed this endpoint yet, the
+        /// other says someone tried and could not establish it. A record
+        /// reaches a place only through teardown, and teardown closes first,
+        /// so an installed record carries an answer.
+        fence: Option<PrivateHandoverFence>,
         /// Capsules taken off that queue and still owed an answer.
         ///
         /// RECEIVED INTO CUSTODY, never probed away. Asking a channel whether
@@ -299,12 +320,17 @@ impl PrivateOrderedContinuation {
                 *ended = match accepted {
                     // NOT ENDED. HAVING NO HANDLE IS NOT HAVING ENDED
                     // SOMETHING. A receiver alone carries no way to reach the
-                    // connection: the accepted socket is still open, its peer
-                    // is still waiting, and nothing here has touched it.
+                    // connection, so nothing here has touched that socket and
+                    // this record knows nothing about it -- not that it is
+                    // open, and not that it closed. Whether it did depends on
+                    // who else holds a descriptor for it, which is not
+                    // knowable from here.
+                    //
                     // Recording `ended` because there is nothing to end with
                     // read as an established fact, let `settled` agree, and
-                    // handed the place back over a live wire with accepted
-                    // work still on its queue.
+                    // handed the place back over a connection whose state
+                    // nobody had established, with accepted work still on its
+                    // queue.
                     //
                     // So this stays false, and the place stays held. That is
                     // the honest outcome of a connection whose binding refused:
@@ -384,8 +410,26 @@ impl PrivateOrderedContinuation {
                 retained,
                 drained,
                 ended,
+                fence,
                 ..
-            } => *drained && *ended && retained.is_empty(),
+            } => {
+                // AN ESTABLISHED CLOSURE IS PART OF BEING SETTLED. The other
+                // three say this connection's work is gone: its producers are
+                // gone, its wire is ended, and nothing was kept back. They say
+                // that about what reached the queue. The fence is what says
+                // there is nothing else to reach it, and nothing left
+                // half-handed-over -- without it, a quiet queue is only a
+                // queue nobody has written to yet.
+                matches!(
+                    fence,
+                    Some(
+                        PrivateHandoverFence::Established
+                            | PrivateHandoverFence::AlreadyEstablished
+                    )
+                ) && *drained
+                    && *ended
+                    && retained.is_empty()
+            }
             Self::Serving(owner) => {
                 owner.retained_unanswered().is_empty()
                     && owner.retained_foreign().is_empty()

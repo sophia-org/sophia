@@ -119,6 +119,9 @@ impl XServerFrontendClientRouteRegistration {
         match self.retain_ordered_setup(PrivateOrderedContinuation::Setup {
             accepted,
             refusal: refused,
+            // Nobody has closed this endpoint: the connection is being built,
+            // not torn down. Teardown writes what its close established.
+            fence: None,
             // Nothing has been received off this queue. Receiving is how a
             // driver learns whether producers are gone, and nothing here is
             // driving.

@@ -750,19 +750,19 @@ impl XServerFrontendClientRouteRegistration {
     /// outcome, and a teardown that ended a wire in passing would report
     /// nothing about whether it worked.
     fn retain_ordered_continuation(&self) {
-        // NOT ACTED ON, AND THAT IS OPEN WORK. An Established or
+        // KEPT, AND CARRIED INTO THE RECORD. An Established or
         // AlreadyEstablished fence is what makes moving this queue sound:
-        // nothing further can be accepted for it. An Unreadable one is not --
-        // it means the gate could not be read, so this teardown cannot show
-        // that a producer is not still inside, and it goes on to move the
-        // queue anyway.
+        // nothing further will be admitted for it.
         //
-        // Nothing here can do better yet: there is nowhere to record it. What
-        // it needs is somewhere in the retained state for "moved without an
-        // established fence", so whoever takes disposition of this record can
-        // see that it was, and that belongs with disposition rather than being
-        // half-answered here.
-        let _fence = self.fence_ordered_handovers();
+        // An Unreadable one is not, and the reason is narrower than it looks.
+        // The gate was acquired -- a poisoned lock is an acquired lock, handed
+        // back inside the error -- so no producer was inside while this ran
+        // and exclusion is not what failed. What is unestablished is that the
+        // closure was made over resolved custody: someone panicked in there,
+        // and the handover they were making may be half-answered. A record
+        // moved under that must not read as closed, so the outcome goes with
+        // it rather than being discarded here.
+        let fence = self.fence_ordered_handovers();
         // The place was taken before this connection was exposed. Taking the
         // slot out is what says this registration is done with it.
         let slot = match self.ordered_continuation.lock() {
@@ -797,6 +797,12 @@ impl XServerFrontendClientRouteRegistration {
             drop(held);
             drop(slot);
             return;
+        }
+        // Written onto the record while it is still in registration-owned
+        // storage, so what is installed already carries it and nothing has to
+        // reach into a place afterwards to finish the record off.
+        if let Some(PrivateOrderedContinuation::Setup { fence: recorded, .. }) = held.as_mut() {
+            *recorded = Some(fence);
         }
         slot.install(&mut held);
         debug_assert!(

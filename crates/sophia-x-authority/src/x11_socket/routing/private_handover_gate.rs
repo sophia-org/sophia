@@ -25,10 +25,14 @@ pub(crate) struct PrivateHandoverGate {
 
 /// What a close established.
 ///
-/// UNREADABLE IS NOT FENCED. A gate whose lock is poisoned cannot be shown to
-/// have stopped anything, and reporting one as the other would name a fence
-/// that was never established -- a caller would then go on to end a socket
-/// under handovers that may still be running.
+/// UNREADABLE IS NOT FENCED -- but not because exclusion failed. A poisoned
+/// lock is acquired and then reported as poisoned; the guard comes back inside
+/// the error, so nothing was running beside a close that saw one. What a
+/// poisoned gate says is that a holder PANICKED while inside it, which leaves
+/// two things unestablished: the flag under it may not reflect a completed
+/// operation, and the handover that panicked may have left custody
+/// unresolved. Reporting that as a fence would name something established over
+/// a connection that still has an unanswered question about it.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Teardown drives closing; not attached yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,7 +41,10 @@ pub(crate) enum PrivateHandoverFence {
     Established,
     /// The closure was already made. Still a fence, and still exact.
     AlreadyEstablished,
-    /// Nothing could be established. Retained failure, not a fence.
+    /// A holder panicked inside this gate. The lock was still acquired -- that
+    /// is what poisoning means -- so this is not a failure to exclude; it is a
+    /// closure that cannot be trusted to have been made over resolved custody.
+    /// Retained failure, not a fence.
     Unreadable,
 }
 
@@ -48,9 +55,11 @@ pub(crate) enum PrivateHandoverRefusal {
     /// This registration's endpoint is closed. Nothing more may be handed to
     /// it, and this producer took nothing.
     Fenced,
-    /// The gate could not be read, so admission could not be established.
-    /// Refused for the same reason a fence would be: an unestablished answer
-    /// is not permission.
+    /// A holder panicked inside this gate. This producer did acquire it -- a
+    /// poisoned lock is an acquired lock -- and is refused anyway: the flag it
+    /// would be trusting may not reflect a completed operation, and an
+    /// unestablished answer is not permission. Refusing takes nothing, so the
+    /// cost of being wrong here is a retry rather than a lost capsule.
     Unreadable,
 }
 
