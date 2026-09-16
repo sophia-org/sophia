@@ -24820,6 +24820,245 @@ fn no_pass_is_made_for_a_slot_with_nobody_in_it() {
     );
 }
 
+
+/// The pieces a startup transaction needs, with nothing started.
+fn startup_fixture() -> (
+    Mutex<PrivateWorkerSlot>,
+    Arc<AtomicBool>,
+    Arc<PrivateOrderedWake>,
+) {
+    (
+        Mutex::new(PrivateWorkerSlot::empty()),
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(PrivateOrderedWake::for_first_sender()),
+    )
+}
+
+/// A worker body that waits for a permit or a stop and reports which it saw.
+fn permit_waiter(
+    stop: Arc<AtomicBool>,
+    wake: Arc<PrivateOrderedWake>,
+    saw: std::sync::mpsc::SyncSender<&'static str>,
+) -> impl FnOnce() + Send + 'static {
+    move || {
+        let mut state = wake.state.lock().expect("a readable notice");
+        while !state.started && !stop.load(std::sync::atomic::Ordering::Acquire) {
+            state = wake.ready.wait(state).expect("a readable notice");
+        }
+        // STOP IS ASKED FIRST AND WINS. A permit says a transaction finished,
+        // never that a worker should still be running.
+        let outcome = if stop.load(std::sync::atomic::Ordering::Acquire) {
+            "stopped"
+        } else {
+            "permitted"
+        };
+        drop(state);
+        saw.send(outcome).expect("the control is listening");
+    }
+}
+
+#[test]
+fn a_started_worker_is_owned_before_it_is_permitted() {
+    // THE PERMIT IS LAST. A worker scheduled the instant it exists cannot
+    // serve before its handle is owned, because what it waits for is published
+    // after the handle is stored.
+    //
+    // THAT ORDER IS NOT OBSERVED HERE, and cannot be from outside: the
+    // transaction holds the destination throughout, so nothing else can look
+    // at the slot while it runs, and by the time a permitted worker reports,
+    // the store has happened either way. It rests on the two being adjacent in
+    // one function with nothing between them. What this control does observe
+    // is the rest: that the notice is free while the thread is made, that the
+    // handle is owned afterwards, and that the worker was permitted rather
+    // than stopped.
+    let (slot, stop, wake) = startup_fixture();
+    let (saw, seen) = sync_channel(1);
+    let body = permit_waiter(Arc::clone(&stop), Arc::clone(&wake), saw);
+
+    // OBSERVED FROM INSIDE THE SPAWN: the destination is held and the notice
+    // is not, so stopping and waking this connection do not queue behind
+    // somebody else's thread creation.
+    let notice_free = Arc::new(AtomicBool::new(false));
+    let seen_free = Arc::clone(&notice_free);
+    let spawning = Arc::clone(&wake);
+    let outcome = start_connection_worker(&slot, &stop, &wake, move || {
+        seen_free.store(spawning.state.try_lock().is_ok(), std::sync::atomic::Ordering::Release);
+        std::thread::Builder::new().spawn(body)
+    });
+    assert_eq!(outcome, PrivateStartupOutcome::Started);
+    assert!(
+        notice_free.load(std::sync::atomic::Ordering::Acquire),
+        "the notice was free while the thread was being made"
+    );
+
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("permitted")
+    );
+    let handle = slot
+        .lock()
+        .expect("readable")
+        .handle
+        .take()
+        .expect("its handle is owned here");
+    handle.join().expect("the worker");
+    assert!(!stop.load(std::sync::atomic::Ordering::Acquire));
+}
+
+#[test]
+fn a_refused_spawn_leaves_nothing_to_stop_or_join() {
+    // Nothing exists, so there is nothing to cancel and nothing to join. The
+    // slot is as empty as it was found, and the connection's stop is untouched.
+    let (slot, stop, wake) = startup_fixture();
+    let outcome = start_connection_worker(&slot, &stop, &wake, || {
+        Err(std::io::Error::other("no thread for you"))
+    });
+    assert_eq!(outcome, PrivateStartupOutcome::SpawnRefused);
+    assert!(!slot.lock().expect("readable").running());
+    assert!(
+        !stop.load(std::sync::atomic::Ordering::Acquire),
+        "nothing was running, so nothing was stopped"
+    );
+    assert!(
+        !wake.state.lock().expect("readable").started,
+        "and nothing was permitted"
+    );
+}
+
+#[test]
+fn a_transaction_that_fails_after_the_spawn_cancels_rather_than_forgets() {
+    // AFTER A SPAWN THERE IS NO GOING BACK TO "NO WORKER". A thread may be
+    // running; saying otherwise loses it, and dropping its handle detaches a
+    // thread nobody can join.
+    //
+    // THE UNWIND IS STAGED AT THE GUARD, and the control says so: the
+    // transaction has nothing fallible between its store and its commit, so
+    // there is no way to make the real one fail there. What is exercised is
+    // the guard those paths share.
+    let (slot, stop, wake) = startup_fixture();
+    let (saw, seen) = sync_channel(1);
+    let body = permit_waiter(Arc::clone(&stop), Arc::clone(&wake), saw);
+    let handle = std::thread::Builder::new()
+        .spawn(body)
+        .expect("a thread for this control");
+    {
+        let mut held = slot.lock().expect("readable");
+        held.handle = Some(handle);
+        let _guard = PrivateStartupGuard {
+            slot: &mut held,
+            stop: &stop,
+            wake: &wake,
+            committed: false,
+        };
+        // and it goes out of scope without committing.
+    }
+
+    assert!(
+        stop.load(std::sync::atomic::Ordering::Acquire),
+        "the connection's own stop is set -- the one its serving consults"
+    );
+    assert!(
+        !wake.state.lock().expect("readable").started,
+        "and no permit was ever published"
+    );
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("stopped"),
+        "so the worker leaves rather than waiting for a permission nobody will give"
+    );
+    let handle = slot
+        .lock()
+        .expect("readable")
+        .handle
+        .take()
+        .expect("THE HANDLE IS STILL HERE, not detached");
+    handle.join().expect("the worker");
+}
+
+#[test]
+fn a_second_start_is_refused_from_the_handle_that_is_already_owned() {
+    // Asked of the handle itself rather than a flag beside it: a flag can be
+    // stale in exactly the window that matters, and would then say no worker
+    // exists while one does.
+    let (slot, stop, wake) = startup_fixture();
+    let (saw, seen) = sync_channel(1);
+    let body = permit_waiter(Arc::clone(&stop), Arc::clone(&wake), saw);
+    assert_eq!(
+        start_connection_worker(&slot, &stop, &wake, || {
+            std::thread::Builder::new().spawn(body)
+        }),
+        PrivateStartupOutcome::Started
+    );
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("permitted")
+    );
+
+    let mut spawned_again = false;
+    let outcome = start_connection_worker(&slot, &stop, &wake, || {
+        spawned_again = true;
+        std::thread::Builder::new().spawn(|| {})
+    });
+    assert_eq!(outcome, PrivateStartupOutcome::AlreadyStarted);
+    assert!(!spawned_again, "nothing was even attempted");
+
+    let handle = slot
+        .lock()
+        .expect("readable")
+        .handle
+        .take()
+        .expect("the first worker's handle, untouched");
+    handle.join().expect("the worker");
+}
+
+#[test]
+fn a_stop_after_a_permit_still_takes_the_worker_out() {
+    // A PERMIT IS NOT A RIGHT TO CONTINUE. It says a transaction finished; the
+    // connection's stop says whether it should still be running, and it is
+    // asked every time the worker wakes rather than once at the start.
+    let (slot, stop, wake) = startup_fixture();
+    let (saw, seen) = sync_channel(1);
+    let waiting_stop = Arc::clone(&stop);
+    let waiting_wake = Arc::clone(&wake);
+    // A body that is permitted, then waits again -- the shape a serving loop
+    // has, without any serving in it.
+    let body = move || {
+        {
+            let mut state = waiting_wake.state.lock().expect("a readable notice");
+            while !state.started {
+                state = waiting_wake.ready.wait(state).expect("a readable notice");
+            }
+        }
+        saw.send("permitted").expect("listening");
+        let mut state = waiting_wake.state.lock().expect("a readable notice");
+        while !waiting_stop.load(std::sync::atomic::Ordering::Acquire) {
+            state = waiting_wake.ready.wait(state).expect("a readable notice");
+        }
+        saw.send("stopped").expect("listening");
+    };
+    assert_eq!(
+        start_connection_worker(&slot, &stop, &wake, || {
+            std::thread::Builder::new().spawn(body)
+        }),
+        PrivateStartupOutcome::Started
+    );
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("permitted")
+    );
+
+    // The same authoritative handle, and a wake so it looks.
+    stop.store(true, std::sync::atomic::Ordering::Release);
+    wake.publish_recheck();
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("stopped"),
+        "the permit did not keep it running"
+    );
+    let handle = slot.lock().expect("readable").handle.take().expect("owned");
+    handle.join().expect("the worker");
+}
+
 #[test]
 fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
     let mut f=prepared_ordered_fixture(XServerFrontendClientId(7601));

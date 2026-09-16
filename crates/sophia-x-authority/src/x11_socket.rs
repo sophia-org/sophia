@@ -82,6 +82,7 @@ include!("x11_socket/routing/private_applied_registry.rs");
 include!("x11_socket/routing/private_endpoint.rs");
 include!("x11_socket/routing/private_handover_gate.rs");
 include!("x11_socket/routing/private_attention.rs");
+include!("x11_socket/routing/private_startup.rs");
 include!("x11_socket/routing/private_focus_runtime.rs");
 include!("x11_socket/routing/private_native.rs");
 #[cfg(unix)]

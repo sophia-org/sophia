@@ -153,6 +153,15 @@ struct PrivateWakeState {
     senders: usize,
     /// Every sender is gone. A HINT TO LOOK AGAIN, not a finding.
     gone: bool,
+    /// This connection's worker may serve.
+    ///
+    /// A PERMIT, AND ONLY A PERMIT. It says a startup transaction finished and
+    /// whoever owns the worker's handle owns it; it does not say the worker
+    /// should still be running, and it never outranks the connection's stop.
+    /// Cancellation is not the absence of this -- it is the authoritative stop
+    /// handle, which is asked separately and wins.
+    #[cfg_attr(not(test), allow(dead_code))] // Read by the worker, which is not landed.
+    started: bool,
 }
 
 /// One connection's waitable notice.
@@ -176,9 +185,30 @@ impl PrivateOrderedWake {
                 pending: false,
                 senders: 1,
                 gone: false,
+                started: false,
             }),
             ready: std::sync::Condvar::new(),
         }
+    }
+
+    /// Wake whoever is waiting, without saying anything new.
+    ///
+    /// For a change made somewhere else that a waiter has to go and look at --
+    /// the authoritative stop being set, above all, which lives in its own
+    /// handle and not here. The level published is the ordinary recheck
+    /// request, because that is exactly what this is.
+    ///
+    /// DOES NOT PANIC, for the same reason as everything else on these paths.
+    #[cfg_attr(not(test), allow(dead_code))] // Used by startup, which nothing calls yet.
+    fn publish_recheck(&self) {
+        {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.pending = true;
+        }
+        self.ready.notify_all();
     }
 
     /// Say that the senders are finished with, and wake whoever is waiting.
