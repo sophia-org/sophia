@@ -27,6 +27,14 @@ struct PrivateWorkerSlot {
     /// is not "nobody was ever started"; that is what the lifecycle beside it
     /// is for.
     handle: Option<std::thread::JoinHandle<()>>,
+    /// Whether this connection has been told to depart.
+    ///
+    /// BESIDE THE HISTORY, NOT INSTEAD OF IT. A departing connection that
+    /// never had a worker, one whose handle is still here, and one whose
+    /// handle has gone to a joiner need completely different things done for
+    /// them, and a single "departing" state that replaced the history would
+    /// leave an empty slot that could be any of the three.
+    departing: bool,
     /// What has become of this slot's worker, for as long as the slot lives.
     ///
     /// DURABLE, because the handle is not. Reading an empty handle as "never
@@ -121,6 +129,7 @@ impl PrivateWorkerSlot {
     fn empty() -> Self {
         Self {
             handle: None,
+            departing: false,
             life: PrivateWorkerLife::NeverStarted,
         }
     }
@@ -187,6 +196,63 @@ fn hand_worker_to_joiner(slot: &Mutex<PrivateWorkerSlot>) -> PrivateWorkerHandof
     }
 }
 
+/// What was here when a connection was told to depart.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Nothing departs a connection yet.
+#[derive(Debug, PartialEq, Eq)]
+enum PrivateDeparture {
+    /// Nobody was ever started. There is nothing to join.
+    NothingStarted,
+    /// A worker is here and its handle is in this slot.
+    WorkerRunning,
+    /// A worker is here and its handle has gone to whoever joins it.
+    WorkerHandedOn,
+    /// It was already departing. The first departure stands.
+    AlreadyDeparting,
+    /// The slot could not be read, so what was here is not established.
+    ///
+    /// THE STOP IS SET ANYWAY. Telling a worker to go does not depend on
+    /// reading this, which is exactly why it happens first.
+    Unreadable,
+}
+
+/// Tell this connection to go, and find out what is here to be dealt with.
+///
+/// THE STOP AND THE WAKE COME FIRST, BEFORE ANY LOCK. The worker slot is held
+/// across a spawn -- creating a thread is somebody else's latency -- so a
+/// departure that wrote its no-more-starts decision first would wait behind
+/// that spawn before telling the connection anything. Stopping a connection
+/// must not queue behind starting one.
+///
+/// Then the decision, which is serialized against starting by the slot's own
+/// lock: a start takes it and refuses a departing slot, a departure takes it
+/// and marks one, and neither can interleave with the other.
+///
+/// WHAT WAS HERE IS REPORTED RATHER THAN ASSUMED, because the three histories
+/// need different things: nothing to join, a handle to take, or a handle
+/// already taken.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Nothing departs a connection yet.
+fn depart_connection(
+    slot: &Mutex<PrivateWorkerSlot>,
+    stop: &Arc<AtomicBool>,
+    wake: &Arc<PrivateOrderedWake>,
+) -> PrivateDeparture {
+    cancel_connection_worker(stop, wake);
+    let Ok(mut held) = slot.lock() else {
+        return PrivateDeparture::Unreadable;
+    };
+    if held.departing {
+        return PrivateDeparture::AlreadyDeparting;
+    }
+    held.departing = true;
+    match held.life {
+        PrivateWorkerLife::NeverStarted => PrivateDeparture::NothingStarted,
+        PrivateWorkerLife::Running => PrivateDeparture::WorkerRunning,
+        PrivateWorkerLife::HandedToJoiner => PrivateDeparture::WorkerHandedOn,
+    }
+}
+
 /// Tell this connection's worker to stop, and wake it so it looks.
 ///
 /// THE CONNECTION'S OWN STOP, the one its serving already consults, and a
@@ -229,6 +295,11 @@ where
     let Ok(mut held) = slot.lock() else {
         return PrivateStartupOutcome::Unreadable;
     };
+    // DEPARTING IS ASKED FIRST. A connection that has been told to go is not
+    // one anything starts on, whatever its history.
+    if held.departing {
+        return PrivateStartupOutcome::NoLongerStartable;
+    }
     // ASKED OF THE LIFECYCLE, not only of the handle. A slot whose worker has
     // been handed on to be joined is empty and is not free.
     match held.life {

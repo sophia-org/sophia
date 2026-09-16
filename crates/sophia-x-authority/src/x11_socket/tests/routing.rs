@@ -25341,6 +25341,152 @@ fn a_release_is_news_only_where_somebody_is_waiting_on_it() {
     let _ = second;
 }
 
+
+#[test]
+fn a_departure_stops_a_connection_without_waiting_for_a_spawn_in_flight() {
+    // THE SLOT IS HELD ACROSS A SPAWN. Creating a thread is somebody else's
+    // latency, and a departure that took that lock before telling the
+    // connection anything would wait behind it -- stopping a connection
+    // queueing behind starting one.
+    //
+    // The spawner here is held by the control, so the lock is provably held
+    // while the departure runs: this does not depend on timing.
+    let (slot, stop, wake) = startup_fixture();
+    let slot = Arc::new(slot);
+    let (inside, entered) = sync_channel(1);
+    let (go, wait_here) = sync_channel(1);
+    let starting = Arc::clone(&slot);
+    let start_stop = Arc::clone(&stop);
+    let start_wake = Arc::clone(&wake);
+    let starter = std::thread::spawn(move || {
+        start_connection_worker(&starting, &start_stop, &start_wake, || {
+            inside.send(()).expect("the control is listening");
+            wait_here.recv().expect("the control lets go");
+            std::thread::Builder::new().spawn(|| {})
+        })
+    });
+    entered.recv().expect("the spawn is in flight, holding the slot");
+    assert!(
+        slot.try_lock().is_err(),
+        "and the slot really is held while it is"
+    );
+
+    // The departure runs now, with that lock held by the spawn.
+    let departing_slot = Arc::clone(&slot);
+    let departing_stop = Arc::clone(&stop);
+    let departing_wake = Arc::clone(&wake);
+    let departure = std::thread::spawn(move || {
+        depart_connection(&departing_slot, &departing_stop, &departing_wake)
+    });
+
+    // THE STOP ARRIVES WHILE THE SPAWN IS STILL PAUSED. Nothing has released
+    // the slot, and the control has not let the spawner go.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !stop.load(std::sync::atomic::Ordering::Acquire) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the stop must not wait for the spawn"
+        );
+        std::thread::yield_now();
+    }
+    assert!(
+        slot.try_lock().is_err(),
+        "and it arrived with the spawn still holding the slot"
+    );
+
+    // Only now does the spawn finish, and the departure's decision follows it.
+    go.send(()).expect("the spawner is waiting");
+    let started = starter.join().expect("the starting thread");
+    assert_eq!(started, PrivateStartupOutcome::Started);
+    assert_eq!(
+        departure.join().expect("the departing thread"),
+        PrivateDeparture::WorkerRunning,
+        "and it found the worker that had just been started"
+    );
+
+    let handle = slot
+        .lock()
+        .expect("readable")
+        .handle
+        .take()
+        .expect("its handle");
+    handle.join().expect("the worker");
+}
+
+#[test]
+fn a_departure_says_which_of_the_three_histories_it_found() {
+    // AN EMPTY SLOT CAN BE ANY OF THREE THINGS, and they need different things
+    // done for them: nothing to join, a handle to take, or a handle already
+    // taken. A departure that collapsed them into one state would leave
+    // whoever acts next guessing.
+    let (slot, stop, wake) = startup_fixture();
+    assert_eq!(
+        depart_connection(&slot, &stop, &wake),
+        PrivateDeparture::NothingStarted
+    );
+    assert!(stop.load(std::sync::atomic::Ordering::Acquire));
+    assert_eq!(
+        depart_connection(&slot, &stop, &wake),
+        PrivateDeparture::AlreadyDeparting,
+        "the first departure stands"
+    );
+
+    // A connection whose worker is here.
+    let (slot, stop, wake) = startup_fixture();
+    let (saw, seen) = sync_channel(1);
+    let body = permit_waiter(Arc::clone(&stop), Arc::clone(&wake), saw);
+    assert_eq!(
+        start_connection_worker(&slot, &stop, &wake, || {
+            std::thread::Builder::new().spawn(body)
+        }),
+        PrivateStartupOutcome::Started
+    );
+    assert_eq!(
+        seen.recv_timeout(std::time::Duration::from_secs(5)),
+        Ok("permitted")
+    );
+    assert_eq!(
+        depart_connection(&slot, &stop, &wake),
+        PrivateDeparture::WorkerRunning
+    );
+    let handed = hand_worker_to_joiner(&slot).handle.expect("its handle");
+
+    // And once its handle has gone to a joiner, that is what a later look
+    // finds -- through the departing flag, which did not replace the history.
+    {
+        let mut held = slot.lock().expect("readable");
+        held.departing = false;
+    }
+    assert_eq!(
+        depart_connection(&slot, &stop, &wake),
+        PrivateDeparture::WorkerHandedOn
+    );
+    handed.join().expect("the worker");
+}
+
+#[test]
+fn a_departing_connection_starts_nothing_whatever_its_history() {
+    // The serialized transition is the slot's own lock: a start takes it and
+    // refuses a departing slot, a departure takes it and marks one. Neither
+    // can interleave with the other, and this is the refusal.
+    let (slot, stop, wake) = startup_fixture();
+    assert_eq!(
+        depart_connection(&slot, &stop, &wake),
+        PrivateDeparture::NothingStarted
+    );
+    let mut spawned = false;
+    let outcome = start_connection_worker(&slot, &stop, &wake, || {
+        spawned = true;
+        std::thread::Builder::new().spawn(|| {})
+    });
+    assert_eq!(
+        outcome,
+        PrivateStartupOutcome::NoLongerStartable,
+        "departing, however little ever happened here"
+    );
+    assert!(!spawned, "and nothing was attempted");
+}
+
 #[test]
 fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
     let mut f=prepared_ordered_fixture(XServerFrontendClientId(7601));
