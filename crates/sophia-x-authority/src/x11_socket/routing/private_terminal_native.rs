@@ -116,11 +116,22 @@ fn dispatch_custody(
         }
     };
     let _ = recovery;
+    // ADMITTED BEFORE ANYTHING IS TAKEN. The sender above was captured under
+    // the client table and the table is already released, so the capture alone
+    // says nothing about whether this endpoint is still open. A refusal here
+    // has taken nothing: the capsule stays where it is, with its phase
+    // untouched, exactly as it does when the row is not this endpoint's.
+    let Ok(admitted) = sender.admit() else {
+        return false;
+    };
     custody.dispatch = PrivateDispatchPhase::Indeterminate;
     let Some(PrivatePendingDelivery::Capsule(capsule)) = custody.pending.take() else {
         unreachable!("checked to be a capsule above")
     };
-    match sender.try_send(capsule) {
+    // Held through the handover and through writing down what came back, so a
+    // close cannot land between the two and report a fence over a handover
+    // that had already happened.
+    match admitted.try_send(capsule) {
         Ok(()) => {
             custody.dispatch = PrivateDispatchPhase::Enqueued;
             true
@@ -538,6 +549,20 @@ fn dispatch_custody(
             }
         };
 
+        // ADMITTED BEFORE ANYTHING IS WRITTEN DOWN OR TAKEN. The sender was
+        // captured under the client table, which is already released; the
+        // capture alone does not say this endpoint is still open. A refusal
+        // here has taken nothing and written nothing, so the attempt is still
+        // an unused reservation and goes back the confirmed way -- with no
+        // gate held, because none was obtained.
+        let admitted = match sender.admit() {
+            Ok(admitted) => admitted,
+            Err(_refusal) => {
+                self.relinquish_outstanding_attempt(claim.token);
+                return Some(false);
+            }
+        };
+
         // Written down before the handover: the record names the attempt it is
         // being made under, and the phase says the handover was begun. An
         // interruption from here leaves both, so the empty slot afterwards is
@@ -561,7 +586,12 @@ fn dispatch_custody(
             unreachable!("checked to be a capsule above")
         };
         // NOTHING FALLIBLE BETWEEN THE REFUSAL AND THE SLOT.
-        match sender.try_send(capsule) {
+        //
+        // The admission is held across the handover AND across writing down
+        // what came back, so a close cannot land between them. The give-back
+        // is deliberately not in here: it takes common, and taking common
+        // beneath this gate would put every producer behind the ledger.
+        let handed_over = match admitted.try_send(capsule) {
             Ok(()) => {
                 // Only the receipt obligation is kept. No replayable copy
                 // stays here: the event is on the queue, and a second copy
@@ -569,7 +599,7 @@ fn dispatch_custody(
                 // from outstanding onto the record it now serves.
                 release.custody.dispatch = PrivateDispatchPhase::Enqueued;
                 self.terminal.attempt_custody = None;
-                Some(true)
+                true
             }
             Err(std::sync::mpsc::TrySendError::Full(capsule)) => {
                 // KNOWN NOT ENQUEUED. The same capsule is offered again later:
@@ -578,20 +608,24 @@ fn dispatch_custody(
                 release.custody.pending = Some(PrivatePendingDelivery::Capsule(capsule));
                 release.custody.dispatch = PrivateDispatchPhase::Pending;
                 // KNOWN NOT ENQUEUED, so this attempt is an unused reservation
-                // again and may be given back. The record stops naming it only
-                // once the ledger confirms.
+                // again and may be given back.
                 self.mark_attempt_unplaced();
-                self.relinquish_outstanding_attempt(claim.token);
-                Some(false)
+                false
             }
             Err(std::sync::mpsc::TrySendError::Disconnected(capsule)) => {
                 release.custody.pending = Some(PrivatePendingDelivery::Capsule(capsule));
                 release.custody.dispatch = PrivateDispatchPhase::Pending;
                 self.mark_attempt_unplaced();
-                self.relinquish_outstanding_attempt(claim.token);
-                Some(false)
+                false
             }
+        };
+        // The gate goes before the ledger does. The record stops naming the
+        // attempt only once the ledger confirms, and that is common-side work.
+        drop(admitted);
+        if !handed_over {
+            self.relinquish_outstanding_attempt(claim.token);
         }
+        Some(handed_over)
     }
 
     /// Finish one delivery attempt against the receipt its writer published.

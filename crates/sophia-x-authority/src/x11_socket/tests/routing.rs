@@ -11160,6 +11160,22 @@ fn private_for_roles() -> crate::PrivateXServerFrontend {
     .unwrap_or_else(|(refusal, _parts)| panic!("a fresh owner to have a slot: {refusal:?}"))
 }
 
+/// Put a capsule on a recipient's queue the way production does: through the
+/// gate that serializes handovers with that registration's closing.
+///
+/// Panics if the endpoint is closed, which no caller staging a queue intends.
+/// A control about closing uses `admit` directly and inspects the refusal.
+#[allow(clippy::result_large_err)] // The capsule comes back in the error, as in production.
+fn gated_send(
+    sender: &PrivateGatedOrderedSender,
+    capsule: XAuthorityOrderedDelivery,
+) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityOrderedDelivery>> {
+    sender
+        .admit()
+        .expect("an open endpoint")
+        .try_send(capsule)
+}
+
 /// The connection identity the ordered path will read back for this client.
 ///
 /// Built the same way on both sides on purpose: the recipient is the client
@@ -20880,6 +20896,492 @@ fn order_pass_frames(c: &XAuthorityOrderedDelivery) -> Vec<Vec<u8>> {
     (0..emission.frame_count()).map(|index|emission.encode_frame(index,XByteOrder::LittleEndian,7).unwrap().as_bytes().to_vec()).collect()
 }
 
+
+/// The gated sender for this client, captured the way a producer captures it:
+/// under the client table, cloned out of the row, table released.
+fn capture_gated_sender(
+    private: &crate::PrivateXServerFrontend,
+    client: XServerFrontendClientId,
+) -> PrivateGatedOrderedSender {
+    let guard = private
+        .broker
+        .registry
+        .clients
+        .lock()
+        .expect("a readable registry");
+    let sender = guard
+        .get(&client)
+        .expect("this client has a row")
+        .ordered
+        .clone();
+    drop(guard);
+    sender
+}
+
+#[test]
+fn a_sender_captured_before_a_close_is_refused_after_it() {
+    // THE CAPTURE IS THE PROBLEM THE GATE EXISTS FOR. A producer clones the
+    // sender under the client table and releases the table before it hands
+    // anything over, so removing the row or reading a flag at lookup time
+    // cannot stop a handover that already has its sender. This pins that exact
+    // interval: captured before, used after.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8201));
+    attempt_run(&mut f, 82010, 272, true);
+    let captured = capture_gated_sender(f.runner.frontend.as_ref().unwrap(), f.client);
+    assert!(
+        captured.admit().is_ok(),
+        "before the close the captured sender admits"
+    );
+
+    assert_eq!(
+        f.registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Established
+    );
+    assert_eq!(f.registration.ordered_handovers_fenced(), Some(true));
+
+    // The same sender, captured before any of that.
+    let refusal = captured
+        .admit()
+        .err()
+        .expect("a captured sender is not permission");
+    assert_eq!(refusal, PrivateHandoverRefusal::Fenced);
+
+    // And nothing was lost to find that out: the press is still in custody,
+    // its phase untouched, its cell unanswered, and no capsule reached the
+    // queue.
+    let cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 82010);
+    let private = f.runner.frontend.as_ref().unwrap();
+    assert_eq!(private.terminal.holds.len(), 1);
+    assert!(private.terminal.holds[0].native.is_some());
+    assert_eq!(
+        handover_phase(private, &cell),
+        Some(PrivateDispatchPhase::Untaken),
+        "nothing has been offered yet, so nothing moved"
+    );
+    assert!(cell.answer().is_none());
+    assert!(f.channels.ordered.try_recv().is_err());
+}
+
+#[test]
+fn a_fence_waits_for_a_handover_already_admitted() {
+    // THE OTHER SIDE OF THE SAME INTERVAL. A handover that got in before the
+    // close finishes, and the close cannot report a fence until it has. This
+    // is a real rendezvous, not a timed one: the admission is held by this
+    // thread, so there is no question of whether the other side arrived --
+    // the fence thread is blocked on a lock this thread holds, and its
+    // completion is observed by a message it sends only after returning.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8211));
+    attempt_run(&mut f, 82110, 272, true);
+    let captured = capture_gated_sender(f.runner.frontend.as_ref().unwrap(), f.client);
+    let (capsule, _endpoint) = capsule_and_endpoint(82119);
+    let admitted = captured.admit().expect("an open endpoint");
+
+    let gate = f.registration.ordered_gate.clone();
+    let (done, fenced) = sync_channel(1);
+    let closer = std::thread::spawn(move || {
+        let outcome = gate.close();
+        done.send(outcome).expect("the control is listening");
+    });
+    assert_eq!(
+        fenced.recv_timeout(std::time::Duration::from_millis(150)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout),
+        "a close cannot report a fence while a handover is admitted"
+    );
+
+    // The admitted handover completes, under the admission, as production
+    // does it.
+    admitted.try_send(capsule).expect("an admitted handover");
+    drop(admitted);
+    let outcome = fenced
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the close completes once the handover is done");
+    assert_eq!(outcome, PrivateHandoverFence::Established);
+    closer.join().expect("the closing thread");
+
+    // The handover that was already in is on the queue, whole.
+    let arrived = f
+        .channels
+        .ordered
+        .try_recv()
+        .expect("the admitted handover completed before the fence");
+    assert_eq!(
+        arrived.delivery(),
+        XAuthorityInputDeliveryId::from_raw(82119)
+    );
+    assert!(f.channels.ordered.try_recv().is_err());
+}
+
+#[test]
+fn closing_one_endpoint_leaves_a_replacement_registration_untouched() {
+    // EXACT. The gate is minted with the queue and bound to the registration
+    // that minted it, so a close reaches that registration's handovers and no
+    // others. A close that found its gate by client id would fence whoever
+    // holds the id now.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8221));
+    attempt_run(&mut f, 82210, 272, true);
+    let original = capture_gated_sender(f.runner.frontend.as_ref().unwrap(), f.client);
+    let replacement_context = admission_with(f.client, 82219, ROLE_SESSION_GENERATION);
+    let (replacement, replacement_channels, _endpoint) = replace_registration(
+        f.runner.frontend.as_mut().unwrap(),
+        f.client,
+        replacement_context,
+        namespaced(f.client, f.namespace).client_id,
+        &f.registration,
+        None,
+    );
+
+    // The old endpoint closes. The replacement minted its own gate.
+    assert_eq!(
+        f.registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Established
+    );
+    assert_eq!(f.registration.ordered_handovers_fenced(), Some(true));
+    assert_eq!(
+        replacement.ordered_handovers_fenced(),
+        Some(false),
+        "closing an old endpoint must not reach a newer registration"
+    );
+
+    let (capsule, _) = capsule_and_endpoint(82219);
+    assert_eq!(
+        original.admit().err(),
+        Some(PrivateHandoverRefusal::Fenced),
+        "the closed endpoint's captured sender stays refused"
+    );
+    let live = capture_gated_sender(f.runner.frontend.as_ref().unwrap(), f.client);
+    gated_send(&live, capsule).expect("the replacement's endpoint is open");
+    assert_eq!(
+        replacement_channels
+            .ordered
+            .try_recv()
+            .expect("onto the replacement's queue")
+            .delivery(),
+        XAuthorityInputDeliveryId::from_raw(82219)
+    );
+    assert!(f.channels.ordered.try_recv().is_err());
+    drop(replacement);
+}
+
+#[test]
+fn a_fenced_endpoint_refuses_a_press_handover_and_keeps_everything() {
+    // Through the production press path, not a hand-held sender.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8231));
+    attempt_run(&mut f, 82310, 272, true);
+    assert_eq!(
+        f.registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Established
+    );
+    let cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 82310);
+    let private = f.runner.frontend.as_mut().unwrap();
+    let native = private.terminal.holds[0].native.as_ref().unwrap() as *const _ as usize;
+    let incarnation = private.terminal.holds[0].incarnation;
+
+    assert_eq!(
+        private.dispatch_one_press(),
+        Some(false),
+        "a fenced endpoint takes no press"
+    );
+
+    // NOTHING TAKEN, NOTHING WRITTEN. The capsule was built before the
+    // handover was attempted, so Pending is where it belongs -- and NOT
+    // Indeterminate, which is the write-ahead mark saying a handover may
+    // already have reached the recipient. An endpoint that refused admission
+    // never began one, so this capsule is still offerable rather than
+    // unrepeatable.
+    let phase = handover_phase(private, &cell);
+    assert_ne!(
+        phase,
+        Some(PrivateDispatchPhase::Indeterminate),
+        "a refused admission must never mark a handover begun"
+    );
+    assert_eq!(phase, Some(PrivateDispatchPhase::Pending));
+    let owned = matches!(
+        private.terminal.holds[0].custody.pending.as_ref(),
+        Some(PrivatePendingDelivery::Capsule(capsule))
+            if capsule.delivery() == XAuthorityInputDeliveryId::from_raw(82310)
+                && Arc::ptr_eq(&cell, &capsule.finalizer().unwrap().completion)
+    );
+    assert!(owned, "the exact capsule stays inventory-owned");
+    assert_eq!(private.terminal.holds[0].incarnation, incarnation);
+    assert_eq!(
+        private.terminal.holds[0].native.as_ref().unwrap() as *const _ as usize,
+        native
+    );
+    assert!(cell.answer().is_none());
+    assert!(f.channels.ordered.try_recv().is_err());
+}
+
+#[test]
+fn a_fenced_endpoint_refuses_a_release_handover_and_gives_the_attempt_back() {
+    // The release path carries an attempt reservation. A refusal before
+    // anything is written down leaves it an unused reservation, so it goes
+    // back through the confirmed give-back -- and the give-back runs with no
+    // gate held, because admission was never obtained.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8241));
+    attempt_release(&mut f, 82410, 272);
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.dispatch_one_press(), Some(true));
+    assert_eq!(private.record_one_native(), Some(true));
+    let press = f.channels.ordered.try_recv().expect("the press went first");
+    assert_eq!(press.delivery(), XAuthorityInputDeliveryId::from_raw(82410));
+
+    let cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 82411);
+    assert_eq!(
+        f.registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Established
+    );
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(
+        private.attempt_one_delivery(),
+        Some(false),
+        "a fenced endpoint takes no release"
+    );
+    // The attempt was claimed and given back before anything was written
+    // down, so nothing is left holding it: not the record, and not the
+    // executor's own attempt custody.
+    assert!(
+        private.terminal.attempt_custody.is_none(),
+        "an attempt that was never begun leaves no custody behind"
+    );
+    let phase = handover_phase(private, &cell);
+    assert_ne!(
+        phase,
+        Some(PrivateDispatchPhase::Indeterminate),
+        "a refused admission must never mark a handover begun"
+    );
+    assert_eq!(phase, Some(PrivateDispatchPhase::Pending));
+    assert!(
+        private.terminal.settling[0].custody.attempt.is_none(),
+        "the record never named an attempt it did not begin"
+    );
+    assert!(cell.answer().is_none());
+    assert!(f.channels.ordered.try_recv().is_err());
+}
+
+#[test]
+fn a_gate_that_cannot_be_read_is_retained_failure_and_never_a_fence() {
+    // UNREADABLE IS NOT FENCED. A close that reported one as the other would
+    // name a fence that was never established, and a caller would go on to end
+    // a socket under handovers that may still be running. A producer refuses
+    // for the same reason: an unestablished answer is not permission.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8251));
+    attempt_run(&mut f, 82510, 272, true);
+    let gate = f.registration.ordered_gate.clone();
+    let poisoner = std::thread::spawn(move || {
+        let _admitted = gate.fenced.lock().expect("an open gate");
+        panic!("poison this gate while a handover holds it");
+    });
+    assert!(poisoner.join().is_err(), "the gate's holder panicked");
+
+    assert_eq!(
+        f.registration.ordered_handovers_fenced(),
+        None,
+        "an unreadable gate is neither open nor closed"
+    );
+    assert_eq!(
+        f.registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Unreadable,
+        "nothing was established, so no fence may be reported"
+    );
+    let captured = capture_gated_sender(f.runner.frontend.as_ref().unwrap(), f.client);
+    assert_eq!(
+        captured.admit().err(),
+        Some(PrivateHandoverRefusal::Unreadable)
+    );
+
+    let cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 82510);
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.dispatch_one_press(), Some(false));
+    let phase = handover_phase(private, &cell);
+    assert_ne!(
+        phase,
+        Some(PrivateDispatchPhase::Indeterminate),
+        "an unreadable gate is not permission, and refusing on it begins nothing"
+    );
+    assert_eq!(phase, Some(PrivateDispatchPhase::Pending));
+    assert!(cell.answer().is_none());
+    assert!(f.channels.ordered.try_recv().is_err());
+}
+
+
+#[test]
+fn a_full_refusal_then_a_close_retains_once_and_gives_the_attempt_back_once() {
+    // TWO REFUSALS, ONE ACCOUNTING. A queue that was Full gave the capsule
+    // back and the attempt with it; a close afterwards refuses admission and
+    // must not give the same attempt back a second time, nor take the capsule,
+    // nor replay it. Full and fenced are different facts about the same
+    // delivery and neither may be read as the other.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8261));
+    // One complete pair of this recipient's own deliveries takes two of its
+    // four slots, through the ordinary press-then-release flow.
+    attempt_release(&mut f, 82610, 272);
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.dispatch_one_press(), Some(true));
+    assert_eq!(private.record_one_native(), Some(true));
+    assert_eq!(private.attempt_one_delivery(), Some(true));
+
+    // A second pair: its press takes the third slot, and its release is the
+    // one this control is about.
+    attempt_release(&mut f, 82614, 274);
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.dispatch_one_press(), Some(true));
+    assert_eq!(private.record_one_native(), Some(true));
+    assert_eq!(
+        private.broker.registry.per_client_input_capacity.get(),
+        4,
+        "four slots"
+    );
+
+    // The fourth slot is filled directly, through the same gate production
+    // uses, so the release below meets a genuinely full queue rather than a
+    // staged refusal.
+    let filler = capture_gated_sender(f.runner.frontend.as_ref().unwrap(), f.client);
+    let (fill, _) = capsule_and_endpoint(82699);
+    gated_send(&filler, fill).expect("the fourth slot");
+
+    let cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 82615);
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(
+        private.attempt_one_delivery(),
+        Some(false),
+        "the fifth delivery meets a genuinely Full queue"
+    );
+    let after_full = handover_phase(private, &cell);
+    assert_eq!(after_full, Some(PrivateDispatchPhase::Pending));
+    assert!(private.terminal.attempt_custody.is_none());
+    let index = private
+        .terminal
+        .settling
+        .iter()
+        .position(|release| release.completion().is_some_and(|held| Arc::ptr_eq(held, &cell)))
+        .expect("the refused release is still here");
+    assert!(private.terminal.settling[index].custody.attempt.is_none());
+    let frames = match private.terminal.settling[index].custody.pending.as_ref() {
+        Some(PrivatePendingDelivery::Capsule(capsule)) => order_pass_frames(capsule),
+        _ => panic!("the Full refusal gave the exact capsule back"),
+    };
+
+    // Now the endpoint closes, and the same delivery is offered again.
+    assert_eq!(
+        f.registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Established
+    );
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.attempt_one_delivery(), Some(false));
+    assert_eq!(
+        handover_phase(private, &cell),
+        after_full,
+        "a fenced refusal leaves the phase the Full refusal left"
+    );
+    assert!(private.terminal.attempt_custody.is_none());
+    assert!(private.terminal.settling[index].custody.attempt.is_none());
+    match private.terminal.settling[index].custody.pending.as_ref() {
+        Some(PrivatePendingDelivery::Capsule(capsule)) => {
+            assert_eq!(
+                capsule.delivery(),
+                XAuthorityInputDeliveryId::from_raw(82615)
+            );
+            assert!(Arc::ptr_eq(&cell, &capsule.finalizer().unwrap().completion));
+            assert_eq!(
+                order_pass_frames(capsule),
+                frames,
+                "the bytes the release decided, unchanged by either refusal"
+            );
+        }
+        _ => panic!("the fenced refusal took nothing"),
+    }
+    assert!(cell.answer().is_none());
+
+    // The four that were admitted before the close are still theirs to read.
+    let mut seen = Vec::new();
+    while let Ok(capsule) = f.channels.ordered.try_recv() {
+        seen.push(capsule.delivery());
+    }
+    assert_eq!(
+        seen,
+        [82610, 82611, 82614, 82699].map(XAuthorityInputDeliveryId::from_raw),
+        "a close takes nothing back that was already handed over"
+    );
+}
+
+
+#[test]
+fn a_producer_waiting_on_the_ledger_is_not_holding_the_handover_gate() {
+    // THE GATE IS NOT HELD ACROSS A LEDGER ACQUISITION. Every producer for
+    // this endpoint passes through the gate, and the attempt path takes common
+    // twice -- to claim, and to give back. A gate held across either would put
+    // every producer for this connection behind the ledger, and would put the
+    // gate underneath a lock other work takes for its own reasons.
+    //
+    // WHAT THIS ESTABLISHES, exactly: common is held for a window in which the
+    // producer provably cannot complete, and throughout that window the gate
+    // still answers a different thread. It does NOT establish where in the
+    // attempt path the producer is waiting -- with common held it stops at the
+    // claim, which is the first acquisition -- so it pins the claim side of
+    // that rule and not the give-back side. The give-back runs after the
+    // admission is dropped by construction; no control here witnesses it.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8271));
+    attempt_release(&mut f, 82710, 272);
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.dispatch_one_press(), Some(true));
+    assert_eq!(private.record_one_native(), Some(true));
+    assert_eq!(
+        f.registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Established
+    );
+    let captured = capture_gated_sender(f.runner.frontend.as_ref().unwrap(), f.client);
+    let common = Arc::clone(&f.runner.frontend.as_ref().unwrap().authority().common);
+
+    // Held for the whole window: nothing that needs the ledger can finish.
+    let ledger = common.lock().expect("a readable authority");
+    let mut frontend = f.runner.frontend.take().expect("this fixture's frontend");
+    let (refused, produced) = sync_channel(1);
+    let producer = std::thread::spawn(move || {
+        let outcome = frontend.attempt_one_delivery();
+        refused.send(outcome).expect("the control is listening");
+        frontend
+    });
+
+    // Probed from a third thread, so a gate that is being held shows up as an
+    // answer that does not arrive rather than as a control that never returns.
+    let (probed, answers) = sync_channel(64);
+    let prober = std::thread::spawn(move || {
+        for _ in 0..40 {
+            let answer = captured.admit().err();
+            if probed.send(answer).is_err() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    });
+    for _ in 0..40 {
+        assert_eq!(
+            answers.recv_timeout(std::time::Duration::from_secs(2)),
+            Ok(Some(PrivateHandoverRefusal::Fenced)),
+            "the gate must answer while a producer waits on the ledger: a \
+             producer holding it across that wait would block every other \
+             producer for this endpoint"
+        );
+    }
+    assert_eq!(
+        produced.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty),
+        "and the producer had not completed, so the window was real"
+    );
+    prober.join().expect("the probing thread");
+
+    drop(ledger);
+    assert_eq!(
+        produced
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the producer completes once the ledger is free"),
+        Some(false)
+    );
+    let frontend = producer.join().expect("the producing thread");
+    assert!(frontend.terminal.attempt_custody.is_none());
+    f.runner.frontend = Some(frontend);
+}
+
 #[test]
 fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
     let mut f=prepared_ordered_fixture(XServerFrontendClientId(7601));
@@ -20912,7 +21414,7 @@ fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
         let sender=p.broker.registry.clients.lock().unwrap().get(&f.client).unwrap().ordered.clone();
         // Classify the actual send refusal. Return the exact original capsule
         // to custody; this is neither synthetic filler nor a fake Full result.
-        let capsule=match sender.try_send(capsule) {
+        let capsule=match gated_send(&sender,capsule) {
             Err(std::sync::mpsc::TrySendError::Full(c))=>c,
             Err(std::sync::mpsc::TrySendError::Disconnected(_))=>panic!("A receiver remains live"),
             Ok(())=>panic!("four original capsules must fill A's four slots"),
@@ -22370,9 +22872,7 @@ fn a_serving_owner_keeps_its_own_endpoint_when_its_registration_is_replaced() {
     // AND IT CANNOT BE HANDED ANOTHER ENDPOINT'S BYTES. A real capsule owed to
     // a different connection, put on this owner's own queue, is refused
     // through the owner's own serving call before any of it is written.
-    original_sender
-        .send(foreign)
-        .expect("this owner's queue accepts it");
+    gated_send(&original_sender, foreign).expect("this owner's queue accepts it");
     assert!(matches!(
         owner.serve_one(XByteOrder::LittleEndian, 7),
         X11OrderedServeStep::AdmissionRefused(X11OrderedAdmissionRefusal::ForeignEndpoint)
@@ -22482,7 +22982,7 @@ fn a_failed_serving_constructor_preserves_its_original_queued_capsule() {
     // Keep ONLY a Weak finalizer witness; a strong clone here would mask
     // destruction of the original queued capsule.
     let finalizer=Arc::downgrade(capsule.finalizer().unwrap());
-    assert!(sender.try_send(capsule).is_ok(),"put the exact original capsule back into its original queue");
+    assert!(gated_send(&sender,capsule).is_ok(),"put the exact original capsule back into its original queue");
     assert!(finalizer.upgrade().is_some());
     assert_eq!(private.terminal.holds[0].custody.dispatch,PrivateDispatchPhase::Enqueued);
     assert!(private.terminal.holds[0].custody.pending.is_none());
@@ -22791,7 +23291,7 @@ fn a_close_does_not_answer_a_capsule_belonging_to_another_endpoint() {
     // STILL QUEUED, NEVER SERVED. The close path has to ask the same admission
     // question the serving path does: a capsule nobody classified is not this
     // connection's to answer for just because it is on its queue.
-    sender.send(foreign).expect("onto this owner's queue");
+    gated_send(&sender, foreign).expect("onto this owner's queue");
 
     let steps = close_to_quiet(&mut owner, X11OrderedCloseCause::ConnectionEnded);
     assert!(
@@ -22871,7 +23371,7 @@ fn a_close_retains_the_exact_capsule_when_the_authority_cannot_answer() {
         })
         .collect();
     assert!(!original_frames.is_empty());
-    sender.try_send(capsule).unwrap();
+    gated_send(&sender, capsule).unwrap();
 
     // The real mutex, poisoned without touching any ledger entry or outcome.
     assert!(
@@ -23025,7 +23525,7 @@ fn a_quiet_close_keeps_its_receiver_until_the_producers_are_actually_gone() {
         capsule
     };
     let late_cell = late.finalizer().expect("carried").completion.clone();
-    sender.send(late).expect("the retained receiver still has a queue");
+    gated_send(&sender, late).expect("the retained receiver still has a queue");
     assert!(matches!(
         owner.advance_close(XByteOrder::LittleEndian, 7),
         X11OrderedCloseStep::Adjudicated(_)
@@ -23301,7 +23801,7 @@ fn a_close_reports_backpressure_rather_than_retaining_past_its_bound() {
     // One at a time, each classified and retained, right up to the bound.
     let mut retained = 0usize;
     for capsule in built {
-        sender.try_send(capsule).expect("onto this connection's queue");
+        gated_send(&sender, capsule).expect("onto this connection's queue");
         assert_eq!(
             owner.advance_close(XByteOrder::LittleEndian, 7),
             X11OrderedCloseStep::Foreign,
@@ -24314,7 +24814,7 @@ fn a_continuation_place_is_taken_before_exposure_and_kept_while_work_remains() {
     let (emission, _endpoint) =
         private_native_tests::emission_and_endpoint_for_writer_fixture(79210);
     let stranded = XAuthorityOrderedDelivery::from_emission(emission).unwrap();
-    sender.send(stranded).expect("accepted into its queue");
+    gated_send(&sender, stranded).expect("accepted into its queue");
 
     let PreparedOrderedFixture { channels, .. } = f;
     let mut source = Some(PrivateOrderedContinuation::Setup {
@@ -24645,7 +25145,7 @@ fn an_unwind_before_the_destination_is_held_leaves_the_work_with_its_source() {
     let (emission, _endpoint) =
         private_native_tests::emission_and_endpoint_for_writer_fixture(79610);
     let accepted = XAuthorityOrderedDelivery::from_emission(emission).unwrap();
-    sender.send(accepted).expect("accepted into its queue");
+    gated_send(&sender, accepted).expect("accepted into its queue");
 
     let durable = PrivateSettlementOwner::with_capacities(2, 2);
     let slot = durable
@@ -24973,9 +25473,11 @@ fn an_unreadable_retained_record_is_not_reported_as_absent() {
         .clone();
     let (emission, _endpoint) =
         private_native_tests::emission_and_endpoint_for_writer_fixture(80010);
-    sender
-        .send(XAuthorityOrderedDelivery::from_emission(emission).unwrap())
-        .expect("accepted into its queue");
+    gated_send(
+        &sender,
+        XAuthorityOrderedDelivery::from_emission(emission).unwrap(),
+    )
+    .expect("accepted into its queue");
 
     let durable = PrivateSettlementOwner::with_capacities(2, 2);
     let slot = durable
@@ -25144,7 +25646,7 @@ fn asking_whether_a_continuation_is_settled_destroys_nothing() {
         client,
     )));
     let finalizer = Arc::downgrade(capsule.finalizer().expect("carried"));
-    sender.send(capsule).expect("accepted into its queue");
+    gated_send(&sender, capsule).expect("accepted into its queue");
 
     let durable = PrivateSettlementOwner::with_capacities(2, 2);
     let slot = durable

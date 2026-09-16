@@ -150,7 +150,7 @@ struct XServerFrontendClientRouteSenders {
     /// says nothing about retained output or holds across turns, which are
     /// reserved before acceptance and not by anything the queue does.
     #[allow(dead_code)]
-    ordered: SyncSender<XAuthorityOrderedDelivery>,
+    ordered: PrivateGatedOrderedSender,
     /// Set when this client's control writer stops, however it stopped.
     ///
     /// Lives with the route senders rather than in a ledger of its own, so it
@@ -237,6 +237,12 @@ struct XServerFrontendClientRouteRegistration {
     /// nobody accounting for it is visible instead of silent.
     #[allow(dead_code)]
     ordered_continuation: Mutex<Option<PrivateOrderedContinuationSlot>>,
+    /// Where this registration's handovers are serialized with its closing.
+    ///
+    /// Held here as well as in the row, because closing is this
+    /// registration's act: a close that had to find the gate by client id
+    /// could reach a replacement's.
+    ordered_gate: Arc<PrivateHandoverGate>,
     connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
     input_recovery: InputRecovery,
     client: XServerFrontendClientId,
@@ -262,6 +268,30 @@ struct XServerFrontendClientRouteRegistration {
         Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XPresentSubscription>>>,
     pending_presentations: Arc<XPendingPresentRegistry>,
     frozen_input: Arc<Mutex<VecDeque<XDeferredRoutedInput>>>,
+}
+
+#[cfg(unix)]
+impl XServerFrontendClientRouteRegistration {
+    /// Close this endpoint to further handovers, irreversibly.
+    ///
+    /// EXACT BY CONSTRUCTION. The gate is this registration's own, minted with
+    /// its queue, so a replacement registration for the same client is
+    /// untouched by this -- there is no lookup here that could reach one.
+    ///
+    /// A handover already inside the gate completes first and this waits for
+    /// it. What it establishes is that no FURTHER handover will be admitted;
+    /// it does not end a socket, answer a finalizer or settle anything, and
+    /// those remain separate facts to be established separately.
+    #[cfg_attr(not(test), allow(dead_code))] // Teardown drives closing; not attached yet.
+    pub(crate) fn fence_ordered_handovers(&self) -> PrivateHandoverFence {
+        self.ordered_gate.close()
+    }
+
+    /// Whether this endpoint is closed to handovers. `None` if unreadable.
+    #[cfg_attr(not(test), allow(dead_code))] // Only controls ask this today.
+    pub(crate) fn ordered_handovers_fenced(&self) -> Option<bool> {
+        self.ordered_gate.fenced()
+    }
 }
 
 #[cfg(unix)]
@@ -432,6 +462,15 @@ impl XServerFrontendRouteRegistry {
         let (protocol_sender, protocol) =
             sync_channel(self.per_client_protocol_capacity.get());
         let (ordered_sender, ordered) = sync_channel(self.per_client_input_capacity.get());
+        // MINTED WITH THE QUEUE, so there is no moment at which this
+        // registration's queue is reachable through a sender that no close can
+        // serialize with. Bound to this registration: a replacement for the
+        // same client mints its own, and closing this endpoint cannot reach it.
+        let gate = Arc::new(PrivateHandoverGate::open());
+        let ordered_sender = PrivateGatedOrderedSender {
+            sender: ordered_sender,
+            gate: gate.clone(),
+        };
         // THE PLACE IS TAKEN BEFORE THE ROW IS PUBLISHED, and before the
         // client table is held. The senders above already exist; what
         // publication does is make one reachable, and from that moment a
@@ -472,8 +511,13 @@ impl XServerFrontendRouteRegistry {
             ordered: ordered_sender,
             control_writer_gone: Arc::new(AtomicBool::new(false)),
         };
-        let published =
-            self.publish_registered_client(client, senders, &connection_state, &mut continuation);
+        let published = self.publish_registered_client(
+            client,
+            senders,
+            &connection_state,
+            &gate,
+            &mut continuation,
+        );
         // The client table is released here, before the place is disposed of.
         //
         // A RESERVATION THAT PUBLISHED NOTHING IS NOT RETAINED WORK. Every
@@ -513,6 +557,7 @@ impl XServerFrontendRouteRegistry {
         client: XServerFrontendClientId,
         senders: XServerFrontendClientRouteSenders,
         connection_state: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+        gate: &Arc<PrivateHandoverGate>,
         continuation: &mut Option<PrivateOrderedContinuationSlot>,
     ) -> Result<XServerFrontendClientRouteRegistration, XServerFrontendRouteError> {
         let mut clients = self
@@ -537,6 +582,9 @@ impl XServerFrontendRouteRegistry {
             // went: a place is returned when the work in it is gone, and until
             // then it belongs to this connection.
             ordered_continuation: Mutex::new(continuation.take()),
+            // The registration's own gate, so closing is exact by
+            // construction rather than by looking anything up.
+            ordered_gate: gate.clone(),
             connection_state: connection_state.clone(),
             input_recovery: self.input_recovery.clone(),
             client,

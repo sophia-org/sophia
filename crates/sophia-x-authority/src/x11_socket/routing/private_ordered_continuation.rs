@@ -448,8 +448,10 @@ impl PrivateSettlementOwner {
         if held.continuation_bound_declared {
             return Some(held.continuation_capacity);
         }
-        // The storage is made here, so a reservation moves into a place that
-        // already exists rather than allocating while holding custody.
+        // The OUTER storage is made here, so a reservation takes an index in a
+        // vector that already has room rather than growing one. The record at
+        // that index is allocated by the reservation itself, before exposure
+        // and not while holding custody.
         held.continuations.reserve(connections.get());
         held.continuation_capacity = connections.get();
         held.continuation_bound_declared = true;
