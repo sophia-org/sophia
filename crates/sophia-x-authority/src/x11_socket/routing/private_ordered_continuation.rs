@@ -11,7 +11,7 @@
 /// has applied, or may already be on a recipient's queue, so the only thing
 /// carried is the right to go on answering for it.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+#[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
 enum PrivateOrderedContinuation {
     /// A receiver that was minted and published before a serving owner could
     /// be built for it.
@@ -71,7 +71,7 @@ enum PrivateOrderedContinuation {
 /// that can still end the wire. Keeping only the queue in that case would
 /// discard the one thing able to terminate a connection nobody will serve.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+#[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
 enum PrivateOrderedSetupCustody {
     /// Published, never bound.
     Receiver(Box<XAuthorityOrderedReceiver>),
@@ -120,7 +120,7 @@ enum PrivateOrderedContinuationPlace {
 /// back when that work is finished and its disposition established, and the
 /// only other way out is an explicit transfer to somewhere already reserved.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+#[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
 struct PrivateOrderedContinuationSlot {
     owner: PrivateSettlementOwner,
     /// Which reserved place this is. The storage exists from the moment the
@@ -134,7 +134,7 @@ struct PrivateOrderedContinuationSlot {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+#[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
 impl PrivateOrderedContinuationSlot {
     /// Put this connection's continuation in the place reserved for it.
     ///
@@ -250,7 +250,7 @@ impl PrivateOrderedContinuationSlot {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+#[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
 impl PrivateOrderedContinuation {
     /// The queue this continuation still holds, whichever case it is.
     ///
@@ -273,7 +273,7 @@ impl PrivateOrderedContinuation {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+#[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
 impl PrivateOrderedContinuation {
     /// One bounded step of whatever this continuation still owes.
     ///
@@ -579,7 +579,7 @@ impl PrivateSettlementOwner {
     /// quiet -- producers may still hold senders -- and not when it drains with
     /// an admission still unanswered, a capsule belonging to elsewhere, or a
     /// wire whose ending was never established.
-    #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+    #[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
     fn drive_ordered_continuations(&self, visits: usize) -> usize {
         let mut driven = 0usize;
         for _ in 0..visits {
@@ -629,7 +629,7 @@ impl PrivateSettlementOwner {
     }
 
     /// Give a place back, once the work in it is gone.
-    #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+    #[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
     fn return_ordered_continuation(
         &self,
         index: usize,
@@ -667,7 +667,7 @@ impl PrivateSettlementOwner {
     /// would invert that and put every other retained connection behind that
     /// write. The record has its own lock, and the store is held only long
     /// enough to find it.
-    #[cfg_attr(not(test), allow(dead_code))] // The dispatch binding is not landed yet.
+    #[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
     fn with_ordered_continuation<R>(
         &self,
         index: usize,

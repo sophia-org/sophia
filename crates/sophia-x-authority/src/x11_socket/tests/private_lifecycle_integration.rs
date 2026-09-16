@@ -548,3 +548,104 @@ fn lifecycle_integration_live_origin_cannot_resolve_a_closing_recipient() {
         })
         .unwrap();
 }
+
+#[test]
+fn lifecycle_integration_actual_setup_binds_before_its_first_fallible_attachment() {
+    // THE ORDER AT THE REAL CALL SITE, over a real socket. Connection setup
+    // publishes the row, binds, and only then attaches lifecycle, connection
+    // state and recovery. A binding placed after those left every one of their
+    // refusals dropping a queue that was already reachable.
+    //
+    // The refusal here is the fixture's own: this instance has room for one
+    // lifecycle lease and the first connection holds it, so the second is
+    // refused at the first attachment after binding. Nothing is hooked or
+    // patched to arrange it.
+    let durable = PrivateSettlementOwner::with_capacities(4, 4);
+    let private = private_over(&durable, 1);
+    let registry = private.broker.registry.clone();
+
+    // The one lease, taken by a connection that keeps it.
+    let first = XServerFrontendClientId(8481);
+    let (held, _held_channels) = registry
+        .register_client_with_admission(first, Some(admitted(first)))
+        .expect("a place and a row");
+    registry
+        .attach_private_lifecycle(&held, admitted(first))
+        .expect("the only lifecycle lease");
+
+    let state = Arc::new(X11CoreSocketServerState::new());
+    state
+        .runtime
+        .lock()
+        .unwrap()
+        .set_input_authority(registry.input_authority.clone());
+    let context = admitted(XServerFrontendClientId(8482));
+    let (mut client, mut server) = UnixStream::pair().unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let worker = std::thread::spawn(move || {
+        serve_x11_core_socket_client_with_trace_observer_and_input(
+            &mut server,
+            context.namespace.id,
+            &state,
+            X11ClientConnectionInputs {
+                input_receiver: None,
+                control_channels: None,
+                client_routing: Some(registry),
+            },
+            X11ClientAdmissionContext {
+                authorization: &XServerFrontendSetupAuthorization::default(),
+                admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
+                worker_admission: None,
+            },
+            |_| Ok(None),
+        )
+    });
+    std::io::Write::write_all(&mut client, &[b'l', 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0]).unwrap();
+    let mut prefix = [0u8; 8];
+    std::io::Read::read_exact(&mut client, &mut prefix).unwrap();
+    assert_eq!(prefix[0], 1, "the setup reply precedes route admission");
+    let units = u16::from_le_bytes([prefix[6], prefix[7]]);
+    let mut body = vec![0; usize::from(units) * 4];
+    std::io::Read::read_exact(&mut client, &mut body).unwrap();
+
+    // Joined before anything is asserted, so what is read below is what the
+    // real setup left behind.
+    let result = worker.join().expect("the serving thread");
+    let error = result.expect_err("the second connection has no lifecycle lease");
+    // Either half of that attachment refusing is the same edge for this
+    // control: both are inside the first fallible thing setup does after it
+    // publishes the row and binds.
+    let refusal = error.to_string();
+    assert!(
+        refusal.contains("private admission failed")
+            || refusal.contains("private lifecycle failed"),
+        "refused inside the first attachment after binding, got {refusal}"
+    );
+
+    // The refused connection's place holds its BOUND output. If the binding
+    // came after that attachment there would be nothing here: the receiver
+    // would have gone with the setup frame.
+    let bound = durable
+        .with_ordered_continuation(1, |continuation| {
+            matches!(
+                continuation,
+                PrivateOrderedContinuation::Setup {
+                    accepted: PrivateOrderedSetupCustody::Transport(_),
+                    refusal: X11OrderedServingRefusal::Unserved,
+                    ..
+                }
+            )
+        })
+        .expect("the refused connection's place");
+    assert!(
+        bound,
+        "the real setup bound this connection's queue before the attachment \
+         that refused it"
+    );
+    drop(held);
+}

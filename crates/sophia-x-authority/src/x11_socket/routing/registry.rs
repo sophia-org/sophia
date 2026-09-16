@@ -176,11 +176,10 @@ struct XServerFrontendClientRouteRegistration {
     /// The place this connection's ordered continuation will go, reserved
     /// before this connection was exposed.
     ///
-    /// Not read yet: the teardown that hands a continuation over is the
-    /// dispatch binding, which is not landed. Until then it is held for what
-    /// losing it does -- a slot dropped without being disposed of is counted as
-    /// abandoned rather than handed out again, so a connection that ended with
-    /// nobody accounting for it is visible instead of silent.
+    /// Taken by this connection's teardown, which hands its ordered output
+    /// over into the place. A slot dropped without being disposed of is
+    /// counted as abandoned rather than handed out again, so a connection that
+    /// ended with nobody accounting for it is visible instead of silent.
     #[allow(dead_code)]
     ordered_continuation: Mutex<Option<PrivateOrderedContinuationSlot>>,
     /// This connection's ordered output, from binding until teardown.

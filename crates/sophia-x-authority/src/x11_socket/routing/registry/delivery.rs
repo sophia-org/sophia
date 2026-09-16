@@ -732,19 +732,36 @@ impl XServerFrontendClientRouteRegistration {
     /// doing it during teardown would mean deciding the disposition of
     /// accepted work on the path that is least able to answer for it.
     ///
-    /// THE SOCKET GOES WITH THE TRANSPORT, OR IT DOES NOT GO AT ALL. A
-    /// transport carries an independent handle on this connection, so a
-    /// retained transport keeps the wire open after the connection's own frame
-    /// is gone and whoever drives it can still end it. A receiver alone
-    /// carries no such handle: the accepted socket closes with the connection
-    /// that owned it, and the queue is retained with no way to deliver what is
-    /// in it. That is a worse outcome and it is recorded as what it is rather
-    /// than smoothed over -- the refusal says why there is no transport.
+    /// AN ENDING CAPABILITY GOES WITH THE TRANSPORT, OR IT DOES NOT GO AT ALL.
+    /// A transport carries an independent handle on this connection, so a
+    /// retained transport keeps the wire reachable after the connection's own
+    /// frame is gone and whoever drives it can still end it.
+    ///
+    /// A receiver alone carries no such handle. What the retained state then
+    /// knows is precisely that: no way to end the wire and no established fact
+    /// about it. It does NOT know that the socket closed -- whether it did
+    /// depends on who else holds a descriptor for it, which is not this
+    /// registration's to say -- and it must not record an ending it cannot
+    /// establish. The queue is retained with no way to deliver what is in it,
+    /// which is the worse outcome, recorded as what it is rather than smoothed
+    /// over; the refusal says why there is no transport.
     ///
     /// Ending the wire is NOT done here. A close is its own act with its own
     /// outcome, and a teardown that ended a wire in passing would report
     /// nothing about whether it worked.
     fn retain_ordered_continuation(&self) {
+        // NOT ACTED ON, AND THAT IS OPEN WORK. An Established or
+        // AlreadyEstablished fence is what makes moving this queue sound:
+        // nothing further can be accepted for it. An Unreadable one is not --
+        // it means the gate could not be read, so this teardown cannot show
+        // that a producer is not still inside, and it goes on to move the
+        // queue anyway.
+        //
+        // Nothing here can do better yet: there is nowhere to record it. What
+        // it needs is somewhere in the retained state for "moved without an
+        // established fence", so whoever takes disposition of this record can
+        // see that it was, and that belongs with disposition rather than being
+        // half-answered here.
         let _fence = self.fence_ordered_handovers();
         // The place was taken before this connection was exposed. Taking the
         // slot out is what says this registration is done with it.
