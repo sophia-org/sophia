@@ -114,7 +114,13 @@ exit "${TEST_SESSION_STATUS:-0}"''')
 
     def run_launcher(self, **env):
         return subprocess.run(["bash", str(self.tools / "run.sh")], env={**self.env, **env},
-                              capture_output=True, text=True, timeout=10)
+                              capture_output=True, text=True, timeout=10, umask=0o002)
+
+    def test_generated_profiles_are_private_under_group_writable_umask(self):
+        result = self.run_launcher()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for name in ("wm-profile.kdl", "desktop.kdl"):
+            self.assertEqual((self.evidence / name).stat().st_mode & 0o777, 0o600)
 
     def test_normal_exit_runs_both_real_verifiers(self):
         result = self.run_launcher()
