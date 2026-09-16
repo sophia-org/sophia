@@ -116,6 +116,17 @@ fn dispatch_custody(
         }
     };
     let _ = recovery;
+    // ARMED BEFORE THE ADMISSION, and that order is the whole of it: locals
+    // are destroyed in reverse, so a notice declared first is published last
+    // -- after the gate is released -- on the way out of this function and on
+    // an unwind through it alike. Declared the other way round, an unwind
+    // would publish while the gate was still held.
+    //
+    // It is published whatever happens below, including on the refusals that
+    // take nothing. A recheck request costs a waiter one look at its queue; a
+    // notification that were only made on success would be the one not made
+    // when a handover is accepted and then interrupted.
+    let notify = sender.arm_wake();
     // ADMITTED BEFORE ANYTHING IS TAKEN. The sender above was captured under
     // the client table and the table is already released, so the capture alone
     // says nothing about whether this endpoint is still open. A refusal here
@@ -124,6 +135,7 @@ fn dispatch_custody(
     let Ok(admitted) = sender.admit() else {
         return false;
     };
+    let _ = &notify;
     custody.dispatch = PrivateDispatchPhase::Indeterminate;
     let Some(PrivatePendingDelivery::Capsule(capsule)) = custody.pending.take() else {
         unreachable!("checked to be a capsule above")
@@ -549,6 +561,12 @@ fn dispatch_custody(
             }
         };
 
+        // ARMED BEFORE THE ADMISSION, so the reverse destruction order
+        // publishes it after the gate is released -- on the way out and on an
+        // unwind alike -- and after the give-back below, which takes common.
+        // Nothing in publishing it reaches for common, the client table, the
+        // payload, the output or the gate.
+        let notify = sender.arm_wake();
         // ADMITTED BEFORE ANYTHING IS WRITTEN DOWN OR TAKEN. The sender was
         // captured under the client table, which is already released; the
         // capture alone does not say this endpoint is still open. A refusal
@@ -625,6 +643,9 @@ fn dispatch_custody(
         if !handed_over {
             self.relinquish_outstanding_attempt(claim.token);
         }
+        // Published here, after the ledger work and with no gate held. It says
+        // only that this connection is worth looking at again.
+        drop(notify);
         Some(handed_over)
     }
 

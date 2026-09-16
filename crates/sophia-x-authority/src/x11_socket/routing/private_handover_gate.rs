@@ -203,6 +203,71 @@ impl PrivateOrderedWake {
     }
 }
 
+/// Signals a connection's notice, whatever else happens.
+///
+/// Constructed first inside a notifier's Drop and therefore destroyed last, so
+/// the signal survives an unwind through the rest of that Drop. It is
+/// COVERAGE, NOT THE MECHANISM: a condition-variable signal is not retained,
+/// so a signal that raced a waiter into its wait is simply lost. What a waiter
+/// can still find afterwards is the level, and publishing that is the job this
+/// does not do.
+#[cfg(unix)]
+struct PrivateWakeSignal<'a>(&'a std::sync::Condvar);
+
+#[cfg(unix)]
+impl Drop for PrivateWakeSignal<'_> {
+    fn drop(&mut self) {
+        self.0.notify_all();
+    }
+}
+
+/// Armed before a handover; publishes when that handover ends, however it ends.
+///
+/// ARMED BEFORE, NOT REPORTED AFTER. A handover can be accepted and then
+/// unwind before anything is written down, so a notification that were a
+/// statement made on success would be the statement not made in exactly the
+/// case where accepted work is left with nobody coming for it.
+///
+/// WHAT IT PUBLISHES IS A LEVEL. The signal wakes whoever is already waiting;
+/// the level is what a waiter finds if it arrives afterwards, and it is the
+/// only part that cannot be lost. A signal alone would leave this open: the
+/// owner sees an empty queue, the notifier signals before the owner reaches
+/// its wait, and the owner then finds nothing set and sleeps on accepted work.
+///
+/// A RECHECK REQUEST, NEVER EVIDENCE. It is published whether the handover was
+/// accepted, refused as full, refused because the endpoint is closed, or never
+/// attempted at all. A waiter woken by it has learned only that it should
+/// look; what is on the queue is established by receiving from it.
+#[cfg(unix)]
+pub(crate) struct PrivateWakeNotice {
+    wake: Arc<PrivateOrderedWake>,
+}
+
+#[cfg(unix)]
+impl Drop for PrivateWakeNotice {
+    /// PUBLISH, THEN SIGNAL, AND NOTHING FALLIBLE BEFORE EITHER.
+    ///
+    /// The signal guard is constructed first so it is destroyed last, which
+    /// puts the notify after the level is set and keeps it on an unwind
+    /// through anything added here later. Nothing between: no allocation, no
+    /// callback, no fallible call, and no lock other than the notice's own --
+    /// this must not reach for the payload, the output, common, the client
+    /// table or the gate, all of which are held by somebody on some path
+    /// through here.
+    ///
+    /// A poisoned notice is recovered rather than unwrapped, because this runs
+    /// in a Drop that may itself be unwinding, where a panic would abort.
+    fn drop(&mut self) {
+        let _signal = PrivateWakeSignal(&self.wake.ready);
+        let mut state = self
+            .wake
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.pending = true;
+    }
+}
+
 /// A recipient's ordered queue, reached through its gate.
 ///
 /// The sender field is private, but that is a smaller guarantee than it looks:
@@ -289,6 +354,17 @@ impl PrivateGatedOrderedSender {
     ///
     /// The admission is held for the handover and for writing down what came
     /// back, so a close cannot land between the send and the record of it.
+    /// Arm this connection's notice for a handover about to be attempted.
+    ///
+    /// DECLARED BEFORE THE ADMISSION BY ITS CALLERS, so that the drop order --
+    /// which is the reverse of the declaration order -- releases the gate and
+    /// only then takes the notice, on the normal path and on an unwind alike.
+    fn arm_wake(&self) -> PrivateWakeNotice {
+        PrivateWakeNotice {
+            wake: self.wake.clone(),
+        }
+    }
+
     fn admit(&self) -> Result<PrivateHandoverAdmission<'_>, PrivateHandoverRefusal> {
         let Ok(fenced) = self.gate.fenced.lock() else {
             return Err(PrivateHandoverRefusal::Unreadable);

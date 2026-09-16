@@ -24322,6 +24322,169 @@ fn a_promoted_owner_keeps_the_notice_its_senders_publish_to() {
     );
 }
 
+
+#[test]
+fn a_notice_published_before_a_waiter_arrives_is_still_there_to_find() {
+    // A SIGNAL IS NOT RETAINED; A LEVEL IS. This is the case a bare signal
+    // loses: the handover happens while the owner is between looking at its
+    // queue and entering its wait, so the signal reaches nobody. What the
+    // owner finds when it does arrive is the level, and that is why the level
+    // is published rather than only signalled.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8801));
+    attempt_run(&mut f, 88010, 272, true);
+    let wake = Arc::clone(&f.channels.ordered.wake);
+    {
+        let mut state = wake.state.lock().expect("a readable notice");
+        state.pending = false;
+    }
+
+    // The handover happens with nobody waiting at all.
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(private.dispatch_one_press(), Some(true));
+
+    // A waiter arriving afterwards finds it set, and does not wait.
+    let state = wake.state.lock().expect("a readable notice");
+    assert!(
+        state.pending,
+        "the notice is still there for a waiter that had not arrived yet"
+    );
+}
+
+#[test]
+fn a_handover_interrupted_after_acceptance_still_publishes_its_notice() {
+    // ACCEPTED WORK MUST NOT BE LEFT ASLEEP. A handover can be accepted and
+    // then unwind before anything is written down; a notification made only on
+    // success would be the one not made in exactly that case.
+    //
+    // THE UNWIND IS STAGED AT THE GUARD, not inside the producer: this crate
+    // has no way to panic mid-producer without a hook, so the control arms the
+    // real notice, sends through the real admission, and then unwinds.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8811);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let wake = Arc::clone(&channels.ordered.wake);
+    {
+        let mut state = wake.state.lock().expect("a readable notice");
+        state.pending = false;
+    }
+    let sender = capture_gated_sender(&private, client);
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(88110);
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+
+    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let notify = sender.arm_wake();
+        let admitted = sender.admit().expect("an open endpoint");
+        admitted.try_send(capsule).expect("accepted");
+        let _ = &notify;
+        panic!("interrupted between acceptance and the owned report");
+    }));
+    assert!(unwound.is_err(), "it unwound");
+
+    assert!(
+        wake.state.lock().expect("a readable notice").pending,
+        "and the notice was published on the way out"
+    );
+    // The accepted capsule is on the queue, exactly itself, unanswered.
+    let arrived = channels
+        .ordered
+        .receiver
+        .try_recv()
+        .expect("accepted before the unwind");
+    assert!(Arc::ptr_eq(
+        &cell,
+        &arrived.finalizer().expect("carried").completion
+    ));
+    assert!(cell.answer().is_none());
+    drop(registration);
+}
+
+#[test]
+fn a_refused_handover_publishes_a_recheck_and_keeps_its_capsule() {
+    // A REFUSAL IS STILL A REASON TO LOOK, and costs a waiter one look at its
+    // own queue. What it is not is evidence: nothing was accepted here, and
+    // the capsule is where it was.
+    let mut f = prepared_ordered_fixture(XServerFrontendClientId(8821));
+    attempt_run(&mut f, 88210, 272, true);
+    let cell = admitted_cell(f.runner.frontend.as_ref().unwrap(), 88210);
+    let wake = Arc::clone(&f.channels.ordered.wake);
+    assert_eq!(
+        f.registration.fence_ordered_handovers(),
+        PrivateHandoverFence::Established
+    );
+    {
+        let mut state = wake.state.lock().expect("a readable notice");
+        state.pending = false;
+    }
+
+    let private = f.runner.frontend.as_mut().unwrap();
+    assert_eq!(
+        private.dispatch_one_press(),
+        Some(false),
+        "the endpoint is closed, so nothing is handed over"
+    );
+    assert!(
+        wake.state.lock().expect("a readable notice").pending,
+        "and the notice is published anyway: a recheck request, not evidence"
+    );
+    assert_eq!(
+        handover_phase(private, &cell),
+        Some(PrivateDispatchPhase::Pending),
+        "with the capsule still offerable"
+    );
+    assert!(cell.answer().is_none());
+    assert!(f.channels.ordered.try_recv().is_err(), "and nothing queued");
+}
+
+#[test]
+fn publishing_a_notice_needs_nothing_that_a_handover_holds() {
+    // THE NOTICE TAKES ITS OWN LOCK AND NO OTHER. If publishing reached for
+    // the gate, the payload, the output, common or the client table, it would
+    // be doing so on a path where somebody already holds one of them -- and
+    // the one it would most obviously reach for is the gate it was armed
+    // beside.
+    let durable = PrivateSettlementOwner::default();
+    let private = private_over(&durable, 2);
+    let client = XServerFrontendClientId(8831);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let sender = capture_gated_sender(&private, client);
+    let wake = Arc::clone(&channels.ordered.wake);
+    {
+        let mut state = wake.state.lock().expect("a readable notice");
+        state.pending = false;
+    }
+
+    // The gate is held by something else entirely, and the client table too.
+    let entered = registration
+        .ordered_gate
+        .entered()
+        .unwrap_or_else(|_| panic!("an open endpoint"));
+    let clients = private
+        .broker
+        .registry
+        .clients
+        .lock()
+        .expect("a readable registry");
+
+    // Publishing completes regardless.
+    drop(sender.arm_wake());
+    assert!(
+        wake.state.lock().expect("a readable notice").pending,
+        "published while the gate and the client table are both held elsewhere"
+    );
+    drop(clients);
+    drop(entered);
+    drop(registration);
+}
+
 #[test]
 fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
     let mut f=prepared_ordered_fixture(XServerFrontendClientId(7601));
