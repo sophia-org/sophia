@@ -9,6 +9,41 @@
 // above its shutdown and error paths. Naming a type durable would not
 // establish it either.
 
+/// Where one connection's worker lives, and what it leaves behind.
+///
+/// OWNED BY THE CUSTODY, BESIDE THE HOME ITS RESULT GOES INTO. The three
+/// belong together: a thread's handle, the note that thread leaves about how
+/// it went, and the place its join result is published. Keeping the first two
+/// in whichever frame happened to start the worker left them with a different
+/// owner from the third, so a connection's evidence had an external keeper and
+/// its worker had none.
+///
+/// EMPTY AND UNSTARTED WHEN IT IS MADE. Reserving this is storage and nothing
+/// else: no thread, no permit, no schedule.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Reached by a caller no production site has yet.
+struct PrivateWorkerSource {
+    /// This connection's one worker-handle slot.
+    ///
+    /// ONE PER CONNECTION, AND THE SAME ONE THROUGHOUT. Its lifecycle is the
+    /// slot's own -- never started, running, handed on -- and nothing here
+    /// resets it because a connection got a new view of it.
+    slot: Mutex<PrivateWorkerSlot>,
+    /// Where that worker says how it went.
+    ///
+    /// BEHIND AN `Arc` SO THE BODY CAN BE GIVEN THE SINK AND NOTHING ELSE. A
+    /// worker needs somewhere to leave its classification; what it must not be
+    /// handed is the custody, the registration or the service owner, any of
+    /// which would put the thread on the owning side of the graph it is being
+    /// watched by.
+    ///
+    /// AND IT IS A DIAGNOSTIC, NOT EVIDENCE OF A JOIN. What is written here is
+    /// whatever the body wrote. It cannot establish that a thread ended, that
+    /// it panicked, or that anything may be started again; only the join
+    /// result can.
+    exit: Arc<PrivateWorkerExit>,
+}
+
 /// One connection's evidence custody, owned outside every operation.
 ///
 /// ESTABLISHED FIRST, IN THE SCOPE THAT OUTLIVES WHAT IT PROTECTS. Its own
@@ -36,6 +71,13 @@ struct PrivateEvidenceCustody {
     store: PrivateSettlementOwner,
     /// Which connection's evidence this keeps.
     identity: PrivateMaintenanceIdentity,
+    /// Where this connection's worker lives and what it leaves behind.
+    ///
+    /// RESERVED WITH THE HOME, ON THE SAME CREDIT AND BEFORE THE SAME
+    /// BOUNDARY. A connection published with a keeper for its result and no
+    /// owned place for its handle would be one whose worker belonged to
+    /// whichever frame started it.
+    source: PrivateWorkerSource,
     /// The publication home a join will write into.
     ///
     /// ALLOCATED HERE, BEFORE ANY HANDLE IS CONSUMED. What is published into
@@ -67,6 +109,12 @@ impl PrivateEvidenceCustody {
         Self {
             store: store.clone(),
             identity,
+            source: PrivateWorkerSource {
+                // EMPTY AND UNSTARTED. Storage now; a worker only if something
+                // later starts one, which nothing here does.
+                slot: Mutex::new(PrivateWorkerSlot::empty()),
+                exit: Arc::new(PrivateWorkerExit::unstarted()),
+            },
             join: Arc::new(PrivateJoinEvidence {
                 // THE RIGHT TO PUBLISH STARTS HERE, in the home, unheld. An
                 // operation acquires it from the home rather than arriving
@@ -88,6 +136,24 @@ impl PrivateEvidenceCustody {
     /// Which connection this custody is for.
     fn identity(&self) -> &PrivateMaintenanceIdentity {
         &self.identity
+    }
+
+    /// This connection's worker-handle slot.
+    ///
+    /// LENT, NOT HANDED OVER. A caller starts into it, hands a handle out of
+    /// it or reads its lifecycle; what owns it is this custody, so an
+    /// operation that ends -- by returning, refusing or unwinding -- leaves a
+    /// started worker's handle exactly where it was.
+    fn worker_slot(&self) -> &Mutex<PrivateWorkerSlot> {
+        &self.source.slot
+    }
+
+    /// The sink this connection's worker writes its classification into.
+    ///
+    /// CLONEABLE ON PURPOSE, AND ONLY THIS. A body that needs to leave a note
+    /// takes a handle to the note, not to the connection.
+    fn exit_sink(&self) -> &Arc<PrivateWorkerExit> {
+        &self.source.exit
     }
 
     /// The publication home this custody owns.

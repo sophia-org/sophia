@@ -139,21 +139,19 @@ struct PrivateReapingRecord<'a> {
     /// The slot this record was bound to, and the only one it will ever act
     /// on.
     ///
-    /// CAPTURED ONCE, AT CONSTRUCTION. A reaping that took a slot at every
-    /// visit was a record with no source of its own: one that had looked at an
-    /// empty slot and released its claim would go on to consume whatever
-    /// handle the next caller happened to hand it, and a retry could be given
-    /// a different connection's exit record and report that connection's body
-    /// had left nothing. Binding it here is not a check that can be got wrong;
-    /// there is no second slot to pass.
+    /// THE CUSTODY'S OWN, borrowed from it. A reaping that took a slot at
+    /// every visit was a record with no source of its own: one that had looked
+    /// at an empty slot and released its claim would go on to consume whatever
+    /// handle the next caller happened to hand it. A retry stays bound to this
+    /// connection's one slot because that is the only one this record can name.
     slot: &'a Mutex<PrivateWorkerSlot>,
-    /// That slot's worker's exit record.
+    /// That connection's exit record, from the same custody.
     ///
-    /// WHICH THREAD WROTE IT IS STILL THE CALLER'S OBLIGATION. Nothing here
-    /// can establish that this record was written by the thread that slot
-    /// holds -- the types do not carry it -- and binding the pair once is not
-    /// a claim that it has been checked. What it does prevent is the pair
-    /// being changed afterwards.
+    /// THE PAIRING IS STRUCTURAL NOW, and that is all it is. This record and
+    /// this slot belong to one connection because they came out of one
+    /// custody; what still cannot be established here is that the note in it
+    /// was written by the thread that slot holds. A body writes whatever it
+    /// writes, and an exit diagnostic is not evidence that a thread ended.
     exit: &'a PrivateWorkerExit,
     /// Whether an attempt has claimed THIS RECORD.
     ///
@@ -265,8 +263,15 @@ struct PrivateReaping {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 impl<'a> PrivateReapingRecord<'a> {
-    /// A record for a join nobody has asked for yet, over this slot, this
-    /// worker's exit record, and a publication home somebody else keeps.
+    /// A record for a join nobody has asked for yet, over one connection's
+    /// registered source.
+    ///
+    /// ALL THREE COME FROM THE ONE CUSTODY: the slot the handle is in, the
+    /// record its body writes its classification into, and the home its result
+    /// is published to. There is no way to hand this a slot from one
+    /// connection and a home from another, because there is nothing to hand.
+    /// A pairing that cannot be expressed is not a pairing that has to be
+    /// checked.
     ///
     /// THE CUSTODY IS TAKEN BEFORE ANY HANDLE IS. That order is the component
     /// this belongs to: a result is published into a home that already had an
@@ -281,14 +286,10 @@ impl<'a> PrivateReapingRecord<'a> {
     /// so a record built from a custody that then went away would have gone on
     /// working -- and losing that record would have lost the result the whole
     /// component exists to protect.
-    fn bound_to(
-        slot: &'a Mutex<PrivateWorkerSlot>,
-        exit: &'a PrivateWorkerExit,
-        custody: &'a PrivateEvidenceCustody,
-    ) -> Self {
+    fn bound_to(custody: &'a PrivateEvidenceCustody) -> Self {
         Self {
-            slot,
-            exit,
+            slot: custody.worker_slot(),
+            exit: custody.exit_sink(),
             claimed: AtomicBool::new(false),
             evidence: Arc::clone(custody.join()),
         }
