@@ -67,6 +67,33 @@ enum PrivateFenced {
 /// connection's whole row alive for the sake of a handle it already published.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
+struct PrivateFenceEvidence {
+    phase: std::sync::atomic::AtomicU8,
+    result: std::sync::OnceLock<PrivateHandoverFence>,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
+impl PrivateFenceEvidence {
+    fn phase(&self) -> PrivateFencePhase {
+        match self.phase.load(Ordering::Acquire) {
+            0 => PrivateFencePhase::NotAttempted,
+            1 => PrivateFencePhase::InProgress,
+            _ => PrivateFencePhase::FenceRecorded,
+        }
+    }
+
+    /// What the gate said, once it has been asked.
+    fn fence(&self) -> Option<PrivateHandoverFence> {
+        match self.phase() {
+            PrivateFencePhase::FenceRecorded => self.result.get().copied(),
+            PrivateFencePhase::NotAttempted | PrivateFencePhase::InProgress => None,
+        }
+    }
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 struct PrivateFenceRecord<'a> {
     /// The join whose publication makes this record eligible.
     join: &'a PrivateReapingRecord<'a>,
@@ -74,14 +101,14 @@ struct PrivateFenceRecord<'a> {
     gate: Arc<PrivateHandoverGate>,
     /// Whether an attempt has claimed this record.
     claimed: AtomicBool,
-    phase: std::sync::atomic::AtomicU8,
-    /// What the gate said, written once by the attempt that claimed this
-    /// record.
+    /// Where this fencing's evidence is published.
     ///
-    /// Publication cannot wait on another holder of this record: the claim
+    /// OWNED IN ITS OWN RIGHT, AND ALLOCATED HERE -- before the gate is ever
+    /// asked. Publication cannot wait on another holder: the claim
     /// established exclusivity before the gate was asked, so this is one
-    /// write, and a reader consulting the phase finds it.
-    result: std::sync::OnceLock<PrivateHandoverFence>,
+    /// write, and a reader consulting the phase finds it. Something that goes
+    /// on to keep this clones the handle rather than the record.
+    evidence: Arc<PrivateFenceEvidence>,
 }
 
 #[cfg(unix)]
@@ -94,25 +121,28 @@ impl<'a> PrivateFenceRecord<'a> {
             join,
             gate,
             claimed: AtomicBool::new(false),
-            phase: std::sync::atomic::AtomicU8::new(0),
-            result: std::sync::OnceLock::new(),
+            evidence: Arc::new(PrivateFenceEvidence {
+                phase: std::sync::atomic::AtomicU8::new(0),
+                result: std::sync::OnceLock::new(),
+            }),
         }
     }
 
     fn phase(&self) -> PrivateFencePhase {
-        match self.phase.load(Ordering::Acquire) {
-            0 => PrivateFencePhase::NotAttempted,
-            1 => PrivateFencePhase::InProgress,
-            _ => PrivateFencePhase::FenceRecorded,
-        }
+        self.evidence.phase()
     }
 
-    /// What this connection's gate said, once it has been asked.
     fn fence(&self) -> Option<PrivateHandoverFence> {
-        match self.phase() {
-            PrivateFencePhase::FenceRecorded => self.result.get().copied(),
-            PrivateFencePhase::NotAttempted | PrivateFencePhase::InProgress => None,
-        }
+        self.evidence.fence()
+    }
+
+    /// The join this fencing's eligibility rests on.
+    ///
+    /// THE FENCE ALREADY NAMES ITS JOIN, so nothing downstream has to be given
+    /// one alongside it -- and could not be given an unrelated one as though
+    /// it were independent evidence.
+    fn join_evidence(&self) -> Arc<PrivateJoinEvidence> {
+        self.join.join_evidence()
     }
 
     /// Close this connection's gate to further handovers, and keep the answer.
@@ -174,15 +204,15 @@ impl<'a> PrivateFenceRecord<'a> {
             return PrivateFenced::AlreadyAttempted;
         }
         // WRITE-AHEAD: the intent is recorded before the gate can be changed.
-        self.phase.store(1, Ordering::Release);
+        self.evidence.phase.store(1, Ordering::Release);
 
         let fence = self.gate.close();
 
         // Retained before anything else, and the phase after it, so no reader
         // sees a recorded fence over storage that is still empty.
-        let retained = self.result.set(fence).is_ok();
+        let retained = self.evidence.result.set(fence).is_ok();
         debug_assert!(retained, "one claim, one writer, one write");
-        self.phase.store(2, Ordering::Release);
+        self.evidence.phase.store(2, Ordering::Release);
         PrivateFenced::Recorded
     }
 }

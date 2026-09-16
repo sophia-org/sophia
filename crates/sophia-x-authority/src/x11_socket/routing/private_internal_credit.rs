@@ -267,6 +267,13 @@ impl Drop for PrivateInternalCredit {
 struct PrivateStoreOwnedHolder {
     /// The place this holder is responsible for finishing.
     credit: PrivateInternalCredit,
+    /// What this connection is owed, once something has committed it.
+    ///
+    /// `None` MEANS RESPONSIBILITY WITHOUT A COMMITTED OBLIGATION. A
+    /// conversion moves who is responsible for a place; committing states what
+    /// that connection is owed and on what evidence. They are different acts
+    /// and a holder can have had the first without the second.
+    obligation: Option<PrivateCommittedObligation>,
 }
 
 /// A place in the store's holder storage.
@@ -698,6 +705,8 @@ impl PrivateOrderedContinuationSlot {
                     record: Arc::downgrade(&record),
                     armed: true,
                 },
+                // A conversion commits nothing: it moves who is responsible.
+                obligation: None,
             });
             held.holders[destination.index] = holder;
             // THE DUTY MOVES HERE: two assignments, serialized under one

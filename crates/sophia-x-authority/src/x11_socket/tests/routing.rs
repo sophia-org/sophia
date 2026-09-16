@@ -34075,3 +34075,569 @@ fn a_publication_that_is_refused_leaves_exactly_the_first_connections_reservatio
     );
     drop((first, private));
 }
+
+/// A registration of its own, to stand in a fixture's field while the real one
+/// is dropped.
+///
+/// The fixture owns its registration and other records borrow its slot and
+/// gate, so a control that needs the connection to END cannot simply move the
+/// registration out. This puts an unrelated one in its place; nothing in the
+/// control touches it.
+fn spare_registration(
+    f: &PreparedOrderedFixture,
+) -> XServerFrontendClientRouteRegistration {
+    let client = XServerFrontendClientId(f.client.raw() + 900_000);
+    f.runner
+        .frontend
+        .as_ref()
+        .unwrap()
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row")
+        .0
+}
+
+/// A connection carried all the way to committable evidence: real startup,
+/// real body, real join, real fencing.
+///
+/// THE ASSOCIATION IS THIS FIXTURE'S, built from one registration and that
+/// connection's own startup, join and gate. Nothing in the types establishes
+/// which connection a worker served, and this does not claim otherwise.
+struct PrivateCommitFixture {
+    g: PrivateFenceFixture,
+    place: usize,
+}
+
+fn commit_fixture(client: XServerFrontendClientId, panicking: bool) -> PrivateCommitFixture {
+    let f = worker_fixture(client);
+    f.permit();
+    let exit = Arc::new(PrivateWorkerExit::unstarted());
+    let gate = f.fixture.registration.handover_gate();
+    let place = f
+        .fixture
+        .registration
+        .maintenance_identity()
+        .expect("a place, so a name")
+        .place();
+    let (home, wake, stop, sequence) = f.handles();
+    let running = Arc::clone(&exit);
+    let slot = started_worker(&f, move || {
+        if panicking {
+            panic!("what this connection's worker carried out with it");
+        }
+        PrivateWorkerBody {
+            home: &home,
+            wake: &wake,
+            stop: &stop,
+            byte_order: XByteOrder::LittleEndian,
+            sequence: &sequence,
+            exit: &running,
+            steps: 16,
+        }
+        .run();
+    });
+    if !panicking {
+        cancel_connection_worker(&f.stop, &f.wake);
+    }
+    PrivateCommitFixture {
+        g: PrivateFenceFixture {
+            f,
+            exit,
+            slot,
+            gate,
+        },
+        place,
+    }
+}
+
+#[test]
+fn a_commitment_waits_for_the_evidence_it_rests_on() {
+    // COMPLETED, PUBLISHED EVIDENCE AND NOTHING WEAKER. A fencing that has not
+    // recorded what the gate said, and a join that has published no result,
+    // are both reasons this connection's obligation cannot yet be stated --
+    // and neither is a reason to go and produce one.
+    let c = commit_fixture(XServerFrontendClientId(8461), false);
+    let durable = c.g.f.fixture.durable.clone();
+    let lease = lease_of(&c.g.f.fixture.registration);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("the destination reserved with this place");
+    let outer = durable.clone();
+    // The fixture's own spare registration has already ended, so this store's
+    // abandonment account is not zero. What matters is that nothing below
+    // moves it.
+    let abandoned_before = durable.continuations_abandoned();
+
+    // NEITHER JOINED NOR FENCED.
+    let PrivateCommitted::NotYetEvidenced(lease) =
+        lease.commit_maintenance_obligation(&outer, destination, &fence)
+    else {
+        panic!("no evidence yet")
+    };
+    // NOTHING WAS CONSUMED AND NOTHING WAS CHANGED. The lease comes back armed
+    // over the same place, and the destination it was offered goes back to
+    // reserved -- still this connection's, still preparable -- so the same
+    // context asks again by preparing again.
+    assert_eq!(
+        maintenance_destination(&durable, c.place),
+        Some("reserved"),
+        "the destination is this connection's again, not spent"
+    );
+    assert_eq!(durable.continuations_abandoned(), abandoned_before);
+    assert!(lease.armed);
+
+    // JOINED BUT NOT FENCED: still not enough.
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination again");
+    let PrivateCommitted::NotYetEvidenced(lease) =
+        lease.commit_maintenance_obligation(&outer, destination, &fence)
+    else {
+        panic!("a join alone is not this connection's evidence")
+    };
+
+    // AND WHEN THE FENCE HAS RECORDED, THE SAME CONTEXT COMMITS.
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination again");
+    assert!(matches!(
+        lease.commit_maintenance_obligation(&outer, destination, &fence),
+        PrivateCommitted::Committed
+    ));
+    assert!(
+        durable
+            .committed_obligation(c.place, |obligation| obligation.closed())
+            .is_some(),
+        "the obligation is in this connection's own destination"
+    );
+    drop((c.g.f.fixture, outer));
+}
+
+#[test]
+fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
+    // WHAT A COMMITTED OBLIGATION KEEPS IS THE EVIDENCE, NOT A COPY OF ITS
+    // SHAPE. A worker that panicked was carrying something, and an obligation
+    // that recorded only "it panicked" while the payload went with the
+    // caller's record would have kept the wrong thing.
+    let c = commit_fixture(XServerFrontendClientId(8462), true);
+    let durable = c.g.f.fixture.durable.clone();
+    let outer = durable.clone();
+    let place = c.place;
+    {
+        let lease = lease_of(&c.g.f.fixture.registration);
+        let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+        assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+        assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+        let destination = durable
+            .prepare_internal_holder(&lease)
+            .expect("its own destination");
+        assert!(matches!(
+            lease.commit_maintenance_obligation(&outer, destination, &fence),
+            PrivateCommitted::Committed
+        ));
+        // The reaping and fencing records, and the exit record, all go here.
+    }
+
+    let carried = durable
+        .committed_obligation(place, |obligation| {
+            assert_eq!(obligation.closed(), PrivateHandoverFence::Established);
+            assert_eq!(obligation.identity().place(), place);
+            let PrivateJoinResult::Panicked(payload) =
+                obligation.join().result().expect("a completed join")
+            else {
+                panic!("this worker panicked")
+            };
+            payload
+                .lock()
+                .expect("a readable payload")
+                .downcast_ref::<&str>()
+                .copied()
+                .map(str::to_owned)
+        })
+        .expect("the store keeps this connection's obligation");
+    assert_eq!(
+        carried.as_deref(),
+        Some("what this connection's worker carried out with it"),
+        "the exact payload, after every frame that joined it has gone"
+    );
+    drop((c.g.f.fixture, outer));
+}
+
+#[test]
+fn a_commitment_records_what_the_gate_said_whichever_it_was() {
+    // ALL THREE STAY DISTINCT. An unreadable gate is not a closed one, and
+    // recording it as established would claim something nobody established --
+    // but it is also not a reason to refuse the responsibility, because
+    // something is still owed and that case is what this retention is for.
+    for (client, arrange, expected) in [
+        (
+            8463u64,
+            None::<fn(&PrivateCommitFixture)>,
+            PrivateHandoverFence::Established,
+        ),
+        (
+            8464,
+            Some((|c: &PrivateCommitFixture| {
+                assert_eq!(
+                    c.g.f.fixture.registration.fence_ordered_handovers(),
+                    PrivateHandoverFence::Established,
+                    "somebody else closed it first, through the real API"
+                );
+            }) as fn(&PrivateCommitFixture)),
+            PrivateHandoverFence::AlreadyEstablished,
+        ),
+        (
+            8465,
+            Some((|c: &PrivateCommitFixture| {
+                assert!(
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let _inside = c.g.gate.fenced.lock().expect("a readable gate");
+                        panic!("a holder unwound inside this connection's gate");
+                    }))
+                    .is_err(),
+                    "the holder unwound"
+                );
+            }) as fn(&PrivateCommitFixture)),
+            PrivateHandoverFence::Unreadable,
+        ),
+    ] {
+        let c = commit_fixture(XServerFrontendClientId(client), false);
+        let durable = c.g.f.fixture.durable.clone();
+        let outer = durable.clone();
+        let lease = lease_of(&c.g.f.fixture.registration);
+        let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+        assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+        if let Some(arrange) = arrange {
+            arrange(&c);
+        }
+        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+        assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+        let destination = durable
+            .prepare_internal_holder(&lease)
+            .expect("its own destination");
+        assert!(matches!(
+            lease.commit_maintenance_obligation(&outer, destination, &fence),
+            PrivateCommitted::Committed
+        ));
+        assert_eq!(
+            durable
+                .committed_obligation(c.place, PrivateCommittedObligation::closed)
+                .expect("an obligation"),
+            expected,
+            "exactly what the gate said"
+        );
+        drop((c.g.f.fixture, outer));
+    }
+}
+
+#[test]
+fn a_commitment_is_not_gated_by_a_diagnostic_somebody_is_holding() {
+    // THE PUBLISHED EVIDENCE IS READ DIRECTLY. Whether anybody is holding the
+    // exit diagnostic or the panic payload has nothing to do with whether this
+    // connection's worker finished or its gate was asked.
+    let c = commit_fixture(XServerFrontendClientId(8466), true);
+    let durable = c.g.f.fixture.durable.clone();
+    let outer = durable.clone();
+    let lease = lease_of(&c.g.f.fixture.registration);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination");
+
+    let PrivateJoinResult::Panicked(payload) = record.result().expect("a completed join") else {
+        panic!("this worker panicked")
+    };
+    let payload_held = payload.lock().expect("a readable payload");
+    let diagnostic_held = c.g.exit.outcome.lock().expect("a readable exit record");
+    assert!(
+        matches!(
+            lease.commit_maintenance_obligation(&outer, destination, &fence),
+            PrivateCommitted::Committed
+        ),
+        "neither lock is on the way to the obligation"
+    );
+    drop((payload_held, diagnostic_held, c.g.f.fixture, outer));
+}
+
+#[test]
+fn a_commitment_takes_no_further_credit_and_moves_the_duty_once() {
+    // THE SAME PLACE, THE SAME NAME, THE SAME COUNT. Committing states what a
+    // connection is owed; it does not charge for a second place, and it leaves
+    // exactly one holder owing this place's disposal.
+    let c = commit_fixture(XServerFrontendClientId(8467), false);
+    let durable = c.g.f.fixture.durable.clone();
+    let outer = durable.clone();
+    let identity = c
+        .g
+        .f
+        .fixture
+        .registration
+        .maintenance_identity()
+        .expect("a name");
+    let reserved_before = durable.continuations_reserved();
+    let abandoned_before = durable.continuations_abandoned();
+    let lease = lease_of(&c.g.f.fixture.registration);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination");
+    assert!(matches!(
+        lease.commit_maintenance_obligation(&outer, destination, &fence),
+        PrivateCommitted::Committed
+    ));
+
+    assert_eq!(durable.continuations_reserved(), reserved_before);
+    assert_eq!(durable.continuations_abandoned(), abandoned_before);
+    assert!(
+        durable
+            .committed_obligation(c.place, |obligation| identity
+                .same_as(obligation.identity()))
+            .expect("an obligation"),
+        "the same name it was reserved under"
+    );
+    // ONE HOLDER OWES THIS PLACE. Taking it out and dropping it marks the
+    // place once, which it could not do if the lease still owed it too.
+    let named = durable
+        .take_internal_holder(c.place)
+        .expect("the store's holder");
+    drop(named);
+    assert_eq!(
+        durable.continuations_abandoned(),
+        abandoned_before.map(|before| before + 1),
+        "once, which it could not be if the lease still owed it too"
+    );
+    drop((c.g.f.fixture, outer));
+}
+
+#[test]
+fn a_second_commitment_replaces_nothing() {
+    // A REPEATED REQUEST MUST NOT RESTATE THE OBLIGATION. The first evidence
+    // stands, and a second attempt finds its destination already holding one.
+    let c = commit_fixture(XServerFrontendClientId(8468), false);
+    let durable = c.g.f.fixture.durable.clone();
+    let outer = durable.clone();
+    let lease = lease_of(&c.g.f.fixture.registration);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination");
+    assert!(matches!(
+        lease.commit_maintenance_obligation(&outer, destination, &fence),
+        PrivateCommitted::Committed
+    ));
+
+    // THERE IS NO SECOND LEASE TO ASK WITH: the first commitment consumed it,
+    // and the registration has none to give.
+    assert!(
+        c.g.f
+            .fixture
+            .registration
+            .maintenance_identity()
+            .is_none(),
+        "this registration is not holding a lease any more"
+    );
+    assert_eq!(
+        maintenance_destination(&durable, c.place),
+        Some("taken"),
+        "and its destination holds the first obligation"
+    );
+    // THE OBLIGATION IS THE FIRST ONE, with its own evidence.
+    assert_eq!(
+        durable
+            .committed_obligation(c.place, PrivateCommittedObligation::closed)
+            .expect("an obligation"),
+        PrivateHandoverFence::Established
+    );
+    drop((c.g.f.fixture, outer));
+}
+
+#[test]
+fn a_commitment_leaves_no_store_self_cycle() {
+    // AN OBLIGATION IS KEPT BY THE STORE, so what it keeps must not keep the
+    // store. The evidence it holds is a completed join's result and a recorded
+    // close; neither reaches back.
+    let capability;
+    let outer;
+    {
+        let c = commit_fixture(XServerFrontendClientId(8469), false);
+        let durable = c.g.f.fixture.durable.clone();
+        capability = durable.settlement_ref();
+        outer = durable.clone();
+        let lease = lease_of(&c.g.f.fixture.registration);
+        let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+        assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+        assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+        let destination = durable
+            .prepare_internal_holder(&lease)
+            .expect("its own destination");
+        assert!(matches!(
+            lease.commit_maintenance_obligation(&outer, destination, &fence),
+            PrivateCommitted::Committed
+        ));
+        drop((c.g.f.fixture, durable));
+    }
+    assert!(
+        capability.owner().is_some(),
+        "the caller's own holder keeps it"
+    );
+    drop(outer);
+    assert!(
+        capability.owner().is_none(),
+        "and a committed obligation is on no ring"
+    );
+}
+
+#[test]
+fn a_commitment_whose_place_moved_on_leaves_the_successor_alone() {
+    // THE OCCUPANT IS CHECKED IN THE ACQUISITION THAT INSTALLS. A place whose
+    // work settles goes back and the next connection takes the number, so a
+    // commitment resting on a lease that has outlived its place would state an
+    // obligation into the successor's destination on the strength of evidence
+    // about somebody else's connection.
+    //
+    // NO HOOK: the place goes back before the commitment is asked. The
+    // preparation happens first, because a stale lease can no longer prepare.
+    let mut c = commit_fixture(XServerFrontendClientId(8470), false);
+    let durable = c.g.f.fixture.durable.clone();
+    let outer = durable.clone();
+    let lease = lease_of(&c.g.f.fixture.registration);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination, while it is still its own");
+
+    // The connection ends and the real drive returns its place. The reaping
+    // and fencing records borrow the slot and gate, which the fixture still
+    // owns, so only the registration goes here.
+    let place = c.place;
+    // Its row and this control's own captured sender both go: the drive can
+    // only finish a queue whose producers have all disappeared, and a sender
+    // this fixture is still holding is a producer.
+    let stand_in = spare_registration(&c.g.f.fixture);
+    let stand_in_client = stand_in.client;
+    let registration = std::mem::replace(&mut c.g.f.fixture.registration, stand_in);
+    let spare_sender = capture_gated_sender(
+        c.g.f.fixture.runner.frontend.as_ref().unwrap(),
+        stand_in_client,
+    );
+    let sender = std::mem::replace(&mut c.g.f.sender, spare_sender);
+    drop((registration, sender));
+    // This connection's place is back; the stand-in above holds one of its
+    // own, so the store's total is not zero and nothing here claims it is.
+    settle_and_return(&durable, place);
+
+    // A REAL SUCCESSOR TAKES THE NUMBER.
+    let second = XServerFrontendClientId(8471);
+    let (successor, successor_registration, successor_cell, successor_frames, _wire) =
+        converted_fixture(&durable, second, 84710);
+    let abandoned_before = durable.continuations_abandoned();
+
+    let PrivateCommitted::Stale(lease) =
+        lease.commit_maintenance_obligation(&outer, destination, &fence)
+    else {
+        panic!("a place that moved on is not this lease's to commit into")
+    };
+    assert!(lease.armed);
+    assert_eq!(
+        maintenance_destination(&durable, place),
+        Some("reserved"),
+        "the successor's destination is untouched"
+    );
+    assert!(durable
+        .committed_obligation(place, |_| ())
+        .is_none(), "and nothing was committed into it");
+    assert_eq!(
+        durable.continuations_abandoned(),
+        abandoned_before,
+        "nothing was marked on the successor's account"
+    );
+    let capsule = successor_registration
+        .ordered_home
+        .borrow(|continuation| continuation.queue().try_recv().ok())
+        .expect("its own home")
+        .expect("the successor's own capsule");
+    assert_eq!(order_pass_frames(&capsule), successor_frames);
+    assert!(Arc::ptr_eq(
+        &successor_cell,
+        &capsule.finalizer().expect("carried").completion
+    ));
+    assert!(successor_cell.answer().is_none());
+    drop((successor, successor_registration, capsule, lease, outer));
+}
+
+#[test]
+fn a_commitment_with_a_destination_from_elsewhere_is_refused() {
+    // A DESTINATION BELONGS TO ONE PLACE IN ONE STORE. Committing through one
+    // from another store, or one prepared for another place, would state this
+    // connection's obligation into storage that was never its own.
+    let c = commit_fixture(XServerFrontendClientId(8472), false);
+    let durable = c.g.f.fixture.durable.clone();
+    let outer = durable.clone();
+    let lease = lease_of(&c.g.f.fixture.registration);
+    let record = PrivateReapingRecord::bound_to(&c.g.slot, &c.g.exit);
+    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+
+    // Another store, with a connection and a destination of its own.
+    let elsewhere = PrivateSettlementOwner::default();
+    let other_private = private_over(&elsewhere, 2);
+    let other = XServerFrontendClientId(8473);
+    let (other_registration, _other_channels) = other_private
+        .broker
+        .registry
+        .register_client_with_admission(other, Some(admitted(other)))
+        .expect("a place and a row");
+    let other_lease = lease_of(&other_registration);
+    let foreign = elsewhere
+        .prepare_internal_holder(&other_lease)
+        .expect("the other store's own destination");
+
+    let PrivateCommitted::Foreign(lease) =
+        lease.commit_maintenance_obligation(&outer, foreign, &fence)
+    else {
+        panic!("a destination from another store is not this one's to commit into")
+    };
+    assert!(lease.armed);
+    assert!(durable.committed_obligation(c.place, |_| ()).is_none());
+    assert_eq!(
+        maintenance_destination(&durable, c.place),
+        Some("reserved"),
+        "this connection's own destination was never touched"
+    );
+
+    // And its own destination still commits.
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("its own destination");
+    assert!(matches!(
+        lease.commit_maintenance_obligation(&outer, destination, &fence),
+        PrivateCommitted::Committed
+    ));
+    drop((
+        c.g.f.fixture,
+        other_registration,
+        other_private,
+        other_lease,
+        outer,
+    ));
+}

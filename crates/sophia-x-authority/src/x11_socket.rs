@@ -87,6 +87,7 @@ include!("x11_socket/routing/private_worker_body.rs");
 include!("x11_socket/routing/private_worker_join.rs");
 include!("x11_socket/routing/private_fence_record.rs");
 include!("x11_socket/routing/private_maintenance_identity.rs");
+include!("x11_socket/routing/private_maintenance_commitment.rs");
 include!("x11_socket/routing/private_focus_runtime.rs");
 include!("x11_socket/routing/private_native.rs");
 #[cfg(unix)]

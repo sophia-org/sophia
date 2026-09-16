@@ -64,6 +64,45 @@ enum PrivateReapingPhase {
 /// that fails or unwinds still leaves whatever it had established readable.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
+struct PrivateJoinEvidence {
+    /// How far the claiming attempt has got.
+    phase: std::sync::atomic::AtomicU8,
+    /// The result, written once by the attempt that claimed it.
+    ///
+    /// NOT A LOCK, AND NOT MERELY A TYPE THAT SAYS ONCE. What makes the write
+    /// here uncontended is that exclusivity was established before the handle
+    /// was consumed: one claim, one writer, one write. Publication cannot wait
+    /// on another holder, which is what a mutex taken after the join would
+    /// have made it do.
+    result: std::sync::OnceLock<PrivateJoinResult>,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
+impl PrivateJoinEvidence {
+    fn phase(&self) -> PrivateReapingPhase {
+        match self.phase.load(Ordering::Acquire) {
+            0 => PrivateReapingPhase::NotBegun,
+            1 => PrivateReapingPhase::InProgress,
+            _ => PrivateReapingPhase::Joined,
+        }
+    }
+
+    /// The result, if this join returned one.
+    ///
+    /// NOTHING IS VISIBLE HERE BEFORE THE PHASE SAYS SO, and the phase is not
+    /// written until the result is in place, so a reader that sees `Joined`
+    /// finds it.
+    fn result(&self) -> Option<&PrivateJoinResult> {
+        match self.phase() {
+            PrivateReapingPhase::Joined => self.result.get(),
+            PrivateReapingPhase::NotBegun | PrivateReapingPhase::InProgress => None,
+        }
+    }
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 struct PrivateReapingRecord<'a> {
     /// The slot this record was bound to, and the only one it will ever act
     /// on.
@@ -91,16 +130,15 @@ struct PrivateReapingRecord<'a> {
     /// once a handle has been taken through this record, no later ask may
     /// reach for another.
     claimed: AtomicBool,
-    /// How far the claiming attempt has got.
-    phase: std::sync::atomic::AtomicU8,
-    /// The result, written once by the attempt that claimed this record.
+    /// Where this join's evidence is published.
     ///
-    /// NOT A LOCK, AND NOT MERELY A TYPE THAT SAYS ONCE. What makes the write
-    /// here uncontended is that exclusivity was established before the handle
-    /// was consumed: one claim, one writer, one write. Publication cannot wait
-    /// on another holder of this record, which is what a mutex taken after the
-    /// join would have made it do.
-    result: std::sync::OnceLock<PrivateJoinResult>,
+    /// OWNED IN ITS OWN RIGHT, AND ALLOCATED HERE -- before any handle is
+    /// consumed, which is what keeps the interval between a join returning and
+    /// its result being kept free of allocation. Something that goes on to
+    /// keep this evidence clones the handle; it does not have to keep this
+    /// record, the worker's slot, its exit diagnostics or its registration
+    /// alive in order to hold what a completed join returned.
+    evidence: Arc<PrivateJoinEvidence>,
 }
 
 /// What a reaping attempt found.
@@ -182,29 +220,28 @@ impl<'a> PrivateReapingRecord<'a> {
             slot,
             exit,
             claimed: AtomicBool::new(false),
-            phase: std::sync::atomic::AtomicU8::new(0),
-            result: std::sync::OnceLock::new(),
+            evidence: Arc::new(PrivateJoinEvidence {
+                phase: std::sync::atomic::AtomicU8::new(0),
+                result: std::sync::OnceLock::new(),
+            }),
         }
     }
 
     fn phase(&self) -> PrivateReapingPhase {
-        match self.phase.load(Ordering::Acquire) {
-            0 => PrivateReapingPhase::NotBegun,
-            1 => PrivateReapingPhase::InProgress,
-            _ => PrivateReapingPhase::Joined,
-        }
+        self.evidence.phase()
     }
 
-    /// The result, if this record's join returned one.
-    ///
-    /// NOTHING IS VISIBLE HERE BEFORE THE PHASE SAYS SO, and the phase is not
-    /// written until the result is in place, so a reader that sees `Joined`
-    /// finds it.
     fn result(&self) -> Option<&PrivateJoinResult> {
-        match self.phase() {
-            PrivateReapingPhase::Joined => self.result.get(),
-            PrivateReapingPhase::NotBegun | PrivateReapingPhase::InProgress => None,
-        }
+        self.evidence.result()
+    }
+
+    /// A handle on this join's evidence, for something that will keep it.
+    ///
+    /// THE EVIDENCE, NOT THE RECORD. What a committed obligation needs is what
+    /// the join returned; keeping this record would keep a caller's frame, its
+    /// worker's slot and its exit diagnostics alive for the sake of it.
+    fn join_evidence(&self) -> Arc<PrivateJoinEvidence> {
+        Arc::clone(&self.evidence)
     }
 
     /// Take this connection's worker handle, join it, and keep what came back.
@@ -248,7 +285,7 @@ impl<'a> PrivateReapingRecord<'a> {
         // WRITE-AHEAD: the intent is recorded before a handle can be consumed, so
         // an attempt interrupted anywhere below leaves something that says a
         // handle may have been taken rather than nothing at all.
-        self.phase.store(1, Ordering::Release);
+        self.evidence.phase.store(1, Ordering::Release);
 
         let handoff = hand_worker_to_joiner(self.slot);
         let slot_poisoned = handoff.source_poisoned;
@@ -257,7 +294,7 @@ impl<'a> PrivateReapingRecord<'a> {
             // withdrawn and the claim released, and the record is exactly as it
             // was found. A later ask may still find a handle here, because nothing
             // here started or stopped anything.
-            self.phase.store(0, Ordering::Release);
+            self.evidence.phase.store(0, Ordering::Release);
             self.claimed.store(false, Ordering::Release);
             return PrivateReaping {
                 reaped: match handoff.found {
@@ -285,12 +322,12 @@ impl<'a> PrivateReapingRecord<'a> {
             // which is what keeps this on the right side of the retention.
             Err(payload) => PrivateJoinResult::Panicked(Mutex::new(payload)),
         };
-        let retained = self.result.set(result).is_ok();
+        let retained = self.evidence.result.set(result).is_ok();
         debug_assert!(retained, "one claim, one writer, one write");
         // AND ONLY THEN IS IT READABLE. The phase is what a reader consults, so
         // writing it after the result is what stops anyone seeing `Joined` over
         // storage that is still empty.
-        self.phase.store(2, Ordering::Release);
+        self.evidence.phase.store(2, Ordering::Release);
 
         // THE EXIT RECORD IS READ LAST, and never as a condition of any of the
         // above. What a body left is its own evidence: a join that returned does
