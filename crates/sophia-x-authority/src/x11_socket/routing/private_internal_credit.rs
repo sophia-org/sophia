@@ -71,7 +71,6 @@ enum PrivateCreditReach<R> {
     StoreGone,
 }
 
-/// What a credit's release did.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a driver that is not attached yet.
 impl<R> PrivateCreditReach<R> {
@@ -88,6 +87,7 @@ impl<R> PrivateCreditReach<R> {
     }
 }
 
+/// What a credit's release did.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a driver that is not attached yet.
 #[must_use]
@@ -96,6 +96,10 @@ enum PrivateCreditRelease {
     Released,
     /// The record still owes work. Nothing is freed and nothing is destroyed.
     StillOwed,
+    /// The place holds nothing yet: the hand-over it was reserved for has not
+    /// happened. Nothing is freed -- work that is still on its way would lose
+    /// its destination.
+    NotHandedOver,
     /// The place is not this credit's any more, so it is not this credit's to
     /// free. Nothing was touched.
     NotOurs,
@@ -173,8 +177,13 @@ impl PrivateInternalCredit {
     /// prevent. So it is checked, and a caller that was wrong gets its place
     /// back untouched instead of a silent loss.
     ///
-    /// AN EMPTY RECORD IS NOT OWED WORK. A place whose record holds nothing is
-    /// a hand-over that never happened; there is no queue to destroy.
+    /// AN EMPTY RECORD IS NOT A FINISHED ONE. A place whose record holds
+    /// nothing is a hand-over that has not happened -- and one of the moments
+    /// it has not happened yet is between this credit being published and the
+    /// work arriving in the place it names. Reading that as "nothing owed"
+    /// frees the place out from under work that is still on its way, and the
+    /// next connection to reserve one takes it. So it is refused, and the
+    /// credit says which of the two it is rather than making them one answer.
     ///
     /// THE CHECK AND THE FREE ARE NOT ONE STEP, and they cannot be: settledness
     /// is read under the record and the place is freed under the store, and
@@ -198,16 +207,18 @@ impl PrivateInternalCredit {
         }) else {
             return PrivateCreditRelease::NotOurs;
         };
-        let finished = {
+        let standing = {
             let destination = record
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            destination
-                .as_ref()
-                .is_none_or(PrivateOrderedContinuation::settled)
+            match destination.as_ref() {
+                None => PrivateCreditRelease::NotHandedOver,
+                Some(continuation) if continuation.settled() => PrivateCreditRelease::Released,
+                Some(_) => PrivateCreditRelease::StillOwed,
+            }
         };
-        if !finished {
-            return PrivateCreditRelease::StillOwed;
+        if !matches!(standing, PrivateCreditRelease::Released) {
+            return standing;
         }
         let mut held = owner.records_even_if_poisoned();
         if !self.ours(&held) {
@@ -321,6 +332,12 @@ struct PrivateHolderDestination {
     /// with a lease on some other place would be using a promise made for
     /// this one.
     for_place: usize,
+    /// AND WHOSE RESERVATION IT WAS. The number goes back with the place and
+    /// is handed to the next connection, so a promise that named only the
+    /// number could be committed against a successor's lease -- a holder over
+    /// a connection nobody prepared one for. The record is the identity, and
+    /// it is compared at commitment.
+    for_record: std::sync::Weak<Mutex<Option<PrivateOrderedContinuation>>>,
     /// Whether this destination still has to be released.
     armed: bool,
 }
@@ -422,6 +439,7 @@ impl PrivateSettlementOwner {
             owner: self.clone(),
             index,
             for_place,
+            for_record: lease.record.clone(),
             armed: true,
         })
     }
@@ -530,7 +548,7 @@ impl PrivateOrderedContinuationSlot {
     /// connection's reservation becomes the store's own responsibility, and it
     /// was continuously somebody's.
     fn convert_to_internal(
-        self,
+        mut self,
         outer: &PrivateSettlementOwner,
         mut destination: PrivateHolderDestination,
         source: &mut Option<PrivateOrderedContinuation>,
@@ -545,18 +563,30 @@ impl PrivateOrderedContinuationSlot {
         if !outer.is_same_store(&self.owner)
             || !destination.owner.is_same_store(&self.owner)
             || destination.for_place != self.index
+            || !std::ptr::eq(destination.for_record.as_ptr(), self.record.as_ptr())
         {
             return PrivateInternalConversion::Foreign(self);
         }
         let index = self.index;
-        let record = {
+        let found = {
             let held = outer.records_even_if_poisoned();
             match held.continuations.get(index) {
-                Some(PrivateOrderedContinuationPlace::Taken(record)) => record.clone(),
-                // No place to be responsible for. The hand-over below says the
-                // same thing and accounts for the lease as it always would.
-                _ => return PrivateInternalConversion::NotInstalled(self.install(source)),
+                Some(PrivateOrderedContinuationPlace::Taken(record))
+                    if std::ptr::eq(Arc::as_ptr(record), self.record.as_ptr()) =>
+                {
+                    Some(record.clone())
+                }
+                _ => None,
             }
+            // THE GUARD ENDS HERE, before anything is delegated. The hand-over
+            // takes this same lock, so calling it from inside this block would
+            // be this thread waiting for itself.
+        };
+        let Some(record) = found else {
+            // No place of this lease's to be responsible for. The hand-over
+            // says the same thing and accounts for the lease as it always
+            // would, now that the guard is gone.
+            return PrivateInternalConversion::NotInstalled(self.install(source));
         };
         {
             let mut held = outer.records_even_if_poisoned();
@@ -582,14 +612,29 @@ impl PrivateOrderedContinuationSlot {
                     armed: true,
                 },
             });
+            // THE DUTY MOVES HERE, IN ONE WRITE UNDER ONE LOCK. Publishing an
+            // armed credit while the lease was still armed would leave two
+            // disposers over one reserved place: an unwind before the
+            // hand-over finished had them both mark it, and one place would be
+            // abandoned twice. Disarming the lease afterwards instead would
+            // leave a window with neither. Here there is exactly one holder of
+            // the duty at every instant, and no interleaving in between,
+            // because the store is held across both.
+            //
+            // The lease is DISARMED, not disposed of: the place is not given
+            // back and not counted abandoned, because it is not going
+            // anywhere. It is the store's now.
+            self.armed = false;
             destination.armed = false;
         }
         let installed = self.install(source);
         if installed != PrivateContinuationInstall::Installed {
             // Nothing was handed over, so there is nothing for a holder to be
-            // responsible for. Taken out under the store and dropped after it
-            // is released; disarmed first, because the lease has already
-            // accounted for this place and a second mark would count it twice.
+            // responsible for. The hand-over has already accounted for the
+            // place -- it is the one duty, handed straight back by the same
+            // call that refused -- so the credit is taken out disarmed and a
+            // second mark is not made. Dropped after the store is released:
+            // a credit's own disposal takes it.
             let mut retired = {
                 let mut held = outer.records_even_if_poisoned();
                 PrivateSettlementOwner::retire_holder_for(&mut held, index, &record)

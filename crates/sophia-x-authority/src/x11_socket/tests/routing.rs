@@ -22103,13 +22103,16 @@ fn a_holder_is_in_place_before_the_work_leaves_its_caller() {
         (outcome, source)
     });
     wait.recv().expect("the converting thread started");
-    // It is inside the hand-over now, waiting on the record. Give it long
-    // enough to have got there and no longer.
+    // WHAT THIS WAIT ESTABLISHES, exactly: the record's lock is held here, so
+    // the hand-over cannot complete, and a holder observed in the meantime was
+    // published before installation could finish. It does NOT establish that
+    // the other thread has reached the lock -- a sleep cannot say that -- and
+    // nothing below rests on its having done so.
     std::thread::sleep(Duration::from_millis(50));
     assert_eq!(
         durable.holders_taken(),
         Some(1),
-        "the place is named before the work is taken"
+        "the place is named before the work can be installed"
     );
     assert!(
         matches!(
@@ -22122,12 +22125,29 @@ fn a_holder_is_in_place_before_the_work_leaves_its_caller() {
         blocker.is_none(),
         "while the record it names is still empty"
     );
+
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "the place is still spoken for"
+    );
+    // ONE DUTY OVER IT, not two: the lease was disarmed as this credit was
+    // published, in the same write under the same lock. What a published
+    // credit may do about a place whose work has not arrived is the control
+    // beside this one -- asking here would want the record's lock, which is
+    // the thing being held.
+    assert_eq!(durable.continuations_abandoned(), Some(0));
     drop(blocker);
 
     let (outcome, source) = converter.join().expect("the conversion finished");
     assert!(matches!(outcome, PrivateInternalConversion::Held));
     assert!(source.is_none());
-    let named = durable.take_internal_holder(0).expect("a holder");
+
+    // AND IT WENT INTO THE RECORD THIS CREDIT NAMES, which is the same record
+    // the holder was published over -- not whatever the place held by then.
+    let named = durable
+        .take_internal_holder(0)
+        .expect("the holder published before the hand-over");
     let PrivateCreditReach::Reached(Some(survived)) = credit_receives(&named.credit) else {
         panic!("the work went in behind the holder")
     };
@@ -22136,7 +22156,164 @@ fn a_holder_is_in_place_before_the_work_leaves_its_caller() {
         &cell,
         &survived.finalizer().expect("carried").completion
     ));
-    drop((registration, private, outer, named));
+    // AND THE DUTY IS THIS CREDIT'S, once: dropping it marks the place once,
+    // which it could not do if the lease had marked it too.
+    drop(named);
+    assert_eq!(durable.continuations_abandoned(), Some(1));
+    drop((registration, private, outer));
+}
+
+#[test]
+fn a_credit_over_a_place_whose_work_has_not_arrived_will_not_free_it() {
+    // AN EMPTY RECORD IS NOT A FINISHED ONE. A holder is published before the
+    // work is handed over -- the control above establishes that this state
+    // really occurs -- so between publication and installation the place is
+    // named by a credit and holds nothing. Reading that as "nothing owed"
+    // frees the place out from under work that is still on its way: the next
+    // connection to reserve takes it, and the hand-over lands in that
+    // connection's record, where its own teardown overwrites it.
+    //
+    // THE EMPTY RECORD IS STAGED HERE, and only that. Reaching this state
+    // through the conversion itself means holding the record's lock, which is
+    // the same lock a release has to take to ask its question, so a control
+    // that tried to do both at once would be waiting for itself. What is
+    // staged is one `take` out of the record the real conversion filled; the
+    // place, the credit and the identity are all the real ones.
+    let durable = PrivateSettlementOwner::default();
+    let client = XServerFrontendClientId(8369);
+    let (private, registration, _cell, _frames, _wire) =
+        converted_fixture(&durable, client, 83690);
+    let (lease, mut source) = lease_and_source(&registration);
+    let index = lease.index;
+    let destination = durable
+        .prepare_internal_holder(&lease)
+        .expect("a holder place");
+    let outer = durable.clone();
+    assert!(matches!(
+        lease.convert_to_internal(&outer, destination, &mut source),
+        PrivateInternalConversion::Held
+    ));
+    let mut named = durable.take_internal_holder(0).expect("a holder");
+    let emptied = {
+        let held = durable.records_even_if_poisoned();
+        let PrivateOrderedContinuationPlace::Taken(record) = &held.continuations[index] else {
+            panic!("its place holds the record")
+        };
+        let record = Arc::clone(record);
+        drop(held);
+        record
+            .lock()
+            .expect("a readable record")
+            .take()
+            .expect("what the conversion installed")
+    };
+
+    // THE CREDIT IS THIS PLACE'S, AND THE RECORD IS EMPTY.
+    assert!(matches!(
+        named.credit.with_place(|_| ()),
+        PrivateCreditReach::Empty
+    ));
+    assert!(matches!(
+        named.credit.release(),
+        PrivateCreditRelease::NotHandedOver
+    ));
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "the place is kept, so work still on its way keeps its destination"
+    );
+    assert_eq!(durable.continuations_abandoned(), Some(0));
+
+    // And a successor cannot be given that place while it is still held.
+    assert!(matches!(
+        private
+            .broker
+            .registry
+            .register_client_with_admission(
+                XServerFrontendClientId(8370),
+                Some(admitted(XServerFrontendClientId(8370)))
+            ),
+        Ok((registration, _)) if lease_of(&registration).index != index
+    ));
+    drop((registration, private, emptied, named, outer));
+}
+
+#[test]
+fn a_promise_made_for_one_reservation_is_not_committed_against_its_successor() {
+    // THE PROMISE NEEDS AN IDENTITY FOR THE SAME REASON THE CREDIT DOES. A
+    // place goes back when its reservation is given up, and the next
+    // connection takes the same number. A destination that named only the
+    // number would then be committed against that connection's lease -- a
+    // holder over a connection nobody prepared one for, made from a promise
+    // that was for somebody else.
+    //
+    // Nothing here is staged or injected: the first lease is relinquished
+    // through the ordinary path for a connection that was never exposed, and
+    // the successor is an ordinary registration.
+    let durable = PrivateSettlementOwner::default();
+    let client = XServerFrontendClientId(8371);
+    let private = private_over(&durable, 2);
+    let (first, _first_channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place and a row");
+    let lease = lease_of(&first);
+    let index = lease.index;
+    let stale = durable
+        .prepare_internal_holder(&lease)
+        .expect("a holder place for this reservation");
+    lease.relinquish_unexposed();
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(0),
+        "a connection that published nothing gives its place back"
+    );
+
+    // THE SAME NUMBER, A DIFFERENT CONNECTION.
+    let successor_id = XServerFrontendClientId(8372);
+    let (successor, successor_registration, cell, frames, wire_weak) =
+        converted_fixture(&durable, successor_id, 83720);
+    let (successor_lease, mut source) = lease_and_source(&successor_registration);
+    assert_eq!(successor_lease.index, index, "the place was handed on");
+
+    let PrivateInternalConversion::Foreign(successor_lease) =
+        successor_lease.convert_to_internal(&durable.clone(), stale, &mut source)
+    else {
+        panic!("a promise made for another reservation is not this one's to commit")
+    };
+
+    // NOTHING TOUCHED: the successor still holds its place and its work.
+    assert!(successor_lease.armed);
+    assert!(source.is_some());
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    assert_eq!(durable.continuations_abandoned(), Some(0));
+    assert_eq!(durable.holders_taken(), Some(0));
+    assert!(wire_weak.upgrade().is_some());
+
+    // And its own promise commits, over its own record.
+    let destination = durable
+        .prepare_internal_holder(&successor_lease)
+        .expect("its own reservation");
+    let outer = durable.clone();
+    assert!(matches!(
+        successor_lease.convert_to_internal(&outer, destination, &mut source),
+        PrivateInternalConversion::Held
+    ));
+    let named = durable.take_internal_holder(0).expect("a holder");
+    let PrivateCreditReach::Reached(Some(landed)) = credit_receives(&named.credit) else {
+        panic!("the successor's own work, in the successor's own record")
+    };
+    assert_eq!(
+        landed.delivery(),
+        XAuthorityInputDeliveryId::from_raw(83720)
+    );
+    assert_eq!(order_pass_frames(&landed), frames);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &landed.finalizer().expect("carried").completion
+    ));
+    drop((first, successor_registration, private, successor, named, outer));
 }
 
 #[test]

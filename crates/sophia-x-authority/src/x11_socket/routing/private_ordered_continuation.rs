@@ -226,6 +226,20 @@ struct PrivateOrderedContinuationSlot {
     /// Which reserved place this is. The storage exists from the moment the
     /// slot does, so installing into it allocates nothing.
     index: usize,
+    /// WHOSE PLACE, not merely which one.
+    ///
+    /// An index is not an identity. A place goes back when what was in it is
+    /// settled, and the next connection to reserve one takes the same number,
+    /// so a lease that outlived its place and still named only the number
+    /// would install this connection's work into that one's record -- where
+    /// its own teardown then overwrites it. The record this lease was made for
+    /// is compared against what is in the place at every use and disposal.
+    ///
+    /// WEAK, because this is a name and not custody: the work is in the place,
+    /// and a lease that kept a record alive would keep retained work alive
+    /// past the store responsible for it. A weak handle keeps the allocation,
+    /// so the address stays this record's while this lease exists.
+    record: std::sync::Weak<Mutex<Option<PrivateOrderedContinuation>>>,
     /// Whether this slot still has to be disposed of.
     ///
     /// Cleared by whichever disposal actually happens, so the fallback in Drop
@@ -285,7 +299,15 @@ impl PrivateOrderedContinuationSlot {
         let record = {
             let held = self.owner.records_even_if_poisoned();
             match held.continuations.get(self.index) {
-                Some(PrivateOrderedContinuationPlace::Taken(record)) => record.clone(),
+                // THE RECORD, NOT THE NUMBER. A place that has moved on to
+                // another connection is not this one's to install into: doing
+                // so would put this connection's queue where that one's
+                // teardown will overwrite it, and neither would ever be read.
+                Some(PrivateOrderedContinuationPlace::Taken(record))
+                    if std::ptr::eq(Arc::as_ptr(record), self.record.as_ptr()) =>
+                {
+                    record.clone()
+                }
                 _ => {
                     // No place to install into. Nothing is taken, so the work
                     // stays with its source and this is reported rather than
@@ -325,8 +347,22 @@ impl PrivateOrderedContinuationSlot {
     /// Give up this place without disposing of it, and say so.
     fn abandon(&mut self) {
         let mut held = self.owner.records_even_if_poisoned();
-        held.continuations_abandoned = held.continuations_abandoned.saturating_add(1);
+        // Only over a place that is still this lease's. A place that has gone
+        // on to another connection is accounted for by whoever holds it now,
+        // and marking here would charge an abandonment against them.
+        if self.holds(&held) {
+            held.continuations_abandoned = held.continuations_abandoned.saturating_add(1);
+        }
         self.armed = false;
+    }
+
+    /// Whether the place still holds the record this lease was made for.
+    fn holds(&self, held: &AbandonedSettlements) -> bool {
+        matches!(
+            held.continuations.get(self.index),
+            Some(PrivateOrderedContinuationPlace::Taken(record))
+                if std::ptr::eq(Arc::as_ptr(record), self.record.as_ptr())
+        )
     }
 
     /// Give the place back, for a connection that was never exposed.
@@ -356,17 +392,15 @@ impl PrivateOrderedContinuationSlot {
         let mut held = self.owner.records_even_if_poisoned();
         // The place is checked, NOT the record's contents: reading a record
         // here would take one beneath the aggregate, which is the order
-        // driving relies on being the other way round. A debug assertion is
-        // not a reason to close a lock cycle.
-        debug_assert!(
-            matches!(
-                &held.continuations[self.index],
-                PrivateOrderedContinuationPlace::Taken(_)
-            ),
-            "a finished slot is still this slot's place"
-        );
-        held.continuation_slots = held.continuation_slots.saturating_sub(1);
-        held.continuations[self.index] = PrivateOrderedContinuationPlace::Free;
+        // driving relies on being the other way round.
+        //
+        // AND IT IS CHECKED FOR REAL, not asserted. Freeing a place that has
+        // moved on takes it from whoever holds it now, and a check that only
+        // exists in builds with debug assertions is not a check.
+        if self.holds(&held) {
+            held.continuation_slots = held.continuation_slots.saturating_sub(1);
+            held.continuations[self.index] = PrivateOrderedContinuationPlace::Free;
+        }
         self.armed = false;
     }
 }
@@ -697,8 +731,8 @@ impl PrivateSettlementOwner {
         };
         // The record is made HERE, before this connection is exposed, so the
         // hand-over later is a move into storage that already exists.
-        held.continuations[index] =
-            PrivateOrderedContinuationPlace::Taken(Arc::new(Mutex::new(None)));
+        let record = Arc::new(Mutex::new(None));
+        held.continuations[index] = PrivateOrderedContinuationPlace::Taken(Arc::clone(&record));
         held.continuation_slots = held.continuation_slots.saturating_add(1);
         drop(held);
         Ok(PrivateOrderedContinuationSlot {
@@ -707,6 +741,7 @@ impl PrivateSettlementOwner {
             // dispose of is in there.
             owner: self.clone(),
             index,
+            record: Arc::downgrade(&record),
             armed: true,
         })
     }
@@ -902,6 +937,8 @@ impl Drop for PrivateOrderedContinuationSlot {
             return;
         }
         let mut held = self.owner.records_even_if_poisoned();
-        held.continuations_abandoned = held.continuations_abandoned.saturating_add(1);
+        if self.holds(&held) {
+            held.continuations_abandoned = held.continuations_abandoned.saturating_add(1);
+        }
     }
 }
