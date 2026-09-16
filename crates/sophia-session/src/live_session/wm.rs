@@ -5,6 +5,7 @@ include!("wm/shortcut_resolution.rs");
 include!("wm/public_policy.rs");
 include!("wm/profile_preparation.rs");
 include!("wm/indicator_admission.rs");
+include!("wm/output_policy_keys.rs");
 include!("wm/session.rs");
 include!("wm/control.rs");
 include!("wm/chrome.rs");

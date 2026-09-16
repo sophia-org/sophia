@@ -139,6 +139,7 @@ fn output(
     focus: Option<crate::SurfaceId>,
 ) -> crate::PolicyOutputSnapshot {
     crate::PolicyOutputSnapshot {
+        policy_key: None,
         output,
         generation,
         focus,

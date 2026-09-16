@@ -598,8 +598,22 @@ impl PolicyWmSessionTransport {
         {
             return Err(PolicyTransferError::UnsupportedCapability.into());
         }
-        let request = encode_wm_v1_policy_projection_request(request)?;
-        let frame = encode_wm_v1_projection_request_frame(transaction, &request)?;
+        let frame = if matches!(
+            request.cause,
+            sophia_protocol::PolicyRequestCause::OutputAction { .. }
+        ) {
+            if self.connection.selected_capabilities()
+                & sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS
+                == 0
+            {
+                return Err(PolicyTransferError::UnsupportedCapability.into());
+            }
+            let wire = sophia_protocol::encode_wm_output_action_request(request)?;
+            sophia_protocol::encode_wm_v1_output_action_request_frame(transaction, &wire)?
+        } else {
+            let wire = encode_wm_v1_policy_projection_request(request)?;
+            encode_wm_v1_projection_request_frame(transaction, &wire)?
+        };
         stream
             .write_all(&frame)
             .and_then(|()| stream.flush())

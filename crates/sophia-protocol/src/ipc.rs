@@ -49,3 +49,6 @@ pub use shell_launcher::*;
 
 mod wm_launch_origin;
 pub use wm_launch_origin::*;
+
+mod wm_output_actions;
+pub use wm_output_actions::*;

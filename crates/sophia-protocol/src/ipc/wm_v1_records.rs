@@ -182,6 +182,9 @@ pub fn encode_wm_v1_policy_projection_request(
         target_generation,
         interaction,
     ) = match request.cause {
+        crate::PolicyRequestCause::OutputAction { .. } => {
+            return Err(invalid("output_action_requires_separate_message", 0));
+        }
         PolicyRequestCause::SceneChanged => (0, 0, 0, 0, 0, 0, 0, 0, Rect::default()),
         PolicyRequestCause::Action {
             activation_serial,
@@ -910,12 +913,14 @@ pub fn encode_wm_v1_policy_snapshot(
         scene_generation: scene.generation,
         chunk_count,
     };
-    Ok(WmV1SnapshotTransfer {
+    let mut transfer = WmV1SnapshotTransfer {
         transaction,
         begin,
         chunks,
         end,
-    })
+    };
+    super::append_wm_output_policy_keys(&mut transfer, &scene.outputs, selected_capabilities)?;
+    Ok(transfer)
 }
 
 pub fn decode_wm_v1_policy_snapshot(
@@ -963,7 +968,11 @@ pub fn decode_wm_v1_policy_snapshot(
                     chunk.item_count,
                 )?)
             }
-            (false, super::SNAPSHOT_LAUNCH_ORIGIN_RECORD_KIND) => {}
+            (
+                false,
+                super::SNAPSHOT_LAUNCH_ORIGIN_RECORD_KIND
+                | super::SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND,
+            ) => {}
             (_, other) => return Err(invalid("snapshot_record_kind", u32::from(other))),
         }
     }
@@ -974,13 +983,14 @@ pub fn decode_wm_v1_policy_snapshot(
         session_operations.len(),
         transfer.begin.session_operation_count as usize,
     )?;
-    let scene = PolicySceneSnapshot {
+    let mut scene = PolicySceneSnapshot {
         generation: transfer.begin.scene_generation,
         active_output: OutputId::from_raw(transfer.begin.active_output),
         outputs: outputs
             .into_iter()
             .map(|record| {
                 Ok(PolicyOutputSnapshot {
+                    policy_key: None,
                     output: OutputId::from_raw(record.output),
                     generation: record.generation,
                     focus: decode_optional_surface(
@@ -1026,6 +1036,7 @@ pub fn decode_wm_v1_policy_snapshot(
             })
             .collect::<Result<Vec<_>, IpcCodecError>>()?,
     };
+    super::apply_wm_output_policy_keys(transfer, &mut scene.outputs)?;
     validate_wm_v1_snapshot_focus(&scene)?;
     let live_surfaces = scene
         .surfaces

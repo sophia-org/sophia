@@ -9,7 +9,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOM_SOURCE="${SOPHIA_LOM_SOURCE:-/home/niltempus/dev/lom}"
 LOM_TARGET="${SOPHIA_LOM_TARGET_DIR:-$HOME/.cache/lom-target}"
 LOM_CONFIG="${SOPHIA_LOM_CONFIG:-$LOM_SOURCE/examples/minimal/live-shell.kdl}"
-HAGIA_BIN="${SOPHIA_HAGIA_BIN:-/home/niltempus/dev/hagia/hagia}"
 HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 LOM_CORE_CONFIG="${SOPHIA_LOM_CORE_CONFIG:-$ROOT_DIR/tools/fixtures/lom_panel_core.kdl}"
 WORKLOAD_BUDGETS="$ROOT_DIR/tools/fixtures/lom_workload_budgets.json"
@@ -19,6 +18,8 @@ EVIDENCE_DIR="${SOPHIA_LOM_NATIVE_EVIDENCE_DIR:-$ROOT_DIR/.artifacts/lom-panel-n
 [[ "${SOPHIA_LOM_NATIVE_GATE_ARM:-0}" == 1 ]] || { echo "Set SOPHIA_LOM_NATIVE_GATE_ARM=1 to run the native panel gate." >&2; exit 2; }
 [[ -z "$(git -C "$ROOT_DIR" status --short)" ]] || { echo "Sophia source must be clean" >&2; exit 2; }
 [[ -z "$(git -C "$LOM_SOURCE" status --short)" ]] || { echo "Lom source must be clean" >&2; exit 2; }
+[[ -z "$(git -C "$HAGIA_ROOT" status --short)" ]] || { echo "Hagia source must be clean" >&2; exit 2; }
+git -C "$HAGIA_ROOT" verify-commit HEAD >/dev/null
 git -C "$ROOT_DIR" verify-commit HEAD >/dev/null
 git -C "$LOM_SOURCE" verify-commit HEAD >/dev/null
 [[ ! -e "$EVIDENCE_DIR" ]] || { echo "Evidence directory already exists; refusing to overwrite it" >&2; exit 2; }
@@ -41,6 +42,8 @@ cargo build --offline --release -p sophia-cli --features native-session --manife
 CARGO_TARGET_DIR="$LOM_TARGET" cargo build --offline --release --manifest-path "$LOM_SOURCE/Cargo.toml"
 LOM_BIN="$LOM_TARGET/release/lom"
 SOPHIA_BIN="$ROOT_DIR/target/release/sophia"
+HAGIA_BIN="$EVIDENCE_DIR/hagia"
+(cd "$HAGIA_ROOT" && nim c -d:release --hints:off --path:src     --nimcache:"$HOME/.cache/hagia-lom-gate" -o:"$HAGIA_BIN" src/hagia.nim)
 wm_profile="${SOPHIA_DESKTOP_PROFILE:-}"
 if [[ -z "$wm_profile" ]]; then
     config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -72,6 +75,7 @@ cargo build --offline --release -p sophia-config --example desktop_profile_probe
     printf 'lom_commit=%s\n' "$(git -C "$LOM_SOURCE" rev-parse HEAD)"
     printf 'lom_binary_sha256=%s\n' "$(sha256sum "$LOM_BIN" | cut -d' ' -f1)"
     printf 'lom_config_sha256=%s\n' "$(sha256sum "$LOM_CONFIG" | cut -d' ' -f1)"
+    printf 'hagia_commit=%s\n' "$(git -C "$HAGIA_ROOT" rev-parse HEAD)"
     printf 'hagia_binary_sha256=%s\n' "$(sha256sum "$HAGIA_BIN" | cut -d' ' -f1)"
     printf 'workload_budgets_sha256=%s\n' "$(sha256sum "$EVIDENCE_DIR/workload-budgets.json" | cut -d' ' -f1)"
     printf 'core_config_sha256=%s\n' "$(sha256sum "$LOM_CORE_CONFIG" | cut -d' ' -f1)"
@@ -87,7 +91,8 @@ verify_candidate_inputs() {
     sha256sum --check --status "$EVIDENCE_DIR/inputs.sha256"
     [[ "sophia_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)" == "$(sed -n '/^sophia_commit=/p' "$EVIDENCE_DIR/identity.manifest")" ]]
     [[ "lom_commit=$(git -C "$LOM_SOURCE" rev-parse HEAD)" == "$(sed -n '/^lom_commit=/p' "$EVIDENCE_DIR/identity.manifest")" ]]
-    [[ -z "$(git -C "$ROOT_DIR" status --short)" && -z "$(git -C "$LOM_SOURCE" status --short)" ]]
+    [[ "hagia_commit=$(git -C "$HAGIA_ROOT" rev-parse HEAD)" == "$(sed -n '/^hagia_commit=/p' "$EVIDENCE_DIR/identity.manifest")" ]]
+    [[ -z "$(git -C "$ROOT_DIR" status --short)" && -z "$(git -C "$LOM_SOURCE" status --short)" && -z "$(git -C "$HAGIA_ROOT" status --short)" ]]
 }
 
 echo "Evidence: $EVIDENCE_DIR"
@@ -105,7 +110,7 @@ cat <<'INSTRUCTIONS'
 The session ends normally after 90 seconds; the 110-second watchdog is failure recovery only.
 Confirm a bar and moving clock on BOTH outputs, then wait ten clock ticks.
 Click an INACTIVE workspace number 20 times on EACH bar (40 clicks total).
-Alternate the two outputs and workspace 1/2; finish the clicks within 60 seconds.
+Alternate the two outputs and two INACTIVE numbers from each bar; finish the clicks within 60 seconds.
 Do not click during warmup or after the 40 clicks; let the clocks run until automatic exit.
 ACK limits: p95 50ms / maximum 100ms. Native limits: p95 150ms / maximum 300ms.
 Missing actions, stale/no-op clicks, restarts, timeouts and retained shutdown credits fail.

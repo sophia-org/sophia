@@ -50,6 +50,13 @@ case "$*" in
     *"verify-commit HEAD"*) exit 0 ;;
     *) exit 99 ;;
 esac''')
+        self.hagia_source = self.base / "hagia-source"
+        self.hagia_source.mkdir()
+        self.script(self.fakebin / "nim", '''
+echo hagia-build >> "$TEST_TRACE"
+for arg in "$@"; do
+  case "$arg" in -o:*) printf '%s\\n' 'fixture Hagia build' > "${arg#-o:}" ;; esac
+done''')
         self.script(self.fakebin / "cargo", 'echo build >> "$TEST_TRACE"')
         self.wm_profile = self.base / "wm.kdl"
         self.wm_profile.write_text('schema 1\nshortcut { profile "operator"; bind "Super+4" "policy:focus-workspace" "7"; }\n')
@@ -100,7 +107,7 @@ exit "${TEST_SESSION_STATUS:-0}"''')
         self.evidence = self.base / "evidence"
         self.env = {**os.environ, "PATH": str(self.fakebin) + ":/usr/bin:/bin",
                     "SOPHIA_LOM_SOURCE": str(self.lom), "SOPHIA_LOM_TARGET_DIR": str(self.base / "target"),
-                    "SOPHIA_HAGIA_BIN": str(self.base / "hagia"), "SOPHIA_LOM_NATIVE_GATE_ARM": "1",
+                    "SOPHIA_HAGIA_ROOT": str(self.hagia_source), "SOPHIA_LOM_NATIVE_GATE_ARM": "1",
                     "SOPHIA_DESKTOP_PROFILE": str(self.wm_profile),
                     "SOPHIA_LOM_NATIVE_EVIDENCE_DIR": str(self.evidence),
                     "TEST_TRACE": str(self.base / "trace"), "TEST_HOST": str(self.base / "host.log"),
@@ -129,7 +136,7 @@ exit "${TEST_SESSION_STATUS:-0}"''')
         self.assertEqual(report["status"], "pass")
         self.assertEqual(report["memory"]["slot_bound"], 4)
         self.assertEqual((self.evidence / "native-outcome.txt").read_text(), "native_exit_status=0\n")
-        self.assertEqual((self.base / "trace").read_text().splitlines(), ["build", "build", "build", "proof", "session"])
+        self.assertEqual((self.base / "trace").read_text().splitlines(), ["build", "build", "hagia-build", "build", "proof", "session"])
         self.assertEqual((self.evidence / "wm-profile.kdl").read_bytes(), self.wm_profile.read_bytes())
         self.assertIn('bind "Super+4" "policy:focus-workspace" "7"', (self.evidence / "desktop.kdl").read_text())
         self.assertIn("wm_profile_sha256=", (self.evidence / "identity.manifest").read_text())

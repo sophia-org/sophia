@@ -218,6 +218,20 @@ impl PolicyProjectionReducer {
         {
             return Err(PolicyProjectionError::InvalidRequestCause);
         }
+        if let PolicyRequestCause::OutputAction {
+            output,
+            output_generation,
+            ..
+        } = cause
+            && (!unique.contains(&output)
+                || !self
+                    .scene
+                    .outputs
+                    .iter()
+                    .any(|o| o.output == output && o.generation == output_generation))
+        {
+            return Err(PolicyProjectionError::InvalidRequestCause);
+        }
         let request_id = self.next_request_id;
         self.next_request_id = self
             .next_request_id

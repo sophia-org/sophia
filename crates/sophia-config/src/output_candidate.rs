@@ -62,6 +62,8 @@ pub enum DesktopMirrorFit {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesktopNamedOutputCandidate {
     pub connector: String,
+    /// Stable operator-selected policy affinity; never inferred from enumeration.
+    pub policy_key: Option<u64>,
     pub mode: Option<DesktopOutputMode>,
     pub scale: Option<DesktopOutputScale>,
     pub position: Option<(i32, i32)>,
@@ -385,6 +387,7 @@ fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopPr
     let connector = connector_name(node)?;
     let mut result = DesktopNamedOutputCandidate {
         connector,
+        policy_key: None,
         mode: None,
         scale: None,
         position: None,
@@ -401,6 +404,10 @@ fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopPr
     }
     for child in children.nodes() {
         match child.name().value() {
+            "policy-key" if result.policy_key.is_none() => {
+                result.policy_key =
+                    Some(one_integer(child, "output policy-key", 1, i128::from(i64::MAX))? as u64);
+            }
             "mode" if result.mode.is_none() => result.mode = Some(output_mode(child)?),
             "scale" if result.scale.is_none() => result.scale = Some(output_scale(child)?),
             "position" if result.position.is_none() => {
@@ -430,7 +437,7 @@ fn named_output(node: &KdlNode) -> Result<DesktopNamedOutputCandidate, DesktopPr
                 result.mirror_fit = Some(output_mirror_fit(child)?);
             }
             "mode" | "scale" | "position" | "transform" | "enabled" | "focus-at-startup"
-            | "vrr" | "mirror" | "mirror-fit" => {
+            | "vrr" | "mirror" | "mirror-fit" | "policy-key" => {
                 return Err(schema_error("duplicate named output setting"));
             }
             _ => return Err(schema_error("unsupported named output setting")),
@@ -454,6 +461,7 @@ pub fn prepare_desktop_output_candidate(
     let mut inheritance_seen = false;
     let mut connectors = BTreeSet::new();
     let mut focused_connector = None;
+    let mut policy_keys = BTreeSet::new();
     for value in &candidate.values {
         let node = single_node(&value.encoded)?;
         match node.name().value() {
@@ -475,6 +483,12 @@ pub fn prepare_desktop_output_candidate(
                         .is_some()
                 {
                     return Err(schema_error("more than one output requests startup focus"));
+                }
+                if output
+                    .policy_key
+                    .is_some_and(|key| !policy_keys.insert(key))
+                {
+                    return Err(schema_error("duplicate output policy-key"));
                 }
                 prepared.named.push(output);
             }

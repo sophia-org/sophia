@@ -12,7 +12,7 @@ use crate::live_session::{
     LivePublicPolicyCause, LiveWmProposalSource, LiveWmRequestAdmission,
     consume_public_launch_classification, enqueue_public_policy_cause,
     materialize_public_dirty_cause, public_launch_classification_snapshot,
-    public_policy_rearm_after_outcome, public_policy_snapshot_focus,
+    public_policy_rearm_after_outcome, public_policy_snapshot_focus, resolve_output_policy_key,
 };
 
 fn relayout_cause(outputs: &[u64]) -> LivePublicPolicyCause {
@@ -72,6 +72,7 @@ fn launch_classification_snapshot_excludes_withdrawn_surfaces() {
         generation: 1,
         active_output: OutputId::from_raw(1),
         outputs: vec![sophia_protocol::PolicyOutputSnapshot {
+            policy_key: None,
             output: OutputId::from_raw(1),
             generation: 1,
             focus: None,
@@ -396,4 +397,43 @@ fn withdrawing_many_surfaces_at_once_coalesces_into_one_relayout() {
         "a capacity rejection here is the session ending"
     );
     assert_eq!(queue.len(), 1, "the whole burst is one relayout");
+}
+
+#[test]
+fn configured_output_keys_resolve_connectors_not_output_order() {
+    use sophia_backend_live::{
+        LibdrmNativeOutputCapability, LibdrmNativeOutputTiming,
+        LibdrmNativeVrrPropertyDiscoveryStatus,
+    };
+    let capability = |output, connector: &str| {
+        let timing = LibdrmNativeOutputTiming::new(1000, 700, 60_000);
+        LibdrmNativeOutputCapability::new(
+            OutputId::from_raw(output),
+            output as u32,
+            connector,
+            [timing],
+            Some(timing),
+            timing,
+            LibdrmNativeVrrPropertyDiscoveryStatus::Discovered,
+        )
+        .unwrap()
+    };
+    let keys = [("DP-1".to_owned(), 17), ("DP-2".to_owned(), 29)]
+        .into_iter()
+        .collect();
+    let reversed = [capability(1, "DP-2"), capability(2, "DP-1")];
+    assert_eq!(
+        resolve_output_policy_key(OutputId::from_raw(1), &keys, &reversed).unwrap(),
+        Some(29)
+    );
+    assert_eq!(
+        resolve_output_policy_key(OutputId::from_raw(2), &keys, &reversed).unwrap(),
+        Some(17)
+    );
+    assert_eq!(
+        resolve_output_policy_key(OutputId::from_raw(3), &keys, &reversed).unwrap(),
+        None
+    );
+    let ambiguous = [capability(1, "DP-1"), capability(1, "DP-2")];
+    assert!(resolve_output_policy_key(OutputId::from_raw(1), &keys, &ambiguous).is_err());
 }

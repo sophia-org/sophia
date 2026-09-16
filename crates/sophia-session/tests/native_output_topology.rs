@@ -121,6 +121,7 @@ fn migrated_output_candidate_reconciles_against_native_projection() {
         inherit_sophia: true,
         named: vec![
             DesktopNamedOutputCandidate {
+                policy_key: None,
                 mirror_fit: None,
                 connector: "DP-1".to_owned(),
                 mode: Some(DesktopOutputMode::Exact {
@@ -137,6 +138,7 @@ fn migrated_output_candidate_reconciles_against_native_projection() {
                 mirror: Vec::new(),
             },
             DesktopNamedOutputCandidate {
+                policy_key: None,
                 mirror_fit: None,
                 connector: "DP-2".to_owned(),
                 mode: Some(DesktopOutputMode::Exact {
@@ -175,6 +177,7 @@ fn native_activation_plan_retains_stable_targets_and_rollback_state() {
         digest: ConfigDigest::new([9; 32]),
         inherit_sophia: true,
         named: vec![DesktopNamedOutputCandidate {
+            policy_key: None,
             mirror_fit: None,
             connector: "DP-1".to_owned(),
             mode: Some(DesktopOutputMode::Exact {
@@ -233,6 +236,7 @@ fn startup_authority_candidate_preserves_profile_geometry_modes_and_focus() {
         inherit_sophia: true,
         named: vec![
             DesktopNamedOutputCandidate {
+                policy_key: None,
                 connector: "DP-1".to_owned(),
                 mode: Some(DesktopOutputMode::Exact {
                     width: 2560,
@@ -249,6 +253,7 @@ fn startup_authority_candidate_preserves_profile_geometry_modes_and_focus() {
                 mirror: Vec::new(),
             },
             DesktopNamedOutputCandidate {
+                policy_key: None,
                 connector: "DP-2".to_owned(),
                 mode: None,
                 scale: None,
@@ -467,6 +472,7 @@ fn a_profile_mode_the_hardware_lacks_is_refused_and_names_the_connector() {
         digest: ConfigDigest::new([4; 32]),
         inherit_sophia: true,
         named: vec![DesktopNamedOutputCandidate {
+            policy_key: None,
             connector: "DP-1".to_owned(),
             mode: Some(DesktopOutputMode::Exact {
                 width: 2560,
@@ -507,6 +513,7 @@ fn a_profile_mode_the_hardware_offers_is_taken_exactly() {
         digest: ConfigDigest::new([4; 32]),
         inherit_sophia: true,
         named: vec![DesktopNamedOutputCandidate {
+            policy_key: None,
             connector: "DP-1".to_owned(),
             mode: Some(DesktopOutputMode::Exact {
                 width: 2560,
@@ -596,6 +603,7 @@ fn a_measured_timing_does_not_change_what_a_profile_matches() {
         digest: ConfigDigest::new([4; 32]),
         inherit_sophia: true,
         named: vec![DesktopNamedOutputCandidate {
+            policy_key: None,
             connector: "DP-1".to_owned(),
             mode: Some(DesktopOutputMode::Exact {
                 width: 2560,

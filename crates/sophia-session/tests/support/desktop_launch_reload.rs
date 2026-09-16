@@ -77,6 +77,7 @@ impl ReloadFixture {
             .into_iter()
             .collect::<BTreeMap<_, _>>();
         let public = LivePublicPolicyState {
+            output_policy_keys: Default::default(),
             control_generation: 1,
             control_catalog_serial: 1,
             control_tickets: BTreeMap::new(),

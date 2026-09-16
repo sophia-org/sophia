@@ -6,6 +6,7 @@ fn complete_scene_snapshot_roundtrips_without_policy_private_state() {
         generation: 7,
         active_output: OutputId::from_raw(1),
         outputs: vec![PolicyOutputSnapshot {
+            policy_key: None,
             output: OutputId::from_raw(1),
             generation: 3,
             focus: Some(SurfaceId::new(3, 1)),
@@ -643,6 +644,7 @@ fn gated_scene() -> PolicySceneSnapshot {
         generation: 7,
         active_output: OutputId::from_raw(1),
         outputs: vec![PolicyOutputSnapshot {
+            policy_key: None,
             output: OutputId::from_raw(1),
             generation: 3,
             focus: Some(SurfaceId::new(3, 1)),

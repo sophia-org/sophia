@@ -325,7 +325,8 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
                         policy_connection_epoch: 1,
                         publication: &publication,
                         outputs: &outputs,
-                        active_output: activation.output,
+                        output_generations: &outputs.iter().map(|o| (o.id, 1)).collect(),
+                        capabilities: sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS,
                         next_transaction: &mut next_transaction,
                         queue: &mut queue,
                         in_flight_source: None,
@@ -334,14 +335,14 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
                     .enqueue(action, output)?;
                     assert_eq!(result.policy_connection_epoch, 1);
                     assert_eq!(result.activation_serial, Some(100));
-                    assert!(matches!(queue[0].cause, PolicyRequestCause::Action { activation_serial, .. } if Some(activation_serial) == result.activation_serial));
+                    assert!(matches!(queue[0].cause, PolicyRequestCause::OutputAction { activation_serial, .. } if Some(activation_serial) == result.activation_serial));
                     Ok(result)
                 },
             )
             .unwrap();
         assert_eq!(queue.len(), 1);
         assert!(
-            matches!(queue[0].cause, PolicyRequestCause::Action { activation_serial: 100, action: v } if v.raw() == activation.action)
+            matches!(queue[0].cause, PolicyRequestCause::OutputAction { activation_serial: 100, action: v, output, output_generation: 1 } if v.raw() == activation.action && output == activation.output)
         );
         assert_eq!(queue[0].affected_outputs, vec![activation.output]);
         assert_eq!(
@@ -451,12 +452,24 @@ fn shared_wm_admission_keeps_unpublished_and_capacity_refusals_out_of_the_queue(
         policy_connection_epoch: 1,
         publication: &published,
         outputs: &outputs,
-        active_output: outputs[1].id,
+        output_generations: &outputs.iter().map(|o| (o.id, 1)).collect(),
+        capabilities: sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS,
         next_transaction: &mut next_transaction,
         queue: &mut queue,
         in_flight_source: None,
         in_flight: false,
     };
+    owner.capabilities = 0;
+    assert_eq!(
+        owner
+            .enqueue(WmActionId::from_raw(13), activation.output)
+            .unwrap()
+            .admission,
+        LiveWmRequestAdmission::Duplicate
+    );
+    assert_eq!(*owner.next_transaction, 100);
+    assert!(owner.queue.is_empty());
+    owner.capabilities = sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS;
     assert_eq!(
         owner
             .enqueue(WmActionId::from_raw(14), activation.output)
@@ -504,7 +517,7 @@ fn shared_wm_admission_keeps_unpublished_and_capacity_refusals_out_of_the_queue(
     );
     assert_eq!(
         owner.queue[0].affected_outputs,
-        vec![outputs[1].id, outputs[0].id]
+        vec![outputs[0].id, outputs[1].id]
     );
     // Existing in-flight work consumes the same finite capacity as queued work.
     owner.queue.pop_front();
@@ -715,3 +728,6 @@ fn direct_mode_keeps_snapshot_and_event_high_water_checks() {
     assert_eq!(calls, 2);
     assert!(h.ledger.live.is_empty());
 }
+
+#[path = "targeted_policy.rs"]
+mod targeted_policy;

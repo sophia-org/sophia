@@ -1371,3 +1371,40 @@ fn help_aliases_share_a_physical_chord_and_display_metadata_is_bounded() {
     assert!(load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn output_policy_keys_are_explicit_unique_and_nonzero() {
+    let root = temporary_directory("output-policy-keys");
+    let path = root.join("config.kdl");
+    for (text, accepted) in [
+        (
+            "named \"DP-1\" { policy-key 17; } named \"DP-2\" { policy-key 29; }",
+            true,
+        ),
+        (
+            "named \"DP-1\" { policy-key 17; } named \"DP-2\" { policy-key 17; }",
+            false,
+        ),
+        ("named \"DP-1\" { policy-key 0; }", false),
+        ("named \"DP-1\" { policy-key -1; }", false),
+        ("named \"DP-1\" { policy-key 1; policy-key 2; }", false),
+    ] {
+        write_profile(
+            &path,
+            &format!(
+                "schema 1\noutput {{ {}\n}}\n",
+                text.replace("} named", "}\n named")
+            ),
+        );
+        let result =
+            load_desktop_profile(Some(&path), ConfigGeneration::INITIAL).and_then(|profile| {
+                prepare_desktop_output_candidate(&profile.candidates[&DesktopAuthority::Output])
+            });
+        assert_eq!(result.is_ok(), accepted, "{text}");
+        if let Ok(output) = result {
+            assert_eq!(output.named[0].policy_key, Some(17));
+            assert_eq!(output.named[1].policy_key, Some(29));
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
+}

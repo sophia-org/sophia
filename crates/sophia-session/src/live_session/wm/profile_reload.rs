@@ -183,6 +183,11 @@ impl LiveWmSession {
             .public
             .as_mut()
             .ok_or("desktop launch lost policy owner")?;
+        if output.as_ref().is_some_and(|profile| {
+            configured_output_policy_keys(profile.current()) != public.output_policy_keys
+        }) {
+            return Err("output policy keys are startup identities; changing them requires a new session".into());
+        }
         config.applications = launch.applications;
         config.active_launch_profile = Some(launch.launch_profile);
         config.shortcut_profile_candidate = launch.shortcuts;

@@ -32,7 +32,9 @@ const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | sophia_protocol::SOPHIA_WM_CAPABILITY_TAB_GROUPS
     | sophia_protocol::SOPHIA_WM_CAPABILITY_TRANSLATION_GROUPS
     | sophia_protocol::SOPHIA_WM_CAPABILITY_POINTER_FOCUS
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN;
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyTransferError {
     NotConnected,
@@ -683,6 +685,29 @@ impl PolicySnapshotAssembler {
             .ok_or(PolicyTransferError::ExcessiveBytes)?;
         let count = chunk.item_count as usize;
         let ordinary_chunk_count = usize::from(transfer.begin.chunk_count);
+        if chunk.record_kind == sophia_protocol::SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND {
+            if self.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS
+                == 0
+            {
+                return Err(PolicyTransferError::UnsupportedCapability);
+            }
+            let prior: usize = transfer
+                .chunks
+                .iter()
+                .filter(|c| c.record_kind == chunk.record_kind)
+                .map(|c| c.item_count as usize)
+                .sum();
+            if transfer.chunks.len() < ordinary_chunk_count
+                || transfer.chunks.len() >= POLICY_MAX_TRANSFER_CHUNKS
+                || count > SOPHIA_WM_MAX_OUTPUTS.saturating_sub(prior)
+                || chunk.data.len() != count * 24
+            {
+                return Err(PolicyTransferError::RecordCountMismatch);
+            }
+            transfer.bytes = next_bytes;
+            transfer.chunks.push(chunk);
+            return Ok(());
+        }
         if chunk.record_kind == sophia_protocol::SNAPSHOT_LAUNCH_ORIGIN_RECORD_KIND {
             if self.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN == 0
             {

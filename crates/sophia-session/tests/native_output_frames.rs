@@ -60,6 +60,7 @@ fn plan(outputs: &[u64], disabled: &[u64]) -> NativeOutputActivationPlan {
         named: disabled
             .iter()
             .map(|output| DesktopNamedOutputCandidate {
+                policy_key: None,
                 mirror_fit: None,
                 connector: format!("DP-{output}"),
                 mode: None,

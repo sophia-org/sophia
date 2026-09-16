@@ -1459,6 +1459,7 @@ fn a_cause_naming_a_withdrawn_surface_is_not_submitted() {
         generation: 1,
         active_output: output,
         outputs: vec![sophia_protocol::PolicyOutputSnapshot {
+            policy_key: None,
             output,
             generation: 1,
             focus: Some(live),

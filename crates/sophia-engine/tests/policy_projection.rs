@@ -574,6 +574,7 @@ fn scene(generation: u64, surfaces: &[PolicySurfaceSnapshot]) -> PolicySceneSnap
         active_output: output(1),
         outputs: vec![
             PolicyOutputSnapshot {
+                policy_key: None,
                 output: output(1),
                 generation: 1,
                 focus: None,
@@ -591,6 +592,7 @@ fn scene(generation: u64, surfaces: &[PolicySurfaceSnapshot]) -> PolicySceneSnap
                 },
             },
             PolicyOutputSnapshot {
+                policy_key: None,
                 output: output(2),
                 generation: 1,
                 focus: None,
@@ -951,5 +953,29 @@ fn pointer_focus_requires_a_live_focusable_target_on_its_affected_output() {
         assert_eq!(result.is_ok(), admitted);
         assert_eq!(reducer.scene(), &before);
         assert_eq!(reducer.commit_serial(), 0);
+    }
+}
+
+#[test]
+fn output_action_requires_exact_current_target_and_coverage() {
+    for (target, generation, coverage, accepted) in [
+        (output(2), 1, vec![output(1), output(2)], true),
+        (output(2), 2, vec![output(1), output(2)], false),
+        (output(2), 1, vec![output(1)], false),
+        (output(99), 1, vec![output(1), output(2)], false),
+    ] {
+        let mut reducer = PolicyProjectionReducer::new(scene(1, &[])).unwrap();
+        reducer.connect(1).unwrap();
+        let result = reducer.issue_request_with_cause(
+            coverage,
+            PolicyRequestCause::OutputAction {
+                activation_serial: 1,
+                action: WmActionId::from_raw(15),
+                output: target,
+                output_generation: generation,
+            },
+        );
+        assert_eq!(result.is_ok(), accepted);
+        assert_eq!(reducer.outstanding().is_some(), accepted);
     }
 }

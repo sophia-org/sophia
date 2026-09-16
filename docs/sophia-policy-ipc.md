@@ -550,3 +550,33 @@ launch, so concurrent unrelated surfaces cannot consume them. A child sent to a
 background origin does not switch the active output, view or keyboard focus.
 Debug admission diagnostics report context availability without application or
 process identifiers.
+
+## Explicit output actions and stable policy keys
+
+Revision 3 has two optional capabilities, `output_actions` (bit 15) and
+`output_policy_keys` (bit 16). Existing messages and ordinary snapshot records
+retain their exact layouts. A client that does not negotiate them receives
+neither the new message nor the extension.
+
+`OutputActionRequest` (kind 53) carries the target output and its current
+output generation independently of `affected_outputs`. Coverage is not focus or
+an action target: its order may change during topology reconciliation. Session
+captures the target when it admits a published shell action, revalidates it
+before dispatch, and never falls back to the active output. The Engine checks
+target generation and coverage before issuing the request; normal scene and
+transaction validation guards proposal settlement. A removed/replaced target
+withdraws that exact queued activation. A WM without the capability cannot
+admit these shell actions; ordinary keyboard `Action` requests remain supported.
+
+`SnapshotOutputPolicyKey` (extension kind 65287) binds a nonzero, operator-chosen
+key to an exact output/generation. Session resolves configured connector names
+locally and exports only the numeric key. The extension follows counted
+snapshot chunks and does not change their revision-3 counts. Keys must be
+unique; an ambiguous logical mirror is refused rather than assigned the first
+connector's identity. This key is policy affinity, not a device identity or an
+input grant. Changing established keys requires a new session; hotplug may
+change runtime handles without changing the configured keys.
+
+Hagia can assign globally numbered workspaces to these keys. Lom continues to
+render labels and return the opaque published action; it does not manufacture
+workspace numbers, select another monitor, or interpret connector names.

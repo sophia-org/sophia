@@ -62,6 +62,7 @@ static int roundtrip(const char *name, uint64_t transaction, const uint8_t *fram
     else if (strcmp(name, "snapshot_begin") == 0) ROUNDTRIP_REQUIRED(snapshot_begin);
     else if (strcmp(name, "snapshot_chunk") == 0) ROUNDTRIP_REQUIRED(snapshot_chunk);
     else if (strcmp(name, "snapshot_end") == 0) ROUNDTRIP_REQUIRED(snapshot_end);
+    else if (strcmp(name, "output_action_request") == 0) ROUNDTRIP_REQUIRED(output_action_request);
     else if (strcmp(name, "projection_request") == 0) ROUNDTRIP_REQUIRED(projection_request);
     else if (strcmp(name, "projection_begin") == 0) ROUNDTRIP_REQUIRED(projection_begin);
     else if (strcmp(name, "projection_chunk") == 0) ROUNDTRIP_REQUIRED(projection_chunk);
@@ -142,7 +143,7 @@ static int check_valid(const char *path) {
         ++checked;
     }
     fclose(input);
-    return checked == 21;
+    return checked == 22;
 }
 
 static int check_malformed(const char *path) {
@@ -223,6 +224,28 @@ static int record_roundtrip(const char *name, const uint8_t *data, size_t data_l
         encoded_len = 16;
         status = SOPHIA_WM_V1_OK;
     }
+    else if (strcmp(name, "snapshot_output_policy_key") == 0 ||
+             strcmp(name, "projection_launch_context") == 0 ||
+             strcmp(name, "snapshot_launch_origin") == 0 ||
+             strcmp(name, "projection_translation_group") == 0 ||
+             strcmp(name, "projection_translation_member") == 0) {
+        int origin = strcmp(name, "projection_launch_context") == 0 || strcmp(name, "snapshot_launch_origin") == 0;
+        int translation = strcmp(name, "projection_translation_group") == 0;
+        int member = strcmp(name, "projection_translation_member") == 0;
+        size_t expected = translation ? 32 : 24;
+        if (data_len != expected) return 0;
+        for (size_t offset = 0; offset < expected;) {
+            size_t width = (origin && offset < 8) || ((translation || member) && offset >= 16) ? 4 : 8;
+            uint64_t value = 0;
+            for (size_t i = 0; i < width; ++i) value |= (uint64_t)data[offset+i] << (8*i);
+            uint64_t wanted = origin && offset == 0 ? 3 : translation && (offset == 20 || offset == 28) ? 0 : 1;
+            if (value != wanted) return 0;
+            for (size_t i = 0; i < width; ++i) encoded[offset+i] = (uint8_t)(value >> (8*i));
+            offset += width;
+        }
+        encoded_len = expected;
+        status = SOPHIA_WM_V1_OK;
+    }
     else if (strcmp(name, "projection_tab_group") == 0 || strcmp(name, "projection_tab_member") == 0) {
         /* Two opaque u64 handles followed by fixed u32 fields. These extension
          * records are independently checked; the revision-3 counted ABI stays frozen. */
@@ -262,7 +285,7 @@ static int check_records(const char *path) {
         ++checked;
     }
     fclose(input);
-    return checked == 11;
+    return checked == 16;
 }
 
 int main(int argc, char **argv) {

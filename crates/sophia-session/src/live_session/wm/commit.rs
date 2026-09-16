@@ -80,7 +80,7 @@ impl LiveWmSession {
     ) -> Result<LiveWmOwnerCommit, Box<dyn std::error::Error>> {
         let public = self.public.as_mut().ok_or("public WM settlement lost its session")?;
         let scripted_action = public.in_flight_request.as_ref().is_some_and(|request| {
-            matches!(request.cause, sophia_protocol::PolicyRequestCause::Action { activation_serial, .. }
+            matches!(request.cause, sophia_protocol::PolicyRequestCause::Action { activation_serial, .. } | sophia_protocol::PolicyRequestCause::OutputAction { activation_serial, .. }
                 if public.control_tickets.contains_key(&activation_serial))
         });
         let layout_committed = result.update.commit.outcome == TransactionOutcome::Committed;
@@ -179,13 +179,17 @@ impl LiveWmSession {
                 expect_session_operation: settlement.expect_session_operation,
             })?;
         if let Some(request) = public.in_flight_request.as_ref()
-            && let sophia_protocol::PolicyRequestCause::Action { activation_serial, action } = request.cause
+            && let sophia_protocol::PolicyRequestCause::Action { activation_serial, action } | sophia_protocol::PolicyRequestCause::OutputAction { activation_serial, action, .. } = request.cause
         {
+            let (target_output, target_generation) = match request.cause {
+                sophia_protocol::PolicyRequestCause::OutputAction { output, output_generation, .. } => (output.raw(), output_generation),
+                _ => (0, 0),
+            };
             crate::session_println!(
-                "sophia_shell_action_policy schema=1 policy_connection_epoch={} activation_serial={} action={} transaction={} request_id={} indicator_generation={} outcome={:?}",
+                "sophia_shell_action_policy schema=1 policy_connection_epoch={} activation_serial={} action={} transaction={} request_id={} indicator_generation={} outcome={:?} target_output={} target_generation={}",
                 public.connection_epoch, activation_serial, action.raw(),
                 settlement.transaction.raw(), settlement.request_id,
-                public.reducer.indicator_publication().generation, outcome,
+                public.reducer.indicator_publication().generation, outcome, target_output, target_generation,
             );
         }
         public.settle_public_projection(outcome);

@@ -818,3 +818,56 @@ claims. [Content shells](../../content-shell.md), the
 [successor GPU decision](../decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
 own the contracts. [Sophia tasks](../../../todo.md) and
 [Lom tasks](https://github.com/sophia-org/lom/blob/master/todo.md) own status.
+
+## 2026-09-16: output-targeted actions and globally numbered workspaces
+
+The `20260916T102653Z` attended capture remains immutable. It contains twelve
+issued/acknowledged/admitted actions split across both logical outputs and no
+shell transport failure. Operator evidence reports DP-2 clicks changing DP-1,
+DP-2 staying on workspace 1 and flashing. Source inspection found the output
+was validated at shell admission but discarded into a legacy WM Action;
+Hagia then executed against the active output. Affected-output ordering is
+coverage and cannot repair that loss.
+
+The repair adds capability-gated explicit output/generation action requests,
+plus capability-gated opaque configured output keys. Hagia owns assignments:
+DP-1 key 1 → numbers 1–3; DP-2 key 2 → numbers 4–6. Keyboard numbers select the
+current owning output in one policy proposal. Bar actions retain their exact
+output, independent of coverage order. Both protocol additions preserve old r3
+layouts; unnegotiated clients receive neither extension. Lom's existing generic
+label/action path requires no monitor-specific logic.
+
+Checkpoint schema 18 retains keys and preferred ownership across changed runtime
+handles and restart. Existing fallback migration retains global numbers on
+unplug; reconnect restores preferred views. Initial legacy migration preserves
+view/window identity and refuses ambiguous membership. Established assignment
+or Session key changes are refused rather than silently renumbering live state.
+Configuration, including all Super bindings, stays in the selected WM profile.
+The gate now builds exact signed Hagia source and records its commit/hash.
+
+Validation: the affected Rust run passed 1,568 tests (14 ignored); the explicit
+real-Hagia socket control passed separately, as did the connector/key mapping
+control. Strict affected Clippy and layout passed. Rust/C/Nim wire controls,
+177 Hagia model controls, 108 other Hagia controls and 29 launcher/workload
+controls passed. A compiled first-output retargeting mutant fails the real-Hagia
+control; restored source passes. Final canonical results are recorded against
+the exact signed commit, separately from these scoped runs. These checks do not
+establish physical connector
+mapping, eliminate the reported DP-2 flashing, or close the 40-action workload.
+No VT, hardware, install or live reload is part of this implementation slice.
+The next attended run must separately verify two disjoint number sets, exact
+clicked-output changes, global Super+number selection, steady per-output
+indicators, no flashing, and clean resource retirement.
+
+The prepared next-run profile is `~/.config/hagia/lom-workspaces.kdl`, copied
+from the selected WM profile with only six assignments and two keys added.
+`~/.local/bin/lom-test` selects it by default while respecting an explicit
+`SOPHIA_DESKTOP_PROFILE`. Original desktop profiles were not rewritten and no
+live reload occurred. The exact profile source/hash and launcher backup are
+retained under `.artifacts/workspace-repair/`.
+
+Regeneration exposed a stale WM-generator shell-schema check (revision 4 versus
+the existing revision 6) and C corpus coverage missing existing extension rows.
+The generator now validates the full existing r6 message set; the independent
+C codec covers all sixteen current record rows, including the new policy key.
+No archived revision-3 bytes or archive digests were changed.

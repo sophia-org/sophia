@@ -308,6 +308,7 @@ fn scene() -> PolicySceneSnapshot {
         generation: 1,
         active_output: output,
         outputs: vec![PolicyOutputSnapshot {
+            policy_key: None,
             output,
             generation: 1,
             focus: Some(SurfaceId::new(3, 1)),

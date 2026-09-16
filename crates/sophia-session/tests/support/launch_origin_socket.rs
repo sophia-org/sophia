@@ -366,6 +366,7 @@ impl PolicyFixture {
             active_output: OutputId::from_raw(1),
             outputs: vec![
                 PolicyOutputSnapshot {
+                    policy_key: None,
                     output: OutputId::from_raw(1),
                     generation: 1,
                     focus: Some(parent),
@@ -373,6 +374,7 @@ impl PolicyFixture {
                     work_area: bounds,
                 },
                 PolicyOutputSnapshot {
+                    policy_key: None,
                     output: OutputId::from_raw(2),
                     generation: 1,
                     focus: None,

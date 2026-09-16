@@ -169,6 +169,7 @@ impl PartialFixture {
             active_output: LEFT,
             outputs: vec![
                 PolicyOutputSnapshot {
+                    policy_key: None,
                     output: LEFT,
                     generation: 1,
                     focus: Some(SurfaceId::new(11, 1)),
@@ -176,6 +177,7 @@ impl PartialFixture {
                     work_area: left_bounds(),
                 },
                 PolicyOutputSnapshot {
+                    policy_key: None,
                     output: RIGHT,
                     generation: 1,
                     focus: Some(SurfaceId::new(21, 1)),

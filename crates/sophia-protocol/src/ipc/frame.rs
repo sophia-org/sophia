@@ -70,6 +70,7 @@ pub fn decode_frame(frame: &[u8]) -> Result<(IpcFrameHeader, &[u8]), IpcCodecErr
         50 => IpcMessageKind::WmV1ProfileActive,
         51 => IpcMessageKind::WmV1ProfileRollback,
         52 => IpcMessageKind::WmV1ProfileRolledBack,
+        53 => IpcMessageKind::WmV1OutputActionRequest,
         64 => IpcMessageKind::OutputV1ClientHello,
         65 => IpcMessageKind::OutputV1ServerWelcome,
         66 => IpcMessageKind::OutputV1Snapshot,

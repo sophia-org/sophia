@@ -26,6 +26,8 @@ pub struct PolicyOutputSnapshot {
     pub focus: Option<SurfaceId>,
     pub bounds: Rect,
     pub work_area: Rect,
+    /// Operator-configured affinity, scoped to the committed output profile.
+    pub policy_key: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -167,6 +169,13 @@ pub enum PolicyRequestCause {
     Action {
         activation_serial: u64,
         action: WmActionId,
+    },
+    /// An explicitly targeted action; coverage order carries no authority.
+    OutputAction {
+        activation_serial: u64,
+        action: WmActionId,
+        output: OutputId,
+        output_generation: u64,
     },
     Focus {
         target: SurfaceId,

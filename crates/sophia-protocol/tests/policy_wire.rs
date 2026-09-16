@@ -180,6 +180,16 @@ fn generated_rust_record_codec_matches_every_golden_record() {
                 )
                 .unwrap()
             }
+            "snapshot_output_policy_key" => {
+                assert_eq!(data.len(), 24);
+                let mut encoded = Vec::new();
+                for field in data.chunks_exact(8) {
+                    let value = u64::from_le_bytes(field.try_into().unwrap());
+                    assert_eq!(value, 1);
+                    encoded.extend(value.to_le_bytes());
+                }
+                encoded
+            }
             other => panic!("unknown record `{other}`"),
         };
         assert_eq!(encoded, data, "golden mismatch for {name}");
@@ -261,6 +271,11 @@ fn roundtrip(name: &str, transaction: u64, frame: &[u8]) -> Vec<u8> {
             let (actual, message) = decode_wm_v1_snapshot_end_frame(frame).unwrap();
             assert_eq!(actual, expected_transaction);
             encode_wm_v1_snapshot_end_frame(actual, &message).unwrap()
+        }
+        "output_action_request" => {
+            let (actual, message) = decode_wm_v1_output_action_request_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_output_action_request_frame(actual, &message).unwrap()
         }
         "projection_request" => {
             let (actual, message) = decode_wm_v1_projection_request_frame(frame).unwrap();

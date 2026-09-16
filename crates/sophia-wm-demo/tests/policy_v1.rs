@@ -71,6 +71,7 @@ fn reference_policy_adopts_unassigned_surfaces_on_the_active_affected_output() {
         generation: 4,
         active_output: output,
         outputs: vec![PolicyOutputSnapshot {
+            policy_key: None,
             output,
             generation: 1,
             focus: Some(SurfaceId::new(1, 1)),
@@ -121,6 +122,7 @@ fn mixed_output_start_barrier_uses_the_committed_proposal_without_an_echo_cycle(
         generation: 4,
         active_output: output,
         outputs: vec![PolicyOutputSnapshot {
+            policy_key: None,
             output,
             generation: 1,
             focus: None,
@@ -171,6 +173,7 @@ fn reference_policy_never_duplicates_unassigned_surfaces_across_outputs() {
         active_output: right,
         outputs: vec![
             PolicyOutputSnapshot {
+                policy_key: None,
                 output: left,
                 generation: 1,
                 focus: None,
@@ -188,6 +191,7 @@ fn reference_policy_never_duplicates_unassigned_surfaces_across_outputs() {
                 },
             },
             PolicyOutputSnapshot {
+                policy_key: None,
                 output: right,
                 generation: 1,
                 focus: None,
@@ -240,6 +244,7 @@ fn mixed_proof_partitions_surfaces_by_logical_geometry_without_head_identity() {
         active_output: left,
         outputs: vec![
             PolicyOutputSnapshot {
+                policy_key: None,
                 output: right,
                 generation: 1,
                 focus: None,
@@ -257,6 +262,7 @@ fn mixed_proof_partitions_surfaces_by_logical_geometry_without_head_identity() {
                 },
             },
             PolicyOutputSnapshot {
+                policy_key: None,
                 output: left,
                 generation: 1,
                 focus: Some(SurfaceId::new(1, 1)),

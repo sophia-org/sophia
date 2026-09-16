@@ -80,6 +80,7 @@ fn hagia_pointer_focus_real_socket_commits_rejects_and_retries() {
         let mut bounds = initial.outputs[0].bounds;
         bounds.x = bounds.width;
         initial.outputs.push(PolicyOutputSnapshot {
+            policy_key: None,
             output: right,
             generation: 1,
             focus: None,

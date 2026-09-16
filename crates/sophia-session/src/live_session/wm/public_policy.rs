@@ -17,6 +17,9 @@ fn policy_cause_subject_is_live(
 ) -> bool {
     let live = |target| scene.surfaces.iter().any(|surface| surface.surface == target);
     match cause {
+        sophia_protocol::PolicyRequestCause::OutputAction { output, output_generation, .. } => {
+            scene.outputs.iter().any(|o| o.output == output && o.generation == output_generation)
+        }
         sophia_protocol::PolicyRequestCause::PointerFocus { output, target } => {
             scene.outputs.iter().any(|o| o.output == output) && target.is_none_or(|t|
                 scene.surfaces.iter().any(|s| s.surface == t && s.current_output == Some(output) && s.capabilities.focusable))
@@ -233,6 +236,7 @@ struct LivePublicPolicyState {
     outputs: Vec<sophia_engine::HeadlessOutput>,
     output_bounds: BTreeMap<sophia_protocol::OutputId, Rect>,
     output_generations: BTreeMap<sophia_protocol::OutputId, u64>,
+    output_policy_keys: BTreeMap<String, u64>,
     live_output_ids: BTreeSet<sophia_protocol::OutputId>,
     work_areas: BTreeMap<sophia_protocol::OutputId, Rect>,
     session_operations: Vec<sophia_protocol::PolicySessionOperation>,
@@ -1377,6 +1381,7 @@ impl LivePublicPolicyState {
             outputs: bounds
                 .into_iter()
                 .map(|(output, bounds)| sophia_protocol::PolicyOutputSnapshot {
+                    policy_key: None,
                     output,
                     generation: 1,
                     focus: None,
@@ -1472,7 +1477,7 @@ impl LivePublicPolicyState {
         self.in_flight_origin_surfaces.clear();
 
         if let Some(sophia_protocol::PolicyProjectionRequest {
-            cause: sophia_protocol::PolicyRequestCause::Action { activation_serial, .. }, ..
+            cause: sophia_protocol::PolicyRequestCause::Action { activation_serial, .. } | sophia_protocol::PolicyRequestCause::OutputAction { activation_serial, .. }, ..
         }) = self.in_flight_request.as_ref()
             && let Some(ticket) = self.control_tickets.remove(activation_serial)
         {
@@ -1609,6 +1614,7 @@ impl LivePublicPolicyState {
                     .copied()
                     .ok_or("public WM snapshot lost logical output bounds")?;
                 Ok(sophia_protocol::PolicyOutputSnapshot {
+                    policy_key: resolve_output_policy_key(output, &self.output_policy_keys, &self.output_capabilities)?,
                     output,
                     generation: self.output_generations.get(&output).copied().unwrap_or(1),
                     focus: public_policy_snapshot_focus(
@@ -2228,6 +2234,7 @@ impl LiveWmSession {
             outputs: outputs.to_vec(),
             output_bounds,
             output_generations,
+            output_policy_keys: configured_output_policy_keys(config.output_profile.current()),
             live_output_ids,
             work_areas,
             session_operations,
@@ -2556,7 +2563,7 @@ impl LiveWmSession {
                 let Some(cause) = public.queue.pop_front() else {
                     break None;
                 };
-                if let sophia_protocol::PolicyRequestCause::Action { activation_serial, .. } = cause.cause
+                if let sophia_protocol::PolicyRequestCause::Action { activation_serial, .. } | sophia_protocol::PolicyRequestCause::OutputAction { activation_serial, .. } = cause.cause
                     && let Some(ticket) = public.control_tickets.get(&activation_serial)
                 {
                     if ticket.cancelled() || ticket.generation != public.control_generation {
@@ -2571,6 +2578,9 @@ impl LiveWmSession {
                 }
                 if policy_cause_subject_is_live(cause.cause, &scene) {
                     break Some(cause);
+                }
+                if let sophia_protocol::PolicyRequestCause::OutputAction { activation_serial, action, output, output_generation } = cause.cause {
+                    crate::session_println!("sophia_shell_action_target schema=1 status=withdrawn policy_connection_epoch={} activation_serial={} action={} target_output={} target_generation={} reason=output_replaced", public.connection_epoch, activation_serial, action.raw(), output.raw(), output_generation);
                 }
                 dropped = dropped.saturating_add(1);
             };

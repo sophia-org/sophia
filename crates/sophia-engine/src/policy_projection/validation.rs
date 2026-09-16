@@ -234,6 +234,18 @@ pub(super) fn validate_request_cause(
             activation_serial,
             action,
         } if activation_serial != 0 && action.is_valid() => Ok(()),
+        PolicyRequestCause::OutputAction {
+            activation_serial,
+            action,
+            output,
+            output_generation,
+        } if activation_serial != 0
+            && action.is_valid()
+            && output.is_valid()
+            && output_generation != 0 =>
+        {
+            Ok(())
+        }
         PolicyRequestCause::Focus { target } if live(target) => Ok(()),
         PolicyRequestCause::PointerFocus { output, target }
             if output.raw() != 0

@@ -14,6 +14,8 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
     capability "translation_groups" bit=12
     capability "pointer_focus" bit=13
     capability "launch_origin" bit=14
+    capability "output_actions" bit=15
+    capability "output_policy_keys" bit=16
 
     outcome "committed" value=1
     outcome "rejected_stale" value=2
@@ -137,6 +139,13 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
         field "surface_generation" type="u32" sample=1
         field "epoch" type="u64" sample=1
         field "token" type="u64" sample=1
+    }
+
+    // Operator-configured, opaque affinity; never a connector name or hardware ID.
+    extension-record "SnapshotOutputPolicyKey" transfer="snapshot" kind=65287 gate="output_policy_keys" max=16 {
+        field "output" type="u64" sample=1
+        field "generation" type="u64" sample=1
+        field "policy_key" type="u64" sample=1
     }
 
     // Tab chrome is committed with affected-output placement; extension chunks
@@ -345,5 +354,20 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
         field "profile_digest" type="u8" count=32 sample="00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
         field "outcome" type="u16" sample=1
         field "reserved" type="u16" reserved=#true sample=0
+    }
+    // Requires output_actions. Coverage is not the action target. Existing
+    // ProjectionRequest bytes and legacy Action semantics stay frozen.
+    message "OutputActionRequest" kind=53 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "request_id" type="u64" sample=17
+        field "scene_generation" type="u64" sample=41
+        field "policy_generation" type="u64" sample=3
+        field "activation_serial" type="u64" sample=23
+        field "action" type="u64" sample=5
+        field "output" type="u64" sample=2
+        field "output_generation" type="u64" sample=1
+        field "affected_output_count" type="u16" sample=2
+        field "reserved" type="u16" reserved=#true sample=0
+        field "affected_outputs" type="bytes" max=128 sample="01000000000000000200000000000000"
     }
 }

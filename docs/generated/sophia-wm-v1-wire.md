@@ -26,6 +26,7 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | `ProfileActive` | 50 | policy-to-session | must be nonzero | 52 |
 | `ProfileRollback` | 51 | session-to-policy | must be nonzero | 48 |
 | `ProfileRolledBack` | 52 | policy-to-session | must be nonzero | 52 |
+| `OutputActionRequest` | 53 | session-to-policy | must be nonzero | ..196 |
 
 ## `ClientHello`
 
@@ -255,6 +256,22 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 48 | `outcome` | `u16` | little-endian |
 | 50 | `reserved` | `u16` | must be zero |
 
+## `OutputActionRequest`
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `connection_epoch` | `u64` | little-endian |
+| 8 | `request_id` | `u64` | little-endian |
+| 16 | `scene_generation` | `u64` | little-endian |
+| 24 | `policy_generation` | `u64` | little-endian |
+| 32 | `activation_serial` | `u64` | little-endian |
+| 40 | `action` | `u64` | little-endian |
+| 48 | `output` | `u64` | little-endian |
+| 56 | `output_generation` | `u64` | little-endian |
+| 64 | `affected_output_count` | `u16` | little-endian |
+| 66 | `reserved` | `u16` | must be zero |
+| 68 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
+
 # Transfer Records
 
 ## `SnapshotOutput` record
@@ -419,6 +436,16 @@ Transfer: `snapshot`; record kind: 0xFF06; gated on capability `launch_origin`; 
 | 4 | `surface_generation` | `u32` | little-endian |
 | 8 | `epoch` | `u64` | little-endian |
 | 16 | `token` | `u64` | little-endian |
+
+## `SnapshotOutputPolicyKey` extension record
+
+Transfer: `snapshot`; record kind: 0xFF07; gated on capability `output_policy_keys`; maximum records: 16; fixed size: 24 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `output` | `u64` | little-endian |
+| 8 | `generation` | `u64` | little-endian |
+| 16 | `policy_key` | `u64` | little-endian |
 
 ## `ProjectionTabGroup` extension record
 
