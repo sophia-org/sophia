@@ -7,6 +7,8 @@ tags: [plan, shell, gpu, lom, daily-driver]
 ---
 # Lom and Sophia portable GPU shell critical path
 
+📌 [Pinned retrospective: prove the shell lifecycle before spending operator time](../concepts/t972gtpa-prove-the-shell-lifecycle-before-spending-operator-time.md).
+
 ## Scope and exit
 
 Deliver one protected Lom shell with workspace/active-output indicators, clock,

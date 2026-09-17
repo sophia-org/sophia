@@ -5,6 +5,10 @@ linked Markdown files. Use `zk` to create, find, and connect them. Start with
 the question you are working on; read its evidence and related decisions before
 opening a new note.
 
+## Pinned observations
+
+- 📌 [Prove the shell lifecycle before spending operator time](concepts/t972gtpa-prove-the-shell-lifecycle-before-spending-operator-time.md) — lessons from bringing up Lom, repeated live tests, and incomplete integration evidence. Find pinned notes with `zk list docs/notes --tag pinned`.
+
 ## Find your way
 
 - [Investigations and concepts](indexes/current.md) connects the first maintained notes.
