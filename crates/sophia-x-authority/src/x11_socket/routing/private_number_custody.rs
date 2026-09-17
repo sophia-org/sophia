@@ -280,11 +280,16 @@ impl PrivateNumberRight {
     /// resolves that state; it is a fact about this connection that the
     /// namespace has to keep.
     ///
-    /// THE OCCUPANT CHECK HERE IS REACHED, not defensive. The two acquisitions
-    /// are separate by design -- the effects run between them with no lock
-    /// held -- so a body that began while its claim was current can return
-    /// after that claim is gone and another connection has taken the number.
-    /// Releasing then would free a claim this right never made.
+    /// THE OCCUPANT CHECK HERE IS EXERCISED AT ITS OWN SEAM, WITH THAT SCOPE.
+    /// On the production call graph nothing reaches this with a foreign
+    /// occupant: a visit opens only from `Held` under its own identity, and
+    /// the only removal during a visit is that visit's own return, so no
+    /// second body can be inside when a successor's claim goes in. The two
+    /// acquisitions being separate is therefore not, by itself, a release
+    /// route. What the check is for is a right that reports again after its
+    /// visit has returned and the number has been reissued -- which the
+    /// control that retains an old right and makes it report late arranges
+    /// directly. Releasing then would free a claim this right never made.
     fn finish(&self, established: bool) {
         let Ok(mut held) = self.occupancy.held.lock() else {
             return;

@@ -301,31 +301,44 @@ impl PrivateCleanupRecord {
 
     /// Everything one connection's destruction owes, run once, synchronously.
     ///
-    /// UNCHANGED IN CONTENT AND ORDER. This is the body that was the
-    /// registration's `Drop`, moved to where the responsibility now lives. The
-    /// fence is still taken before the queue is moved, and the writers are
-    /// still told before the query state is removed.
+    /// STILL SYNCHRONOUS, STILL TRIGGERED ONLY BY THE REGISTRATION'S `Drop`.
+    /// The body lives here, beside the responsibility its keeper holds, and
+    /// runs in the same order it always did: the retained continuation is
+    /// fenced first, the writers are told before the query state is removed.
+    /// Nothing is moved: the accepted queue stays in the shared home its
+    /// publication reserved, and this fences it there.
     ///
-    /// IT IS NOT A PROMISE THAT EVERYTHING FINISHED. The ignored errors below
-    /// are the same ignored errors: a lock that could not be taken leaves work
-    /// nobody did, and nothing here records that it was done. There is no
-    /// phase called Complete, because a function returning is not a settlement.
+    /// IT IS NOT A PROMISE THAT EVERYTHING FINISHED, and it no longer
+    /// pretends otherwise by silence. Every effect below reports whether it
+    /// was performed, and the number's claim is given back only if all of
+    /// them were; an effect that could not run leaves the number
+    /// `Unestablished`, which nothing here resolves. There is still no phase
+    /// called Complete: a function returning is not a settlement, and the
+    /// claim going back says only that the namespace may reissue the number.
     ///
-    /// AND IT IS NOT YET SAFE TO RUN LATER -- A DEPENDENCY, RECORDED HERE
-    /// BECAUSE THE NEW TYPE DOES NOT SOLVE IT. Most of the removals below are
-    /// BY CLIENT NUMBER: rows, surfaces, focus, parents, subscriptions,
-    /// pending presentations and frozen input all say "whatever is under this
-    /// id". Capturing an exact identity when the record was made does not make
-    /// those safe to execute afterwards, because a number is reissued and the
-    /// connection holding it then is somebody else.
+    /// DEFERRED EXECUTION IS NOT AUTHORISED BY ANY OF THIS. The interval the
+    /// number claim protects is this synchronous body; when cleanup runs is a
+    /// later boundary's question, not one this record answers.
     ///
-    /// WHAT A LATER EXECUTION BOUNDARY MUST ESTABLISH is exact-occupant
-    /// exclusion for these effects, covering the interval between deciding
-    /// and acting. Checking a maintenance identity and then calling
-    /// `remove(client)` would not do it: the check and the removal are two
-    /// moments, and the reissue can happen between them. Nothing in this slice
-    /// defers anything, and this is written down so the next one cannot
-    /// mistake the record for the repair.
+    /// WHAT MAKES THE BY-NUMBER EFFECTS BELOW SAFE, AND HOW FAR. Rows,
+    /// surfaces, focus, parents, subscriptions, pending presentations and
+    /// frozen input all say "whatever is under this id", and a number is
+    /// reissued. They are safe here because the number's claim -- taken at
+    /// publication, held by this record -- is opened into a visit before the
+    /// first of them and given back only after the last, and only if all of
+    /// them were performed. A successor cannot publish inside that interval,
+    /// so "whatever is under this id" is this connection. That is the exact-
+    /// occupant exclusion an earlier version of this comment said a later
+    /// boundary would have to establish; it is established, for this
+    /// synchronous body, by `PrivateNumberRight` and the standing it keeps.
+    ///
+    /// The effects that act LATER than they are decided -- a send that finds
+    /// its endpoint gone, a queue that stopped draining, a stalled watcher --
+    /// are not covered by this interval and do not rely on it: each carries
+    /// the identity it captured and compares it under the acquisition it acts
+    /// under. Where an effect cannot carry identity (the input authority keys
+    /// grabs by number alone), it runs under the ledger acquisition that
+    /// established whose entry it is.
     fn run_synchronous_cleanup(&self) {
         // A CONNECTION THAT ENDS IS CLOSED TO HANDOVERS, and its queue goes to
         // the place reserved for it.

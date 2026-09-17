@@ -182,8 +182,9 @@ impl InputRecovery {
             .lock()
             .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
         let disconnected = self.disconnect_locked(&mut state, client, outcome, rejected);
+        let finished = self.finish_disconnect_under(&state, client, disconnected);
         drop(state);
-        self.finish_disconnect(client, disconnected)
+        finished
     }
 
     /// Disconnect this number only if its entry is still `occupant`'s.
@@ -218,12 +219,39 @@ impl InputRecovery {
             return Ok(false);
         }
         let disconnected = self.disconnect_locked(&mut state, client, outcome, rejected);
+        // THE LEGACY AUTHORITY CLEANUP IS PART OF THE SAME ACT, and runs under
+        // the same acquisition. Releasing the ledger first and cleaning the
+        // authority afterwards left an interval in which a successor could
+        // publish and install its own grab under this number, which the
+        // by-number cleanup then erased. The identity check above protects
+        // only what happens while the ledger is held.
+        let finished = self.finish_disconnect_under(&state, client, disconnected);
         drop(state);
-        self.finish_disconnect(client, disconnected).map(|()| true)
+        finished.map(|()| true)
     }
 
-    fn finish_disconnect(
+    /// The rest of a disconnect, under the ledger acquisition that decided it.
+    ///
+    /// THE AUTHORITY KEYS ITS GRABS BY NUMBER AND NOTHING ELSE. A grab carries
+    /// `owner: u64`, so no identity can travel into `cleanup_owner`; what
+    /// makes the cleanup reach only the connection that was disconnected is
+    /// that the ledger -- whose entry named that connection, and which every
+    /// publication must take to replace it -- is still held while the
+    /// authority is cleaned. A successor cannot publish inside this act.
+    ///
+    /// LOCK ORDER: the recovery ledger, then the input authority. Audited
+    /// across the crate: no path takes the ledger while holding the authority
+    /// (`recover` released the ledger before the authority and now keeps the
+    /// same order as this; the dispatcher's teardown holds pointer state then
+    /// the authority and reads only a `OnceLock` of this ledger; the lifecycle
+    /// boundary's closures do not touch the ledger). The `_ledger` parameter
+    /// exists so that this cannot be called without a ledger guard in hand.
+    ///
+    /// The private lifecycle branch is unchanged: the gate was closed under
+    /// the ledger, and origin drive performs that path's cleanup.
+    fn finish_disconnect_under(
         &self,
+        _ledger: &InputRecoveryState,
         client: XServerFrontendClientId,
         disconnected: Result<(), XServerFrontendRouteError>,
     ) -> Result<(), XServerFrontendRouteError> {

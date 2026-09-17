@@ -735,13 +735,18 @@ impl InputRecovery {
                     .is_none_or(|entry| entry.terminal.is_some())
             })
             .collect();
-        drop(state);
         if let Some(owner) = self.lifecycle.get() {
+            drop(state);
             owner
                 .drive(NonZeroUsize::new(1).unwrap())
                 .map_err(|_| XServerFrontendRouteError::LifecycleUnavailable)?;
             return Ok(expired);
         }
+        // UNDER THE LEDGER, FOR THE SAME REASON AS AN EXACT DISCONNECT. These
+        // connections were revoked under this acquisition; releasing it before
+        // cleaning their authority would let a successor publish under one of
+        // these numbers and have its own grab erased by number. Same lock
+        // order as finish_disconnect_under: ledger, then authority.
         let mut authority = self
             .authority
             .lock()
@@ -749,6 +754,8 @@ impl InputRecovery {
         for client in revoked {
             authority.cleanup_owner(client.raw());
         }
+        drop(authority);
+        drop(state);
         Ok(expired)
     }
 }

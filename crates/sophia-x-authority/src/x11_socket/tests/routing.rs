@@ -40119,3 +40119,358 @@ fn a_stale_rights_late_report_does_not_free_the_successors_open_visit() {
     );
     drop((old_record, private, keeper, durable));
 }
+
+/// A keyboard grab for a public-broker control, in the shape the dispatcher
+/// installs one: synchronous keyboard mode, so the namespace's keyboard is
+/// frozen and a routed key press is deferred rather than delivered.
+fn public_keyboard_grab(client: XServerFrontendClientId) -> crate::XActiveInputGrab {
+    crate::XActiveInputGrab {
+        owner: client.raw(),
+        window: XResourceId::new(0x9200, 1),
+        owner_events: false,
+        pointer_mode: 1,
+        keyboard_mode: 0,
+        event_mask: 0,
+        xi_event_mask: [0; 8],
+        xi_event_mask_words: 0,
+        route_lease: None,
+    }
+}
+
+#[test]
+fn a_current_public_recipients_exact_disconnect_cleans_its_own_authority() {
+    // THE POSITIVE HALF: on the public path -- no private lifecycle -- an
+    // exact disconnect of the connection that holds the number really does
+    // clean that connection's authority. A repair that protected a successor
+    // by never cleaning anybody would pass the negative half and fail here.
+    let namespace = NamespaceId::from_raw(9201);
+    let client = XServerFrontendClientId(9201);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let registry = &broker.registry;
+    assert!(registry.input_recovery.lifecycle.get().is_none(), "the public path");
+    let (registration, channels) = registry.register_client(client).expect("a row");
+    registry
+        .input_authority
+        .lock()
+        .expect("a readable authority")
+        .grab_keyboard(namespace, public_keyboard_grab(client))
+        .expect("its own keyboard grab");
+    let own = Arc::clone(
+        &registry
+            .client_senders(client)
+            .expect("its own senders")
+            .connection_state,
+    );
+
+    let exact = registry.input_recovery.disconnect_exact(
+        client,
+        &own,
+        XAuthorityInputDeliveryOutcome::ClientDisconnected,
+        None,
+    );
+    assert!(matches!(exact, Ok(true)), "{exact:?}");
+    assert!(
+        registry
+            .input_authority
+            .lock()
+            .expect("a readable authority")
+            .keyboard_grab(namespace)
+            .is_none(),
+        "the current recipient's own grab is gone"
+    );
+    drop((channels, registration, broker));
+}
+
+#[test]
+fn a_stale_exact_disconnect_leaves_a_public_successors_authority_alone() {
+    // THE NEGATIVE HALF, AT THE ACT. The predecessor's identity, acting after
+    // its successor published and installed a grab under the same number,
+    // must find the entry is not its own and clean nothing -- and the
+    // successor's own identity, acting afterwards, must clean exactly that.
+    let namespace = NamespaceId::from_raw(9202);
+    let client = XServerFrontendClientId(9202);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let registry = &broker.registry;
+    let (registration, channels) = registry.register_client(client).expect("a row");
+    let old = Arc::clone(
+        &registry
+            .client_senders(client)
+            .expect("its own senders")
+            .connection_state,
+    );
+    drop(channels);
+    drop(registration);
+    assert_eq!(registry.occupancy.state_of(client), None);
+
+    let (successor, successor_channels) = registry.register_client(client).expect("free");
+    registry
+        .input_authority
+        .lock()
+        .expect("a readable authority")
+        .grab_keyboard(namespace, public_keyboard_grab(client))
+        .expect("the successor's own keyboard grab");
+    let stale = registry.input_recovery.disconnect_exact(
+        client,
+        &old,
+        XAuthorityInputDeliveryOutcome::ClientDisconnected,
+        None,
+    );
+    assert!(matches!(stale, Ok(false)), "{stale:?}");
+    assert!(
+        registry
+            .input_authority
+            .lock()
+            .expect("a readable authority")
+            .keyboard_grab(namespace)
+            .is_some(),
+        "the successor's grab is untouched by its predecessor's late disconnect"
+    );
+    let own = Arc::clone(
+        &registry
+            .client_senders(client)
+            .expect("the successor's senders")
+            .connection_state,
+    );
+    let exact = registry.input_recovery.disconnect_exact(
+        client,
+        &own,
+        XAuthorityInputDeliveryOutcome::ClientDisconnected,
+        None,
+    );
+    assert!(matches!(exact, Ok(true)), "{exact:?}");
+    assert!(
+        registry
+            .input_authority
+            .lock()
+            .expect("a readable authority")
+            .keyboard_grab(namespace)
+            .is_none(),
+        "and its own exact disconnect cleans its own grab"
+    );
+    drop((successor_channels, successor, broker));
+}
+
+#[test]
+fn no_successor_can_publish_inside_a_public_exact_disconnect() {
+    // THE INTERVAL ITSELF, WITHOUT A HOOK. The act's later effect is the
+    // authority cleanup, which needs the authority lock; this control holds
+    // that lock, so an exact disconnect is stopped exactly at that effect.
+    // What is then observed is whether the ledger is still held there. If it
+    // is, no publication can replace the entry inside the act -- shown by a
+    // successor's registration not completing while the act is stopped. If it
+    // is not (the repaired-away behaviour), the successor publishes and
+    // installs its grab through this control's own guard, and the act's
+    // resumed cleanup erases it.
+    //
+    // OBSERVED INTO LOCALS, COMPARED AFTER EVERY LOCK IS RELEASED AND EVERY
+    // THREAD COLLECTED. Nothing here waits unboundedly on the act.
+    let namespace = NamespaceId::from_raw(9203);
+    let client = XServerFrontendClientId(9203);
+    let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let registry = broker.registry.clone();
+    let (registration, channels) = registry.register_client(client).expect("a row");
+    let own = Arc::clone(
+        &registry
+            .client_senders(client)
+            .expect("its own senders")
+            .connection_state,
+    );
+    // The row goes first through an ordinary disconnected send, so the
+    // successor's publication below is refused by nothing but the ledger.
+    drop(channels);
+    let sent = registry.route_control(XAuthorityClientControlCommand {
+        client,
+        command: XAuthorityControlCommand::FocusSurface {
+            transaction: TransactionId::from_raw(92030),
+            surface: SurfaceId::new(9203, 1),
+        },
+    });
+    assert!(sent.is_err(), "{sent:?}");
+    // And the predecessor's cleanup releases the number, but NOT its ledger
+    // entry: the stale exact disconnect below is the delayed act that still
+    // names the entry its identity was published for.
+    let record_still_named = {
+        let ledger = registry.input_recovery.state.lock().expect("a readable ledger");
+        ledger
+            .connections
+            .get(&client)
+            .is_some_and(|entry| entry.belongs_to(&own))
+    };
+    assert!(record_still_named, "the entry is still the predecessor's until somebody replaces it");
+
+    let (ledger_held_at_the_effect, successor_published_inside, grab_after, act) =
+        std::thread::scope(|scope| {
+            let authority = registry
+                .input_authority
+                .lock()
+                .expect("a readable authority");
+            let acting = registry.clone();
+            let act = scope.spawn(move || {
+                acting.input_recovery.disconnect_exact(
+                    client,
+                    &own,
+                    XAuthorityInputDeliveryOutcome::ClientDisconnected,
+                    None,
+                )
+            });
+            // The act reaches the authority effect and stops there. Whether it
+            // still holds the ledger at that point is the fact under test.
+            let ledger_held_at_the_effect = waited_for(|| {
+                registry.input_recovery.state.try_lock().is_err()
+            });
+            // A successor tries to publish while the act is stopped.
+            let publishing = registry.clone();
+            let (published, publication) = channel();
+            let successor = scope.spawn(move || {
+                let attempt = publishing.register_client(client);
+                let _ = published.send(attempt.is_ok());
+                attempt
+            });
+            let successor_published_inside = publication
+                .recv_timeout(std::time::Duration::from_millis(500))
+                .unwrap_or(false);
+            if successor_published_inside {
+                // Through this control's own guard, as the dispatcher would
+                // through its own.
+                let mut authority = authority;
+                authority
+                    .grab_keyboard(namespace, public_keyboard_grab(client))
+                    .expect("the successor's keyboard grab");
+                drop(authority);
+            } else {
+                drop(authority);
+            }
+            let act = act.join().expect("the act returned");
+            let successor = successor.join().expect("the publication returned");
+            if !successor_published_inside {
+                // Published after the act, as it should be; give it its grab
+                // now so the comparison below asks the same question.
+                registry
+                    .input_authority
+                    .lock()
+                    .expect("a readable authority")
+                    .grab_keyboard(namespace, public_keyboard_grab(client))
+                    .expect("the successor's keyboard grab");
+            }
+            let grab_after = registry
+                .input_authority
+                .lock()
+                .expect("a readable authority")
+                .keyboard_grab(namespace)
+                .is_some();
+            drop(successor);
+            (ledger_held_at_the_effect, successor_published_inside, grab_after, act)
+        });
+
+    assert!(matches!(act, Ok(true)), "the predecessor's own disconnect: {act:?}");
+    assert!(
+        ledger_held_at_the_effect,
+        "the ledger is held through the authority effect, so identity covers the whole act"
+    );
+    assert!(
+        !successor_published_inside,
+        "no successor can publish inside a public exact disconnect"
+    );
+    assert!(
+        grab_after,
+        "and the successor's grab, installed after the act, is its own"
+    );
+    drop((registration, broker));
+}
+
+#[test]
+fn a_ledger_poisoned_after_a_healthy_disconnect_still_keeps_the_number() {
+    // THE ARM THAT DECIDES ON ITS OWN. The cleanup's recovery disconnect can
+    // succeed while the ledger is readable, and the ledger can be poisoned by
+    // another holder before the same cleanup settles its abandoned frozen
+    // routes. That later failure is the only report of work nobody did, and
+    // the number must not be freed over it.
+    //
+    // A REAL FROZEN ROUTE: a synchronous keyboard grab freezes the namespace,
+    // and a key press routed through the broker is deferred into the frozen
+    // queue rather than delivered. The cleanup is held open by the parent
+    // table -- after its disconnect, before its frozen drain -- while the
+    // ledger is poisoned from here by an ordinary caught panic.
+    let namespace = NamespaceId::from_raw(9204);
+    let client = XServerFrontendClientId(9204);
+    let surface = SurfaceId::new(9204, 1);
+    let mut broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
+    let registry = broker.registry.clone();
+    let (registration, _channels) = registry.register_client(client).expect("a row");
+    registry
+        .register_surface(client, namespace, surface, XResourceId::new(0x9204, 1))
+        .expect("its own surface");
+    registry
+        .input_authority
+        .lock()
+        .expect("a readable authority")
+        .grab_keyboard(namespace, public_keyboard_grab(client))
+        .expect("a synchronous keyboard grab freezes the namespace");
+    broker
+        .routed_input_sender()
+        .send(XAuthorityRoutedInput {
+            request: RoutedInputRequest {
+                serial: 1,
+                seat: SeatId::from_raw(1),
+                device: DeviceId::from_raw(1),
+                time_msec: 1,
+                target_surface: surface,
+                global_position: Point::default(),
+                local_position: Point::default(),
+                kind: InputEventKind::Key {
+                    keycode: 30,
+                    pressed: true,
+                },
+            },
+            route_lease: None,
+            delivery: Some(XAuthorityInputDeliveryId::from_raw(92040)),
+            mode: XAuthorityRoutedInputMode::Deliver,
+        })
+        .expect("the broker accepts a routed input");
+    assert_eq!(broker.route_pending(), Ok(1));
+    assert_eq!(
+        registry.frozen_input.lock().expect("readable").len(),
+        1,
+        "the key press is frozen, not delivered"
+    );
+
+    let (disconnect_completed_first, poisoning_caught) = std::thread::scope(|scope| {
+        let parents = registry
+            .window_parents
+            .lock()
+            .expect("a readable parent table");
+        let ending = scope.spawn(move || drop(registration));
+        // Past its row removal, which is after its disconnect.
+        let row_gone = waited_for(|| {
+            matches!(
+                registry.client_senders(client),
+                Err(XServerFrontendRouteError::UnknownClient { .. })
+            )
+        });
+        let disconnect_completed_first = row_gone
+            && registry
+                .input_recovery
+                .state
+                .lock()
+                .expect("still readable here")
+                .connections
+                .get(&client)
+                .is_some_and(|entry| entry.revoked);
+        // Now, and only now, the ledger is poisoned.
+        let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = registry.input_recovery.state.lock().expect("readable");
+            panic!("poisoning the ledger after the healthy disconnect, and nothing else");
+        }));
+        drop(parents);
+        ending.join().expect("the ending finished");
+        (disconnect_completed_first, poisoning.is_err())
+    });
+    assert!(disconnect_completed_first, "the disconnect succeeded while the ledger was readable");
+    assert!(poisoning_caught);
+    assert_eq!(
+        registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Unestablished),
+        "an abandoned route the ledger would not settle keeps the number"
+    );
+    drop(broker);
+}
