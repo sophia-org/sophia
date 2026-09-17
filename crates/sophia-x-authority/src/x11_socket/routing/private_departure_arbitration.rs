@@ -141,10 +141,36 @@ impl PrivateEvidenceCustody {
         &self,
         supplied: Option<(&Arc<AtomicBool>, &Arc<PrivateOrderedWake>)>,
     ) -> PrivateDeparted {
+        let supplied = supplied.map(|(stop, notice)| (Arc::clone(stop), Arc::clone(notice)));
         let pair = {
-            let Ok(mut state) = self.source.departure.lock() else {
-                return PrivateDeparted::Unreadable;
+            let state = match self.source.departure.lock() {
+                Ok(state) => state,
+                Err(poisoned) => {
+                    // THE BOUNDARY IS UNREADABLE, AND A WORKER MAY ALREADY
+                    // EXIST. Nothing about admission or about what was
+                    // published here can be established -- but this
+                    // connection's bound control association is immutable and
+                    // does not live behind this lock, so the authoritative
+                    // stop it published is still reachable and the worker
+                    // admitted through this boundary can still be told to
+                    // stop. Failing closed to a NEW start is not a reason to
+                    // leave a running one unstopped.
+                    //
+                    // THE GUARD GOES FIRST. Nothing is read from it, nothing
+                    // is written back, and the wake below is published with
+                    // this lock released.
+                    drop(poisoned);
+                    if let Some((stop, notice)) =
+                        supplied.as_ref().or(self.bound_pair().as_ref())
+                    {
+                        cancel_connection_worker(stop, notice);
+                    }
+                    // STILL UNREADABLE. Cancelling is not a decision: this ask
+                    // established nothing about the slot, and says so.
+                    return PrivateDeparted::Unreadable;
+                }
             };
+            let mut state = state;
             if let Some(recorded) = state.observed {
                 return PrivateDeparted::AlreadyDecided(recorded);
             }
@@ -162,7 +188,6 @@ impl PrivateEvidenceCustody {
         };
         // A KNOWN BOUND WORKER IS TOLD TO STOP whatever the slot says
         // afterwards. This reaches nothing but the pair itself.
-        let supplied = supplied.map(|(stop, notice)| (Arc::clone(stop), Arc::clone(notice)));
         if let Some((stop, notice)) = pair.as_ref().or(supplied.as_ref()) {
             cancel_connection_worker(stop, notice);
         }
@@ -185,6 +210,19 @@ impl PrivateEvidenceCustody {
                 PrivateDeparted::Decided(found)
             }
         }
+    }
+
+    /// This connection's authoritative pair, from its bound control
+    /// association.
+    ///
+    /// NOT BEHIND THE ARBITRATION BOUNDARY. The association is published once
+    /// and never rebound, so it is reachable when that boundary is not -- which
+    /// is exactly when a worker that was admitted still needs telling.
+    fn bound_pair(&self) -> Option<(Arc<AtomicBool>, Arc<PrivateOrderedWake>)> {
+        self.source
+            .control
+            .get()
+            .map(|bound| (Arc::clone(&bound.stop), Arc::clone(&bound.notice)))
     }
 
     /// Whether this connection still admits a registered start.
