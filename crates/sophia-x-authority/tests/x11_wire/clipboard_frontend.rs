@@ -448,9 +448,9 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
     use std::{
         io::Write,
         num::NonZeroUsize,
-        sync::{Arc, Mutex},
+        sync::{Arc, Condvar, Mutex},
         thread,
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
     let socket_path = std::env::temp_dir().join(format!(
@@ -465,14 +465,28 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
         .unwrap()
         .with_max_concurrent_clients(NonZeroUsize::new(2).unwrap());
     let observations = Arc::new(Mutex::new(Vec::new()));
+    // WHAT THE SECOND CLIENT ACTUALLY DEPENDS ON. Its requests are about the
+    // first client's window, and the trace this test compares is the order
+    // observations were APPENDED in. Writing first orders neither: two
+    // connections are served by two workers, so a request written earlier can
+    // be dispatched later, and one dispatched earlier can be appended later
+    // still.
+    //
+    // So the fixture waits for the thing it needs -- the first client's
+    // CreateWindow having been observed -- and this is the observer saying so.
+    let first_window_observed = Arc::new((Mutex::new(false), Condvar::new()));
     let server_observations = observations.clone();
+    let server_signal = first_window_observed.clone();
     let server = thread::spawn(move || {
         let mut frontend = XServerFrontend::bind(config).unwrap();
         let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
-            server_observations
-                .lock()
-                .unwrap()
-                .push((trace.client.raw(), trace.major_opcode));
+            let observation = (trace.client.raw(), trace.major_opcode);
+            server_observations.lock().unwrap().push(observation);
+            if observation == (1, 1) {
+                let (seen, announced) = &*server_signal;
+                *seen.lock().unwrap() = true;
+                announced.notify_all();
+            }
             Ok(None)
         });
         frontend
@@ -508,6 +522,26 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
         ))
         .unwrap();
 
+    // BOUNDED, AND NOT A SLEEP. If this never arrives the test goes on to
+    // release both clients and collect the server, so the failure below is an
+    // assertion rather than a hang.
+    let created = {
+        let (seen, announced) = &*first_window_observed;
+        let mut held = seen.lock().unwrap();
+        let deadline = Duration::from_secs(5);
+        let started = std::time::Instant::now();
+        while !*held && started.elapsed() < deadline {
+            let (next, timeout) = announced
+                .wait_timeout(held, deadline.saturating_sub(started.elapsed()))
+                .unwrap();
+            held = next;
+            if timeout.timed_out() {
+                break;
+            }
+        }
+        *held
+    };
+
     let mut second = connect_x_socket(&socket_path);
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
@@ -530,6 +564,11 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
     drop(second);
 
     assert_eq!(server.join().unwrap(), 0);
+    assert!(
+        created,
+        "the first client's CreateWindow was never observed, so the order \
+         below was never this fixture's to assert"
+    );
     assert_eq!(
         observations.lock().unwrap().as_slice(),
         &[(1, 1), (2, 8), (2, 3), (1, 0)]

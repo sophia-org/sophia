@@ -164,12 +164,14 @@ impl PrivateCleanupRecord {
         self.ordered_gate.close()
     }
 
-    /// Close this endpoint and move what it still owes into its own place.
+    /// Close this endpoint and record what its connection's ending established.
     ///
-    /// THE FENCE IS WHAT MAKES THE MOVE SOUND. Once it is established no
-    /// further capsule can be accepted for this connection, so the queue taken
-    /// here is the whole of what was accepted -- not a snapshot with a
-    /// producer still writing behind it.
+    /// THE CLOSE IS ATTEMPTED AND ITS ACTUAL ANSWER IS KEPT. An Established or
+    /// AlreadyEstablished fence says no further capsule can be accepted for
+    /// this connection, so what its home holds afterwards is the whole of what
+    /// was accepted. An Unreadable one says no such thing and is kept as
+    /// itself: it does not establish closure, and a reader told otherwise
+    /// would treat a half-answered handover as finished.
     ///
     /// WHAT IS RETAINED IS NOT UNPACKED, AND IT IS NOT CARRIED ANYWHERE. This
     /// connection's output has lived in its home since it bound; what happens
@@ -200,18 +202,19 @@ impl PrivateCleanupRecord {
     /// outcome, and a teardown that ended a wire in passing would report
     /// nothing about whether it worked.
     fn retain_ordered_continuation(&self) {
-        // KEPT, AND CARRIED INTO THE RECORD. An Established or
-        // AlreadyEstablished fence is what makes moving this queue sound:
-        // nothing further will be admitted for it.
+        // KEPT, AND WRITTEN INTO THE SHARED HOME. An Established or
+        // AlreadyEstablished fence says nothing further will be admitted for
+        // this connection, which is what makes the standing change below mean
+        // what it says.
         //
         // An Unreadable one is not, and the reason is narrower than it looks.
         // The gate was acquired -- a poisoned lock is an acquired lock, handed
         // back inside the error -- so no producer was inside while this ran
         // and exclusion is not what failed. What is unestablished is that the
         // closure was made over resolved custody: someone panicked in there,
-        // and the handover they were making may be half-answered. A record
-        // moved under that must not read as closed, so the outcome goes with
-        // it rather than being discarded here.
+        // and the handover they were making may be half-answered. A home
+        // retained under that must not read as closed, so the outcome is
+        // written beside it rather than discarded here.
         let fence = self.fence_ordered_handovers();
         // NOTHING IS MOVED HERE, AND THERE IS NOTHING TO MOVE. This
         // connection's output has lived in its home since it bound, and the
@@ -337,10 +340,15 @@ impl PrivateCleanupRecord {
         //
         // THAT STOPPED BEING TRUE WHEN ITS HOME OUTLIVED THE HANDLE. A lease
         // left in this record on the poison path is not dropped when the
-        // registration goes -- the keeper still holds the record -- so the
-        // gate stays open for as long as that record lives. Skipping the take
-        // here is not "the same as before"; it is the loss of the disposal
-        // that used to happen anyway.
+        // registration goes -- the keeper still holds the record -- so this
+        // connection's own destruction closes nothing.
+        //
+        // WHETHER THE GATE STAYS OPEN IS A SEPARATE QUESTION. Healthy input
+        // recovery closes it, and so does the frontend's own shutdown, so a
+        // connection whose service is otherwise well is closed by something
+        // else and the loss is invisible. What is lost here is the disposal
+        // this destruction used to perform, which is why seeing it at all
+        // means poisoning those paths too.
         //
         // SO THE GUARD IS RECOVERED, AND ONLY TO TAKE. Taking a lease out in
         // order to dispose of it is a close this connection's destruction is
@@ -353,9 +361,11 @@ impl PrivateCleanupRecord {
             Err(poisoned) => poisoned.into_inner().take(),
         };
         if let Some(lease) = lease {
-            // The guard is released above, before the close: what closing
-            // takes is the gate's own lock, and holding this cell across it
-            // would put a second lock under the first for no reason.
+            // The guard is released above, before the close. Closing this
+            // lease is an atomic exchange on its lifecycle mark and takes no
+            // lock at all, so this is not a lock-order argument -- it is that
+            // holding a cell across work that does not need it is holding it
+            // for no reason.
             lease.close();
             drop(lease);
         }
