@@ -1,6 +1,7 @@
 //! Ledger -> real transport FIFO -> private peer. No WM/native acceptance.
 use super::*;
 use sophia_protocol::*;
+use sophia_runtime::ShellSessionTransport;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -81,7 +82,7 @@ fn expired_action_keeps_its_real_fifo_cancel_credit_until_exact_transfer() {
             0,
             &limits,
             TransactionId::from_raw(1),
-            &mut transport,
+            &mut transport.connection(),
         )
         .unwrap()
         .unwrap();
@@ -95,12 +96,21 @@ fn expired_action_keeps_its_real_fifo_cancel_credit_until_exact_transfer() {
     // No acknowledgement. The actual ACK service must not discard the credit
     // at the deadline before the cancellation producer gets its turn.
     let now = u64::from(limits.action_ack_timeout_ms) + 1;
-    assert_eq!(ledger.service_acks(&mut transport, now, 64).unwrap(), 0);
+    assert_eq!(
+        ledger
+            .service_acks(&mut transport.connection(), now, 64)
+            .unwrap(),
+        0
+    );
     let index = ledger
         .next_cancellation(&[], now)
         .expect("deadline retains cancel obligation");
     ledger
-        .queue_cancellation(index, TransactionId::from_raw(2), &mut transport)
+        .queue_cancellation(
+            index,
+            TransactionId::from_raw(2),
+            &mut transport.connection(),
+        )
         .unwrap();
     assert_eq!(ledger.next_cancellation(&[], now), None);
     transport.poll_io().unwrap();
@@ -114,7 +124,9 @@ fn expired_action_keeps_its_real_fifo_cancel_credit_until_exact_transfer() {
     assert_eq!(cancel, expected);
     assert!(ledger.live.is_empty());
     // Cancel has no ACK and cannot be emitted again on a later service turn.
-    ledger.service_acks(&mut transport, now + 1, 64).unwrap();
+    ledger
+        .service_acks(&mut transport.connection(), now + 1, 64)
+        .unwrap();
     assert_eq!(ledger.next_cancellation(&[], now + 1), None);
     peer.set_nonblocking(true).unwrap();
     let mut byte = [0];

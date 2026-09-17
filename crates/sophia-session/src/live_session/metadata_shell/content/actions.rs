@@ -2,7 +2,7 @@ use sophia_engine::PresentedContentTarget;
 use sophia_protocol::{
     ContentAction, ContentActionAck, ContentReason, ShellIndicatorActivation, TransactionId,
 };
-use sophia_runtime::{ShellSessionTransport, ShellTransportError};
+use sophia_runtime::{ShellTransportConnection, ShellTransportError};
 
 const ACTION_ACTIVATE: u16 = 1;
 const ACTION_CANCEL: u16 = 3;
@@ -85,7 +85,7 @@ impl ContentActionLedger {
         now_msec: u64,
         limits: &sophia_protocol::ContentLimits,
         transaction: TransactionId,
-        transport: &mut ShellSessionTransport,
+        transport: &mut ShellTransportConnection<'_>,
     ) -> Result<Option<u64>, ShellTransportError> {
         if self.live.len() >= limits.max_pending_actions as usize
             || self.live.len() >= self.live.capacity()
@@ -124,7 +124,7 @@ impl ContentActionLedger {
 
     pub(super) fn service_acks(
         &mut self,
-        transport: &mut ShellSessionTransport,
+        transport: &mut ShellTransportConnection<'_>,
         now_msec: u64,
         maximum: usize,
     ) -> Result<usize, ShellTransportError> {
@@ -210,7 +210,7 @@ impl ContentActionLedger {
 
     pub(super) fn service_indicator_request(
         &mut self,
-        transport: &mut ShellSessionTransport,
+        transport: &mut ShellTransportConnection<'_>,
         indicators: &mut super::super::indicators::LiveIndicatorState,
         input_enabled: bool,
         now_msec: u64,
@@ -238,7 +238,7 @@ impl ContentActionLedger {
     // roundtrip fixture. Only WM admission is borrowed from its policy owner.
     pub(super) fn finish_indicator_request(
         &mut self,
-        transport: &mut ShellSessionTransport,
+        transport: &mut ShellTransportConnection<'_>,
         request: super::super::indicators::LiveIndicatorActivationRequest,
         input_enabled: bool,
         now_msec: u64,
@@ -362,7 +362,7 @@ impl ContentActionLedger {
         &mut self,
         index: usize,
         transaction: TransactionId,
-        transport: &mut ShellSessionTransport,
+        transport: &mut ShellTransportConnection<'_>,
     ) -> Result<(), ShellTransportError> {
         let pending = &self.live[index];
         let cancellation =
@@ -469,10 +469,13 @@ impl super::super::LiveMetadataShell {
             .cloned()
             .ok_or("content limits are unavailable")?;
         let transaction = self.take_transaction()?;
-        Ok(self
-            .content
-            .actions
-            .issue(target, now, &limits, transaction, &mut self.transport)?)
+        Ok(self.content.actions.issue(
+            target,
+            now,
+            &limits,
+            transaction,
+            &mut self.transport.connection(),
+        )?)
     }
 
     pub(in crate::live_session) fn service_content_actions(
@@ -487,15 +490,17 @@ impl super::super::LiveMetadataShell {
             .transport
             .content_limits()
             .map_or(0, |limits| limits.max_frames_per_service_tick as usize);
-        let mut processed = self
-            .content
-            .actions
-            .service_acks(&mut self.transport, now, maximum)?;
-        while let Some(index) = self.content.actions.next_cancellation(presented, now) {
-            let transaction = self.take_transaction()?;
+        let mut processed =
             self.content
                 .actions
-                .queue_cancellation(index, transaction, &mut self.transport)?;
+                .service_acks(&mut self.transport.connection(), now, maximum)?;
+        while let Some(index) = self.content.actions.next_cancellation(presented, now) {
+            let transaction = self.take_transaction()?;
+            self.content.actions.queue_cancellation(
+                index,
+                transaction,
+                &mut self.transport.connection(),
+            )?;
             processed = processed.saturating_add(1);
         }
         self.content.actions.expire(now);
@@ -524,7 +529,7 @@ mod client_roundtrip_tests;
 impl super::LiveContentSession {
     pub(in crate::live_session) fn service_indicator_request(
         &mut self,
-        transport: &mut ShellSessionTransport,
+        transport: &mut ShellTransportConnection<'_>,
         indicators: &mut super::super::indicators::LiveIndicatorState,
         admit: impl FnOnce(
             sophia_protocol::WmActionId,

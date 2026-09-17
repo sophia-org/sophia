@@ -91,15 +91,18 @@ impl LiveMetadataShell {
         if !self.connected || !self.transport.supports_indicator_activation() {
             return Ok(false);
         }
-        self.content
-            .service_indicator_request(&mut self.transport, &mut self.indicators, admit)
+        self.content.service_indicator_request(
+            &mut self.transport.connection(),
+            &mut self.indicators,
+            admit,
+        )
     }
 }
 
 impl LiveIndicatorState {
     pub(in crate::live_session) fn poll_request(
         &mut self,
-        transport: &mut sophia_runtime::ShellSessionTransport,
+        transport: &mut sophia_runtime::ShellTransportConnection<'_>,
         input_enabled: bool,
     ) -> Result<Option<LiveIndicatorActivationRequest>, Box<dyn std::error::Error>> {
         let Some((transaction, activation)) = transport.poll_indicator_activation()? else {

@@ -303,6 +303,7 @@ impl ShellComponentTransport {
         wm_commit_generation: u64,
         now_msec: u64,
     ) -> Result<(), ShellTransportError> {
+        self.validate_completion_grant(epochs, grant)?;
         let connected = self.content_grant == Some(grant);
         // The already-owned response credit must still fit before the native
         // result changes reducer state. No I/O occurs during the subsequent
@@ -336,6 +337,7 @@ impl ShellComponentTransport {
         work_area_generation: u64,
         wm_commit_generation: u64,
     ) -> Result<(), ShellTransportError> {
+        self.validate_completion_grant(epochs, grant)?;
         let connected = self.content_grant == Some(grant);
         // The already-owned response credit must still fit before the native
         // result changes reducer state. No I/O occurs during the subsequent
@@ -367,6 +369,7 @@ impl ShellComponentTransport {
         output: ContentOutputId,
         candidate_generation: u64,
     ) -> Result<(), ShellTransportError> {
+        self.validate_completion_grant(epochs, grant)?;
         let connected = self.content_grant == Some(grant);
         // The already-owned response credit must still fit before the native
         // result changes reducer state. No I/O occurs during the subsequent
@@ -382,6 +385,19 @@ impl ShellComponentTransport {
             self.flush_content_candidate_events(epochs)?;
         }
         epochs.collect();
+        Ok(())
+    }
+
+    // Disconnected completion may settle its exact retained epoch, but a
+    // neighbor's live grant must be routed through its own response owner.
+    fn validate_completion_grant(
+        &self,
+        epochs: &crate::ContentEpochRegistry,
+        grant: sophia_protocol::ContentGrant,
+    ) -> Result<(), ShellTransportError> {
+        if self.content_grant != Some(grant) && epochs.active_candidates(grant).is_some() {
+            return Err(ShellTransportError::WrongContentGrant);
+        }
         Ok(())
     }
 
@@ -463,142 +479,150 @@ impl ShellComponentTransport {
 }
 
 // Legacy single-shell facade, delegating to the same shared registry path.
-impl ShellSessionTransport {
-    pub fn service_content_demands(
-        &mut self,
-        outputs: &[ContentOutputId],
-        allocations: &[crate::ContentAllocationSnapshot],
-    ) -> Result<usize, ShellTransportError> {
-        self.state
-            .service_content_demands(&mut self.content_epochs, outputs, allocations)
-    }
 
-    pub fn next_content_demand(
-        &self,
-    ) -> Option<(TransactionId, sophia_protocol::ContentFrameDemand)> {
-        self.state.next_content_demand(&self.content_epochs)
-    }
+// The owned legacy and borrowed Session façades share forwarding, not policy.
+macro_rules! transport_facade {
+    ($transport:ty) => {
+        impl $transport {
+            pub fn service_content_demands(
+                &mut self,
+                outputs: &[ContentOutputId],
+                allocations: &[crate::ContentAllocationSnapshot],
+            ) -> Result<usize, ShellTransportError> {
+                self.state
+                    .service_content_demands(&mut self.content_epochs, outputs, allocations)
+            }
 
-    pub fn grant_content_demand(
-        &mut self,
-        transaction: TransactionId,
-        output: ContentOutputId,
-        permit_id: u64,
-        now_msec: u64,
-    ) -> Result<(), ShellTransportError> {
-        self.state.grant_content_demand(
-            &mut self.content_epochs,
-            transaction,
-            output,
-            permit_id,
-            now_msec,
-        )
-    }
+            pub fn next_content_demand(
+                &self,
+            ) -> Option<(TransactionId, sophia_protocol::ContentFrameDemand)> {
+                self.state.next_content_demand(&self.content_epochs)
+            }
 
-    pub fn grant_content_permit(
-        &mut self,
-        transaction: TransactionId,
-        output: ContentOutputId,
-        demand_id: u64,
-        permit_id: u64,
-        now_msec: u64,
-    ) -> Result<(), ShellTransportError> {
-        self.state.grant_content_permit(
-            &mut self.content_epochs,
-            transaction,
-            output,
-            demand_id,
-            permit_id,
-            now_msec,
-        )
-    }
+            pub fn grant_content_demand(
+                &mut self,
+                transaction: TransactionId,
+                output: ContentOutputId,
+                permit_id: u64,
+                now_msec: u64,
+            ) -> Result<(), ShellTransportError> {
+                self.state.grant_content_demand(
+                    &mut self.content_epochs,
+                    transaction,
+                    output,
+                    permit_id,
+                    now_msec,
+                )
+            }
 
-    pub fn service_content_candidates(
-        &mut self,
-        contexts: &[ContentCandidateContext<'_>],
-        now_msec: u64,
-    ) -> Result<usize, ShellTransportError> {
-        self.state
-            .service_content_candidates(&mut self.content_epochs, contexts, now_msec)
-    }
+            pub fn grant_content_permit(
+                &mut self,
+                transaction: TransactionId,
+                output: ContentOutputId,
+                demand_id: u64,
+                permit_id: u64,
+                now_msec: u64,
+            ) -> Result<(), ShellTransportError> {
+                self.state.grant_content_permit(
+                    &mut self.content_epochs,
+                    transaction,
+                    output,
+                    demand_id,
+                    permit_id,
+                    now_msec,
+                )
+            }
 
-    pub fn begin_content_submission(
-        &mut self,
-        output: ContentOutputId,
-        candidate_generation: u64,
-        now_msec: u64,
-    ) -> Result<ContentRenderBundle, ShellTransportError> {
-        self.state.begin_content_submission(
-            &mut self.content_epochs,
-            output,
-            candidate_generation,
-            now_msec,
-        )
-    }
+            pub fn service_content_candidates(
+                &mut self,
+                contexts: &[ContentCandidateContext<'_>],
+                now_msec: u64,
+            ) -> Result<usize, ShellTransportError> {
+                self.state
+                    .service_content_candidates(&mut self.content_epochs, contexts, now_msec)
+            }
 
-    pub fn next_content_submission(&self) -> Option<(ContentOutputId, u64)> {
-        self.state.next_content_submission(&self.content_epochs)
-    }
+            pub fn begin_content_submission(
+                &mut self,
+                output: ContentOutputId,
+                candidate_generation: u64,
+                now_msec: u64,
+            ) -> Result<ContentRenderBundle, ShellTransportError> {
+                self.state.begin_content_submission(
+                    &mut self.content_epochs,
+                    output,
+                    candidate_generation,
+                    now_msec,
+                )
+            }
 
-    pub fn next_content_submission_for(
-        &self,
-        available: impl FnMut(ContentOutputId) -> bool,
-    ) -> Option<(ContentOutputId, u64)> {
-        self.state
-            .next_content_submission_for(&self.content_epochs, available)
-    }
+            pub fn next_content_submission(&self) -> Option<(ContentOutputId, u64)> {
+                self.state.next_content_submission(&self.content_epochs)
+            }
 
-    pub fn content_prepared(
-        &mut self,
-        grant: sophia_protocol::ContentGrant,
-        output: ContentOutputId,
-        candidate_generation: u64,
-        work_area_generation: u64,
-        wm_commit_generation: u64,
-        now_msec: u64,
-    ) -> Result<(), ShellTransportError> {
-        self.state.content_prepared(
-            &mut self.content_epochs,
-            grant,
-            output,
-            candidate_generation,
-            work_area_generation,
-            wm_commit_generation,
-            now_msec,
-        )
-    }
+            pub fn next_content_submission_for(
+                &self,
+                available: impl FnMut(ContentOutputId) -> bool,
+            ) -> Option<(ContentOutputId, u64)> {
+                self.state
+                    .next_content_submission_for(&self.content_epochs, available)
+            }
 
-    pub fn content_presented(
-        &mut self,
-        grant: sophia_protocol::ContentGrant,
-        output: ContentOutputId,
-        candidate_generation: u64,
-        presentation_epoch: u64,
-        work_area_generation: u64,
-        wm_commit_generation: u64,
-    ) -> Result<(), ShellTransportError> {
-        self.state.content_presented(
-            &mut self.content_epochs,
-            grant,
-            output,
-            candidate_generation,
-            presentation_epoch,
-            work_area_generation,
-            wm_commit_generation,
-        )
-    }
+            pub fn content_prepared(
+                &mut self,
+                grant: sophia_protocol::ContentGrant,
+                output: ContentOutputId,
+                candidate_generation: u64,
+                work_area_generation: u64,
+                wm_commit_generation: u64,
+                now_msec: u64,
+            ) -> Result<(), ShellTransportError> {
+                self.state.content_prepared(
+                    &mut self.content_epochs,
+                    grant,
+                    output,
+                    candidate_generation,
+                    work_area_generation,
+                    wm_commit_generation,
+                    now_msec,
+                )
+            }
 
-    pub fn content_renderer_failed(
-        &mut self,
-        grant: sophia_protocol::ContentGrant,
-        output: ContentOutputId,
-        candidate_generation: u64,
-    ) -> Result<(), ShellTransportError> {
-        self.state.content_renderer_failed(
-            &mut self.content_epochs,
-            grant,
-            output,
-            candidate_generation,
-        )
-    }
+            pub fn content_presented(
+                &mut self,
+                grant: sophia_protocol::ContentGrant,
+                output: ContentOutputId,
+                candidate_generation: u64,
+                presentation_epoch: u64,
+                work_area_generation: u64,
+                wm_commit_generation: u64,
+            ) -> Result<(), ShellTransportError> {
+                self.state.content_presented(
+                    &mut self.content_epochs,
+                    grant,
+                    output,
+                    candidate_generation,
+                    presentation_epoch,
+                    work_area_generation,
+                    wm_commit_generation,
+                )
+            }
+
+            pub fn content_renderer_failed(
+                &mut self,
+                grant: sophia_protocol::ContentGrant,
+                output: ContentOutputId,
+                candidate_generation: u64,
+            ) -> Result<(), ShellTransportError> {
+                self.state.content_renderer_failed(
+                    &mut self.content_epochs,
+                    grant,
+                    output,
+                    candidate_generation,
+                )
+            }
+        }
+    };
 }
+transport_facade!(ShellSessionTransport);
+transport_facade!(crate::shell_transport::ShellTransportConnection<'_>);

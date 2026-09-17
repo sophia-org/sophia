@@ -180,3 +180,70 @@ Scoped validation passes 200 runtime tests and 468 Session library tests, with
 fourteen Session tests ignored; strict affected Clippy, formatting and the
 repository layout gate pass. These are separate from any subsequent exact-source
 canonical gate or attended launcher acceptance.
+
+## Session connection ownership over 35153520
+
+`ShellComponentConnections` owns two selected endpoint/attempt records and one
+actual `ContentEpochRegistry`. Roles and IDs are bounded/unique before endpoint
+creation. It consumes both global epoch numbers before attempting the complete
+role-specific reservation; even a budget-refused attempt cannot reuse them. The
+bar reserves 40 MiB and the launcher 24 MiB of logical storage, using the existing
+separate backing accounting. An exact key includes slot and both grant epochs.
+A stale close cannot affect its successor or the other component.
+
+Protected evidence is still required before negotiation. Each nonblocking round
+visits every negotiating entry once, rotates its first entry, and gives each its
+own bounded byte allowance. One failure emits one exact result and revokes only
+that reservation. This establishes negotiation service ordering, not fairness
+of process spawning, application dispatch or native rendering.
+
+`ShellTransportConnection` is a temporary borrow of the real transport and common
+registry, with no new store, lock, resource map or ownership transfer on drop.
+The owned compatibility wrapper and borrowed view share forwarding definitions;
+Session content/action/indicator helpers now accept that view. Their publication,
+ACK/WM and outbox decisions remain in the existing implementations. Admission,
+protected-peer authorization and disconnect are absent from the service view;
+the connection owner controls them. Three native-completion methods now reject
+a foreign *live* grant before reducer mutation, so a neighbor's response credit
+cannot be bypassed by routing its result through the wrong connection. Exact
+retained dead epochs remain eligible for disconnected completion.
+
+Final shutdown takes an actual backend owner only after all attempts are revoked;
+otherwise it returns that same owner untouched. Existing registry finalization
+drops it before settling disconnected submissions and collecting real consumers.
+A non-quiescent report remains unresolved, not a claim that worker join reclaimed
+pixels. This API does not supply a native retirement witness.
+
+Five private-socket controls exercise the Session owner, real wire/resource
+stores and actual held pixel leases: failed launcher handshake with bar preserved;
+retained launcher bytes refusing replacement while bar uploads; exact shared
+attempt numbering including budget refusal; stale-key/role/admission refusal;
+rotating bounded negotiation under a stalled peer; and final consumer transfer.
+The live-grant completion negative refuses before candidate lookup and preserves
+accounting; it does not construct a submitted native candidate. The shutdown
+consumer is a real resource lease, not an actual native backend. Protection
+evidence is supplied, and no protected child or display is launched.
+
+The resource accounting control preserves the distinction between a **retired
+epoch** and the resource store's **retiring** class. Revoke keeps resident bytes
+in their original class, while the common registry charges their full footprint
+against the retired epoch. The test checks retained epoch count, resident bytes,
+total reservation and actual held pixels, rather than expecting a class transfer.
+
+This checkpoint does **not** install this owner into the live compositor loop.
+That loop still uses the single-shell compatibility owner, now borrowing the same
+service interface. Protected supervisor inventory, complete ordinary-I/O round
+budgets, revocation/native-completion orchestration, revision-7 role/focus/catalog
+semantics and two-component composition must be joined before independent mode
+can be enabled. Current configuration still refuses it. No `lom-test` readiness
+or native launcher acceptance follows from these foundations.
+
+Scoped evidence is retained in `.artifacts/bemenu-session-registry/`: 200 runtime
+tests and 473 Session tests pass (468 library plus five owner controls, fourteen
+library tests ignored), with strict affected Clippy, formatting and layout.
+Four separately compiled mutations fail behaviorally: reuse a budget-refused
+attempt number, allow an old key to close its successor, lose first-visit
+rotation, and bypass the live-neighbor completion guard. Sources are restored.
+A forwarding comparison preserves the existing public method tokens after
+normalizing whitespace/trailing commas, except for the three explicitly added
+completion guards. This is not a full live owner-loop/native acceptance result.

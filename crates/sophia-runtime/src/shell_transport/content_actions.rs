@@ -103,30 +103,37 @@ impl ShellComponentTransport {
 }
 
 // Legacy single-shell facade, delegating to the same shared registry path.
-impl ShellSessionTransport {
-    pub fn content_action_capacity_available(&self) -> bool {
-        self.state
-            .content_action_capacity_available(&self.content_epochs)
-    }
 
-    pub fn send_content_action(
-        &mut self,
-        transaction: TransactionId,
-        action: &ContentAction,
-    ) -> Result<(), ShellTransportError> {
-        self.state
-            .send_content_action(&mut self.content_epochs, transaction, action)
-    }
+// The owned legacy and borrowed Session façades share forwarding, not policy.
+macro_rules! transport_facade {
+    ($transport:ty) => {
+        impl $transport {
+            pub fn content_action_capacity_available(&self) -> bool {
+                self.state
+                    .content_action_capacity_available(&self.content_epochs)
+            }
 
-    pub fn poll_content_action_ack(
-        &mut self,
-    ) -> Result<Option<(TransactionId, ContentActionAck)>, ShellTransportError> {
-        self.state.poll_content_action_ack(&mut self.content_epochs)
-    }
+            pub fn send_content_action(
+                &mut self,
+                transaction: TransactionId,
+                action: &ContentAction,
+            ) -> Result<(), ShellTransportError> {
+                self.state
+                    .send_content_action(&mut self.content_epochs, transaction, action)
+            }
+
+            pub fn poll_content_action_ack(
+                &mut self,
+            ) -> Result<Option<(TransactionId, ContentActionAck)>, ShellTransportError> {
+                self.state.poll_content_action_ack(&mut self.content_epochs)
+            }
+        }
+        impl $transport {
+            pub fn retain_content_action_reservations(&mut self, live: impl FnMut(u64) -> bool) {
+                self.state.retain_content_action_reservations(live)
+            }
+        }
+    };
 }
-
-impl ShellSessionTransport {
-    pub fn retain_content_action_reservations(&mut self, live: impl FnMut(u64) -> bool) {
-        self.state.retain_content_action_reservations(live)
-    }
-}
+transport_facade!(ShellSessionTransport);
+transport_facade!(crate::shell_transport::ShellTransportConnection<'_>);

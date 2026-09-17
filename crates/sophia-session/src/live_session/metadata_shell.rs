@@ -259,7 +259,7 @@ impl LiveMetadataShell {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let next = &mut self.next_transaction;
         self.content.service(
-            &mut self.transport,
+            &mut self.transport.connection(),
             runtime,
             scene,
             native_scanout,
@@ -285,7 +285,7 @@ impl LiveMetadataShell {
         runtime: &sophia_backend_live::LiveProductionVisualRuntime,
     ) -> Result<bool, sophia_runtime::ShellTransportError> {
         self.content
-            .observe_presentation(&mut self.transport, runtime)
+            .observe_presentation(&mut self.transport.connection(), runtime)
     }
 
     pub(super) fn request_candidate(

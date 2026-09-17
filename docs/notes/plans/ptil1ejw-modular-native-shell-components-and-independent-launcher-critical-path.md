@@ -94,6 +94,14 @@ compatibility API drives the same policy and state transitions. Session must
 still join this API to the component supervisor and rotating service; the
 independent profile remains refused. See the [negotiation record](../investigations/r3b9n7cf-native-component-storage-and-compositor-identity.md#retained-negotiation-over-a2c8e67c).
 
+A prepared Session connection owner now holds both transports and the common
+registry, burns global attempt identities, preserves exact successor/neighbor
+ownership and rotates bounded negotiation visits. Content/action/indicator
+helpers accept the same borrowed service view. This owner is not yet installed
+in the live loop; supervisor and native-completion joins plus revision-7 role
+semantics are still required. The [Session ownership record](../investigations/r3b9n7cf-native-component-storage-and-compositor-identity.md#session-connection-ownership-over-35153520)
+distinguishes the private-socket controls from live admission.
+
 Configuration checkpoint evidence: `.artifacts/bemenu-component-profile/`.
 Device-hidden tests pass 118 config tests and 468 Session library tests, with
 fourteen Session tests ignored. Four new config groups cover typed independent

@@ -1,5 +1,4 @@
 use super::ShellComponentTransport;
-use super::ShellSessionTransport;
 
 // All fixed r5 lifecycle responses fit this frame envelope, including the IPC
 // header. Variable output/indicator snapshots are bulk and cannot spend it.
@@ -94,6 +93,3 @@ impl ShellComponentTransport {
 #[cfg(test)]
 #[path = "../../tests/support/shell_control_budget.rs"]
 mod tests;
-
-// Legacy single-shell facade, delegating to the same shared registry path.
-impl ShellSessionTransport {}

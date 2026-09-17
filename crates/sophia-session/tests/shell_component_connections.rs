@@ -1,0 +1,351 @@
+//! Session connection owner + private socket codecs + real resource consumers.
+//! Protection evidence is supplied, not a launched child; no native/focus proof.
+use sophia_config::ShellComponentRole;
+use sophia_protocol::*;
+use sophia_runtime::*;
+use sophia_session::shell_component_connections::*;
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+static NEXT: AtomicU64 = AtomicU64::new(0);
+struct Harness {
+    owner: ShellComponentConnections,
+    directory: std::path::PathBuf,
+}
+impl Harness {
+    fn new() -> Self {
+        let directory = std::env::temp_dir().join(format!(
+            "session-component-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let mut owner = ShellComponentConnections::new().unwrap();
+        for (id, role) in [
+            ("panel", ShellComponentRole::Bar),
+            ("menu", ShellComponentRole::ApplicationLauncher),
+        ] {
+            owner
+                .add(
+                    id,
+                    role,
+                    &directory.join(id),
+                    rustix::process::geteuid().as_raw(),
+                )
+                .unwrap();
+        }
+        Self { owner, directory }
+    }
+    fn begin(&mut self, key: ComponentConnectionKey) -> UnixStream {
+        self.owner
+            .begin_negotiation(
+                key,
+                &evidence(),
+                Duration::from_secs(2),
+                ShellContentAdmissionPolicy::Granted {
+                    discrete_input: false,
+                },
+            )
+            .unwrap();
+        let client = UnixStream::connect(self.owner.socket_path(key.slot).unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        client
+    }
+    fn connect(&mut self, key: ComponentConnectionKey) -> UnixStream {
+        let mut client = self.begin(key);
+        client.write_all(&hello()).unwrap();
+        let events = self.owner.poll_negotiations(65536);
+        let (received, welcome) = events.into_iter().flatten().next().unwrap();
+        assert_eq!(received, key);
+        assert_eq!(
+            welcome.unwrap().connection_epoch,
+            key.grant.connection_epoch
+        );
+        read_frame(&mut client);
+        read_frame(&mut client);
+        client
+    }
+}
+impl Drop for Harness {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
+}
+fn evidence() -> ProtectionDomainEvidence {
+    ProtectionDomainEvidence {
+        backend: ProtectionBackendKind::Bubblewrap,
+        supervisor_pid: std::process::id(),
+        peer_pid: std::process::id(),
+        roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+    }
+}
+fn hello() -> Vec<u8> {
+    encode_shell_v1_client_hello_frame(ShellV1ClientHello {
+        minimum_revision: 5,
+        maximum_revision: 6,
+        required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
+            | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
+    })
+    .unwrap()
+}
+fn read_frame(client: &mut UnixStream) -> Vec<u8> {
+    let mut frame = vec![0; SOPHIA_IPC_HEADER_LEN];
+    client.read_exact(&mut frame).unwrap();
+    let size = u32::from_le_bytes(frame[16..20].try_into().unwrap()) as usize;
+    frame.resize(SOPHIA_IPC_HEADER_LEN + size, 0);
+    client
+        .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
+        .unwrap();
+    frame
+}
+fn upload(
+    h: &mut Harness,
+    key: ComponentConnectionKey,
+    client: &mut UnixStream,
+    id: u64,
+) -> ContentResourceLease {
+    let grant = key.grant;
+    let resource = ContentResourceId { id, generation: 1 };
+    for record in [
+        ShellContentRecord::ResourceBegin(ContentResourceBegin {
+            grant,
+            resource,
+            width_px: 1,
+            height_px: 1,
+            rendered_scale_numerator: 1,
+            rendered_scale_denominator: 1,
+            pixel_format: 1,
+            chunk_count: 1,
+            total_bytes: 4,
+        }),
+        ShellContentRecord::ResourceChunk(ContentResourceChunk {
+            grant,
+            resource,
+            ordinal: 0,
+            offset: 0,
+            bytes: vec![1, 2, 3, 255],
+        }),
+        ShellContentRecord::ResourceEnd(ContentResourceEnd {
+            grant,
+            resource,
+            total_bytes: 4,
+            chunk_count: 1,
+        }),
+    ] {
+        client
+            .write_all(&encode_shell_content_frame(TransactionId::from_raw(id), &record).unwrap())
+            .unwrap();
+    }
+    h.owner
+        .with_connection(key, |transport| {
+            transport.service_content_resources(1).unwrap();
+            transport.poll_io().unwrap();
+        })
+        .unwrap();
+    for status in [1, 2] {
+        let (_, ShellContentRecord::ResourceStatus(value)) =
+            decode_shell_content_frame(&read_frame(client)).unwrap()
+        else {
+            panic!("status");
+        };
+        assert_eq!(value.grant, grant);
+        assert_eq!(value.resource, resource);
+        assert_eq!(value.status, status);
+    }
+    h.owner
+        .with_connection(key, |transport| {
+            transport.lease_content_resource(grant, resource).unwrap()
+        })
+        .unwrap()
+}
+
+#[test]
+fn failed_launcher_attempt_burns_epochs_without_resetting_bar() {
+    let mut h = Harness::new();
+    let panel = h.owner.reserve_attempt(0).unwrap();
+    let _bar = h.connect(panel);
+    let first = h.owner.reserve_attempt(1).unwrap();
+    let mut menu = h.begin(first);
+    menu.write_all(&[0; 24]).unwrap();
+    let events = h.owner.poll_negotiations(65536);
+    assert_eq!(events.iter().flatten().count(), 1);
+    assert!(events.into_iter().flatten().next().unwrap().1.is_err());
+    assert_eq!(h.owner.phase(first), Ok(ComponentConnectionPhase::Revoked));
+    assert_eq!(
+        h.owner.phase(panel),
+        Ok(ComponentConnectionPhase::Connected)
+    );
+    assert!(h.owner.poll_negotiations(65536).iter().all(Option::is_none));
+    let second = h.owner.reserve_attempt(1).unwrap();
+    assert!(second.grant.connection_epoch > first.grant.connection_epoch);
+    assert!(second.grant.content_grant_epoch > first.grant.content_grant_epoch);
+    assert_eq!(
+        h.owner.close(first),
+        Err(ComponentConnectionError::StaleAttempt)
+    );
+    let _new = h.connect(second);
+    assert_eq!(h.owner.accounting().active_epochs, 2);
+    h.owner.close(panel).unwrap();
+    h.owner.close(second).unwrap();
+    h.owner.close(second).unwrap();
+    assert!(h.owner.collect().quiescent());
+}
+
+#[test]
+fn retained_launcher_bytes_refuse_replacement_while_bar_uploads() {
+    let mut h = Harness::new();
+    let panel = h.owner.reserve_attempt(0).unwrap();
+    let mut bar = h.connect(panel);
+    let menu_key = h.owner.reserve_attempt(1).unwrap();
+    let mut menu = h.connect(menu_key);
+    let before = h.owner.accounting();
+    let output = ContentOutputId {
+        id: 1,
+        generation: 1,
+    };
+    h.owner
+        .with_connection(panel, |transport| {
+            assert_eq!(
+                transport.content_prepared(menu_key.grant, output, 1, 1, 1, 1),
+                Err(ShellTransportError::WrongContentGrant)
+            );
+            assert_eq!(
+                transport.content_presented(menu_key.grant, output, 1, 1, 1, 1),
+                Err(ShellTransportError::WrongContentGrant)
+            );
+            assert_eq!(
+                transport.content_renderer_failed(menu_key.grant, output, 1),
+                Err(ShellTransportError::WrongContentGrant)
+            );
+        })
+        .unwrap();
+    assert_eq!(h.owner.accounting(), before);
+    let held = upload(&mut h, menu_key, &mut menu, 1);
+    h.owner.close(menu_key).unwrap();
+    let retained = h.owner.collect();
+    assert_eq!(retained.retired_epochs, 1);
+    assert_eq!(retained.memory.resident, 4);
+    assert_eq!(retained.reserved_bytes, 40 * 1024 * 1024 + 4);
+    assert_eq!(held.bytes(), &[1, 2, 3, 255]);
+    assert!(matches!(
+        h.owner.reserve_attempt(1),
+        Err(ComponentConnectionError::Transport(
+            ShellTransportError::ContentStore(ContentStoreError::Budget)
+        ))
+    ));
+    let bar_bytes = upload(&mut h, panel, &mut bar, 1);
+    assert_eq!(bar_bytes.description().grant, panel.grant);
+    drop(held);
+    let released = h.owner.collect();
+    assert_eq!(released.retired_epochs, 0);
+    assert_eq!(released.reserved_bytes, 40 * 1024 * 1024);
+    let replacement = h.owner.reserve_attempt(1).unwrap();
+    // Attempt 3 was consumed even though its budget reservation refused.
+    assert_eq!(replacement.grant.connection_epoch, 4);
+    assert_eq!(replacement.grant.content_grant_epoch, 4);
+    let _replacement = h.connect(replacement);
+    assert_eq!(
+        h.owner
+            .with_connection(panel, |t| t.content_grant())
+            .unwrap(),
+        Some(panel.grant)
+    );
+    assert!(h.owner.with_connection(menu_key, |_| ()).is_err());
+    drop(bar_bytes);
+    h.owner.close(panel).unwrap();
+    h.owner.close(replacement).unwrap();
+    assert!(h.owner.collect().quiescent());
+}
+
+#[test]
+fn bounded_negotiation_visits_both_peers_and_alternates_first_owner() {
+    let mut h = Harness::new();
+    let a = h.owner.reserve_attempt(0).unwrap();
+    let b = h.owner.reserve_attempt(1).unwrap();
+    let mut ac = h.begin(a);
+    let mut bc = h.begin(b);
+    ac.write_all(&hello()[..4]).unwrap();
+    bc.write_all(&hello()).unwrap();
+    assert!(h.owner.poll_negotiations(0).iter().all(Option::is_none));
+    // Both still pending, but first visit rotates even with zero byte credit.
+    let events = h.owner.poll_negotiations(65536);
+    assert_eq!(events[0].as_ref().unwrap().0, b);
+    assert!(events[1].is_none());
+    assert_eq!(h.owner.phase(a), Ok(ComponentConnectionPhase::Negotiating));
+    ac.write_all(&hello()[4..]).unwrap();
+    let events = h.owner.poll_negotiations(65536);
+    assert_eq!(events[0].as_ref().unwrap().0, a);
+    assert!(events[1].is_none());
+    for c in [&mut ac, &mut bc] {
+        read_frame(c);
+        read_frame(c);
+    }
+    h.owner.close(a).unwrap();
+    h.owner.close(b).unwrap();
+    assert!(h.owner.collect().quiescent());
+}
+
+#[test]
+fn admission_requires_exact_attempt_and_protected_role() {
+    let mut h = Harness::new();
+    let key = h.owner.reserve_attempt(0).unwrap();
+    assert_eq!(
+        h.owner.reserve_attempt(0),
+        Err(ComponentConnectionError::Busy)
+    );
+    assert!(h.owner.with_connection(key, |_| ()).is_err());
+    let forged = ComponentConnectionKey { slot: 1, ..key };
+    assert_eq!(
+        h.owner.close(forged),
+        Err(ComponentConnectionError::StaleAttempt)
+    );
+    let mut wrong = evidence();
+    wrong.roles.clear();
+    assert!(
+        h.owner
+            .begin_negotiation(
+                key,
+                &wrong,
+                Duration::from_secs(1),
+                ShellContentAdmissionPolicy::Unavailable
+            )
+            .is_err()
+    );
+    assert_eq!(h.owner.phase(key), Ok(ComponentConnectionPhase::Revoked));
+    assert!(h.owner.collect().quiescent());
+    assert_eq!(
+        h.owner.add(
+            "third",
+            ShellComponentRole::Bar,
+            &h.directory.join("third"),
+            rustix::process::geteuid().as_raw()
+        ),
+        Err(ComponentConnectionError::InvalidSelection)
+    );
+    assert!(!h.directory.join("third").exists());
+}
+
+#[test]
+fn final_owner_transfer_refuses_live_admission_and_drops_the_actual_consumer() {
+    let mut h = Harness::new();
+    let key = h.owner.reserve_attempt(1).unwrap();
+    let mut client = h.connect(key);
+    let held = upload(&mut h, key, &mut client, 1);
+    let held = h
+        .owner
+        .finish_after_backend_drop(held)
+        .expect_err("live admission retains actual consumer");
+    assert_eq!(held.bytes(), &[1, 2, 3, 255]);
+    h.owner.close(key).unwrap();
+    assert_eq!(h.owner.collect().retired_epochs, 1);
+    let (settled, accounting) = h
+        .owner
+        .finish_after_backend_drop(held)
+        .unwrap_or_else(|_| panic!("closed owner must accept final disposition"));
+    assert_eq!(settled, 0);
+    assert!(accounting.quiescent());
+}

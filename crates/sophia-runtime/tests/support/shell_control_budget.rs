@@ -1,4 +1,5 @@
 use super::*;
+use crate::ShellSessionTransport;
 use sophia_protocol::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 

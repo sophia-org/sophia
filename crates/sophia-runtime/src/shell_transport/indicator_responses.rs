@@ -133,27 +133,36 @@ impl ShellComponentTransport {
 mod tests;
 
 // Legacy single-shell facade, delegating to the same shared registry path.
-impl ShellSessionTransport {
-    pub fn poll_indicator_activation(
-        &mut self,
-    ) -> Result<Option<(TransactionId, ShellIndicatorActivation)>, ShellTransportError> {
-        self.state
-            .poll_indicator_activation(&mut self.content_epochs)
-    }
 
-    pub fn finish_indicator_activation(
-        &mut self,
-        transaction: TransactionId,
-        activation: &ShellIndicatorActivation,
-        status: ShellIndicatorActivationStatus,
-        reason: u16,
-    ) -> Result<(), ShellTransportError> {
-        self.state.finish_indicator_activation(
-            &mut self.content_epochs,
-            transaction,
-            activation,
-            status,
-            reason,
-        )
-    }
+// The owned legacy and borrowed Session façades share forwarding, not policy.
+macro_rules! transport_facade {
+    ($transport:ty) => {
+        impl $transport {
+            pub fn poll_indicator_activation(
+                &mut self,
+            ) -> Result<Option<(TransactionId, ShellIndicatorActivation)>, ShellTransportError>
+            {
+                self.state
+                    .poll_indicator_activation(&mut self.content_epochs)
+            }
+
+            pub fn finish_indicator_activation(
+                &mut self,
+                transaction: TransactionId,
+                activation: &ShellIndicatorActivation,
+                status: ShellIndicatorActivationStatus,
+                reason: u16,
+            ) -> Result<(), ShellTransportError> {
+                self.state.finish_indicator_activation(
+                    &mut self.content_epochs,
+                    transaction,
+                    activation,
+                    status,
+                    reason,
+                )
+            }
+        }
+    };
 }
+transport_facade!(ShellSessionTransport);
+transport_facade!(crate::shell_transport::ShellTransportConnection<'_>);

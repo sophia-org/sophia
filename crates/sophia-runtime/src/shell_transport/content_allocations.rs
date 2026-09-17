@@ -248,92 +248,103 @@ impl ShellComponentTransport {
 }
 
 // Legacy single-shell facade, delegating to the same shared registry path.
-impl ShellSessionTransport {
-    pub fn publish_content_output_facts(
-        &mut self,
-        transaction: TransactionId,
-        facts_generation: u64,
-        outputs: Vec<ContentOutputFactsEntry>,
-    ) -> Result<(), ShellTransportError> {
-        self.state.publish_content_output_facts(
-            &mut self.content_epochs,
-            transaction,
-            facts_generation,
-            outputs,
-        )
-    }
 
-    pub fn service_content_allocation_requests(
-        &mut self,
-        presented_parents: &[(ContentAllocationId, u64)],
-        now_msec: u64,
-    ) -> Result<usize, ShellTransportError> {
-        self.state.service_content_allocation_requests(
-            &mut self.content_epochs,
-            presented_parents,
-            now_msec,
-        )
-    }
+// The owned legacy and borrowed Session façades share forwarding, not policy.
+macro_rules! transport_facade {
+    ($transport:ty) => {
+        impl $transport {
+            pub fn publish_content_output_facts(
+                &mut self,
+                transaction: TransactionId,
+                facts_generation: u64,
+                outputs: Vec<ContentOutputFactsEntry>,
+            ) -> Result<(), ShellTransportError> {
+                self.state.publish_content_output_facts(
+                    &mut self.content_epochs,
+                    transaction,
+                    facts_generation,
+                    outputs,
+                )
+            }
 
-    pub fn next_content_allocation_request(
-        &self,
-    ) -> Option<(TransactionId, ContentAllocationRequest)> {
-        self.state
-            .next_content_allocation_request(&self.content_epochs)
-    }
+            pub fn service_content_allocation_requests(
+                &mut self,
+                presented_parents: &[(ContentAllocationId, u64)],
+                now_msec: u64,
+            ) -> Result<usize, ShellTransportError> {
+                self.state.service_content_allocation_requests(
+                    &mut self.content_epochs,
+                    presented_parents,
+                    now_msec,
+                )
+            }
 
-    pub fn grant_content_allocation(
-        &mut self,
-        request_id: u64,
-        snapshot: ContentAllocationSnapshot,
-        presented_parents: &[(ContentAllocationId, u64)],
-    ) -> Result<(), ShellTransportError> {
-        self.state.grant_content_allocation(
-            &mut self.content_epochs,
-            request_id,
-            snapshot,
-            presented_parents,
-        )
-    }
+            pub fn next_content_allocation_request(
+                &self,
+            ) -> Option<(TransactionId, ContentAllocationRequest)> {
+                self.state
+                    .next_content_allocation_request(&self.content_epochs)
+            }
 
-    pub fn reject_content_allocation(
-        &mut self,
-        request_id: u64,
-        error: ContentAllocationError,
-    ) -> Result<(), ShellTransportError> {
-        self.state
-            .reject_content_allocation(&mut self.content_epochs, request_id, error)
-    }
+            pub fn grant_content_allocation(
+                &mut self,
+                request_id: u64,
+                snapshot: ContentAllocationSnapshot,
+                presented_parents: &[(ContentAllocationId, u64)],
+            ) -> Result<(), ShellTransportError> {
+                self.state.grant_content_allocation(
+                    &mut self.content_epochs,
+                    request_id,
+                    snapshot,
+                    presented_parents,
+                )
+            }
 
-    pub fn release_content_allocation(
-        &mut self,
-        request_id: u64,
-    ) -> Result<(), ShellTransportError> {
-        self.state
-            .release_content_allocation(&mut self.content_epochs, request_id)
-    }
+            pub fn reject_content_allocation(
+                &mut self,
+                request_id: u64,
+                error: ContentAllocationError,
+            ) -> Result<(), ShellTransportError> {
+                self.state
+                    .reject_content_allocation(&mut self.content_epochs, request_id, error)
+            }
 
-    pub fn invalidate_content_allocation(
-        &mut self,
-        transaction: TransactionId,
-        allocation: ContentAllocationId,
-        reason: ContentReason,
-    ) -> Result<(), ShellTransportError> {
-        self.state.invalidate_content_allocation(
-            &mut self.content_epochs,
-            transaction,
-            allocation,
-            reason,
-        )
-    }
+            pub fn release_content_allocation(
+                &mut self,
+                request_id: u64,
+            ) -> Result<(), ShellTransportError> {
+                self.state
+                    .release_content_allocation(&mut self.content_epochs, request_id)
+            }
 
-    pub fn expire_content_allocations(&mut self, now_msec: u64) -> Result<(), ShellTransportError> {
-        self.state
-            .expire_content_allocations(&mut self.content_epochs, now_msec)
-    }
+            pub fn invalidate_content_allocation(
+                &mut self,
+                transaction: TransactionId,
+                allocation: ContentAllocationId,
+                reason: ContentReason,
+            ) -> Result<(), ShellTransportError> {
+                self.state.invalidate_content_allocation(
+                    &mut self.content_epochs,
+                    transaction,
+                    allocation,
+                    reason,
+                )
+            }
 
-    pub fn content_allocation_snapshots(&self) -> Vec<ContentAllocationSnapshot> {
-        self.state
-            .content_allocation_snapshots(&self.content_epochs)
-    }
+            pub fn expire_content_allocations(
+                &mut self,
+                now_msec: u64,
+            ) -> Result<(), ShellTransportError> {
+                self.state
+                    .expire_content_allocations(&mut self.content_epochs, now_msec)
+            }
+
+            pub fn content_allocation_snapshots(&self) -> Vec<ContentAllocationSnapshot> {
+                self.state
+                    .content_allocation_snapshots(&self.content_epochs)
+            }
+        }
+    };
 }
+transport_facade!(ShellSessionTransport);
+transport_facade!(crate::shell_transport::ShellTransportConnection<'_>);

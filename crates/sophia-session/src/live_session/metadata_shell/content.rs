@@ -5,7 +5,7 @@ use sophia_backend_live::LiveShellContentFrame;
 use sophia_engine::{CompositorContentImage, CompositorNodeId, HeadlessOutput};
 use sophia_protocol::{ContentOutputId, OutputId, Rect, Size};
 use sophia_runtime::{ContentAllocationSnapshot, ContentRenderBundle};
-use sophia_runtime::{ShellSessionTransport, ShellTransportError};
+use sophia_runtime::{ShellTransportConnection, ShellTransportError};
 
 #[path = "content/actions.rs"]
 pub(in crate::live_session) mod actions;
@@ -133,7 +133,7 @@ impl LiveContentSession {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn service(
         &mut self,
-        transport: &mut ShellSessionTransport,
+        transport: &mut ShellTransportConnection<'_>,
         runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
         scene: &sophia_backend_live::LiveProductionCpuScene,
         native_scanout: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
@@ -253,7 +253,7 @@ impl LiveContentSession {
 
     pub(super) fn observe_presentation(
         &mut self,
-        transport: &mut ShellSessionTransport,
+        transport: &mut ShellTransportConnection<'_>,
         runtime: &sophia_backend_live::LiveProductionVisualRuntime,
     ) -> Result<bool, ShellTransportError> {
         let Some((index, epoch)) = self
@@ -315,7 +315,7 @@ impl LiveContentSession {
 
     fn publish_outputs(
         &mut self,
-        transport: &mut ShellSessionTransport,
+        transport: &mut ShellTransportConnection<'_>,
         outputs: &[HeadlessOutput],
         transaction: &mut dyn FnMut() -> Result<
             sophia_protocol::TransactionId,

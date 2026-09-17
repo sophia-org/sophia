@@ -4,6 +4,7 @@
 //! retirement, policy execution, or compositor owner-loop acceptance.
 use super::*;
 use sophia_protocol::*;
+use sophia_runtime::ShellSessionTransport;
 use sophia_shell_client::*;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -167,7 +168,7 @@ impl Harness {
                 0,
                 &self.limits,
                 TransactionId::from_raw(71),
-                &mut self.transport,
+                &mut self.transport.connection(),
             )
             .unwrap()
             .unwrap()
@@ -346,7 +347,12 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
             .unwrap();
         h.client.poll_io().unwrap();
         if ack_first {
-            assert_eq!(h.ledger.service_acks(&mut h.transport, 1, 64).unwrap(), 1);
+            assert_eq!(
+                h.ledger
+                    .service_acks(&mut h.transport.connection(), 1, 64)
+                    .unwrap(),
+                1
+            );
         }
         let tx = TransactionId::from_raw(81);
         assert_eq!(
@@ -382,7 +388,7 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
         indicators.last_published = Some(snapshot);
         h.ledger
             .service_indicator_request(
-                &mut h.transport,
+                &mut h.transport.connection(),
                 &mut indicators,
                 true,
                 1,
@@ -416,7 +422,9 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
             LinkedIndicatorAdmission::Stale
         );
         assert_eq!(
-            h.ledger.service_acks(&mut h.transport, 1, 64).unwrap(),
+            h.ledger
+                .service_acks(&mut h.transport.connection(), 1, 64)
+                .unwrap(),
             usize::from(!ack_first)
         );
         assert!(h.ledger.live.is_empty());
@@ -459,7 +467,11 @@ fn real_client_rejects_action_before_presented_and_never_acknowledges_cancel() {
     let now = u64::from(h.limits.action_ack_timeout_ms) + 1;
     let index = h.ledger.next_cancellation(&[], now).unwrap();
     h.ledger
-        .queue_cancellation(index, TransactionId::from_raw(72), &mut h.transport)
+        .queue_cancellation(
+            index,
+            TransactionId::from_raw(72),
+            &mut h.transport.connection(),
+        )
         .unwrap();
     let cancel = h.dispatch();
     assert_eq!(cancel.action, Some(ContentActionDispatch::Cancelled));
@@ -474,7 +486,12 @@ fn real_client_rejects_action_before_presented_and_never_acknowledges_cancel() {
             .unwrap()
             .is_none()
     );
-    assert_eq!(h.ledger.service_acks(&mut h.transport, now, 64).unwrap(), 0);
+    assert_eq!(
+        h.ledger
+            .service_acks(&mut h.transport.connection(), now, 64)
+            .unwrap(),
+        0
+    );
     assert!(h.ledger.live.is_empty());
     h.transport.disconnect().unwrap();
 }
@@ -692,14 +709,20 @@ fn owner_decision_finishes_refusals_without_replaying_wm_admission() {
         }
         let mut invoked = 0;
         h.ledger
-            .service_indicator_request(&mut h.transport, &mut indicators, true, 1, |_, _| {
-                invoked += 1;
-                Ok(crate::live_session::LiveIndicatorAdmissionResult {
-                    admission,
-                    activation_serial: Some(100),
-                    policy_connection_epoch: 1,
-                })
-            })
+            .service_indicator_request(
+                &mut h.transport.connection(),
+                &mut indicators,
+                true,
+                1,
+                |_, _| {
+                    invoked += 1;
+                    Ok(crate::live_session::LiveIndicatorAdmissionResult {
+                        admission,
+                        activation_serial: Some(100),
+                        policy_connection_epoch: 1,
+                    })
+                },
+            )
             .unwrap();
         assert_eq!(invoked, calls);
         h.transport.poll_io().unwrap();
@@ -764,14 +787,20 @@ fn direct_mode_keeps_snapshot_and_event_high_water_checks() {
         let before = calls;
         assert!(
             h.ledger
-                .service_indicator_request(&mut h.transport, &mut indicators, false, 1, |_, _| {
-                    calls += 1;
-                    Ok(crate::live_session::LiveIndicatorAdmissionResult {
-                        admission: crate::live_session::LiveWmRequestAdmission::Admitted,
-                        activation_serial: Some(100),
-                        policy_connection_epoch: 1,
-                    })
-                },)
+                .service_indicator_request(
+                    &mut h.transport.connection(),
+                    &mut indicators,
+                    false,
+                    1,
+                    |_, _| {
+                        calls += 1;
+                        Ok(crate::live_session::LiveIndicatorAdmissionResult {
+                            admission: crate::live_session::LiveWmRequestAdmission::Admitted,
+                            activation_serial: Some(100),
+                            policy_connection_epoch: 1,
+                        })
+                    },
+                )
                 .unwrap()
         );
         assert_eq!(
@@ -788,7 +817,7 @@ fn direct_mode_keeps_snapshot_and_event_high_water_checks() {
         assert!(
             !h.ledger
                 .service_indicator_request(
-                    &mut h.transport,
+                    &mut h.transport.connection(),
                     &mut indicators,
                     false,
                     1,

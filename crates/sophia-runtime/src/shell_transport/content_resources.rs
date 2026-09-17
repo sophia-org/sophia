@@ -216,21 +216,29 @@ fn content_reason(error: ContentStoreError) -> ContentReason {
 }
 
 // Legacy single-shell facade, delegating to the same shared registry path.
-impl ShellSessionTransport {
-    pub fn service_content_resources(
-        &mut self,
-        now_msec: u64,
-    ) -> Result<usize, ShellTransportError> {
-        self.state
-            .service_content_resources(&mut self.content_epochs, now_msec)
-    }
 
-    pub fn send_content_record(
-        &mut self,
-        transaction: TransactionId,
-        record: &ShellContentRecord,
-    ) -> Result<(), ShellTransportError> {
-        self.state
-            .send_content_record(&mut self.content_epochs, transaction, record)
-    }
+// The owned legacy and borrowed Session façades share forwarding, not policy.
+macro_rules! transport_facade {
+    ($transport:ty) => {
+        impl $transport {
+            pub fn service_content_resources(
+                &mut self,
+                now_msec: u64,
+            ) -> Result<usize, ShellTransportError> {
+                self.state
+                    .service_content_resources(&mut self.content_epochs, now_msec)
+            }
+
+            pub fn send_content_record(
+                &mut self,
+                transaction: TransactionId,
+                record: &ShellContentRecord,
+            ) -> Result<(), ShellTransportError> {
+                self.state
+                    .send_content_record(&mut self.content_epochs, transaction, record)
+            }
+        }
+    };
 }
+transport_facade!(ShellSessionTransport);
+transport_facade!(crate::shell_transport::ShellTransportConnection<'_>);

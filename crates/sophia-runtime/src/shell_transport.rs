@@ -26,6 +26,8 @@ use crate::{
 };
 
 mod accounting;
+mod connection;
+pub use connection::ShellTransportConnection;
 mod legacy;
 mod negotiation;
 mod negotiation_policy;

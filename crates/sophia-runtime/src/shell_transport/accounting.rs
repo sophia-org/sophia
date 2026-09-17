@@ -102,21 +102,29 @@ impl ShellComponentTransport {
 }
 
 // Legacy single-shell facade, delegating to the same shared registry path.
-impl ShellSessionTransport {
-    pub fn finish_content_after_backend_drop<B>(
-        &mut self,
-        backend: B,
-    ) -> Result<ShellContentShutdown, B> {
-        self.state
-            .finish_content_after_backend_drop(&mut self.content_epochs, backend)
-    }
 
-    pub fn content_accounting(&self) -> ShellContentAccounting {
-        self.state.content_accounting(&self.content_epochs)
-    }
+// The owned legacy and borrowed Session façades share forwarding, not policy.
+macro_rules! transport_facade {
+    ($transport:ty) => {
+        impl $transport {
+            pub fn finish_content_after_backend_drop<B>(
+                &mut self,
+                backend: B,
+            ) -> Result<ShellContentShutdown, B> {
+                self.state
+                    .finish_content_after_backend_drop(&mut self.content_epochs, backend)
+            }
 
-    pub fn collect_content_accounting(&mut self) -> ShellContentAccounting {
-        self.state
-            .collect_content_accounting(&mut self.content_epochs)
-    }
+            pub fn content_accounting(&self) -> ShellContentAccounting {
+                self.state.content_accounting(&self.content_epochs)
+            }
+
+            pub fn collect_content_accounting(&mut self) -> ShellContentAccounting {
+                self.state
+                    .collect_content_accounting(&mut self.content_epochs)
+            }
+        }
+    };
 }
+transport_facade!(ShellSessionTransport);
+transport_facade!(crate::shell_transport::ShellTransportConnection<'_>);

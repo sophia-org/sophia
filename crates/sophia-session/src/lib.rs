@@ -46,6 +46,7 @@ pub mod session_control;
 pub mod session_keyboard;
 pub mod session_shutdown;
 pub mod session_startup;
+pub mod shell_component_connections;
 pub mod support;
 
 #[cfg(feature = "native-session")]
