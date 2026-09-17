@@ -1587,24 +1587,30 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 };
                                 if recipient == client {
                                     output.outputs.push(crate::XClientOutput::Event(event));
-                                } else if let Err(error) =
-                                    routing.route_protocol(recipient, event)
+                                } else if let Err(refusal) =
+                                    routing.route_protocol_to_watcher(recipient, event)
                                 {
-                                    if let XServerFrontendRouteError::ClientQueueFull {
-                                        client: stalled,
-                                    } = error
-                                    {
-                                        routing
-                                            .disconnect_saturated_recipient(stalled)
-                                            .map_err(|error| {
-                                                X11SetupSocketError::new(format!(
-                                                    "failed to end a stalled XFixes watcher: {error}"
-                                                ))
-                                            })?;
-                                    } else if !x11_recipient_is_gone(&error) {
-                                        return Err(X11SetupSocketError::new(format!(
-                                            "failed to route an XFixes selection change: {error}"
-                                        )));
+                                    match refusal {
+                                        // ENDED BY THE IDENTITY THAT STALLED. The
+                                        // number alone could by now be a successor's.
+                                        XServerFrontendWatcherRefusal::Stalled(stalled) => {
+                                            let watcher = stalled.client();
+                                            routing
+                                                .disconnect_saturated_recipient(stalled)
+                                                .map_err(|error| {
+                                                    X11SetupSocketError::new(format!(
+                                                        "failed to end a stalled XFixes watcher {}: {error}",
+                                                        watcher.raw()
+                                                    ))
+                                                })?;
+                                        }
+                                        XServerFrontendWatcherRefusal::Route(error) => {
+                                            if !x11_recipient_is_gone(&error) {
+                                                return Err(X11SetupSocketError::new(format!(
+                                                    "failed to route an XFixes selection change: {error}"
+                                                )));
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2699,7 +2705,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 if recipient == client {
                     continue;
                 }
-                if let Err(error) = routing.route_protocol(
+                if let Err(refusal) = routing.route_protocol_to_watcher(
                     recipient,
                     crate::XClientEvent::XfixesSelectionNotify {
                         sequence: 0,
@@ -2711,18 +2717,27 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         selection_time: retired.current.selection_timestamp,
                     },
                 ) {
-                    if let XServerFrontendRouteError::ClientQueueFull { client: stalled } = error {
-                        routing
-                            .disconnect_saturated_recipient(stalled)
-                            .map_err(|error| {
-                                X11SetupSocketError::new(format!(
-                                    "failed to end a stalled XFixes watcher: {error}"
-                                ))
-                            })?;
-                    } else if !x11_recipient_is_gone(&error) {
-                        return Err(X11SetupSocketError::new(format!(
-                            "failed to route a departed peer's selection change: {error}"
-                        )));
+                    match refusal {
+                        // ENDED BY THE IDENTITY THAT STALLED. The number alone
+                        // could by now be a successor's.
+                        XServerFrontendWatcherRefusal::Stalled(stalled) => {
+                            let watcher = stalled.client();
+                            routing
+                                .disconnect_saturated_recipient(stalled)
+                                .map_err(|error| {
+                                    X11SetupSocketError::new(format!(
+                                        "failed to end a stalled XFixes watcher {}: {error}",
+                                        watcher.raw()
+                                    ))
+                                })?;
+                        }
+                        XServerFrontendWatcherRefusal::Route(error) => {
+                            if !x11_recipient_is_gone(&error) {
+                                return Err(X11SetupSocketError::new(format!(
+                                    "failed to route a departed peer's selection change: {error}"
+                                )));
+                            }
+                        }
                     }
                 }
             }
@@ -2813,6 +2828,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 })?;
         }
     }
+    // AFTER THE WRITERS ARE JOINED, AND THAT ORDER IS LOAD-BEARING. The input
+    // writer's recovery guard disconnects this client BY NUMBER when its
+    // thread ends. `writers.shut_down()` above stopped and joined every
+    // writer synchronously, so that action has completed here, while this
+    // registration -- and with it the number's claim -- is still alive; it
+    // can therefore reach only this connection's ledger entry. Every early
+    // return and unwind between the writers' spawn and here keeps the same
+    // order for a different reason: `owned` is declared after
+    // `route_registration`, so it is dropped first. Nothing enforces either
+    // by type. A registration dropped before its writers are joined would
+    // release the number under a by-number act still to come.
     drop(route_registration);
     let cleanup_observer_result = if release.removed_surfaces.is_empty()
         && release.released_dma_bufs.is_empty()

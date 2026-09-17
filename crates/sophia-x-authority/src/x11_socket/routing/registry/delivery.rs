@@ -1,3 +1,32 @@
+/// The exact connection a protocol delivery could not be queued for.
+///
+/// MINTED ONLY BY THE ROUTE THAT FAILED, from the identity it captured with
+/// the endpoint it used. A caller holding one can end THAT connection; it
+/// cannot end whoever holds the number by the time it acts. It carries no
+/// other capability and settles nothing.
+#[cfg(unix)]
+pub(crate) struct XServerFrontendStalledRecipient {
+    client: XServerFrontendClientId,
+    occupant: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+}
+
+#[cfg(unix)]
+impl XServerFrontendStalledRecipient {
+    pub(crate) fn client(&self) -> XServerFrontendClientId {
+        self.client
+    }
+}
+
+/// Why a delivery to a watcher did not happen.
+#[cfg(unix)]
+pub(crate) enum XServerFrontendWatcherRefusal {
+    /// It stopped draining. Ending it goes through this value, not the
+    /// number.
+    Stalled(XServerFrontendStalledRecipient),
+    /// Anything else the route reported.
+    Route(XServerFrontendRouteError),
+}
+
 impl XServerFrontendRouteRegistry {
     fn advance_input_control_epoch(&self) -> Result<usize, XServerFrontendRouteError> {
         self.input_authority
@@ -636,17 +665,50 @@ impl XServerFrontendRouteRegistry {
         client: XServerFrontendClientId,
         event: XClientEvent,
     ) -> Result<(), XServerFrontendRouteError> {
+        self.route_protocol_to_watcher(client, event)
+            .map_err(|refusal| match refusal {
+                XServerFrontendWatcherRefusal::Stalled(stalled) => {
+                    XServerFrontendRouteError::ClientQueueFull {
+                        client: stalled.client,
+                    }
+                }
+                XServerFrontendWatcherRefusal::Route(error) => error,
+            })
+    }
+
+    /// As `route_protocol`, but a recipient that has stopped draining is named
+    /// exactly.
+    ///
+    /// THE NUMBER IN A `ClientQueueFull` IS NOT ENOUGH TO ACT ON. The caller
+    /// that ends a stalled watcher does so after this returns, and by then the
+    /// number can belong to a successor. What comes back here is the identity
+    /// this route captured with the sender it used, so the ending reaches the
+    /// connection that stalled and not whoever holds its number next.
+    fn route_protocol_to_watcher(
+        &self,
+        client: XServerFrontendClientId,
+        event: XClientEvent,
+    ) -> Result<(), XServerFrontendWatcherRefusal> {
         let (incarnation, sender) = match self.client_senders(client) {
             Ok(senders) => (senders.connection_state.clone(), senders.protocol),
             Err(XServerFrontendRouteError::UnknownClient { .. }) => return Ok(()),
-            Err(error) => return Err(error),
+            Err(error) => return Err(XServerFrontendWatcherRefusal::Route(error)),
         };
         match self.route_to_client(client, &incarnation, sender, event) {
+            Ok(()) => Ok(()),
             Err(
                 XServerFrontendRouteError::UnknownClient { .. }
                 | XServerFrontendRouteError::ClientQueueDisconnected { .. },
             ) => Ok(()),
-            result => result,
+            Err(XServerFrontendRouteError::ClientQueueFull { .. }) => {
+                Err(XServerFrontendWatcherRefusal::Stalled(
+                    XServerFrontendStalledRecipient {
+                        client,
+                        occupant: incarnation,
+                    },
+                ))
+            }
+            Err(error) => Err(XServerFrontendWatcherRefusal::Route(error)),
         }
     }
 

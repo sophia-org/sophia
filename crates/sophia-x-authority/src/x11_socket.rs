@@ -118,6 +118,7 @@ include!("x11_socket/routing/control_dependents.rs");
 include!("x11_socket/routing/control_publication.rs");
 include!("x11_socket/routing/recovery_completion.rs");
 include!("x11_socket/routing/recovery.rs");
+include!("x11_socket/routing/recovery_connection.rs");
 include!("x11_socket/routing/focus.rs");
 include!("x11_socket/routing/registry.rs");
 include!("x11_socket/routing/subscriptions.rs");

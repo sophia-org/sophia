@@ -37,7 +37,7 @@ fn input_recovery_keeps_absolute_deadline_and_five_second_startup_grace() {
     let now = Instant::now();
     let client = XServerFrontendClientId(1);
     let old = route(1, SurfaceId::new(11, 3));
-    recovery.register(client).unwrap();
+    recovery.register(client, None).unwrap();
     assert!(recovery.admit(&old, 7, now));
     recovery.bind(old.delivery, client).unwrap();
     assert!(
@@ -93,7 +93,7 @@ fn input_recovery_wrong_client_duplicate_and_late_receipts_cannot_settle() {
     let (recovery, receipts) = ledger(2);
     let client = XServerFrontendClientId(1);
     let request = route(1, SurfaceId::new(11, 3));
-    recovery.register(client).unwrap();
+    recovery.register(client, None).unwrap();
     assert!(recovery.admit(&request, 1, Instant::now()));
     recovery.bind(request.delivery, client).unwrap();
     recovery
@@ -132,8 +132,8 @@ fn input_recovery_disconnect_interrupts_a_blocked_writer_without_its_mutex() {
     let now = Instant::now();
     let client = XServerFrontendClientId(1);
     let healthy = XServerFrontendClientId(2);
-    recovery.register(client).unwrap();
-    recovery.register(healthy).unwrap();
+    recovery.register(client, None).unwrap();
+    recovery.register(healthy, None).unwrap();
     let (mut socket, _nonreading_peer) = UnixStream::pair().unwrap();
     let (mut good_socket, mut good_peer) = UnixStream::pair().unwrap();
     recovery
@@ -258,7 +258,7 @@ fn input_recovery_routing_binds_the_grab_receiver_and_revokes_only_its_grab() {
 fn input_recovery_writer_exit_settles_current_and_queued_deliveries() {
     let (recovery, receipts) = ledger(3);
     let client = XServerFrontendClientId(1);
-    recovery.register(client).unwrap();
+    recovery.register(client, None).unwrap();
     for id in 1..=2 {
         let request = route(id, SurfaceId::new(11, 3));
         recovery.admit(&request, 1, Instant::now());
@@ -303,7 +303,7 @@ fn input_recovery_expiration_and_completion_have_one_winner() {
         let client = XServerFrontendClientId(1);
         let request = route(1, SurfaceId::new(11, 3));
         let now = Instant::now();
-        recovery.register(client).unwrap();
+        recovery.register(client, None).unwrap();
         recovery.admit(&request, 1, now);
         recovery.bind(request.delivery, client).unwrap();
         if completion_first {

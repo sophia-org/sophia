@@ -8317,7 +8317,7 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
     selections.update(window, Some(1 << 6), None);
     let (deliveries, settled) = channel();
     let recovery = InputRecovery::new(4, Some(deliveries), Arc::default());
-    recovery.register(client).expect("a fresh ledger");
+    recovery.register(client, None).expect("a fresh ledger");
     let (events, receiver) = channel();
     let (stream, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
     // Control output is registered and nobody will clear it, so the writer
@@ -18687,7 +18687,7 @@ fn an_established_fact_is_reported_even_when_something_may_have_applied() {
     let client = XServerFrontendClientId(1103);
     let delivery = XAuthorityInputDeliveryId::from_raw(1103);
     let (recovery, receipts) = claim_fixture(delivery);
-    recovery.register(client).unwrap();
+    recovery.register(client, None).unwrap();
     assert_eq!(recovery.claim_execution(Some(delivery)), ExecutionClaim::Claimed);
     assert!(recovery.bind(Some(delivery), client).unwrap());
 
@@ -18719,7 +18719,7 @@ fn a_cancellation_deferred_by_binding_under_a_claim_stands_when_nothing_applied(
     let client = XServerFrontendClientId(1102);
     let delivery = XAuthorityInputDeliveryId::from_raw(1102);
     let (recovery, receipts) = claim_fixture(delivery);
-    recovery.register(client).unwrap();
+    recovery.register(client, None).unwrap();
     recovery.disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected).unwrap();
     assert_eq!(recovery.claim_execution(Some(delivery)), ExecutionClaim::Claimed);
     assert!(!recovery.bind(Some(delivery), client).unwrap());
@@ -20195,7 +20195,7 @@ fn an_adjudication_reports_what_the_authority_did_with_it() {
     let client = XServerFrontendClientId(17401);
     let other = XServerFrontendClientId(17402);
     let (recovery, _receipts) = claim_fixture(delivery);
-    recovery.register(client).unwrap();
+    recovery.register(client, None).unwrap();
     assert!(
         recovery.bind(Some(delivery), client).unwrap(),
         "the delivery is bound to the recipient it reached"
@@ -20248,7 +20248,7 @@ fn a_rejected_offer_stays_refused_even_when_older_work_is_deferred() {
     let client = XServerFrontendClientId(17501);
     let other = XServerFrontendClientId(17502);
     let (recovery, receipts) = claim_fixture(delivery);
-    recovery.register(client).unwrap();
+    recovery.register(client, None).unwrap();
     assert!(recovery.bind(Some(delivery), client).unwrap());
     assert_eq!(
         recovery.claim_execution(Some(delivery)),
@@ -38398,7 +38398,7 @@ fn a_number_is_not_free_because_its_row_went() {
         .registry
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place, a keeper, a record and a row");
-    assert_eq!(private.broker.registry.occupancy.state_of(client), Some((false, false)));
+    assert_eq!(private.broker.registry.occupancy.state_of(client), Some(PrivateNumberStanding::Held));
 
     // Its endpoint goes; the next send finds it disconnected and removes the
     // row, which is one of the paths this rule exists for.
@@ -38511,7 +38511,7 @@ fn a_number_stays_held_while_its_endings_effects_run() {
         .expect("a place, a keeper, a record and a row");
     let registry = private.broker.registry.clone();
 
-    let (entered, excluded, outcome, neighbour_ok) = std::thread::scope(|scope| {
+    let (entered, row_gone, excluded, outcome, neighbour_ok) = std::thread::scope(|scope| {
         // A TABLE THE ENDING TAKES LATE, AND PUBLICATION NEVER TAKES. The
         // ending reaches this one after its writer cancellation, its recovery
         // disconnect and its row removal, so holding it stops the ending
@@ -38531,7 +38531,23 @@ fn a_number_stays_held_while_its_endings_effects_run() {
         // made here would, when it fails, unwind while this table is held and
         // leave the ending waiting on a poisoned lock forever -- so a control
         // that had something to report would hang instead of reporting it.
-        let entered = waited_for(|| matches!(registry.occupancy.state_of(client), Some((true, _))));
+        let entered = waited_for(|| {
+            matches!(
+                registry.occupancy.state_of(client),
+                Some(PrivateNumberStanding::Visiting)
+            )
+        });
+        // AND ITS ROW IS GONE. Visiting is set before the row removal, so a
+        // publication asked between the two would rightly be refused as a
+        // duplicate -- the table's refusal, not the number's. The number's is
+        // what this control is about, so the row's absence is established
+        // first, while this table still holds the interval open.
+        let row_gone = waited_for(|| {
+            matches!(
+                registry.client_senders(client),
+                Err(XServerFrontendRouteError::UnknownClient { .. })
+            )
+        });
         let attempted = registry.register_client_with_admission(client, Some(admitted(client)));
         let excluded = matches!(
             attempted.as_ref().err(),
@@ -38558,12 +38574,16 @@ fn a_number_stays_held_while_its_endings_effects_run() {
         drop(attempted);
         drop(admitted_neighbour);
         ending.join().expect("the ending finished");
-        (entered, excluded, outcome, neighbour_ok)
+        (entered, row_gone, excluded, outcome, neighbour_ok)
     });
 
     assert!(
         entered,
         "its ending is inside the interval its number authorises"
+    );
+    assert!(
+        row_gone,
+        "and past its row removal, so the table cannot answer the attempt"
     );
     assert!(
         excluded,
@@ -38612,7 +38632,7 @@ fn a_number_whose_ending_could_not_finish_stays_held() {
     drop(registration);
     assert_eq!(
         private.broker.registry.occupancy.state_of(client),
-        Some((false, true)),
+        Some(PrivateNumberStanding::Unestablished),
         "its ending could not establish that the number may be reused"
     );
     let refused = private
@@ -38649,14 +38669,16 @@ fn an_old_senders_failure_does_not_remove_the_connection_that_took_its_number() 
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place, a keeper, a record and a row");
 
-    // The old operation's sender, captured the ordinary way while its
-    // connection was live.
-    let stale = private
+    // The old operation's sender AND the identity it came with, from the one
+    // lookup an operation makes while its connection is live. The pair below
+    // is that captured pair, not a sender beside an invented cell.
+    let senders = private
         .broker
         .registry
         .client_senders(client)
-        .expect("its own senders")
-        .control;
+        .expect("its own senders");
+    let stale_incarnation = Arc::clone(&senders.connection_state);
+    let stale = senders.control;
 
     // Its connection ends, which releases the number, and a real successor
     // takes it with channels of its own.
@@ -38673,7 +38695,7 @@ fn an_old_senders_failure_does_not_remove_the_connection_that_took_its_number() 
     // that removes a row.
     let failed = private.broker.registry.route_to_client(
         client,
-        &registration_state_of(&private, client, false),
+        &stale_incarnation,
         stale,
         X11RoutedControl::FocusOut {
             window: XResourceId::new(0x9106, 1),
@@ -38716,27 +38738,6 @@ fn an_old_senders_failure_does_not_remove_the_connection_that_took_its_number() 
     drop(successor_channels);
     drop(successor);
     drop((private, keeper, durable));
-}
-
-/// The incarnation a caller would have captured: the current row's, or a
-/// deliberately stale one that no longer names any row.
-fn registration_state_of(
-    private: &crate::PrivateXServerFrontend,
-    client: XServerFrontendClientId,
-    current: bool,
-) -> Arc<std::sync::OnceLock<PrivateAppliedClientState>> {
-    if current {
-        private
-            .broker
-            .registry
-            .client_senders(client)
-            .expect("its own senders")
-            .connection_state
-    } else {
-        // A connection that has gone: its cell is nobody's row now, which is
-        // what an old operation is holding.
-        Arc::new(std::sync::OnceLock::new())
-    }
 }
 
 #[test]
@@ -38810,7 +38811,7 @@ fn a_stale_cleanup_request_does_not_run_against_the_successor() {
     assert!(
         matches!(
             private.broker.registry.occupancy.state_of(client),
-            Some((false, false))
+            Some(PrivateNumberStanding::Held)
         ),
         "the successor's own claim is intact and not marked clearing"
     );
@@ -38889,7 +38890,7 @@ fn a_refused_publication_changes_nothing_under_the_number_it_could_not_take() {
     );
     assert_eq!(
         private.broker.registry.occupancy.state_of(client),
-        Some((false, false)),
+        Some(PrivateNumberStanding::Held),
         "and the incumbent's own claim is not marked by somebody else's attempt"
     );
 
@@ -39178,7 +39179,7 @@ fn two_attempts_at_one_number_cannot_both_have_it() {
     );
     assert_eq!(
         registry.occupancy.state_of(client),
-        Some((false, false)),
+        Some(PrivateNumberStanding::Held),
         "and the winner's claim is the one that is held"
     );
 
@@ -39227,7 +39228,7 @@ fn an_operation_view_ending_does_not_give_the_number_back() {
     drop(pin);
     assert_eq!(
         private.broker.registry.occupancy.state_of(client),
-        Some((false, false)),
+        Some(PrivateNumberStanding::Held),
         "a custody view ending is not this connection ending"
     );
 
@@ -39235,14 +39236,14 @@ fn an_operation_view_ending_does_not_give_the_number_back() {
     drop(name);
     assert_eq!(
         private.broker.registry.occupancy.state_of(client),
-        Some((false, false)),
+        Some(PrivateNumberStanding::Held),
         "nor a maintenance name going out of scope"
     );
 
     drop(channels);
     assert_eq!(
         private.broker.registry.occupancy.state_of(client),
-        Some((false, false)),
+        Some(PrivateNumberStanding::Held),
         "nor its endpoints going"
     );
 
@@ -39330,4 +39331,791 @@ fn a_refused_attempt_at_an_excluded_number_consumes_no_place() {
     );
     drop(held);
     drop((private, keeper, durable));
+}
+
+/// An ending that could not perform one of its number-keyed effects.
+///
+/// `poison` takes the one lock that effect needs, under an ordinary caught
+/// panic, and rewrites nothing. The registration then ends while its keeper
+/// still holds its record. What is asserted is the number's standing
+/// afterwards and what a successor is told -- not that the effect ran.
+fn an_ending_that_could_not(
+    client: XServerFrontendClientId,
+    poison: impl FnOnce(&XServerFrontendRouteRegistry),
+) {
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        poison(&private.broker.registry);
+    }));
+    assert!(poisoning.is_err(), "the poisoning panic is caught here");
+
+    drop(registration);
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Unestablished),
+        "its ending could not establish that the number may be reused"
+    );
+    let refused = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .err()
+        .expect("an unestablished ending keeps its number");
+    assert!(
+        matches!(
+            refused,
+            XServerFrontendRouteError::ClientNumberExcluded { client: same } if same == client
+        ),
+        "{refused:?}"
+    );
+    drop((private, keeper, durable));
+}
+
+#[test]
+fn an_ending_over_an_unreadable_selection_table_keeps_its_number() {
+    // THE EFFECT IS STILL THERE TO BE DONE, and the ending said so. The
+    // poisoned guard is read here as diagnostics only -- nothing is recovered
+    // into service -- to show the exact subscription is still present under a
+    // number the ending must therefore not have handed on.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let registry = &private.broker.registry;
+    let client = XServerFrontendClientId(9120);
+    let namespace = admitted(client).namespace.id;
+    let window = XResourceId::new(0x9120, 1);
+    let (registration, _channels) = registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    registry
+        .select_xfixes_selection_input(client, namespace, window, 0x9120, 0xf)
+        .expect("its own selection interest");
+    let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = registry
+            .xfixes_selection_subscriptions
+            .lock()
+            .expect("a readable table");
+        panic!("poisoning this registry's selection table, and nothing else");
+    }));
+    assert!(poisoning.is_err());
+
+    drop(registration);
+    let remaining = match registry.xfixes_selection_subscriptions.lock() {
+        Ok(_) => panic!("the table is poisoned"),
+        Err(poisoned) => poisoned
+            .into_inner()
+            .contains_key(&(client, window, 0x9120)),
+    };
+    assert!(remaining, "the subscription the ending could not retire is still there");
+    assert_eq!(
+        registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Unestablished)
+    );
+    let refused = registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .err()
+        .expect("a number with work still under it is not free");
+    assert!(
+        matches!(
+            refused,
+            XServerFrontendRouteError::ClientNumberExcluded { client: same } if same == client
+        ),
+        "{refused:?}"
+    );
+    drop((private, keeper, durable));
+}
+
+#[test]
+fn an_ending_over_an_unreadable_focus_keeps_its_number() {
+    an_ending_that_could_not(XServerFrontendClientId(9121), |registry| {
+        let _held = registry.focused_surface.lock().expect("readable");
+        panic!("poisoning the focus cell, and nothing else");
+    });
+}
+
+#[test]
+fn an_ending_over_unreadable_core_event_subscriptions_keeps_its_number() {
+    an_ending_that_could_not(XServerFrontendClientId(9122), |registry| {
+        let _held = registry.core_event_subscriptions.lock().expect("readable");
+        panic!("poisoning the core event subscriptions, and nothing else");
+    });
+}
+
+#[test]
+fn an_ending_over_unreadable_randr_subscriptions_keeps_its_number() {
+    an_ending_that_could_not(XServerFrontendClientId(9123), |registry| {
+        let _held = registry.randr_subscriptions.lock().expect("readable");
+        panic!("poisoning the RandR subscriptions, and nothing else");
+    });
+}
+
+#[test]
+fn an_ending_over_unreadable_present_subscriptions_keeps_its_number() {
+    an_ending_that_could_not(XServerFrontendClientId(9124), |registry| {
+        let _held = registry.present_subscriptions.lock().expect("readable");
+        panic!("poisoning the presentation subscriptions, and nothing else");
+    });
+}
+
+#[test]
+fn an_ending_over_unreadable_pending_presentations_keeps_its_number() {
+    an_ending_that_could_not(XServerFrontendClientId(9125), |registry| {
+        let _held = registry
+            .pending_presentations
+            .entries
+            .lock()
+            .expect("readable");
+        panic!("poisoning the pending presentations, and nothing else");
+    });
+}
+
+#[test]
+fn an_ending_over_unreadable_frozen_input_keeps_its_number() {
+    an_ending_that_could_not(XServerFrontendClientId(9126), |registry| {
+        let _held = registry.frozen_input.lock().expect("readable");
+        panic!("poisoning the frozen input, and nothing else");
+    });
+}
+
+#[test]
+fn an_ending_over_unreadable_parents_keeps_its_number() {
+    an_ending_that_could_not(XServerFrontendClientId(9127), |registry| {
+        let _held = registry.window_parents.lock().expect("readable");
+        panic!("poisoning the parent table, and nothing else");
+    });
+}
+
+#[test]
+fn an_ending_over_an_unreadable_writer_registry_keeps_its_number() {
+    // THE CANCELLATION THAT SILENTLY DID NOTHING. A registry it cannot read
+    // is an expectation nobody cancelled, and a number freed over that is
+    // freed over a client the registry still believes may execute.
+    an_ending_that_could_not(XServerFrontendClientId(9128), |registry| {
+        let completion = registry
+            .control_completion()
+            .expect("a private frontend installs one");
+        let _held = completion.inner.lock().expect("readable");
+        panic!("poisoning the writer registry, and nothing else");
+    });
+}
+
+#[test]
+fn an_ending_over_an_unreadable_recovery_ledger_keeps_its_number() {
+    // THE DISCONNECT WHOSE RESULT WAS THROWN AWAY. A ledger that refused to
+    // disconnect this connection has its gate open, its socket live and its
+    // entry unrevoked, under a number the ending must therefore keep.
+    an_ending_that_could_not(XServerFrontendClientId(9129), |registry| {
+        let _held = registry.input_recovery.state.lock().expect("readable");
+        panic!("poisoning the recovery ledger, and nothing else");
+    });
+}
+
+#[test]
+fn an_ending_over_an_unreadable_client_table_keeps_its_number() {
+    // THE ONE TABLE WHOSE UNREADABILITY THE SUCCESSOR MEETS FIRST. Publication
+    // reads it before it reaches the number, so the refusal here is the
+    // table's own; the number's standing is what this control checks.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(9130);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = private.broker.registry.clients.lock().expect("readable");
+        panic!("poisoning the client table, and nothing else");
+    }));
+    assert!(poisoning.is_err());
+    drop(registration);
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Unestablished)
+    );
+    let refused = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .err()
+        .expect("nothing publishes through an unreadable table");
+    assert!(
+        matches!(refused, XServerFrontendRouteError::RegistryPoisoned),
+        "{refused:?}"
+    );
+    drop((private, keeper, durable));
+}
+
+#[test]
+fn an_ending_whose_recovery_entry_is_not_its_own_keeps_its_number() {
+    // A DIRECT SEAM CONTROL. The exclusion makes this impossible from
+    // publication -- the entry under a held number is its holder's -- so the
+    // entry is replaced here directly, with one that names no occupant. The
+    // ending's disconnect then finds an entry that is not this connection's
+    // to act on, and must not certify over it.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(9131);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    private
+        .broker
+        .registry
+        .input_recovery
+        .register(client, None)
+        .expect("the entry is replaced with nobody's");
+    drop(registration);
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Unestablished),
+        "a disconnect that was not this connection's to perform is not one performed"
+    );
+    drop((private, keeper, durable));
+}
+
+#[test]
+fn an_unreadable_occupancy_record_is_reported_as_unreadable() {
+    // NOT AS EXCLUDED. Excluded says an incumbent owns the number, which an
+    // unreadable record has established nothing about. Startup is refused
+    // either way; what differs is what the refusal claims to know.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(9132);
+    let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = private
+            .broker
+            .registry
+            .occupancy
+            .held
+            .lock()
+            .expect("readable");
+        panic!("poisoning the occupancy record, and nothing else");
+    }));
+    assert!(poisoning.is_err());
+    let refused = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .err()
+        .expect("nothing publishes through an unreadable record");
+    assert!(
+        matches!(refused, XServerFrontendRouteError::RegistryPoisoned),
+        "{refused:?}"
+    );
+    drop((private, keeper, durable));
+}
+
+#[test]
+fn a_second_visit_through_one_right_is_refused_while_the_first_is_inside() {
+    // ONE RIGHT, TWO ASKINGS. The record outlives its registration, so the
+    // same right can be asked to clean up twice. Two bodies admitted through
+    // it would both run number-keyed effects; the first to return would free
+    // the number for both, and the other would then act on the successor.
+    //
+    // THE FIRST VISIT IS HELD OPEN BY THIS TABLE; the second is asked from
+    // another thread with a bounded wait, so a second visit that was admitted
+    // -- and therefore blocked behind this table too -- is reported as a
+    // failure rather than as a hang.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(9133);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let PrivateCustodyReach::Reached(pin) = registration
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let record = Arc::clone(pin.cleanup_record());
+    drop(pin);
+    let registry = private.broker.registry.clone();
+
+    let (entered, second_returned, standing_meanwhile, refused_meanwhile) =
+        std::thread::scope(|scope| {
+            let parents = registry
+                .window_parents
+                .lock()
+                .expect("a readable parent table");
+            let first = scope.spawn(move || drop(registration));
+            let entered = waited_for(|| {
+                matches!(
+                    registry.occupancy.state_of(client),
+                    Some(PrivateNumberStanding::Visiting)
+                )
+            });
+
+            // THE SECOND ASKING OF THE SAME RECORD.
+            let (done, returned) = channel();
+            let asked = Arc::clone(&record);
+            let second = scope.spawn(move || {
+                asked.run_synchronous_cleanup();
+                let _ = done.send(());
+            });
+            let second_returned = returned
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .is_ok();
+            let standing_meanwhile = registry.occupancy.state_of(client);
+            // BOUND, NOT CONSUMED. An attempt that succeeded is a live
+            // registration whose own ending needs the table this thread is
+            // holding; disposing of it here would be waiting for a lock held
+            // by this thread. It is disposed of after the table goes.
+            let attempted = registry.register_client_with_admission(client, Some(admitted(client)));
+            let refused_meanwhile = attempted.as_ref().err().map(|error| format!("{error:?}"));
+
+            drop(parents);
+            drop(attempted);
+            first.join().expect("the first visit finished");
+            second.join().expect("the second asking returned");
+            (entered, second_returned, standing_meanwhile, refused_meanwhile)
+        });
+
+    assert!(entered, "the first visit is inside the interval");
+    assert!(
+        second_returned,
+        "a second visit through the same right is refused at once, not admitted behind the first"
+    );
+    assert_eq!(
+        standing_meanwhile,
+        Some(PrivateNumberStanding::Visiting),
+        "and the first visit's standing is untouched by the refusal"
+    );
+    assert!(
+        refused_meanwhile
+            .as_deref()
+            .is_some_and(|text| text.contains("ClientNumberExcluded")),
+        "the number is nobody else's while the first visit is inside: {refused_meanwhile:?}"
+    );
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        None,
+        "and only the first visit's return freed it"
+    );
+    drop((record, private, keeper, durable));
+}
+
+#[test]
+fn an_unestablished_number_admits_no_further_visit() {
+    // NO RETRY, AND NOTHING THAT LOOKS LIKE ONE. A visit that returned without
+    // establishing its effects left the number this connection's. Asking the
+    // record again is not a second chance: it is refused, the standing stays
+    // what it was, and the successor is still told the number is not free.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(9134);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let PrivateCustodyReach::Reached(pin) = registration
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let record = Arc::clone(pin.cleanup_record());
+    drop(pin);
+    let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = private
+            .broker
+            .registry
+            .surfaces
+            .lock()
+            .expect("a readable surface table");
+        panic!("poisoning this registry's surface table, and nothing else");
+    }));
+    assert!(poisoning.is_err());
+    drop(registration);
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Unestablished)
+    );
+
+    record.run_synchronous_cleanup();
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Unestablished),
+        "a second asking neither reopens the interval nor frees the number"
+    );
+    let refused = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .err()
+        .expect("still not free");
+    assert!(
+        matches!(
+            refused,
+            XServerFrontendRouteError::ClientNumberExcluded { client: same } if same == client
+        ),
+        "{refused:?}"
+    );
+    drop((record, private, keeper, durable));
+}
+
+#[test]
+fn a_visited_number_is_not_given_back_as_unpublished() {
+    // THE CUSTODY TYPE'S OWN RULE, AT ITS OWN SEAM. The unpublished release
+    // exists for a publication that failed before anything ran under the
+    // number. Once a visit has opened, that description is false, and the
+    // release must not act on it.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(9135);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let PrivateCustodyReach::Reached(pin) = registration
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let record = Arc::clone(pin.cleanup_record());
+    drop(pin);
+    let right = record.number.get().expect("a published record holds its right");
+
+    assert!(right.begin_clearing(), "the first visit opens");
+    assert!(!right.begin_clearing(), "and a second through the same right does not");
+    right.relinquish_unpublished();
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Visiting),
+        "a visited number is not an unpublished one"
+    );
+    right.finish(false);
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Unestablished)
+    );
+    right.finish(true);
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Unestablished),
+        "a later report of success from no open visit establishes nothing"
+    );
+    assert!(!right.begin_clearing(), "and nothing reopens it");
+
+    // The registration's own ending now finds its right already visited and
+    // does none of its number-keyed effects; the number stays this
+    // connection's, which is the rule.
+    drop(registration);
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Unestablished)
+    );
+    drop((record, private, keeper, durable));
+}
+
+#[test]
+fn a_delayed_disconnect_reaches_only_the_connection_it_captured() {
+    // THE LEDGER'S ENTRY IS KEYED BY NUMBER AND THE NUMBER IS REISSUED. A
+    // disconnect decided while the old connection was live and performed
+    // after its successor published must find the successor's entry and leave
+    // it alone -- and the same call with the successor's own identity must
+    // act. Both are asked here, in that order, against one live successor.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let registry = &private.broker.registry;
+    let client = XServerFrontendClientId(9136);
+    let (registration, channels) = registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let old_incarnation = Arc::clone(
+        &registry
+            .client_senders(client)
+            .expect("its own senders")
+            .connection_state,
+    );
+    drop(channels);
+    drop(registration);
+    assert_eq!(registry.occupancy.state_of(client), None);
+
+    let (successor, successor_channels) = registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("the number is free");
+    let successor_incarnation = Arc::clone(
+        &registry
+            .client_senders(client)
+            .expect("the successor's senders")
+            .connection_state,
+    );
+    let (peer, owned) = UnixStream::pair().expect("socket pair");
+    let retained = owned.try_clone().expect("a second handle on the same connection");
+    registry
+        .input_recovery
+        .attach(client, owned)
+        .expect("the successor's own socket");
+    peer.set_read_timeout(Some(std::time::Duration::from_millis(500)))
+        .expect("a bounded wait");
+
+    // THE OLD IDENTITY, ACTING LATE.
+    let stale = registry.input_recovery.disconnect_exact(
+        client,
+        &old_incarnation,
+        XAuthorityInputDeliveryOutcome::ClientDisconnected,
+        None,
+    );
+    assert!(matches!(stale, Ok(false)), "not this entry's to act on: {stale:?}");
+    let mut byte = [0u8; 1];
+    let untouched = std::io::Read::read(&mut &peer, &mut byte);
+    assert!(
+        untouched.is_err(),
+        "the successor's socket is still open: {untouched:?}"
+    );
+    assert!(
+        registry.client_senders(client).is_ok(),
+        "and its row is still there"
+    );
+
+    // THE SUCCESSOR'S OWN IDENTITY, which is the entry's.
+    let exact = registry.input_recovery.disconnect_exact(
+        client,
+        &successor_incarnation,
+        XAuthorityInputDeliveryOutcome::ClientDisconnected,
+        None,
+    );
+    assert!(matches!(exact, Ok(true)), "{exact:?}");
+    let ended = std::io::Read::read(&mut &peer, &mut byte);
+    assert!(matches!(ended, Ok(0)), "its own disconnect reached its socket: {ended:?}");
+    drop((successor_channels, successor, retained, peer, private, keeper, durable));
+}
+
+#[test]
+fn a_stalled_watchers_ending_does_not_reach_its_numbers_successor() {
+    // THE DISPATCHER'S REAL FAILURE ACTION, ON THE VALUE THE ROUTE HANDED
+    // BACK. The old watcher's protocol queue is actually filled and the route
+    // actually refuses it; that watcher then ends and is succeeded at the
+    // same number; and only then does the dispatcher's ending run. It carries
+    // the identity that stalled, so the successor -- its row, its recovery
+    // entry, its socket -- is not the one ended.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let registry = &private.broker.registry;
+    let client = XServerFrontendClientId(9137);
+    let (registration, channels) = registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let change = || crate::XClientEvent::XfixesSelectionNotify {
+        sequence: 0,
+        subtype: 0,
+        window: XResourceId::new(0x9137, 1),
+        owner: crate::XResourceId::NONE,
+        selection: 0x9137,
+        time: 0,
+        selection_time: 0,
+    };
+    let mut stalled = None;
+    for _ in 0..4096 {
+        match registry.route_protocol_to_watcher(client, change()) {
+            Ok(()) => continue,
+            Err(XServerFrontendWatcherRefusal::Stalled(recipient)) => {
+                stalled = Some(recipient);
+                break;
+            }
+            Err(XServerFrontendWatcherRefusal::Route(error)) => {
+                panic!("the queue fills, it does not fail otherwise: {error:?}")
+            }
+        }
+    }
+    let stalled = stalled.expect("the old watcher's queue filled");
+    assert_eq!(stalled.client(), client);
+
+    // The old watcher ends and is succeeded, with a socket of its own.
+    drop(channels);
+    drop(registration);
+    assert_eq!(registry.occupancy.state_of(client), None);
+    let (successor, successor_channels) = registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("the number is free");
+    let (peer, owned) = UnixStream::pair().expect("socket pair");
+    let retained = owned.try_clone().expect("a second handle on the same connection");
+    registry
+        .input_recovery
+        .attach(client, owned)
+        .expect("the successor's own socket");
+    peer.set_read_timeout(Some(std::time::Duration::from_millis(500)))
+        .expect("a bounded wait");
+
+    // NOW THE DISPATCHER ENDS THE WATCHER THAT STALLED.
+    registry
+        .disconnect_saturated_recipient(stalled)
+        .expect("ending a stalled watcher is not an error");
+
+    assert!(
+        registry.client_senders(client).is_ok(),
+        "the successor's row is not the stalled watcher's"
+    );
+    let mut byte = [0u8; 1];
+    let untouched = std::io::Read::read(&mut &peer, &mut byte);
+    assert!(
+        untouched.is_err(),
+        "and its socket was not shut down: {untouched:?}"
+    );
+    let accepted = registry.route_protocol(client, change());
+    assert!(accepted.is_ok(), "and it still receives: {accepted:?}");
+    assert!(
+        successor_channels.protocol.try_recv().is_ok(),
+        "on its own queue"
+    );
+    drop((successor_channels, successor, retained, peer, private, keeper, durable));
+}
+
+#[test]
+fn a_stalled_watcher_that_is_still_live_is_the_one_ended() {
+    // THE POSITIVE HALF OF THE SAME RULE. A value that named nobody would
+    // leave every successor alone by leaving everyone alone. The watcher that
+    // stalled, still live, is ended through it: its row goes and its socket
+    // is shut down.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let registry = &private.broker.registry;
+    let client = XServerFrontendClientId(9138);
+    let (registration, channels) = registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let (peer, owned) = UnixStream::pair().expect("socket pair");
+    let retained = owned.try_clone().expect("a second handle on the same connection");
+    registry
+        .input_recovery
+        .attach(client, owned)
+        .expect("the watcher's own socket");
+    peer.set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .expect("a bounded wait");
+    let change = || crate::XClientEvent::XfixesSelectionNotify {
+        sequence: 0,
+        subtype: 0,
+        window: XResourceId::new(0x9138, 1),
+        owner: crate::XResourceId::NONE,
+        selection: 0x9138,
+        time: 0,
+        selection_time: 0,
+    };
+    let mut stalled = None;
+    for _ in 0..4096 {
+        match registry.route_protocol_to_watcher(client, change()) {
+            Ok(()) => continue,
+            Err(XServerFrontendWatcherRefusal::Stalled(recipient)) => {
+                stalled = Some(recipient);
+                break;
+            }
+            Err(XServerFrontendWatcherRefusal::Route(error)) => {
+                panic!("the queue fills, it does not fail otherwise: {error:?}")
+            }
+        }
+    }
+    let stalled = stalled.expect("the watcher's queue filled");
+
+    registry
+        .disconnect_saturated_recipient(stalled)
+        .expect("ending a stalled watcher is not an error");
+    assert!(
+        matches!(
+            registry.client_senders(client),
+            Err(XServerFrontendRouteError::UnknownClient { .. })
+        ),
+        "the stalled watcher's row is gone"
+    );
+    let mut byte = [0u8; 1];
+    let ended = std::io::Read::read(&mut &peer, &mut byte);
+    assert!(matches!(ended, Ok(0)), "and its socket was shut down: {ended:?}");
+    drop((channels, registration, retained, peer, private, keeper, durable));
+}
+
+#[test]
+fn a_stale_rights_late_report_does_not_free_the_successors_open_visit() {
+    // THE OCCUPANT CHECK IN finish, AT ITS OWN SEAM. No production body
+    // reaches finish with a foreign occupant now that begin_clearing admits
+    // only from Held under the same identity: the only removal during a visit
+    // is that visit's own return, so no second body can be inside when a
+    // successor's claim goes in. That argument was made once before about a
+    // premise that did not hold, so it is not relied on here. The old right is
+    // retained directly and made to report late, while the successor's own
+    // visit is open; the successor's standing must not move.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(9139);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let PrivateCustodyReach::Reached(pin) = registration
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let old_record = Arc::clone(pin.cleanup_record());
+    drop(pin);
+    drop(registration);
+    assert_eq!(private.broker.registry.occupancy.state_of(client), None);
+    let old_right = old_record
+        .number
+        .get()
+        .expect("a published record keeps its right");
+
+    let (successor, _successor_channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("the number is free");
+    let registry = private.broker.registry.clone();
+    let (entered, after_stale_report) = std::thread::scope(|scope| {
+        let parents = registry
+            .window_parents
+            .lock()
+            .expect("a readable parent table");
+        let ending = scope.spawn(move || drop(successor));
+        let entered = waited_for(|| {
+            matches!(
+                registry.occupancy.state_of(client),
+                Some(PrivateNumberStanding::Visiting)
+            )
+        });
+        // THE OLD RIGHT REPORTS SUCCESS, LATE.
+        old_right.finish(true);
+        let after_stale_report = registry.occupancy.state_of(client);
+        drop(parents);
+        ending.join().expect("the successor's ending finished");
+        (entered, after_stale_report)
+    });
+    assert!(entered, "the successor's own visit is open");
+    assert_eq!(
+        after_stale_report,
+        Some(PrivateNumberStanding::Visiting),
+        "a report from a right that is not the occupant frees nothing"
+    );
+    assert_eq!(
+        private.broker.registry.occupancy.state_of(client),
+        None,
+        "and the successor's own return does"
+    );
+    drop((old_record, private, keeper, durable));
 }

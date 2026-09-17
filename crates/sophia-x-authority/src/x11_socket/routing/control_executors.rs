@@ -135,8 +135,13 @@ impl ControlCompletionRegistry {
     /// expectation nothing will meet, and an expectation nobody cancels keeps
     /// that client executing forever -- so its operations would never reach
     /// the edge that owes them a cleanup.
-    pub fn cancel_expected_writer(&self, client: XServerFrontendClientId) {
-        self.release_executor(client, |executors| executors.expected = false);
+    ///
+    /// Reports whether the cancellation was established: performed, or
+    /// nothing to perform. `false` is a registry that could not be read, and
+    /// a caller freeing a number on the strength of this must not treat that
+    /// as done.
+    pub fn cancel_expected_writer(&self, client: XServerFrontendClientId) -> bool {
+        self.release_executor(client, |executors| executors.expected = false)
     }
 
     /// Enter a routing call as an executor for one client, if anything could
@@ -171,23 +176,26 @@ impl ControlCompletionRegistry {
     /// happens to ask next. A route returning is the last-executor edge as
     /// much as a writer exiting is, and an edge that only moves an operation
     /// to its cleanup when something else calls a sweep is not an edge.
+    /// Whether the release was established. No entry for the client is an
+    /// established no-op; an unreadable registry is not.
     fn release_executor(
         &self,
         client: XServerFrontendClientId,
         release: impl FnOnce(&mut ControlExecutors),
-    ) {
+    ) -> bool {
         let Ok(mut inner) = self.inner.lock() else {
-            return;
+            return false;
         };
         let Some(executors) = inner.executors.get_mut(&client) else {
-            return;
+            return true;
         };
         release(executors);
         if executors.any() {
-            return;
+            return true;
         }
         inner.executors.remove(&client);
         Self::abandon_unexecutable(&mut inner, client);
+        true
     }
 
     fn executing(inner: &ControlCompletions, client: XServerFrontendClientId) -> bool {

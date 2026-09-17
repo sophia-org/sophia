@@ -621,11 +621,21 @@ impl XServerFrontendRouteRegistry {
         let record = cleanup.as_ref().expect("a publication has its record");
         let number = match self.occupancy.claim(client, &record.connection_state) {
             Ok(right) => right,
-            Err(PrivateNumberRefusal::Excluded | PrivateNumberRefusal::Unreadable) => {
+            Err(PrivateNumberRefusal::Excluded) => {
                 return Err(XServerFrontendRouteError::ClientNumberExcluded { client });
             }
+            // NOT THE SAME REFUSAL. Excluded says an incumbent owns this
+            // number; an unreadable record has established no such thing, and
+            // saying it had would be reporting a fact nobody checked. Startup
+            // is refused either way.
+            Err(PrivateNumberRefusal::Unreadable) => {
+                return Err(XServerFrontendRouteError::RegistryPoisoned);
+            }
         };
-        if let Err(refusal) = self.input_recovery.register(client) {
+        if let Err(refusal) = self
+            .input_recovery
+            .register(client, Some(&record.connection_state))
+        {
             // Nothing was established under it, so it goes straight back.
             number.relinquish_unpublished();
             return Err(refusal);
@@ -679,8 +689,14 @@ impl XServerFrontendRouteRegistry {
                 // happens unless the row under this number is still the
                 // connection whose sender failed.
                 if self.remove_row_of(client, &incarnation)? {
-                    self.input_recovery.disconnect_rejecting(
+                    // AND THE DISCONNECT COMPARES AGAIN, under its own
+                    // acquisition. The row check above released the client
+                    // table before this line; a successor can publish in
+                    // between, and its recovery entry would then be the one
+                    // under this number. The identity travels to the act.
+                    self.input_recovery.disconnect_exact(
                         client,
+                        &incarnation,
                         XAuthorityInputDeliveryOutcome::ClientDisconnected,
                         route.delivery,
                     )?;

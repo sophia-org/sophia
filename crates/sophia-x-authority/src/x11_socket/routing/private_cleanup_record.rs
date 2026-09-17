@@ -366,8 +366,16 @@ impl PrivateCleanupRecord {
             return;
         }
         // Whether everything the number authorises was actually done. A
-        // best-effort body returning is not that fact, and the ignored errors
-        // below are exactly where it is lost.
+        // best-effort body returning is not that fact.
+        //
+        // EVERY EFFECT BELOW REPORTS INTO THIS, OR THE NUMBER IS NOT FREED.
+        // An effect that could not run -- a table nobody could read, a
+        // disconnect the ledger refused, an entry that was not this
+        // connection's to act on -- leaves work nobody did, and a number
+        // handed on after that is handed on over it. An effect that ran and
+        // found nothing to do is established: there was nothing under the
+        // number to undo. What is not accepted is silence, which is what
+        // every `if let Ok` without an else and every `let _ =` was.
         let mut established = true;
         // TAKEN, CLOSED AND DROPPED HERE, WHETHER OR NOT THE CELL IS POISONED.
         //
@@ -422,9 +430,27 @@ impl PrivateCleanupRecord {
             // expectation nothing will meet from keeping the client executing
             // forever. Either way the registry decides what that leaves,
             // under the lock that abandons.
-            completion.cancel_expected_writer(self.client);
+            //
+            // No registry installed is nothing to cancel. A registry that
+            // could not be read is a cancellation that did not happen.
+            if !completion.cancel_expected_writer(self.client) {
+                established = false;
+            }
         }
-        let _ = self.input_recovery.disconnect(self.client, XAuthorityInputDeliveryOutcome::ClientDisconnected);
+        // BY THIS CONNECTION'S OWN IDENTITY, under the ledger's acquisition.
+        // The entry under this number is this connection's for as long as the
+        // number is held, so `Ok(false)` -- somebody else's entry -- cannot
+        // happen while the exclusion holds; if it is seen, the exclusion did
+        // not hold, and that is not a disconnect that was performed.
+        match self.input_recovery.disconnect_exact(
+            self.client,
+            &self.connection_state,
+            XAuthorityInputDeliveryOutcome::ClientDisconnected,
+            None,
+        ) {
+            Ok(true) => {}
+            Ok(false) | Err(_) => established = false,
+        }
         if let Ok(mut clients) = self.clients.lock() {
             clients.remove(&self.client);
         } else {
@@ -435,10 +461,12 @@ impl PrivateCleanupRecord {
         } else {
             established = false;
         }
-        if let Ok(mut focused) = self.focused_surface.lock()
-            && focused.is_some_and(|route| route.client == self.client)
-        {
-            *focused = None;
+        if let Ok(mut focused) = self.focused_surface.lock() {
+            if focused.is_some_and(|route| route.client == self.client) {
+                *focused = None;
+            }
+        } else {
+            established = false;
         }
         if let Ok(mut parents) = self.window_parents.lock() {
             parents.retain(|(client, _), _| *client != self.client);
@@ -447,9 +475,13 @@ impl PrivateCleanupRecord {
         }
         if let Ok(mut subscriptions) = self.core_event_subscriptions.lock() {
             subscriptions.retain(|(client, _), _| *client != self.client);
+        } else {
+            established = false;
         }
         if let Ok(mut subscriptions) = self.randr_subscriptions.lock() {
             subscriptions.remove(&self.client);
+        } else {
+            established = false;
         }
         // Retired here as well as on an orderly close, because a client whose
         // connection failed before that point never reaches it. A client id
@@ -457,23 +489,41 @@ impl PrivateCleanupRecord {
         // client's selections to whoever takes the id next.
         if let Ok(mut subscriptions) = self.xfixes_selection_subscriptions.lock() {
             subscriptions.retain(|(client, _, _), _| *client != self.client);
+        } else {
+            established = false;
         }
         if let Ok(mut subscriptions) = self.present_subscriptions.lock() {
             subscriptions.retain(|(client, _), _| *client != self.client);
+        } else {
+            established = false;
         }
         if let Ok(mut pending) = self.pending_presentations.entries.lock() {
             pending.retain(|_, presentation| presentation.client != self.client);
             self.pending_presentations.capacity_changed.notify_all();
+        } else {
+            established = false;
         }
         let abandoned = if let Ok(mut frozen) = self.frozen_input.lock() {
             let (abandoned, retained): (Vec<_>, Vec<_>) = frozen.drain(..)
                 .partition(|route| route.client == self.client);
             *frozen = retained.into();
             abandoned
-        } else { Vec::new() };
+        } else {
+            established = false;
+            Vec::new()
+        };
         for route in abandoned {
-            let _ = self.input_recovery.finish(self.client, route.route.delivery,
-                XAuthorityInputDeliveryOutcome::ClientDisconnected);
+            // Each abandoned route is a delivery this connection still owed
+            // an answer for. One the ledger would not settle is one still
+            // owed, and a number freed over it would be freed over that debt.
+            if self
+                .input_recovery
+                .finish(self.client, route.route.delivery,
+                    XAuthorityInputDeliveryOutcome::ClientDisconnected)
+                .is_err()
+            {
+                established = false;
+            }
         }
 
         // AND THE NUMBER GOES BACK ONLY IF THIS ESTABLISHED THAT IT MAY. A
