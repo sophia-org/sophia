@@ -40297,9 +40297,22 @@ fn no_successor_can_publish_inside_a_public_exact_disconnect() {
             .is_some_and(|entry| entry.belongs_to(&own))
     };
     assert!(record_still_named, "the entry is still the predecessor's until somebody replaces it");
+    // AND THE NUMBER IS ACTUALLY FREE. With the predecessor's registration
+    // still alive, a successor would be refused by the number claim and the
+    // question below -- can it publish inside the act -- would never be put
+    // to the ledger. Its ending runs the same exact disconnect once already;
+    // the act below is the delayed one, arriving after the number went back.
+    drop(registration);
+    assert_eq!(registry.occupancy.state_of(client), None);
 
-    let (ledger_held_at_the_effect, successor_published_inside, grab_after, act) =
-        std::thread::scope(|scope| {
+    let (
+        (ledger_held_at_the_effect, act_still_blocked),
+        successor_published_inside,
+        grab_after,
+        act,
+        successor_published,
+        successor_refusal,
+    ) = std::thread::scope(|scope| {
             let authority = registry
                 .input_authority
                 .lock()
@@ -40315,9 +40328,23 @@ fn no_successor_can_publish_inside_a_public_exact_disconnect() {
             });
             // The act reaches the authority effect and stops there. Whether it
             // still holds the ledger at that point is the fact under test.
+            //
+            // BLOCKED, NOT FINISHED. A ledger seen held while the act has not
+            // returned is the act holding it somewhere past its identity
+            // check; a ledger seen free with the act already returned would
+            // mean the act never contended on the authority this control
+            // holds, which is a different failure and is reported as one.
+            // This does not by itself establish that the act has reached the
+            // authority lock -- only that it holds the ledger and has not
+            // finished while the authority is held here. Arrival at that lock
+            // is what the pre-repair discriminator below shows: an act that
+            // released the ledger before it reaches the authority lets the
+            // successor publish inside, and its resumed cleanup erases the
+            // successor's grab.
             let ledger_held_at_the_effect = waited_for(|| {
                 registry.input_recovery.state.try_lock().is_err()
             });
+            let act_still_blocked = !act.is_finished();
             // A successor tries to publish while the act is stopped.
             let publishing = registry.clone();
             let (published, publication) = channel();
@@ -40342,6 +40369,10 @@ fn no_successor_can_publish_inside_a_public_exact_disconnect() {
             }
             let act = act.join().expect("the act returned");
             let successor = successor.join().expect("the publication returned");
+            // THE SUCCESSOR REALLY PUBLISHES -- after the act. A refusal here
+            // would mean the question was never put to the ledger at all.
+            let successor_published = successor.is_ok();
+            let successor_refusal = successor.as_ref().err().map(|error| format!("{error:?}"));
             if !successor_published_inside {
                 // Published after the act, as it should be; give it its grab
                 // now so the comparison below asks the same question.
@@ -40359,13 +40390,29 @@ fn no_successor_can_publish_inside_a_public_exact_disconnect() {
                 .keyboard_grab(namespace)
                 .is_some();
             drop(successor);
-            (ledger_held_at_the_effect, successor_published_inside, grab_after, act)
+            (
+                (ledger_held_at_the_effect, act_still_blocked),
+                successor_published_inside,
+                grab_after,
+                act,
+                successor_published,
+                successor_refusal,
+            )
         });
 
     assert!(matches!(act, Ok(true)), "the predecessor's own disconnect: {act:?}");
     assert!(
-        ledger_held_at_the_effect,
-        "the ledger is held through the authority effect, so identity covers the whole act"
+        successor_published,
+        "the successor really publishes once the act has returned: {successor_refusal:?}"
+    );
+    // THE FACTS TRAVEL IN THE MESSAGES. A failure anywhere says which of them
+    // failed and what the others were, without printing from a passing run.
+    assert!(
+        ledger_held_at_the_effect && act_still_blocked,
+        "the ledger is held by the act while it has not returned and the authority is held here \
+         (ledger_held_at_the_effect={ledger_held_at_the_effect}, act_still_blocked={act_still_blocked}, \
+         successor_published_inside={successor_published_inside}, successor_published={successor_published}, \
+         grab_after={grab_after}, act={act:?})"
     );
     assert!(
         !successor_published_inside,
@@ -40375,7 +40422,7 @@ fn no_successor_can_publish_inside_a_public_exact_disconnect() {
         grab_after,
         "and the successor's grab, installed after the act, is its own"
     );
-    drop((registration, broker));
+    drop(broker);
 }
 
 #[test]

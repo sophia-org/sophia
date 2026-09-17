@@ -245,13 +245,19 @@ impl InputRecovery {
     /// same order as this; the dispatcher's teardown holds pointer state then
     /// the authority and reads only a `OnceLock` of this ledger; the lifecycle
     /// boundary's closures do not touch the ledger). The `_ledger` parameter
-    /// exists so that this cannot be called without a ledger guard in hand.
+    /// is a guard, not a reference to what a guard protects: a caller cannot
+    /// satisfy it without holding SOME `InputRecoveryState` mutex, because a
+    /// `MutexGuard` cannot be made any other way. It does not establish by
+    /// type that the guard is this recovery's `self.state`; that is visible
+    /// at the two call sites, each of which passes the guard it just took on
+    /// `self.state`. A `&InputRecoveryState` would have let a detached
+    /// default value stand in for any acquisition at all.
     ///
     /// The private lifecycle branch is unchanged: the gate was closed under
     /// the ledger, and origin drive performs that path's cleanup.
     fn finish_disconnect_under(
         &self,
-        _ledger: &InputRecoveryState,
+        _ledger: &std::sync::MutexGuard<'_, InputRecoveryState>,
         client: XServerFrontendClientId,
         disconnected: Result<(), XServerFrontendRouteError>,
     ) -> Result<(), XServerFrontendRouteError> {
