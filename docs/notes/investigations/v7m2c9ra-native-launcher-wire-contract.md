@@ -138,3 +138,43 @@ a first isolated compiler run lacked private include paths; neither counted as a
 pass. Corrected Clang and bounded include mounts produced the retained passes.
 Evidence is `.artifacts/bemenu-native-wire/` in the coordinating root checkout.
 Exact-source canonical validation remains a subsequent checkpoint gate.
+
+## Native store ownership over 795a3d60
+
+The runtime now has an immutable per-epoch native launcher storage profile. It
+uses the existing allocation, resource, permit, candidate and response-credit
+owners. Legacy constructors remain legacy, and their public request methods
+refuse native records. This does not enable revision-7 transport negotiation.
+
+Session-supplied opening identity stays on the pending and granted allocation.
+Native allocations are parentless, limited to one per grant, and reserve no
+workspace extent. A mismatching grant decision leaves the original proposal
+owned. Candidate Begin attaches bounded ordered catalog slots and selected row
+to the actual assembly; End checks current catalog availability, issued model
+revision and exact allocation opening, and row targets must match that order.
+The larger Begin and row bytes count against the candidate byte limit before
+chunk admission. Renderer handoff rechecks current provenance before transferring
+ownership and carries that same row binding with the real resource leases.
+
+Chunk/End use the existing grant-wide candidate-generation correlation. Terminal
+responses retain the original Begin transaction; this slice does not add a new
+transaction-equality rule to the legacy assembly contract. Prepared and Presented
+remain distinct caller-supplied renderer transitions, not inferred outcomes.
+
+Ten device-hidden integration controls exercise the actual stores, including a
+held submitted launcher bundle across disconnect while a separate bar uploads
+under its own grant. Replacement waits for the held bytes; releasing them admits
+the replacement without changing the bar's resource. The control supplies the
+renderer failure/completion boundary and does not drive native rendering or bar
+actions. Four separately compiled mutations fail the intended tests: omitted
+allocation-opening comparison, ignored catalog row order, ignored current model
+revision and omitted native metadata byte charge. Mutations run in an isolated
+source copy and are restored; no live source is mutated. Evidence is retained in
+`.artifacts/bemenu-native-stores/`.
+
+The first test run had two incorrect fixture expectations that omitted the
+already-owned ResourceReleased credit. The corrected assertions retain that
+credit alongside candidate responses; production accounting was not weakened.
+Protected role negotiation, live supervision, geometry/composition publication,
+focus/input/activation and the Bemenu C backend are still required. These store
+controls do not establish readiness for `lom-test`.

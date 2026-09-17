@@ -3,7 +3,7 @@
 
 use super::{
     ContentAllocationStore, ContentCandidateStore, ContentEpochAccounting, ContentResourceStore,
-    ContentStoreError,
+    ContentStoreError, ContentStoreProfile,
 };
 use sophia_protocol::{ContentGrant, ContentLimits};
 
@@ -16,6 +16,7 @@ pub struct ContentEpochRegistry {
 }
 
 struct ContentEpoch {
+    profile: ContentStoreProfile,
     allocations: ContentAllocationStore,
     resources: ContentResourceStore,
     candidates: ContentCandidateStore,
@@ -24,14 +25,15 @@ struct ContentEpoch {
 }
 
 impl ContentEpoch {
-    fn new(limits: ContentLimits) -> Result<Self, ContentStoreError> {
+    fn new(limits: ContentLimits, profile: ContentStoreProfile) -> Result<Self, ContentStoreError> {
         let reserved_bytes =
             limits.max_staging_bytes + limits.max_resident_bytes + limits.max_retiring_bytes;
         let reserved_backing_bytes = limits.max_resident_bytes + limits.max_retiring_bytes;
         Ok(Self {
-            candidates: ContentCandidateStore::new(limits.clone())
+            profile,
+            candidates: ContentCandidateStore::with_profile(limits.clone(), profile)
                 .map_err(|_| ContentStoreError::Malformed)?,
-            allocations: ContentAllocationStore::new(limits.clone())
+            allocations: ContentAllocationStore::with_profile(limits.clone(), profile)
                 .map_err(|_| ContentStoreError::Malformed)?,
             resources: ContentResourceStore::new(limits)?,
             reserved_bytes,
@@ -93,6 +95,14 @@ impl ContentEpochRegistry {
     /// Both epochs are minted monotonically by the Session admission owner;
     /// neither a component name nor this storage reservation grants authority.
     pub fn admit(&mut self, limits: ContentLimits) -> Result<(), ContentStoreError> {
+        self.admit_with_profile(limits, ContentStoreProfile::Legacy)
+    }
+
+    pub fn admit_with_profile(
+        &mut self,
+        limits: ContentLimits,
+        profile: ContentStoreProfile,
+    ) -> Result<(), ContentStoreError> {
         self.collect();
         if self.active.len() == Self::MAX_ACTIVE_EPOCHS
             || self.active.len() + self.retired.len() >= Self::MAX_RETAINED_EPOCHS
@@ -129,11 +139,18 @@ impl ContentEpochRegistry {
             return Err(ContentStoreError::Budget);
         }
         let grant = limits.grant;
-        let epoch = ContentEpoch::new(limits)?;
+        let epoch = ContentEpoch::new(limits, profile)?;
         // All fallible construction precedes publication or watermark change.
         self.active.push(epoch);
         self.last_grant = grant;
         Ok(())
+    }
+
+    pub fn profile(&self, grant: ContentGrant) -> Option<ContentStoreProfile> {
+        self.active
+            .iter()
+            .find(|epoch| epoch.resources.grant() == grant)
+            .map(|epoch| epoch.profile)
     }
 
     pub fn resources(&self, grant: ContentGrant) -> Option<&ContentResourceStore> {

@@ -10,6 +10,7 @@ mod allocations;
 mod candidates;
 mod epoch_registry;
 mod epochs;
+mod profile;
 mod resources;
 
 pub use accounting::*;
@@ -17,4 +18,5 @@ pub use allocations::*;
 pub use candidates::*;
 pub use epoch_registry::*;
 pub use epochs::*;
+pub use profile::*;
 pub use resources::*;

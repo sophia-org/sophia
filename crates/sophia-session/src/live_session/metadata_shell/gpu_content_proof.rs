@@ -123,6 +123,7 @@ pub fn run(
                 return Err("Lom changed the admitted first-panel allocation".into());
             }
             let snapshot = ContentAllocationSnapshot {
+                native_opening: None,
                 output,
                 allocation: ContentAllocationId {
                     id: 1,

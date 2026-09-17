@@ -390,6 +390,7 @@ fn admitted_candidate_crosses_the_real_socket_and_keeps_outcomes_ordered() {
         .grant_content_allocation(
             1,
             ContentAllocationSnapshot {
+                native_opening: None,
                 output,
                 allocation: allocation_id,
                 scale_generation: 5,

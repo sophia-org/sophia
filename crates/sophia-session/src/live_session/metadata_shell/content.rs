@@ -408,6 +408,7 @@ impl LiveContentSession {
             }
         };
         Ok(ContentAllocationSnapshot {
+            native_opening: None,
             output: request.output,
             allocation,
             scale_generation: 1,

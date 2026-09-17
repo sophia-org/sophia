@@ -84,6 +84,7 @@ fn upload(store: &mut ContentResourceStore, id: u64) {
 
 fn allocation() -> ContentAllocationSnapshot {
     ContentAllocationSnapshot {
+        native_opening: None,
         output: output(),
         allocation: allocation_id(1),
         scale_generation: 4,

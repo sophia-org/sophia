@@ -131,6 +131,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             transport.grant_content_allocation(
                 request.allocation_request_id,
                 ContentAllocationSnapshot {
+                    native_opening: None,
                     output,
                     allocation,
                     scale_generation: 1,

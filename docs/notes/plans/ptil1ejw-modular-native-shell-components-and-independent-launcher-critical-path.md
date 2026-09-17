@@ -208,6 +208,16 @@ Exit: retained attended acceptance, reproducible user configuration and develope
 instructions, and current documentation updated to state the capabilities
 actually shipped. Completion does not imply dock/notification/lock support.
 
+## Native launcher store progress
+
+The [wire/store record](../investigations/v7m2c9ra-native-launcher-wire-contract.md#native-store-ownership-over-795a3d60)
+now records actual native allocation and candidate ownership, ordered catalog-row
+binding through renderer handoff, aggregate byte/response accounting and retained
+resource isolation from the bar. This is storage preparation only: revision-7
+live admission, two supervised services, presented focus/launch authority and the
+Bemenu backend remain on the critical path. The ten store controls use supplied
+renderer transitions and do not qualify a physical run.
+
 ## Dependencies and boundaries
 
 Sequence: t104 → t105 → t106 → t107 → t108. t106 also depends on existing anchored

@@ -93,6 +93,7 @@ fn panel_allowance_is_enforced_against_resolved_physical_thickness() {
 
 fn allocation() -> ContentAllocationSnapshot {
     ContentAllocationSnapshot {
+        native_opening: None,
         output: OUTPUT,
         allocation: ALLOCATION,
         scale_generation: 4,
@@ -281,6 +282,7 @@ fn a_scaled_popout_keeps_the_exact_physical_anchor_origin() {
         generation: 1,
     };
     let parent = ContentAllocationSnapshot {
+        native_opening: None,
         output: OUTPUT,
         allocation: parent_id,
         scale_generation: 1,

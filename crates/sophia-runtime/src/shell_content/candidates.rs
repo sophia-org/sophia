@@ -7,7 +7,12 @@ use super::{
 };
 
 mod demands;
+mod native;
+mod validation;
+use super::ContentStoreProfile;
 use demands::StandingDemand;
+pub use native::{NativeLauncherCandidateBinding, NativeLauncherCandidateContext};
+use validation::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContentCandidateError {
@@ -70,6 +75,7 @@ struct Permit {
 }
 
 struct Assembly {
+    native_launcher: Option<NativeLauncherCandidateBinding>,
     transaction: TransactionId,
     begin: ContentCandidateBegin,
     deadline: u64,
@@ -80,6 +86,7 @@ struct Assembly {
 }
 
 struct Candidate {
+    native_launcher: Option<NativeLauncherCandidateBinding>,
     transaction: TransactionId,
     begin: ContentCandidateBegin,
     surfaces: Vec<ContentSurface>,
@@ -94,6 +101,7 @@ struct Candidate {
 /// until the renderer drops this value after native retirement.
 #[derive(Clone)]
 pub struct ContentRenderBundle {
+    pub native_launcher: Option<NativeLauncherCandidateBinding>,
     pub grant: ContentGrant,
     pub output: ContentOutputId,
     pub candidate_generation: u64,
@@ -119,6 +127,7 @@ impl ContentRenderBundle {
 /// bundle was presented; only `presented` may emit that outcome, after the
 /// caller has observed native retirement.
 pub struct ContentCandidateStore {
+    profile: ContentStoreProfile,
     limits: ContentLimits,
     permits: BTreeMap<ContentOutputId, Permit>,
     demands: BTreeMap<ContentOutputId, StandingDemand>,
@@ -154,10 +163,18 @@ impl ContentCandidateStore {
     }
 
     pub fn new(limits: ContentLimits) -> Result<Self, ContentCandidateError> {
+        Self::with_profile(limits, ContentStoreProfile::Legacy)
+    }
+
+    pub fn with_profile(
+        limits: ContentLimits,
+        profile: ContentStoreProfile,
+    ) -> Result<Self, ContentCandidateError> {
         limits
             .validate()
             .map_err(|_| ContentCandidateError::Malformed)?;
         Ok(Self {
+            profile,
             limits,
             permits: BTreeMap::new(),
             demands: BTreeMap::new(),
@@ -356,6 +373,20 @@ impl ContentCandidateStore {
         begin: ContentCandidateBegin,
         now: u64,
     ) -> Result<(), ContentCandidateError> {
+        if self.profile != ContentStoreProfile::Legacy {
+            return Err(ContentCandidateError::Malformed);
+        }
+        self.begin_inner(transaction, begin, None, None, now)
+    }
+
+    fn begin_inner(
+        &mut self,
+        transaction: TransactionId,
+        begin: ContentCandidateBegin,
+        native_launcher: Option<NativeLauncherCandidateBinding>,
+        invalid_native: Option<ContentCandidateError>,
+        now: u64,
+    ) -> Result<(), ContentCandidateError> {
         self.check_grant(begin.grant)?;
         self.time(now)?;
         self.expire(now)?;
@@ -366,7 +397,9 @@ impl ContentCandidateStore {
         if !transaction.is_valid() || permit.permit_id != begin.pacing_permit {
             return Err(ContentCandidateError::Stale);
         }
-        let invalid = if now >= permit.deadline
+        let invalid = if let Some(error) = invalid_native {
+            Some(error)
+        } else if now >= permit.deadline
             || begin.candidate_generation <= self.last_candidate_generation
         {
             Some(ContentCandidateError::Stale)
@@ -402,6 +435,7 @@ impl ContentCandidateStore {
         self.assemblies.insert(
             begin.output,
             Assembly {
+                native_launcher,
                 transaction,
                 begin,
                 deadline,
@@ -415,6 +449,18 @@ impl ContentCandidateStore {
     }
 
     pub fn chunk(
+        &mut self,
+        transaction: TransactionId,
+        chunk: ContentCandidateChunk,
+        now: u64,
+    ) -> Result<(), ContentCandidateError> {
+        if self.profile != ContentStoreProfile::Legacy {
+            return Err(ContentCandidateError::Malformed);
+        }
+        self.chunk_inner(transaction, chunk, now)
+    }
+
+    fn chunk_inner(
         &mut self,
         transaction: TransactionId,
         chunk: ContentCandidateChunk,
@@ -436,6 +482,11 @@ impl ContentCandidateStore {
         let next_placements = assembly.placements.len() + chunk.placements.len();
         let next_targets = assembly.targets.len() + chunk.targets.len();
         let data_bytes = 40usize
+            .saturating_add(
+                assembly
+                    .native_launcher
+                    .map_or(0, |binding| 108 + 2 * binding.rows().len()),
+            )
             .saturating_add(next_surfaces.saturating_mul(64))
             .saturating_add(next_placements.saturating_mul(32))
             .saturating_add(next_targets.saturating_mul(48));
@@ -446,7 +497,11 @@ impl ContentCandidateStore {
             || next_placements > assembly.begin.placement_count as usize
             || next_targets > assembly.begin.target_count as usize
             || data_bytes > self.limits.max_candidate_bytes as usize
-            || !valid_chunk_rows(&chunk, self.limits.max_margin_logical)
+            || !valid_chunk_rows(
+                &chunk,
+                self.limits.max_margin_logical,
+                assembly.native_launcher.is_some(),
+            )
         {
             self.reject_assembly(output, ContentCandidateError::Malformed);
             return Err(ContentCandidateError::Malformed);
@@ -466,6 +521,21 @@ impl ContentCandidateStore {
         resources: &ContentResourceStore,
         now: u64,
     ) -> Result<(), ContentCandidateError> {
+        if self.profile != ContentStoreProfile::Legacy {
+            return Err(ContentCandidateError::Malformed);
+        }
+        self.end_inner(transaction, end, context, None, resources, now)
+    }
+
+    fn end_inner(
+        &mut self,
+        transaction: TransactionId,
+        end: ContentCandidateEnd,
+        context: ContentCandidateContext<'_>,
+        native_context: Option<NativeLauncherCandidateContext<'_>>,
+        resources: &ContentResourceStore,
+        now: u64,
+    ) -> Result<(), ContentCandidateError> {
         self.check_grant(end.grant)?;
         self.time(now)?;
         self.expire(now)?;
@@ -476,7 +546,14 @@ impl ContentCandidateStore {
                 (assembly.begin.candidate_generation == end.candidate_generation).then_some(*output)
             })
             .ok_or(ContentCandidateError::Stale)?;
-        let result = self.validate_end(transaction, &end, context, resources, output);
+        let result = self.validate_end(
+            transaction,
+            &end,
+            context,
+            native_context,
+            resources,
+            output,
+        );
         match result {
             Ok(candidate) => {
                 self.assemblies.remove(&output);
@@ -495,6 +572,7 @@ impl ContentCandidateStore {
         transaction: TransactionId,
         end: &ContentCandidateEnd,
         context: ContentCandidateContext<'_>,
+        native_context: Option<NativeLauncherCandidateContext<'_>>,
         resources: &ContentResourceStore,
         output: ContentOutputId,
     ) -> Result<Candidate, ContentCandidateError> {
@@ -515,6 +593,14 @@ impl ContentCandidateStore {
         {
             return Err(ContentCandidateError::Incomplete);
         }
+        native::validate_binding(
+            assembly.native_launcher,
+            &assembly.begin,
+            &assembly.surfaces,
+            &assembly.targets,
+            context.allocations,
+            native_context,
+        )?;
         validate_surfaces(&assembly.surfaces, context.allocations, output)?;
         validate_targets(&assembly.targets, &assembly.surfaces, context.allocations)?;
         let resource_ids = validate_placements(
@@ -529,6 +615,7 @@ impl ContentCandidateStore {
             leases.push((resource, resources.lease(self.limits.grant, resource)?));
         }
         Ok(Candidate {
+            native_launcher: assembly.native_launcher,
             transaction: assembly.transaction,
             begin: assembly.begin.clone(),
             surfaces: assembly.surfaces.clone(),
@@ -568,6 +655,18 @@ impl ContentCandidateStore {
         candidate_generation: u64,
         now: u64,
     ) -> Result<ContentRenderBundle, ContentCandidateError> {
+        if self.profile != ContentStoreProfile::Legacy {
+            return Err(ContentCandidateError::Malformed);
+        }
+        self.begin_submission_inner(output, candidate_generation, now)
+    }
+
+    fn begin_submission_inner(
+        &mut self,
+        output: ContentOutputId,
+        candidate_generation: u64,
+        now: u64,
+    ) -> Result<ContentRenderBundle, ContentCandidateError> {
         self.time(now)?;
         self.expire(now)?;
         if self.submitted.contains_key(&output) {
@@ -582,6 +681,7 @@ impl ContentCandidateStore {
             return Err(ContentCandidateError::Stale);
         }
         let bundle = ContentRenderBundle {
+            native_launcher: candidate.native_launcher,
             grant: self.limits.grant,
             output,
             candidate_generation,
@@ -772,159 +872,4 @@ impl ContentCandidateStore {
         // `renderer_failed` without reusing old authority.
         self.response_credits = 0;
     }
-}
-
-fn allocation(
-    allocations: &[ContentAllocationSnapshot],
-    id: ContentAllocationId,
-) -> Result<&ContentAllocationSnapshot, ContentCandidateError> {
-    allocations
-        .iter()
-        .find(|allocation| allocation.allocation == id)
-        .ok_or(ContentCandidateError::AllocationLost)
-}
-
-fn validate_surfaces(
-    surfaces: &[ContentSurface],
-    allocations: &[ContentAllocationSnapshot],
-    output: ContentOutputId,
-) -> Result<(), ContentCandidateError> {
-    let mut ids = BTreeSet::new();
-    for (index, surface) in surfaces.iter().enumerate() {
-        let actual = allocation(allocations, surface.allocation)?;
-        if actual.output != output
-            || !ids.insert(surface.allocation)
-            || surface.scale_generation != actual.scale_generation
-            || surface.role != actual.role
-            || surface.edge != actual.edge
-            || surface.margins != actual.margins
-            || surface.anchor_parent_rect != actual.anchor_parent_rect
-            || surface.reservation_extent > actual.allowed_reservation_extent
-        {
-            return Err(ContentCandidateError::AllocationLost);
-        }
-        if surface.role == 1 {
-            if surface.parent_surface_index != u16::MAX
-                || actual.parent != ContentAllocationId::default()
-            {
-                return Err(ContentCandidateError::Malformed);
-            }
-        } else {
-            let parent_index = usize::from(surface.parent_surface_index);
-            if parent_index >= index
-                || surfaces[parent_index].role != 1
-                || surfaces[parent_index].allocation != actual.parent
-            {
-                return Err(ContentCandidateError::Malformed);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn validate_targets(
-    targets: &[ContentTarget],
-    surfaces: &[ContentSurface],
-    allocations: &[ContentAllocationSnapshot],
-) -> Result<(), ContentCandidateError> {
-    let mut identities = BTreeSet::new();
-    for target in targets {
-        let Some(surface) = surfaces.get(usize::from(target.surface_index)) else {
-            return Err(ContentCandidateError::Malformed);
-        };
-        let actual = allocation(allocations, surface.allocation)?;
-        if !identities.insert((target.target_id, target.target_generation, target.action_id))
-            || !inside(target.bounds_px, actual.pixel.width, actual.pixel.height)
-        {
-            return Err(ContentCandidateError::Malformed);
-        }
-    }
-    for (index, left) in targets.iter().enumerate() {
-        for right in &targets[index + 1..] {
-            if left.surface_index == right.surface_index
-                && rectangles_overlap(left.bounds_px, right.bounds_px)
-            {
-                return Err(ContentCandidateError::Malformed);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn rectangles_overlap(left: ContentPixelRect, right: ContentPixelRect) -> bool {
-    let left_right = i64::from(left.x) + i64::from(left.width);
-    let left_bottom = i64::from(left.y) + i64::from(left.height);
-    let right_right = i64::from(right.x) + i64::from(right.width);
-    let right_bottom = i64::from(right.y) + i64::from(right.height);
-    i64::from(left.x) < right_right
-        && i64::from(right.x) < left_right
-        && i64::from(left.y) < right_bottom
-        && i64::from(right.y) < left_bottom
-}
-
-fn valid_chunk_rows(chunk: &ContentCandidateChunk, max_margin: u32) -> bool {
-    chunk.surfaces.iter().all(|surface| {
-        (1..=2).contains(&surface.role)
-            && (1..=4).contains(&surface.edge)
-            && [
-                surface.margins.top,
-                surface.margins.right,
-                surface.margins.bottom,
-                surface.margins.left,
-            ]
-            .into_iter()
-            .all(|margin| i32::from(margin).unsigned_abs() <= max_margin)
-    }) && chunk.placements.iter().all(|placement| {
-        placement.resource.id > 0
-            && placement.resource.generation > 0
-            && placement.destination_x_px >= 0
-            && placement.destination_y_px >= 0
-    }) && chunk.targets.iter().all(|target| {
-        target.action_kind == 1
-            && target.target_id > 0
-            && target.target_generation > 0
-            && target.action_id > 0
-            && target.bounds_px.width > 0
-            && target.bounds_px.height > 0
-    })
-}
-
-fn validate_placements(
-    placements: &[ContentPlacement],
-    surfaces: &[ContentSurface],
-    allocations: &[ContentAllocationSnapshot],
-    resources: &ContentResourceStore,
-    grant: ContentGrant,
-) -> Result<BTreeSet<ContentResourceId>, ContentCandidateError> {
-    let mut resource_ids = BTreeSet::new();
-    for placement in placements {
-        let Some(surface) = surfaces.get(usize::from(placement.surface_index)) else {
-            return Err(ContentCandidateError::Malformed);
-        };
-        let actual = allocation(allocations, surface.allocation)?;
-        let lease = resources.lease(grant, placement.resource)?;
-        let description = lease.description();
-        if description.rendered_scale_numerator != actual.scale_numerator
-            || description.rendered_scale_denominator != actual.scale_denominator
-            || placement.destination_x_px < 0
-            || placement.destination_y_px < 0
-            || u64::try_from(placement.destination_x_px).unwrap_or(u64::MAX)
-                + u64::from(description.width_px)
-                > u64::from(actual.pixel.width)
-            || u64::try_from(placement.destination_y_px).unwrap_or(u64::MAX)
-                + u64::from(description.height_px)
-                > u64::from(actual.pixel.height)
-        {
-            return Err(ContentCandidateError::Malformed);
-        }
-        resource_ids.insert(placement.resource);
-    }
-    Ok(resource_ids)
-}
-
-fn inside(rect: ContentPixelRect, width: u32, height: u32) -> bool {
-    rect.x >= 0
-        && rect.y >= 0
-        && u64::try_from(rect.x).unwrap_or(u64::MAX) + u64::from(rect.width) <= u64::from(width)
-        && u64::try_from(rect.y).unwrap_or(u64::MAX) + u64::from(rect.height) <= u64::from(height)
 }

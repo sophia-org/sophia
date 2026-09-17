@@ -50,6 +50,7 @@ fn panel_request(id: u64, operation: u16, prior: ContentAllocationId) -> Content
 
 fn panel(allocation: ContentAllocationId) -> ContentAllocationSnapshot {
     ContentAllocationSnapshot {
+        native_opening: None,
         output: output(),
         allocation,
         scale_generation: 1,
@@ -280,6 +281,7 @@ fn a_popout_requires_the_exact_presented_parent_epoch() {
         .request(tx(4), retry.clone(), &[(parent, 7)], 1)
         .unwrap();
     let popout = ContentAllocationSnapshot {
+        native_opening: None,
         output: output(),
         allocation: ContentAllocationId {
             id: 2,
@@ -378,6 +380,7 @@ fn a_popout_origin_is_exact_physical_even_when_logical_coordinates_cannot_name_i
         .request(tx(3), request.clone(), &[(parent, 7)], 1)
         .unwrap();
     let popout = ContentAllocationSnapshot {
+        native_opening: None,
         output: output(),
         allocation: ContentAllocationId {
             id: 2,

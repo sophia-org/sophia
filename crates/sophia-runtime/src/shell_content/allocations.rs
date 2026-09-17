@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, VecDeque};
 
+use super::ContentStoreProfile;
 use sophia_protocol::*;
+mod native;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContentAllocationError {
@@ -28,6 +30,8 @@ impl ContentAllocationError {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContentAllocationSnapshot {
+    /// Exact native opening; absent for legacy panel/popout allocations.
+    pub native_opening: Option<u64>,
     pub output: ContentOutputId,
     pub allocation: ContentAllocationId,
     pub scale_generation: u64,
@@ -51,6 +55,7 @@ pub struct ContentAllocationEvent {
 
 #[derive(Clone)]
 struct PendingAllocation {
+    native_opening: Option<u64>,
     transaction: TransactionId,
     request: ContentAllocationRequest,
     deadline: u64,
@@ -62,6 +67,7 @@ struct PendingAllocation {
 /// freshness, budgets and terminal results; a grant accepts only an exact
 /// Engine-resolved snapshot against the currently published output facts.
 pub struct ContentAllocationStore {
+    profile: ContentStoreProfile,
     limits: ContentLimits,
     facts_generation: u64,
     outputs: Vec<ContentOutputFactsEntry>,
@@ -100,10 +106,18 @@ impl ContentAllocationStore {
     }
 
     pub fn new(limits: ContentLimits) -> Result<Self, ContentAllocationError> {
+        Self::with_profile(limits, ContentStoreProfile::Legacy)
+    }
+
+    pub fn with_profile(
+        limits: ContentLimits,
+        profile: ContentStoreProfile,
+    ) -> Result<Self, ContentAllocationError> {
         limits
             .validate()
             .map_err(|_| ContentAllocationError::Malformed)?;
         Ok(Self {
+            profile,
             limits,
             facts_generation: 0,
             outputs: Vec::new(),
@@ -200,6 +214,20 @@ impl ContentAllocationStore {
         presented_parents: &[(ContentAllocationId, u64)],
         now: u64,
     ) -> Result<(), ContentAllocationError> {
+        if self.profile != ContentStoreProfile::Legacy {
+            return Err(ContentAllocationError::Malformed);
+        }
+        self.request_inner(transaction, request, presented_parents, None, now)
+    }
+
+    fn request_inner(
+        &mut self,
+        transaction: TransactionId,
+        request: ContentAllocationRequest,
+        presented_parents: &[(ContentAllocationId, u64)],
+        native_opening: Option<u64>,
+        now: u64,
+    ) -> Result<(), ContentAllocationError> {
         self.check_grant(request.grant)?;
         self.time(now)?;
         self.expire(now)?;
@@ -210,7 +238,7 @@ impl ContentAllocationStore {
         if !self.outputs.iter().any(|row| row.output == request.output) {
             return Err(ContentAllocationError::OutputLost);
         }
-        if !valid_request(&request, &self.limits) {
+        if !valid_request(&request, &self.limits, native_opening.is_some()) {
             return Err(ContentAllocationError::Malformed);
         }
         if self.pending.len() >= self.limits.max_pending_allocation_requests as usize
@@ -227,6 +255,7 @@ impl ContentAllocationStore {
         self.pending.insert(
             request.allocation_request_id,
             PendingAllocation {
+                native_opening,
                 transaction,
                 request,
                 deadline,
@@ -247,6 +276,9 @@ impl ContentAllocationStore {
             .ok_or(ContentAllocationError::Stale)?;
         if pending.request.operation == 3 {
             return Err(ContentAllocationError::Malformed);
+        }
+        if pending.native_opening != snapshot.native_opening {
+            return Err(ContentAllocationError::Stale);
         }
         self.validate_live_references(&pending.request, presented_parents)?;
         self.validate_snapshot(&pending.request, &snapshot)?;
@@ -526,12 +558,15 @@ impl ContentAllocationStore {
                         && entry.request.role == request.role
                 })
                 .count();
-        let role_limit = if request.role == 1 {
+        let role_limit = if request.role == 3 {
+            1
+        } else if request.role == 1 {
             self.limits.max_panels_per_output
         } else {
             self.limits.max_popouts_per_output
         } as usize;
-        if total >= self.limits.max_allocations_total as usize
+        if (request.role == 3 && total >= 1)
+            || total >= self.limits.max_allocations_total as usize
             || per_output >= self.limits.max_allocations_per_output as usize
             || per_role >= role_limit
         {
@@ -572,7 +607,7 @@ impl ContentAllocationStore {
             || output_pixel_extent(output)
                 .is_none_or(|(width, height)| !inside(snapshot.pixel, width, height))
             || snapshot.allowed_reservation_extent > self.limits.max_reservation_extent
-            || (snapshot.role == 2 && snapshot.allowed_reservation_extent != 0)
+            || (snapshot.role != 1 && snapshot.allowed_reservation_extent != 0)
         {
             return Err(ContentAllocationError::Malformed);
         }
@@ -589,7 +624,7 @@ impl ContentAllocationStore {
         if (snapshot.role == 1
             && (logical_thickness > self.limits.max_panel_extent
                 || snapshot.allowed_reservation_extent > pixel_thickness))
-            || (snapshot.role == 2
+            || (snapshot.role != 1
                 && (snapshot.pixel.width > self.limits.max_popout_extent_px
                     || snapshot.pixel.height > self.limits.max_popout_extent_px))
             || !self.coverage_allows(snapshot, output)
@@ -654,7 +689,7 @@ fn resolved_pixel_geometry_is_valid(snapshot: &ContentAllocationSnapshot) -> boo
     ) else {
         return false;
     };
-    if snapshot.role == 1 {
+    if snapshot.role != 2 {
         quantized == snapshot.pixel
     } else {
         // A popout origin is selected from its physical parent anchor. At a
@@ -692,7 +727,7 @@ fn valid_outputs(outputs: &[ContentOutputFactsEntry], limits: &ContentLimits) ->
     })
 }
 
-fn valid_request(request: &ContentAllocationRequest, limits: &ContentLimits) -> bool {
+fn valid_request(request: &ContentAllocationRequest, limits: &ContentLimits, native: bool) -> bool {
     let margins = [
         request.margins.top,
         request.margins.right,
@@ -700,7 +735,11 @@ fn valid_request(request: &ContentAllocationRequest, limits: &ContentLimits) -> 
         request.margins.left,
     ];
     if !(1..=3).contains(&request.operation)
-        || !(1..=2).contains(&request.role)
+        || !(if native {
+            request.role == 3
+        } else {
+            (1..=2).contains(&request.role)
+        })
         || !(1..=4).contains(&request.edge)
         || margins
             .into_iter()
@@ -720,7 +759,7 @@ fn valid_request(request: &ContentAllocationRequest, limits: &ContentLimits) -> 
     request.desired_width > 0
         && request.desired_height > 0
         && (request.operation != 1 || request.prior == ContentAllocationId::default())
-        && if request.role == 1 {
+        && if request.role == 1 || native {
             request.parent == ContentAllocationId::default()
                 && request.parent_presentation_epoch == 0
                 && request.anchor_parent_rect == ContentPixelRect::default()
