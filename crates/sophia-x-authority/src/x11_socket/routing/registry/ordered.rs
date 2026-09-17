@@ -322,19 +322,6 @@ impl XServerFrontendClientRouteRegistration {
         }
     }
 
-    /// Close this endpoint to further handovers, irreversibly.
-    ///
-    /// EXACT BY CONSTRUCTION. The gate is this registration's own, minted with
-    /// its queue, so a replacement registration for the same client is
-    /// untouched by this -- there is no lookup here that could reach one.
-    ///
-    /// A handover already inside the gate completes first and this waits for
-    /// it. What it establishes is that no FURTHER handover will be admitted;
-    /// it does not end a socket, answer a finalizer or settle anything, and
-    /// those remain separate facts to be established separately.
-    pub(crate) fn fence_ordered_handovers(&self) -> PrivateHandoverFence {
-        self.ordered_gate.close()
-    }
 
     /// This connection's gate, for a holder that will close it later.
     ///
@@ -347,27 +334,6 @@ impl XServerFrontendClientRouteRegistration {
         self.ordered_gate.clone()
     }
 
-    /// The name of this connection's obligation, if it has a place.
-    ///
-    /// FROM THE RESERVATION THAT MADE IT, so a caller gets the name this
-    /// connection was actually given rather than one assembled out of an
-    /// index, a home and a store it happened to be holding.
-    ///
-    /// `None` MEANS THIS REGISTRATION IS NOT HOLDING A LEASE, which is not the
-    /// same as there being no store or no place. A registry with no
-    /// continuation store never had one; a connection whose lease has been
-    /// taken for a conversion, or consumed by its own teardown, has not got
-    /// one here any more. In neither case does this establish anything about
-    /// what the store holds.
-    #[cfg_attr(not(test), allow(dead_code))] // Asked by a commitment not attached yet.
-    pub(crate) fn maintenance_identity(&self) -> Option<PrivateMaintenanceIdentity> {
-        let held = match self.ordered_continuation.lock() {
-            Ok(held) => held,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        held.as_ref()
-            .map(PrivateOrderedContinuationSlot::maintenance_identity)
-    }
 
     /// Pin the evidence custody reserved for this connection.
     ///

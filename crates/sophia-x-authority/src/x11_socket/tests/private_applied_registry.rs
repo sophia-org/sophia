@@ -205,6 +205,11 @@ mod private_applied_registry {
             .unwrap();
         assert!(weak_selections.upgrade().is_some());
         drop(registration);
+        // AND THE KEEPER THAT ALSO HOLDS THIS CONNECTION'S TEARDOWN RECORD.
+        // Its registration going runs the cleanup; the state that record
+        // legitimately owns is released when the owner keeping it goes, which
+        // is a separate event and this control makes it happen.
+        drop(service_keeper);
         assert!(weak_slot.upgrade().is_none());
         assert!(weak_selections.upgrade().is_none());
         private

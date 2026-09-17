@@ -178,17 +178,6 @@ struct XServerFrontendClientRouteChannels {
 
 #[cfg(unix)]
 struct XServerFrontendClientRouteRegistration {
-    lifecycle: Mutex<Option<PrivateConnectionLifecycle>>,
-    /// The place this connection's home sits in, reserved before this
-    /// connection was exposed.
-    ///
-    /// Taken by this connection's teardown, which accounts for the place once
-    /// the home has said whether anything is owed through it. A lease dropped
-    /// without being disposed of is counted as abandoned rather than handed
-    /// out again, so a connection that ended with nobody accounting for it is
-    /// visible instead of silent.
-    #[allow(dead_code)]
-    ordered_continuation: Mutex<Option<PrivateOrderedContinuationSlot>>,
     /// This connection's way back to the evidence custody reserved for it.
     ///
     /// RESERVED BEFORE THIS ROW WAS PUBLISHED and kept by the service owner,
@@ -200,51 +189,26 @@ struct XServerFrontendClientRouteRegistration {
     /// evidence being disposed of, and an entry that vanished with the
     /// registration would make a service exit look like a settlement.
     ordered_custody: Option<PrivateRegisteredCustody>,
-    /// Where this connection's ordered output lives, from binding onwards.
+    /// What this connection's destruction is responsible for.
     ///
-    /// A HANDLE, NOT A STORAGE OF ITS OWN. When there is a place, this is the
-    /// very home that place holds: the reservation makes it, and the
-    /// registration is handed the same one. So the output is reachable from
-    /// the place from the moment it binds rather than from teardown onwards,
-    /// and teardown has nothing to move -- which is what lets anything else
-    /// borrow this connection's output without owning this registration.
-    ///
-    /// A REGISTRY WITH NO CONTINUATION STORE STILL HAS ONE. There is no place
-    /// for it to sit in, so it is this registration's alone and goes when the
-    /// registration does, which is what a connection with nowhere to hand over
-    /// to has always done.
-    ordered_home: Arc<PrivateOrderedHome>,
-    /// Where this registration's handovers are serialized with its closing.
-    ///
-    /// Held here as well as in the row, because closing is this
-    /// registration's act: a close that had to find the gate by client id
-    /// could reach a replacement's.
-    ordered_gate: Arc<PrivateHandoverGate>,
-    connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
-    input_recovery: InputRecovery,
-    client: XServerFrontendClientId,
-    /// The completion registry this client's control is answered through,
-    /// when the instance is private. Held so that losing the registration is
-    /// an edge this client's control records are told about, rather than one
-    /// that quietly leaves them waiting for a writer that has gone.
-    control_completion: Arc<std::sync::OnceLock<ControlCompletionRegistry>>,
-    clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
-    surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
-    focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
-    window_parents:
-        Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XResourceId>>>,
-    core_event_subscriptions:
-        Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), u32>>>,
-    randr_subscriptions: Arc<Mutex<BTreeMap<XServerFrontendClientId, (XResourceId, u16)>>>,
-    /// Selections a client watches, keyed by the window it named when it
-    /// subscribed. One client may watch several selections, and the same
-    /// selection through different windows, so the window is part of the key
-    /// rather than a value that the next subscription overwrites.
-    xfixes_selection_subscriptions: XFixesSelectionSubscriptions,
-    present_subscriptions:
-        Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XPresentSubscription>>>,
-    pending_presentations: Arc<XPendingPresentRegistry>,
-    frozen_input: Arc<Mutex<VecDeque<XDeferredRoutedInput>>>,
+    /// SHARED WITH ITS KEEPER, and reached by everything that used to read
+    /// these as fields of this handle. The responsibility outlives the handle;
+    /// what still triggers it is this handle's own `Drop`, unchanged.
+    cleanup: Arc<PrivateCleanupRecord>,
+}
+
+/// A registration reads as the connection it is a handle to.
+///
+/// ITS STATE MOVED, NOT ITS MEANING. Everything that asked this handle for its
+/// home, its gate, its client or its routing tables is asking the connection,
+/// and that is where those now live.
+#[cfg(unix)]
+impl std::ops::Deref for XServerFrontendClientRouteRegistration {
+    type Target = PrivateCleanupRecord;
+
+    fn deref(&self) -> &Self::Target {
+        &self.cleanup
+    }
 }
 
 #[cfg(unix)]
@@ -521,14 +485,31 @@ impl XServerFrontendRouteRegistry {
         // NO KEEPER INSTALLED MEANS NO CUSTODY, which is the public frontend's
         // shape: there is no private service owner, so there is nothing to
         // reserve from and nothing is claimed about one.
-        let mut custody = match (self.custody_keeper.get(), continuation.as_ref()) {
-            (Some(keeper), Some(slot)) => {
+        // THIS CONNECTION'S TEARDOWN RESPONSIBILITY, prepared before its row
+        // is published and before any accepted work can depend on it. The
+        // place moves into it here: one home for the reservation, so a later
+        // conversion or a late lifecycle attachment reaches the same state
+        // this connection's destruction will act on.
+        let mut cleanup = Some(Arc::new(PrivateCleanupRecord::prepared_for(
+            self,
+            client,
+            continuation.take(),
+            home,
+            Arc::clone(&gate),
+            connection_state.clone(),
+        )));
+        let mut custody = match (self.custody_keeper.get(), cleanup.as_ref()) {
+            (Some(keeper), Some(record)) if record.holds_a_place() => {
                 // THE GATE THIS CONNECTION'S QUEUE WAS MINTED WITH, handed to
                 // its custody here -- before the row goes in, on the same
                 // reservation. The sender above already has it, and this is
                 // what makes the source's gate the same gate rather than one
                 // that merely matches.
-                match keeper.reserve_for(&slot.maintenance_identity(), Arc::clone(&gate)) {
+                match keeper.reserve_for(
+                    &record.maintenance_identity().expect("it holds a place"),
+                    Arc::clone(&gate),
+                    Arc::clone(record),
+                ) {
                     PrivateCustodyReserved::Reserved(registered) => Some(registered),
                     // REFUSED BEFORE EXPOSURE, and the place above goes back
                     // with it: this connection is not admitted at all rather
@@ -539,7 +520,11 @@ impl XServerFrontendRouteRegistry {
                     | PrivateCustodyReserved::Saturated
                     | PrivateCustodyReserved::Foreign
                     | PrivateCustodyReserved::Unreadable => {
-                        if let Some(unexposed) = continuation.take() {
+                        // THIS ATTEMPT'S OWN RESERVATIONS, AND ONLY THOSE. The
+                        // record was never published, so nothing outside this
+                        // call has it and disposing of the place is all it
+                        // owes.
+                        if let Some(unexposed) = cleanup.take() {
                             unexposed.relinquish_unexposed();
                         }
                         return Err(XServerFrontendRouteError::EvidenceCustodyUnavailable {
@@ -553,10 +538,7 @@ impl XServerFrontendRouteRegistry {
         let published = self.publish_registered_client(
             client,
             senders,
-            &connection_state,
-            &gate,
-            &mut continuation,
-            home,
+            &mut cleanup,
             &mut custody,
         );
         // The client table is released here, before the place is disposed of.
@@ -566,7 +548,7 @@ impl XServerFrontendRouteRegistry {
         // capsule could have been accepted for this connection and the place
         // owes nothing. Publication is what takes it: on success the
         // registration holds it, and this is None.
-        if let Some(unexposed) = continuation.take() {
+        if let Some(unexposed) = cleanup.take() {
             unexposed.relinquish_unexposed();
         }
         // THE SAME FOR THE KEEPER'S ENTRY, and only for an attempt that was
@@ -607,10 +589,7 @@ impl XServerFrontendRouteRegistry {
         &self,
         client: XServerFrontendClientId,
         senders: XServerFrontendClientRouteSenders,
-        connection_state: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
-        gate: &Arc<PrivateHandoverGate>,
-        continuation: &mut Option<PrivateOrderedContinuationSlot>,
-        home: Arc<PrivateOrderedHome>,
+        cleanup: &mut Option<Arc<PrivateCleanupRecord>>,
         custody: &mut Option<PrivateRegisteredCustody>,
     ) -> Result<XServerFrontendClientRouteRegistration, XServerFrontendRouteError> {
         let mut clients = self
@@ -629,46 +608,16 @@ impl XServerFrontendRouteRegistry {
         }
         clients.insert(client, senders);
         Ok(XServerFrontendClientRouteRegistration {
-            lifecycle: Mutex::new(None),
-            // Held for this connection's whole ownership interval once it is
-            // exposed. It is not given back because setup failed or the client
-            // went: a place is returned when the work in it is gone, and until
-            // then it belongs to this connection.
-            ordered_continuation: Mutex::new(continuation.take()),
             // TAKEN WITH THE ROW, like the place. What this registration gets
             // is a capability naming the one custody reserved for it -- not a
             // licence to make a publication home later, and not a handle that
             // keeps one alive. Asking twice names the same home.
             ordered_custody: custody.take(),
-            // THE SAME HOME THE PLACE HOLDS, when there is a place: this is a
-            // handle to it, not a second storage that teardown would have to
-            // move out of. Empty until this connection's setup binds its
-            // queue, and reachable from the place for as long as the place
-            // exists -- which is what lets anything else borrow this
-            // connection's output after the registration has gone.
-            //
-            // A REGISTRY WITH NO CONTINUATION STORE STILL NEEDS ONE. There is
-            // no place for it to be in, so it is this registration's alone and
-            // goes when the registration does, which is what a connection with
-            // nowhere to hand over to has always done.
-            ordered_home: home,
-            // The registration's own gate, so closing is exact by
-            // construction rather than by looking anything up.
-            ordered_gate: gate.clone(),
-            connection_state: connection_state.clone(),
-            input_recovery: self.input_recovery.clone(),
-            client,
-            control_completion: self.control_completion.clone(),
-            clients: self.clients.clone(),
-            surfaces: self.surfaces.clone(),
-            focused_surface: self.focused_surface.clone(),
-            window_parents: self.window_parents.clone(),
-            core_event_subscriptions: self.core_event_subscriptions.clone(),
-            randr_subscriptions: self.randr_subscriptions.clone(),
-            xfixes_selection_subscriptions: self.xfixes_selection_subscriptions.clone(),
-            present_subscriptions: self.present_subscriptions.clone(),
-            pending_presentations: self.pending_presentations.clone(),
-            frozen_input: self.frozen_input.clone(),
+            // AND THE RESPONSIBILITY THIS HANDLE CARRIES, which its keeper
+            // also reaches. Taken with the row for the same reason as the
+            // place: from publication onwards this connection's destruction
+            // owes what is in here.
+            cleanup: cleanup.take().expect("a published row has its record"),
         })
     }
 

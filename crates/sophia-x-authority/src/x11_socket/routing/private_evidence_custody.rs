@@ -48,6 +48,11 @@ struct PrivateWorkerSource {
     /// is bounded storage on the source the reservation already made -- not a
     /// second inventory, not a budget, and not a permit.
     control: std::sync::OnceLock<PrivateControlCredentials>,
+    /// What this connection's destruction owes, shared with its registration.
+    ///
+    /// HELD, BECAUSE THE RESPONSIBILITY MUST OUTLIVE THE HANDLE. Holding it
+    /// runs nothing; what runs it is still the registration's own `Drop`.
+    cleanup: Arc<PrivateCleanupRecord>,
     /// The gate this connection's queue was minted with.
     ///
     /// THE EXACT ONE, GIVEN TO THIS RESERVATION BEFORE THE ROW WENT IN. Not
@@ -125,6 +130,7 @@ impl PrivateEvidenceCustody {
         store: &PrivateSettlementOwner,
         identity: PrivateMaintenanceIdentity,
         gate: Arc<PrivateHandoverGate>,
+        cleanup: Arc<PrivateCleanupRecord>,
     ) -> Self {
         Self {
             store: store.clone(),
@@ -135,6 +141,7 @@ impl PrivateEvidenceCustody {
                 slot: Mutex::new(PrivateWorkerSlot::empty()),
                 exit: Arc::new(PrivateWorkerExit::unstarted()),
                 control: std::sync::OnceLock::new(),
+                cleanup,
                 gate,
                 fence: PrivateFenceEvidence::unattempted(),
             },
@@ -190,6 +197,15 @@ impl PrivateEvidenceCustody {
     /// Where this connection's fencing publishes its answer.
     fn fence_evidence(&self) -> &PrivateFenceEvidence {
         &self.source.fence
+    }
+
+    /// What this connection's destruction is responsible for.
+    ///
+    /// THE REGISTRATION'S OWN RECORD, not a copy of it: the handle and this
+    /// keeper reach one piece of state, so what is attached or transferred
+    /// through one is what the other acts on.
+    fn cleanup_record(&self) -> &Arc<PrivateCleanupRecord> {
+        &self.source.cleanup
     }
 
     /// The publication home this custody owns.

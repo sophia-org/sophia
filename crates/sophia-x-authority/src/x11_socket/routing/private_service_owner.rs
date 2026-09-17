@@ -261,6 +261,7 @@ impl PrivateCustodyKeeper {
         &self,
         identity: &PrivateMaintenanceIdentity,
         gate: Arc<PrivateHandoverGate>,
+        cleanup: Arc<PrivateCleanupRecord>,
     ) -> PrivateCustodyReserved {
         let Some(inventory) = self.inventory.upgrade() else {
             return PrivateCustodyReserved::Unreadable;
@@ -304,6 +305,7 @@ impl PrivateCustodyKeeper {
             &inventory.store,
             identity.clone(),
             gate,
+            cleanup,
         ));
         let capability = PrivateRegisteredCustody {
             inventory: Arc::downgrade(&inventory),

@@ -62,9 +62,9 @@ struct PrivateFenceEvidence {
     ///
     /// IT LIVES WHERE THE RESULT LIVES. A claim kept on an operation record is
     /// one a second freshly built view mints for itself, and two views each
-    /// holding their own right would each go to the gate -- so the second
-    /// would replace an Established answer with AlreadyEstablished and the
-    /// connection's record of its own closure would be the wrong one.
+    /// holding their own right would each go to the gate -- which is a second
+    /// close call this connection never needed, with the consequences set out
+    /// below.
     ///
     /// TAKEN, NOT CHECKED. One exchange is the whole acquisition. It is never
     /// given back: once the gate may have been reached, the effect may have

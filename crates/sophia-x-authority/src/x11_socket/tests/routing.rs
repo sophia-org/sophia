@@ -22895,6 +22895,10 @@ fn a_credit_frees_a_place_whose_record_finished_owing_nothing() {
         Some(0),
         "a released credit is not also an abandoned one"
     );
+    // AND THE SERVICE OWNER, which keeps this connection's teardown record and
+    // so keeps what that record owns. Its going is a separate event from the
+    // registration's, and this control makes it happen before asking.
+    drop(_private_keeper);
     assert!(wire_weak.upgrade().is_none());
     drop(outer);
 }
@@ -36092,7 +36096,11 @@ fn an_inventory_refuses_a_second_home_and_a_foreign_name() {
     // -- is left exactly as it was.
     let capability = keeper.keeper();
     assert!(matches!(
-        capability.reserve_for(&named, registration.handover_gate()),
+        capability.reserve_for(
+            &named,
+            registration.handover_gate(),
+            Arc::clone(&registration.cleanup),
+        ),
         PrivateCustodyReserved::AlreadyKept
     ));
     assert_eq!(
@@ -36126,6 +36134,7 @@ fn an_inventory_refuses_a_second_home_and_a_foreign_name() {
         capability.reserve_for(
             &foreign.maintenance_identity().expect("a name"),
             foreign.handover_gate(),
+            Arc::clone(&foreign.cleanup),
         ),
         PrivateCustodyReserved::Foreign
     ));
@@ -37217,8 +37226,8 @@ fn a_connections_fence_source_names_the_gate_its_queue_was_minted_with() {
     // ASKING AGAIN NAMES THE SAME GATE AND THE SAME STORAGE. This is an
     // observation after registration returned; that the gate was bound BEFORE
     // publication is established by source order -- reserve_for runs before
-    // publish_registered_client -- and by the refused duplicate below, which
-    // has its own reservation to give back.
+    // publish_registered_client -- and by the client-table control named
+    // below, not by anything this control watches.
     let address = std::ptr::from_ref(pin.fence_evidence()) as usize;
     drop(pin);
     let PrivateCustodyReach::Reached(again) = registration
@@ -37468,4 +37477,253 @@ fn two_eligible_views_make_one_attempt() {
     drop(record);
     drop(custody);
     drop(f.fixture);
+}
+
+/// The cleanup record this connection's registration and keeper share.
+fn cleanup_of(registration: &XServerFrontendClientRouteRegistration) -> Arc<PrivateCleanupRecord> {
+    Arc::clone(&registration.cleanup)
+}
+
+#[test]
+fn a_registration_and_its_keeper_reach_one_cleanup_record() {
+    // ONE RESPONSIBILITY, ONE HOME. The handle a caller drops and the keeper
+    // that outlives it must reach the same state, or deferring that
+    // destruction later would be deferring a copy of it.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(8901);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let PrivateCustodyReach::Reached(pin) = registration
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let shared = cleanup_of(&registration);
+    assert!(
+        Arc::ptr_eq(pin.cleanup_record(), &shared),
+        "the keeper reaches the registration's own record"
+    );
+
+    // THE SAME MUTABLE STATE, not a snapshot of it. A late lifecycle
+    // attachment is written through the registration and read through the
+    // keeper's handle.
+    assert!(
+        shared.lifecycle.lock().expect("readable").is_none(),
+        "nothing is attached yet"
+    );
+    private
+        .broker
+        .registry
+        .attach_private_lifecycle(&registration, admitted(client))
+        .expect("the boundary admits and the lifecycle attaches");
+    assert!(
+        shared.lifecycle.lock().expect("readable").is_some(),
+        "and the keeper's record sees what was attached afterwards"
+    );
+
+    // AND THE PLACE IS IN THAT ONE RECORD TOO.
+    assert!(
+        shared.maintenance_identity().is_some(),
+        "its reservation lives here, not beside it"
+    );
+    assert!(Arc::ptr_eq(&shared.ordered_gate, &registration.handover_gate()));
+
+    // A FRESH PIN AFTER THE FIRST VIEW ENDS FINDS THE SAME RECORD.
+    drop(pin);
+    let PrivateCustodyReach::Reached(again) = registration
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    assert!(Arc::ptr_eq(again.cleanup_record(), &shared));
+    drop(again);
+    drop((registration, private, keeper, durable, shared));
+}
+
+#[test]
+fn a_refused_duplicate_leaves_no_cleanup_record_behind() {
+    // THIS ATTEMPT'S OWN RESERVATIONS, AND ONLY THOSE. A duplicate is refused
+    // while publication is excluded, so the attempt has a record of its own to
+    // give back -- and the live connection it collided with keeps everything.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(8902);
+    let (first, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let live = cleanup_of(&first);
+    let place = first.maintenance_identity().expect("a name").place();
+    assert_eq!(keeper.custodies_kept(), 1);
+    assert_eq!(durable.continuations_reserved(), Some(1));
+
+    let registry = private.broker.registry.clone();
+    let refused = std::thread::scope(|scope| {
+        // THE REAL CLIENT TABLE, held by this control: the attempt below stops
+        // exactly between preparing its record and publishing it.
+        let table = registry.clients.lock().expect("a readable client table");
+        let attempt = scope.spawn(|| {
+            registry.register_client_with_admission(client, Some(admitted(client)))
+        });
+        assert!(
+            waited_for(|| keeper.custodies_kept() == 2),
+            "the attempt prepared its own custody and record before publication"
+        );
+        assert_eq!(
+            durable.continuations_reserved(),
+            Some(2),
+            "and its own place, on the same reservation"
+        );
+        drop(table);
+        attempt.join().expect("the attempt returned")
+    });
+    assert!(matches!(
+        refused,
+        Err(XServerFrontendRouteError::DuplicateClient { .. })
+    ));
+
+    // BOTH OF THAT ATTEMPT'S RESERVATIONS WENT BACK, AND THE LIVE SIBLING IS
+    // UNTOUCHED -- including the record it is still holding.
+    assert_eq!(keeper.custodies_kept(), 1);
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    assert!(Arc::ptr_eq(&cleanup_of(&first), &live));
+    assert_eq!(
+        live.maintenance_identity().expect("a name").place(),
+        place,
+        "the live connection's own place"
+    );
+    assert!(
+        !first
+            .ordered_handovers_fenced()
+            .expect("a readable gate"),
+        "and nothing ran its cleanup"
+    );
+    drop((first, live, private, registry, keeper, durable));
+}
+
+#[test]
+fn keeping_a_cleanup_record_neither_runs_it_nor_repeats_it() {
+    // KEEPING IS NOT RUNNING. The registration's own Drop performs this
+    // connection's cleanup at exactly the point it always did; the keeper goes
+    // on holding the record afterwards, and holding it does nothing.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(8903);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    let shared = cleanup_of(&registration);
+    assert!(
+        private
+            .broker
+            .registry
+            .clients
+            .lock()
+            .expect("a readable client table")
+            .contains_key(&client),
+        "its row is in"
+    );
+    assert!(!shared.ordered_gate.fenced().expect("a readable gate"));
+
+    // THE HANDLE GOES, AND THE CLEANUP RAN.
+    drop(registration);
+    assert!(
+        shared
+            .ordered_gate
+            .fenced()
+            .expect("a readable gate"),
+        "its gate was closed by the cleanup its Drop performed"
+    );
+    assert!(
+        !private
+            .broker
+            .registry
+            .clients
+            .lock()
+            .expect("a readable client table")
+            .contains_key(&client),
+        "and its row is out"
+    );
+    assert_eq!(
+        shared.ordered_home.standing(),
+        PrivateHomeStanding::Retained,
+        "its queue went to the place reserved for it"
+    );
+
+    // AND THE KEEPER STILL HAS THE RECORD, which changes nothing.
+    assert_eq!(keeper.custodies_kept(), 1);
+    let fenced_before = shared.ordered_gate.fenced();
+    drop(shared);
+    assert_eq!(
+        keeper.custodies_kept(),
+        1,
+        "a record going out of one holder's hands is not a disposition"
+    );
+    assert_eq!(fenced_before, Some(true));
+    drop((private, keeper, durable));
+}
+
+#[test]
+fn a_connection_with_a_lifecycle_lease_closes_it_when_its_registration_goes() {
+    // THE LEASE IS PRESENT THROUGH TEARDOWN, which is the case that moving its
+    // home could have changed. It used to be a field of the handle, so its own
+    // destructor ran at exactly that point; it now lives in a record that
+    // outlives the handle, and the cleanup takes it rather than leaving it.
+    //
+    // WHAT THIS CONTROL CAN AND CANNOT SEPARATE. It shows the gate is closed
+    // when the registration goes. It does NOT discriminate taking the lease
+    // from closing it in place: this lease's own `Drop` closes the same gate,
+    // and closing is idempotent, so both orders leave the same observable
+    // state. The taking is written for the destructor's timing, and that
+    // timing has no observable consequence for this lease type.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(8904);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    private
+        .broker
+        .registry
+        .attach_private_lifecycle(&registration, admitted(client))
+        .expect("the boundary admits and the lifecycle attaches");
+    let shared = cleanup_of(&registration);
+    let gate = shared
+        .lifecycle
+        .lock()
+        .expect("a readable lifecycle")
+        .as_ref()
+        .expect("a lease is attached")
+        .gate();
+    assert!(gate.is_open(), "its lifecycle is open");
+
+    drop(registration);
+    assert!(
+        !gate.is_open(),
+        "the cleanup closed this connection's lifecycle"
+    );
+    assert!(
+        shared
+            .lifecycle
+            .lock()
+            .expect("a readable lifecycle")
+            .is_none(),
+        "and took the lease rather than leaving it for whenever the record goes"
+    );
+    drop((shared, private, keeper, durable));
 }
