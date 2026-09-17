@@ -70,3 +70,17 @@ registry/supervision, complete per-grant projections/retirement claims and input
 focused text/catalog binding, reusable C lifecycle, Bemenu hookup, joined
 1,000-cycle multi-component controls and attended acceptance. Existing tests of
 single-shell retirement are not renamed as the new two-client 1,000-cycle gate.
+
+## Frozen ownership checkpoint
+
+Signed `c7dea19ae6785d1e30915a5a3ba477d2c344ceb0` passed the exact-source
+contained canonical gate and was published to master. Evidence:
+`.artifacts/offline-check-c7dea19a/report.json` and `execution-summary.json`.
+274 Rust result groups reported 3,391 passes, no failures, thirty ignored and
+zero compiler warning lines. HEAD/parent signatures passed; sibling evidence
+checks signed commit identities only, not tree/blob contents. Hardware and
+promoted host archives were NOT_RUN. No native acceptance follows from this.
+
+The scoped renderer all-tests Clippy invocation initially omitted egl-probe,
+exposing an existing fixture import that needs both gbm-probe and egl-probe.
+The feature-complete strict invocation passes. No fixture or lint was weakened.

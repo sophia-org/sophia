@@ -5,6 +5,9 @@ published revision 1–6 envelope and negotiation without linking Rust. Compile
 those three C99 sources into the client. `sh tools/check_shell_c_wire.sh` runs
 the strict C gate; the canonical and shell-protocol gates call it too.
 
+An optional typed catalog assembler is now available as
+`sophia_shell_catalog.h` plus `shell_wire/catalog.c`, described below.
+
 This is **not yet the complete shell lifecycle SDK**. It does not authenticate or
 connect a peer, decode content payloads, track Presented/Released, reserve paired
 ACK/activation obligations, authorize a launcher or launch an application.
@@ -70,3 +73,39 @@ remain opaque to this reader. Schema inventory and source length are checked.
 
 These tests connect no live endpoint and require no renderer/device. They do not
 exercise Session admission, client content state, WM actions or native acceptance.
+
+## Authorized application catalog
+
+After validating a welcome that grants `application_catalog`, initialize
+`sophia_shell_catalog` with two disjoint caller-owned entry arrays. Each holds
+up to 4,096 entries; callers may choose a smaller explicit capacity, in which
+case larger catalogs refuse. The helper allocates nothing and opens no socket.
+Compile `shell_wire/catalog.c` alongside the wire sources.
+
+Pass kinds 114–116 from the existing receive FIFO to
+`sophia_shell_catalog_accept`. Other families return UNRELATED for dispatch by
+their owner. Begin/entry/end must agree on connection, transaction and catalog
+generation. The helper rejects duplicate slots, incomplete counts, trailing
+bytes, invalid flags, oversized text, non-scalar/noncanonical UTF-8, controls
+and bidi formatting controls. Strings are copied with a trailing NUL; embedded
+NUL is invalid. Limits apply to UTF-8 bytes, not characters.
+
+Only a validated End swaps the complete staging array into the current catalog.
+The previous catalog remains visible during assembly and after a rejected
+transfer; a rejected transfer latches a connection error requiring fresh state.
+A pointer returned by `sophia_shell_catalog_entries` is borrowed until the next
+successful commit or reinitialization. Copy any identity/text that must outlive
+that boundary. The input wire payload may be consumed immediately after the
+assembler returns. An empty completed catalog is distinct from no catalog.
+
+The catalog conveys labels, keywords, availability and opaque slots only. It
+provides no execution authority, presented selection, keyboard lease, resource
+upload, content candidate, or application dispatch. These remain the typed
+lifecycle/Session integration still required for Bemenu.
+
+The C gate independently decodes the Rust-generated catalog payloads, including
+labels, keywords, slot order and availability. It also tests replacement
+atomicity, unrelated-family interleaving, stale/mismatched identities, malformed
+Unicode, exact maximum text lengths and every truncation of a maximal entry.
+These are codec/assembly controls with supplied welcome facts, not an admitted
+native launcher.

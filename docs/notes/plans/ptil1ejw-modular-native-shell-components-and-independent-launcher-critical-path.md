@@ -115,6 +115,10 @@ remains separately labelled.
 
 **Deliver developer examples and a joined conformance gate.**
 
+The public C foundation now includes atomic typed application-catalog assembly
+(kinds 114–116) with an independent Rust-golden payload reader. Content/focus
+lifecycle, protected independent admission and Bemenu integration remain open.
+
 Provide a minimal independent non-Rust launcher client and optional Rust lifecycle
 helpers using the same schema. Document admission, supported/denied capabilities,
 focus acquisition/dismissal, catalog/launch outcomes, reconnect and resource
