@@ -73,6 +73,28 @@ The [shared-store and compositor-identity foundation](../investigations/r3b9n7cf
 is implemented. Session still owns a single live shell; this does not complete
 t105 or enable a second client. Both epoch fields will be globally minted.
 
+Typed `session.shell-component` selections now validate bounded independent IDs,
+exclusive roles, paths and default-denied per-component GPU policy. Mixed legacy
+selections refuse. The live startup parser explicitly refuses this unimplemented
+admission mode before resolving a legacy fallback. This is configuration-boundary
+progress, not two-client admission; the common live transport owner remains next.
+
+Configuration checkpoint evidence: `.artifacts/bemenu-component-profile/`.
+Device-hidden tests pass 118 config tests and 468 Session library tests, with
+fourteen Session tests ignored. Four new config groups cover typed independent
+selections, Session-only fragment disclosure, malformed/conflicting profiles and
+legacy preservation. One new Session control exercises the real startup parser's
+explicit refusal with nonexistent component executables and both legacy override
+forms. It does not launch a protected child. Strict affected Clippy and the
+repository layout gate pass. Two separately compiled mutations (duplicate role
+admission and implicit GPU permission) fail their exact one-test controls.
+
+The first local runner also attempted the `desktop_profile_probe` example without
+its required arguments; its usage refusal is retained separately and is not test
+coverage. The corrected runner selects only Cargo test executables. The raw
+source-layout audit reports existing debt; the canonical layout subcommand checks
+that ledger and passes. Neither result is a native or two-client acceptance claim.
+
 Implement the accepted Session/config/transport design with one owned grant and
 lifecycle per admitted client. Validate the complete operator profile before
 launch. Enforce requested/supported/permitted capability intersection, exact peer

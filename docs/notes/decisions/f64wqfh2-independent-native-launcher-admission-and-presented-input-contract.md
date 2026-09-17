@@ -17,8 +17,9 @@ keyboard events. The revision-4 descriptor launcher is a different product: Engi
 renders and edits its menu. Neither may silently be reinterpreted as the custom
 Bemenu content launcher.
 
-This is the initial t104 contract proposal. Existing protocol files and runtime
-behavior are unchanged. Concrete byte layouts, compatibility controls and the
+This is the t104 contract proposal. The existing wire remains revision 6;
+component profile parsing is now implemented with an explicit live-startup
+refusal until independent admission is connected. Concrete byte layouts, compatibility controls and the
 multi-client inventory audit must accompany the subsequent schema checkpoint;
 t104 is not complete at this checkpoint. The [source ownership audit and budget
 proposal](../investigations/faon4eja-native-component-ownership-audit-and-reusable-c-wire-boundary.md)
@@ -146,6 +147,45 @@ and aggregate outbox; indicator/catalog publication routing; endpoint peer check
 content allocation, presented projection and input capture; resource retirement;
 Session launch policy and WM operation dispatch. Preserve their current actual
 owners rather than introduce a competing resource/focus ledger in a test host.
+
+### Typed component selection checkpoint
+
+The Session authority accepts this configuration shape for validation/staging:
+
+```kdl
+shell { enabled #true; }
+session {
+  shell-component "panel" "bar" {
+    executable "/opt/lom"
+    config "/home/user/.config/lom/config.kdl"
+    gpu "direct"
+  }
+  shell-component "menu" "application-launcher" {
+    executable "/opt/bemenu-sophia"
+    // GPU access defaults to denied independently for each component.
+  }
+}
+```
+
+This is not yet a runnable desktop example: live Session refuses it before
+legacy process resolution or child launch, naming unimplemented revision-7
+admission. Neither explicit nor default legacy shell-process flags override that
+refusal. Reload retains existing non-launch settings and reports its existing
+`non_launch_settings` deferral; it cannot activate the new selection.
+
+Identity is 1–64 ASCII letters, digits, hyphens or underscores. At most two
+components may be selected, with unique identities and unique roles; supported
+roles are `bar` and `application-launcher`. Each requires one absolute executable
+path; configuration is optional and absolute. Arguments, unknown settings,
+duplicate settings, typed/named positional values, unsupported roles and mixed
+legacy `shell-client`/`shell-config` selections refuse. Executable/configuration
+existence and protection-domain admission remain launch-owner responsibilities.
+Profile staging discloses these paths only to Session, never to the WM fragment.
+
+The `gpu` setting is an operator selection (`denied` or `direct`), not a content
+capability or effective device grant. There is no implicit inheritance between
+components. The legacy fields and their current behavior are preserved; legacy
+normalization into the future common live inventory is not implemented here.
 
 ## Controls and acceptance
 

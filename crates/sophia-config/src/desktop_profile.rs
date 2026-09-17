@@ -477,7 +477,9 @@ pub fn prepare_desktop_profile_candidates(
     };
     let session = crate::prepare_desktop_session_candidate(candidate(DesktopAuthority::Session))?;
     if !desktop_profile_shell_enabled(&profile)
-        && (session.components.shell_client.is_some() || session.components.shell_config.is_some())
+        && (session.components.shell_client.is_some()
+            || session.components.shell_config.is_some()
+            || !session.components.shell_components.is_empty())
     {
         return Err(DesktopProfileError::Schema(
             "shell component selections require shell { enabled #true; }".to_owned(),
@@ -745,6 +747,7 @@ fn validate_setting(
             "window-manager",
             "shell-client",
             "shell-config",
+            "shell-component",
             "application-catalog",
         ]
         .contains(&name),
@@ -939,7 +942,15 @@ pub fn desktop_profile_shell_panel_thickness(profile: &DesktopProfileGeneration)
 fn setting_key(authority: DesktopAuthority, node: &KdlNode) -> Result<String, DesktopProfileError> {
     let mut key = format!("{}.{}", authority.name(), node.name().value());
     if authority != DesktopAuthority::Policy
-        && ["bind", "pointer-bind", "application", "device", "named"].contains(&node.name().value())
+        && [
+            "bind",
+            "pointer-bind",
+            "application",
+            "device",
+            "named",
+            "shell-component",
+        ]
+        .contains(&node.name().value())
     {
         key.push('.');
         key.push_str(exact_first_string(node)?);

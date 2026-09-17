@@ -286,6 +286,7 @@ pub struct DesktopComponents {
     pub window_manager: Option<ExternalWmConfig>,
     pub shell_client: Option<PathBuf>,
     pub shell_config: Option<PathBuf>,
+    pub shell_components: Vec<crate::ShellComponentConfig>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

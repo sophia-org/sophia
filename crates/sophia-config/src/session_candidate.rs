@@ -100,7 +100,10 @@ fn logout_enabled(node: &KdlNode) -> Result<bool, DesktopProfileError> {
         .ok_or_else(|| schema_error("logout requires one boolean"))
 }
 
-fn component_arguments(node: &KdlNode, maximum: usize) -> Result<Vec<String>, DesktopProfileError> {
+pub(crate) fn component_arguments(
+    node: &KdlNode,
+    maximum: usize,
+) -> Result<Vec<String>, DesktopProfileError> {
     if node.entries().is_empty()
         || node.entries().len() > maximum
         || node.children().is_some()
@@ -196,6 +199,20 @@ pub fn prepare_desktop_session_candidate(
                 prepared.components.shell_client =
                     Some(component_arguments(&node, 1)?.remove(0).into())
             }
+            "shell-component" => {
+                let component = crate::shell_components::parse(&node)?;
+                let components = &mut prepared.components.shell_components;
+                if components.len() >= 2
+                    || components
+                        .iter()
+                        .any(|old| old.id == component.id || old.role == component.role)
+                {
+                    return Err(schema_error(
+                        "duplicate shell component identity, exclusive role or excessive component count",
+                    ));
+                }
+                components.push(component);
+            }
             "shell-config" => {
                 prepared.components.shell_config =
                     Some(component_arguments(&node, 1)?.remove(0).into())
@@ -212,6 +229,14 @@ pub fn prepare_desktop_session_candidate(
             }
             _ => return Err(schema_error("candidate contains a non-session setting")),
         }
+    }
+    if !prepared.components.shell_components.is_empty()
+        && (prepared.components.shell_client.is_some()
+            || prepared.components.shell_config.is_some())
+    {
+        return Err(schema_error(
+            "shell-component cannot be combined with legacy shell-client or shell-config",
+        ));
     }
     Ok(prepared)
 }

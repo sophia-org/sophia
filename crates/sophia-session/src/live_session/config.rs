@@ -309,6 +309,11 @@ impl PersistentXtermSessionConfig {
             input: input_profile_candidate,
             output: output_profile_candidate,
         } = prepared_desktop;
+        // The typed profile must not silently fall back to the legacy shell
+        // while the shared component admission/transport owner is unfinished.
+        if !session_profile_candidate.components.shell_components.is_empty() {
+            return Err("independent shell components require revision-7 Session admission, which is not implemented".into());
+        }
         let session_profile = PreparedSessionProfile::new(session_profile_candidate)?;
         let input_profile = PreparedInputProfile::new(input_profile_candidate)?;
         let output_profile = PreparedOutputProfile::new(output_profile_candidate)?;

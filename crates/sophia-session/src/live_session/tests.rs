@@ -13,6 +13,9 @@ mod glx_pixmap_export;
 #[path = "../../tests/support/live_session_shutdown.rs"]
 mod live_session_shutdown;
 
+#[path = "../../tests/support/shell_component_config.rs"]
+mod shell_component_config;
+
 use super::metadata_broker::resolve_live_broker_toplevel_action;
 use super::metadata_shell::{live_shell_activation_surfaces, reservation_within_profile};
 use super::startup_readiness::startup_required_submission_for_head;
