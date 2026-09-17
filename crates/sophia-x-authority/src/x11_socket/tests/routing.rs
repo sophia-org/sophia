@@ -36450,3 +36450,446 @@ fn a_caller_that_unwinds_after_startup_leaves_the_handle_with_its_owner() {
     drop(after);
     drop(f.fixture);
 }
+
+#[test]
+fn a_control_context_takes_its_credentials_from_its_own_serving_owner() {
+    // NOT FROM WHOEVER PREPARED IT. The stop and the notice are the ones this
+    // connection's own serving owner published, resolved under the one
+    // acquisition of the home that establishes that owner is there and live.
+    let f = worker_fixture(XServerFrontendClientId(8701));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let context = custody
+        .prepare_control()
+        .expect("a live serving owner with a stop of its own");
+
+    // THE EXACT ORIGINAL HANDLES, not copies of what they held. The fixture's
+    // own clones came from the same binding, so pointer identity is the whole
+    // assertion.
+    assert!(
+        Arc::ptr_eq(context.stop(), &f.stop),
+        "this connection's authoritative stop"
+    );
+    assert!(
+        Arc::ptr_eq(context.notice(), &f.wake),
+        "and its own notice"
+    );
+    assert!(
+        Arc::ptr_eq(context.home(), &f.fixture.registration.ordered_home),
+        "resolved to the home its own reservation made"
+    );
+    assert!(Arc::ptr_eq(context.exit_sink(), custody.exit_sink()));
+
+    // AND A FRESH VIEW RECOVERS THE PUBLISHED ASSOCIATION rather than binding
+    // a second one.
+    //
+    // ASKED WHERE A SECOND BINDING WOULD ANSWER DIFFERENTLY. Preparing again
+    // over a live owner would derive the same handles either way, which proves
+    // nothing; this connection's home is RETAINED first, so a preparation that
+    // rebound would refuse -- and the association that is already published is
+    // what a later view must still find.
+    // The first context ends here; it is a borrow, so there is nothing to
+    // release.
+    assert!(f.fixture.registration.ordered_home.retain());
+    let again = custody_for(&f, &f.fixture.keeper);
+    let recovered = again
+        .prepare_control()
+        .expect("what was published is still this connection's");
+    assert!(Arc::ptr_eq(recovered.stop(), &f.stop));
+    assert!(Arc::ptr_eq(recovered.notice(), &f.wake));
+    assert!(Arc::ptr_eq(
+        recovered.home(),
+        &f.fixture.registration.ordered_home
+    ));
+    drop(again);
+    drop(custody);
+    drop(f.fixture);
+}
+
+#[test]
+fn one_connections_context_cannot_stop_its_sibling() {
+    // TWO REAL CONNECTIONS OF ONE STORE, each with its own registered source
+    // and its own credentials. A context that could reach the other's stop
+    // would be able to end a connection nobody asked it about.
+    let first = worker_fixture(XServerFrontendClientId(8702));
+    let second = worker_fixture(XServerFrontendClientId(8703));
+    let first_custody = custody_for(&first, &first.fixture.keeper);
+    let second_custody = custody_for(&second, &second.fixture.keeper);
+    let first_context = first_custody.prepare_control().expect("its own owner");
+    let second_context = second_custody.prepare_control().expect("its own owner");
+
+    assert!(
+        !Arc::ptr_eq(first_context.stop(), second_context.stop()),
+        "two connections, two stops"
+    );
+    assert!(!Arc::ptr_eq(first_context.notice(), second_context.notice()));
+    assert!(!Arc::ptr_eq(first_context.home(), second_context.home()));
+
+    // ONE IS CANCELLED, AND ONLY ONE IS TOLD TO STOP.
+    first_context.cancel();
+    assert!(
+        first.stop.load(std::sync::atomic::Ordering::Acquire),
+        "the one this context is about"
+    );
+    assert!(
+        !second.stop.load(std::sync::atomic::Ordering::Acquire),
+        "and its sibling was not told anything"
+    );
+    drop((first_custody, second_custody));
+    drop((first.fixture, second.fixture));
+}
+
+#[test]
+fn cancelling_through_a_context_does_not_wait_on_the_home_it_came_from() {
+    // THE CASE THE BINDING EXISTS FOR. A worker blocked while borrowing its
+    // own home is exactly when cancellation must work, so a cancellation that
+    // went back to the home to find its own stop would queue behind the thing
+    // it is trying to stop.
+    //
+    // THE HOME IS HELD BY THIS CONTROL for the whole cancellation, which is
+    // the same lock a borrowing worker would hold. This says nothing about how
+    // long anything takes.
+    let f = worker_fixture(XServerFrontendClientId(8704));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let context = custody.prepare_control().expect("its own owner");
+
+    let blocked = context.home().borrow(|_| {
+        // Inside the home's own lock, and this is where cancellation runs.
+        context.cancel();
+        (
+            f.stop.load(std::sync::atomic::Ordering::Acquire),
+            f.wake.state.lock().expect("a readable notice").pending,
+        )
+    });
+    assert_eq!(
+        blocked,
+        Some((true, true)),
+        "the stop was set and the recheck published while its home was held"
+    );
+
+    // AND THE STORE AND INVENTORY WERE NOT NEEDED EITHER: this one runs with
+    // the owner's inventory acquired by this control.
+    let other = worker_fixture(XServerFrontendClientId(8705));
+    let other_custody = custody_for(&other, &other.fixture.keeper);
+    let other_context = other_custody.prepare_control().expect("its own owner");
+    let held = other.fixture.durable.records_even_if_poisoned();
+    other_context.cancel();
+    drop(held);
+    assert!(other.stop.load(std::sync::atomic::Ordering::Acquire));
+    drop((custody, other_custody));
+    drop((f.fixture, other.fixture));
+}
+
+#[test]
+fn a_departure_that_wins_leaves_the_spawner_uncalled() {
+    // NO MORE STARTS MEANS NO MORE STARTS. Departure and startup use the same
+    // registered slot, so a start that arrives afterwards never reaches its
+    // spawner -- which is the only way to be sure no thread was made.
+    let f = worker_fixture(XServerFrontendClientId(8706));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let context = custody.prepare_control().expect("its own owner");
+
+    assert_eq!(context.depart(), PrivateDeparture::NothingStarted);
+    assert!(
+        f.stop.load(std::sync::atomic::Ordering::Acquire),
+        "departure set this connection's own stop first"
+    );
+    let called = std::sync::atomic::AtomicBool::new(false);
+    let outcome = context.start(|| {
+        called.store(true, std::sync::atomic::Ordering::Release);
+        std::thread::Builder::new().spawn(|| {})
+    });
+    assert_eq!(outcome, PrivateStartupOutcome::NoLongerStartable);
+    assert!(
+        !called.load(std::sync::atomic::Ordering::Acquire),
+        "the spawner was never called, so no thread exists to be lost"
+    );
+    assert_eq!(
+        context.depart(),
+        PrivateDeparture::AlreadyDeparting,
+        "and saying it again is not a fresh decision"
+    );
+    drop(custody);
+    drop(f.fixture);
+}
+
+#[test]
+fn a_stop_reaches_a_worker_whose_destination_is_still_held() {
+    // THE OTHER HALF OF THE SAME PROPERTY. A spawn holds this connection's
+    // slot for the whole transaction; a cancellation arriving in that window
+    // must still be able to set the stop and publish the recheck, because it
+    // needs neither the slot nor the home to find them.
+    let f = worker_fixture(XServerFrontendClientId(8707));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let context = custody.prepare_control().expect("its own owner");
+    let (enter, entered) = std::sync::mpsc::channel::<()>();
+    let (release, released) = std::sync::mpsc::channel::<()>();
+
+    let witnessed = std::thread::scope(|scope| {
+        let context = &context;
+        let started = scope.spawn(move || {
+            context.start(move || {
+                // The destination is held for as long as this spawner runs.
+                enter.send(()).expect("its caller is waiting");
+                let _ = released.recv();
+                std::thread::Builder::new().spawn(|| {})
+            })
+        });
+        entered
+            .recv_timeout(Duration::from_secs(3))
+            .expect("the spawn began and is holding the slot");
+        // WITNESSED WHILE THE SLOT IS HELD: this is the interval, not a guess
+        // about one.
+        context.cancel();
+        let witnessed = (
+            f.stop.load(std::sync::atomic::Ordering::Acquire),
+            f.wake.state.lock().expect("a readable notice").pending,
+        );
+        drop(release);
+        assert_eq!(started.join().expect("the startup returned"), PrivateStartupOutcome::Started);
+        witnessed
+    });
+    assert_eq!(
+        witnessed,
+        (true, true),
+        "the stop was set while this connection's own destination was held"
+    );
+
+    // AND THE WORKER IT DID MAKE IS THIS CONNECTION'S, AND IS COLLECTED HERE.
+    let record = PrivateReapingRecord::bound_to(&custody);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    drop(record);
+    drop(custody);
+    drop(f.fixture);
+}
+
+#[test]
+fn a_body_driven_by_its_own_context_stops_when_that_context_says_so() {
+    // END TO END THROUGH THE REGISTERED SEAM. The approved body runs on the
+    // handles this context derived and the exit sink this source owns; the
+    // same context cancels it; and its custody joins it.
+    let f = worker_fixture(XServerFrontendClientId(8708));
+    f.permit();
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let context = custody.prepare_control().expect("its own owner");
+    let home = Arc::clone(context.home());
+    let notice = Arc::clone(context.notice());
+    let stop = Arc::clone(context.stop());
+    let sink = Arc::clone(context.exit_sink());
+    let sequence = Arc::clone(&f.sequence);
+    assert_eq!(
+        context.start(|| {
+            std::thread::Builder::new().spawn(move || {
+                PrivateWorkerBody {
+                    home: &home,
+                    wake: &notice,
+                    stop: &stop,
+                    byte_order: XByteOrder::LittleEndian,
+                    sequence: &sequence,
+                    exit: &sink,
+                    steps: 16,
+                }
+                .run();
+            })
+        }),
+        PrivateStartupOutcome::Started
+    );
+
+    // TOLD TO STOP THROUGH THE CONTEXT, and collected through the custody.
+    context.cancel();
+    let record = PrivateReapingRecord::bound_to(&custody);
+    let reaping = record.reap();
+    let reaped = reaping.reaped;
+    let exit = reaping.exit;
+
+    assert_eq!(reaped, PrivateReaped::Joined);
+    let Some(PrivateExitReading::Classified(outcome)) = exit else {
+        panic!("the body left a classification: {exit:?}")
+    };
+    assert!(
+        stopped_by_cancellation(&outcome),
+        "the owner's own terminal answer, which is not the same fact as the \
+         cancellation that triggered it: {outcome:?}"
+    );
+    drop(record);
+    drop(custody);
+    drop(f.fixture);
+}
+
+#[test]
+fn preparing_a_control_context_refuses_each_shape_as_itself() {
+    // SEVEN DIFFERENT ANSWERS, and a caller told the wrong one looks in the
+    // wrong place. None of them starts anything, permits anything, sets a
+    // stop, takes queued work or changes what a home holds.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 6);
+    let private = private_over(&keeper, 6);
+
+    // NOTHING BOUND: a registered connection whose setup never arrived. Its
+    // home is live and empty, so there is no owner to take credentials from.
+    let bare = XServerFrontendClientId(8711);
+    let (bare_registration, _bare_channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(bare, Some(admitted(bare)))
+        .expect("a place, a keeper, a source and a row");
+    let PrivateCustodyReach::Reached(bare_custody) = bare_registration
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    assert_eq!(
+        bare_custody.prepare_control().err(),
+        Some(PrivateControlRefusal::NothingBound)
+    );
+    assert!(
+        bare_custody.prepare_control().is_err(),
+        "a refusal leaves it unprepared, so asking again asks again"
+    );
+    assert_eq!(
+        bare_custody
+            .worker_slot()
+            .lock()
+            .expect("a readable slot")
+            .life,
+        PrivateWorkerLife::NeverStarted,
+        "and starts nothing"
+    );
+
+    // UNSTOPPABLE: a real serving owner bound without a stop of its own. Its
+    // binding said so, and nothing here mints a replacement.
+    let unstoppable = worker_fixture_bound(XServerFrontendClientId(8712), false);
+    let unstoppable_custody = custody_for(&unstoppable, &unstoppable.fixture.keeper);
+    assert_eq!(
+        unstoppable_custody.prepare_control().err(),
+        Some(PrivateControlRefusal::Unstoppable),
+        "a stop this context invented would be one its worker never reads"
+    );
+
+    // RETAINED: its connection has ended. Driving is not how retained work is
+    // finished, and this is not that borrower's home.
+    let ended = worker_fixture(XServerFrontendClientId(8713));
+    let ended_custody = custody_for(&ended, &ended.fixture.keeper);
+    assert!(ended_custody.prepare_control().is_ok(), "live to begin with");
+    let later = worker_fixture(XServerFrontendClientId(8714));
+    let later_custody = custody_for(&later, &later.fixture.keeper);
+
+    // ONE EXACT CAPSULE, ACCEPTED BEFORE ANY OF THIS, so the refusal below has
+    // something it could have taken.
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(87140);
+    let delivery = capsule.delivery();
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    let frames = order_pass_frames(&capsule);
+    produced_send(&later.sender, capsule);
+    assert!(later.fixture.registration.ordered_home.retain());
+    assert_eq!(
+        later_custody.prepare_control().err(),
+        Some(PrivateControlRefusal::Retained)
+    );
+
+    // AND THE EXACT QUEUED WORK IS STILL THERE, unanswered and unchanged: the
+    // refusal did not take it, answer it or rebind it.
+    let queued = later
+        .fixture
+        .registration
+        .ordered_home
+        .peek_retained(|continuation| continuation.queue().try_recv().ok())
+        .expect("a readable retained home")
+        .flatten()
+        .expect("the capsule this control accepted is still queued");
+    assert_eq!(queued.delivery(), delivery);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &queued.finalizer().expect("carried").completion
+    ));
+    assert_eq!(order_pass_frames(&queued), frames);
+    assert!(cell.answer().is_none(), "and nothing answered it");
+    drop(queued);
+
+    drop((bare_custody, unstoppable_custody, ended_custody, later_custody));
+    drop(bare_registration);
+    drop((unstoppable.fixture, ended.fixture, later.fixture));
+    drop((private, keeper, durable));
+}
+
+#[test]
+fn a_stale_name_prepares_nothing_for_the_connection_that_took_its_place() {
+    // A NAME OUTLIVES ITS CONNECTION, and a place is taken again. A context
+    // prepared from the old name would be driving the successor's worker with
+    // the predecessor's credentials.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 3);
+    let private = private_over(&keeper, 3);
+    let first = bound_on(&private, XServerFrontendClientId(8715));
+    let PrivateCustodyReach::Reached(first_custody) = first
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let place = first.maintenance_identity().expect("a name").place();
+    drop(first);
+    settle_and_return(&durable, place);
+
+    // A REAL SUCCESSOR TAKES THAT NUMBER.
+    let successor = bound_on(&private, XServerFrontendClientId(8716));
+    assert_eq!(
+        successor.maintenance_identity().expect("a name").place(),
+        place
+    );
+    assert_eq!(
+        first_custody.prepare_control().err(),
+        Some(PrivateControlRefusal::StaleName),
+        "the old name reaches nothing at a number its connection gave back"
+    );
+    drop(first_custody);
+    drop((successor, private, keeper, durable));
+}
+
+#[test]
+fn a_permit_that_cannot_be_published_stops_this_connection_and_keeps_its_worker() {
+    // THE PATH THE STOP IN A STARTUP IS FOR. A permit that cannot be published
+    // leaves a thread already running, so the transaction tells THIS
+    // connection to stop, wakes it, and keeps the handle where it is to be
+    // joined. A startup holding somebody else's stop would set a flag its own
+    // worker never looks at.
+    let f = worker_fixture(XServerFrontendClientId(8717));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let context = custody.prepare_control().expect("its own owner");
+
+    // The notice is poisoned by an ordinary panic under its own lock. Nothing
+    // is rewritten: this is what a holder that unwound would leave.
+    let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = context.notice().state.lock().expect("a readable notice");
+        panic!("poisoning this connection's notice, and nothing else");
+    }));
+    assert!(poisoning.is_err());
+    assert!(context.notice().state.is_poisoned());
+
+    let outcome = context.start(|| std::thread::Builder::new().spawn(|| {}));
+    let stopped = f.stop.load(std::sync::atomic::Ordering::Acquire);
+    let kept = context
+        .custody
+        .worker_slot()
+        .lock()
+        .expect("a readable slot")
+        .handle
+        .is_some();
+
+    // COLLECTED BEFORE ANYTHING COMPARES, so a failure cannot leave a thread
+    // this control started with nobody to join it.
+    let record = PrivateReapingRecord::bound_to(&custody);
+    let reaped = record.reap().reaped;
+
+    assert_eq!(outcome, PrivateStartupOutcome::PermitRefused);
+    assert!(
+        stopped,
+        "the transaction set THIS connection's own stop, which is the one its \
+         worker reads"
+    );
+    assert!(kept, "and kept the handle where its owner can join it");
+    assert_eq!(reaped, PrivateReaped::Joined);
+    drop(record);
+    drop(custody);
+    drop(f.fixture);
+}

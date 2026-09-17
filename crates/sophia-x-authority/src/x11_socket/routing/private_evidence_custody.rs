@@ -42,6 +42,12 @@ struct PrivateWorkerSource {
     /// it panicked, or that anything may be started again; only the join
     /// result can.
     exit: Arc<PrivateWorkerExit>,
+    /// The capabilities this connection's execution is driven by.
+    ///
+    /// INERT AND EMPTY UNTIL SOMETHING PREPARES IT, and published once. This
+    /// is bounded storage on the source the reservation already made -- not a
+    /// second inventory, not a budget, and not a permit.
+    control: std::sync::OnceLock<PrivateControlCredentials>,
 }
 
 /// One connection's evidence custody, owned outside every operation.
@@ -114,6 +120,7 @@ impl PrivateEvidenceCustody {
                 // later starts one, which nothing here does.
                 slot: Mutex::new(PrivateWorkerSlot::empty()),
                 exit: Arc::new(PrivateWorkerExit::unstarted()),
+                control: std::sync::OnceLock::new(),
             },
             join: Arc::new(PrivateJoinEvidence {
                 // THE RIGHT TO PUBLISH STARTS HERE, in the home, unheld. An
