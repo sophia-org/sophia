@@ -110,10 +110,32 @@ impl<'c> PrivateControlContext<'c> {
     /// the destination is the one this connection's reservation made and the
     /// credentials are the ones its own owner published. What a caller still
     /// supplies is the spawn itself, which is the approved transaction's.
+    /// AND IT ASKS ADMISSION FIRST. A context obtained before this connection
+    /// departed is still a context; what it must not be is a way to start a
+    /// worker afterwards. The boundary is asked, this start's stop and notice
+    /// are published there so a later departure can reach them, and the
+    /// boundary is released -- all before the destination is held or anything
+    /// is spawned.
+    ///
+    /// A REFUSED START CALLS NO SPAWNER. That is the only way to be sure no
+    /// thread was made for a connection that had already said there would be
+    /// no more.
     fn start(
         &self,
         spawn: impl FnOnce() -> std::io::Result<std::thread::JoinHandle<()>>,
     ) -> PrivateStartupOutcome {
+        match self
+            .custody
+            .admit_start(self.credentials.stop(), &self.credentials.notice)
+        {
+            PrivateStartAdmission::Admitted => {}
+            // A departed connection and an unreadable boundary are both
+            // refusals here. Neither is startable, and a boundary nobody can
+            // read is exactly when inventing eligibility would be worst.
+            PrivateStartAdmission::Departed | PrivateStartAdmission::Unreadable => {
+                return PrivateStartupOutcome::NoLongerStartable;
+            }
+        }
         start_connection_worker(
             self.custody.worker_slot(),
             self.credentials.stop(),
@@ -139,12 +161,14 @@ impl<'c> PrivateControlContext<'c> {
     }
 
     /// Tell this connection nothing more will start, and say what was there.
-    fn depart(&self) -> PrivateDeparture {
-        depart_connection(
-            self.custody.worker_slot(),
-            &self.credentials.stop,
-            &self.credentials.notice,
-        )
+    ///
+    /// THROUGH THE SOURCE, NOT THIS VIEW. The decision and what it found
+    /// belong to the connection: a departure whose answer went back only to
+    /// the frame that asked would be one nothing afterwards could recover, and
+    /// a context is not required to make it.
+    fn depart(&self) -> PrivateDeparted {
+        self.custody
+            .depart_registered_through(Some((&self.credentials.stop, &self.credentials.notice)))
     }
 }
 

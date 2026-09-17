@@ -36653,7 +36653,10 @@ fn a_departure_that_wins_leaves_the_spawner_uncalled() {
     let custody = custody_for(&f, &f.fixture.keeper);
     let context = custody.prepare_control().expect("its own owner");
 
-    assert_eq!(context.depart(), PrivateDeparture::NothingStarted);
+    assert_eq!(
+        context.depart(),
+        PrivateDeparted::Decided(PrivateDeparture::NothingStarted)
+    );
     assert!(
         f.stop.load(std::sync::atomic::Ordering::Acquire),
         "departure set this connection's own stop first"
@@ -36670,8 +36673,8 @@ fn a_departure_that_wins_leaves_the_spawner_uncalled() {
     );
     assert_eq!(
         context.depart(),
-        PrivateDeparture::AlreadyDeparting,
-        "and saying it again is not a fresh decision"
+        PrivateDeparted::AlreadyDecided(PrivateDeparture::NothingStarted),
+        "and saying it again reports the decision rather than making another"
     );
     drop(custody);
     drop(f.fixture);
@@ -37790,4 +37793,377 @@ fn a_poisoned_lifecycle_cell_still_closes_this_connections_gate() {
         "and the lease was taken, not left for whenever the record goes"
     );
     drop((shared, private, keeper, durable));
+}
+
+#[test]
+fn a_connection_can_depart_before_anything_prepares_it() {
+    // NO PREPARED ASSOCIATION IS REQUIRED. Forbidding a future start must not
+    // mean entering this connection's home, inventing a stop, or making it
+    // serve first -- a connection that never became serving is exactly one
+    // that may need forbidding.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(9001);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a source and a row");
+    let PrivateCustodyReach::Reached(pin) = registration
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    assert_eq!(pin.startup_admitted(), Some(true));
+    assert!(
+        pin.prepare_control().is_err(),
+        "nothing is bound: this connection never became serving"
+    );
+
+    assert_eq!(
+        pin.depart_registered(),
+        PrivateDeparted::Decided(PrivateDeparture::NothingStarted)
+    );
+    assert_eq!(pin.startup_admitted(), Some(false));
+    assert_eq!(
+        pin.departure_observation(),
+        Some(PrivateDeparture::NothingStarted),
+        "and the connection keeps what was found, not the frame that asked"
+    );
+
+    // AND NOTHING WAS ENTERED TO DO IT. Its home is live and empty, its gate
+    // is open, and its place is exactly where it was.
+    assert_eq!(registration.ordered_home.standing(), PrivateHomeStanding::Live);
+    assert!(!registration.ordered_handovers_fenced().expect("a readable gate"));
+    assert_eq!(durable.continuations_reserved(), Some(1));
+    drop(pin);
+    drop((registration, private, keeper, durable));
+}
+
+#[test]
+fn a_context_obtained_before_departure_cannot_start_afterwards() {
+    // A CONTEXT IS STILL A CONTEXT; what it must not be is a way in. This one
+    // is prepared first, departs through the source, and then tries to start.
+    let f = worker_fixture(XServerFrontendClientId(9002));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let context = custody.prepare_control().expect("its own owner");
+
+    assert_eq!(
+        custody.depart_registered(),
+        PrivateDeparted::Decided(PrivateDeparture::NothingStarted)
+    );
+
+    let called = std::sync::atomic::AtomicBool::new(false);
+    let outcome = context.start(|| {
+        called.store(true, std::sync::atomic::Ordering::Release);
+        std::thread::Builder::new().spawn(|| {})
+    });
+    assert_eq!(outcome, PrivateStartupOutcome::NoLongerStartable);
+    assert!(
+        !called.load(std::sync::atomic::Ordering::Acquire),
+        "a refused start calls no spawner, so no thread exists to be lost"
+    );
+    assert_eq!(
+        custody.worker_slot().lock().expect("a readable slot").life,
+        PrivateWorkerLife::NeverStarted
+    );
+
+    // AND A PREPARATION THAT FINISHES AFTERWARDS DOES NOT REOPEN ANYTHING.
+    let later = custody.prepare_control().expect("its association stands");
+    assert!(Arc::ptr_eq(later.stop(), context.stop()));
+    assert_eq!(custody.startup_admitted(), Some(false));
+    let outcome = later.start(|| std::thread::Builder::new().spawn(|| {}));
+    assert_eq!(outcome, PrivateStartupOutcome::NoLongerStartable);
+    drop(f.fixture);
+}
+
+#[test]
+fn a_departure_reaching_an_admitted_start_stops_it_before_waiting() {
+    // THE RACE THIS COMPONENT EXISTS FOR. A start is admitted and is inside
+    // its transaction holding the destination; a departure arrives, finds the
+    // pair that start published, stops the worker through it, and only then
+    // waits for the slot.
+    //
+    // THE OVERLAP IS WITNESSED BY HOLDING THE SPAWNER, not by sleeping: the
+    // start cannot leave its transaction while this control holds it, and the
+    // stop is observed while that is true.
+    let f = worker_fixture(XServerFrontendClientId(9003));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let context = custody.prepare_control().expect("its own owner");
+    let (enter, entered) = std::sync::mpsc::channel::<()>();
+    let (release, released) = std::sync::mpsc::channel::<()>();
+
+    let (started, departed, witnessed) = std::thread::scope(|scope| {
+        let context = &context;
+        let custody = &custody;
+        let starting = scope.spawn(move || {
+            context.start(move || {
+                enter.send(()).expect("its caller is waiting");
+                let _ = released.recv();
+                std::thread::Builder::new().spawn(|| {})
+            })
+        });
+        entered
+            .recv_timeout(Duration::from_secs(3))
+            .expect("the spawn began and holds the destination");
+
+        // THE PAIR IS ALREADY PUBLISHED, which is what makes the stop below
+        // reachable without the home.
+        let published = custody.published_stop().is_some();
+
+        let departing = scope.spawn(move || custody.depart_registered());
+        assert!(
+            waited_for(|| f.stop.load(std::sync::atomic::Ordering::Acquire)),
+            "the departure stopped this worker while its destination was held"
+        );
+        let witnessed = (
+            published,
+            f.stop.load(std::sync::atomic::Ordering::Acquire),
+            custody.startup_admitted(),
+        );
+        drop(release);
+        let started = starting.join().expect("the startup returned");
+        let departed = departing.join().expect("the departure returned");
+        (started, departed, witnessed)
+    });
+
+    // COLLECTED BEFORE THE COMPARISONS. The worker it made is this
+    // connection's and is joined here.
+    let record = PrivateReapingRecord::bound_to(&custody);
+    let reaped = record.reap().reaped;
+
+    assert_eq!(started, PrivateStartupOutcome::Started);
+    assert_eq!(
+        witnessed,
+        (true, true, Some(false)),
+        "the pair was published, the stop was set while the destination was \
+         held, and admission was closed"
+    );
+    assert!(
+        matches!(
+            departed,
+            PrivateDeparted::Decided(
+                PrivateDeparture::WorkerRunning | PrivateDeparture::WorkerHandedOn
+            )
+        ),
+        "it found a worker, whichever side of the handover it saw: {departed:?}"
+    );
+    assert!(matches!(
+        reaped,
+        PrivateReaped::Joined | PrivateReaped::HandedElsewhere
+    ));
+    drop(record);
+    drop(custody);
+    drop(f.fixture);
+}
+
+#[test]
+fn one_departure_decision_is_recorded_however_many_ask() {
+    // ONE DEPARTURE, ONE HISTORY. A second ask reports what the first
+    // established rather than deciding again, and a view ending takes nothing
+    // with it.
+    let f = worker_fixture(XServerFrontendClientId(9004));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    started_worker(&custody, &f, || {});
+
+    let first = custody.depart_registered();
+    assert_eq!(
+        first,
+        PrivateDeparted::Decided(PrivateDeparture::WorkerRunning),
+        "its handle was still in the slot when this looked"
+    );
+    for _ in 0..3 {
+        assert_eq!(
+            custody.depart_registered(),
+            PrivateDeparted::AlreadyDecided(PrivateDeparture::WorkerRunning),
+            "reported, not decided again"
+        );
+    }
+
+    // AND THROUGH A CONTEXT PREPARED AFTERWARDS, which is another view of the
+    // same connection and not another departure.
+    let context = custody.prepare_control().expect("its own owner");
+    assert_eq!(
+        context.depart(),
+        PrivateDeparted::AlreadyDecided(PrivateDeparture::WorkerRunning)
+    );
+    assert_eq!(
+        custody.departure_observation(),
+        Some(PrivateDeparture::WorkerRunning),
+        "the first fact, which is the connection's"
+    );
+
+    let record = PrivateReapingRecord::bound_to(&custody);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    drop(record);
+    drop(custody);
+    drop(f.fixture);
+}
+
+#[test]
+fn a_departure_leaves_a_same_store_sibling_exactly_as_it_was() {
+    // ONE CONNECTION'S DECISION IS ONE CONNECTION'S. A sibling of the same
+    // instance keeps its admission, its stop, its gate, its standing and the
+    // exact work already accepted for it.
+    let f = worker_fixture(XServerFrontendClientId(9005));
+    let (sibling, sibling_stop, _sibling_notice, _peer) =
+        serving_sibling(&f, XServerFrontendClientId(9006), true);
+    let keeper = &f.fixture.keeper;
+    let custody = custody_for(&f, keeper);
+    let PrivateCustodyReach::Reached(sibling_custody) = sibling
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("the same owner keeps it")
+    };
+
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(90060);
+    let delivery = capsule.delivery();
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    let frames = order_pass_frames(&capsule);
+    let sender = capture_gated_sender(
+        f.fixture.runner.frontend.as_ref().expect("a live runner"),
+        XServerFrontendClientId(9006),
+    );
+    produced_send(&sender, capsule);
+
+    // COUNTED BEFORE, because this fixture holds more than this connection --
+    // it keeps a spare registration of its own -- and what this control means
+    // is that departing changes nothing, not that the total is any number.
+    let reserved_before = f.fixture.durable.continuations_reserved();
+    assert_eq!(
+        custody.depart_registered(),
+        PrivateDeparted::Decided(PrivateDeparture::NothingStarted)
+    );
+
+    assert_eq!(
+        sibling_custody.startup_admitted(),
+        Some(true),
+        "its sibling still admits a start"
+    );
+    assert_eq!(sibling_custody.departure_observation(), None);
+    assert!(!sibling_stop.load(std::sync::atomic::Ordering::Acquire));
+    assert!(!sibling.ordered_handovers_fenced().expect("a readable gate"));
+    assert_eq!(sibling.ordered_home.standing(), PrivateHomeStanding::Live);
+    let queued = sibling
+        .ordered_home
+        .borrow(|continuation| continuation.queue().try_recv().ok())
+        .expect("a readable live home")
+        .expect("the capsule this control accepted for it");
+    assert_eq!(queued.delivery(), delivery);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &queued.finalizer().expect("carried").completion
+    ));
+    assert_eq!(order_pass_frames(&queued), frames);
+    assert!(cell.answer().is_none());
+
+    // AND THE DECISION CHANGED NO STANDING AND NO ACCOUNTING for either.
+    assert_eq!(
+        f.fixture.registration.ordered_home.standing(),
+        PrivateHomeStanding::Live
+    );
+    assert_eq!(
+        f.fixture.durable.continuations_reserved(),
+        reserved_before,
+        "no place was returned or taken by deciding"
+    );
+    drop(queued);
+    drop(sender);
+    drop((custody, sibling_custody));
+    drop(sibling);
+    drop(f.fixture);
+}
+
+#[test]
+fn an_unreadable_admission_boundary_admits_nothing() {
+    // FAIL CLOSED. A boundary nobody can read is exactly when letting a start
+    // through would be worst: it would be restoring an eligibility nobody
+    // established, on the one path where nothing can be established at all.
+    //
+    // The boundary is poisoned by an ordinary caught panic under its own lock,
+    // and nothing in it is rewritten.
+    let f = worker_fixture(XServerFrontendClientId(9007));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let context = custody.prepare_control().expect("its own owner");
+    assert_eq!(custody.startup_admitted(), Some(true));
+
+    let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = custody
+            .source
+            .departure
+            .lock()
+            .expect("a readable boundary");
+        panic!("poisoning this connection's admission boundary, and nothing else");
+    }));
+    assert!(poisoning.is_err());
+    assert!(custody.source.departure.is_poisoned());
+
+    let called = std::sync::atomic::AtomicBool::new(false);
+    let outcome = context.start(|| {
+        called.store(true, std::sync::atomic::Ordering::Release);
+        std::thread::Builder::new().spawn(|| {})
+    });
+    assert_eq!(outcome, PrivateStartupOutcome::NoLongerStartable);
+    assert!(
+        !called.load(std::sync::atomic::Ordering::Acquire),
+        "no spawner ran, so no thread exists that nothing admitted"
+    );
+    assert_eq!(
+        custody.worker_slot().lock().expect("a readable slot").life,
+        PrivateWorkerLife::NeverStarted
+    );
+
+    // AND A DEPARTURE SAYS IT ESTABLISHED NOTHING, rather than reporting an
+    // absence it could not read.
+    assert_eq!(custody.depart_registered(), PrivateDeparted::Unreadable);
+    assert_eq!(custody.startup_admitted(), None);
+    assert_eq!(custody.departure_observation(), None);
+    drop(f.fixture);
+}
+
+#[test]
+fn a_repeated_departure_ask_does_not_go_back_to_the_worker_slot() {
+    // A RECORDED FACT IS REPORTED, NOT RE-ESTABLISHED. An ask that went to the
+    // slot again would spend a second decision on a connection that has one --
+    // and would wait for a slot somebody else may be holding, which is what
+    // this control makes true while it asks.
+    let f = worker_fixture(XServerFrontendClientId(9008));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    started_worker(&custody, &f, || {});
+    assert_eq!(
+        custody.depart_registered(),
+        PrivateDeparted::Decided(PrivateDeparture::WorkerRunning)
+    );
+
+    let (report, answered) = std::sync::mpsc::channel();
+    let repeated = std::thread::scope(|scope| {
+        // THE SLOT IS HELD BY THIS CONTROL for the whole of the second ask.
+        let held = custody.worker_slot().lock().expect("a readable slot");
+        let custody = &custody;
+        let asking = scope.spawn(move || {
+            report
+                .send(custody.depart_registered())
+                .expect("its caller waits");
+        });
+        let answer = answered.recv_timeout(Duration::from_secs(3));
+        // RELEASED BEFORE ANYTHING COMPARES, so a second ask that did go to
+        // the slot is collected rather than left waiting on this control.
+        drop(held);
+        asking.join().expect("the repeated ask returned");
+        answer
+    });
+
+    assert_eq!(
+        repeated.ok(),
+        Some(PrivateDeparted::AlreadyDecided(PrivateDeparture::WorkerRunning)),
+        "it reported the recorded fact without waiting for the slot"
+    );
+    let record = PrivateReapingRecord::bound_to(&custody);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    drop(record);
+    drop(custody);
+    drop(f.fixture);
 }

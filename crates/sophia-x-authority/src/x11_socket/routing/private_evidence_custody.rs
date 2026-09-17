@@ -53,6 +53,13 @@ struct PrivateWorkerSource {
     /// HELD, BECAUSE THE RESPONSIBILITY MUST OUTLIVE THE HANDLE. Holding it
     /// runs nothing; what runs it is still the registration's own `Drop`.
     cleanup: Arc<PrivateCleanupRecord>,
+    /// Whether this connection still admits a start, and what its departure
+    /// established.
+    ///
+    /// RESERVED WITH EVERYTHING ELSE, admitting and undecided. A decision that
+    /// lived in the frame that made it would be one nothing could recover,
+    /// which is the whole reason this is here.
+    departure: Mutex<PrivateDepartureState>,
     /// The gate this connection's queue was minted with.
     ///
     /// THE EXACT ONE, GIVEN TO THIS RESERVATION BEFORE THE ROW WENT IN. Not
@@ -142,6 +149,12 @@ impl PrivateEvidenceCustody {
                 exit: Arc::new(PrivateWorkerExit::unstarted()),
                 control: std::sync::OnceLock::new(),
                 cleanup,
+                departure: Mutex::new(PrivateDepartureState {
+                    admitted: true,
+                    published: None,
+                    deciding: false,
+                    observed: None,
+                }),
                 gate,
                 fence: PrivateFenceEvidence::unattempted(),
             },

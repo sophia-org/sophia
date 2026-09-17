@@ -209,7 +209,11 @@ fn hand_worker_to_joiner(slot: &Mutex<PrivateWorkerSlot>) -> PrivateWorkerHandof
 /// What was here when a connection was told to depart.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Nothing departs a connection yet.
-#[derive(Debug, PartialEq, Eq)]
+// Copied because a departure's answer is now KEPT: the source records what one
+// ask established so a later one can be told rather than deciding again, and a
+// recorded fact that had to be moved out to be read would be a fact a reader
+// could take away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateDeparture {
     /// Nobody was ever started. There is nothing to join.
     NothingStarted,
@@ -254,6 +258,22 @@ fn depart_connection(
     wake: &Arc<PrivateOrderedWake>,
 ) -> PrivateDeparture {
     cancel_connection_worker(stop, wake);
+    decide_departure(slot)
+}
+
+/// The slot half of a departure: no more starts here, and what was in it.
+///
+/// SEPARATE BECAUSE THE STOP IS NOT ALWAYS THIS CALLER'S TO SEND. A connection
+/// that never admitted a start has no worker to tell and no pair to tell it
+/// with, and one whose pair was published elsewhere is told through that pair
+/// before this is reached. What this does is the decision itself.
+///
+/// THE SLOT LOCK IS THE ORDER. An admitted startup holds this destination for
+/// its whole transaction, so reaching it here is what puts a start and a
+/// departure in one order rather than two.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Called by a caller no production site has yet.
+fn decide_departure(slot: &Mutex<PrivateWorkerSlot>) -> PrivateDeparture {
     let Ok(mut held) = slot.lock() else {
         return PrivateDeparture::Unreadable;
     };
