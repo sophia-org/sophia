@@ -122,9 +122,8 @@ use process_supervision::{
 };
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};
 use shutdown::{
-    AuthorityIngressState, AuthorityWorkWait, disconnect_frontend_for_drain,
-    drain_queued_authority_batches, observe_authority_ingress, stop_frontend_intake,
-    take_authority_work,
+    AuthorityIngressState, AuthorityWorkWait, drain_queued_authority_batches,
+    observe_authority_ingress, stop_frontend_intake, take_authority_work,
 };
 use startup_readiness::{
     StartupHeadRequirement, StartupSurfacePresentationEvidence, all_startup_outputs_presented,

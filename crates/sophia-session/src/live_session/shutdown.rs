@@ -126,6 +126,17 @@ pub(super) fn disconnect_frontend_for_drain(
     )
 }
 
+/// Close optional publication before the frontend can consume its drain request.
+/// A failed send remains fatal and never reopens the publisher.
+pub(super) fn begin_frontend_quiescence(
+    publisher: &mut super::window_allocation::LiveWindowAllocationPublisher,
+    sender: &SyncSender<XServerFrontendServiceCommand>,
+    stopped: &mut bool,
+) -> Result<(), SendError<XServerFrontendServiceCommand>> {
+    publisher.begin_quiescence();
+    disconnect_frontend_for_drain(sender, stopped)
+}
+
 /// Recheck at the recovery boundary: draining the old owner can itself consume
 /// the remaining runtime budget. Seat notifications never extend that budget.
 pub(super) fn native_recovery_allowed(

@@ -708,3 +708,17 @@ fn content_pointer_cancellation_identity_survives_capture() {
         assert!(reduced.contains(field), "missing {field}: {reduced}");
     }
 }
+
+#[test]
+fn allocation_shutdown_capture_preserves_bounded_disposition_and_reason() {
+    for record in [
+        "sophia_window_allocation_publisher schema=1 status=stopped pending_cancelled=true generation=2",
+        "sophia_live_session_quiescence schema=3 status=started reason=logout_complete timeout_msec=2000",
+        "sophia_live_session_quiescence schema=3 status=frontend_drained reason=runtime_deadline elapsed_msec=70",
+    ] {
+        assert_eq!(reduced_record(record).as_deref(), Some(record));
+    }
+    let reduced =
+        reduced_record("sophia_live_session_quiescence schema=3 reason=private-user-text").unwrap();
+    assert!(!reduced.contains("reason="));
+}

@@ -1,11 +1,12 @@
 #![cfg(test)]
 
-use super::super::shutdown::{AuthorityWorkWait, take_authority_work};
+use super::super::shutdown::{
+    AuthorityWorkWait, disconnect_frontend_for_drain, take_authority_work,
+};
 use super::super::{
     AuthorityIngressState, SessionQuiescence, SessionQuiescenceDecision, SessionQuiescenceSnapshot,
     XAuthorityObservedTransactionBatch, XServerFrontendServiceCommand,
-    disconnect_frontend_for_drain, drain_queued_authority_batches, observe_authority_ingress,
-    stop_frontend_intake,
+    drain_queued_authority_batches, observe_authority_ingress, stop_frontend_intake,
 };
 use sophia_protocol::TransactionId;
 use std::collections::VecDeque;

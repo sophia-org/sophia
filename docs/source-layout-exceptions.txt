@@ -28,3 +28,6 @@ inline-tests crates/sophia-backend-live/src/production_visual_runtime/projection
 
 # External private plane-descriptor ownership fixture; no graphics operation.
 inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/types.rs
+
+# External publisher/shutdown channel fixture; rationale in docs/style-guide.md.
+inline-tests crates/sophia-session/src/live_session/window_allocation.rs

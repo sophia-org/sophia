@@ -3,6 +3,7 @@ use super::*;
 #[derive(Default)]
 pub(super) struct LiveWindowAllocationPublisher {
     generation: u64,
+    quiescing: bool,
     next_check: Option<Instant>,
     applied: Option<sophia_x_authority::XWindowAllocationPreferences>,
     pending: Option<(
@@ -211,6 +212,21 @@ impl LiveWindowAllocationPublisher {
         ))
     }
 
+    /// Preferences own metadata only. Stop before frontend drain, preserving
+    /// the last applied witness for already accepted presentation comparisons.
+    pub(super) fn begin_quiescence(&mut self) {
+        if self.quiescing {
+            return;
+        }
+        self.quiescing = true;
+        let cancelled = self.pending.take().is_some();
+        self.next_check = None;
+        crate::session_println!(
+            "sophia_window_allocation_publisher schema=1 status=stopped pending_cancelled={cancelled} generation={}",
+            self.generation,
+        );
+    }
+
     pub(super) fn poll(
         &mut self,
         now: Instant,
@@ -221,6 +237,26 @@ impl LiveWindowAllocationPublisher {
         outputs: &[sophia_engine::HeadlessOutput],
         service: &SyncSender<XServerFrontendServiceCommand>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.poll_snapshot(now, topology_generation, service, || {
+            window_allocation_rows(
+                runtime.committed_surfaces(),
+                &layout.mapped_surfaces,
+                &wm_output_bounds(outputs),
+                &native.output_allocation_preferences(),
+            )
+        })
+    }
+
+    fn poll_snapshot(
+        &mut self,
+        now: Instant,
+        topology_generation: u64,
+        service: &SyncSender<XServerFrontendServiceCommand>,
+        snapshot: impl FnOnce() -> Vec<sophia_x_authority::XWindowAllocationPreference>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.quiescing {
+            return Ok(());
+        }
         if let Some((_, receiver)) = self.pending.as_ref() {
             match receiver.try_recv() {
                 Ok(sophia_x_authority::XWindowAllocationUpdate::Applied) => {
@@ -240,12 +276,7 @@ impl LiveWindowAllocationPublisher {
             return Ok(());
         }
         self.next_check = Some(now + Duration::from_millis(250));
-        let windows = window_allocation_rows(
-            runtime.committed_surfaces(),
-            &layout.mapped_surfaces,
-            &wm_output_bounds(outputs),
-            &native.output_allocation_preferences(),
-        );
+        let windows = snapshot();
         if self.applied.as_ref().is_some_and(|old| {
             old.topology_generation == topology_generation && old.windows == windows
         }) {
@@ -279,3 +310,7 @@ impl LiveWindowAllocationPublisher {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/window_allocation_shutdown.rs"]
+mod shutdown_tests;

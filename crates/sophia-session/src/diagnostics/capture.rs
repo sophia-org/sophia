@@ -509,6 +509,20 @@ pub fn reduced_record(line: &str) -> Option<String> {
         let quiescence_status = name == "sophia_live_session_quiescence"
             && key == "status"
             && matches!(value, "frontend_drained" | "timed_out");
+        let quiescence_reason = name == "sophia_live_session_quiescence"
+            && key == "reason"
+            && matches!(
+                value,
+                "logout_complete"
+                    | "runtime_deadline"
+                    | "startup_application_exit"
+                    | "successful_primary_exit"
+                    | "input_proof_complete"
+                    | "tick_limit"
+            );
+        let allocation_stop = name == "sophia_window_allocation_publisher"
+            && ((key == "status" && value == "stopped")
+                || (key == "pending_cancelled" && matches!(value, "true" | "false")));
         let failure = key == "failure_code" && super::failure::approved_failure_code(value);
         let failure_phase = name == "sophia_session_failure"
             && key == "phase"
@@ -528,6 +542,8 @@ pub fn reduced_record(line: &str) -> Option<String> {
             || fixed
             || protocol_status
             || quiescence_status
+            || quiescence_reason
+            || allocation_stop
             || failure
             || failure_phase
             || panic_site

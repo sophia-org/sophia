@@ -947,3 +947,37 @@ Drained retirement receipt. Its cause is separate and unestablished by this slic
 click continuity is not a shutdown repair or clean-session acceptance. The next
 authorized attended matrix must count all 40 intended switches (20 per output),
 include holds across clock refresh, and retain shutdown outcome independently.
+
+### Allocation publisher shutdown follow-up (2026-09-17)
+
+Attended capture `20260917T000849Z` used Sophia 855138f9 and Lom a317370.
+All six captured presses activated, were acknowledged and joined to committed
+WM actions (four on output 1, two on output 2). One sequence on each output
+crossed a new presentation and still activated. This is six-action evidence,
+not the full forty-action workload or a latency acceptance result.
+
+The separate exit-1 cause is now localized: quiescence started at monotonic
+509947275 msec, frontend drain was observed at 509947346, and the owner-loop
+allocation publisher subsequently attempted a new update on the closed service
+channel. It reported `window allocation frontend disconnected`; outer native
+retirement nevertheless completed as Drained and shell inventory reached zero.
+The captured quiescence reason was stripped by the old diagnostic allowlist, so
+the shutdown trigger is not inferred from that missing field.
+
+The shared quiescence entry now irreversibly stops optional allocation
+publication before requesting frontend drain. Pending metadata acknowledgements
+are cancelled locally, never promoted to Applied; the previous applied witness
+remains available to outstanding presentation comparisons. The stopped publisher
+never queries native allocation preferences or sends another update. Active
+channel loss and a failed drain request remain errors. Accepted authority work,
+coordinator work, CPU/native progress, actual frontend join and retained native
+owner disposition still determine completion independently.
+
+Evidence in `.artifacts/allocation-shutdown` covers the production publisher and
+shared shutdown entry using real channels, including a pending acknowledgement
+already disconnected or already queued, repeated shutdown, active channel failure,
+queue-full generation accounting and quiescence with outstanding work. Native
+facts are supplied only to the existing quiescence reducer; these tests do not
+run the complete owner loop, frontend workers or KMS. Compiled negatives and
+exact-source canonical results are retained separately. No live action is part
+of the implementation. Native exit-0 acceptance remains pending; t081 stays open.

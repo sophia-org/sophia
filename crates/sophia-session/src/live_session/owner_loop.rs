@@ -777,7 +777,8 @@ fn run_session_loop_inner(
         ($reason:literal) => {{
             if session_quiescence.is_none() {
                 let now = Instant::now();
-                if let Err(error) = disconnect_frontend_for_drain(
+                if let Err(error) = shutdown::begin_frontend_quiescence(
+                    &mut window_allocation_publisher,
                     frontend_service_sender,
                     &mut terminal_client_intake_stopped,
                 ) {

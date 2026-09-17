@@ -423,3 +423,9 @@ The external image-snapshot ownership fixture mounts beside private plane fields
 so ordinary socket descriptors can check duplicate ownership and retained-source
 lifetime without constructing an EGL context or exposing a public fake-image
 constructor. It proves descriptor custody only, not DMA-BUF import or rendering.
+
+The window-allocation publisher mounts an external shutdown fixture beside its
+private pending acknowledgement and applied metadata. It drives the same passive
+publisher and quiescence entry as production through real channels, without a
+native scanout constructor. The exception permits that test mount only; it is
+not a device, frontend-worker or full owner-loop execution.
