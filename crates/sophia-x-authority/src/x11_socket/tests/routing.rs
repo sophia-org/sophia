@@ -37233,7 +37233,14 @@ fn a_connections_fence_source_names_the_gate_its_queue_was_minted_with() {
         address
     );
 
-    // A REFUSED DUPLICATE PUBLICATION RETURNS ONLY ITS OWN.
+    // A REFUSED DUPLICATE PUBLICATION RETURNS ONLY ITS OWN, AND THAT IS ALL
+    // THIS SHOWS. A count that is one before and one after does not witness
+    // the interval: what establishes that the gate and this storage are bound
+    // BEFORE the row goes in is source order -- reserve_for runs before
+    // publish_registered_client -- and the client-table rendezvous in
+    // a_connections_evidence_keeper_is_reserved_before_its_row_is_published,
+    // which observes a waiting attempt's own entry while publication is
+    // excluded.
     assert_eq!(keeper.custodies_kept(), 1);
     assert!(matches!(
         private
@@ -37402,10 +37409,11 @@ fn two_eligible_views_make_one_attempt() {
     // published one would be whichever won a race.
     //
     // THE OVERLAP IS WITNESSED BY HOLDING THE GATE'S OWN ADMISSION, not by
-    // sleeping: the winner is inside the gate and cannot finish while this
-    // control holds it, and the loser's answer is read before it is released.
-    // That observes a claimed, unfinished attempt. It does not establish that
-    // the winner reached the gate's mutex.
+    // sleeping. What that establishes is exactly this: one view has CLAIMED
+    // the attempt and has not finished it, and the loser's answer is read
+    // while that is true. Where the winner has got to is not established --
+    // it may not have reached the gate's mutex at all -- and this control
+    // does not say it has.
     let f = worker_fixture(XServerFrontendClientId(8805));
     let custody = custody_for(&f, &f.fixture.keeper);
     started_worker(&custody, &f, || {});
@@ -37427,7 +37435,7 @@ fn two_eligible_views_make_one_attempt() {
         // THE CLAIM IS TAKEN WHILE THIS CONTROL HOLDS THE GATE.
         assert!(
             waited_for(|| custody.fence_evidence().phase() == PrivateFencePhase::InProgress),
-            "one view claimed the attempt and is inside the gate"
+            "one view claimed the attempt and has not finished it"
         );
         let losing = PrivateFenceRecord::bound_to(custody);
         let loser = losing.record_fence();

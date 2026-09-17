@@ -44,8 +44,13 @@ enum PrivateFenced {
     /// too early consumes no attempt, and the same record may ask again once
     /// that same join completes.
     JoinIncomplete,
-    /// This record has already been asked. The gate was not asked again and
-    /// whatever the first attempt established is exactly as it was.
+    /// THIS CONNECTION'S ONE ATTEMPT IS SPENT. The gate was not asked again
+    /// and whatever that attempt established is exactly as it was.
+    ///
+    /// TWO WAYS TO GET IT, AND THEY ARE DIFFERENT FACTS. This view has already
+    /// been asked; or another view took the source's one right, and may still
+    /// be inside its attempt. A caller reads what happened from the phase and
+    /// the result, not from this.
     AlreadyAttempted,
 }
 
@@ -65,6 +70,14 @@ struct PrivateFenceEvidence {
     /// given back: once the gate may have been reached, the effect may have
     /// begun, and an attempt that could be retried on that assumption is one
     /// that asks a gate a second time.
+    ///
+    /// WHAT A SECOND ASK WOULD COST, PRECISELY. The result storage is written
+    /// once, so an Established answer is not overwritten by anything. What a
+    /// second attempt does is call the gate again -- which answers
+    /// AlreadyEstablished -- and then try to publish it: the write is refused,
+    /// the single-writer assertion is what notices, and the phase is moved by
+    /// a second writer. The record of the closure is not replaced; it is
+    /// contradicted by an attempt nobody asked for.
     producer: AtomicBool,
     phase: std::sync::atomic::AtomicU8,
     result: std::sync::OnceLock<PrivateHandoverFence>,
@@ -85,7 +98,7 @@ impl PrivateFenceEvidence {
     /// Take the one right to attempt this connection's fence.
     fn take_attempt(&self) -> bool {
         self.producer
-            .compare_exchange(false | true, false, Ordering::AcqRel, Ordering::Acquire)
+            .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
     }
 
@@ -136,8 +149,12 @@ struct PrivateFenceRecord<'a> {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 impl<'a> PrivateFenceRecord<'a> {
-    /// A view of a fencing nobody has attempted yet, over this connection's
-    /// registered source.
+    /// A view of this connection's fencing, over its registered source.
+    ///
+    /// A VIEW, NOT A FRESH ATTEMPT. Making one says nothing about what has
+    /// happened: the source it reads may have an attempt in progress or a
+    /// result already published, and this is how a later caller observes
+    /// either. What is new here is only this view's own claim.
     fn bound_to(custody: &'a PrivateEvidenceCustody) -> Self {
         Self {
             custody,
