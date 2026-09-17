@@ -37875,10 +37875,13 @@ fn a_context_obtained_before_departure_cannot_start_afterwards() {
     // WHAT THIS IS NOT. The association was already published by the context
     // above, so this ask returns at the entry check -- it is a second view,
     // not a resolution that began before the departure and finished after it.
-    // That schedule needs the two halves of a preparation separated, which is
-    // what resolve_control exists for and what
+    //
+    // AND NO CONTROL HERE ARRANGES THAT SCHEDULE.
     // a_preparation_that_loses_a_race_recovers_what_the_winner_published
-    // arranges; this control does not reach it.
+    // separates the two halves of a preparation, but it stages one preparation
+    // against another and then poisons the home; it never departs and never
+    // closes admission. A preparation resolving across a departure is not
+    // covered by anything landed here.
     let later = custody.prepare_control().expect("its association stands");
     assert!(Arc::ptr_eq(later.stop(), context.stop()));
     assert_eq!(custody.startup_admitted(), Some(false));
@@ -37938,9 +37941,13 @@ fn a_departure_reaching_an_admitted_start_stops_it_before_waiting() {
         (started, departed, witnessed)
     });
 
-    // COLLECTED BEFORE THE COMPARISONS, AND THIS TIME THAT COVERS THEM ALL.
-    // The worker this control started is joined here, through its own custody,
-    // and nothing above compares.
+    // COLLECTED BEFORE THE COMPARISONS THIS CONTROL IS ABOUT. The worker it
+    // started is joined here, through its own custody, and the stop and
+    // outcome observations are compared after that.
+    //
+    // NOT A GENERAL FAILURE-PATH CLAIM. The setup, the channel receives and
+    // the helper joins above can still fail on their own, and no cleanup guard
+    // is armed for those.
     let record = PrivateReapingRecord::bound_to(&custody);
     let reaped = record.reap().reaped;
 
@@ -38184,7 +38191,10 @@ fn an_unreadable_boundary_still_stops_the_worker_it_admitted() {
         };
         let stopped = f.stop.load(std::sync::atomic::Ordering::Acquire);
 
-        // RELEASED AND COLLECTED BEFORE THE COMPARISONS, whichever way they go.
+        // RELEASED AND COLLECTED BEFORE THE COMPARISONS THIS CONTROL IS
+        // ABOUT. The startup, publication and poisoning above assert on their
+        // own and would end this iteration before here; what follows the
+        // collection is the departure's answer and the stop it sent.
         drop(release);
         let record = PrivateReapingRecord::bound_to(&custody);
         let reaped = record.reap().reaped;
