@@ -138,3 +138,45 @@ Device-hidden scoped validation passes 195 runtime tests and 468 Session library
 tests (fourteen Session tests ignored), strict affected Clippy, formatting and the
 repository layout gate. These results are separate from a subsequent frozen
 canonical gate and from physical acceptance.
+
+## Retained negotiation over a2c8e67c
+
+`ShellComponentTransport::begin_negotiation` and `poll_negotiation` separate
+starting a handshake from bounded service. Each visit attempts at most one
+protected accept and 32 socket reads/writes, sharing the supplied byte budget
+capped at 64 KiB. It does not sleep. The fixed 36-byte Hello buffer reads only the
+24-byte header and exact twelve-byte payload; subsequent framed bytes remain for
+normal dispatch. A missing peer or partial Hello yields pending without blocking
+a neighbor. The endpoint uses the same expected protected-peer credential check.
+
+The connection owns its partial reply and offset. Until final-byte write it
+reserves two response records/512 bytes and one fixed Hello record/36 bytes in
+accounting. These are bounded pre-negotiation storage, not an additional content
+resource grant. Ordinary sends refuse before enqueue while disconnected, and
+final backend settlement refuses an outstanding handshake. Success transfers the
+socket into the connected state only after Welcome and optional Limits finish;
+this is kernel write completion, not peer receipt. An explicit content refusal
+likewise remains owned until sent, then returns its terminal error. Returned
+errors or explicit disconnect revoke only this owner's reservation/socket.
+
+Capability selection and registry admission have one implementation. The legacy
+blocking entry point drives these same visits with a short sleep. Its timeout now
+bounds the whole handshake rather than independently timing each blocking stage.
+This does not change Session's first-success ready/reconnected finalizer, enable
+independent mode, or provide its future global attempt-epoch issuer. Session's
+supervisor inventory and rotating service still need to use the new API.
+
+Five device-hidden private-socket controls cover stalled/partial Hello alongside
+a successful neighbor, preservation of the next FIFO frame, single-byte reply
+progress and unchanged reservation through the final byte, duplicate begin and
+pre-connection send refusal, malformed/EOF cleanup, explicit disconnect/deadline,
+and complete refusal delivery. Protection evidence is supplied; no protected
+child or native display is exercised. The single-byte test drains each byte; it
+is a deterministic service-budget control, not natural kernel saturation.
+Three separately compiled mutations fail behaviorally: omit exact failure
+cleanup, report success after the first byte, ignore the requested byte budget.
+Sources are restored after each. Evidence: `.artifacts/bemenu-async-negotiation/`.
+Scoped validation passes 200 runtime tests and 468 Session library tests, with
+fourteen Session tests ignored; strict affected Clippy, formatting and the
+repository layout gate pass. These are separate from any subsequent exact-source
+canonical gate or attended launcher acceptance.

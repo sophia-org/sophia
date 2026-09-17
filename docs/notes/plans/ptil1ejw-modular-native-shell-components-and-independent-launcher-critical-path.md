@@ -88,6 +88,12 @@ states the limits. Session still needs its bounded supervisor inventory, globall
 minted attempt identities and asynchronous/fair negotiation/service before the
 independent profile can be enabled. No native readiness follows from this seam.
 
+Runtime now offers retained, nonblocking protected negotiation with bounded
+visits, exact reservation cleanup and partial reply ownership. The blocking
+compatibility API drives the same policy and state transitions. Session must
+still join this API to the component supervisor and rotating service; the
+independent profile remains refused. See the [negotiation record](../investigations/r3b9n7cf-native-component-storage-and-compositor-identity.md#retained-negotiation-over-a2c8e67c).
+
 Configuration checkpoint evidence: `.artifacts/bemenu-component-profile/`.
 Device-hidden tests pass 118 config tests and 468 Session library tests, with
 fourteen Session tests ignored. Four new config groups cover typed independent

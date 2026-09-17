@@ -48,7 +48,8 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         backend: B,
     ) -> Result<ShellContentShutdown, B> {
-        if self.stream.is_some()
+        if self.negotiation.is_some()
+            || self.stream.is_some()
             || self.content_grant.is_some()
             || epochs.resources(self.store_grant).is_some()
         {
@@ -72,12 +73,20 @@ impl ShellComponentTransport {
             + self.action_cancellations.len()
             + usize::from(self.indicator_response.is_some());
         let controls = reserved - bulk_records + self.output.controls();
+        let negotiating = usize::from(self.negotiation.is_some());
         ShellContentAccounting {
             epochs: epoch_accounting,
-            response_records: reserved + self.output.records(),
-            response_bytes: bulk_bytes + self.output.bulk_bytes() + controls * CONTROL_FRAME_BYTES,
-            input_records: self.inbox.len(),
-            input_bytes: self.input.len() + self.inbox.iter().map(Vec::len).sum::<usize>(),
+            response_records: reserved
+                + self.output.records()
+                + negotiating * super::negotiation_service::REPLY_RECORDS,
+            response_bytes: bulk_bytes
+                + self.output.bulk_bytes()
+                + controls * CONTROL_FRAME_BYTES
+                + negotiating * super::negotiation_service::REPLY_BYTES,
+            input_records: self.inbox.len() + negotiating,
+            input_bytes: self.input.len()
+                + self.inbox.iter().map(Vec::len).sum::<usize>()
+                + negotiating * (super::SOPHIA_IPC_HEADER_LEN + 12),
         }
     }
 

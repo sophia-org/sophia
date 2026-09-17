@@ -28,6 +28,8 @@ use crate::{
 mod accounting;
 mod legacy;
 mod negotiation;
+mod negotiation_policy;
+mod negotiation_service;
 pub use legacy::ShellSessionTransport;
 mod content_actions;
 mod content_admission;
@@ -105,6 +107,7 @@ impl From<ContentAllocationError> for ShellTransportError {
 pub struct ShellComponentTransport {
     endpoint: PolicyRoleEndpoint,
     stream: Option<UnixStream>,
+    negotiation: Option<negotiation_service::PendingNegotiation>,
     capabilities: u64,
     peer_closed: bool,
     input: Vec<u8>,
@@ -144,6 +147,7 @@ impl ShellComponentTransport {
                 expected_uid,
             )?,
             stream: None,
+            negotiation: None,
             capabilities: 0,
             peer_closed: false,
             input: Vec::new(),
@@ -382,6 +386,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
         self.stream = None;
+        self.negotiation = None;
         self.input.clear();
         self.output.clear();
         self.action_cancellations.clear();
@@ -560,6 +565,9 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         frame: Vec<u8>,
     ) -> Result<(), ShellTransportError> {
+        if self.stream.is_none() {
+            return Err(ShellTransportError::NotConnected);
+        }
         if !self.bulk_capacity_available(epochs, frame.len()) {
             return Err(ShellTransportError::ActivationQueueSaturated);
         }

@@ -302,6 +302,32 @@ impl PolicyRoleEndpoint {
         self.admit_expected_stream(stream, expected)
     }
 
+    /// One nonblocking accept attempt with the same protected-peer check as
+    /// blocking admission. Restores the listener mode before returning; no
+    /// retry loop, sleep, or change to the admitted peer on WouldBlock/EINTR.
+    pub fn poll_expected(&mut self) -> Result<Option<UnixStream>, PolicyRoleEndpointError> {
+        let expected = self.expected_peer()?;
+        self.listener
+            .set_nonblocking(true)
+            .map_err(|error| PolicyRoleEndpointError::Io(error.to_string()))?;
+        let accepted = self.listener.accept();
+        self.listener
+            .set_nonblocking(false)
+            .map_err(|error| PolicyRoleEndpointError::Io(error.to_string()))?;
+        match accepted {
+            Ok((stream, _)) => self.admit_expected_stream(stream, expected).map(Some),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(PolicyRoleEndpointError::Io(error.to_string())),
+        }
+    }
+
     pub fn accept_expected_timeout(
         &mut self,
         timeout: Duration,
