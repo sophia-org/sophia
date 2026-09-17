@@ -8,6 +8,7 @@ build_dir=$(mktemp -d)
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 cd "$root"
+sh tools/check_shell_c_wire.sh
 cargo run --offline -q -p sophia-protocol --example shell_content_corpus \
     >"$build_dir/sophia-shell-content.frames"
 cargo run --offline -q -p sophia-protocol --example shell_content_corpus -- --malformed \

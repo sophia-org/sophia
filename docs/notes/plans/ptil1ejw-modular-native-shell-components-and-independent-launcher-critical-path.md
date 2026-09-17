@@ -28,8 +28,9 @@ release are separate milestones.
 
 Implementation started with the [launcher contract proposal](../decisions/f64wqfh2-independent-native-launcher-admission-and-presented-input-contract.md)
 and Bemenu CPU raster checkpoint `51fae2b` (strict C build, device-hidden
-raster controls, Clang UBSan and three discriminating compiled negatives). Wire/schema, inventory
-audit and model controls remain open; the proposal is not a shipped capability.
+raster controls, Clang UBSan and three discriminating compiled negatives). The [ownership audit](../investigations/faon4eja-native-component-ownership-audit-and-reusable-c-wire-boundary.md)
+and revision-1–6 C wire foundation are implemented. New wire/schema and model
+controls remain open; the proposal is not a shipped capability.
 
 **Decide the multi-component contract.**
 

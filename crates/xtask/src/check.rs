@@ -40,6 +40,7 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
     clippy(repo)?;
     sophia_conformance::profile::check_every_profile(&[])?;
     layout(repo)?;
+    command(repo, "sh", &["tools/check_shell_c_wire.sh"])?;
     anchored_readers(repo)?;
     for pattern in [
         "layout_comparison_test.py",

@@ -20,7 +20,10 @@ Bemenu content launcher.
 This is the initial t104 contract proposal. Existing protocol files and runtime
 behavior are unchanged. Concrete byte layouts, compatibility controls and the
 multi-client inventory audit must accompany the subsequent schema checkpoint;
-t104 is not complete at this checkpoint.
+t104 is not complete at this checkpoint. The [source ownership audit and budget
+proposal](../investigations/faon4eja-native-component-ownership-audit-and-reusable-c-wire-boundary.md)
+now identify the actual join points, including the per-transport epoch pool and
+output-only compositor identity. C framing/negotiation is implemented separately.
 
 ## Decisions for the first implementation
 
