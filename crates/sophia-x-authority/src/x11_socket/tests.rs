@@ -1141,6 +1141,7 @@ fn a_notify_msc_ahead_of_the_clock_waits_for_a_completion_to_ripen() {
 
 include!("tests/routing.rs");
 include!("tests/private_runner.rs");
+include!("tests/private_service.rs");
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),

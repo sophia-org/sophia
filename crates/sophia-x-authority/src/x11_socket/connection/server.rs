@@ -638,186 +638,19 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
         worker_egress.submit_blocking(XAuthorityBoundedEgressEnvelope::new(trace.transaction, batch))?;
         Ok(receipt)
     });
-    let mut accepting = true;
     let mut pending_raster_egress = None::<XAuthorityBoundedEgressEnvelope>;
-    let mut raster_fallbacks = XRasterFallbackCoalescer::default();
-    let service_result: Result<(), X11SetupSocketError> = (|| {
-        loop {
-            let mut progressed = false;
-            match service_commands.try_recv() {
-                Ok(XServerFrontendServiceCommand::UpdateWindowAllocationPreferences { snapshot, acknowledgement }) => {
-                    let outcome = frontend.update_window_allocation_preferences(snapshot)?;
-                    let _ = acknowledgement.try_send(outcome);
-                    progressed = true;
-                }
-                Ok(XServerFrontendServiceCommand::InstallDeviceBundle { bundle, acknowledgement }) => {
-                    let _ = acknowledgement.try_send(frontend.install_device_bundle(bundle));
-                    progressed = true;
-                }
-                Ok(XServerFrontendServiceCommand::MarkDeviceGenerationUnavailable { generation, acknowledgement }) => {
-                    let _ = acknowledgement.try_send(frontend.mark_device_generation_unavailable(generation));
-                    progressed = true;
-                }
-                Ok(XServerFrontendServiceCommand::StopAccepting) => {
-                    if accepting {
-                        accepting = false;
-                        progressed = true;
-                    }
-                }
-                Ok(XServerFrontendServiceCommand::DrainAndDisconnect) => {
-                    accepting = false;
-                    // Workers retain cleanup ownership and may still be
-                    // publishing accepted work. Do not cancel their egress.
-                    frontend.shutdown_all_client_workers()?;
-                    progressed = true;
-                }
-                Ok(XServerFrontendServiceCommand::StopAndDisconnect)
-                | Err(TryRecvError::Disconnected) => {
-                    accepting = false;
-                    if !ordered_egress.cancelled() {
-                        ordered_egress.cancel();
-                        if let Some(mut envelope) = pending_raster_egress.take() {
-                            ordered_egress.cancel_envelope(&mut envelope)?;
-                        }
-                        frontend.shutdown_all_client_workers()?;
-                        progressed = true;
-                    }
-                }
-                Ok(XServerFrontendServiceCommand::RevokeAdmission { admission }) => {
-                    progressed |= frontend.revoke_admission(admission)?;
-                }
-                Ok(XServerFrontendServiceCommand::UpdateOutputTopology {
-                    snapshot,
-                    acknowledgement,
-                }) => {
-                    let mut outcome = frontend.update_output_topology(snapshot.clone())?;
-                    if matches!(outcome, XAuthorityOutputUpdateOutcome::Applied { .. }) {
-                        let notifications = broker
-                            .registry
-                            .broadcast_randr_update(&snapshot)
-                            .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
-                        if let XAuthorityOutputUpdateOutcome::Applied {
-                            notifications: delivered,
-                            ..
-                        } = &mut outcome
-                        {
-                            *delivered = notifications;
-                        }
-                    }
-                    acknowledgement.try_send(outcome).map_err(|error| {
-                        X11SetupSocketError::new(format!(
-                            "failed to return Engine output topology acknowledgement: {error}"
-                        ))
-                    })?;
-                    progressed = true;
-                }
-                Err(TryRecvError::Empty) => {}
-            }
+    // THE LOOP LIVES IN private_service.rs NOW, shared with the private
+    // service and reached here through the owned broker. Its body is moved,
+    // not rewritten.
+    let service_result = drive_routed_service(
+        &mut frontend,
+        &mut broker,
+        &service_commands,
+        &ordered_egress,
+        &observer,
+        &mut pending_raster_egress,
+    );
 
-            if !ordered_egress.cancelled() {
-                if pending_raster_egress.is_none() {
-                    match broker.try_recv_raster_requirements() {
-                        Ok(requirements) => {
-                            let transaction = frontend.state.allocate_transaction()?;
-                            let response = frontend
-                                .state
-                                .runtime
-                                .lock()
-                                .map_err(|_| {
-                                    X11SetupSocketError::new("X11 authority runtime lock poisoned")
-                                })?
-                                .apply_surface_raster_requirements(transaction, &requirements);
-                            match response {
-                                Ok(crate::XSurfaceRasterOutcome::Satisfied(response)) => {
-                                    raster_fallbacks.report_satisfied(
-                                        &requirements,
-                                        response.identity.source_content_generation,
-                                    );
-                                    let batch =
-                                        XAuthorityObservedTransactionBatch::from_raster_response(
-                                            *response,
-                                        );
-                                    pending_raster_egress =
-                                        Some(XAuthorityBoundedEgressEnvelope::new(
-                                            transaction,
-                                            Some(batch),
-                                        ));
-                                }
-                                Ok(crate::XSurfaceRasterOutcome::SampledFallback {
-                                    cause,
-                                    observed_content_generation,
-                                }) => {
-                                    pending_raster_egress = Some(
-                                        XAuthorityBoundedEgressEnvelope::new(transaction, None),
-                                    );
-                                    raster_fallbacks.report(
-                                        &requirements,
-                                        cause,
-                                        observed_content_generation,
-                                    );
-                                }
-                                Err(error) => {
-                                    pending_raster_egress = Some(
-                                        XAuthorityBoundedEgressEnvelope::new(transaction, None),
-                                    );
-                                    tracing::warn!(
-                                        "sophia_x11_raster_requirement schema=1 status=refused surface={:?} content_generation={} requirement_generation={} error={error:?}",
-                                        requirements.surface,
-                                        requirements.committed_content_generation,
-                                        requirements.requirement_generation,
-                                    );
-                                }
-                            }
-                            progressed = true;
-                        }
-                        Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
-                    }
-                }
-                if let Some(envelope) = pending_raster_egress.take() {
-                    let was_waiting = envelope.waiting_since.is_some();
-                    pending_raster_egress = ordered_egress.try_submit(envelope)?;
-                    progressed |= !was_waiting && pending_raster_egress.is_none();
-                }
-            }
-
-            if accepting {
-                while frontend.active_client_worker_count()
-                    < frontend.config().max_concurrent_clients().get()
-                {
-                    if !frontend
-                        .try_serve_next_concurrently_routed_traced(&broker, observer.clone())?
-                    {
-                        break;
-                    }
-                    progressed = true;
-                }
-            }
-            if !ordered_egress.cancelled() {
-                let routed = broker
-                    .route_pending()
-                    .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
-                progressed |= routed != 0;
-            }
-            let workers_before_reap = frontend.active_client_worker_count();
-            frontend.poll_client_workers()?;
-            progressed |= workers_before_reap != frontend.active_client_worker_count();
-            if ordered_egress.transport_disconnected() {
-                return Err(X11SetupSocketError::new(
-                    "X authority observed transaction channel is disconnected",
-                ));
-            }
-
-            if !accepting
-                && frontend.active_client_worker_count() == 0
-                && pending_raster_egress.is_none()
-            {
-                return Ok(());
-            }
-            if !progressed {
-                std::thread::sleep(Duration::from_millis(1));
-            }
-        }
-    })();
 
     let mut cleanup_failures = Vec::new();
     if service_result.is_err() {
