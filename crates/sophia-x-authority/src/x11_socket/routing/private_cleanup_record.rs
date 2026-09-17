@@ -347,8 +347,11 @@ impl PrivateCleanupRecord {
         // recovery closes it, and so does the frontend's own shutdown, so a
         // connection whose service is otherwise well is closed by something
         // else and the loss is invisible. What is lost here is the disposal
-        // this destruction used to perform, which is why seeing it at all
-        // means poisoning those paths too.
+        // this destruction used to perform.
+        //
+        // SEEING IT MEANS SILENCING THE OTHER CLOSERS, each in its own way:
+        // recovery has to be unable to act, and the frontend's shutdown has to
+        // not have run yet when the question is asked.
         //
         // SO THE GUARD IS RECOVERED, AND ONLY TO TAKE. Taking a lease out in
         // order to dispose of it is a close this connection's destruction is
