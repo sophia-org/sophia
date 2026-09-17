@@ -245,8 +245,18 @@ static void negotiation(void)
     bytes[37] = 6; bytes[24] = 5; /* revision contradiction */
     assert(sophia_shell_welcome_decode(&frame, request, &welcome) == SOPHIA_SHELL_INVALID);
     size_t count;
-    const struct sophia_shell_hello invalid[] = {{0,6,1},{6,1,1},{1,7,1},{1,6,0},
-        {1,5,0x601},{1,6,0x401},{1,6,0x101},{1,6,0x41},{1,6,0x11},{1,6,0x801}};
+    assert(sophia_shell_hello_encode(bytes, sizeof(bytes),
+        (struct sophia_shell_hello){7,7,0x9a0}, &count) == SOPHIA_SHELL_OK);
+    memcpy(bytes, welcome_bytes, sizeof(bytes));
+    bytes[24]=7; bytes[36]=0xa0; bytes[37]=9;
+    assert(sophia_shell_frame_decode(bytes, sizeof(bytes), &frame)==SOPHIA_SHELL_OK);
+    assert(sophia_shell_welcome_decode(&frame, (struct sophia_shell_hello){7,7,0x9a0}, &welcome)==SOPHIA_SHELL_OK);
+    assert(welcome.capabilities==0x9a0 && welcome.revision==7);
+    assert(sophia_shell_welcome_decode(&frame, (struct sophia_shell_hello){1,7,1}, &welcome)==SOPHIA_SHELL_INVALID);
+    bytes[36]=0xa1;
+    assert(sophia_shell_welcome_decode(&frame, (struct sophia_shell_hello){7,7,0x9a0}, &welcome)==SOPHIA_SHELL_INVALID);
+    const struct sophia_shell_hello invalid[] = {{0,6,1},{6,1,1},{1,8,1},{1,6,0},
+        {1,5,0x601},{1,6,0x401},{1,6,0x101},{1,6,0x41},{1,6,0x11},{1,6,0x801},{6,7,0x9a0},{7,7,0x9a1},{7,7,0x980},{7,7,0x8a0}};
     for (size_t i = 0; i < sizeof(invalid)/sizeof(*invalid); ++i)
         assert(sophia_shell_hello_encode(bytes, sizeof(bytes), invalid[i], &count) == SOPHIA_SHELL_INVALID);
 }

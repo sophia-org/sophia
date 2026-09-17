@@ -1,5 +1,6 @@
 #include "../sophia_shell_catalog.h"
 #include "fields.h"
+#include "text.h"
 
 #include <string.h>
 
@@ -34,40 +35,6 @@ int sophia_shell_catalog_init(struct sophia_shell_catalog *c,
     return SOPHIA_SHELL_CATALOG_PENDING;
 }
 
-/* Same text contract as the Rust catalog codec: strict Unicode scalar UTF-8,
- * no controls or bidi formatting controls. Reject, never replace or truncate. */
-static int text_valid(const uint8_t *p, size_t length)
-{
-    size_t i = 0;
-    while (i < length) {
-        uint32_t cp = p[i++], minimum = 0;
-        unsigned tail = 0;
-        if (cp < 0x80u) {
-            tail = 0;
-        } else if (cp >= 0xc2u && cp <= 0xdfu) {
-            cp &= 0x1fu; tail = 1; minimum = 0x80u;
-        } else if (cp >= 0xe0u && cp <= 0xefu) {
-            cp &= 0x0fu; tail = 2; minimum = 0x800u;
-        } else if (cp >= 0xf0u && cp <= 0xf4u) {
-            cp &= 7u; tail = 3; minimum = 0x10000u;
-        } else {
-            return 0;
-        }
-        if (tail > length - i)
-            return 0;
-        for (unsigned j = 0; j < tail; ++j) {
-            uint8_t next = p[i++];
-            if ((next & 0xc0u) != 0x80u)
-                return 0;
-            cp = (cp << 6) | (next & 0x3fu);
-        }
-        if (cp < minimum || cp > 0x10ffffu || (cp >= 0xd800u && cp <= 0xdfffu) ||
-            cp < 0x20u || (cp >= 0x7fu && cp <= 0x9fu) ||
-            (cp >= 0x202au && cp <= 0x202eu) || (cp >= 0x2066u && cp <= 0x2069u))
-            return 0;
-    }
-    return 1;
-}
 
 static int entry(struct sophia_shell_catalog *c, const uint8_t *p, size_t bytes)
 {
@@ -86,8 +53,8 @@ static int entry(struct sophia_shell_catalog *c, const uint8_t *p, size_t bytes)
     value.keywords_bytes = shell_get16(p + keyword_offset);
     if (value.keywords_bytes > SOPHIA_SHELL_CATALOG_KEYWORDS_BYTES ||
         keyword_offset + 2u + value.keywords_bytes != bytes ||
-        !text_valid(p + 22, value.label_bytes) ||
-        !text_valid(p + keyword_offset + 2u, value.keywords_bytes))
+        !shell_text_valid(p + 22, value.label_bytes) ||
+        !shell_text_valid(p + keyword_offset + 2u, value.keywords_bytes))
         return 0;
     unsigned index = value.slot - 1u;
     uint64_t bit = UINT64_C(1) << (index % 64u);

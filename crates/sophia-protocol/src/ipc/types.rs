@@ -99,6 +99,17 @@ pub enum IpcMessageKind {
     ShellIndicatorsEnd = 184,
     ShellIndicatorActivate = 185,
     ShellIndicatorActivateOutcome = 186,
+    ShellNativeLauncherOpening = 187,
+    ShellNativeLauncherAllocationRequest = 188,
+    ShellNativeLauncherCandidateBegin = 189,
+    ShellNativeLauncherCandidateChunk = 190,
+    ShellNativeLauncherFocus = 191,
+    ShellNativeLauncherFocusRevoked = 192,
+    ShellNativeLauncherInput = 193,
+    ShellNativeLauncherInputAck = 194,
+    ShellNativeLauncherActivate = 195,
+    ShellNativeLauncherActivationOutcome = 196,
+    ShellNativeLauncherClosed = 197,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

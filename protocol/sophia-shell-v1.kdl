@@ -1,4 +1,4 @@
-protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=6 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 max-shortcuts=256 {
+protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=7 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 max-shortcuts=256 {
     capability "descriptor_switcher" bit=0
     capability "work_area_reservation" bit=1
     capability "tab_groups" bit=2 since=2
@@ -11,6 +11,9 @@ protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=
     capability "content_discrete_input" bit=8 since=5 requires="content_surface"
     capability "view_indicators" bit=9 since=6
     capability "indicator_activation" bit=10 since=6 requires="view_indicators"
+    // Codec support is not runtime admission. The independent launcher role is
+    // exclusive: bits 5,7,8,11 only; no descriptor, reservation or device grant.
+    capability "native_launcher" bit=11 since=7 requires="application_catalog,content_surface,content_discrete_input"
 
     outcome "prepared" value=1
     outcome "presented" value=2
@@ -692,5 +695,107 @@ protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=
         field "activation" type="u64"
         field "slot" type="u16"
         field "status" type="u16"
+    }
+
+    // R7 native launcher. All integers little-endian, no implicit padding.
+    // Runtime admission remains disabled until the owner/lifecycle integration.
+    // Allocation replies, resources, pacing, CandidateEnd/outcomes and discrete
+    // actions reuse r5. Kinds 163/173 retain their original role restrictions.
+    // Native CandidateBegin replaces kind 172 in the SAME candidate transaction;
+    // native chunks replace 173. No parallel candidate or response owner exists.
+    record "NativeLauncherBinding" bytes=104 {
+        record-ref "grant" record="ContentGrant"
+        field "opening" type="u64" nonzero=#true
+        record-ref "output" record="ContentOutputId"
+        record-ref "allocation" record="ContentAllocationId"
+        field "catalog_generation" type="u64" nonzero=#true
+        field "candidate_generation" type="u64" nonzero=#true
+        field "presentation_epoch" type="u64" nonzero=#true
+        field "interaction_generation" type="u64" nonzero=#true
+        field "state_revision" type="u64" nonzero=#true
+        field "focus_lease" type="u64" nonzero=#true
+    }
+    record "NativeLauncherEvent" bytes=120 {
+        record-ref "binding" record="NativeLauncherBinding"
+        field "event_id" type="u64" nonzero=#true
+        field "state_revision" type="u64" minimum="binding.state_revision"
+    }
+    record "NativeLauncherActivation" bytes=124 {
+        record-ref "event" record="NativeLauncherEvent"
+        field "cause" type="u16" values="1=keyboard_accept,2=content_action"
+        field "slot" type="u16" min=1 max=4096
+    }
+    // Input commands 1..17: Text,Left,Right,Home,End,Backspace,Delete,Previous,
+    // Next,PagePrevious,PageNext,First,Last,DeleteToStart,DeleteToEnd,DeleteWord,Accept.
+    // Accept/activation require state_revision == binding.state_revision;
+    // other input commands require a later state_revision. Session disarms
+    // activation while that newer state awaits presentation. Committed text is
+    // UTF-8, no controls or bidi formatting controls; never helper/clipboard data.
+    // Catalog membership, current lease, exact targets, event/cause and ordered
+    // monotonic revisions are validated by the owner, not established by codec.
+    message "NativeLauncherOpening" kind=187 direction="session-to-shell" transaction="required" since=7 bytes=56 {
+        record-ref "grant" record="ContentGrant"
+        field "opening" type="u64"
+        record-ref "output" record="ContentOutputId"
+        field "catalog_generation" type="u64"
+        field "state_revision" type="u64"
+    }
+    message "NativeLauncherAllocationRequest" kind=188 direction="shell-to-session" transaction="required" since=7 bytes=84 {
+        record-ref "grant" record="ContentGrant"
+        field "opening" type="u64"
+        record-ref "output" record="ContentOutputId"
+        field "request_id" type="u64"
+        record-ref "prior" record="ContentAllocationId"
+        field "operation" type="u16"
+        field "edge" type="u16"
+        field "desired_width" type="u32"
+        field "desired_height" type="u32"
+        record-ref "margins" record="ContentMargins"
+    }
+    message "NativeLauncherCandidateBegin" kind=189 direction="shell-to-session" transaction="required" since=7 {
+        payload-ref "content" message="ContentCandidateBegin"
+        field "opening" type="u64"
+        field "catalog_generation" type="u64"
+        field "state_revision" type="u64"
+        field "selected" type="u16"
+        field "row_count" type="u16"
+        field "rows" type="u16[row_count]"
+    }
+    message "NativeLauncherCandidateChunk" kind=190 direction="shell-to-session" transaction="required" since=7 surface-role=3 target-action-kind=2 max-surfaces=1 max-targets=32 {
+        payload-ref "content" message="ContentCandidateChunk"
+    }
+    message "NativeLauncherFocus" kind=191 direction="session-to-shell" transaction="required" since=7 bytes=104 {
+        record-ref "binding" record="NativeLauncherBinding"
+    }
+    message "NativeLauncherFocusRevoked" kind=192 direction="session-to-shell" transaction="required" since=7 bytes=108 {
+        record-ref "binding" record="NativeLauncherBinding"
+        field "reason" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "NativeLauncherInput" kind=193 direction="session-to-shell" transaction="required" since=7 {
+        record-ref "event" record="NativeLauncherEvent"
+        field "issued_mono_usec" type="u64"
+        field "command" type="u16"
+        field "text_len" type="u16"
+        field "text" type="utf8[text_len]"
+    }
+    message "NativeLauncherInputAck" kind=194 direction="shell-to-session" transaction="required" since=7 bytes=124 {
+        record-ref "event" record="NativeLauncherEvent"
+        field "disposition" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "NativeLauncherActivate" kind=195 direction="shell-to-session" transaction="required" since=7 bytes=124 {
+        record-ref "activation" record="NativeLauncherActivation"
+    }
+    message "NativeLauncherActivationOutcome" kind=196 direction="session-to-shell" transaction="required" since=7 bytes=128 {
+        record-ref "activation" record="NativeLauncherActivation"
+        field "status" type="u16"
+        field "reason" type="u16"
+    }
+    message "NativeLauncherClosed" kind=197 direction="session-to-shell" transaction="required" since=7 bytes=28 {
+        record-ref "grant" record="ContentGrant"
+        field "opening" type="u64"
+        field "reason" type="u16"
+        field "reserved" type="u16" reserved=#true
     }
 }

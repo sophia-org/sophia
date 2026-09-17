@@ -9,6 +9,14 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 cd "$root"
 sh tools/check_shell_c_wire.sh
+cargo run --offline -q -p sophia-protocol --example shell_native_launcher_corpus >"$build_dir/native-launcher.frames"
+cmp "$build_dir/native-launcher.frames" protocol/golden/sophia-shell-native-launcher.frames
+cargo run --offline -q -p sophia-protocol --example shell_native_launcher_corpus -- --mutations >"$build_dir/native-launcher-mutations.frames"
+"${CC:-cc}" -std=c99 -Wall -Wextra -Werror -pedantic \
+    bindings/c/shell_wire/frame.c bindings/c/shell_wire/native_launcher.c \
+    bindings/c/tests/sophia_shell_wire_native_test.c -o "$build_dir/native-launcher-decoder"
+"$build_dir/native-launcher-decoder" "$build_dir/native-launcher-mutations.frames"
+
 cargo run --offline -q -p sophia-protocol --example shell_content_corpus \
     >"$build_dir/sophia-shell-content.frames"
 cargo run --offline -q -p sophia-protocol --example shell_content_corpus -- --malformed \

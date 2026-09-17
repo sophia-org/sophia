@@ -17,10 +17,11 @@ keyboard events. The revision-4 descriptor launcher is a different product: Engi
 renders and edits its menu. Neither may silently be reinterpreted as the custom
 Bemenu content launcher.
 
-This is the t104 contract proposal. The existing wire remains revision 6;
+This is the t104 contract proposal. Live negotiation remains capped at revision 6;
 component profile parsing is now implemented with an explicit live-startup
-refusal until independent admission is connected. Concrete byte layouts, compatibility controls and the
-multi-client inventory audit must accompany the subsequent schema checkpoint;
+refusal until independent admission is connected. The [revision-7 codec checkpoint](../investigations/v7m2c9ra-native-launcher-wire-contract.md)
+now supplies concrete byte layouts and Rust/C compatibility controls; formal
+models and live lifecycle integration remain pending;
 t104 is not complete at this checkpoint. The [source ownership audit and budget
 proposal](../investigations/faon4eja-native-component-ownership-audit-and-reusable-c-wire-boundary.md)
 now identify the actual join points, including the per-transport epoch pool and
@@ -130,13 +131,14 @@ resource. Sophia continues GPU composition; this client needs no render-node gra
 
 ### Protocol/configuration checkpoint
 
-Add a negotiated custom-launcher capability in a subsequent revision. Existing
+Revision-7 vocabulary allocates the native-launcher capability and kinds 187–197;
+its runtime admission remains disabled. Existing
 revision-4 launcher messages keep their meanings and existing peers keep their
 wire layouts. Do not reinterpret kind 179 as keyboard data, forge a parent window
 or make a private Bemenu socket. Endpoint admission supplies the component scope;
 wire records still carry connection/opening/binding identities for stale checks.
 
-The schema checkpoint must define lease grant/revoke, text/edit delivery and ACK,
+The schema checkpoint defines lease grant/revoke, text/edit delivery and ACK,
 content-to-catalog row binding and exact activation/outcome byte layouts together.
 All new kinds/bits must be checked against the complete protocol inventory before
 allocation, with golden frames decoded independently in C and Rust. Missing

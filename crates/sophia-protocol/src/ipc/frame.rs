@@ -134,6 +134,17 @@ pub fn decode_frame(frame: &[u8]) -> Result<(IpcFrameHeader, &[u8]), IpcCodecErr
         184 => IpcMessageKind::ShellIndicatorsEnd,
         185 => IpcMessageKind::ShellIndicatorActivate,
         186 => IpcMessageKind::ShellIndicatorActivateOutcome,
+        187 => IpcMessageKind::ShellNativeLauncherOpening,
+        188 => IpcMessageKind::ShellNativeLauncherAllocationRequest,
+        189 => IpcMessageKind::ShellNativeLauncherCandidateBegin,
+        190 => IpcMessageKind::ShellNativeLauncherCandidateChunk,
+        191 => IpcMessageKind::ShellNativeLauncherFocus,
+        192 => IpcMessageKind::ShellNativeLauncherFocusRevoked,
+        193 => IpcMessageKind::ShellNativeLauncherInput,
+        194 => IpcMessageKind::ShellNativeLauncherInputAck,
+        195 => IpcMessageKind::ShellNativeLauncherActivate,
+        196 => IpcMessageKind::ShellNativeLauncherActivationOutcome,
+        197 => IpcMessageKind::ShellNativeLauncherClosed,
 
         other => return Err(IpcCodecError::UnknownMessageKind(other)),
     };

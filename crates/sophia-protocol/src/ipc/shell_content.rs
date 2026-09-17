@@ -4,10 +4,10 @@
 //! peer requirements. These records never grant device access.
 
 mod codec;
-mod fields;
+pub(super) mod fields;
 mod limits;
 mod records;
-mod validation;
+pub(super) mod validation;
 
 pub use codec::{decode_shell_content_frame, encode_shell_content_frame};
 pub use limits::*;

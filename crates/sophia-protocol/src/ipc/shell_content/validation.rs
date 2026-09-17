@@ -65,7 +65,7 @@ fn pixel_rect(r: ContentPixelRect) -> Result<(), IpcCodecError> {
     )
 }
 
-pub(super) fn validate(record: &ShellContentRecord) -> Result<(), IpcCodecError> {
+pub(crate) fn validate(record: &ShellContentRecord) -> Result<(), IpcCodecError> {
     use ShellContentRecord::*;
     let grant = match record {
         AdmissionRefused(v) => {
@@ -248,53 +248,7 @@ pub(super) fn validate(record: &ShellContentRecord) -> Result<(), IpcCodecError>
             v.grant
         }
         CandidateChunk(v) => {
-            require(v.candidate_generation > 0, "content candidate generation")?;
-            require(
-                v.surfaces.len() <= 8 && v.placements.len() <= 32 && v.targets.len() <= 64,
-                "content chunk counts",
-            )?;
-            for row in &v.surfaces {
-                allocation(row.allocation, false)?;
-                margins(row.margins)?;
-                require(
-                    row.scale_generation > 0
-                        && (1..=2).contains(&row.role)
-                        && (1..=4).contains(&row.edge)
-                        && row.reservation_extent <= 512,
-                    "content surface",
-                )?;
-                if row.role == 1 {
-                    require(
-                        row.parent_surface_index == u16::MAX
-                            && row.anchor_parent_rect == ContentPixelRect::default(),
-                        "content panel row",
-                    )?;
-                } else {
-                    require(
-                        row.parent_surface_index < 8 && row.reservation_extent == 0,
-                        "content popout row",
-                    )?;
-                    pixel_rect(row.anchor_parent_rect)?;
-                }
-            }
-            for row in &v.placements {
-                resource(row.resource)?;
-                require(
-                    row.surface_index < 8 && row.destination_x_px >= 0 && row.destination_y_px >= 0,
-                    "content placement",
-                )?;
-            }
-            for row in &v.targets {
-                require(
-                    row.surface_index < 8
-                        && row.action_kind == 1
-                        && row.target_id > 0
-                        && row.target_generation > 0
-                        && row.action_id > 0,
-                    "content target",
-                )?;
-                pixel_rect(row.bounds_px)?;
-            }
+            validate_candidate_chunk(v, false)?;
             v.grant
         }
         CandidateEnd(v) => {
@@ -454,4 +408,80 @@ impl ContentResourceBegin {
             total_bytes,
         })
     }
+}
+
+/// The native family opts in explicitly; legacy kind 173 keeps r5 roles/kinds.
+pub(crate) fn validate_candidate_chunk(
+    v: &ContentCandidateChunk,
+    native_launcher: bool,
+) -> Result<(), IpcCodecError> {
+    require(v.candidate_generation > 0, "content candidate generation")?;
+    require(
+        v.surfaces.len() <= 8 && v.placements.len() <= 32 && v.targets.len() <= 64,
+        "content chunk counts",
+    )?;
+    for row in &v.surfaces {
+        allocation(row.allocation, false)?;
+        margins(row.margins)?;
+        require(
+            row.scale_generation > 0
+                && if native_launcher {
+                    row.role == 3
+                } else {
+                    (1..=2).contains(&row.role)
+                }
+                && (1..=4).contains(&row.edge)
+                && row.reservation_extent <= 512,
+            "content surface",
+        )?;
+        if row.role == 1 || native_launcher {
+            require(
+                row.parent_surface_index == u16::MAX
+                    && row.anchor_parent_rect == ContentPixelRect::default()
+                    && (!native_launcher || row.reservation_extent == 0),
+                "content panel row",
+            )?;
+        } else {
+            require(
+                row.parent_surface_index < 8 && row.reservation_extent == 0,
+                "content popout row",
+            )?;
+            pixel_rect(row.anchor_parent_rect)?;
+        }
+    }
+    for row in &v.placements {
+        resource(row.resource)?;
+        require(
+            row.surface_index < 8 && row.destination_x_px >= 0 && row.destination_y_px >= 0,
+            "content placement",
+        )?;
+    }
+    for row in &v.targets {
+        require(
+            row.surface_index < 8
+                && row.action_kind == if native_launcher { 2 } else { 1 }
+                && row.target_id > 0
+                && row.target_generation > 0
+                && row.action_id > 0,
+            "content target",
+        )?;
+        pixel_rect(row.bounds_px)?;
+    }
+    if native_launcher {
+        require(
+            v.surfaces.len() <= 1 && v.targets.len() <= 32,
+            "native launcher chunk counts",
+        )?;
+        require(
+            v.placements.iter().all(|p| p.surface_index == 0)
+                && v.targets
+                    .iter()
+                    .all(|t| t.surface_index == 0 && t.action_id <= 4096),
+            "native launcher chunk rows",
+        )?;
+    }
+    require(
+        v.grant.connection_epoch > 0 && v.grant.content_grant_epoch > 0,
+        "content grant",
+    )
 }

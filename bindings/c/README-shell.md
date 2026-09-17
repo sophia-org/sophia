@@ -109,3 +109,18 @@ atomicity, unrelated-family interleaving, stale/mismatched identities, malformed
 Unicode, exact maximum text lengths and every truncation of a maximal entry.
 These are codec/assembly controls with supplied welcome facts, not an admitted
 native launcher.
+
+## Native launcher wire vocabulary (revision 7)
+
+`sophia_shell_native_launcher.h` and `shell_wire/native_launcher.c` validate kinds
+187–197 without allocating, connecting or authorizing an effect. They share the
+bounded framing layer. Golden frames from the Rust codec and the independent C
+payload validator are compared by `tools/check_shell_protocol.sh`, including
+bounded byte mutations. Text shares the catalog's strict UTF-8/control policy.
+
+The native launcher role requests exactly bits 5, 7, 8 and 11 (`0x9a0`) at revision
+7. It does not request the descriptor launcher, work-area reservation or indicators.
+The C hello/welcome codec can represent this request; the current Session server
+still refuses it because live revision-7 admission is not implemented. No backend
+may treat successful payload validation as a focus lease, catalog membership or
+permission to start an application. The native C lifecycle/client remains pending.

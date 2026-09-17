@@ -2,7 +2,7 @@
 
 static uint64_t revision_mask(uint16_t revision)
 {
-    static const uint64_t masks[] = {0, 3, 7, 31, 127, 511, 2047};
+    static const uint64_t masks[] = {0, 3, 7, 31, 127, 511, 2047, 4095};
     return revision < sizeof(masks) / sizeof(*masks) ? masks[revision] : 0;
 }
 
@@ -12,14 +12,19 @@ static int dependencies(uint64_t caps)
         if ((caps & (UINT64_C(1) << dependent)) && !(caps & (UINT64_C(1) << (dependent - 1))))
             return 0;
     }
-    return 1;
+    const uint64_t native = SOPHIA_SHELL_CAP_NATIVE_LAUNCHER;
+    const uint64_t needs = SOPHIA_SHELL_CAP_APPLICATION_CATALOG |
+        SOPHIA_SHELL_CAP_CONTENT_SURFACE | SOPHIA_SHELL_CAP_CONTENT_DISCRETE_INPUT;
+    return !(caps & native) || caps == (native | needs);
 }
 
 static int valid_request(struct sophia_shell_hello hello)
 {
     return hello.minimum_revision && hello.minimum_revision <= hello.maximum_revision &&
         hello.maximum_revision <= SOPHIA_SHELL_WIRE_MAX_REVISION &&
-        (hello.required_capabilities & SOPHIA_SHELL_CAP_DESCRIPTOR_SWITCHER) &&
+        ((hello.required_capabilities & SOPHIA_SHELL_CAP_NATIVE_LAUNCHER) ?
+            hello.minimum_revision >= 7u :
+            (hello.required_capabilities & SOPHIA_SHELL_CAP_DESCRIPTOR_SWITCHER) != 0) &&
         !(hello.required_capabilities & ~revision_mask(hello.maximum_revision)) &&
         dependencies(hello.required_capabilities);
 }
@@ -54,6 +59,7 @@ int sophia_shell_welcome_decode(const struct sophia_shell_frame *frame,
         value.revision < requested.minimum_revision || value.revision > requested.maximum_revision ||
         !value.connection_epoch || (requested.required_capabilities & ~value.capabilities) ||
         (value.capabilities & ~revision_mask(value.revision)) || !dependencies(value.capabilities) ||
+        ((value.capabilities ^ requested.required_capabilities) & SOPHIA_SHELL_CAP_NATIVE_LAUNCHER) ||
         !value.max_descriptors || value.max_descriptors > 16 ||
         !value.max_label_bytes || value.max_label_bytes > 128 ||
         !value.max_pending_activations || value.max_pending_activations > 16)

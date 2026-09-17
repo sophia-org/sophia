@@ -2,7 +2,7 @@ use super::*;
 use crate::IpcCodecError;
 use crate::ipc::cursor::Cursor;
 
-pub(super) trait Wire: Sized {
+pub(crate) trait Wire: Sized {
     fn put(&self, bytes: &mut Vec<u8>);
     fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError>;
 }
@@ -26,7 +26,7 @@ integer!(i16, u16);
 integer!(i32, i32);
 
 /// Reserved fields exist only on the wire, never as mutable record state.
-pub(super) fn reserved<T: Wire + Default + PartialEq>(
+pub(crate) fn reserved<T: Wire + Default + PartialEq>(
     cursor: &mut Cursor<'_>,
 ) -> Result<(), IpcCodecError> {
     if T::take(cursor)? != T::default() {
