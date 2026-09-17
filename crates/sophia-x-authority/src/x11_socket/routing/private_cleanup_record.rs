@@ -171,13 +171,18 @@ impl PrivateCleanupRecord {
     /// here is the whole of what was accepted -- not a snapshot with a
     /// producer still writing behind it.
     ///
-    /// WHAT IS RETAINED IS NOT UNPACKED. The receiver, or the transport if
-    /// binding got that far, moves whole. Nothing is received off the queue
-    /// here: receiving is how a driver learns whether producers are gone, and
-    /// doing it during teardown would mean deciding the disposition of
-    /// accepted work on the path that is least able to answer for it.
+    /// WHAT IS RETAINED IS NOT UNPACKED, AND IT IS NOT CARRIED ANYWHERE. This
+    /// connection's output has lived in its home since it bound; what happens
+    /// here is that the endpoint is closed, what the closure established is
+    /// written beside what that home already holds, and the standing change is
+    /// accounted for.
     ///
-    /// AN ENDING CAPABILITY GOES WITH THE TRANSPORT, OR IT DOES NOT GO AT ALL.
+    /// AND NOTHING IS RECEIVED OFF THE QUEUE. Receiving is how a driver learns
+    /// whether producers are gone, and doing it during teardown would mean
+    /// deciding the disposition of accepted work on the path least able to
+    /// answer for it. Nothing here authorises such a driver.
+    ///
+    /// AN ENDING CAPABILITY IS THE TRANSPORT'S, OR THERE IS NONE.
     /// A transport carries an independent handle on this connection, so a
     /// retained transport keeps the wire reachable after the connection's own
     /// frame is gone and whoever drives it can still end it.
@@ -223,10 +228,12 @@ impl PrivateCleanupRecord {
         //
         // WRITTEN WHERE IT LIVES. Both shapes carry evidence and both consult
         // it: a record that reached retention without it would carry None for
-        // ever, because nothing afterwards can establish a closure -- the gate
-        // goes with the registration -- so such a record could never settle
-        // however finished it was. Writing it for one shape and not the other
-        // would make a connection's fate depend on how far its setup got.
+        // THIS closure, and this is the one its own teardown made. The gate
+        // itself survives -- its custody holds it -- but that does not make
+        // this answer reconstructable afterwards, because a later close is a
+        // different act with an answer of its own. Writing it for one shape
+        // and not the other would make a connection's fate depend on how far
+        // its setup got.
         // Asked before the borrow below, which goes ahead through the
         // poisoned guard the way everything that must go ahead does.
         let source_poisoned = self.ordered_home.unreadable();
@@ -320,18 +327,35 @@ impl PrivateCleanupRecord {
         // is written this way for when a driver receives from that queue,
         // where it will separate.
         self.retain_ordered_continuation();
-        // TAKEN, CLOSED AND DROPPED HERE. This lease used to be a field of
-        // the handle, so its own destructor ran at exactly this point; now
-        // that its home outlives the handle, leaving it in place would defer
-        // that destructor to whenever the record goes. Taking it keeps both
-        // the close and the destruction where they were.
+        // TAKEN, CLOSED AND DROPPED HERE, WHETHER OR NOT THE CELL IS POISONED.
         //
-        // A POISONED CELL STILL SKIPS THE CLOSE, exactly as it did: the guard
-        // that panicked is what says this lease cannot be reasoned about, and
-        // recovering it here would be inventing a close nobody performed.
-        if let Ok(mut held) = self.lifecycle.lock()
-            && let Some(lease) = held.take()
-        {
+        // WHAT THIS LEASE USED TO GET FOR FREE. It was a field of the handle,
+        // so the handle's own destruction dropped it AFTER this body ran, and
+        // its destructor closes the gate. The explicit close was the belt; the
+        // destructor was the braces. A poisoned cell skipped the close and the
+        // destructor still ran.
+        //
+        // THAT STOPPED BEING TRUE WHEN ITS HOME OUTLIVED THE HANDLE. A lease
+        // left in this record on the poison path is not dropped when the
+        // registration goes -- the keeper still holds the record -- so the
+        // gate stays open for as long as that record lives. Skipping the take
+        // here is not "the same as before"; it is the loss of the disposal
+        // that used to happen anyway.
+        //
+        // SO THE GUARD IS RECOVERED, AND ONLY TO TAKE. Taking a lease out in
+        // order to dispose of it is a close this connection's destruction is
+        // asking for, not a reading of state somebody's panic left behind.
+        // Nothing else is read from the cell, nothing is put back, and this
+        // recovers no unreadable payload into serving and performs no native
+        // cleanup or settlement.
+        let lease = match self.lifecycle.lock() {
+            Ok(mut held) => held.take(),
+            Err(poisoned) => poisoned.into_inner().take(),
+        };
+        if let Some(lease) = lease {
+            // The guard is released above, before the close: what closing
+            // takes is the gate's own lock, and holding this cell across it
+            // would put a second lock under the first for no reason.
             lease.close();
             drop(lease);
         }

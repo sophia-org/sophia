@@ -37682,12 +37682,17 @@ fn a_connection_with_a_lifecycle_lease_closes_it_when_its_registration_goes() {
     // destructor ran at exactly that point; it now lives in a record that
     // outlives the handle, and the cleanup takes it rather than leaving it.
     //
-    // WHAT THIS CONTROL CAN AND CANNOT SEPARATE. It shows the gate is closed
-    // when the registration goes. It does NOT discriminate taking the lease
-    // from closing it in place: this lease's own `Drop` closes the same gate,
-    // and closing is idempotent, so both orders leave the same observable
-    // state. The taking is written for the destructor's timing, and that
-    // timing has no observable consequence for this lease type.
+    // WHAT THIS CONTROL SEPARATES. It shows the gate is closed when the
+    // registration goes AND that the lease was taken rather than closed in
+    // place: a cleanup that closed through a borrow would leave the lease in a
+    // record its keeper still holds, and the assertion below is what refuses
+    // that.
+    //
+    // WHAT IT DOES NOT SEPARATE is the explicit close from the disposal. This
+    // lease's own `Drop` closes the same gate and closing is idempotent, so
+    // dropping it without closing it first leaves the same observable state.
+    // The explicit close is written for the reason the original had it, not
+    // because this control can tell.
     let durable = PrivateSettlementOwner::default();
     let keeper = service_owner(&durable, 4);
     let private = private_over(&keeper, 4);
@@ -37724,6 +37729,65 @@ fn a_connection_with_a_lifecycle_lease_closes_it_when_its_registration_goes() {
             .expect("a readable lifecycle")
             .is_none(),
         "and took the lease rather than leaving it for whenever the record goes"
+    );
+    drop((shared, private, keeper, durable));
+}
+
+#[test]
+fn a_poisoned_lifecycle_cell_still_closes_this_connections_gate() {
+    // WHAT THE HANDLE USED TO GET FOR FREE. The lease was a field of the
+    // registration, so its destructor ran when the handle was destroyed and
+    // closed the gate even on the path where the explicit close was skipped.
+    // Once its home outlived the handle, leaving it in place on that path
+    // meant the gate stayed open for as long as the keeper held the record.
+    //
+    // NO WORKER IS INVOLVED. The cell is poisoned by an ordinary caught panic
+    // under its own lock, and nothing in it is rewritten.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(8905);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a record and a row");
+    private
+        .broker
+        .registry
+        .attach_private_lifecycle(&registration, admitted(client))
+        .expect("the boundary admits and the lifecycle attaches");
+    let shared = cleanup_of(&registration);
+    let gate = shared
+        .lifecycle
+        .lock()
+        .expect("a readable lifecycle")
+        .as_ref()
+        .expect("a lease is attached")
+        .gate();
+    assert!(gate.is_open());
+
+    let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = shared.lifecycle.lock().expect("a readable lifecycle");
+        panic!("poisoning this connection's lifecycle cell, and nothing else");
+    }));
+    assert!(poisoning.is_err());
+    assert!(shared.lifecycle.is_poisoned());
+
+    // ONLY THE REGISTRATION GOES. The keeper still holds the record, which is
+    // exactly the condition that used to hide the missing disposal.
+    drop(registration);
+    assert!(
+        !gate.is_open(),
+        "its lifecycle was closed, which is what dropping the lease always did"
+    );
+    let still_held = match shared.lifecycle.lock() {
+        Ok(held) => held.is_some(),
+        Err(poisoned) => poisoned.into_inner().is_some(),
+    };
+    assert!(
+        !still_held,
+        "and the lease was taken, not left for whenever the record goes"
     );
     drop((shared, private, keeper, durable));
 }
