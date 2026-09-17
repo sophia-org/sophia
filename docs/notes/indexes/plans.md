@@ -9,6 +9,7 @@ Candidates and deferred tasks require explicit promotion before implementation.
 
 - [Application commands in the desktop profile](../plans/1agxbuuf-application-commands-in-the-desktop-profile.md)
 - [Lom and Sophia portable GPU shell critical path](../plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md)
+- [Modular native shell components and independent launcher](../plans/ptil1ejw-modular-native-shell-components-and-independent-launcher-critical-path.md) — candidate sequence t104–t108; multi-client support is proposed.
 - [Critical Path](../plans/queue-01-critical-path.md)
 - [Parallel Production Readiness](../plans/queue-11-parallel-production-readiness.md)
 - [Candidate Queue](../plans/queue-12-candidate-queue.md)

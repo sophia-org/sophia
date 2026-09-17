@@ -136,6 +136,11 @@ among several clients will require explicit role assignment and protocol work.
 There is no first-client-wins selection, and an X11 panel does not become the
 native shell by appearing in the startup list.
 
+The [native component proposal](notes/concepts/k2d9l42p-native-shell-components-compose-through-explicit-scoped-grants.md)
+and [candidate sequence t104–t108](notes/plans/ptil1ejw-modular-native-shell-components-and-independent-launcher-critical-path.md)
+record the path to an integrated or independently replaceable bar/launcher setup.
+They do not change the current single-client admission contract.
+
 ## Choose a shell and its permissions
 
 Today, the native shell uses descriptors. Narthex chooses among the features

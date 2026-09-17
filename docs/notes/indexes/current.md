@@ -31,3 +31,7 @@ owns the integration sequence and native-acceptance exits.
 Add connections here when they help someone find an investigation. Search the
 whole collection with `zk list docs/notes --match "terms"`; this page is a curated
 map, not a list of every note or another roadmap.
+
+## Native shell component proposal
+
+[Explicit scoped component grants](../concepts/k2d9l42p-native-shell-components-compose-through-explicit-scoped-grants.md) describes integrated and modular shells; the linked candidate plan starts with a bar and independent launcher. This is not current multi-client support.
