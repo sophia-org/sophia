@@ -762,6 +762,7 @@ pub(super) fn project_render_bundle(
             return Err("content placement escapes its allocation");
         }
         let node = CompositorNodeId::ShellContent {
+            grant: bundle.grant,
             output: output.id,
             candidate: bundle.candidate_generation,
             surface: placement.surface_index,

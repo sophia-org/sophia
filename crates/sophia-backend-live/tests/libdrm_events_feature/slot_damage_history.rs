@@ -289,8 +289,6 @@ fn slot_damage_history_owes_nothing_for_a_scene_its_buffer_already_holds() {
     assert_eq!(history.metrics().partial_repaints, 1);
 }
 
-
-
 #[test]
 fn worker_slot_damage_disabled_offers_no_table() {
     let mut damage = WorkerSlotDamage::with_enabled(false);
@@ -439,6 +437,7 @@ fn worker_slot_damage_history_does_not_own_copied_shell_pixels() {
             commands: vec![sophia_engine::CompositorDisplayCommand::ContentImage(
                 CompositorContentImage {
                     node: CompositorNodeId::ShellContent {
+                        grant,
                         output: output.id,
                         candidate: 1,
                         surface: 0,
@@ -461,7 +460,8 @@ fn worker_slot_damage_history_does_not_own_copied_shell_pixels() {
                     resource: resources.lease(grant, resource).unwrap(),
                 },
             )],
-        }.into(),
+        }
+        .into(),
         software_cursor: None,
     };
     let mut damage = WorkerSlotDamage::with_enabled(true);

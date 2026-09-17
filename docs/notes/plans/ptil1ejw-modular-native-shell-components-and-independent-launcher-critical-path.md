@@ -69,6 +69,10 @@ formal/fixture scenarios. Remaining product decisions are resolved explicitly.
 
 **Admit and supervise independent component owners.**
 
+The [shared-store and compositor-identity foundation](../investigations/r3b9n7cf-native-component-storage-and-compositor-identity.md)
+is implemented. Session still owns a single live shell; this does not complete
+t105 or enable a second client. Both epoch fields will be globally minted.
+
 Implement the accepted Session/config/transport design with one owned grant and
 lifecycle per admitted client. Validate the complete operator profile before
 launch. Enforce requested/supported/permitted capability intersection, exact peer

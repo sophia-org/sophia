@@ -1022,6 +1022,7 @@ fn shell_content_lowers_exact_pixels_and_keeps_the_resource_until_frame_retireme
         sophia_engine::HeadCompositorContentImage {
             image: CompositorContentImage {
                 node: CompositorNodeId::ShellContent {
+                    grant: description.grant,
                     output: plan.output,
                     candidate: 17,
                     surface: 0,

@@ -27,10 +27,12 @@ impl LiveProductionVisualRuntime {
                 !matches!(
                     image.node,
                     CompositorNodeId::ShellContent {
+                        grant,
                         output,
                         candidate,
                         ..
-                    } if output == frame.output && candidate == frame.candidate_generation
+                    } if grant == frame.grant && output == frame.output && candidate == frame.candidate_generation
+                        && image.resource.description().grant == grant
                 )
             })
         {

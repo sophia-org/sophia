@@ -61,8 +61,10 @@ admit the two intended components without multiplying the Session ceiling.
 
 Session should issue globally unique nonzero connection epochs within its live
 session. Component names select configuration only and are not authorization.
-Per-component content-grant counters can remain local because the complete grant
-includes that unique connection epoch. Compositor and retirement identities still
+The implementation plan now mints both connection and content-grant epochs
+globally. This supersedes the initial local-grant-counter option: it preserves
+the actual pool's strict two-field admission watermarks without a second replay
+ledger. Compositor and retirement identities still
 need the complete grant; connection minting alone does not repair output-only maps.
 
 The existing descriptor-required revision-6 negotiation remains unchanged. A new
@@ -111,3 +113,12 @@ an independent review. Exact-source canonical validation is recorded separately
 once the signed checkpoint exists.
 All private sockets in these tests are freshly created pairs. No live Session
 endpoint, display, render node or input device is accessed.
+
+## Subsequent ownership work
+
+The [shared-store checkpoint](r3b9n7cf-native-component-storage-and-compositor-identity.md)
+introduces an exact-grant two-owner registry and scopes compositor node identities.
+The single-transport facade delegates its actual stores to that owner. Session
+still constructs one facade per transport; moving the shared registry to Session
+and joining multiple component projections remain outstanding. This record must
+not be read as current two-client admission.

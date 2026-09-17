@@ -32,7 +32,8 @@ output-only compositor identity. C framing/negotiation is implemented separately
 Session admits configured components into separate protection domains, endpoints,
 connections and content stores. Component identity is assigned from the validated
 operator profile; peers cannot choose another component by sending its name.
-Every replacement gets a fresh connection/grant identity. Resource, allocation,
+Session mints both connection and content-grant epochs globally and monotonically;
+zero and exhaustion refuse admission. Every replacement gets a fresh identity. Resource, allocation,
 candidate, focus and action identities are interpreted in that connection scope.
 Lom's identity and grant do not change when the launcher exits or reconnects.
 
@@ -96,12 +97,16 @@ the existing execution boundary, preserving current descriptor-launcher behavior
 
 ### Bounds and service
 
-First-profile proposed bounds (to encode and enforce before runtime enablement):
+First-profile bounds (to encode and enforce before runtime enablement):
 
 - At most two live components and one active launcher opening/focus lease.
 - Existing catalog limits remain: 4096 entries, 128-byte labels, 256-byte keywords
   and query, 32 visible rows. One committed-text record is at most 256 UTF-8 bytes;
   reject invalid UTF-8 and oversize payloads without truncation.
+- Share 64 MiB logical and 64 MiB backing ceilings. Bar staging/resident/retiring
+  maxima remain 8/16/16 MiB; launcher maxima are 4/12/8 MiB. Keep the 4 MiB
+  per-resource cap and a common 16-owner retirement inventory, with a retirement
+  slot reserved for each live grant.
 - Reuse negotiated content limits per connection. Do not multiply an existing
   session retirement limit merely by admitting a second client. Admission must
   reserve the entire connection's possible dead-epoch footprint against the
@@ -173,3 +178,26 @@ and the [component concept](../concepts/k2d9l42p-native-shell-components-compose
 Normative shipped behavior remains [shell_v1](../../../protocol/sophia-shell-v1.kdl)
 and the [descriptor launcher](../../application-launcher.md); this proposed ADR
 must not be cited as current multi-client support.
+
+## Implementation sequence and attended workload
+
+The approved implementation plan follows t104 contract, t105 independent Session
+owners, t106 composition/focus, t107 C lifecycle plus `bemenu-sophia`, then t108
+attended acceptance. Keep the existing descriptor launcher and single-shell mode.
+The C client is a pinned, provenance-recorded source dependency, not a Rust ABI.
+Bemenu keeps upstream placement/styling defaults within the allocation; Session
+selects the active output and validates every visible catalog row.
+
+The approved workload target is five warm-up interactions followed by forty
+state-changing interactions, twenty per output on healthy outputs at least
+60 Hz. Input issuance to causally matching native presentation must have p95 at
+most 100 ms and maximum at most 250 ms. Use nearest-rank p95 over all forty
+intended outcomes, and report each output separately. Missing/rejected intended
+outcomes fail rather than disappearing from the sample. Retain kernel versus
+observation-time provenance; unavailable exact timing is not a timing pass.
+Application startup is measured separately. These are declared workload gates,
+not hardware guarantees or evidence from an earlier run.
+
+The first ownership implementation is recorded in
+[the shared-store checkpoint](../investigations/r3b9n7cf-native-component-storage-and-compositor-identity.md).
+It does not yet enable revision 7 or a second live component.

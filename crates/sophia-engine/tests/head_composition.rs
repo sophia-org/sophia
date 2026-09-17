@@ -939,6 +939,10 @@ fn shell_content_keeps_physical_geometry_and_forces_composition() {
         .push(CompositorDisplayCommand::ContentImage(
             CompositorContentImage {
                 node: CompositorNodeId::ShellContent {
+                    grant: ContentGrant {
+                        connection_epoch: 7,
+                        content_grant_epoch: 9,
+                    },
                     output: scene.output,
                     candidate: 17,
                     surface: 0,

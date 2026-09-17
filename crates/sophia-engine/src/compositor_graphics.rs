@@ -51,6 +51,7 @@ pub enum CompositorNodeId {
         role: DescriptorOverlayNodeRole,
     },
     ShellContent {
+        grant: sophia_protocol::ContentGrant,
         output: OutputId,
         candidate: u64,
         surface: u16,

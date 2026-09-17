@@ -207,6 +207,7 @@ fn content_display_list(
         commands: vec![CompositorDisplayCommand::ContentImage(
             CompositorContentImage {
                 node: CompositorNodeId::ShellContent {
+                    grant: lease.description().grant,
                     output: output.id,
                     candidate,
                     surface: 0,

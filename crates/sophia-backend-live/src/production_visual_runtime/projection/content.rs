@@ -99,8 +99,8 @@ pub(super) fn retain_presented_content_binding(
     };
     let matches = images.all(|image| {
         image.resource.grant == current.frame.grant
-            && matches!(image.node, CompositorNodeId::ShellContent { output, candidate, .. }
-                if output == current.frame.output && candidate == previous.candidate_generation)
+            && matches!(image.node, CompositorNodeId::ShellContent { grant, output, candidate, .. }
+                if grant == current.frame.grant && output == current.frame.output && candidate == previous.candidate_generation)
     });
     let mut retained = previous.clone();
     retained.authority_current &= matches

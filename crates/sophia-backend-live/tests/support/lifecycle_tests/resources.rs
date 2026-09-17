@@ -72,6 +72,7 @@ pub(super) fn shell_frame(
         interaction_generation: candidate,
         images: vec![CompositorContentImage {
             node: CompositorNodeId::ShellContent {
+                grant,
                 output: output.id,
                 candidate,
                 surface: 0,

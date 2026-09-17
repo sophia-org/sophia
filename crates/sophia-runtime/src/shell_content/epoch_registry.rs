@@ -1,0 +1,289 @@
+//! Session-owned storage, including exact disconnected owners. Transport
+//! permission and connection supervision remain outside this resource owner.
+
+use super::{
+    ContentAllocationStore, ContentCandidateStore, ContentEpochAccounting, ContentResourceStore,
+    ContentStoreError,
+};
+use sophia_protocol::{ContentGrant, ContentLimits};
+
+pub struct ContentEpochRegistry {
+    active: Vec<ContentEpoch>,
+    retired: Vec<ContentEpoch>,
+    last_grant: ContentGrant,
+    max_bytes: u64,
+    max_backing_bytes: u64,
+}
+
+struct ContentEpoch {
+    allocations: ContentAllocationStore,
+    resources: ContentResourceStore,
+    candidates: ContentCandidateStore,
+    reserved_bytes: u64,
+    reserved_backing_bytes: u64,
+}
+
+impl ContentEpoch {
+    fn new(limits: ContentLimits) -> Result<Self, ContentStoreError> {
+        let reserved_bytes =
+            limits.max_staging_bytes + limits.max_resident_bytes + limits.max_retiring_bytes;
+        let reserved_backing_bytes = limits.max_resident_bytes + limits.max_retiring_bytes;
+        Ok(Self {
+            candidates: ContentCandidateStore::new(limits.clone())
+                .map_err(|_| ContentStoreError::Malformed)?,
+            allocations: ContentAllocationStore::new(limits.clone())
+                .map_err(|_| ContentStoreError::Malformed)?,
+            resources: ContentResourceStore::new(limits)?,
+            reserved_bytes,
+            reserved_backing_bytes,
+        })
+    }
+
+    fn quiescent(&self) -> bool {
+        self.allocations.quiescent() && self.resources.quiescent() && self.candidates.quiescent()
+    }
+
+    fn discard_peer_responses(&mut self) {
+        // Peer loss accounts for these undeliverable replies. It does not
+        // release a render consumer or transfer replies to a new connection.
+        while self.resources.take_event().is_some() {}
+        while self.allocations.take_event().is_some() {}
+        while self.candidates.take_event().is_some() {}
+    }
+}
+
+impl ContentEpochRegistry {
+    pub const MAX_ACTIVE_EPOCHS: usize = 2;
+    pub const MAX_RETAINED_EPOCHS: usize = 16;
+
+    pub fn new(max_bytes: u64) -> Result<Self, ContentStoreError> {
+        if max_bytes == 0 || max_bytes > 64 * 1024 * 1024 {
+            return Err(ContentStoreError::Budget);
+        }
+        Ok(Self {
+            active: Vec::with_capacity(Self::MAX_ACTIVE_EPOCHS),
+            retired: Vec::with_capacity(Self::MAX_RETAINED_EPOCHS),
+            last_grant: ContentGrant::default(),
+            max_bytes,
+            max_backing_bytes: 64 * 1024 * 1024,
+        })
+    }
+
+    /// Reserves the full possible footprint and one future retirement slot.
+    /// Both epochs are minted monotonically by the Session admission owner;
+    /// neither a component name nor this storage reservation grants authority.
+    pub fn admit(&mut self, limits: ContentLimits) -> Result<(), ContentStoreError> {
+        self.collect();
+        if self.active.len() == Self::MAX_ACTIVE_EPOCHS
+            || self.active.len() + self.retired.len() >= Self::MAX_RETAINED_EPOCHS
+        {
+            return Err(ContentStoreError::Budget);
+        }
+        if limits.grant.connection_epoch <= self.last_grant.connection_epoch
+            || limits.grant.content_grant_epoch <= self.last_grant.content_grant_epoch
+        {
+            return Err(ContentStoreError::Stale);
+        }
+        limits
+            .validate()
+            .map_err(|_| ContentStoreError::Malformed)?;
+        let reserve = limits
+            .max_staging_bytes
+            .checked_add(limits.max_resident_bytes)
+            .and_then(|bytes| bytes.checked_add(limits.max_retiring_bytes))
+            .ok_or(ContentStoreError::Budget)?;
+        let backing = limits
+            .max_resident_bytes
+            .checked_add(limits.max_retiring_bytes)
+            .ok_or(ContentStoreError::Budget)?;
+        if limits.max_session_retiring_bytes != self.max_bytes
+            || self
+                .reserved_bytes()
+                .checked_add(reserve)
+                .is_none_or(|n| n > self.max_bytes)
+            || self
+                .reserved_backing_bytes()
+                .checked_add(backing)
+                .is_none_or(|n| n > self.max_backing_bytes)
+        {
+            return Err(ContentStoreError::Budget);
+        }
+        let grant = limits.grant;
+        let epoch = ContentEpoch::new(limits)?;
+        // All fallible construction precedes publication or watermark change.
+        self.active.push(epoch);
+        self.last_grant = grant;
+        Ok(())
+    }
+
+    pub fn resources(&self, grant: ContentGrant) -> Option<&ContentResourceStore> {
+        self.active
+            .iter()
+            .find(|epoch| epoch.resources.grant() == grant)
+            .map(|epoch| &epoch.resources)
+    }
+
+    pub fn resources_mut(&mut self, grant: ContentGrant) -> Option<&mut ContentResourceStore> {
+        self.active
+            .iter_mut()
+            .find(|epoch| epoch.resources.grant() == grant)
+            .map(|epoch| &mut epoch.resources)
+    }
+
+    pub fn allocations(&self, grant: ContentGrant) -> Option<&ContentAllocationStore> {
+        self.active
+            .iter()
+            .find(|epoch| epoch.resources.grant() == grant)
+            .map(|epoch| &epoch.allocations)
+    }
+
+    pub fn allocations_mut(&mut self, grant: ContentGrant) -> Option<&mut ContentAllocationStore> {
+        self.active
+            .iter_mut()
+            .find(|epoch| epoch.resources.grant() == grant)
+            .map(|epoch| &mut epoch.allocations)
+    }
+
+    pub fn active_candidates(&self, grant: ContentGrant) -> Option<&ContentCandidateStore> {
+        self.active
+            .iter()
+            .find(|epoch| epoch.resources.grant() == grant)
+            .map(|epoch| &epoch.candidates)
+    }
+
+    pub fn active_candidates_mut(
+        &mut self,
+        grant: ContentGrant,
+    ) -> Option<&mut ContentCandidateStore> {
+        self.active
+            .iter_mut()
+            .find(|epoch| epoch.resources.grant() == grant)
+            .map(|epoch| &mut epoch.candidates)
+    }
+
+    pub fn active_parts_mut(
+        &mut self,
+        grant: ContentGrant,
+    ) -> Option<(&ContentResourceStore, &mut ContentCandidateStore)> {
+        self.active
+            .iter_mut()
+            .find(|epoch| epoch.resources.grant() == grant)
+            .map(|epoch| (&epoch.resources, &mut epoch.candidates))
+    }
+
+    /// Native completions can settle the exact disconnected store. New peer
+    /// requests must use active_candidates_mut instead.
+    pub fn candidates_mut(&mut self, grant: ContentGrant) -> Option<&mut ContentCandidateStore> {
+        self.active
+            .iter_mut()
+            .chain(&mut self.retired)
+            .find(|epoch| epoch.resources.grant() == grant)
+            .map(|epoch| &mut epoch.candidates)
+    }
+
+    /// Revoke this grant only. A repeated/stale disconnect cannot revoke a
+    /// successor or a neighbor. Preallocated retirement capacity follows every
+    /// admitted owner, so this transfer never grows the retirement inventory.
+    pub fn disconnect(&mut self, grant: ContentGrant) -> bool {
+        let Some(index) = self
+            .active
+            .iter()
+            .position(|epoch| epoch.resources.grant() == grant)
+        else {
+            return false;
+        };
+        let mut epoch = self.active.remove(index);
+        epoch.allocations.revoke();
+        epoch.candidates.revoke();
+        epoch.resources.revoke();
+        epoch.discard_peer_responses();
+        if !epoch.quiescent() {
+            self.retired.push(epoch);
+        }
+        self.collect();
+        true
+    }
+
+    pub fn collect(&mut self) {
+        for epoch in &mut self.active {
+            epoch.resources.collect();
+        }
+        for epoch in &mut self.retired {
+            epoch.resources.collect();
+            epoch.discard_peer_responses();
+        }
+        self.retired.retain(|epoch| !epoch.quiescent());
+    }
+
+    pub fn retired_bytes(&self) -> u64 {
+        self.retired
+            .iter()
+            .map(|epoch| {
+                let usage = epoch.resources.usage();
+                usage.staging + usage.resident + usage.retiring
+            })
+            .sum()
+    }
+
+    pub fn retired_backing_bytes(&self) -> u64 {
+        self.retired
+            .iter()
+            .map(|epoch| epoch.resources.usage().backing)
+            .sum()
+    }
+
+    pub fn reserved_bytes(&self) -> u64 {
+        self.active
+            .iter()
+            .map(|epoch| epoch.reserved_bytes)
+            .sum::<u64>()
+            + self.retired_bytes()
+    }
+
+    pub fn reserved_backing_bytes(&self) -> u64 {
+        self.active
+            .iter()
+            .map(|epoch| epoch.reserved_backing_bytes)
+            .sum::<u64>()
+            + self.retired_backing_bytes()
+    }
+
+    pub fn accounting(&self) -> ContentEpochAccounting {
+        let mut value = ContentEpochAccounting {
+            grant: self.last_grant,
+            active_epochs: self.active.len(),
+            retired_epochs: self.retired.len(),
+            reserved_bytes: self.reserved_bytes(),
+            reserved_backing_bytes: self.reserved_backing_bytes(),
+            ..Default::default()
+        };
+        for epoch in self.active.iter().chain(&self.retired) {
+            epoch.resources.add_accounting(&mut value);
+            epoch.candidates.add_accounting(&mut value);
+            epoch.allocations.add_accounting(&mut value);
+        }
+        value
+    }
+
+    /// Final Session backend shutdown only, after its workers have ended.
+    /// Join success alone is not proof of that disposition. Any still-live
+    /// grant refuses the transfer and returns the actual backend unchanged.
+    pub fn finish_after_backend_drop<B>(&mut self, backend: B) -> Result<usize, B> {
+        if !self.active.is_empty() {
+            return Err(backend);
+        }
+        drop(backend);
+        let mut count = 0;
+        for epoch in &mut self.retired {
+            while let Some((output, generation)) = epoch.candidates.first_submitted_identity() {
+                epoch
+                    .candidates
+                    .renderer_failed(output, generation)
+                    .expect("the unchanged retired store owns this exact submitted identity");
+                count += 1;
+            }
+        }
+        self.collect();
+        Ok(count)
+    }
+}

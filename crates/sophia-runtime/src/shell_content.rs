@@ -8,11 +8,13 @@
 mod accounting;
 mod allocations;
 mod candidates;
+mod epoch_registry;
 mod epochs;
 mod resources;
 
 pub use accounting::*;
 pub use allocations::*;
 pub use candidates::*;
+pub use epoch_registry::*;
 pub use epochs::*;
 pub use resources::*;
