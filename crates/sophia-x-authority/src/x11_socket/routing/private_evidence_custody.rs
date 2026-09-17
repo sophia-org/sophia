@@ -48,6 +48,19 @@ struct PrivateWorkerSource {
     /// is bounded storage on the source the reservation already made -- not a
     /// second inventory, not a budget, and not a permit.
     control: std::sync::OnceLock<PrivateControlCredentials>,
+    /// The gate this connection's queue was minted with.
+    ///
+    /// THE EXACT ONE, GIVEN TO THIS RESERVATION BEFORE THE ROW WENT IN. Not
+    /// one minted here, not one found by client number, and not one handed in
+    /// later by whoever happens to be fencing: the sender, the row, the
+    /// registration and this source all name the same gate because they were
+    /// all given it.
+    gate: Arc<PrivateHandoverGate>,
+    /// Where this connection's fencing publishes what its gate said.
+    ///
+    /// RESERVED WITH EVERYTHING ELSE, NotAttempted and empty. The one right to
+    /// attempt lives in here, so two views cannot each mint their own.
+    fence: PrivateFenceEvidence,
 }
 
 /// One connection's evidence custody, owned outside every operation.
@@ -111,6 +124,7 @@ impl PrivateEvidenceCustody {
     fn prepared_for(
         store: &PrivateSettlementOwner,
         identity: PrivateMaintenanceIdentity,
+        gate: Arc<PrivateHandoverGate>,
     ) -> Self {
         Self {
             store: store.clone(),
@@ -121,6 +135,8 @@ impl PrivateEvidenceCustody {
                 slot: Mutex::new(PrivateWorkerSlot::empty()),
                 exit: Arc::new(PrivateWorkerExit::unstarted()),
                 control: std::sync::OnceLock::new(),
+                gate,
+                fence: PrivateFenceEvidence::unattempted(),
             },
             join: Arc::new(PrivateJoinEvidence {
                 // THE RIGHT TO PUBLISH STARTS HERE, in the home, unheld. An
@@ -161,6 +177,19 @@ impl PrivateEvidenceCustody {
     /// takes a handle to the note, not to the connection.
     fn exit_sink(&self) -> &Arc<PrivateWorkerExit> {
         &self.source.exit
+    }
+
+    /// This connection's gate.
+    ///
+    /// LENT. A caller asks it to close or reads what it said; what owns it is
+    /// this custody and the row it was published with.
+    fn gate(&self) -> &Arc<PrivateHandoverGate> {
+        &self.source.gate
+    }
+
+    /// Where this connection's fencing publishes its answer.
+    fn fence_evidence(&self) -> &PrivateFenceEvidence {
+        &self.source.fence
     }
 
     /// The publication home this custody owns.

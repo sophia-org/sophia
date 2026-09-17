@@ -523,7 +523,12 @@ impl XServerFrontendRouteRegistry {
         // reserve from and nothing is claimed about one.
         let mut custody = match (self.custody_keeper.get(), continuation.as_ref()) {
             (Some(keeper), Some(slot)) => {
-                match keeper.reserve_for(&slot.maintenance_identity()) {
+                // THE GATE THIS CONNECTION'S QUEUE WAS MINTED WITH, handed to
+                // its custody here -- before the row goes in, on the same
+                // reservation. The sender above already has it, and this is
+                // what makes the source's gate the same gate rather than one
+                // that merely matches.
+                match keeper.reserve_for(&slot.maintenance_identity(), Arc::clone(&gate)) {
                     PrivateCustodyReserved::Reserved(registered) => Some(registered),
                     // REFUSED BEFORE EXPOSURE, and the place above goes back
                     // with it: this connection is not admitted at all rather

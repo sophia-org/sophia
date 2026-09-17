@@ -33291,7 +33291,7 @@ fn a_fence_waits_for_the_join_that_makes_it_eligible() {
     let g = fence_fixture(XServerFrontendClientId(8421));
     let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&custody);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
 
     // ASKED TOO EARLY: nothing is entered and nothing is spent.
     assert_eq!(fence.record_fence(), PrivateFenced::JoinIncomplete);
@@ -33326,7 +33326,7 @@ fn an_unconfirmed_join_is_not_a_joined_one() {
     let g = fence_fixture(XServerFrontendClientId(8422));
     let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&custody);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
 
     std::thread::scope(|scope| {
         let record = &record;
@@ -33385,11 +33385,10 @@ fn a_join_that_reported_a_panic_is_a_completed_join() {
     // was reading the payload at the time.
     let f = worker_fixture(XServerFrontendClientId(8423));
     let custody = custody_for(&f, &f.fixture.keeper);
-    let gate = f.fixture.registration.handover_gate();
     started_worker(&custody, &f, || panic!("what the join kept"));
     let record = PrivateReapingRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
 
     // The payload is held by this control for the whole of the fencing, which
     // a fence that needed it could not have got past.
@@ -33419,7 +33418,7 @@ fn a_fence_keeps_the_three_things_a_gate_can_say() {
         let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
-        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+        let fence = PrivateFenceRecord::bound_to(&custody);
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
         let seen = fence.fence();
         drop(g.f.fixture);
@@ -33440,7 +33439,7 @@ fn a_fence_keeps_the_three_things_a_gate_can_say() {
             PrivateHandoverFence::Established,
             "somebody else closed it first, through the real API"
         );
-        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+        let fence = PrivateFenceRecord::bound_to(&custody);
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
         let seen = fence.fence();
         drop(g.f.fixture);
@@ -33465,7 +33464,7 @@ fn a_fence_keeps_the_three_things_a_gate_can_say() {
             .is_err(),
             "the holder unwound"
         );
-        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+        let fence = PrivateFenceRecord::bound_to(&custody);
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
         let seen = fence.fence();
         // NOT CLEARED AND NOT REOPENED: the gate is left exactly as it was
@@ -33488,7 +33487,7 @@ fn a_second_fencing_asks_nothing_and_replaces_nothing() {
     let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
 
     assert_eq!(fence.record_fence(), PrivateFenced::AlreadyAttempted);
@@ -33512,7 +33511,7 @@ fn a_fencing_that_waits_on_a_handover_leaves_its_evidence_readable() {
     let custody = custody_for(&g.f, &g.f.fixture.keeper);
     let record = PrivateReapingRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
 
     std::thread::scope(|scope| {
         let (admitted, wait) = std::sync::mpsc::channel();
@@ -33582,7 +33581,7 @@ fn fencing_one_connection_leaves_another_connections_gate_open() {
         produced_send(&f.sender, capsule);
         (cell, frames)
     });
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
     assert_eq!(fence.fence(), Some(PrivateHandoverFence::Established));
 
@@ -33651,11 +33650,10 @@ fn a_fence_is_not_delayed_by_a_diagnostic_somebody_is_holding() {
     // and that is a separate claim needing a separate control.
     let f = worker_fixture(XServerFrontendClientId(8431));
     let custody = custody_for(&f, &f.fixture.keeper);
-    let gate = f.fixture.registration.handover_gate();
     started_worker(&custody, &f, || panic!("held while the gate is closed"));
     let record = PrivateReapingRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
 
     let PrivateJoinResult::Panicked(payload) = record.result().expect("a completed join") else {
         panic!("this worker panicked")
@@ -34490,7 +34488,7 @@ fn a_commitment_waits_for_the_evidence_it_rests_on() {
     let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&custody);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
     let destination = durable
         .prepare_internal_holder(&lease)
         .expect("the destination reserved with this place");
@@ -34560,7 +34558,7 @@ fn a_commitment_keeps_the_exact_evidence_after_the_frames_that_made_it_go() {
         assert!(Arc::ptr_eq(view.join(), custody.join()));
         let lease = lease_of(&c.g.f.fixture.registration);
         let record = PrivateReapingRecord::bound_to(&custody);
-        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+        let fence = PrivateFenceRecord::bound_to(&custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
         let destination = view
@@ -34674,7 +34672,7 @@ fn a_commitment_records_what_the_gate_said_whichever_it_was() {
         if let Some(arrange) = arrange {
             arrange(&c);
         }
-        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+        let fence = PrivateFenceRecord::bound_to(&custody);
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
         let destination = durable
             .prepare_internal_holder(&lease)
@@ -34705,7 +34703,7 @@ fn a_commitment_is_not_gated_by_a_diagnostic_somebody_is_holding() {
     let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&custody);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
     let destination = durable
@@ -34753,7 +34751,7 @@ fn a_commitment_takes_no_further_credit_and_moves_the_duty_once() {
     let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&custody);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
     let destination = durable
@@ -34797,7 +34795,7 @@ fn a_second_commitment_replaces_nothing() {
     let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&custody);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
     let destination = durable
@@ -34856,7 +34854,7 @@ fn a_commitment_leaves_no_store_self_cycle() {
         let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
         let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&custody);
-        let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+        let fence = PrivateFenceRecord::bound_to(&custody);
         assert_eq!(record.reap().reaped, PrivateReaped::Joined);
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
         let destination = durable
@@ -34894,7 +34892,7 @@ fn a_commitment_whose_place_moved_on_leaves_the_successor_alone() {
     let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&custody);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
     let destination = durable
@@ -34984,7 +34982,7 @@ fn a_commitment_with_a_destination_from_elsewhere_is_refused() {
     let custody = custody_for(&c.g.f, &c.g.f.fixture.keeper);
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&custody);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
 
@@ -35115,7 +35113,7 @@ fn a_commitment_needs_no_returned_handle_to_keep_its_evidence() {
     let place = c.place;
     let lease = lease_of(&c.g.f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&custody);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&c.g.gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
     let destination = durable
@@ -35173,7 +35171,7 @@ fn a_commitment_refuses_another_connections_evidence() {
     // join for that custody to have.
     started_worker(&sibling_custody, &c.g.f, || {});
     let misnamed = PrivateReapingRecord::bound_to(&sibling_custody);
-    let misfence = PrivateFenceRecord::bound_to(&misnamed, Arc::clone(&c.g.gate));
+    let misfence = PrivateFenceRecord::bound_to(&sibling_custody);
     assert_eq!(misnamed.reap().reaped, PrivateReaped::Joined);
     assert_eq!(misfence.record_fence(), PrivateFenced::Recorded);
     let destination = durable
@@ -35215,7 +35213,7 @@ fn a_commitment_refuses_another_connections_evidence() {
         PrivateReaped::Joined,
         "its own handle was never the sibling's to take"
     );
-    let own_fence = PrivateFenceRecord::bound_to(&own, Arc::clone(&c.g.gate));
+    let own_fence = PrivateFenceRecord::bound_to(&twin);
     assert_eq!(own_fence.record_fence(), PrivateFenced::Recorded);
     let context = PrivateCommitmentContext::bound_to(&twin, &own_fence, lease, destination);
     assert!(
@@ -35234,7 +35232,6 @@ fn a_commitment_refuses_another_connections_evidence() {
     );
     drop(stated);
     drop(context);
-    drop(own_fence);
     drop(own);
     drop((sibling_custody, twin));
     drop((c.g.f.fixture, sibling));
@@ -35257,7 +35254,7 @@ fn a_completed_join_cannot_be_withdrawn_by_a_later_view() {
     {
         let first = PrivateReapingRecord::bound_to(&custody);
         assert_eq!(first.reap().reaped, PrivateReaped::Joined);
-        let fence = PrivateFenceRecord::bound_to(&first, Arc::clone(&c.g.gate));
+        let fence = PrivateFenceRecord::bound_to(&custody);
         assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
         let destination = durable
             .prepare_internal_holder(&lease)
@@ -35461,7 +35458,7 @@ fn a_payload_holding_the_store_is_a_chain_from_its_custodian() {
     });
     let lease = lease_of(&f.fixture.registration);
     let record = PrivateReapingRecord::bound_to(&custody);
-    let fence = PrivateFenceRecord::bound_to(&record, Arc::clone(&gate));
+    let fence = PrivateFenceRecord::bound_to(&custody);
     assert_eq!(record.reap().reaped, PrivateReaped::Joined);
     assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
     let destination = durable
@@ -35493,7 +35490,6 @@ fn a_payload_holding_the_store_is_a_chain_from_its_custodian() {
     // is only that the chain is not yet broken -- the release comes after the
     // fixture goes, which is the last drop in this control.
     drop(context);
-    drop(fence);
     drop(record);
     drop(custody);
     drop((durable, gate));
@@ -36096,7 +36092,7 @@ fn an_inventory_refuses_a_second_home_and_a_foreign_name() {
     // -- is left exactly as it was.
     let capability = keeper.keeper();
     assert!(matches!(
-        capability.reserve_for(&named),
+        capability.reserve_for(&named, registration.handover_gate()),
         PrivateCustodyReserved::AlreadyKept
     ));
     assert_eq!(
@@ -36127,7 +36123,10 @@ fn an_inventory_refuses_a_second_home_and_a_foreign_name() {
         .register_client_with_admission(outsider, Some(admitted(outsider)))
         .expect("a place, a keeper and a row");
     assert!(matches!(
-        capability.reserve_for(&foreign.maintenance_identity().expect("a name")),
+        capability.reserve_for(
+            &foreign.maintenance_identity().expect("a name"),
+            foreign.handover_gate(),
+        ),
         PrivateCustodyReserved::Foreign
     ));
     assert_eq!(
@@ -37175,4 +37174,290 @@ fn serving_sibling(
         );
     }
     (registration, stop, wake, peer)
+}
+
+#[test]
+fn a_connections_fence_source_names_the_gate_its_queue_was_minted_with() {
+    // THE EXACT GATE, not one that matches. The sender, the row, the
+    // registration and this source were all given the same Arc, which is what
+    // makes a fencing through this custody a fencing of this connection.
+    let durable = PrivateSettlementOwner::default();
+    let keeper = service_owner(&durable, 4);
+    let private = private_over(&keeper, 4);
+    let client = XServerFrontendClientId(8801);
+    let (registration, _channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admitted(client)))
+        .expect("a place, a keeper, a source and a row");
+    let PrivateCustodyReach::Reached(pin) = registration
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    assert!(
+        Arc::ptr_eq(pin.gate(), &registration.handover_gate()),
+        "the registration's own gate"
+    );
+
+    // AND ITS FENCE STORAGE IS RESERVED, INERT AND EMPTY.
+    assert_eq!(
+        pin.fence_evidence().phase(),
+        PrivateFencePhase::NotAttempted
+    );
+    assert!(pin.fence_evidence().fence().is_none());
+    assert!(
+        !registration
+            .ordered_handovers_fenced()
+            .expect("a readable gate"),
+        "and reserving it closed nothing"
+    );
+
+    // ASKING AGAIN NAMES THE SAME GATE AND THE SAME STORAGE. This is an
+    // observation after registration returned; that the gate was bound BEFORE
+    // publication is established by source order -- reserve_for runs before
+    // publish_registered_client -- and by the refused duplicate below, which
+    // has its own reservation to give back.
+    let address = std::ptr::from_ref(pin.fence_evidence()) as usize;
+    drop(pin);
+    let PrivateCustodyReach::Reached(again) = registration
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    assert!(Arc::ptr_eq(again.gate(), &registration.handover_gate()));
+    assert_eq!(
+        std::ptr::from_ref(again.fence_evidence()) as usize,
+        address
+    );
+
+    // A REFUSED DUPLICATE PUBLICATION RETURNS ONLY ITS OWN.
+    assert_eq!(keeper.custodies_kept(), 1);
+    assert!(matches!(
+        private
+            .broker
+            .registry
+            .register_client_with_admission(client, Some(admitted(client))),
+        Err(XServerFrontendRouteError::DuplicateClient { .. })
+    ));
+    assert_eq!(keeper.custodies_kept(), 1);
+    assert!(Arc::ptr_eq(again.gate(), &registration.handover_gate()));
+    assert!(
+        !registration
+            .ordered_handovers_fenced()
+            .expect("a readable gate"),
+        "and the live connection's gate is untouched"
+    );
+    drop(again);
+    drop((registration, private, keeper, durable));
+}
+
+#[test]
+fn fencing_one_connection_through_its_custody_leaves_its_sibling_alone() {
+    // TWO REAL CONNECTIONS OF ONE INSTANCE. A fencing takes its join, its gate
+    // and its result home from one custody, so there is nothing to give it
+    // that belongs to the other.
+    let f = worker_fixture(XServerFrontendClientId(8802));
+    let (sibling, _sibling_stop, _sibling_notice, _sibling_peer) =
+        serving_sibling(&f, XServerFrontendClientId(8803), true);
+    let keeper = &f.fixture.keeper;
+    let custody = custody_for(&f, keeper);
+    let PrivateCustodyReach::Reached(sibling_custody) = sibling
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("the same owner keeps it")
+    };
+
+    // ONE EXACT CAPSULE ON THE SIBLING'S QUEUE.
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(88030);
+    let delivery = capsule.delivery();
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    let frames = order_pass_frames(&capsule);
+    let sibling_sender = capture_gated_sender(
+        f.fixture.runner.frontend.as_ref().expect("a live runner"),
+        XServerFrontendClientId(8803),
+    );
+    produced_send(&sibling_sender, capsule);
+
+    // ITS OWN WORKER, JOINED, AND ITS OWN GATE CLOSED.
+    started_worker(&custody, &f, || {});
+    let record = PrivateReapingRecord::bound_to(&custody);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+    let fence = PrivateFenceRecord::bound_to(&custody);
+    assert_eq!(fence.record_fence(), PrivateFenced::Recorded);
+    assert_eq!(fence.fence(), Some(PrivateHandoverFence::Established));
+
+    // AND THE SIBLING IS EXACTLY AS IT WAS.
+    assert!(
+        !sibling
+            .ordered_handovers_fenced()
+            .expect("a readable gate"),
+        "its gate is open"
+    );
+    assert_eq!(
+        sibling_custody.fence_evidence().phase(),
+        PrivateFencePhase::NotAttempted,
+        "nothing was attempted for it"
+    );
+    assert_eq!(
+        sibling.ordered_home.standing(),
+        PrivateHomeStanding::Live,
+        "and its home is live"
+    );
+    let queued = sibling
+        .ordered_home
+        .borrow(|continuation| continuation.queue().try_recv().ok())
+        .expect("a readable live home")
+        .expect("the capsule this control accepted for it");
+    assert_eq!(queued.delivery(), delivery);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &queued.finalizer().expect("carried").completion
+    ));
+    assert_eq!(order_pass_frames(&queued), frames);
+    assert!(cell.answer().is_none());
+    drop(queued);
+    drop(record);
+    drop(sibling_sender);
+    drop((custody, sibling_custody));
+    drop(sibling);
+    drop(f.fixture);
+}
+
+#[test]
+fn a_fencing_survives_the_view_that_recorded_it() {
+    // THE RESULT BELONGS TO THE KEEPER, NOT THE VIEW. An early view refuses
+    // and costs nothing; a later one records; and what it recorded is still
+    // there after that view ends ordinarily AND after another unwinds holding
+    // one.
+    let f = worker_fixture(XServerFrontendClientId(8804));
+    let custody = custody_for(&f, &f.fixture.keeper);
+
+    // TOO EARLY: no join has published, so no gate is touched and no attempt
+    // is spent.
+    {
+        let early = PrivateFenceRecord::bound_to(&custody);
+        assert_eq!(early.record_fence(), PrivateFenced::JoinIncomplete);
+        assert_eq!(
+            custody.fence_evidence().phase(),
+            PrivateFencePhase::NotAttempted
+        );
+        assert!(
+            !f.fixture
+                .registration
+                .ordered_handovers_fenced()
+                .expect("a readable gate"),
+            "an ask made too early asks no gate"
+        );
+    }
+
+    started_worker(&custody, &f, || {});
+    let record = PrivateReapingRecord::bound_to(&custody);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+
+    // A LATER VIEW RECORDS, AND THEN ENDS.
+    {
+        let recording = PrivateFenceRecord::bound_to(&custody);
+        assert_eq!(recording.record_fence(), PrivateFenced::Recorded);
+    }
+    assert_eq!(
+        custody.fence_evidence().fence(),
+        Some(PrivateHandoverFence::Established),
+        "the answer is the keeper's, and the view that got it has gone"
+    );
+
+    // AND AN UNWIND AFTER RECORDING TAKES NOTHING WITH IT.
+    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let holding = PrivateFenceRecord::bound_to(&custody);
+        assert_eq!(holding.record_fence(), PrivateFenced::AlreadyAttempted);
+        panic!("the frame holding a view goes here");
+    }));
+    assert!(unwound.is_err());
+    assert_eq!(
+        custody.fence_evidence().fence(),
+        Some(PrivateHandoverFence::Established),
+        "still the original answer"
+    );
+
+    // A FRESH VIEW OBSERVES THAT ORIGINAL RESULT rather than asking the gate
+    // again: a second close call would answer AlreadyEstablished, and this
+    // connection's record of its own closure would become the wrong one.
+    let fresh = PrivateFenceRecord::bound_to(&custody);
+    assert_eq!(fresh.record_fence(), PrivateFenced::AlreadyAttempted);
+    assert_eq!(fresh.fence(), Some(PrivateHandoverFence::Established));
+    drop((fresh, record));
+    drop(custody);
+    drop(f.fixture);
+}
+
+#[test]
+fn two_eligible_views_make_one_attempt() {
+    // TWO FRESHLY BUILT VIEWS, NEITHER PREVIOUSLY ASKED. A claim kept on the
+    // view would let each mint its own right and both reach the gate; the
+    // second close call would answer AlreadyEstablished and overwrite nothing
+    // -- but this connection would have two records of one closure and the
+    // published one would be whichever won a race.
+    //
+    // THE OVERLAP IS WITNESSED BY HOLDING THE GATE'S OWN ADMISSION, not by
+    // sleeping: the winner is inside the gate and cannot finish while this
+    // control holds it, and the loser's answer is read before it is released.
+    // That observes a claimed, unfinished attempt. It does not establish that
+    // the winner reached the gate's mutex.
+    let f = worker_fixture(XServerFrontendClientId(8805));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    started_worker(&custody, &f, || {});
+    let record = PrivateReapingRecord::bound_to(&custody);
+    assert_eq!(record.reap().reaped, PrivateReaped::Joined);
+
+    let own_gate = f.fixture.registration.handover_gate();
+    let admitted_handover = own_gate
+        .entered()
+        .expect("an open gate admits this control");
+    let (report, answered) = std::sync::mpsc::channel();
+    let observed = std::thread::scope(|scope| {
+        let custody = &custody;
+        let report = report.clone();
+        let winner = scope.spawn(move || {
+            let view = PrivateFenceRecord::bound_to(custody);
+            report.send(view.record_fence()).expect("its caller waits");
+        });
+        // THE CLAIM IS TAKEN WHILE THIS CONTROL HOLDS THE GATE.
+        assert!(
+            waited_for(|| custody.fence_evidence().phase() == PrivateFencePhase::InProgress),
+            "one view claimed the attempt and is inside the gate"
+        );
+        let losing = PrivateFenceRecord::bound_to(custody);
+        let loser = losing.record_fence();
+        let phase_while_held = custody.fence_evidence().phase();
+        let result_while_held = custody.fence_evidence().fence();
+        drop(admitted_handover);
+        winner.join().expect("the fencing view returned");
+        (loser, phase_while_held, result_while_held)
+    });
+    let winner = answered
+        .recv_timeout(Duration::from_secs(3))
+        .expect("the winning view reported");
+
+    assert_eq!(observed.0, PrivateFenced::AlreadyAttempted, "one attempt");
+    assert_eq!(
+        observed.1,
+        PrivateFencePhase::InProgress,
+        "the losing ask did not withdraw the winner's intent"
+    );
+    assert_eq!(
+        observed.2, None,
+        "and an unfinished attempt publishes no result"
+    );
+    assert_eq!(winner, PrivateFenced::Recorded);
+    assert_eq!(
+        custody.fence_evidence().fence(),
+        Some(PrivateHandoverFence::Established),
+        "the one attempt's own answer"
+    );
+    drop(record);
+    drop(custody);
+    drop(f.fixture);
 }

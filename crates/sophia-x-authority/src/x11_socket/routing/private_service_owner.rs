@@ -257,7 +257,11 @@ impl PrivateCustodyKeeper {
     /// ALLOCATES OR REFUSES WITH EVERYTHING STILL WHERE IT WAS. The name is
     /// copied, nothing is consumed, and a refusal leaves the caller holding
     /// exactly what it held before.
-    fn reserve_for(&self, identity: &PrivateMaintenanceIdentity) -> PrivateCustodyReserved {
+    fn reserve_for(
+        &self,
+        identity: &PrivateMaintenanceIdentity,
+        gate: Arc<PrivateHandoverGate>,
+    ) -> PrivateCustodyReserved {
         let Some(inventory) = self.inventory.upgrade() else {
             return PrivateCustodyReserved::Unreadable;
         };
@@ -299,6 +303,7 @@ impl PrivateCustodyKeeper {
         let custody = Arc::new(PrivateEvidenceCustody::prepared_for(
             &inventory.store,
             identity.clone(),
+            gate,
         ));
         let capability = PrivateRegisteredCustody {
             inventory: Arc::downgrade(&inventory),
