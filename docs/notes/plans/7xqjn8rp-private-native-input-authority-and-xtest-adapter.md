@@ -25,6 +25,27 @@ runner, native proof and lifecycle integration, with independent review across
 the boundary. t093 remains the recording home. M4–M6 and physical task t094
 remain separate; no partial path enables discovery.
 
+As of the approved `f2fb18f4` checkpoint, M3 has reviewed components but
+**no runnable combined end-to-end acceptance gate and no M3 closure**.
+The registered keeper owns the worker source, control association, join
+evidence and exact fencing capability/result. Component controls include real
+queues, sockets and threads; that does not establish their production
+attachment, safe destruction of a registration over a live worker, or a
+complete press/release/settlement path.
+
+`bdfa8b92` carries the follow-up prose corrections and is not a separate frozen
+checkpoint. The next authorized implementation slice is **registered teardown
+custody with synchronous cleanup preserved**. It puts the cleanup state under
+the existing external keeper before changing when cleanup runs. It does not
+authorize deferred cleanup or live-worker registration destruction. The real
+application owner above launch, shutdown and error paths, worker/actor
+attachment and authorized retained driving remain absent from this reviewed
+path. The [remaining integration sequence](#m3-integration-sequence-and-acceptance-runner)
+below is the route to the existing A-D closure gates, not an expansion of the
+current implementation authorization.
+
+The following integration identities and content/GPU observations are earlier
+checkpoints, retained as history rather than current M3 acceptance evidence.
 The base-only checkpoint is `fbe6e990`, carrying published `5c199b9f` without
 the unaccepted private producer/consumer slice. Its next batched base refresh
 targets `feca59c8`. The active input implementation is separate:
@@ -114,6 +135,90 @@ at the recovery primitive. Constructor allocations still occur before frontend
 exposure after some parts are consumed; this is not a fully fallible constructor
 or an allocation-free post-preparation guarantee. Owned watchdog/transport
 wiring, Session producer participation and Gate A remain open.
+
+### M3 integration sequence and acceptance runner
+
+The finish line is an executable, contained acceptance run over the actual
+M3 producer, execution, writer, recovery and lifecycle paths on one exact
+source revision. A collection of independently passing component tests is
+supporting evidence, not this run. The combined runner is **planned, not
+implemented**; no existing command or passing report is claimed here.
+
+The remaining dependencies are:
+
+| Step | Concrete exit needed for integration | Gates it enables |
+| --- | --- | --- |
+| 1. Registered teardown custody | The exact connection's cleanup capabilities and mutable reservation/lifecycle holdings have one externally kept home. The current synchronous cleanup path and accounting remain intact. This is the currently authorized slice. | C, D |
+| 2. Safe startup and departure arbitration | Start and destruction share an exclusion decision. Stop reaches the actual worker before blocking cleanup. A live, handed-on or unconfirmed worker is never reported as NeverStarted or joined. Unfinished cleanup remains owned, and delayed cleanup cannot affect a successor at the same client number. | C, D |
+| 3. Service ownership and actor integration | An actual outer holder survives operation, service-error and shutdown paths; the worker, joiner and supervisor use the registered source and evidence. Blocking joins, gates and retained visits stay off supervision. Existing budget/watchdog obligations are exercised through their real callers. | A, C, D |
+| 4. Authorized retained cleanup and settlement | Exact join/fence evidence and the committed maintenance obligation authorize the appropriate home borrow. Commitment alone is not permission to drive. Cleanup identity remains valid across attention retirement; native and recipient obligations keep their separate outcomes. | A, C, D |
+| 5. Combined A-D acceptance | Ordered state, terminal delivery, failure recovery and lifecycle/scheduling cases run on the same integrated source. Every required gate has a verdict and retained evidence. | A, B, C, D |
+
+This table states dependencies, not automatic permission for the remaining
+runtime edits, imports, Session/launcher changes or deployment. Compatible
+work can be grouped where the dependencies permit; it need not acquire a new
+standalone milestone for every helper. Each implementation boundary should
+name the acceptance case it unblocks and what still prevents that case from
+running. Component approval does not silently mark a gate complete.
+
+The minimum Gate A scenario must follow one admitted connection and its exact
+identities through the whole path:
+
+1. Reach the real ingress with a checked service lease and admitted grant;
+   queue the exact immutable envelope and execute through the actual applied
+   routing/native boundary.
+2. Observe the press bytes on the recipient socket and the corresponding real
+   writer receipt. Queue acceptance or bytes alone do not establish the final
+   completion publication.
+3. Issue the final release for that hold incarnation. Observe the exact release
+   bytes and transport evidence, and separately the native reconciliation
+   proof. Neither substitutes for the other or for application processing.
+4. Drive the origin-bound debt/attempt/settle path. The clearing barrier must
+   remain in force while either required obligation is outstanding; a new
+   press by the same grant succeeds after the barrier has actually cleared.
+5. Exercise the established-recipient-disconnect alternative with the
+   submitting connection still live. It settles only what the actual ending
+   proves; a missing route, failed send or unreadable record is not a receipt.
+
+Gate A is necessary but insufficient. The combined run also covers the B-D
+rows above, with these discriminators:
+
+- **B:** pending versus applied focus, stale/replacement histories, key/XKB
+  continuity, motion/axis and StateOnly/thaw ordering, duplicate/join behavior,
+  survivor release, and exact grab/lease/query cleanup through participating
+  producers. No late reselection or independently mutated deferred state.
+- **C:** full queues, partial or indeterminate sends, refused publication,
+  poison and interrupted ownership transitions. Preserve the exact current
+  item, remainder, identity and credits. An enqueued item retries observation,
+  not transmission; unknown outcomes remain owed rather than becoming zero.
+  Include all nine control kinds and native sibling-grab continuations.
+- **D:** refused spawn, post-spawn failure, departure during startup, worker
+  unwind, registration destruction over a worker, service error/shutdown,
+  revocation and delayed cleanup against a reused identity. Exercise budget
+  charging, cleanup reserve and the independent execution watchdog through
+  real callers. No blocked worker is joined on supervision's stop/wake path.
+
+The runner may orchestrate smaller cases; it must provide one entry point and
+one aggregate verdict. Record exact source/binary/configuration identities,
+per-gate and per-case outcomes, the evidence for the relevant bytes, receipts,
+native proof, retained obligations and accounting, and the cleanup result of
+each test process. Missing required cases are NOT_RUN or BLOCKED and prevent
+an overall PASS. An expected refusal or retained unknown can pass its negative
+case only when the exact expected state is asserted; it is not a successful
+settlement. Harness deadlines bound a test, not product latency.
+
+Retain discriminating negative controls for the integrated boundaries, with
+source restored before the positive run. Label test hooks and staged states;
+do not promote component mutants or scheduling assumptions into end-to-end
+evidence. Run the applicable full headless checks on the final exact source
+and retain their provenance separately from the A-D behavioral verdicts.
+
+M3 acceptance is headless and protocol-neutral. It must exercise real M3
+implementations and production entry paths, but does not require advertising
+XTEST or substituting the later M4 private Session host and M5 adapter/client
+conformance work for these gates. M4-M6, physical task t094 and any attended
+acceptance remain separate. No headless result authorizes hardware,
+installation, default enablement or discovery.
 
 ## Native identities, state and capacity
 
