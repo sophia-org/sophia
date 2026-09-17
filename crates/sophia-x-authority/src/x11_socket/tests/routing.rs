@@ -36345,8 +36345,12 @@ fn a_started_worker_stays_with_its_source_after_the_view_that_started_it_ends() 
     // original home.
     //
     // OBSERVED FIRST, COLLECTED, AND ONLY THEN COMPARED. The worker is held on
-    // a channel, so an assertion that failed while it was still blocked would
-    // leave this control's own joiner waiting on it.
+    // a channel, so the final comparisons are arranged to follow its release
+    // and its join on this path.
+    //
+    // THAT IS ALL THIS ORDER ESTABLISHES. The helper calls and lock reads
+    // above it can still fail first, and no cleanup guard is armed, so this is
+    // not a claim that every failure path collects the worker.
     let f = worker_fixture(XServerFrontendClientId(8602));
     f.permit();
     let (release, held) = std::sync::mpsc::channel::<()>();
@@ -36376,7 +36380,7 @@ fn a_started_worker_stays_with_its_source_after_the_view_that_started_it_ends() 
     };
     let same_home = Arc::ptr_eq(later.join(), &home);
 
-    // RELEASED AND COLLECTED THROUGH THAT VIEW, before anything can fail.
+    // RELEASED AND COLLECTED THROUGH THAT VIEW, before the comparisons.
     drop(release);
     let record = PrivateReapingRecord::bound_to(&later);
     let reaped = record.reap().reaped;
@@ -36410,11 +36414,13 @@ fn a_caller_that_unwinds_after_startup_leaves_the_handle_with_its_owner() {
     // establishes is that losing the frame that started a worker does not lose
     // the worker.
     //
-    // NOTHING IS ASSERTED UNTIL THE WORKER HAS BEEN COLLECTED. Every
+    // THE COMPARISONS FOLLOW RELEASE AND COLLECTION ON THIS PATH. Every
     // observation below is taken into a local first; the thread is released
-    // and joined; and only then does anything compare. An assertion that fails
-    // earlier would leave a blocked thread and this control's joiner waiting
-    // on each other, and the failure would read as a hang.
+    // and joined; and only then does anything compare.
+    //
+    // NOT A GENERAL CLAIM ABOUT FAILURE PATHS. The helper calls and lock reads
+    // before that point can fail on their own, and nothing here arms a
+    // release-and-join guard that would run if they did.
     let f = worker_fixture(XServerFrontendClientId(8603));
     f.permit();
     let (release, held) = std::sync::mpsc::channel::<()>();
@@ -36432,7 +36438,7 @@ fn a_caller_that_unwinds_after_startup_leaves_the_handle_with_its_owner() {
         (slot.handle.is_some(), slot.life)
     };
 
-    // RELEASED AND COLLECTED, before anything can fail.
+    // RELEASED AND COLLECTED, before the comparisons.
     drop(release);
     let record = PrivateReapingRecord::bound_to(&after);
     let reaped = record.reap().reaped;
@@ -36507,13 +36513,31 @@ fn a_control_context_takes_its_credentials_from_its_own_serving_owner() {
 
 #[test]
 fn one_connections_context_cannot_stop_its_sibling() {
-    // TWO REAL CONNECTIONS OF ONE STORE, each with its own registered source
-    // and its own credentials. A context that could reach the other's stop
-    // would be able to end a connection nobody asked it about.
-    let first = worker_fixture(XServerFrontendClientId(8702));
-    let second = worker_fixture(XServerFrontendClientId(8703));
-    let first_custody = custody_for(&first, &first.fixture.keeper);
-    let second_custody = custody_for(&second, &second.fixture.keeper);
+    // TWO REAL CONNECTIONS OF ONE INSTANCE, over ONE store and ONE service
+    // owner -- which this control asserts rather than assumes, because two
+    // fixtures would be two stores and separation between those is not the
+    // question. Each derives its own credentials from its own serving owner.
+    let f = worker_fixture(XServerFrontendClientId(8702));
+    let (sibling, sibling_stop, sibling_notice, _sibling_peer) =
+        serving_sibling(&f, XServerFrontendClientId(8703), true);
+    let keeper = &f.fixture.keeper;
+    assert!(
+        keeper
+            .custody_named(&f.fixture.registration.maintenance_identity().expect("a name"))
+            .is_some()
+            && keeper
+                .custody_named(&sibling.maintenance_identity().expect("a name"))
+                .is_some(),
+        "one owner's inventory answers for both, so this is one store"
+    );
+
+    let first_custody = custody_for(&f, keeper);
+    let PrivateCustodyReach::Reached(second_custody) = sibling
+        .registered_custody(&keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("the same owner keeps it")
+    };
     let first_context = first_custody.prepare_control().expect("its own owner");
     let second_context = second_custody.prepare_control().expect("its own owner");
 
@@ -36523,19 +36547,50 @@ fn one_connections_context_cannot_stop_its_sibling() {
     );
     assert!(!Arc::ptr_eq(first_context.notice(), second_context.notice()));
     assert!(!Arc::ptr_eq(first_context.home(), second_context.home()));
+    assert!(Arc::ptr_eq(second_context.stop(), &sibling_stop));
+    assert!(Arc::ptr_eq(second_context.notice(), &sibling_notice));
+
+    // ONE EXACT CAPSULE ON THE SIBLING'S QUEUE, so a cancellation that reached
+    // across would have something of its neighbour's to disturb.
+    let (capsule, _endpoint, _recovery, _receipts) = answerable_capsule(87030);
+    let delivery = capsule.delivery();
+    let cell = Arc::clone(&capsule.finalizer().expect("carried").completion);
+    let frames = order_pass_frames(&capsule);
+    let sibling_sender = capture_gated_sender(
+        f.fixture.runner.frontend.as_ref().expect("a live runner"),
+        XServerFrontendClientId(8703),
+    );
+    produced_send(&sibling_sender, capsule);
 
     // ONE IS CANCELLED, AND ONLY ONE IS TOLD TO STOP.
     first_context.cancel();
     assert!(
-        first.stop.load(std::sync::atomic::Ordering::Acquire),
+        f.stop.load(std::sync::atomic::Ordering::Acquire),
         "the one this context is about"
     );
     assert!(
-        !second.stop.load(std::sync::atomic::Ordering::Acquire),
+        !sibling_stop.load(std::sync::atomic::Ordering::Acquire),
         "and its sibling was not told anything"
     );
+
+    // AND THE SIBLING'S EXACT QUEUED WORK IS WHERE IT WAS.
+    let queued = second_context
+        .home()
+        .borrow(|continuation| continuation.queue().try_recv().ok())
+        .expect("a readable live home")
+        .expect("the capsule this control accepted for it");
+    assert_eq!(queued.delivery(), delivery);
+    assert!(Arc::ptr_eq(
+        &cell,
+        &queued.finalizer().expect("carried").completion
+    ));
+    assert_eq!(order_pass_frames(&queued), frames);
+    assert!(cell.answer().is_none());
+    drop(queued);
+    drop(sibling_sender);
     drop((first_custody, second_custody));
-    drop((first.fixture, second.fixture));
+    drop(sibling);
+    drop(f.fixture);
 }
 
 #[test]
@@ -36566,8 +36621,10 @@ fn cancelling_through_a_context_does_not_wait_on_the_home_it_came_from() {
         "the stop was set and the recheck published while its home was held"
     );
 
-    // AND THE STORE AND INVENTORY WERE NOT NEEDED EITHER: this one runs with
-    // the owner's inventory acquired by this control.
+    // AND THE STORE'S AGGREGATE WAS NOT NEEDED EITHER: this one runs with the
+    // settlement store's own guard held by this control. That is the store,
+    // not the owner's custody inventory -- naming the wrong lock would be
+    // claiming a separation this does not test.
     let other = worker_fixture(XServerFrontendClientId(8705));
     let other_custody = custody_for(&other, &other.fixture.keeper);
     let other_context = other_custody.prepare_control().expect("its own owner");
@@ -36806,7 +36863,60 @@ fn preparing_a_control_context_refuses_each_shape_as_itself() {
     assert!(cell.answer().is_none(), "and nothing answered it");
     drop(queued);
 
-    drop((bare_custody, unstoppable_custody, ended_custody, later_custody));
+    // NOT SERVING: a real connection bound but never promoted. Its home holds
+    // its setup, which is a payload and is not an owner to take credentials
+    // from. Nothing is staged -- this is the shape a connection has between
+    // binding and promotion.
+    let host = worker_fixture(XServerFrontendClientId(8718));
+    let (unpromoted, _unpromoted_stop, _unpromoted_notice, _unpromoted_peer) =
+        serving_sibling(&host, XServerFrontendClientId(8719), false);
+    let PrivateCustodyReach::Reached(setup_custody) = unpromoted
+        .registered_custody(&host.fixture.keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("the same owner keeps it")
+    };
+    assert_eq!(
+        setup_custody.prepare_control().err(),
+        Some(PrivateControlRefusal::NotServing)
+    );
+
+    // UNREADABLE: a holder panicked inside the home. Not recovered into
+    // eligibility -- the lock WAS acquired, and what is unknown is what is in
+    // there, which is the thing preparation would be asserting.
+    let broken = worker_fixture(XServerFrontendClientId(8720));
+    let broken_custody = custody_for(&broken, &broken.fixture.keeper);
+    let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = broken
+            .fixture
+            .registration
+            .ordered_home
+            .state
+            .lock()
+            .expect("a readable home");
+        panic!("poisoning this connection's home, and nothing else");
+    }));
+    assert!(poisoning.is_err());
+    assert_eq!(
+        broken_custody.prepare_control().err(),
+        Some(PrivateControlRefusal::Unreadable)
+    );
+
+    // STORE GONE IS DEFENSIVE HERE, and this control says so rather than
+    // staging a path to it. A registered custody owns the store its name is
+    // in, so while that custody exists the store does; the answer is kept
+    // apart because it is a different fact, not because this reaches it.
+
+    drop((
+        bare_custody,
+        unstoppable_custody,
+        ended_custody,
+        later_custody,
+        setup_custody,
+        broken_custody,
+    ));
+    drop(unpromoted);
+    drop((host.fixture, broken.fixture));
     drop(bare_registration);
     drop((unstoppable.fixture, ended.fixture, later.fixture));
     drop((private, keeper, durable));
@@ -36892,4 +37002,177 @@ fn a_permit_that_cannot_be_published_stops_this_connection_and_keeps_its_worker(
     drop(record);
     drop(custody);
     drop(f.fixture);
+}
+
+#[test]
+fn a_preparation_that_loses_a_race_recovers_what_the_winner_published() {
+    // OVERLAPPING, NOT SEQUENTIAL. The sequential case -- ask, then ask again
+    // -- is covered where a retained home makes a rebinding preparation
+    // answer differently. THIS one is about a preparation that began when
+    // nothing was published and finishes after another has committed: its own
+    // resolution fails, and the connection nevertheless has an association.
+    //
+    // A caller refused here would have to ask again for what this call should
+    // have recovered, and nothing about that refusal is still true.
+    //
+    // STAGED WITHOUT A THREAD. The order is produced by doing the two halves
+    // of the losing preparation around the winner: this control observes that
+    // nothing is published, lets the winner publish, poisons the home by an
+    // ordinary caught panic under its own mutex, and only then runs the
+    // preparation whose resolution must fail.
+    let f = worker_fixture(XServerFrontendClientId(8721));
+    let losing = custody_for(&f, &f.fixture.keeper);
+    let winning = custody_for(&f, &f.fixture.keeper);
+
+    // THE LOSER'S STARTING CONDITION, observed rather than assumed.
+    assert!(
+        losing.bound().is_none(),
+        "nothing is published when the losing preparation begins"
+    );
+
+    // THE WINNER COMMITS.
+    let published = winning.prepare_control().expect("a live serving owner");
+    let stop = Arc::clone(published.stop());
+    let notice = Arc::clone(published.notice());
+    let home = Arc::clone(published.home());
+
+    // AND THE HOME BECOMES UNREADABLE, which is what the loser's own
+    // resolution will find.
+    let poisoning = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = f
+            .fixture
+            .registration
+            .ordered_home
+            .state
+            .lock()
+            .expect("a readable home");
+        panic!("poisoning this connection's home, and nothing else");
+    }));
+    assert!(poisoning.is_err());
+
+    // THE LOSING PREPARATION FINISHES. Its entry check already found nothing
+    // -- that is what was observed above -- so what runs now is the half that
+    // resolves, which is where the interval is. Its resolution cannot read the
+    // home; the connection's association exists; the association is the
+    // answer.
+    let recovered = losing
+        .resolve_control()
+        .expect("the binding another preparation committed");
+    assert!(Arc::ptr_eq(recovered.stop(), &stop));
+    assert!(Arc::ptr_eq(recovered.notice(), &notice));
+    assert!(Arc::ptr_eq(recovered.home(), &home));
+
+    // AND A SOURCE NOBODY PREPARED STILL GETS THE REFUSAL. Recovering a
+    // published binding is not recovering a poisoned home into eligibility.
+    let unprepared = worker_fixture(XServerFrontendClientId(8722));
+    let never = custody_for(&unprepared, &unprepared.fixture.keeper);
+    let breaking = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = unprepared
+            .fixture
+            .registration
+            .ordered_home
+            .state
+            .lock()
+            .expect("a readable home");
+        panic!("poisoning a home nobody has prepared over");
+    }));
+    assert!(breaking.is_err());
+    assert_eq!(
+        never.resolve_control().err(),
+        Some(PrivateControlRefusal::Unreadable),
+        "an unprepared source has no association to recover"
+    );
+    assert_eq!(
+        never.prepare_control().err(),
+        Some(PrivateControlRefusal::Unreadable),
+        "by either entry point"
+    );
+    drop((losing, winning, never));
+    drop((f.fixture, unprepared.fixture));
+}
+
+/// A SECOND connection of THIS instance, served by a real owner of its own.
+///
+/// The same registry, the same store and the same service owner as the fixture
+/// it is given: a sibling built on its own frontend would be a different
+/// store, and separation between two stores is not the question.
+fn serving_sibling(
+    f: &PrivateWorkerFixture,
+    client: XServerFrontendClientId,
+    promote: bool,
+) -> (
+    XServerFrontendClientRouteRegistration,
+    Arc<AtomicBool>,
+    Arc<PrivateOrderedWake>,
+    UnixStream,
+) {
+    let private = f
+        .fixture
+        .runner
+        .frontend
+        .as_ref()
+        .expect("a live runner");
+    // IN THIS INSTANCE'S OWN NAMESPACE, which is what makes it this
+    // instance's sibling rather than a stranger it would refuse.
+    let admission = namespaced(client, f.fixture.namespace);
+    let (registration, channels) = private
+        .broker
+        .registry
+        .register_client_with_admission(client, Some(admission))
+        .expect("a place, a keeper, a source and a row");
+    // Admitted at the boundary, because promotion asks it for this
+    // registration's endpoint and a connection assembled beside it is refused
+    // as unadmitted -- rightly.
+    private
+        .participant
+        .admit(client, admission)
+        .expect("the boundary admits this sibling");
+    // And its applied state, because the endpoint promotion asks for is the
+    // one attached to this registration's own row.
+    private
+        .broker
+        .registry
+        .attach_connection_state(
+            &registration,
+            f.fixture.namespace,
+            Arc::new(Mutex::new(XCoreEventSelectionState::default())),
+            Arc::new(AtomicU64::new(0)),
+        )
+        .expect("its own applied state attaches");
+    let (socket, peer) = UnixStream::pair().expect("a socket pair");
+    peer.set_read_timeout(Some(Duration::from_secs(3)))
+        .expect("a bounded read");
+    let output = Arc::new(Mutex::new(socket));
+    let wire = Arc::new(X11WirePermission::open());
+    let pending = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let wake = Arc::clone(&channels.ordered.wake);
+    let transport = XAuthorityOrderedTransport::bind(
+        &registration,
+        channels.ordered,
+        &output,
+        &wire,
+        &pending,
+        Some(&stop),
+    )
+    .unwrap_or_else(|(refusal, _)| panic!("its own receiver and output bind: {refusal:?}"));
+    assert!(matches!(
+        registration.retain_ordered_setup(PrivateOrderedContinuation::Setup {
+            accepted: PrivateOrderedSetupCustody::Transport(Box::new(transport)),
+            refusal: X11OrderedServingRefusal::Unserved,
+            evidence: PrivateOrderedEvidence::unstarted(),
+            retained: Vec::new(),
+            drained: false,
+            ended: false,
+            ending_refused: None,
+        }),
+        Ok(())
+    ));
+    if promote {
+        assert_eq!(
+            registration.promote_ordered_serving(private),
+            PrivateOrderedPromotion::Ready
+        );
+    }
+    (registration, stop, wake, peer)
 }

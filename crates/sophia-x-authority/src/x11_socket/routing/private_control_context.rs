@@ -124,9 +124,16 @@ impl<'c> PrivateControlContext<'c> {
 
     /// Tell this connection's worker to stop, and wake it so it looks.
     ///
-    /// NOTHING IS REACQUIRED. The stop and the notice were resolved when this
-    /// context was prepared, so a worker blocked while borrowing its own home
-    /// is exactly the case this serves rather than the case it waits behind.
+    /// WHAT IT DOES NOT GO BACK TO. The stop and the notice were resolved when
+    /// this context was prepared, so this needs the home, the output, the
+    /// gate, the store and the inventory for nothing -- which is what makes a
+    /// worker blocked while borrowing its own home the case this serves rather
+    /// than the case it waits behind.
+    ///
+    /// IT IS NOT LOCK FREE AND NOT BOUNDED IN TIME. The stop is an atomic
+    /// write and the recheck is published under the notice's own mutex.
+    /// Departure additionally takes this connection's worker slot, and may
+    /// wait for it -- after the worker has already been told to stop.
     fn cancel(&self) {
         cancel_connection_worker(&self.credentials.stop, &self.credentials.notice);
     }
@@ -151,6 +158,31 @@ impl PrivateControlCredentials {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Asked by a caller no production site has yet.
 impl PrivateEvidenceCustody {
+    /// This connection's association, if one has been published.
+    fn bound(&self) -> Option<PrivateControlContext<'_>> {
+        self.source
+            .control
+            .get()
+            .map(|credentials| PrivateControlContext {
+                custody: self,
+                credentials,
+            })
+    }
+
+    /// What a resolution that failed should answer.
+    ///
+    /// THE BINDING WINS OVER THE FAILURE. A preparation that could not resolve
+    /// is reporting the moment it looked; a preparation that committed is
+    /// reporting this connection. Where both exist, the connection's
+    /// association is the answer, and the failure is about nothing that is
+    /// still true.
+    fn bound_or(
+        &self,
+        refusal: PrivateControlRefusal,
+    ) -> Result<PrivateControlContext<'_>, PrivateControlRefusal> {
+        self.bound().ok_or(refusal)
+    }
+
     /// Bind this connection's control capabilities, once.
     ///
     /// THE HOME IS RESOLVED BY OCCUPANT AND THE STORE IS RELEASED BEFORE IT IS
@@ -167,12 +199,18 @@ impl PrivateEvidenceCustody {
     /// IT INSPECTS AND CHANGES NOTHING. No permit, no stop, no queued capsule
     /// taken, no standing altered, and a refusal leaves this unprepared.
     fn prepare_control(&self) -> Result<PrivateControlContext<'_>, PrivateControlRefusal> {
-        if let Some(bound) = self.source.control.get() {
-            return Ok(PrivateControlContext {
-                custody: self,
-                credentials: bound,
-            });
+        if let Some(bound) = self.bound() {
+            return Ok(bound);
         }
+        self.resolve_control()
+    }
+
+    /// The half of a preparation that runs when nothing was published yet.
+    ///
+    /// SEPARATE BECAUSE THE INTERVAL IS BETWEEN THE TWO. Everything below
+    /// happens after this connection was seen to have no association; by the
+    /// time it finishes, another preparation may have committed one.
+    fn resolve_control(&self) -> Result<PrivateControlContext<'_>, PrivateControlRefusal> {
         let found = self.identity.with_home(|home| {
             // The store's aggregate is already released here; this is the
             // home's own lock and nothing else is held under it. The home
@@ -188,15 +226,36 @@ impl PrivateEvidenceCustody {
             });
             (pinned, borrow)
         });
+        // EVERY REFUSAL ASKS AGAIN BEFORE IT ANSWERS. This resolution began
+        // when nothing was published; by the time it finishes, another
+        // preparation may have committed this connection's association, and
+        // what THAT resolution found is a fact about this connection while
+        // this one's failure is a fact about a moment that has passed. A
+        // caller refused here would have to ask again to recover what this
+        // call should have recovered.
+        //
+        // AND ONLY A COMMITTED BINDING RECOVERS ANYTHING. A source nobody has
+        // prepared still gets the refusal: this does not recover a poisoned
+        // home into eligibility, and it does not rebind.
         let (home, notice, stop) = match found {
-            PrivateMaintenanceReach::StoreGone => return Err(PrivateControlRefusal::StoreGone),
-            PrivateMaintenanceReach::Stale => return Err(PrivateControlRefusal::StaleName),
+            PrivateMaintenanceReach::StoreGone => {
+                return self.bound_or(PrivateControlRefusal::StoreGone)
+            }
+            PrivateMaintenanceReach::Stale => {
+                return self.bound_or(PrivateControlRefusal::StaleName)
+            }
             PrivateMaintenanceReach::Reached((home, borrow)) => match borrow {
                 PrivateHomeBorrow::Acted(Ok((notice, stop))) => (home, notice, stop),
-                PrivateHomeBorrow::Acted(Err(refusal)) => return Err(refusal),
-                PrivateHomeBorrow::Retained => return Err(PrivateControlRefusal::Retained),
-                PrivateHomeBorrow::Empty => return Err(PrivateControlRefusal::NothingBound),
-                PrivateHomeBorrow::Unreadable => return Err(PrivateControlRefusal::Unreadable),
+                PrivateHomeBorrow::Acted(Err(refusal)) => return self.bound_or(refusal),
+                PrivateHomeBorrow::Retained => {
+                    return self.bound_or(PrivateControlRefusal::Retained)
+                }
+                PrivateHomeBorrow::Empty => {
+                    return self.bound_or(PrivateControlRefusal::NothingBound)
+                }
+                PrivateHomeBorrow::Unreadable => {
+                    return self.bound_or(PrivateControlRefusal::Unreadable)
+                }
             },
         };
         // Published into the source's own storage. A racing preparation that
