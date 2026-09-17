@@ -13,8 +13,8 @@ starting with Lom's persistent bar plus a replaceable launcher. Use the same
 public language-neutral contract, existing content/descriptor lifecycle and
 Session-owned launch policy. No private Lom coordinator or display bridge.
 
-This is candidate work recorded at the operator's request, not implementation
-approval or current multi-client support. Task status and order live only in
+The operator has approved implementation of the Bemenu/native-component path.
+That is not evidence of current multi-client support. Task status and order live only in
 [todo.md](../../../todo.md). The sequence below is its own critical path; it does
 not replace the current Lom daily-driver path or authorize input-branch imports.
 
@@ -25,6 +25,11 @@ and existing Narthex path. A clean tested implementation and an attended exact
 release are separate milestones.
 
 ## t104
+
+Implementation started with the [launcher contract proposal](../decisions/f64wqfh2-independent-native-launcher-admission-and-presented-input-contract.md)
+and Bemenu CPU raster checkpoint `51fae2b` (strict C build, device-hidden
+raster controls, Clang UBSan and three discriminating compiled negatives). Wire/schema, inventory
+audit and model controls remain open; the proposal is not a shipped capability.
 
 **Decide the multi-component contract.**
 
