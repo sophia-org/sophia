@@ -16,6 +16,12 @@ struct XServerFrontendRouteRegistry {
     /// can reserve a connection's external keeper BEFORE its row is
     /// published. Held weakly, like the store above and for the same reason.
     custody_keeper: Arc<std::sync::OnceLock<PrivateCustodyKeeper>>,
+    /// Who holds which client number in this registry's namespace.
+    ///
+    /// A NUMBER IS AN INDEX, NOT AN IDENTITY. This is what keeps one
+    /// connection's ending from acting by number on the connection that took
+    /// the number next.
+    occupancy: PrivateNumberOccupancy,
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
     focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
@@ -599,7 +605,38 @@ impl XServerFrontendRouteRegistry {
         if clients.contains_key(&client) {
             return Err(XServerFrontendRouteError::DuplicateClient { client });
         }
-        self.input_recovery.register(client)?;
+        // THE NUMBER ITSELF, TAKEN BEFORE ANYTHING IS ESTABLISHED UNDER IT.
+        // The recovery ledger below and the expected writer after it are both
+        // keyed by this number, so a claim placed only before the row would
+        // let a predecessor's unfinished ending reach state a successor had
+        // already reset.
+        //
+        // NO ROW IS NOT NO OCCUPANT. A row is removed when a send finds its
+        // endpoint gone and when a client stops draining its queue, so the
+        // check above says nothing about whether the connection that had this
+        // number has finished with it.
+        //
+        // LOCK ORDER: the client table, then this. Nothing takes the client
+        // table while holding the occupancy record.
+        let record = cleanup.as_ref().expect("a publication has its record");
+        let number = match self.occupancy.claim(client, &record.connection_state) {
+            Ok(right) => right,
+            Err(PrivateNumberRefusal::Excluded | PrivateNumberRefusal::Unreadable) => {
+                return Err(XServerFrontendRouteError::ClientNumberExcluded { client });
+            }
+        };
+        if let Err(refusal) = self.input_recovery.register(client) {
+            // Nothing was established under it, so it goes straight back.
+            number.relinquish_unpublished();
+            return Err(refusal);
+        }
+        // KEPT WITH THE RESPONSIBILITY, which is what ends it. A right held by
+        // the frame that published would be one a lost row or an ended view
+        // could hand to somebody else.
+        record
+            .number
+            .set(number)
+            .unwrap_or_else(|_| panic!("a record is published once"));
         // A writer for this client exists or is about to: registration comes
         // before the spawn, and control accepted in that window is not control
         // with nowhere to go. The writer stopping is what clears it.
@@ -625,19 +662,29 @@ impl XServerFrontendRouteRegistry {
         &self,
         route: XAuthorityClientInputEvent,
     ) -> Result<(), XServerFrontendRouteError> {
-        let sender = self.client_senders(route.client)?.input;
+        let senders = self.client_senders(route.client)?;
+        let incarnation = senders.connection_state.clone();
         if !self.input_recovery.bind(route.delivery, route.client)? {
             return Ok(());
         }
-        match self.route_to_client(route.client, sender, route) {
+        match self.route_to_client(route.client, &incarnation, senders.input, route) {
             Err(error @ XServerFrontendRouteError::ClientQueueFull { client }) => {
                 // A client that stops draining its private input queue has
                 // failed as an endpoint. Remove every sender for that client
                 // so later routes cannot repeatedly pressure the shared
                 // broker and its worker observes channel disconnection.
-                self.input_recovery.disconnect_rejecting(client, XAuthorityInputDeliveryOutcome::ClientDisconnected, route.delivery)?;
-                self.clients.lock()
-                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?.remove(&client);
+                // BOTH BY IDENTITY. The recovery disconnect is as keyed by
+                // the number as the removal is, so a successor would be
+                // disconnected as readily as it would be removed. Neither
+                // happens unless the row under this number is still the
+                // connection whose sender failed.
+                if self.remove_row_of(client, &incarnation)? {
+                    self.input_recovery.disconnect_rejecting(
+                        client,
+                        XAuthorityInputDeliveryOutcome::ClientDisconnected,
+                        route.delivery,
+                    )?;
+                }
                 Err(error)
             }
             result => result,

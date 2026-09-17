@@ -82,6 +82,16 @@ struct PrivateCleanupRecord {
         Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XPresentSubscription>>>,
     pending_presentations: Arc<XPendingPresentRegistry>,
     frozen_input: Arc<Mutex<VecDeque<XDeferredRoutedInput>>>,
+    /// This connection's right to its client number.
+    ///
+    /// EVERY EFFECT BELOW THAT ACTS BY NUMBER IS AUTHORISED BY THIS, and it is
+    /// given back only when reuse is established. It is here, with the
+    /// responsibility, rather than in whatever frame runs the cleanup: a row
+    /// that disappeared and an operation view that ended are both things that
+    /// must not hand the number to somebody else.
+    /// SET WHEN THE ROW IS PUBLISHED, and once. A record whose connection was
+    /// never exposed established nothing under its number and has none.
+    number: std::sync::OnceLock<PrivateNumberRight>,
 }
 
 #[cfg(unix)]
@@ -102,6 +112,7 @@ impl PrivateCleanupRecord {
         connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
     ) -> Self {
         Self {
+            number: std::sync::OnceLock::new(),
             lifecycle: Mutex::new(None),
             ordered_continuation: Mutex::new(continuation),
             ordered_home: home,
@@ -330,6 +341,34 @@ impl PrivateCleanupRecord {
         // is written this way for when a driver receives from that queue,
         // where it will separate.
         self.retain_ordered_continuation();
+
+        // THE NUMBER'S INTERVAL OPENS HERE, BEFORE THE FIRST EFFECT THAT ACTS
+        // BY IT. The writer cancellation and the recovery disconnect below are
+        // both keyed by the number, so a check placed any later -- at the row
+        // removal, say -- would already have let those two reach whoever holds
+        // it next.
+        //
+        // THE ENDPOINT WORK ABOVE IS NOT PART OF IT. This connection's gate,
+        // home and place are its own by identity and were never reached by
+        // number, so they neither need this permission nor lose anything by
+        // being done before it.
+        //
+        // REFUSED MEANS THIS RECORD IS NOT THE OCCUPANT. A stale or repeated
+        // request must not reacquire a relinquished incarnation's right and
+        // run by number against its successor, so it does none of the effects
+        // below.
+        let Some(number) = self.number.get() else {
+            // Nothing was ever published under this number, so there is
+            // nothing keyed by it to undo and nothing to give back.
+            return;
+        };
+        if !number.begin_clearing() {
+            return;
+        }
+        // Whether everything the number authorises was actually done. A
+        // best-effort body returning is not that fact, and the ignored errors
+        // below are exactly where it is lost.
+        let mut established = true;
         // TAKEN, CLOSED AND DROPPED HERE, WHETHER OR NOT THE CELL IS POISONED.
         //
         // WHAT THIS LEASE USED TO GET FOR FREE. It was a field of the handle,
@@ -388,9 +427,13 @@ impl PrivateCleanupRecord {
         let _ = self.input_recovery.disconnect(self.client, XAuthorityInputDeliveryOutcome::ClientDisconnected);
         if let Ok(mut clients) = self.clients.lock() {
             clients.remove(&self.client);
+        } else {
+            established = false;
         }
         if let Ok(mut surfaces) = self.surfaces.lock() {
             surfaces.retain(|_, route| route.client != self.client);
+        } else {
+            established = false;
         }
         if let Ok(mut focused) = self.focused_surface.lock()
             && focused.is_some_and(|route| route.client == self.client)
@@ -399,6 +442,8 @@ impl PrivateCleanupRecord {
         }
         if let Ok(mut parents) = self.window_parents.lock() {
             parents.retain(|(client, _), _| *client != self.client);
+        } else {
+            established = false;
         }
         if let Ok(mut subscriptions) = self.core_event_subscriptions.lock() {
             subscriptions.retain(|(client, _), _| *client != self.client);
@@ -430,10 +475,20 @@ impl PrivateCleanupRecord {
             let _ = self.input_recovery.finish(self.client, route.route.delivery,
                 XAuthorityInputDeliveryOutcome::ClientDisconnected);
         }
+
+        // AND THE NUMBER GOES BACK ONLY IF THIS ESTABLISHED THAT IT MAY. A
+        // table nobody could read leaves work nobody did, and a number handed
+        // on after that would be handed on over an effect that never happened.
+        // Where it cannot be established the number stays this connection's
+        // and says it is unfinished, which nothing here resolves.
+        number.finish(established);
     }
 
-    /// Take back the reservation of a connection that was never exposed.
+    /// Take back the reservations of a connection that was never exposed.
     fn relinquish_unexposed(&self) {
+        if let Some(number) = self.number.get() {
+            number.relinquish_unpublished();
+        }
         let taken = match self.ordered_continuation.lock() {
             Ok(mut held) => held.take(),
             Err(poisoned) => poisoned.into_inner().take(),

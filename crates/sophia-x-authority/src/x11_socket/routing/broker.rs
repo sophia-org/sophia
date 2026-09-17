@@ -498,6 +498,7 @@ impl XServerFrontendRouteBroker {
                 private_applied: Arc::new(std::sync::OnceLock::new()),
                 continuation_owner: Arc::new(std::sync::OnceLock::new()),
                 custody_keeper: Arc::new(std::sync::OnceLock::new()),
+                occupancy: PrivateNumberOccupancy::new(),
                 clients: Arc::new(Mutex::new(BTreeMap::new())),
                 surfaces: Arc::new(Mutex::new(BTreeMap::new())),
                 focused_surface: Arc::new(Mutex::new(None)),

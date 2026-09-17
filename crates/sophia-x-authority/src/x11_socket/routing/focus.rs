@@ -172,7 +172,9 @@ impl XServerFrontendRouteRegistry {
     ) -> Result<(), XServerFrontendRouteError> {
         let claim = self.private_focus_dependency(previous.client, previous.window)
             .map_err(|cause| x11_focus_claim_route_error(previous.client, cause))?;
-        let sender = self.client_senders(previous.client)?.control;
+        let previous_senders = self.client_senders(previous.client)?;
+        let previous_incarnation = previous_senders.connection_state.clone();
+        let sender = previous_senders.control;
         // Counted against its origin before it is queued, so there is no
         // moment where the effect exists and nothing is waiting for it.
         //
@@ -200,6 +202,7 @@ impl XServerFrontendRouteRegistry {
         };
         self.route_to_client(
             previous.client,
+            &previous_incarnation,
             sender,
             X11RoutedControl::FocusOut {
                 window: previous.window,
@@ -226,10 +229,12 @@ impl XServerFrontendRouteRegistry {
         completion: Option<ControlCompletionToken>,
         claim: Option<PrivateFocusClaim>,
     ) -> Result<(), XServerFrontendRouteError> {
-        let sender = self.client_senders(route.client)?.control;
+        let senders = self.client_senders(route.client)?;
+        let incarnation = senders.connection_state.clone();
         self.route_to_client(
             route.client,
-            sender,
+            &incarnation,
+            senders.control,
             X11RoutedControl::Authority {
                 command: route.command,
                 focus,

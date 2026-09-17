@@ -592,10 +592,12 @@ impl XServerFrontendRouteRegistry {
         if let Some(result) = self.route_focus_control(route, completion) {
             return result;
         }
-        let sender = self.client_senders(route.client)?.control;
+        let senders = self.client_senders(route.client)?;
+        let incarnation = senders.connection_state.clone();
         self.route_to_client(
             route.client,
-            sender,
+            &incarnation,
+            senders.control,
             X11RoutedControl::Authority {
                 command: route.command,
                 focus: None,
@@ -634,12 +636,12 @@ impl XServerFrontendRouteRegistry {
         client: XServerFrontendClientId,
         event: XClientEvent,
     ) -> Result<(), XServerFrontendRouteError> {
-        let sender = match self.client_senders(client) {
-            Ok(senders) => senders.protocol,
+        let (incarnation, sender) = match self.client_senders(client) {
+            Ok(senders) => (senders.connection_state.clone(), senders.protocol),
             Err(XServerFrontendRouteError::UnknownClient { .. }) => return Ok(()),
             Err(error) => return Err(error),
         };
-        match self.route_to_client(client, sender, event) {
+        match self.route_to_client(client, &incarnation, sender, event) {
             Err(
                 XServerFrontendRouteError::UnknownClient { .. }
                 | XServerFrontendRouteError::ClientQueueDisconnected { .. },
@@ -660,9 +662,14 @@ impl XServerFrontendRouteRegistry {
             .ok_or(XServerFrontendRouteError::UnknownClient { client })
     }
 
+    /// THE REMOVAL IS THE SENDER'S CONNECTION'S, NOT THE NUMBER'S. A send can
+    /// fail long after the connection that handed out this sender has gone,
+    /// and by then the number may be somebody else's. Removing by number then
+    /// would revoke a connection nothing was wrong with.
     fn route_to_client<T>(
         &self,
         client: XServerFrontendClientId,
+        incarnation: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
         sender: SyncSender<T>,
         value: T,
     ) -> Result<(), XServerFrontendRouteError> {
@@ -672,13 +679,32 @@ impl XServerFrontendRouteRegistry {
                 Err(XServerFrontendRouteError::ClientQueueFull { client })
             }
             Err(TrySendError::Disconnected(_)) => {
-                self.clients
-                    .lock()
-                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                    .remove(&client);
+                self.remove_row_of(client, incarnation)?;
                 Err(XServerFrontendRouteError::ClientQueueDisconnected { client })
             }
         }
+    }
+
+    /// Remove this number's row only while it is still this connection's.
+    ///
+    /// ASKED AND ACTED ON UNDER THE ONE ACQUISITION, so a successor published
+    /// between a check and a removal is not the one removed.
+    fn remove_row_of(
+        &self,
+        client: XServerFrontendClientId,
+        incarnation: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+    ) -> Result<bool, XServerFrontendRouteError> {
+        let mut clients = self
+            .clients
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let ours = clients
+            .get(&client)
+            .is_some_and(|row| Arc::ptr_eq(&row.connection_state, incarnation));
+        if ours {
+            clients.remove(&client);
+        }
+        Ok(ours)
     }
 
     fn registered_client_count(&self) -> usize {

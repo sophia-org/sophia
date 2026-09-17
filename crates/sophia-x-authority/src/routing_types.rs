@@ -438,6 +438,18 @@ pub enum XServerFrontendRouteError {
     /// Refused before anything is taken or advanced. Not a fact about any
     /// connection: what is refused is the association.
     ForeignServiceOwner,
+    /// This client number is still held by the connection that had it.
+    ///
+    /// ITS ENDING IS RUNNING THE EFFECTS THAT ACT BY THAT NUMBER, or ended
+    /// without establishing that reusing it is safe. Refusing here is
+    /// deliberately stricter than the old behaviour, which let a successor
+    /// take a number whose predecessor could still reach it.
+    ///
+    /// NOT A COMPLETED CLEANUP AND NOT A SETTLEMENT. It says the number is
+    /// somebody's.
+    ClientNumberExcluded {
+        client: XServerFrontendClientId,
+    },
     /// The XKB worker's command queue is full. Distinct from a poisoned lock:
     /// the worker is alive and behind, not broken.
     XkbWorkerSaturated,
@@ -598,6 +610,13 @@ impl core::fmt::Display for XServerFrontendRouteError {
                 write!(
                     formatter,
                     "this X11 route service is kept by a different owner"
+                )
+            }
+            Self::ClientNumberExcluded { client } => {
+                write!(
+                    formatter,
+                    "X11 route client {} is still held by the connection that had it",
+                    client.raw()
                 )
             }
             Self::EvidenceCustodyUnavailable { client } => {
