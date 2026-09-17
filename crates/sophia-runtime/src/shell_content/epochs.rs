@@ -47,22 +47,6 @@ impl ContentEpochPool {
         self.epochs.reserved_backing_bytes()
     }
 
-    pub(crate) fn active_bulk_occupancy(&self) -> (usize, usize) {
-        self.active_allocations()
-            .map_or((0, 0), ContentAllocationStore::queued_bulk_occupancy)
-    }
-
-    pub(crate) fn active_control_occupancy(&self) -> usize {
-        self.active()
-            .map_or(0, ContentResourceStore::control_occupancy)
-            + self
-                .active_candidates()
-                .map_or(0, ContentCandidateStore::control_occupancy)
-            + self
-                .active_allocations()
-                .map_or(0, ContentAllocationStore::control_occupancy)
-    }
-
     pub fn active_mut(&mut self) -> Option<&mut ContentResourceStore> {
         self.epochs.resources_mut(self.grant)
     }

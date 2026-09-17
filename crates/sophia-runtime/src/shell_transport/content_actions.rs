@@ -1,21 +1,23 @@
+use super::ShellComponentTransport;
 use sophia_protocol::{
     ContentAction, ContentActionAck, IpcMessageKind, ShellContentRecord, TransactionId,
 };
 
 use super::{ShellSessionTransport, ShellTransportError, content_admission};
 
-impl ShellSessionTransport {
+impl ShellComponentTransport {
     /// Admission requires two real aggregate credits: Action and cancellation.
-    pub fn content_action_capacity_available(&self) -> bool {
+    pub fn content_action_capacity_available(&self, epochs: &crate::ContentEpochRegistry) -> bool {
         self.content_limits.as_ref().is_some_and(|limits| {
             self.action_cancellations.len() < limits.max_pending_actions as usize
                 && self.action_cancellations.len() < self.action_cancellations.capacity()
-                && self.control_capacity_available(2)
+                && self.control_capacity_available(epochs, 2)
         })
     }
 
     pub fn send_content_action(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         action: &ContentAction,
     ) -> Result<(), ShellTransportError> {
@@ -34,6 +36,7 @@ impl ShellSessionTransport {
                 return Err(ShellTransportError::WrongActivation);
             }
             self.queue_content_record(
+                epochs,
                 transaction,
                 &ShellContentRecord::Action(action.clone()),
                 true,
@@ -44,7 +47,7 @@ impl ShellSessionTransport {
                 .action_cancellations
                 .iter()
                 .any(|pending| pending.event_id == action.event_id)
-                || !self.content_action_capacity_available()
+                || !self.content_action_capacity_available(epochs)
             {
                 return Err(ShellTransportError::ContentQueueSaturated);
             }
@@ -52,6 +55,7 @@ impl ShellSessionTransport {
             // aggregate credits. After the FIFO owns Action, recording its
             // exact cancellation credit cannot allocate or call user code.
             self.queue_content_record(
+                epochs,
                 transaction,
                 &ShellContentRecord::Action(action.clone()),
                 false,
@@ -71,8 +75,9 @@ impl ShellSessionTransport {
 
     pub fn poll_content_action_ack(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ContentActionAck)>, ShellTransportError> {
-        self.poll_io()?;
+        self.poll_io(epochs)?;
         let at = self.inbox.iter().position(|frame| {
             u16::from_le_bytes([frame[6], frame[7]]) == IpcMessageKind::ShellContentActionAck as u16
         });
@@ -94,5 +99,34 @@ impl ShellSessionTransport {
             return Err(ShellTransportError::WrongContentRecord);
         };
         Ok(Some((transaction, ack)))
+    }
+}
+
+// Legacy single-shell facade, delegating to the same shared registry path.
+impl ShellSessionTransport {
+    pub fn content_action_capacity_available(&self) -> bool {
+        self.state
+            .content_action_capacity_available(&self.content_epochs)
+    }
+
+    pub fn send_content_action(
+        &mut self,
+        transaction: TransactionId,
+        action: &ContentAction,
+    ) -> Result<(), ShellTransportError> {
+        self.state
+            .send_content_action(&mut self.content_epochs, transaction, action)
+    }
+
+    pub fn poll_content_action_ack(
+        &mut self,
+    ) -> Result<Option<(TransactionId, ContentActionAck)>, ShellTransportError> {
+        self.state.poll_content_action_ack(&mut self.content_epochs)
+    }
+}
+
+impl ShellSessionTransport {
+    pub fn retain_content_action_reservations(&mut self, live: impl FnMut(u64) -> bool) {
+        self.state.retain_content_action_reservations(live)
     }
 }

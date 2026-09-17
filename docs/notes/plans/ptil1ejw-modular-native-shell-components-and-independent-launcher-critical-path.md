@@ -79,6 +79,15 @@ selections refuse. The live startup parser explicitly refuses this unimplemented
 admission mode before resolving a legacy fallback. This is configuration-boundary
 progress, not two-client admission; the common live transport owner remains next.
 
+The subsequent shared transport path now borrows one registry for real socket
+resource/lifecycle service, preserves exact pre-launch reservations and custom
+wire limits, and leaves legacy callers on a delegating compatibility wrapper.
+Five private-socket controls and four compiled mutations join that path to actual
+retained bytes. The [ownership record](../investigations/r3b9n7cf-native-component-storage-and-compositor-identity.md#shared-transport-checkpoint-over-bef4fd7a)
+states the limits. Session still needs its bounded supervisor inventory, globally
+minted attempt identities and asynchronous/fair negotiation/service before the
+independent profile can be enabled. No native readiness follows from this seam.
+
 Configuration checkpoint evidence: `.artifacts/bemenu-component-profile/`.
 Device-hidden tests pass 118 config tests and 468 Session library tests, with
 fourteen Session tests ignored. Four new config groups cover typed independent

@@ -56,6 +56,26 @@ impl ContentEpochRegistry {
     pub const MAX_ACTIVE_EPOCHS: usize = 2;
     pub const MAX_RETAINED_EPOCHS: usize = 16;
 
+    /// Legacy caller chooses its next connection identity. The content epoch
+    /// comes from the common owner, never a transport-local counter. Admission
+    /// publishes the watermark only after its complete reservation succeeds.
+    pub(crate) fn next_grant(
+        &self,
+        connection_epoch: u64,
+    ) -> Result<ContentGrant, ContentStoreError> {
+        if connection_epoch <= self.last_grant.connection_epoch {
+            return Err(ContentStoreError::Stale);
+        }
+        Ok(ContentGrant {
+            connection_epoch,
+            content_grant_epoch: self
+                .last_grant
+                .content_grant_epoch
+                .checked_add(1)
+                .ok_or(ContentStoreError::Stale)?,
+        })
+    }
+
     pub fn new(max_bytes: u64) -> Result<Self, ContentStoreError> {
         if max_bytes == 0 || max_bytes > 64 * 1024 * 1024 {
             return Err(ContentStoreError::Budget);
@@ -121,6 +141,22 @@ impl ContentEpochRegistry {
             .iter()
             .find(|epoch| epoch.resources.grant() == grant)
             .map(|epoch| &epoch.resources)
+    }
+
+    pub(crate) fn bulk_occupancy(&self, grant: ContentGrant) -> (usize, usize) {
+        self.allocations(grant)
+            .map_or((0, 0), ContentAllocationStore::queued_bulk_occupancy)
+    }
+
+    pub(crate) fn control_occupancy(&self, grant: ContentGrant) -> usize {
+        self.resources(grant)
+            .map_or(0, ContentResourceStore::control_occupancy)
+            + self
+                .allocations(grant)
+                .map_or(0, ContentAllocationStore::control_occupancy)
+            + self
+                .active_candidates(grant)
+                .map_or(0, ContentCandidateStore::control_occupancy)
     }
 
     pub fn resources_mut(&mut self, grant: ContentGrant) -> Option<&mut ContentResourceStore> {

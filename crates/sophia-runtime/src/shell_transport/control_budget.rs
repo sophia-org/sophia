@@ -1,18 +1,23 @@
+use super::ShellComponentTransport;
 use super::ShellSessionTransport;
 
 // All fixed r5 lifecycle responses fit this frame envelope, including the IPC
 // header. Variable output/indicator snapshots are bulk and cannot spend it.
 pub(super) const CONTROL_FRAME_BYTES: usize = 256;
 
-impl ShellSessionTransport {
+impl ShellComponentTransport {
     /// Existing reducer credits name exact accepted obligations. Queued events
     /// remain charged there until custody moves into the same wire FIFO.
-    pub(super) fn control_capacity_available(&self, additional: usize) -> bool {
+    pub(super) fn control_capacity_available(
+        &self,
+        epochs: &crate::ContentEpochRegistry,
+        additional: usize,
+    ) -> bool {
         let Some(limits) = &self.content_limits else {
             return false;
         };
-        let (bulk_records, bulk_bytes) = self.content_epochs.active_bulk_occupancy();
-        let reserved = self.content_epochs.active_control_occupancy()
+        let (bulk_records, bulk_bytes) = epochs.bulk_occupancy(self.store_grant);
+        let reserved = epochs.control_occupancy(self.store_grant)
             + self.action_cancellations.len()
             + usize::from(self.indicator_response.is_some());
         let controls = reserved - bulk_records + self.output.controls() + additional;
@@ -30,6 +35,7 @@ impl ShellSessionTransport {
     /// credit. Encoding and admission may fail; neither changes either owner.
     pub(super) fn frame_capacity_available(
         &self,
+        epochs: &crate::ContentEpochRegistry,
         bytes: usize,
         control: bool,
         transfer: bool,
@@ -37,8 +43,8 @@ impl ShellSessionTransport {
         let Some(limits) = &self.content_limits else {
             return false;
         };
-        let (bulk_records, bulk_bytes) = self.content_epochs.active_bulk_occupancy();
-        let reserved = self.content_epochs.active_control_occupancy()
+        let (bulk_records, bulk_bytes) = epochs.bulk_occupancy(self.store_grant);
+        let reserved = epochs.control_occupancy(self.store_grant)
             + self.action_cancellations.len()
             + usize::from(self.indicator_response.is_some());
         let Some(records) = reserved.checked_sub(usize::from(transfer)) else {
@@ -69,9 +75,13 @@ impl ShellSessionTransport {
                         as usize)
     }
 
-    pub(super) fn bulk_capacity_available(&self, bytes: usize) -> bool {
+    pub(super) fn bulk_capacity_available(
+        &self,
+        epochs: &crate::ContentEpochRegistry,
+        bytes: usize,
+    ) -> bool {
         if self.content_limits.is_some() {
-            self.frame_capacity_available(bytes, false, false)
+            self.frame_capacity_available(epochs, bytes, false, false)
         } else {
             self.output.records() + usize::from(self.indicator_response.is_some()) < 64
                 && self.output.len().saturating_add(bytes).saturating_add(
@@ -84,3 +94,6 @@ impl ShellSessionTransport {
 #[cfg(test)]
 #[path = "../../tests/support/shell_control_budget.rs"]
 mod tests;
+
+// Legacy single-shell facade, delegating to the same shared registry path.
+impl ShellSessionTransport {}

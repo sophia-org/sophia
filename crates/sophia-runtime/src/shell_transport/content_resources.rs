@@ -1,3 +1,4 @@
+use super::ShellComponentTransport;
 use sophia_protocol::{ContentReason, ContentResourceStatus, ShellContentRecord, TransactionId};
 
 use super::{ShellSessionTransport, ShellTransportError, content_admission};
@@ -7,22 +8,23 @@ use crate::ContentStoreError;
 // produces at most one immediate status/release record of no greater size.
 const MAX_RESOURCE_RESPONSE_BYTES: usize = sophia_protocol::SOPHIA_IPC_HEADER_LEN + 48;
 
-impl ShellSessionTransport {
+impl ShellComponentTransport {
     /// Service only immutable resource-transfer records. Candidate and
     /// allocation records remain queued for their separate lifecycle owners.
     pub fn service_content_resources(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         now_msec: u64,
     ) -> Result<usize, ShellTransportError> {
         let limits = self
             .content_limits
             .clone()
             .ok_or(ShellTransportError::MissingCapability)?;
-        self.content_epochs.collect();
-        if let Some(store) = self.content_epochs.active_mut() {
+        epochs.collect();
+        if let Some(store) = epochs.resources_mut(self.store_grant) {
             store.expire(now_msec)?;
         }
-        self.flush_content_resource_events()?;
+        self.flush_content_resource_events(epochs)?;
         let mut processed = 0;
         while processed < limits.max_frames_per_service_tick as usize {
             if self
@@ -33,15 +35,14 @@ impl ShellSessionTransport {
             {
                 break;
             }
-            let Some((transaction, record)) = self.poll_content_resource_record()? else {
+            let Some((transaction, record)) = self.poll_content_resource_record(epochs)? else {
                 break;
             };
             let resource = content_admission::resource_identity(&record)
                 .ok_or(ShellTransportError::WrongContentRecord)?;
             let (outcome, store_reported) = {
-                let store = self
-                    .content_epochs
-                    .active_mut()
+                let store = epochs
+                    .resources_mut(self.store_grant)
                     .ok_or(ShellTransportError::MissingCapability)?;
                 let outcome = match &record {
                     ShellContentRecord::ResourceBegin(value) => {
@@ -60,7 +61,7 @@ impl ShellSessionTransport {
                 (outcome, store.pending_event().is_some())
             };
             processed += 1;
-            self.flush_content_resource_events()?;
+            self.flush_content_resource_events(epochs)?;
             if let Err(error) = outcome
                 && !store_reported
             {
@@ -68,6 +69,7 @@ impl ShellSessionTransport {
                     return Err(error.into());
                 }
                 self.send_content_record(
+                    epochs,
                     transaction,
                     &ShellContentRecord::ResourceStatus(ContentResourceStatus {
                         grant: limits.grant,
@@ -85,28 +87,31 @@ impl ShellSessionTransport {
 
     pub fn send_content_record(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         record: &ShellContentRecord,
     ) -> Result<(), ShellTransportError> {
         if let ShellContentRecord::Action(action) = record {
-            return self.send_content_action(transaction, action);
+            return self.send_content_action(epochs, transaction, action);
         }
-        self.queue_content_record(transaction, record, false)
+        self.queue_content_record(epochs, transaction, record, false)
     }
 
     pub(super) fn queue_content_record(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         record: &ShellContentRecord,
         reserved: bool,
     ) -> Result<(), ShellTransportError> {
-        let (frame, control) = self.prepare_content_frame(transaction, record, reserved)?;
+        let (frame, control) = self.prepare_content_frame(epochs, transaction, record, reserved)?;
         self.output.push(frame, control);
         Ok(())
     }
 
     pub(super) fn prepare_content_frame(
         &self,
+        epochs: &crate::ContentEpochRegistry,
         transaction: TransactionId,
         record: &ShellContentRecord,
         reserved: bool,
@@ -126,7 +131,7 @@ impl ShellSessionTransport {
             ShellContentRecord::Limits(_) | ShellContentRecord::OutputFacts(_)
         );
         if (!bulk && frame.len() > super::control_budget::CONTROL_FRAME_BYTES)
-            || !self.frame_capacity_available(frame.len(), !bulk, reserved)
+            || !self.frame_capacity_available(epochs, frame.len(), !bulk, reserved)
         {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
@@ -137,8 +142,9 @@ impl ShellSessionTransport {
 
     fn poll_content_resource_record(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
-        self.poll_io()?;
+        self.poll_io(epochs)?;
         let at = self.inbox.iter().position(|frame| {
             matches!(
                 u16::from_le_bytes([frame[6], frame[7]]),
@@ -159,12 +165,11 @@ impl ShellSessionTransport {
         if content_admission::record_grant(&record) != self.content_grant {
             return Err(ShellTransportError::WrongContentGrant);
         }
-        let needed = self
-            .content_epochs
-            .active()
+        let needed = epochs
+            .resources(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
             .additional_response_credit(&record);
-        if !self.control_capacity_available(needed) {
+        if !self.control_capacity_available(epochs, needed) {
             self.inbox
                 .insert(at.expect("selected frame has an index"), frame);
             return Ok(None);
@@ -172,18 +177,20 @@ impl ShellSessionTransport {
         Ok(Some((transaction, record)))
     }
 
-    fn flush_content_resource_events(&mut self) -> Result<(), ShellTransportError> {
+    fn flush_content_resource_events(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+    ) -> Result<(), ShellTransportError> {
         loop {
-            let event = self
-                .content_epochs
-                .active_mut()
+            let event = epochs
+                .resources_mut(self.store_grant)
                 .and_then(|store| store.pending_event().cloned());
             let Some(event) = event else {
                 return Ok(());
             };
             let (frame, control) =
-                self.prepare_content_frame(event.transaction, &event.record, true)?;
-            let Some(store) = self.content_epochs.active_mut() else {
+                self.prepare_content_frame(epochs, event.transaction, &event.record, true)?;
+            let Some(store) = epochs.resources_mut(self.store_grant) else {
                 return Err(ShellTransportError::MissingCapability);
             };
             // Validate custody before the only allocating operation (push).
@@ -205,5 +212,25 @@ fn content_reason(error: ContentStoreError) -> ContentReason {
         ContentStoreError::Incomplete => ContentReason::Incomplete,
         ContentStoreError::Revoked => ContentReason::Revoked,
         ContentStoreError::ClockRegression => ContentReason::Malformed,
+    }
+}
+
+// Legacy single-shell facade, delegating to the same shared registry path.
+impl ShellSessionTransport {
+    pub fn service_content_resources(
+        &mut self,
+        now_msec: u64,
+    ) -> Result<usize, ShellTransportError> {
+        self.state
+            .service_content_resources(&mut self.content_epochs, now_msec)
+    }
+
+    pub fn send_content_record(
+        &mut self,
+        transaction: TransactionId,
+        record: &ShellContentRecord,
+    ) -> Result<(), ShellTransportError> {
+        self.state
+            .send_content_record(&mut self.content_epochs, transaction, record)
     }
 }

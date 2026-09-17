@@ -26,8 +26,9 @@ impl Fixture {
         let mut limits = ContentLimits::prototype(grant);
         limits.max_control_records = records;
         transport.content_epochs.admit(limits.clone()).unwrap();
-        transport.content_grant = Some(grant);
-        transport.content_limits = Some(limits);
+        transport.state.store_grant = grant;
+        transport.state.content_grant = Some(grant);
+        transport.state.content_limits = Some(limits);
         Self {
             transport,
             directory,
@@ -52,12 +53,12 @@ fn final_collection_refuses_a_live_socket_even_without_a_content_epoch() {
     assert_eq!(owner.as_ptr(), address);
     transport.disconnect().unwrap();
     let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
-    transport.stream = Some(socket);
+    transport.state.stream = Some(socket);
     let owner = transport
         .finish_content_after_backend_drop(owner)
         .unwrap_err();
     assert_eq!(owner.as_ptr(), address);
-    assert!(transport.stream.is_some());
+    assert!(transport.state.stream.is_some());
     transport.disconnect().unwrap();
     let report = transport.finish_content_after_backend_drop(owner).unwrap();
     assert_eq!(report.settled_candidates, 0);
@@ -68,10 +69,10 @@ fn final_collection_refuses_a_live_socket_even_without_a_content_epoch() {
 fn all_store_credits_and_fifo_frames_share_one_capacity() {
     let mut fixture = Fixture::new(7);
     let transport = &mut fixture.transport;
-    let grant = transport.content_grant.unwrap();
+    let grant = transport.state.content_grant.unwrap();
     transport
         .content_epochs
-        .active_mut()
+        .resources_mut(transport.state.store_grant)
         .unwrap()
         .begin(
             TransactionId::from_raw(1),
@@ -94,7 +95,7 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
         .unwrap();
     transport
         .content_epochs
-        .active_candidates_mut()
+        .active_candidates_mut(transport.state.store_grant)
         .unwrap()
         .grant_permit(
             TransactionId::from_raw(2),
@@ -109,7 +110,7 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
         .unwrap();
     transport
         .content_epochs
-        .active_allocations_mut()
+        .allocations_mut(transport.state.store_grant)
         .unwrap()
         .publish_outputs(
             TransactionId::from_raw(3),
@@ -127,80 +128,161 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
             }],
         )
         .unwrap();
-    assert_eq!(transport.content_epochs.active_control_occupancy(), 7);
+    assert_eq!(
+        transport
+            .content_epochs
+            .control_occupancy(transport.state.store_grant),
+        7
+    );
     let owned = transport.content_accounting();
     assert_eq!(owned.response_records, 7);
     assert_eq!(owned.epochs.transfers, 1);
     assert_eq!(owned.epochs.permits, 1);
-    assert!(transport.control_capacity_available(0));
+    assert!(
+        transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 0)
+    );
     assert!(!transport.content_action_capacity_available());
     let event = transport
         .content_epochs
-        .active()
+        .resources(transport.state.store_grant)
         .unwrap()
         .pending_event()
         .unwrap()
         .clone();
     transport
+        .state
         .content_limits
         .as_mut()
         .unwrap()
         .max_control_records = 6;
     assert!(
         transport
-            .queue_content_record(event.transaction, &event.record, true)
+            .state
+            .queue_content_record(
+                &mut transport.content_epochs,
+                event.transaction,
+                &event.record,
+                true
+            )
             .is_err()
     );
-    assert_eq!(transport.content_epochs.active_control_occupancy(), 7);
-    assert_eq!(transport.output.controls(), 0);
+    assert_eq!(
+        transport
+            .content_epochs
+            .control_occupancy(transport.state.store_grant),
+        7
+    );
+    assert_eq!(transport.state.output.controls(), 0);
     assert_eq!(transport.content_accounting(), owned);
     assert_eq!(
-        transport.content_epochs.active().unwrap().pending_event(),
+        transport
+            .content_epochs
+            .resources(transport.state.store_grant)
+            .unwrap()
+            .pending_event(),
         Some(&event)
     );
     transport
+        .state
         .content_limits
         .as_mut()
         .unwrap()
         .max_control_records = 7;
     transport
-        .queue_content_record(event.transaction, &event.record, true)
+        .state
+        .queue_content_record(
+            &mut transport.content_epochs,
+            event.transaction,
+            &event.record,
+            true,
+        )
         .unwrap();
-    transport.content_epochs.active_mut().unwrap().take_event();
-    assert_eq!(transport.content_epochs.active_control_occupancy(), 6);
-    assert_eq!(transport.output.controls(), 1);
+    transport
+        .content_epochs
+        .resources_mut(transport.state.store_grant)
+        .unwrap()
+        .take_event();
+    assert_eq!(
+        transport
+            .content_epochs
+            .control_occupancy(transport.state.store_grant),
+        6
+    );
+    assert_eq!(transport.state.output.controls(), 1);
     let transferred = transport.content_accounting();
     assert_eq!(transferred.response_records, owned.response_records);
     assert_eq!(transferred.response_bytes, owned.response_bytes);
-    assert!(!transport.control_capacity_available(1));
-    let frame_bytes = transport.output.front().len();
-    transport.output.written(frame_bytes - 1);
+    assert!(
+        !transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 1)
+    );
+    let frame_bytes = transport.state.output.front().len();
+    transport.state.output.written(frame_bytes - 1);
     assert_eq!(transport.content_accounting(), transferred);
-    assert!(!transport.control_capacity_available(1));
-    transport.output.written(1);
+    assert!(
+        !transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 1)
+    );
+    transport.state.output.written(1);
     assert_eq!(transport.content_accounting().response_records, 6);
     assert_eq!(
         transport.content_accounting().response_bytes,
         transferred.response_bytes - CONTROL_FRAME_BYTES
     );
-    assert!(transport.control_capacity_available(1));
-    assert!(!transport.control_capacity_available(2));
+    assert!(
+        transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 1)
+    );
+    assert!(
+        !transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 2)
+    );
 }
 
 #[test]
 fn byte_budget_can_exhaust_before_record_budget_and_bulk_cannot_spend_it() {
     let mut fixture = Fixture::new(64);
     let transport = &mut fixture.transport;
-    let limits = transport.content_limits.as_mut().unwrap();
+    let limits = transport.state.content_limits.as_mut().unwrap();
     limits.reserved_control_queue_bytes = 1024;
     limits.max_output_queue_bytes = 2048;
-    assert!(transport.control_capacity_available(4));
-    assert!(!transport.control_capacity_available(5));
-    assert!(transport.bulk_capacity_available(1024));
-    assert!(!transport.bulk_capacity_available(1025));
-    transport.output.push(vec![0; 1024], false);
-    assert!(!transport.bulk_capacity_available(1));
-    assert!(transport.control_capacity_available(4));
+    assert!(
+        transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 4)
+    );
+    assert!(
+        !transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 5)
+    );
+    assert!(
+        transport
+            .state
+            .bulk_capacity_available(&transport.content_epochs, 1024)
+    );
+    assert!(
+        !transport
+            .state
+            .bulk_capacity_available(&transport.content_epochs, 1025)
+    );
+    transport.state.output.push(vec![0; 1024], false);
+    assert!(
+        !transport
+            .state
+            .bulk_capacity_available(&transport.content_epochs, 1)
+    );
+    assert!(
+        transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 4)
+    );
 }
 
 #[test]
@@ -208,7 +290,7 @@ fn cancellation_reserve_survives_bulk_and_partial_write_until_exact_transfer() {
     let mut fixture = Fixture::new(3);
     let transport = &mut fixture.transport;
     let action = ContentAction {
-        grant: transport.content_grant.unwrap(),
+        grant: transport.state.content_grant.unwrap(),
         output: ContentOutputId {
             id: 1,
             generation: 1,
@@ -230,12 +312,24 @@ fn cancellation_reserve_survives_bulk_and_partial_write_until_exact_transfer() {
     transport
         .send_content_action(TransactionId::from_raw(1), &action)
         .unwrap();
-    assert_eq!(transport.output.records(), 1);
-    assert_eq!(transport.action_cancellations.len(), 1);
-    assert!(transport.bulk_capacity_available(8));
-    transport.output.push(vec![0; 8], false);
-    assert!(!transport.bulk_capacity_available(1));
-    assert!(!transport.control_capacity_available(1));
+    assert_eq!(transport.state.output.records(), 1);
+    assert_eq!(transport.state.action_cancellations.len(), 1);
+    assert!(
+        transport
+            .state
+            .bulk_capacity_available(&transport.content_epochs, 8)
+    );
+    transport.state.output.push(vec![0; 8], false);
+    assert!(
+        !transport
+            .state
+            .bulk_capacity_available(&transport.content_epochs, 1)
+    );
+    assert!(
+        !transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 1)
+    );
     let mut cancel = action.clone();
     cancel.kind = 3;
     cancel.reason = ContentReason::Revoked as u16;
@@ -248,6 +342,7 @@ fn cancellation_reserve_survives_bulk_and_partial_write_until_exact_transfer() {
     );
     assert_eq!(
         transport
+            .state
             .action_cancellations
             .iter()
             .find(|pending| pending.event_id == 1),
@@ -256,33 +351,53 @@ fn cancellation_reserve_survives_bulk_and_partial_write_until_exact_transfer() {
     transport
         .send_content_action(TransactionId::from_raw(3), &cancel)
         .unwrap();
-    assert!(transport.action_cancellations.is_empty());
-    assert_eq!(transport.output.records(), 3);
-    assert!(!transport.control_capacity_available(1));
-    let remaining = transport.output.front().len();
-    transport.output.written(remaining - 1);
-    assert!(!transport.control_capacity_available(1));
-    transport.output.written(1);
-    assert!(transport.control_capacity_available(1));
+    assert!(transport.state.action_cancellations.is_empty());
+    assert_eq!(transport.state.output.records(), 3);
+    assert!(
+        !transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 1)
+    );
+    let remaining = transport.state.output.front().len();
+    transport.state.output.written(remaining - 1);
+    assert!(
+        !transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 1)
+    );
+    transport.state.output.written(1);
+    assert!(
+        transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 1)
+    );
     // Peer loss settles delivery as lost, never as sent, and leaves no charge
     // available to be freed a second time by the next grant.
     transport.disconnect().unwrap();
-    assert_eq!(transport.output.records(), 0);
-    assert_eq!(transport.output.len(), 0);
-    assert_eq!(transport.content_epochs.active_control_occupancy(), 0);
-    assert!(transport.action_cancellations.is_empty());
+    assert_eq!(transport.state.output.records(), 0);
+    assert_eq!(transport.state.output.len(), 0);
+    assert_eq!(
+        transport
+            .content_epochs
+            .control_occupancy(transport.state.store_grant),
+        0
+    );
+    assert!(transport.state.action_cancellations.is_empty());
 }
 
 #[test]
 fn a_reserved_allocation_rejection_progresses_at_the_aggregate_record_limit() {
     let mut fixture = Fixture::new(2);
     let transport = &mut fixture.transport;
-    let grant = transport.content_grant.unwrap();
+    let grant = transport.state.content_grant.unwrap();
     let output = ContentOutputId {
         id: 1,
         generation: 1,
     };
-    let store = transport.content_epochs.active_allocations_mut().unwrap();
+    let store = transport
+        .content_epochs
+        .allocations_mut(transport.state.store_grant)
+        .unwrap();
     store
         .publish_outputs(
             TransactionId::from_raw(1),
@@ -320,16 +435,29 @@ fn a_reserved_allocation_rejection_progresses_at_the_aggregate_record_limit() {
             0,
         )
         .unwrap();
-    transport.output.push(vec![0; 8], false);
-    assert!(!transport.control_capacity_available(1));
+    transport.state.output.push(vec![0; 8], false);
+    assert!(
+        !transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 1)
+    );
     transport
         .reject_content_allocation(1, crate::ContentAllocationError::Budget)
         .unwrap();
-    assert_eq!(transport.content_epochs.active_control_occupancy(), 0);
-    assert_eq!(transport.output.records(), 2);
-    assert!(!transport.control_capacity_available(1));
-    transport.output.written(8);
-    let (_, record) = decode_shell_content_frame(transport.output.front()).unwrap();
+    assert_eq!(
+        transport
+            .content_epochs
+            .control_occupancy(transport.state.store_grant),
+        0
+    );
+    assert_eq!(transport.state.output.records(), 2);
+    assert!(
+        !transport
+            .state
+            .control_capacity_available(&transport.content_epochs, 1)
+    );
+    transport.state.output.written(8);
+    let (_, record) = decode_shell_content_frame(transport.state.output.front()).unwrap();
     assert!(matches!(record, ShellContentRecord::AllocationResult(value)
         if value.allocation_request_id == 1 && value.status == 2));
 }
@@ -338,7 +466,7 @@ fn a_reserved_allocation_rejection_progresses_at_the_aggregate_record_limit() {
 fn refused_native_outcome_retains_candidate_then_publishes_once_before_action() {
     let mut fixture = Fixture::new(6);
     let transport = &mut fixture.transport;
-    let grant = transport.content_grant.unwrap();
+    let grant = transport.state.content_grant.unwrap();
     let output = ContentOutputId {
         id: 1,
         generation: 1,
@@ -346,7 +474,10 @@ fn refused_native_outcome_retains_candidate_then_publishes_once_before_action() 
     transport
         .grant_content_permit(TransactionId::from_raw(1), output, 1, 1, 0)
         .unwrap();
-    let (resources, candidates) = transport.content_epochs.active_parts_mut().unwrap();
+    let (resources, candidates) = transport
+        .content_epochs
+        .active_parts_mut(transport.state.store_grant)
+        .unwrap();
     candidates
         .begin(
             TransactionId::from_raw(2),
@@ -391,6 +522,7 @@ fn refused_native_outcome_retains_candidate_then_publishes_once_before_action() 
         .content_prepared(grant, output, 1, 1, 1, 2)
         .unwrap();
     transport
+        .state
         .content_limits
         .as_mut()
         .unwrap()
@@ -403,13 +535,14 @@ fn refused_native_outcome_retains_candidate_then_publishes_once_before_action() 
     assert_eq!(
         transport
             .content_epochs
-            .active_candidates()
+            .active_candidates(transport.state.store_grant)
             .unwrap()
             .submitted_candidate_count(),
         1
     );
-    assert_eq!(transport.output.records(), 2); // Permit and Prepared only.
+    assert_eq!(transport.state.output.records(), 2); // Permit and Prepared only.
     transport
+        .state
         .content_limits
         .as_mut()
         .unwrap()
@@ -444,11 +577,11 @@ fn refused_native_outcome_retains_candidate_then_publishes_once_before_action() 
             .is_err()
     );
     let mut records = Vec::new();
-    while !transport.output.is_empty() {
-        let frame = transport.output.front();
+    while !transport.state.output.is_empty() {
+        let frame = transport.state.output.front();
         records.push(decode_shell_content_frame(frame).unwrap());
         let bytes = frame.len();
-        transport.output.written(bytes);
+        transport.state.output.written(bytes);
     }
     assert_eq!(records.len(), 4);
     assert!(
@@ -466,10 +599,10 @@ fn complete_inbox_frames_and_partial_input_share_the_advertised_byte_budget() {
     use std::time::{Duration, Instant};
     let mut fixture = Fixture::new(64);
     let transport = &mut fixture.transport;
-    let grant = transport.content_grant.unwrap();
+    let grant = transport.state.content_grant.unwrap();
     let (local, mut peer) = UnixStream::pair().unwrap();
     local.set_nonblocking(true).unwrap();
-    transport.stream = Some(local);
+    transport.state.stream = Some(local);
     let writer = std::thread::spawn(move || {
         for transaction in 1..=8 {
             let frame = encode_shell_content_frame(
@@ -490,6 +623,7 @@ fn complete_inbox_frames_and_partial_input_share_the_advertised_byte_budget() {
         }
     });
     let limit = transport
+        .state
         .content_limits
         .as_ref()
         .unwrap()
@@ -497,10 +631,11 @@ fn complete_inbox_frames_and_partial_input_share_the_advertised_byte_budget() {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         transport.poll_io().unwrap();
-        let retained = transport.input.len() + transport.inbox.iter().map(Vec::len).sum::<usize>();
+        let retained =
+            transport.state.input.len() + transport.state.inbox.iter().map(Vec::len).sum::<usize>();
         let accounting = transport.content_accounting();
         assert_eq!(accounting.input_bytes, retained);
-        assert_eq!(accounting.input_records, transport.inbox.len());
+        assert_eq!(accounting.input_records, transport.state.inbox.len());
         assert!(retained <= limit);
         if retained == limit {
             break;
@@ -512,16 +647,17 @@ fn complete_inbox_frames_and_partial_input_share_the_advertised_byte_budget() {
         std::thread::yield_now();
     }
     assert!(
-        !transport.input.is_empty(),
+        !transport.state.input.is_empty(),
         "the second whole frame cannot yet fit"
     );
     let mut received = 0;
     while received < 8 {
         transport.poll_io().unwrap();
         assert!(
-            transport.input.len() + transport.inbox.iter().map(Vec::len).sum::<usize>() <= limit
+            transport.state.input.len() + transport.state.inbox.iter().map(Vec::len).sum::<usize>()
+                <= limit
         );
-        if let Some(frame) = transport.inbox.pop_front() {
+        if let Some(frame) = transport.state.inbox.pop_front() {
             received += 1;
             let (transaction, _) = decode_shell_content_frame(&frame).unwrap();
             assert_eq!(transaction.raw(), received);

@@ -20,10 +20,12 @@ stores while their actual consumers remain. Each live owner reserves a future
 retirement entry; live plus retained inventories cannot exceed sixteen. Storage
 is reserved at construction, not grown by transferring an epoch on disconnect.
 
-The existing `ContentEpochPool` remains a single-connection compatibility facade
-and delegates to that same registry implementation. Existing transports still
-own that facade. Session-wide construction/routing is the next integration;
-creating two existing transports still would not establish one shared budget.
+The existing `ContentEpochPool` remains a single-connection store compatibility
+facade and delegates to that same registry implementation. At `c7dea19a`, each
+transport still owned that facade. The later shared transport checkpoint below
+removes that dependency from the connection state; live Session construction and
+routing remain the next integration. Creating two legacy owning wrappers would
+still duplicate budgets and is not the independent component construction.
 No Rc/RefCell sharing or parallel sidecar accounting was introduced.
 
 The registry uses the approved 64 MiB ceiling with per-grant limits supplied by
@@ -84,3 +86,55 @@ promoted host archives were NOT_RUN. No native acceptance follows from this.
 The scoped renderer all-tests Clippy invocation initially omitted egl-probe,
 exposing an existing fixture import that needs both gbm-probe and egl-probe.
 The feature-complete strict invocation passes. No fixture or lint was weakened.
+
+## Shared transport checkpoint over bef4fd7a
+
+`ShellComponentTransport` owns the actual endpoint, socket, inbox, FIFO and
+connection-local response/action obligations. Its content operations explicitly
+borrow a `ContentEpochRegistry`; all active-store lookups use its complete retained
+grant. The public `ShellSessionTransport` compatibility wrapper retains a private
+registry and delegates to those same operations. It exposes no mutable dereference
+that could detach its connection from its registry. Existing legacy call sites
+exercise the shared implementation without changing their API.
+
+`reserve_content` reserves the complete caller-selected limits before a supervisor
+launch. It does not grant a capability. A second reservation on that connection or
+a mismatched connection at negotiation refuses without replacing the owner. The
+real Welcome/Limits exchange retains those exact limits rather than reconstructing
+the larger bar defaults. Any attempted negotiation failure disconnects the exact
+reservation; the original failure remains authoritative if endpoint bookkeeping
+also fails. Explicit abandonment still requires the caller to disconnect.
+
+The compatibility negotiation path obtains its next content epoch from the shared
+registry. Component admission must still mint connection identities globally;
+the later Session inventory must burn identities on attempts that reserved or
+disclosed them, not only successful finalization. The existing blocking handshake
+is not a fair multi-component owner-loop scheduler: bounded asynchronous launch/
+negotiation, rotating service budgets and the two-component supervisor inventory
+remain unimplemented. Live configuration continues to refuse independent mode.
+
+Response budgets are connection-local store credits plus that connection's owned
+FIFO/cancellation/outcome records. `ShellContentAccounting.epochs` is explicitly
+the common registry snapshot; callers must not add it once per connection. Native
+completion can settle the exact retained grant while current-peer response
+delivery stays tied to the matching live connection. This is not an additional
+resource ledger, and it does not make worker join sufficient to release consumers.
+
+Five device-hidden real-socket controls cover exact pre-launch reservations and
+wire limits, two owners with identical resource IDs, continued neighbor upload
+while an old launcher byte consumer blocks replacement, forged peer grant refusal,
+failed handshake cleanup, common epoch allocation, and preservation on refused
+replacement/wrong-connection calls. They use supplied protection evidence and the
+real Rust client, transport and stores. They do not launch a protected child,
+exercise native completion/focus, or establish revision-7 capabilities.
+
+Four compiled mutations each fail their exact one-test control: omit the initial
+reservation; retain a failed handshake reservation; use a transport-local content
+counter; omit dead-owner bytes from common admission accounting. Sources are
+restored after each control. Evidence: `.artifacts/bemenu-shared-transport/`.
+Existing transport credit/partial-write tests retain their assertions while
+addressing the now-explicit connection state and registry separately.
+Device-hidden scoped validation passes 195 runtime tests and 468 Session library
+tests (fourteen Session tests ignored), strict affected Clippy, formatting and the
+repository layout gate. These results are separate from a subsequent frozen
+canonical gate and from physical acceptance.

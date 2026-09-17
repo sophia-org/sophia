@@ -21,11 +21,14 @@ use sophia_protocol::{
 };
 
 use crate::{
-    ContentAllocationError, ContentCandidateError, ContentEpochPool, ContentStoreError, PolicyRole,
+    ContentAllocationError, ContentCandidateError, ContentStoreError, PolicyRole,
     PolicyRoleEndpoint, PolicyRoleEndpointError, ProtectionDomainEvidence,
 };
 
 mod accounting;
+mod legacy;
+mod negotiation;
+pub use legacy::ShellSessionTransport;
 mod content_actions;
 mod content_admission;
 mod content_allocations;
@@ -99,7 +102,7 @@ impl From<ContentAllocationError> for ShellTransportError {
     }
 }
 
-pub struct ShellSessionTransport {
+pub struct ShellComponentTransport {
     endpoint: PolicyRoleEndpoint,
     stream: Option<UnixStream>,
     capabilities: u64,
@@ -110,10 +113,10 @@ pub struct ShellSessionTransport {
     indicator_response: Option<indicator_responses::PendingIndicatorResponse>,
     inbox: VecDeque<Vec<u8>>,
     connection_epoch: u64,
-    last_content_grant_epoch: u64,
+    reserved_limits: Option<ContentLimits>,
     content_grant: Option<ContentGrant>,
     content_limits: Option<ContentLimits>,
-    content_epochs: ContentEpochPool,
+    store_grant: ContentGrant,
     last_candidate_generation: u64,
     requested_candidate: Option<(TransactionId, ShellV1DescriptorSnapshot)>,
     pending_candidate: Option<PendingShellCandidate>,
@@ -129,7 +132,7 @@ struct PendingShellCandidate {
     prepared: bool,
 }
 
-impl ShellSessionTransport {
+impl ShellComponentTransport {
     pub fn bind_for_supervised_uid(
         directory: impl AsRef<Path>,
         expected_uid: u32,
@@ -149,10 +152,10 @@ impl ShellSessionTransport {
             indicator_response: None,
             inbox: VecDeque::new(),
             connection_epoch: 0,
-            last_content_grant_epoch: 0,
+            reserved_limits: None,
             content_grant: None,
             content_limits: None,
-            content_epochs: ContentEpochPool::new(64 * 1024 * 1024)?,
+            store_grant: ContentGrant::default(),
             last_candidate_generation: 0,
             requested_candidate: None,
             pending_candidate: None,
@@ -181,222 +184,16 @@ impl ShellSessionTransport {
         self.content_limits.as_ref()
     }
 
-    pub fn accept_and_negotiate(
-        &mut self,
-        connection_epoch: u64,
-        timeout: Duration,
-    ) -> Result<ShellV1ServerWelcome, ShellTransportError> {
-        self.accept_and_negotiate_with_content_policy(
-            connection_epoch,
-            timeout,
-            ShellContentAdmissionPolicy::Unavailable,
-        )
-    }
-
-    /// Negotiate one protected shell peer under an explicit content policy.
-    ///
-    /// Codec support does not grant content. Production callers must name the
-    /// operator decision, and the legacy entry point remains unavailable.
-    pub fn accept_and_negotiate_with_content_policy(
-        &mut self,
-        connection_epoch: u64,
-        timeout: Duration,
-        content_policy: ShellContentAdmissionPolicy,
-    ) -> Result<ShellV1ServerWelcome, ShellTransportError> {
-        if connection_epoch == 0 || connection_epoch <= self.connection_epoch {
-            return Err(ShellTransportError::InvalidConnectionEpoch);
-        }
-        let mut stream = self.endpoint.accept_expected_timeout(timeout)?;
-        configure_stream(&stream)?;
-        let hello = decode_shell_v1_client_hello_frame(&read_frame(&mut stream)?)?;
-        if hello.minimum_revision == 0
-            || hello.minimum_revision > hello.maximum_revision
-            || hello.minimum_revision > sophia_protocol::SOPHIA_SHELL_INDICATOR_REVISION
-        {
-            return Err(ShellTransportError::UnsupportedRevision);
-        }
-        if hello.required_capabilities & SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER == 0 {
-            return Err(ShellTransportError::MissingCapability);
-        }
-        let revision = hello
-            .maximum_revision
-            .min(sophia_protocol::SOPHIA_SHELL_INDICATOR_REVISION);
-        let capabilities = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
-            | sophia_protocol::SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
-            | if revision >= 2 {
-                hello.required_capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_TAB_GROUPS
-            } else {
-                0
-            };
-        let capabilities = capabilities
-            | if revision >= 3 {
-                hello.required_capabilities
-                    & (sophia_protocol::SOPHIA_SHELL_CAPABILITY_SHORTCUT_CATALOG
-                        | sophia_protocol::SOPHIA_SHELL_CAPABILITY_REFERENCE_SHEET)
-            } else {
-                0
-            };
-        let launcher_mask = sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
-            | sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_LAUNCHER;
-        let capabilities = capabilities
-            | if revision >= 4 {
-                hello.required_capabilities & launcher_mask
-            } else {
-                0
-            };
-        let content_request = hello.required_capabilities
-            & (sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-                | sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT);
-        if content_request & sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT != 0
-            && content_request & sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE == 0
-        {
-            return Err(ShellTransportError::MissingCapability);
-        }
-        let content_decision = content_admission::decide(revision, content_request, content_policy);
-        let content_capabilities = match content_decision {
-            content_admission::ContentAdmissionDecision::NotRequested => 0,
-            content_admission::ContentAdmissionDecision::Granted(capabilities) => capabilities,
-            content_admission::ContentAdmissionDecision::Refused(refusal) => {
-                return self.refuse_content(stream, refusal);
-            }
-        };
-        let indicator_mask = sophia_protocol::SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS
-            | sophia_protocol::SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION;
-        let capabilities = capabilities | content_capabilities;
-        let capabilities = capabilities
-            | if revision >= sophia_protocol::SOPHIA_SHELL_INDICATOR_REVISION {
-                hello.required_capabilities & indicator_mask
-            } else {
-                0
-            };
-        if capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION != 0
-            && capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS == 0
-        {
-            return Err(ShellTransportError::MissingCapability);
-        }
-        if capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_LAUNCHER != 0
-            && capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG == 0
-        {
-            return Err(ShellTransportError::MissingCapability);
-        }
-        if capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_REFERENCE_SHEET != 0
-            && capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_SHORTCUT_CATALOG == 0
-        {
-            return Err(ShellTransportError::MissingCapability);
-        }
-        if hello.required_capabilities & !capabilities != 0 {
-            return Err(ShellTransportError::MissingCapability);
-        }
-        let welcome = ShellV1ServerWelcome {
-            selected_revision: revision,
-            connection_epoch,
-            capabilities,
-            max_descriptors: SOPHIA_SHELL_MAX_DESCRIPTORS as u16,
-            max_label_bytes: sophia_protocol::MAX_CHROME_LABEL_LEN as u16,
-            max_pending_activations: SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS as u16,
-        };
-        let next_content_grant = if content_capabilities != 0 {
-            let content_grant_epoch = self
-                .last_content_grant_epoch
-                .checked_add(1)
-                .ok_or(ShellTransportError::InvalidConnectionEpoch)?;
-            Some(ContentGrant {
-                connection_epoch,
-                content_grant_epoch,
-            })
-        } else {
-            None
-        };
-        let content_limits = next_content_grant.map(ContentLimits::prototype);
-        if let Some(limits) = &content_limits {
-            match self.content_epochs.admit(limits.clone()) {
-                Ok(()) => {}
-                Err(ContentStoreError::Budget) => {
-                    return self.refuse_content(
-                        stream,
-                        ContentAdmissionRefused {
-                            reason: 4,
-                            denied_capabilities: content_request,
-                        },
-                    );
-                }
-                Err(error) => return Err(error.into()),
-            }
-        }
-        let write_result = (|| {
-            write_frame(&mut stream, &encode_shell_v1_server_welcome_frame(welcome)?)?;
-            if let Some(limits) = content_limits {
-                write_frame(
-                    &mut stream,
-                    &sophia_protocol::encode_shell_content_frame(
-                        TransactionId::INVALID,
-                        &sophia_protocol::ShellContentRecord::Limits(limits),
-                    )?,
-                )?;
-            }
-            Ok::<(), ShellTransportError>(())
-        })();
-        if let Err(error) = write_result {
-            if next_content_grant.is_some() {
-                self.content_epochs.disconnect();
-            }
-            return Err(error);
-        }
-        self.pending_activations.clear();
-        self.last_candidate_generation = 0;
-        self.requested_candidate = None;
-        self.pending_candidate = None;
-        self.presented_candidate = None;
-        self.connection_epoch = connection_epoch;
-        if let Some(grant) = next_content_grant {
-            self.last_content_grant_epoch = grant.content_grant_epoch;
-        }
-        self.content_grant = next_content_grant;
-        self.content_limits = next_content_grant.map(ContentLimits::prototype);
-        stream
-            .set_nonblocking(true)
-            .map_err(|e| ShellTransportError::Io(e.to_string()))?;
-        self.peer_closed = false;
-        self.input.clear();
-        self.output.clear();
-        self.action_cancellations.clear();
-        self.indicator_response = None;
-        self.inbox.clear();
-        self.capabilities = capabilities;
-        self.stream = Some(stream);
-        Ok(welcome)
-    }
-
-    fn refuse_content(
-        &mut self,
-        mut stream: UnixStream,
-        refusal: ContentAdmissionRefused,
-    ) -> Result<ShellV1ServerWelcome, ShellTransportError> {
-        let frame = sophia_protocol::encode_shell_content_frame(
-            TransactionId::INVALID,
-            &sophia_protocol::ShellContentRecord::AdmissionRefused(refusal.clone()),
-        )?;
-        let write_result = write_frame(&mut stream, &frame);
-        let _ = stream.shutdown(std::net::Shutdown::Both);
-        let release_result = self
-            .endpoint
-            .active_peer()
-            .map(|peer| self.endpoint.release_peer(peer))
-            .transpose();
-        write_result?;
-        release_result?;
-        Err(ShellTransportError::ContentAdmissionRefused(refusal))
-    }
-
     pub fn request_candidate(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         snapshot: &ShellV1DescriptorSnapshot,
     ) -> Result<ShellV1Candidate, ShellTransportError> {
-        self.begin_candidate_request(transaction, snapshot)?;
+        self.begin_candidate_request(epochs, transaction, snapshot)?;
         let deadline = std::time::Instant::now() + SHELL_IO_TIMEOUT;
         loop {
-            if let Some(candidate) = self.poll_candidate()? {
+            if let Some(candidate) = self.poll_candidate(epochs)? {
                 return Ok(candidate);
             }
             if std::time::Instant::now() >= deadline {
@@ -408,6 +205,7 @@ impl ShellSessionTransport {
 
     pub fn begin_candidate_request(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         snapshot: &ShellV1DescriptorSnapshot,
     ) -> Result<(), ShellTransportError> {
@@ -417,14 +215,19 @@ impl ShellSessionTransport {
         }
         let frame = encode_shell_v1_descriptor_snapshot_frame(transaction, snapshot)?;
         self.requested_candidate = Some((transaction, snapshot.clone()));
-        self.send_async(frame)
+        self.send_async(epochs, frame)
     }
 
-    pub fn poll_candidate(&mut self) -> Result<Option<ShellV1Candidate>, ShellTransportError> {
+    pub fn poll_candidate(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+    ) -> Result<Option<ShellV1Candidate>, ShellTransportError> {
         let Some((transaction, snapshot)) = self.requested_candidate.clone() else {
             return Ok(None);
         };
-        let Some(frame) = self.poll_kind(sophia_protocol::IpcMessageKind::ShellV1Candidate)? else {
+        let Some(frame) =
+            self.poll_kind(epochs, sophia_protocol::IpcMessageKind::ShellV1Candidate)?
+        else {
             return Ok(None);
         };
         self.requested_candidate = None;
@@ -457,6 +260,7 @@ impl ShellSessionTransport {
 
     pub fn send_candidate_outcome(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         outcome: ShellV1CandidateOutcome,
     ) -> Result<(), ShellTransportError> {
@@ -478,7 +282,7 @@ impl ShellSessionTransport {
             _ => return Err(ShellTransportError::WrongCandidate),
         }
         let frame = encode_shell_v1_candidate_outcome_frame(transaction, outcome)?;
-        self.send_async(frame)?;
+        self.send_async(epochs, frame)?;
         match outcome.kind {
             sophia_protocol::ShellV1CandidateOutcomeKind::Prepared => {
                 self.pending_candidate = Some(pending);
@@ -504,6 +308,7 @@ impl ShellSessionTransport {
 
     pub fn queue_activation(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         activation: ShellV1Activation,
     ) -> Result<(), ShellTransportError> {
@@ -518,20 +323,23 @@ impl ShellSessionTransport {
             return Err(ShellTransportError::WrongActivation);
         }
         if self.pending_activations.len() >= SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS {
-            self.disconnect()?;
+            self.disconnect(epochs)?;
             return Err(ShellTransportError::ActivationQueueSaturated);
         }
         let frame = encode_shell_v1_activation_frame(transaction, activation)?;
-        self.send_async(frame)?;
+        self.send_async(epochs, frame)?;
         self.pending_activations
             .push_back((transaction, activation.activation));
         Ok(())
     }
 
-    pub fn receive_activation_ack(&mut self) -> Result<ShellV1ActivationAck, ShellTransportError> {
+    pub fn receive_activation_ack(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+    ) -> Result<ShellV1ActivationAck, ShellTransportError> {
         let deadline = std::time::Instant::now() + SHELL_IO_TIMEOUT;
         loop {
-            if let Some(ack) = self.poll_activation_ack()? {
+            if let Some(ack) = self.poll_activation_ack(epochs)? {
                 return Ok(ack);
             }
             if std::time::Instant::now() >= deadline {
@@ -545,6 +353,7 @@ impl ShellSessionTransport {
 
     pub fn poll_activation_ack(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<ShellV1ActivationAck>, ShellTransportError> {
         let Some((expected_transaction, expected_activation)) =
             self.pending_activations.front().copied()
@@ -552,6 +361,7 @@ impl ShellSessionTransport {
             return Ok(None);
         };
         let Some(frame) = self.poll_transaction(
+            epochs,
             sophia_protocol::IpcMessageKind::ShellV1ActivationAck,
             expected_transaction,
         )?
@@ -567,7 +377,10 @@ impl ShellSessionTransport {
         Ok(Some(ack))
     }
 
-    pub fn disconnect(&mut self) -> Result<(), ShellTransportError> {
+    pub fn disconnect(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+    ) -> Result<(), ShellTransportError> {
         self.stream = None;
         self.input.clear();
         self.output.clear();
@@ -580,7 +393,8 @@ impl ShellSessionTransport {
         self.pending_activations.clear();
         self.content_grant = None;
         self.content_limits = None;
-        self.content_epochs.disconnect();
+        self.reserved_limits = None;
+        epochs.disconnect(self.store_grant);
         if let Some(peer) = self.endpoint.active_peer() {
             self.endpoint.release_peer(peer)?;
         }
@@ -631,36 +445,45 @@ impl ShellSessionTransport {
         self.content_grant
     }
 
-    pub fn content_reserved_bytes(&self) -> u64 {
-        self.content_epochs.reserved_bytes()
+    pub fn content_reserved_bytes(&self, epochs: &crate::ContentEpochRegistry) -> u64 {
+        epochs.reserved_bytes()
     }
 
-    pub fn content_backing_reserved_bytes(&self) -> u64 {
-        self.content_epochs.reserved_backing_bytes()
+    pub fn content_backing_reserved_bytes(&self, epochs: &crate::ContentEpochRegistry) -> u64 {
+        epochs.reserved_backing_bytes()
     }
 
-    pub fn content_usage(&self) -> Option<crate::ContentMemoryUsage> {
-        self.content_epochs.active().map(|store| store.usage())
+    pub fn content_usage(
+        &self,
+        epochs: &crate::ContentEpochRegistry,
+    ) -> Option<crate::ContentMemoryUsage> {
+        epochs
+            .resources(self.store_grant)
+            .map(|store| store.usage())
     }
 
     pub fn lease_content_resource(
         &self,
+        epochs: &crate::ContentEpochRegistry,
         grant: ContentGrant,
         resource: sophia_protocol::ContentResourceId,
     ) -> Result<crate::ContentResourceLease, ShellTransportError> {
-        self.content_epochs
-            .active()
+        epochs
+            .resources(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
             .lease(grant, resource)
             .map_err(Into::into)
     }
 
     /// Bounded, nonblocking I/O shared by persistent tabs and the r1 facade.
-    pub fn poll_io(&mut self) -> Result<(), ShellTransportError> {
+    pub fn poll_io(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+    ) -> Result<(), ShellTransportError> {
         if self.stream.is_none() {
             return Err(ShellTransportError::NotConnected);
         }
-        self.flush_indicator_response()?;
+        self.flush_indicator_response(epochs)?;
         let stream = self
             .stream
             .as_mut()
@@ -732,19 +555,24 @@ impl ShellSessionTransport {
         Ok(())
     }
 
-    pub fn send_async(&mut self, frame: Vec<u8>) -> Result<(), ShellTransportError> {
-        if !self.bulk_capacity_available(frame.len()) {
+    pub fn send_async(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        frame: Vec<u8>,
+    ) -> Result<(), ShellTransportError> {
+        if !self.bulk_capacity_available(epochs, frame.len()) {
             return Err(ShellTransportError::ActivationQueueSaturated);
         }
         self.output.push(frame, false);
-        self.poll_io()
+        self.poll_io(epochs)
     }
 
     pub fn poll_kind(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         kind: sophia_protocol::IpcMessageKind,
     ) -> Result<Option<Vec<u8>>, ShellTransportError> {
-        self.poll_io()?;
+        self.poll_io(epochs)?;
         let at = self
             .inbox
             .iter()
@@ -758,10 +586,11 @@ impl ShellSessionTransport {
 
     pub fn poll_transaction(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         kind: sophia_protocol::IpcMessageKind,
         tx: TransactionId,
     ) -> Result<Option<Vec<u8>>, ShellTransportError> {
-        self.poll_io()?;
+        self.poll_io(epochs)?;
         let at = self.inbox.iter().position(|f| {
             u16::from_le_bytes([f[6], f[7]]) == kind as u16
                 && u64::from_le_bytes(f[8..16].try_into().unwrap()) == tx.raw()

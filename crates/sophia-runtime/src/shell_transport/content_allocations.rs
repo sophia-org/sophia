@@ -1,3 +1,4 @@
+use super::ShellComponentTransport;
 use sophia_protocol::*;
 
 use super::{ShellSessionTransport, ShellTransportError, content_admission};
@@ -7,27 +8,29 @@ const ALLOCATION_RESPONSE_BYTES: usize = sophia_protocol::SOPHIA_IPC_HEADER_LEN 
 const OUTPUT_FACTS_PREFIX_BYTES: usize = sophia_protocol::SOPHIA_IPC_HEADER_LEN + 32;
 const OUTPUT_FACT_BYTES: usize = 40;
 
-impl ShellSessionTransport {
+impl ShellComponentTransport {
     pub fn publish_content_output_facts(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         facts_generation: u64,
         outputs: Vec<ContentOutputFactsEntry>,
     ) -> Result<(), ShellTransportError> {
         let bytes = OUTPUT_FACTS_PREFIX_BYTES
             .saturating_add(outputs.len().saturating_mul(OUTPUT_FACT_BYTES));
-        if !self.bulk_capacity_available(bytes) {
+        if !self.bulk_capacity_available(epochs, bytes) {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
-        self.content_epochs
-            .active_allocations_mut()
+        epochs
+            .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
             .publish_outputs(transaction, facts_generation, outputs)?;
-        self.flush_content_allocation_events()
+        self.flush_content_allocation_events(epochs)
     }
 
     pub fn service_content_allocation_requests(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         presented_parents: &[(ContentAllocationId, u64)],
         now_msec: u64,
     ) -> Result<usize, ShellTransportError> {
@@ -38,20 +41,19 @@ impl ShellSessionTransport {
         let mut processed = 0;
         while processed < limits.max_frames_per_service_tick as usize {
             if self
-                .require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 1)
+                .require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 1)
                 .is_err()
             {
                 break;
             }
-            let Some((transaction, record)) = self.poll_content_allocation_record()? else {
+            let Some((transaction, record)) = self.poll_content_allocation_record(epochs)? else {
                 break;
             };
             let ShellContentRecord::AllocationRequest(request) = record else {
                 return Err(ShellTransportError::WrongContentRecord);
             };
-            let outcome = self
-                .content_epochs
-                .active_allocations_mut()
+            let outcome = epochs
+                .allocations_mut(self.store_grant)
                 .ok_or(ShellTransportError::MissingCapability)?
                 .request(transaction, request.clone(), presented_parents, now_msec);
             processed += 1;
@@ -60,6 +62,7 @@ impl ShellSessionTransport {
                     return Err(error.into());
                 }
                 self.send_content_record(
+                    epochs,
                     transaction,
                     &ShellContentRecord::AllocationResult(ContentAllocationResult {
                         grant: limits.grant,
@@ -81,89 +84,102 @@ impl ShellSessionTransport {
                 )?;
             }
         }
-        self.flush_content_allocation_events()?;
+        self.flush_content_allocation_events(epochs)?;
         Ok(processed)
     }
 
     pub fn next_content_allocation_request(
         &self,
+        epochs: &crate::ContentEpochRegistry,
     ) -> Option<(TransactionId, ContentAllocationRequest)> {
-        self.content_epochs
-            .active_allocations()
+        epochs
+            .allocations(self.store_grant)
             .and_then(|allocations| allocations.pending_request())
     }
 
     pub fn grant_content_allocation(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         request_id: u64,
         snapshot: ContentAllocationSnapshot,
         presented_parents: &[(ContentAllocationId, u64)],
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 0)?;
-        self.content_epochs
-            .active_allocations_mut()
+        self.require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 0)?;
+        epochs
+            .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
             .grant(request_id, snapshot, presented_parents)?;
-        self.flush_content_allocation_events()
+        self.flush_content_allocation_events(epochs)
     }
 
     pub fn reject_content_allocation(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         request_id: u64,
         error: ContentAllocationError,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 0)?;
-        self.content_epochs
-            .active_allocations_mut()
+        self.require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 0)?;
+        epochs
+            .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
             .reject(request_id, error)?;
-        self.flush_content_allocation_events()
+        self.flush_content_allocation_events(epochs)
     }
 
     pub fn release_content_allocation(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         request_id: u64,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 0)?;
-        self.content_epochs
-            .active_allocations_mut()
+        self.require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 0)?;
+        epochs
+            .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
             .release(request_id)?;
-        self.flush_content_allocation_events()
+        self.flush_content_allocation_events(epochs)
     }
 
     pub fn invalidate_content_allocation(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         allocation: ContentAllocationId,
         reason: ContentReason,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 1)?;
-        self.content_epochs
-            .active_allocations_mut()
+        self.require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 1)?;
+        epochs
+            .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
             .invalidate(transaction, allocation, reason)?;
-        self.flush_content_allocation_events()
+        self.flush_content_allocation_events(epochs)
     }
 
-    pub fn expire_content_allocations(&mut self, now_msec: u64) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(ALLOCATION_RESPONSE_BYTES, 0)?;
-        self.content_epochs
-            .active_allocations_mut()
+    pub fn expire_content_allocations(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        now_msec: u64,
+    ) -> Result<(), ShellTransportError> {
+        self.require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 0)?;
+        epochs
+            .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
             .expire(now_msec)?;
-        self.flush_content_allocation_events()
+        self.flush_content_allocation_events(epochs)
     }
 
-    pub fn content_allocation_snapshots(&self) -> Vec<ContentAllocationSnapshot> {
-        self.content_epochs
-            .active_allocations()
+    pub fn content_allocation_snapshots(
+        &self,
+        epochs: &crate::ContentEpochRegistry,
+    ) -> Vec<ContentAllocationSnapshot> {
+        epochs
+            .allocations(self.store_grant)
             .map(|allocations| allocations.snapshots())
             .unwrap_or_default()
     }
 
     fn require_allocation_output_capacity(
         &self,
+        epochs: &crate::ContentEpochRegistry,
         bytes: usize,
         additional: usize,
     ) -> Result<(), ShellTransportError> {
@@ -171,7 +187,7 @@ impl ShellSessionTransport {
             .content_limits
             .as_ref()
             .ok_or(ShellTransportError::MissingCapability)?;
-        if !self.control_capacity_available(additional)
+        if !self.control_capacity_available(epochs, additional)
             || self.output.len().saturating_add(bytes) > limits.max_output_queue_bytes as usize
         {
             Err(ShellTransportError::ContentQueueSaturated)
@@ -182,8 +198,9 @@ impl ShellSessionTransport {
 
     fn poll_content_allocation_record(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
-        self.poll_io()?;
+        self.poll_io(epochs)?;
         let at = self
             .inbox
             .iter()
@@ -205,18 +222,20 @@ impl ShellSessionTransport {
         Ok(Some((transaction, record)))
     }
 
-    fn flush_content_allocation_events(&mut self) -> Result<(), ShellTransportError> {
+    fn flush_content_allocation_events(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+    ) -> Result<(), ShellTransportError> {
         loop {
-            let event = self
-                .content_epochs
-                .active_allocations()
+            let event = epochs
+                .allocations(self.store_grant)
                 .and_then(|allocations| allocations.pending_event().cloned());
             let Some(event) = event else {
                 return Ok(());
             };
             let (frame, control) =
-                self.prepare_content_frame(event.transaction, &event.record, true)?;
-            let Some(store) = self.content_epochs.active_allocations_mut() else {
+                self.prepare_content_frame(epochs, event.transaction, &event.record, true)?;
+            let Some(store) = epochs.allocations_mut(self.store_grant) else {
                 return Err(ShellTransportError::MissingCapability);
             };
             if store.pending_event() != Some(&event) {
@@ -225,5 +244,96 @@ impl ShellSessionTransport {
             self.output.push(frame, control);
             store.take_event();
         }
+    }
+}
+
+// Legacy single-shell facade, delegating to the same shared registry path.
+impl ShellSessionTransport {
+    pub fn publish_content_output_facts(
+        &mut self,
+        transaction: TransactionId,
+        facts_generation: u64,
+        outputs: Vec<ContentOutputFactsEntry>,
+    ) -> Result<(), ShellTransportError> {
+        self.state.publish_content_output_facts(
+            &mut self.content_epochs,
+            transaction,
+            facts_generation,
+            outputs,
+        )
+    }
+
+    pub fn service_content_allocation_requests(
+        &mut self,
+        presented_parents: &[(ContentAllocationId, u64)],
+        now_msec: u64,
+    ) -> Result<usize, ShellTransportError> {
+        self.state.service_content_allocation_requests(
+            &mut self.content_epochs,
+            presented_parents,
+            now_msec,
+        )
+    }
+
+    pub fn next_content_allocation_request(
+        &self,
+    ) -> Option<(TransactionId, ContentAllocationRequest)> {
+        self.state
+            .next_content_allocation_request(&self.content_epochs)
+    }
+
+    pub fn grant_content_allocation(
+        &mut self,
+        request_id: u64,
+        snapshot: ContentAllocationSnapshot,
+        presented_parents: &[(ContentAllocationId, u64)],
+    ) -> Result<(), ShellTransportError> {
+        self.state.grant_content_allocation(
+            &mut self.content_epochs,
+            request_id,
+            snapshot,
+            presented_parents,
+        )
+    }
+
+    pub fn reject_content_allocation(
+        &mut self,
+        request_id: u64,
+        error: ContentAllocationError,
+    ) -> Result<(), ShellTransportError> {
+        self.state
+            .reject_content_allocation(&mut self.content_epochs, request_id, error)
+    }
+
+    pub fn release_content_allocation(
+        &mut self,
+        request_id: u64,
+    ) -> Result<(), ShellTransportError> {
+        self.state
+            .release_content_allocation(&mut self.content_epochs, request_id)
+    }
+
+    pub fn invalidate_content_allocation(
+        &mut self,
+        transaction: TransactionId,
+        allocation: ContentAllocationId,
+        reason: ContentReason,
+    ) -> Result<(), ShellTransportError> {
+        self.state.invalidate_content_allocation(
+            &mut self.content_epochs,
+            transaction,
+            allocation,
+            reason,
+        )
+    }
+
+    pub fn expire_content_allocations(&mut self, now_msec: u64) -> Result<(), ShellTransportError> {
+        self.state
+            .expire_content_allocations(&mut self.content_epochs, now_msec)
+    }
+
+    pub fn content_allocation_snapshots(&self) -> Vec<ContentAllocationSnapshot> {
+        self.state
+            .content_allocation_snapshots(&self.content_epochs)
     }
 }

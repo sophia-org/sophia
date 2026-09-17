@@ -1,5 +1,6 @@
 //! Snapshot the existing epoch, input and aggregate response owners.
 
+use super::ShellComponentTransport;
 use super::{ShellSessionTransport, control_budget::CONTROL_FRAME_BYTES};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -10,6 +11,9 @@ pub struct ShellContentShutdown {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ShellContentAccounting {
+    /// Common registry snapshot. With independent components this is Session
+    /// accounting and must not be summed once per connection. The remaining
+    /// fields count only this connection's exact credits, FIFO and input.
     pub epochs: crate::ContentEpochAccounting,
     /// Store credits, queued store responses, action-cancel/outcome credits,
     /// and FIFO frames. A partial write still owns the entire frame charge.
@@ -29,7 +33,7 @@ impl ShellContentAccounting {
     }
 }
 
-impl ShellSessionTransport {
+impl ShellComponentTransport {
     /// Final shutdown only, after successful native detach/cleanup. The caller
     /// transfers its remaining backend owner; the owner is dropped BEFORE any
     /// submitted candidate's terminal transition. Earlier Engine/scene owners
@@ -41,31 +45,35 @@ impl ShellSessionTransport {
     /// completion, not recovery from a panic in an owner's destructor.
     pub fn finish_content_after_backend_drop<B>(
         &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
         backend: B,
     ) -> Result<ShellContentShutdown, B> {
         if self.stream.is_some()
             || self.content_grant.is_some()
-            || self.content_epochs.active().is_some()
+            || epochs.resources(self.store_grant).is_some()
         {
             return Err(backend);
         }
-        let settled_candidates = self.content_epochs.finish_after_backend_drop(backend)?;
+        let settled_candidates = epochs.finish_after_backend_drop(backend)?;
         Ok(ShellContentShutdown {
             settled_candidates,
-            accounting: self.collect_content_accounting(),
+            accounting: self.collect_content_accounting(epochs),
         })
     }
 
     /// Observe charges rather than allocating a second resource registry.
-    pub fn content_accounting(&self) -> ShellContentAccounting {
-        let epochs = self.content_epochs.accounting();
-        let (bulk_records, bulk_bytes) = self.content_epochs.active_bulk_occupancy();
-        let reserved = epochs.response_records
+    pub fn content_accounting(
+        &self,
+        epochs: &crate::ContentEpochRegistry,
+    ) -> ShellContentAccounting {
+        let epoch_accounting = epochs.accounting();
+        let (bulk_records, bulk_bytes) = epochs.bulk_occupancy(self.store_grant);
+        let reserved = epochs.control_occupancy(self.store_grant)
             + self.action_cancellations.len()
             + usize::from(self.indicator_response.is_some());
         let controls = reserved - bulk_records + self.output.controls();
         ShellContentAccounting {
-            epochs,
+            epochs: epoch_accounting,
             response_records: reserved + self.output.records(),
             response_bytes: bulk_bytes + self.output.bulk_bytes() + controls * CONTROL_FRAME_BYTES,
             input_records: self.inbox.len(),
@@ -75,8 +83,31 @@ impl ShellSessionTransport {
 
     /// Collection only releases stores whose actual tracked consumers ended.
     /// Calling this after disconnect is safe and requires no socket operation.
+    pub fn collect_content_accounting(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+    ) -> ShellContentAccounting {
+        epochs.collect();
+        self.content_accounting(epochs)
+    }
+}
+
+// Legacy single-shell facade, delegating to the same shared registry path.
+impl ShellSessionTransport {
+    pub fn finish_content_after_backend_drop<B>(
+        &mut self,
+        backend: B,
+    ) -> Result<ShellContentShutdown, B> {
+        self.state
+            .finish_content_after_backend_drop(&mut self.content_epochs, backend)
+    }
+
+    pub fn content_accounting(&self) -> ShellContentAccounting {
+        self.state.content_accounting(&self.content_epochs)
+    }
+
     pub fn collect_content_accounting(&mut self) -> ShellContentAccounting {
-        self.content_epochs.collect();
-        self.content_accounting()
+        self.state
+            .collect_content_accounting(&mut self.content_epochs)
     }
 }
