@@ -116,16 +116,15 @@ impl NativeCatalogService {
             self.request_shutdown(launches);
         }
         self.last_visit = self.last_visit.max(now_msec);
-        if let Some(pending) = &mut self.pending {
-            let grant = connection.and_then(|c| c.content_grant());
-            if self.stopped
+        if let Some(pending) = &mut self.pending
+            && (self.stopped
                 || now_msec >= pending.deadline
-                || grant != Some(pending.launch.activation.event.binding.grant)
-                || !launches.native_catalog_admission(&pending.launch)
-            {
-                launches.reject_native_before_execution(&pending.launch);
-                pending.rejected = true;
-            }
+                || connection
+                    .is_none_or(|c| !execution::connection_permits_cause(c, &pending.launch.cause))
+                || !launches.native_catalog_admission(&pending.launch))
+        {
+            launches.reject_native_before_execution(&pending.launch);
+            pending.rejected = true;
         }
         if let Some(result) = self.worker.poll() {
             match result {

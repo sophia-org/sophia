@@ -29,7 +29,10 @@ fn keyboard_admission_is_once_and_independent_of_ack_order_or_disposition() {
             assert_eq!(h.activate(activation, 0).status, 2);
             assert_eq!(h.queue.pending_len(), 1);
             let payload = h.dispatch();
-            assert_eq!(payload.activation, activation);
+            assert_eq!(
+                payload.cause,
+                sophia_session::session_actions::CatalogLaunchCause::Transient(activation)
+            );
             assert!(h.queue.native_catalog_admission(&payload));
             assert_ne!(payload.transaction, tx(20)); // client request transaction
             h.queue.cancel_catalog(payload.transaction);
@@ -248,7 +251,10 @@ fn native_worker_returns_exact_queue_owner_without_restoring_revoked_authority()
             panic!("wrong worker result");
         };
         assert!(Arc::ptr_eq(&payload, &returned));
-        assert_eq!(returned.activation, activation);
+        assert_eq!(
+            returned.cause,
+            sophia_session::session_actions::CatalogLaunchCause::Transient(activation)
+        );
         assert_eq!(command.is_err(), changed);
         if let Ok(command) = command {
             assert_eq!(Some(command), payload.entry.command);
@@ -322,7 +328,12 @@ fn managed_origin_match_requires_native_payload_not_just_catalog_transaction() {
             .matches_child_launch(payload.transaction, false, Some(&payload))
     );
     let mut other = (*payload).clone();
-    other.activation.event.binding.grant.content_grant_epoch += 1;
+    let sophia_session::session_actions::CatalogLaunchCause::Transient(activation) =
+        &mut other.cause
+    else {
+        panic!("transient fixture");
+    };
+    activation.event.binding.grant.content_grant_epoch += 1;
     assert!(
         !h.queue
             .matches_child_launch(payload.transaction, true, Some(&other))

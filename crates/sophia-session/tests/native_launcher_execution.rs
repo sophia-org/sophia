@@ -18,6 +18,65 @@ fn environment() -> catalog::CatalogProcessEnvironment<'static> {
         control_socket: None,
     }
 }
+
+#[test]
+fn transient_connection_cannot_execute_a_persistent_cause_with_the_same_grant() {
+    let mut h = Harness::with_command(catalog::ApplicationLaunchCommand {
+        executable: "/bin/true".into(),
+        arguments: vec![],
+        working_directory: None,
+    });
+    let entry = h.catalog.entry(1).unwrap();
+    let activation = CatalogActivation {
+        catalog_generation: h.catalog.wire().generation,
+        action: ContentAction {
+            grant: GRANT,
+            output: OUTPUT,
+            candidate_generation: 1,
+            presentation_epoch: 11,
+            interaction_generation: 1,
+            allocation: ContentAllocationId {
+                id: 1,
+                generation: 1,
+            },
+            target_id: 1,
+            target_generation: 1,
+            action_id: 1,
+            event_id: 1,
+            kind: 1,
+            reason: 0,
+        },
+    };
+    h.queue
+        .enqueue_persistent_catalog(
+            activation,
+            entry.clone(),
+            SessionApplicationId::from_raw(2),
+            0,
+        )
+        .unwrap();
+    let launch = h.dispatch();
+    let connection = h.peer.transport.connection(&mut h.epochs);
+    assert!(connection.supports_native_launcher());
+    assert!(!connection.supports_persistent_catalog());
+    match catalog::spawn_native_catalog(
+        &connection,
+        &mut h.queue,
+        launch,
+        Ok(entry.command.clone().unwrap()),
+        environment(),
+    ) {
+        Err(catalog::NativeCatalogSpawnError::Refused) => {}
+        Ok(mut child) => {
+            child.child.wait().unwrap();
+            panic!("wrong role executed");
+        }
+        Err(catalog::NativeCatalogSpawnError::Spawn(error)) => {
+            panic!("wrong role attempted spawn: {error}")
+        }
+    }
+    assert!(h.queue.admission().is_none());
+}
 fn service(command: catalog::ApplicationLaunchCommand) -> catalog::NativeCatalogService {
     catalog::NativeCatalogService::start(
         sophia_config::ApplicationCatalogConfig {
@@ -100,7 +159,10 @@ fn worker_to_process_join_preserves_revocation_deadline_and_stop_boundaries() {
             let catalog::NativeCatalogServiceEvent::Started(mut child) = event else {
                 panic!("expected real spawn");
             };
-            assert_eq!(child.launch.activation, activation);
+            assert_eq!(
+                child.launch.cause,
+                sophia_session::session_actions::CatalogLaunchCause::Transient(activation)
+            );
             assert!(
                 h.queue
                     .matches_child_launch(intent.transaction, true, Some(&child.launch))

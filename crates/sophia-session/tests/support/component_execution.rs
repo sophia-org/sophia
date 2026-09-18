@@ -194,8 +194,8 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
             assert!(started.is_some());
             assert!(children[0].matches_admission(&h.queue));
             assert_eq!(
-                children[0].native_catalog.as_ref().unwrap().activation,
-                activation
+                children[0].native_catalog.as_ref().unwrap().cause,
+                crate::session_actions::CatalogLaunchCause::Transient(activation)
             );
             assert_eq!(children[0].launch_transaction, Some(intent.transaction));
             // A later disconnect cannot erase the already executed child's origin.

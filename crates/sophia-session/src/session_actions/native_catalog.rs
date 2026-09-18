@@ -1,13 +1,37 @@
 use super::*;
 use crate::application_catalog::ApplicationCatalogEntry;
-use sophia_protocol::{ContentGrant, NativeLauncherActivation};
+use sophia_protocol::{CatalogActivation, ContentGrant, NativeLauncherActivation};
+
+/// Exact launch origin; a persistent catalog click never acquires a transient
+/// opening or keyboard lease. Presentation authorization precedes queue entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CatalogLaunchCause {
+    Transient(NativeLauncherActivation),
+    Persistent(CatalogActivation),
+}
+
+impl CatalogLaunchCause {
+    pub const fn grant(&self) -> ContentGrant {
+        match self {
+            Self::Transient(value) => value.event.binding.grant,
+            Self::Persistent(value) => value.action.grant,
+        }
+    }
+
+    fn slot(&self) -> u64 {
+        match self {
+            Self::Transient(value) => u64::from(value.slot),
+            Self::Persistent(value) => value.action.action_id,
+        }
+    }
+}
 
 /// The actual catalog queue payload. Worker verification retains this same
 /// entry and exact origin; a client transaction is never the Session serial.
 #[derive(Clone, Debug)]
 pub struct NativeCatalogLaunch {
     pub transaction: TransactionId,
-    pub activation: NativeLauncherActivation,
+    pub cause: CatalogLaunchCause,
     pub entry: Arc<ApplicationCatalogEntry>,
 }
 
@@ -19,10 +43,10 @@ pub enum NativeCatalogLaunchRefusal {
     Exhausted,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct CatalogDispatch {
     pub transaction: TransactionId,
-    pub native: Option<NativeLauncherActivation>,
+    pub native: Option<CatalogLaunchCause>,
 }
 
 impl SessionLaunchQueue {
@@ -55,7 +79,44 @@ impl SessionLaunchQueue {
         application: SessionApplicationId,
         active: usize,
     ) -> Result<TransactionId, NativeCatalogLaunchRefusal> {
-        if entry.descriptor.slot != activation.slot
+        self.enqueue_catalog_cause(
+            CatalogLaunchCause::Transient(activation),
+            entry,
+            application,
+            active,
+        )
+    }
+
+    /// Queue an already-authorized persistent event under the same bounded
+    /// execution owner as a transient menu. This validates shape, not Presented.
+    pub fn enqueue_persistent_catalog(
+        &mut self,
+        activation: CatalogActivation,
+        entry: Arc<ApplicationCatalogEntry>,
+        application: SessionApplicationId,
+        active: usize,
+    ) -> Result<TransactionId, NativeCatalogLaunchRefusal> {
+        sophia_protocol::encode_shell_catalog_action_frame(
+            TransactionId::from_raw(1),
+            &sophia_protocol::ShellCatalogActionRecord::Activate(activation.clone()),
+        )
+        .map_err(|_| NativeCatalogLaunchRefusal::Unauthorized)?;
+        self.enqueue_catalog_cause(
+            CatalogLaunchCause::Persistent(activation),
+            entry,
+            application,
+            active,
+        )
+    }
+
+    fn enqueue_catalog_cause(
+        &mut self,
+        cause: CatalogLaunchCause,
+        entry: Arc<ApplicationCatalogEntry>,
+        application: SessionApplicationId,
+        active: usize,
+    ) -> Result<TransactionId, NativeCatalogLaunchRefusal> {
+        if u64::from(entry.descriptor.slot) != cause.slot()
             || !entry.descriptor.available
             || entry.command.is_none()
         {
@@ -64,12 +125,11 @@ impl SessionLaunchQueue {
         if self
             .admitted_native
             .as_ref()
-            .is_some_and(|v| v.activation == activation)
-            || self.pending.iter().any(|v| {
-                v.native
-                    .as_ref()
-                    .is_some_and(|v| v.activation == activation)
-            })
+            .is_some_and(|v| v.cause == cause)
+            || self
+                .pending
+                .iter()
+                .any(|v| v.native.as_ref().is_some_and(|v| v.cause == cause))
         {
             return Err(NativeCatalogLaunchRefusal::Stale);
         }
@@ -95,7 +155,7 @@ impl SessionLaunchQueue {
         let transaction = TransactionId::from_raw(serial);
         let payload = Arc::new(NativeCatalogLaunch {
             transaction,
-            activation,
+            cause,
             entry,
         });
         let intent = SessionLaunchIntent {
@@ -122,7 +182,7 @@ impl SessionLaunchQueue {
         self.catalog_admission(launch.transaction)
             && self.admitted_native.as_ref().is_some_and(|current| {
                 current.transaction == launch.transaction
-                    && current.activation == launch.activation
+                    && current.cause == launch.cause
                     && Arc::ptr_eq(&current.entry, &launch.entry)
             })
     }
@@ -140,7 +200,7 @@ impl SessionLaunchQueue {
         if self.native_execution_attempted
             || !self.native_dispatch_taken
             || !self.native_catalog_admission(launch)
-            || current_grant != launch.activation.event.binding.grant
+            || current_grant != launch.cause.grant()
             || launch.entry.command.as_ref() != Some(verified)
         {
             return false;
@@ -151,11 +211,11 @@ impl SessionLaunchQueue {
     }
 
     pub fn take_native_catalog_dispatch(&mut self) -> Option<Arc<NativeCatalogLaunch>> {
-        let dispatch = self.catalog_dispatch?;
+        let dispatch = self.catalog_dispatch.clone()?;
         let activation = dispatch.native?;
         let current = self.admitted_native.as_ref()?;
         if current.transaction != dispatch.transaction
-            || current.activation != activation
+            || current.cause != activation
             || !self.native_catalog_admission(current)
         {
             return None;
@@ -174,14 +234,14 @@ impl SessionLaunchQueue {
             launch
                 .native
                 .as_ref()
-                .is_none_or(|v| v.activation.event.binding.grant != grant)
+                .is_none_or(|v| v.cause.grant() != grant)
         });
         let mut removed = before - self.pending.len();
         if !self.native_execution_attempted
             && self
                 .admitted_native
                 .as_ref()
-                .is_some_and(|v| v.activation.event.binding.grant == grant)
+                .is_some_and(|v| v.cause.grant() == grant)
         {
             self.take_admission();
             removed += 1;
@@ -199,7 +259,7 @@ impl SessionLaunchQueue {
         self.pending.retain(|v| {
             v.native.as_ref().is_none_or(|v| {
                 v.transaction != launch.transaction
-                    || v.activation != launch.activation
+                    || v.cause != launch.cause
                     || !Arc::ptr_eq(&v.entry, &launch.entry)
             })
         });

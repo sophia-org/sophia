@@ -6,7 +6,7 @@ use sophia_protocol::{SessionApplicationId, SurfaceId, TransactionId};
 
 mod native_catalog;
 use native_catalog::CatalogDispatch;
-pub use native_catalog::{NativeCatalogLaunch, NativeCatalogLaunchRefusal};
+pub use native_catalog::{CatalogLaunchCause, NativeCatalogLaunch, NativeCatalogLaunchRefusal};
 
 pub const SESSION_ACTION_APPLICATION_CAPACITY: usize = 16;
 pub const SESSION_ACTION_SURFACE_CAPACITY: usize = 16;
@@ -117,23 +117,27 @@ impl SessionLaunchQueue {
         }
         self.catalog_dispatch = Some(CatalogDispatch {
             transaction,
-            native: self.admitted_native.as_ref().map(|owner| owner.activation),
+            native: self
+                .admitted_native
+                .as_ref()
+                .map(|owner| owner.cause.clone()),
         });
         true
     }
     pub fn take_catalog_dispatch(&mut self) -> Option<TransactionId> {
-        let dispatch = self.catalog_dispatch?;
+        let dispatch = self.catalog_dispatch.as_ref()?;
         if dispatch.native.is_some() {
             return None;
         }
+        let transaction = dispatch.transaction;
         self.catalog_dispatch = None;
-        Some(dispatch.transaction)
+        Some(transaction)
     }
     pub fn cancel_catalog(&mut self, transaction: TransactionId) {
         self.pending.retain(|launch| {
             !launch.catalog || launch.native.is_some() || launch.intent.transaction != transaction
         });
-        if self.catalog_dispatch.is_some_and(|dispatch| {
+        if self.catalog_dispatch.as_ref().is_some_and(|dispatch| {
             dispatch.transaction == transaction && dispatch.native.is_none()
         }) {
             self.catalog_dispatch = None;

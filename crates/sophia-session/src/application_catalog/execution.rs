@@ -1,7 +1,7 @@
 //! Process creation shared by legacy and native catalog consumers. No display
 //! connection is opened here; launched applications use the configured endpoint.
 use super::ApplicationLaunchCommand;
-use crate::session_actions::{NativeCatalogLaunch, SessionLaunchQueue};
+use crate::session_actions::{CatalogLaunchCause, NativeCatalogLaunch, SessionLaunchQueue};
 use sophia_runtime::ShellTransportConnection;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -52,6 +52,17 @@ pub enum NativeCatalogSpawnError {
     Spawn(std::io::Error),
 }
 
+pub(super) fn connection_permits_cause(
+    connection: &ShellTransportConnection<'_>,
+    cause: &CatalogLaunchCause,
+) -> bool {
+    connection.content_grant() == Some(cause.grant())
+        && match cause {
+            CatalogLaunchCause::Transient(_) => connection.supports_native_launcher(),
+            CatalogLaunchCause::Persistent(_) => connection.supports_persistent_catalog(),
+        }
+}
+
 /// Run directly after verification, without another deferred effect queue.
 /// Returned spawn failure settles only this exact admission. There is no retry
 /// of a successful or uncertain execution attempt through this function.
@@ -65,7 +76,8 @@ pub fn spawn_native_catalog(
     let current = connection.content_grant();
     let command = match (current, verified) {
         (Some(grant), Ok(command))
-            if launches.begin_native_catalog_execution(&launch, grant, &command) =>
+            if connection_permits_cause(connection, &launch.cause)
+                && launches.begin_native_catalog_execution(&launch, grant, &command) =>
         {
             command
         }
