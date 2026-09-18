@@ -13,6 +13,8 @@ mod glx_pixmap_export;
 #[path = "../../tests/support/live_session_shutdown.rs"]
 mod live_session_shutdown;
 
+#[path = "../../tests/support/component_execution.rs"]
+mod component_execution;
 #[path = "../../tests/support/shell_component_config.rs"]
 mod shell_component_config;
 

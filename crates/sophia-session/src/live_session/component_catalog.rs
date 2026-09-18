@@ -2,6 +2,7 @@
 use super::*;
 use sophia_protocol::OutputId;
 mod actions;
+mod execution;
 mod opening;
 use crate::application_catalog::{
     ApplicationCatalog, ApplicationCatalogEnvironment, ApplicationLaunchCommand,
@@ -20,6 +21,7 @@ pub(super) struct ComponentCatalog {
     next_transaction: u64,
     queued_open: Option<(OutputId, Instant)>,
     next_opening: u64,
+    execution_grant: Option<sophia_protocol::ContentGrant>,
 }
 impl ComponentCatalog {
     pub(super) fn mint_transaction(&mut self) -> Result<TransactionId, Box<dyn std::error::Error>> {

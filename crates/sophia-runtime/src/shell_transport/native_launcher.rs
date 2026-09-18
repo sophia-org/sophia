@@ -171,6 +171,9 @@ impl super::ShellTransportConnection<'_> {
     pub fn native_launcher_closed_opening(&self) -> Option<NativeLauncherOpening> {
         self.state.native_launcher_closed_opening()
     }
+    pub fn native_launcher_admitted_opening(&self) -> Option<NativeLauncherOpening> {
+        self.state.native_launcher_admitted_opening()
+    }
     pub fn native_launcher_focus(&self) -> Option<NativeLauncherBinding> {
         self.state.native_launcher_focus()
     }

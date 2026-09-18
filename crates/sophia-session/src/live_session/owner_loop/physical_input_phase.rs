@@ -1295,7 +1295,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         }
         if let (Some(components), Some(runtime)) = (shell_components.as_mut(), runtime.as_mut()) {
             component_service::service_components(components, component_catalog, runtime, scene, native_scanout.as_mut(),
-                &outputs, wm_session, shell_presentation_available, session_launches, secondary_children.len())?;
+                &outputs, wm_session, shell_presentation_available, session_launches, secondary_children, config, xauthority, &mut launch_admission_started_at)?;
             shell_work_area_bands = Some(components.work_area_bands());
         }
         if let Some(wm) = wm_session.as_mut() {

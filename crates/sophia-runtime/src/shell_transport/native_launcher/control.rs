@@ -24,6 +24,14 @@ impl ShellComponentTransport {
             )
         })
     }
+    /// Exact opening whose activation outcome records queue admission. This is
+    /// not worker verification or process execution; Session may dismiss its UI
+    /// without revoking the connection's admitted launch payload.
+    pub fn native_launcher_admitted_opening(&self) -> Option<NativeLauncherOpening> {
+        (self.native_control.active() && self.native_control.launch_admitted)
+            .then_some(self.native_control.opening)
+            .flatten()
+    }
     /// Exact Closed already transferred to the owned FIFO. This is not peer
     /// receipt, pixel removal, resource settlement or permission to reopen.
     pub fn native_launcher_closed_opening(&self) -> Option<NativeLauncherOpening> {

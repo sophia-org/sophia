@@ -1115,3 +1115,50 @@ Pending input after an admitted activation must receive an explicit disposition,
 not accidentally become a connection failure. Configuration remains refused
 until the full join/protected integration/canonical is checked. No push, live
 endpoint, installation, GPU, native/VT run or lom-test readiness claim.
+
+## Connected catalog execution and exact child adoption
+
+The transport exposes its exact admitted opening read-only. Session dismisses
+that UI through the retained close owner, cancelling only untransferred semantic
+input; ordinary dismissal does not revoke the queued application. The admitted
+outcome precedes revocation/Closed in the existing FIFO. The connection's grant
+continues to authorize only the previously verified exact queue payload.
+
+The connected component visit now drives the actual outer-owned catalog worker.
+Before a visit can produce a child, Session reserves supervisor vector capacity.
+A Started result moves immediately into ManagedSessionChild with its exact native
+origin and transaction, then starts the existing first-window admission timer.
+A missing/replaced connected grant revokes unexecuted queue owners before worker
+service. A native component service failure explicitly revokes its grant before
+stopping it. Already-attempted execution preserves the child's first-window
+attribution. Worker completion does not decide which opening to close, so an old
+rejected verification cannot dismiss a later opening. Unconnected visits still
+drain worker results with no execution authority.
+
+`.artifacts/bemenu-native-execution-join/final2/`: device-hidden Session 476 PASS/
+14 ignored, input owner 5 PASS, native execution 4 PASS and native admission 13
+PASS; strict affected Clippy, layout and formatting PASS. The new private Session
+fixture runs the production catalog scan and connected execution/adoption method,
+actual private protocol admission and real worker verification. It checks UI
+close cancelling pending text without cancelling the launch, exact managed child
+origin, no duplicate child, preservation after executed-grant retirement, and
+revocation both while queued and while verification is pending. Only /bin/true
+runs; the fixture supplies protocol presentation/protection and manually dispatches
+the real Session queue. It does not run the compositor owner loop, protected
+Bemenu, X window admission or a native display.
+
+Two compiled mutations fail their exact controls: omitting grant reconciliation
+leaves an undispatched launch queued; discarding the managed child's native origin
+fails matches_admission. Sources are restored in
+`.artifacts/bemenu-native-execution-{revoke,origin}-mutant/`. Initial mutation
+launches were rejected before execution because the wrapper allows mounts only
+below /work; corrected runs use a private alias to the read-only /work snapshot.
+Those pre-activation failures are not test evidence. The first positive fixture
+also caught the new close helper's invalid reason zero; it now uses the existing
+Cancelled/UI-dismissal reason, explicitly distinct from grant revocation. Original
+failure logs remain. Optional loader-cache activation diagnostics remain retained.
+
+The public configuration guard remains. Still required: joined protected
+Bemenu/bar protocol execution, final configuration/harness enablement, exact-source
+canonical checks and physical-run preparation. This checkpoint makes no first
+window, hardware, GPU, VT, install, push or lom-test readiness claim.

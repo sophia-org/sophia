@@ -58,6 +58,23 @@ impl NativeLauncherContentService {
         Ok(())
     }
 
+    /// Dismiss only the exact transport-recorded admitted opening. Queue
+    /// admission survives ordinary dismissal; grant revocation is separate.
+    pub fn close_admitted(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        transaction: TransactionId,
+    ) -> Result<bool, ShellTransportError> {
+        self.validate(transport)?;
+        let Some(opening) = transport.native_launcher_admitted_opening() else {
+            return Ok(false);
+        };
+        match self.begin_close(transport, opening, transaction, ContentReason::Cancelled) {
+            Ok(()) | Err(ShellTransportError::ContentQueueSaturated) => Ok(true),
+            Err(error) => Err(error),
+        }
+    }
+
     /// The connected scheduler uses this before any new opening or input.
     /// None means no close; false retains a live removal/resource obligation.
     pub fn service_close_if_requested(

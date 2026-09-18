@@ -16,7 +16,10 @@ pub(super) fn service_components(
     wm: &mut Option<LiveWmSession>,
     available: bool,
     launches: &mut SessionLaunchQueue,
-    active_children: usize,
+    children: &mut Vec<ManagedSessionChild>,
+    config: &PersistentXtermSessionConfig,
+    xauthority: &std::path::Path,
+    admission_started: &mut Option<Instant>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !available {
         catalog.cancel_open_request();
@@ -64,6 +67,21 @@ pub(super) fn service_components(
             "sophia_shell_component schema=1 status=start_failed reason={error}"
         );
     }
+    if !components
+        .connected_roles()
+        .into_iter()
+        .flatten()
+        .any(|(_, role)| role == sophia_config::ShellComponentRole::ApplicationLauncher)
+    {
+        catalog.service_execution(
+            None,
+            config,
+            xauthority,
+            launches,
+            children,
+            admission_started,
+        )?;
+    }
     if !available {
         return Ok(());
     }
@@ -85,7 +103,16 @@ pub(super) fn service_components(
                         transport,
                         runtime,
                         launches,
-                        active_children,
+                        children.len(),
+                    )?;
+                    content.close_admitted(transport, catalog.mint_transaction()?)?;
+                    catalog.service_execution(
+                        Some(transport),
+                        config,
+                        xauthority,
+                        launches,
+                        children,
+                        admission_started,
                     )?;
                     catalog.service_open_content(
                         content,
@@ -105,7 +132,16 @@ pub(super) fn service_components(
                     "sophia_shell_component schema=1 status=catalog_failed slot={} reason={error}",
                     key.slot
                 );
+                launches.revoke_native_catalog_grant(key.grant);
                 components.stop(key)?;
+                catalog.service_execution(
+                    None,
+                    config,
+                    xauthority,
+                    launches,
+                    children,
+                    admission_started,
+                )?;
             }
             continue;
         }
