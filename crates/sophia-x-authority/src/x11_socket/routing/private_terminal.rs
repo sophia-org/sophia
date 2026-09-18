@@ -357,7 +357,7 @@ impl PrivateXServerFrontend {
                     self.terminal.current = Some(PrivateOrderedItem::Refused {
                         sequence,
                         refusal: PrivateExecutionRefusal::NotAttempted,
-                        custody: reservation.accepted(),
+                        custody: reservation.accepted_in(&self.durable),
                         route: envelope.route,
                     });
                     None
@@ -824,6 +824,18 @@ impl PrivateXServerFrontend {
                 return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
             }
         };
+        // An empty observation proves no completion. Keep the item and its
+        // accepted storage charge unless the exact outcome was taken and
+        // the established transfer into native/output custody permits item
+        // disposal. Ran is that transfer's recorded result.
+        let PrivateOrderedItem::Ran { custody, .. } = &mut self.terminal.delivering[0] else {
+            unreachable!("checked above")
+        };
+        if !custody.finish_item() {
+            let item = self.terminal.delivering.remove(0);
+            self.terminal.undelivered.push(PrivateUndelivered { item });
+            return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
+        }
         // Disposed, so the entry goes.
         let _resolved = self.terminal.delivering.remove(0);
         Ok(PrivateDeliveryStep::Advanced {

@@ -430,6 +430,7 @@ impl PrivateReservation {
             grant: self.grant,
             capability: self.capability,
             observed: std::cell::Cell::new(false),
+            accepted_store_credit: None,
             phase: std::cell::Cell::new(PrivateRequestPhase::Unused),
         }
     }
@@ -474,6 +475,9 @@ impl Drop for PrivateReservation {
 /// connection test compares against what the caller passed in.
 #[cfg(unix)]
 pub struct PrivateOutstandingRequest {
+    /// The prepared order's accepted-item charge, never released by Drop.
+    /// Weak ownership prevents store -> terminal -> store cycles.
+    accepted_store_credit: Option<PrivateAcceptedItemCredit>,
     controller: PrivateAuthorityController,
     submit: sophia_input_authority::SubmitHandle,
     token: sophia_input_authority::RequestToken,

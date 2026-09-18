@@ -2,7 +2,10 @@
   "schema": 1,
   "suites": {
     "item-credit": [
-      "x11_socket::routing_tests::completed_ordered_input_returns_its_storage_credit_after_item_disposal"
+      "x11_socket::routing_tests::completed_ordered_input_returns_its_storage_credit_after_item_disposal",
+      "x11_socket::routing_tests::unobserved_or_dropped_ordered_items_keep_their_exact_storage_charge",
+      "x11_socket::routing_tests::refused_ordered_item_keeps_its_charge_through_retained_handover",
+      "x11_socket::routing_tests::retained_item_buffers_use_the_accepted_store_bound_before_exposure"
     ],
     "transient-service": [
       "x11_socket::routing_tests::service_motion_and_axis_use_the_original_request_and_reclaim_exact_writer_receipts",

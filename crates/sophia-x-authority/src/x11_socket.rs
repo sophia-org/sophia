@@ -71,6 +71,7 @@ include!("x11_socket/routing/control_transition.rs");
 include!("x11_socket/routing/private_producer_surface.rs");
 include!("x11_socket/routing/private_shutdown.rs");
 include!("x11_socket/routing/private_authority.rs");
+include!("x11_socket/routing/private_item_credit.rs");
 include!("x11_socket/routing/private_participant.rs");
 include!("x11_socket/routing/private_lifecycle.rs");
 include!("x11_socket/routing/private_records.rs");

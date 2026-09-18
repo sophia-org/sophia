@@ -40,6 +40,9 @@ struct PrivateAttemptCustody {
 
 #[cfg(unix)]
 struct PrivateTerminalInventory {
+    /// All accepted item generations share this store bound. Queue depth or
+    /// the number of currently live grants cannot bound retained items.
+    item_capacity: usize,
     /// Readable resource loss without ownership of thread-local execution.
     execution: Option<Arc<PrivateExecutionWitness>>,
     /// The registry that can answer for everything here.
@@ -197,6 +200,7 @@ impl PrivateTerminalInventory {
         controller: PrivateAuthorityController,
         lifecycle: PrivateLifecycleOwner,
         capacity: usize,
+        item_capacity: usize,
     ) -> Self {
         let holds = Vec::with_capacity(PRIVATE_HOLD_RECORDS);
         let settling = Vec::with_capacity(PRIVATE_HOLD_RECORDS);
@@ -210,6 +214,7 @@ impl PrivateTerminalInventory {
             "the complete native custody storage fits the allocator byte bound"
         );
         Self {
+            item_capacity,
             execution: None,
             origin,
             controller,
@@ -230,9 +235,9 @@ impl PrivateTerminalInventory {
             shared_activation: PrivateSharedActivationScan::default(),
             shared_activation_turn: true,
             current: None,
-            turn: Vec::with_capacity(capacity),
-            delivering: Vec::with_capacity(capacity),
-            undelivered: Vec::with_capacity(capacity),
+            turn: Vec::with_capacity(item_capacity),
+            delivering: Vec::with_capacity(item_capacity),
+            undelivered: Vec::with_capacity(item_capacity),
         }
     }
 
@@ -297,9 +302,15 @@ impl PrivateTerminalInventory {
     /// destination reserved before the work was accepted, which is a different
     /// arrangement from this one.
     fn hand_over(&mut self) -> Self {
+        debug_assert!(
+            self.turn.len() + self.delivering.len() + self.undelivered.len()
+                + usize::from(self.current.is_some()) <= self.item_capacity,
+            "accepted item custody cannot exceed its pre-exposure storage bound"
+        );
         std::mem::replace(
             self,
             Self {
+                item_capacity: 0,
                 execution: None,
                 origin: self.origin.clone(),
                 controller: self.controller.clone(),

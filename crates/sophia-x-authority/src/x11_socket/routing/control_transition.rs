@@ -503,6 +503,13 @@ impl PrivateXServerFrontend {
             .get()
             .saturating_mul(2)
             .saturating_add(PRIVATE_CLEANUP_RESERVE);
+        let item_capacity = match durable.accepted_item_capacity() {
+            Ok(capacity) => capacity,
+            Err(refusal) => {
+                durable.release_failure_slot();
+                return Err((refusal, parts));
+            }
+        };
         // Also before the parts are taken apart. A registry that could not
         // take an unused origin would issue identities another live instance
         // already answers to, and refusing after the senders were consumed
@@ -604,6 +611,7 @@ impl PrivateXServerFrontend {
             controller.clone(),
             lifecycle,
             capacity,
+            item_capacity,
         );
         Ok(Self {
             pending_watch: Some(watch),
@@ -617,7 +625,7 @@ impl PrivateXServerFrontend {
             completion,
             service_budget: capacity,
             durable: durable.clone(),
-            outstanding: Vec::with_capacity(capacity),
+            outstanding: Vec::with_capacity(item_capacity),
             settled: false,
             failed: false,
             uncollected: Arc::new(Mutex::new(Vec::new())),

@@ -475,7 +475,10 @@ impl XInputAuthorityState {
             if state.query_clients.is_empty() {
                 state.query = XPointerQueryState::default();
                 if query_removed {
-                    state.query_scope.0.store(true, std::sync::atomic::Ordering::Release);
+                    state
+                        .query_scope
+                        .0
+                        .store(true, std::sync::atomic::Ordering::Release);
                 }
             }
             if state.pointer.is_some_and(|grab| grab.owner == owner) {
