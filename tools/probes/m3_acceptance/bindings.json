@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "cases": {
-    "C.capacity": "x11_socket::routing_tests::m3_acceptance::c_capacity"
+    "C.capacity": "x11_socket::routing_tests::m3_acceptance::c_capacity",
+    "C.interrupted_ownership": "x11_socket::routing_tests::m3_acceptance::c_interrupted_ownership"
   }
 }
