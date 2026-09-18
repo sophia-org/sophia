@@ -265,6 +265,13 @@ fn projection_keeps_exact_pixels_and_allocation_local_placement() {
         }
     );
     assert_eq!(projected.images[0].resource.bytes().len(), 8);
+    assert!(projected.targets.is_empty());
+    let allocation = allocation();
+    assert_eq!(
+        projected.allocations,
+        vec![(allocation.allocation, allocation.logical, allocation.pixel)],
+        "visible content with no rows must still occlude input"
+    );
 }
 
 #[test]

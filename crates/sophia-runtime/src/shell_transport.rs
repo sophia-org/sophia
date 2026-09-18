@@ -455,6 +455,12 @@ impl ShellComponentTransport {
         self.content_grant.is_some()
     }
 
+    pub const fn supports_content_discrete_input(&self) -> bool {
+        self.content_grant.is_some()
+            && self.capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
+                != 0
+    }
+
     pub const fn content_grant(&self) -> Option<ContentGrant> {
         self.content_grant
     }

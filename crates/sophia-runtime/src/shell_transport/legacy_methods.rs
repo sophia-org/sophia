@@ -146,6 +146,10 @@ macro_rules! transport_facade {
                 self.state.supports_content()
             }
 
+            pub const fn supports_content_discrete_input(&self) -> bool {
+                self.state.supports_content_discrete_input()
+            }
+
             pub const fn content_grant(&self) -> Option<ContentGrant> {
                 self.state.content_grant()
             }

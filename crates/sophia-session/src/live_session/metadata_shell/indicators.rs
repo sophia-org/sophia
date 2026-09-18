@@ -19,41 +19,57 @@ impl LiveMetadataShell {
         publication: Option<&sophia_engine::PolicyIndicatorPublication>,
         active_output: Option<OutputId>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if !self.connected || !self.transport.supports_indicators() {
+        if !self.connected {
+            return Ok(());
+        }
+        let next = &mut self.next_transaction;
+        self.indicators.service_publication(
+            &mut self.transport.connection(),
+            publication,
+            active_output,
+            &mut || super::take_shell_transaction(next),
+        )
+    }
+}
+
+impl LiveIndicatorState {
+    pub(super) fn service_publication(
+        &mut self,
+        transport: &mut sophia_runtime::ShellTransportConnection<'_>,
+        publication: Option<&sophia_engine::PolicyIndicatorPublication>,
+        active_output: Option<OutputId>,
+        transaction: &mut dyn FnMut() -> Result<
+            sophia_protocol::TransactionId,
+            Box<dyn std::error::Error>,
+        >,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if !transport.supports_indicators() {
             return Ok(());
         }
         let Some(publication) = publication else {
             return Ok(());
         };
-        self.transport.poll_io()?;
+        transport.poll_io()?;
 
-        let snapshot = indicator_snapshot(
-            publication,
-            active_output,
-            self.transport.connection_epoch(),
-        );
+        let snapshot = indicator_snapshot(publication, active_output, transport.connection_epoch());
 
         // Republishing an unchanged set would wake a shell for nothing on every
         // committed frame.
-        if self.indicators.last_published.as_ref() == Some(&snapshot) {
+        if self.last_published.as_ref() == Some(&snapshot) {
             return Ok(());
         }
 
-        let tx = self.take_transaction()?;
+        let tx = transaction()?;
         let frames = encode_shell_indicator_snapshot(tx, &snapshot)
             .map_err(sophia_runtime::ShellTransportError::Codec)?;
         for frame in frames {
-            self.transport.send_async(frame)?;
+            transport.send_async(frame)?;
         }
-        self.indicators.last_published = Some(snapshot);
+        self.last_published = Some(snapshot);
         // Evidence of the exact enqueued publication, not peer consumption.
         // Repeat publications may share a generation when only focus moves;
         // the indicator identities and state must still agree for that revision.
-        let published = self
-            .indicators
-            .last_published
-            .as_ref()
-            .expect("just retained");
+        let published = self.last_published.as_ref().expect("just retained");
         for indicator in &published.indicators {
             crate::session_println!(
                 "sophia_shell_indicator_state schema=1 connection_epoch={} indicator_generation={} output={} indicator={} action={} slot={} state_bits={} entries={}",

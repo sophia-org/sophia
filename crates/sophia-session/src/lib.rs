@@ -50,6 +50,11 @@ pub mod shell_component_connections;
 pub mod shell_component_processes;
 
 #[cfg(feature = "native-session")]
+pub mod shell_panel_service {
+    pub use crate::live_session::metadata_shell::PanelComponentService;
+}
+
+#[cfg(feature = "native-session")]
 pub mod shell_native_launcher {
     pub use crate::live_session::metadata_shell::NativeLauncherActionService;
 }

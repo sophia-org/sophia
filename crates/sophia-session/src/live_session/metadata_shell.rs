@@ -1,6 +1,8 @@
 use super::*;
 mod content;
+mod panel_service;
 pub use content::NativeLauncherActionService;
+pub use panel_service::PanelComponentService;
 mod content_accounting;
 mod content_shutdown;
 mod gpu;
@@ -267,13 +269,7 @@ impl LiveMetadataShell {
             outputs,
             output_bounds,
             root,
-            &mut || {
-                let transaction = TransactionId::from_raw(*next);
-                *next = next
-                    .checked_add(1)
-                    .ok_or("metadata shell transaction identity exhausted")?;
-                Ok(transaction)
-            },
+            &mut || take_shell_transaction(next),
         )
     }
 
@@ -843,12 +839,7 @@ impl LiveMetadataShell {
     }
 
     fn take_transaction(&mut self) -> Result<TransactionId, Box<dyn std::error::Error>> {
-        let transaction = TransactionId::from_raw(self.next_transaction);
-        self.next_transaction = self
-            .next_transaction
-            .checked_add(1)
-            .ok_or("metadata shell transaction identity exhausted")?;
-        Ok(transaction)
+        take_shell_transaction(&mut self.next_transaction)
     }
 }
 
@@ -888,4 +879,12 @@ impl Drop for LiveMetadataShell {
             );
         }
     }
+}
+
+fn take_shell_transaction(next: &mut u64) -> Result<TransactionId, Box<dyn std::error::Error>> {
+    let transaction = TransactionId::from_raw(*next);
+    *next = next
+        .checked_add(1)
+        .ok_or("metadata shell transaction identity exhausted")?;
+    Ok(transaction)
 }

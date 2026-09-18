@@ -462,69 +462,79 @@ impl super::super::LiveMetadataShell {
         target: PresentedContentTarget,
         runtime: &sophia_backend_live::LiveProductionVisualRuntime,
     ) -> Result<Option<u64>, Box<dyn std::error::Error>> {
-        if !self.content.input_requested || self.transport.content_grant() != Some(target.grant) {
-            return Ok(None);
-        }
-        // Native retirement is the only source of Presented. Publish all
-        // bounded pending retirements before putting this Action on the FIFO.
-        while self.observe_content_presentation(runtime)? {}
-        if !self
-            .content
-            .presented
-            .get(&target.output)
-            .is_some_and(|published| {
-                published.grant == target.grant
-                    && published.candidate_generation == target.candidate_generation
-                    && published.presentation_epoch == target.presentation_epoch
-            })
-        {
-            return Ok(None);
-        }
-        let now = self.content.now_msec();
-        let limits = self
-            .transport
-            .content_limits()
-            .cloned()
-            .ok_or("content limits are unavailable")?;
-        let transaction = self.take_transaction()?;
-        Ok(self.content.actions.issue(
-            target,
-            now,
-            &limits,
-            transaction,
+        let next = &mut self.next_transaction;
+        self.content.issue_presented_activation(
             &mut self.transport.connection(),
-        )?)
+            target,
+            runtime,
+            &mut || super::super::take_shell_transaction(next),
+        )
     }
 
     pub(in crate::live_session) fn service_content_actions(
         &mut self,
         presented: &[sophia_engine::PresentedContentBinding],
     ) -> Result<usize, Box<dyn std::error::Error>> {
-        if !self.content.input_requested || self.transport.content_grant().is_none() {
+        let next = &mut self.next_transaction;
+        self.content
+            .service_actions(&mut self.transport.connection(), presented, &mut || {
+                super::super::take_shell_transaction(next)
+            })
+    }
+}
+
+impl super::LiveContentSession {
+    pub(in crate::live_session::metadata_shell) fn issue_presented_activation(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        target: PresentedContentTarget,
+        runtime: &sophia_backend_live::LiveProductionVisualRuntime,
+        transaction: &mut dyn FnMut() -> Result<TransactionId, Box<dyn std::error::Error>>,
+    ) -> Result<Option<u64>, Box<dyn std::error::Error>> {
+        if !self.input_requested || transport.content_grant() != Some(target.grant) {
+            return Ok(None);
+        }
+        // The shared boundary retains Presented-before-Action for every owner.
+        while self.observe_presentation(transport, runtime)? {}
+        if !self.presented.get(&target.output).is_some_and(|published| {
+            published.grant == target.grant
+                && published.candidate_generation == target.candidate_generation
+                && published.presentation_epoch == target.presentation_epoch
+        }) {
+            return Ok(None);
+        }
+        let now = self.now_msec();
+        let limits = transport
+            .content_limits()
+            .cloned()
+            .ok_or("content limits are unavailable")?;
+        Ok(self
+            .actions
+            .issue(target, now, &limits, transaction()?, transport)?)
+    }
+
+    pub(in crate::live_session::metadata_shell) fn service_actions(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        presented: &[sophia_engine::PresentedContentBinding],
+        transaction: &mut dyn FnMut() -> Result<TransactionId, Box<dyn std::error::Error>>,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        if !self.input_requested || transport.content_grant().is_none() {
             return Ok(0);
         }
-        let now = self.content.now_msec();
-        let maximum = self
-            .transport
+        let now = self.now_msec();
+        let maximum = transport
             .content_limits()
             .map_or(0, |limits| limits.max_frames_per_service_tick as usize);
-        let mut processed =
-            self.content
-                .actions
-                .service_acks(&mut self.transport.connection(), now, maximum)?;
-        while let Some(index) = self.content.actions.next_cancellation(presented, now) {
-            let transaction = self.take_transaction()?;
-            self.content.actions.queue_cancellation(
-                index,
-                transaction,
-                &mut self.transport.connection(),
-            )?;
+        let mut processed = self.actions.service_acks(transport, now, maximum)?;
+        while let Some(index) = self.actions.next_cancellation(presented, now) {
+            self.actions
+                .queue_cancellation(index, transaction()?, transport)?;
             processed = processed.saturating_add(1);
         }
-        self.content.actions.expire(now);
-        self.transport.retain_content_action_reservations(|event| {
-            self.content
-                .actions
+        self.actions.expire(now);
+        transport.retain_content_action_reservations(|event| {
+            self.actions
                 .live
                 .iter()
                 .any(|pending| pending.action.event_id == event)

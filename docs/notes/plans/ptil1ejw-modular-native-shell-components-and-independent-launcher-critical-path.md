@@ -325,3 +325,38 @@ missing-file failures. The corrected runner provides a private symlink to the
 captured source, not a host source mount. Nested protection still reports an
 absent private loader cache in these logs; no successful protected child launch
 or native process admission is inferred from this library result.
+
+### Borrowed panel service over 01fe9ecd
+
+`PanelComponentService` retains per-attempt panel state without a socket,
+process supervisor or separate content registry. Its content/presentation,
+indicator publication and action service delegate to the same implementations
+used by the live legacy owner. It requires the exact borrowed connection grant,
+refuses native-launcher-role connections and cannot upgrade a negotiated grant
+to discrete input. The actual dual-connection registry fixture drives indicator
+publication through this service, checks exact received frames and unchanged
+snapshot suppression, and verifies that neither the neighbor nor a replacement
+attempt can be serviced with stale panel state. Protection evidence in this
+fixture is supplied; no protected process is launched.
+
+Integration also exposed a targetless-content gap: `project_render_bundle` built
+occlusion allocations only while visiting actionable targets. A rendered empty
+launcher result could therefore have pixels but no input occlusion. The retained
+baseline control fails on the actual resource/candidate-store bundle with zero
+targets (`.artifacts/bemenu-empty-target-baseline`). Projection now derives those
+rectangles from rendered placements independently of targets. This fixes shared
+surface geometry, not a special Bemenu pointer rule.
+
+The shared-service and projection evidence is in
+`.artifacts/bemenu-borrowed-panel-final`; native startup/focus/removal and live
+Session scheduling remain to be connected. The explicit component profile stays
+refused until that join and cleanup are complete. No physical-run readiness,
+installation, native display activity or M3 integration follows from these
+service controls.
+
+Final scoped gates: 468 Session library tests pass (14 ignored), all six
+component-connection controls pass, strict runtime/Session lib-and-tests Clippy
+and layout pass. The targetless projection control previously failed with an
+empty allocation list; the repaired real bundle retains its exact logical and
+pixel rectangle. Nested-loader-cache diagnostic scope remains as recorded above;
+these are device-hidden service/geometry controls, not protected-child proof.

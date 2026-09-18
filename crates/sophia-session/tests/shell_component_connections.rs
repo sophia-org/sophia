@@ -108,7 +108,9 @@ fn hello(native: bool) -> Vec<u8> {
         minimum_revision: 5,
         maximum_revision: 6,
         required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
-            | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
+            | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+            | SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS
+            | SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION,
     })
     .unwrap()
 }
@@ -368,4 +370,97 @@ fn final_owner_transfer_refuses_live_admission_and_drops_the_actual_consumer() {
         .unwrap_or_else(|_| panic!("closed owner must accept final disposition"));
     assert_eq!(settled, 0);
     assert!(accounting.quiescent());
+}
+
+#[cfg(feature = "native-session")]
+#[test]
+fn borrowed_panel_service_uses_the_shared_registry_and_refuses_another_attempt() {
+    use sophia_session::shell_panel_service::PanelComponentService;
+    let mut h = Harness::new();
+    let panel = h.owner.reserve_attempt(0).unwrap();
+    let native = h.owner.reserve_attempt(1).unwrap();
+    let mut client = h.connect(panel);
+    let mut neighbor = h.connect(native);
+    let accounting = h.owner.accounting();
+    let mut service = h
+        .owner
+        .with_connection(panel, |t| {
+            // The operator request cannot upgrade the actual negotiated grant.
+            assert!(PanelComponentService::new(t, 30, true).is_err());
+            assert!(PanelComponentService::new(t, 0, false).is_err());
+            PanelComponentService::new(t, 30, false).unwrap()
+        })
+        .unwrap();
+    assert_eq!(service.grant(), panel.grant);
+    let publication = sophia_engine::PolicyIndicatorPublication {
+        tab_groups: vec![],
+        generation: 1,
+        connection_epoch: Some(20),
+        indicators: vec![],
+        output_statuses: vec![],
+    };
+    h.owner
+        .with_connection(native, |t| {
+            assert!(PanelComponentService::new(t, 30, false).is_err());
+            assert!(
+                service
+                    .service_indicators(t, Some(&publication), None)
+                    .is_err()
+            );
+        })
+        .unwrap();
+    h.owner
+        .with_connection(panel, |t| {
+            service
+                .service_indicators(t, Some(&publication), None)
+                .unwrap();
+            t.poll_io().unwrap();
+        })
+        .unwrap();
+    let snapshot = sophia_session::shell_indicator_publication::indicator_snapshot(
+        &publication,
+        None,
+        panel.grant.connection_epoch,
+    );
+    for expected in encode_shell_indicator_snapshot(TransactionId::from_raw(1), &snapshot).unwrap()
+    {
+        assert_eq!(read_frame(&mut client), expected);
+    }
+    // Unchanged snapshots enqueue nothing and the native peer receives no panel frames.
+    h.owner
+        .with_connection(panel, |t| {
+            service
+                .service_indicators(t, Some(&publication), None)
+                .unwrap();
+            t.poll_io().unwrap();
+        })
+        .unwrap();
+    for peer in [&mut client, &mut neighbor] {
+        peer.set_nonblocking(true).unwrap();
+        assert_eq!(
+            peer.read(&mut [0; 1]).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+    assert_eq!(h.owner.accounting(), accounting);
+    h.owner.close(panel).unwrap();
+    h.owner.collect();
+    let replacement = h.owner.reserve_attempt(0).unwrap();
+    let _new_client = h.connect(replacement);
+    h.owner
+        .with_connection(replacement, |t| {
+            assert!(
+                service
+                    .service_indicators(t, Some(&publication), None)
+                    .is_err()
+            );
+            assert_eq!(
+                PanelComponentService::new(t, 30, false).unwrap().grant(),
+                replacement.grant
+            );
+        })
+        .unwrap();
+    h.owner.close(replacement).unwrap();
+    h.owner.close(native).unwrap();
+    assert!(h.owner.collect().quiescent());
 }

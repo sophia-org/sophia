@@ -714,6 +714,7 @@ pub(super) fn project_render_bundle(
         return Err("content bundle targets stale output facts");
     }
     let mut nodes = BTreeSet::new();
+    let mut allocation_rows = Vec::new();
     let mut images = Vec::with_capacity(bundle.placements.len());
     for (placement_index, placement) in bundle.placements.iter().enumerate() {
         let surface_index = usize::from(placement.surface_index);
@@ -775,6 +776,12 @@ pub(super) fn project_render_bundle(
         if !nodes.insert(node) {
             return Err("content placement repeats a renderer node");
         }
+        // A visible surface occludes even when its query has no actionable
+        // rows. Targets describe actions, not whether rendered content exists.
+        let row = (allocation.allocation, allocation.logical, allocation.pixel);
+        if !allocation_rows.contains(&row) {
+            allocation_rows.push(row);
+        }
         images.push(CompositorContentImage {
             node,
             generation: placement.resource.generation,
@@ -792,7 +799,6 @@ pub(super) fn project_render_bundle(
     if images.is_empty() {
         return Err("content candidate has no visible placements");
     }
-    let mut allocation_rows = Vec::new();
     let mut targets = Vec::with_capacity(bundle.targets.len());
     for target in &bundle.targets {
         let surface = bundle
@@ -803,10 +809,6 @@ pub(super) fn project_render_bundle(
             .iter()
             .find(|candidate| candidate.allocation == surface.allocation)
             .ok_or("content target names a lost allocation")?;
-        let row = (allocation.allocation, allocation.logical, allocation.pixel);
-        if !allocation_rows.contains(&row) {
-            allocation_rows.push(row);
-        }
         targets.push(sophia_engine::PresentedContentTarget {
             continuity: None,
             scale_generation: allocation.scale_generation,
