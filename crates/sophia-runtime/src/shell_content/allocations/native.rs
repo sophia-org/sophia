@@ -82,3 +82,41 @@ impl ContentAllocationStore {
         Ok(())
     }
 }
+
+impl ContentAllocationStore {
+    pub(crate) fn reject_closed_native_request(
+        &mut self,
+        transaction: TransactionId,
+        request: NativeLauncherAllocationRequest,
+        opening: NativeLauncherOpening,
+    ) -> Result<(), ContentAllocationError> {
+        if self.profile != ContentStoreProfile::NativeLauncher
+            || !transaction.is_valid()
+            || request.grant != self.limits.grant
+            || request.opening != opening.opening
+            || request.output != opening.output
+            || request.request_id == 0
+        {
+            return Err(ContentAllocationError::Stale);
+        }
+        if request.request_id <= self.last_request_id {
+            return Ok(());
+        }
+        if self.events.len() + self.response_credits >= self.limits.max_control_records as usize {
+            return Err(ContentAllocationError::Budget);
+        }
+        self.last_request_id = request.request_id;
+        self.push(
+            transaction,
+            ShellContentRecord::AllocationResult(zero_result(
+                self.limits.grant,
+                request.request_id,
+                2,
+                ContentReason::Stale,
+                request.output,
+                ContentAllocationId::default(),
+            )),
+        );
+        Ok(())
+    }
+}

@@ -31,6 +31,7 @@ pub(super) struct AcceptIntent {
 /// transition. Input receipts retain their original binding across replacements.
 pub(in crate::shell_transport) struct NativeControl {
     pub opening: Option<NativeLauncherOpening>,
+    pub closed: Option<NativeLauncherOpening>,
     pub presented: Option<NativePresented>,
     pub focus: Option<NativeLauncherBinding>,
     pub revision: u64,
@@ -49,6 +50,7 @@ impl Default for NativeControl {
     fn default() -> Self {
         Self {
             opening: None,
+            closed: None,
             presented: None,
             focus: None,
             revision: 0,
@@ -79,6 +81,7 @@ impl NativeControl {
         self.opening.is_some() && self.closing.is_none()
     }
     pub(super) fn clear_opening(&mut self) {
+        self.closed = self.opening;
         self.opening = None;
         self.presented = None;
         self.focus = None;

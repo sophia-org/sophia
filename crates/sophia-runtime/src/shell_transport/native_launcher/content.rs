@@ -57,33 +57,7 @@ impl ShellComponentTransport {
                 break;
             }
             // Decode and validate role/grant before removing the exact frame.
-            let kind = u16::from_le_bytes([frame[6], frame[7]]);
-            let (transaction, record) = if matches!(kind, 165 | 167..=170 | 174 | 176 | 178) {
-                let (tx, record) = decode_shell_content_frame(frame)?;
-                let record = match record {
-                    ShellContentRecord::CandidateEnd(end) => NativeContentRecord::End(end),
-                    ShellContentRecord::FrameDemand(v) => NativeContentRecord::Demand(v),
-                    ShellContentRecord::FrameDemandCancel(v) => NativeContentRecord::Cancel(v),
-                    v if content_admission::resource_identity(&v).is_some() => {
-                        NativeContentRecord::Resource(v)
-                    }
-                    _ => return Err(ShellTransportError::WrongContentRecord),
-                };
-                (tx, record)
-            } else if (188..=190).contains(&kind) {
-                let (tx, record) = decode_shell_native_launcher_frame(frame)?;
-                let record = match record {
-                    ShellNativeLauncherRecord::AllocationRequest(v) => {
-                        NativeContentRecord::Allocation(v)
-                    }
-                    ShellNativeLauncherRecord::CandidateBegin(v) => NativeContentRecord::Begin(v),
-                    ShellNativeLauncherRecord::CandidateChunk(v) => NativeContentRecord::Chunk(v),
-                    _ => return Err(ShellTransportError::WrongContentRecord),
-                };
-                (tx, record)
-            } else {
-                return Err(ShellTransportError::WrongContentRecord);
-            };
+            let (transaction, record) = decode_native_content_record(frame)?;
             if record.grant() != self.store_grant {
                 return Err(ShellTransportError::WrongContentGrant);
             }
@@ -209,7 +183,7 @@ impl ShellComponentTransport {
     }
 }
 
-enum NativeContentRecord {
+pub(super) enum NativeContentRecord {
     Allocation(NativeLauncherAllocationRequest),
     Begin(NativeLauncherCandidateBegin),
     Chunk(ContentCandidateChunk),
@@ -219,7 +193,7 @@ enum NativeContentRecord {
     Cancel(ContentFrameDemandCancel),
 }
 impl NativeContentRecord {
-    fn grant(&self) -> ContentGrant {
+    pub(super) fn grant(&self) -> ContentGrant {
         match self {
             Self::Allocation(v) => v.grant,
             Self::Begin(v) => v.content.grant,
@@ -230,4 +204,35 @@ impl NativeContentRecord {
             Self::Cancel(v) => v.grant,
         }
     }
+}
+
+pub(super) fn decode_native_content_record(
+    frame: &[u8],
+) -> Result<(TransactionId, NativeContentRecord), ShellTransportError> {
+    let kind = u16::from_le_bytes([frame[6], frame[7]]);
+    let result = if matches!(kind, 165 | 167..=170 | 174 | 176 | 178) {
+        let (tx, record) = decode_shell_content_frame(frame)?;
+        let record = match record {
+            ShellContentRecord::CandidateEnd(end) => NativeContentRecord::End(end),
+            ShellContentRecord::FrameDemand(v) => NativeContentRecord::Demand(v),
+            ShellContentRecord::FrameDemandCancel(v) => NativeContentRecord::Cancel(v),
+            v if content_admission::resource_identity(&v).is_some() => {
+                NativeContentRecord::Resource(v)
+            }
+            _ => return Err(ShellTransportError::WrongContentRecord),
+        };
+        (tx, record)
+    } else if (188..=190).contains(&kind) {
+        let (tx, record) = decode_shell_native_launcher_frame(frame)?;
+        let record = match record {
+            ShellNativeLauncherRecord::AllocationRequest(v) => NativeContentRecord::Allocation(v),
+            ShellNativeLauncherRecord::CandidateBegin(v) => NativeContentRecord::Begin(v),
+            ShellNativeLauncherRecord::CandidateChunk(v) => NativeContentRecord::Chunk(v),
+            _ => return Err(ShellTransportError::WrongContentRecord),
+        };
+        (tx, record)
+    } else {
+        return Err(ShellTransportError::WrongContentRecord);
+    };
+    Ok(result)
 }

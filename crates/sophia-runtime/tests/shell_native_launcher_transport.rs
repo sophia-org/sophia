@@ -506,3 +506,139 @@ fn native_close_refuses_pending_allocation_and_cancels_standing_demand() {
         assert_eq!(r.accounting().retired_epochs, 0);
     }
 }
+
+#[test]
+fn late_closed_begin_gets_one_terminal_and_tails_cannot_reenter_submission() {
+    let mut r = empty();
+    let mut peer = Peer::connected(&mut r);
+    let allocations = peer.allocation(&mut r);
+    peer.upload(&mut r);
+    peer.permit(&mut r);
+    // These bytes are already in flight, but have not reached candidate intake.
+    peer.send(ShellNativeLauncherRecord::CandidateBegin(begin()));
+    peer.send(ShellNativeLauncherRecord::CandidateChunk(chunk()));
+    peer.send_content(ShellContentRecord::CandidateEnd(end()));
+    peer.transport
+        .close_native_launcher(&mut r, opening(), tx(80), ContentReason::Cancelled)
+        .unwrap();
+    peer.transport.poll_io(&mut r).unwrap();
+    assert!(matches!(
+        decode_shell_content_frame(&peer.read()).unwrap().1,
+        ShellContentRecord::FramePermit(_)
+    ));
+    assert!(matches!(
+        decode_shell_native_launcher_frame(&peer.read()).unwrap().1,
+        ShellNativeLauncherRecord::Closed(_)
+    ));
+    let mut wrong = opening();
+    wrong.opening += 1;
+    assert!(
+        peer.transport
+            .service_closed_native_content(&mut r, wrong, 0)
+            .is_err()
+    );
+    assert_eq!(
+        peer.transport
+            .service_closed_native_content(&mut r, opening(), 0)
+            .unwrap(),
+        3
+    );
+    peer.transport.poll_io(&mut r).unwrap();
+    let (transaction, ShellContentRecord::CandidateOutcome(v)) =
+        decode_shell_content_frame(&peer.read()).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(transaction, tx(20));
+    assert_eq!(
+        (v.kind, v.reason, v.candidate_generation),
+        (3, ContentReason::Cancelled as u16, 1)
+    );
+    let store = r.active_candidates_mut(GRANT).unwrap();
+    assert_eq!(store.pending_candidate_count(), 0);
+    assert_eq!(store.submitted_candidate_count(), 0);
+    assert_eq!(r.allocations_mut(GRANT).unwrap().snapshots(), allocations);
+    assert_eq!(peer.transport.native_launcher_focus(), None);
+    // Duplicates of the terminalized generation do not create another outcome.
+    peer.send(ShellNativeLauncherRecord::CandidateBegin(begin()));
+    peer.send(ShellNativeLauncherRecord::CandidateChunk(chunk()));
+    peer.send_content(ShellContentRecord::CandidateEnd(end()));
+    assert_eq!(
+        peer.transport
+            .service_closed_native_content(&mut r, opening(), 0)
+            .unwrap(),
+        3
+    );
+    peer.transport.poll_io(&mut r).unwrap();
+    peer.client.set_nonblocking(true).unwrap();
+    assert_eq!(
+        peer.client.read(&mut [0]).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    peer.client.set_nonblocking(false).unwrap();
+    peer.send(ShellNativeLauncherRecord::AllocationRequest(request(2)));
+    peer.send_content(ShellContentRecord::FrameDemand(ContentFrameDemand {
+        grant: GRANT,
+        output: OUTPUT,
+        allocation: ALLOCATION,
+        demand_id: 2,
+        reason: 1,
+    }));
+    assert_eq!(
+        peer.transport
+            .service_closed_native_content(&mut r, opening(), 0)
+            .unwrap(),
+        2
+    );
+    peer.transport.poll_io(&mut r).unwrap();
+    let (_, ShellContentRecord::AllocationResult(v)) =
+        decode_shell_content_frame(&peer.read()).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!((v.status, v.allocation_request_id), (2, 2));
+    let (_, ShellContentRecord::FramePermit(v)) = decode_shell_content_frame(&peer.read()).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!((v.state, v.demand_id, v.permit_id), (3, 2, 0));
+    assert_eq!(r.allocations_mut(GRANT).unwrap().snapshots(), allocations);
+    let held = peer
+        .transport
+        .lease_content_resource(&r, GRANT, RESOURCE)
+        .unwrap();
+    peer.send_content(ShellContentRecord::ResourceRetire(ContentResourceRetire {
+        grant: GRANT,
+        resource: RESOURCE,
+    }));
+    assert_eq!(
+        peer.transport
+            .service_closed_native_content(&mut r, opening(), 0)
+            .unwrap(),
+        1
+    );
+    peer.transport.poll_io(&mut r).unwrap();
+    assert_eq!(r.accounting().memory.retiring, 8);
+    peer.client.set_nonblocking(true).unwrap();
+    assert_eq!(
+        peer.client.read(&mut [0]).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    peer.client.set_nonblocking(false).unwrap();
+    drop(held);
+    assert_eq!(
+        peer.transport
+            .service_closed_native_content(&mut r, opening(), 0)
+            .unwrap(),
+        0
+    );
+    peer.transport.poll_io(&mut r).unwrap();
+    assert!(matches!(
+        decode_shell_content_frame(&peer.read()).unwrap().1,
+        ShellContentRecord::ResourceReleased(_)
+    ));
+    assert_eq!(r.accounting().memory.retiring, 0);
+    peer.transport.disconnect(&mut r).unwrap();
+    r.collect();
+    assert_eq!(r.accounting().retired_epochs, 0);
+}

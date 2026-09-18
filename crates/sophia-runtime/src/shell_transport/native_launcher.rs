@@ -3,6 +3,7 @@
 use super::*;
 use sophia_protocol::*;
 
+mod closed_content;
 mod content;
 pub(crate) mod control;
 

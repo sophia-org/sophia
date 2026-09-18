@@ -521,3 +521,40 @@ This closes the client receiver mismatch recorded above, not the server's late
 record drain or live Session close/reopen orchestration. Both repositories remain
 uninstalled; this checkpoint is local and unpushed. Physical readiness is still
 pending the remaining live join, cleanup and exact canonical/harness gates.
+
+### Bounded late-content drain over 9f46b1a5
+
+The transport retains the exact last closed opening and exposes a bounded
+content drain only while no new opening is active. It shares the actual native
+record decoder, inbox, stores, aggregate output budget and resource transition.
+The visit is limited to 32 records/the negotiated lower limit and 64 KiB payload;
+possible terminal credit is checked before removing a request. It cannot grant
+an allocation, permit, candidate, focus or launch.
+
+A Begin which crossed close in flight receives one Cancelled candidate outcome.
+The real store's monotonically consumed generation suppresses duplicate Begin
+terminals; known chunk/end tails consume no new obligation. Unknown future tails
+refuse. Late exact-opening allocation requests get Stale refusals and new demands
+get Cancelled permits. Existing submitted candidates and live allocations remain
+owned. Immutable resource transfers/retirement keep using their existing owner
+and credit rules, allowing cleanup to progress after Closed.
+
+`.artifacts/bemenu-late-content-final`: 14 runtime library, 27 native transport
+and 10 native content controls pass device-hidden; runtime/Session strict
+lib/tests Clippy and layout pass. The new socket control sends Begin/chunk/end
+before close but defers intake until afterward, checks one exact terminal and
+no candidate admission, repeats the records without duplicate response, then
+checks late allocation/demand refusal. A real held resource lease keeps retiring
+bytes at eight and withholds Released until its actual drop; the allocation is
+still deliberately retained. Supplied protection and completion remain fixtures,
+not protected-child or native display evidence.
+
+The compiled duplicate-guard mutant produces an extra terminal and fails the
+no-response assertion (`.artifacts/bemenu-late-content-mutant`); its disposable
+source is restored. No kernel backpressure or general protocol fairness proof is
+claimed. Input ACK/activation draining is separate, and this API intentionally
+refuses while another opening is active: Session must join the exact close,
+removal, resource/allocation settlement and reopen boundary, rather than treating
+a temporarily empty inbox as peer acknowledgement. Those live owner duties,
+component startup/shutdown and the final canonical/`lom-test` gate remain open.
+No device, display, VT, install, push or M3 import occurred.

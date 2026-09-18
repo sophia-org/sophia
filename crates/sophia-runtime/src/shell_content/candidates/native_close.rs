@@ -101,3 +101,106 @@ impl ContentCandidateStore {
         Ok(())
     }
 }
+
+impl ContentCandidateStore {
+    pub(crate) fn reject_closed_native_begin(
+        &mut self,
+        transaction: TransactionId,
+        begin: NativeLauncherCandidateBegin,
+        opening: NativeLauncherOpening,
+    ) -> Result<(), ContentCandidateError> {
+        self.check_grant(begin.content.grant)?;
+        if self.profile != ContentStoreProfile::NativeLauncher
+            || !transaction.is_valid()
+            || begin.opening != opening.opening
+            || begin.content.output != opening.output
+            || begin.catalog_generation != opening.catalog_generation
+            || begin.content.candidate_generation == 0
+        {
+            return Err(ContentCandidateError::Stale);
+        }
+        if begin.content.candidate_generation <= self.last_candidate_generation {
+            return Ok(());
+        }
+        if self.control_occupancy() >= self.limits.max_control_records as usize {
+            return Err(ContentCandidateError::Budget);
+        }
+        self.last_candidate_generation = begin.content.candidate_generation;
+        self.outcome(
+            transaction,
+            begin.content.candidate_generation,
+            begin.content.output,
+            3,
+            ContentReason::Cancelled,
+            0,
+            0,
+            0,
+        );
+        Ok(())
+    }
+    pub(crate) fn closed_native_tail(
+        &self,
+        grant: ContentGrant,
+        generation: u64,
+    ) -> Result<(), ContentCandidateError> {
+        self.check_grant(grant)?;
+        if self.profile != ContentStoreProfile::NativeLauncher
+            || generation == 0
+            || generation > self.last_candidate_generation
+        {
+            return Err(ContentCandidateError::Stale);
+        }
+        Ok(())
+    }
+    pub(crate) fn reject_closed_native_demand(
+        &mut self,
+        transaction: TransactionId,
+        demand: ContentFrameDemand,
+        opening: NativeLauncherOpening,
+    ) -> Result<(), ContentCandidateError> {
+        self.check_grant(demand.grant)?;
+        if self.profile != ContentStoreProfile::NativeLauncher
+            || !transaction.is_valid()
+            || demand.output != opening.output
+            || demand.demand_id == 0
+        {
+            return Err(ContentCandidateError::Stale);
+        }
+        if demand.demand_id <= self.last_demand_id {
+            return Ok(());
+        }
+        if self.control_occupancy() >= self.limits.max_control_records as usize {
+            return Err(ContentCandidateError::Budget);
+        }
+        self.last_demand_id = demand.demand_id;
+        self.push(
+            transaction,
+            ShellContentRecord::FramePermit(ContentFramePermit {
+                grant: demand.grant,
+                output: demand.output,
+                demand_id: demand.demand_id,
+                permit_id: 0,
+                state: 3,
+                reason: ContentReason::Cancelled as u16,
+                ttl_ms: 0,
+                max_candidate_bytes: 0,
+            }),
+        );
+        Ok(())
+    }
+    pub(crate) fn closed_native_cancel(
+        &self,
+        cancel: ContentFrameDemandCancel,
+        opening: NativeLauncherOpening,
+    ) -> Result<(), ContentCandidateError> {
+        self.check_grant(cancel.grant)?;
+        if cancel.output != opening.output
+            || cancel.demand_id == 0
+            || cancel.demand_id > self.last_demand_id
+            || cancel.permit_id > self.last_permit_id
+        {
+            return Err(ContentCandidateError::Stale);
+        }
+        Ok(())
+    }
+}
