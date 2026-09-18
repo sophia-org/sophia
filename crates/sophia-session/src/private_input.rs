@@ -17,6 +17,7 @@
 //! nothing resets an interruption once it is recorded.
 
 mod admission;
+mod committed;
 mod config;
 mod control;
 mod handle;
