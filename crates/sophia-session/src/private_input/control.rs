@@ -124,11 +124,22 @@ impl PrivateInputCommittedEffect {
         self.surface
     }
 
-    /// Which effect the commit called for. A surface committed for the first
-    /// time in its current incarnation is an admission; a later committed
-    /// update to that same still-live incarnation is a configure; a surface
-    /// the intake removed is a withdrawal, which is the existing cleanup
-    /// disposition rather than an operation invented here.
+    /// Which effect the commit called for.
+    ///
+    /// READ FROM THE BATCH'S OWN MAPPING FACTS, never inferred from a surface
+    /// merely being present in committed state. The batch carries
+    /// `surface_presentations`, whose `mapped` flag comes from the runtime's
+    /// surface state via MapWindow and UnmapWindow, and `presentation_intents`
+    /// carrying Request or Withdraw. A surface that is mapped and has no
+    /// admission outstanding for its current `generation` is an admission; a
+    /// committed update to that same mapped incarnation is a configure; a
+    /// withdraw intent or an intake removal is a withdrawal.
+    ///
+    /// The distinction matters because an unmapped surface can be present and
+    /// committed. The transport already relies on the same separation: only
+    /// mapped surfaces acquire an owner route, and an unmapped passive helper
+    /// acquires none merely by existing. Treating a first commit as a map
+    /// would have admitted those helpers.
     pub fn kind(&self) -> XAuthorityControlKind {
         self.kind
     }
