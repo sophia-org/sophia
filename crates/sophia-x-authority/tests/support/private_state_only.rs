@@ -32,14 +32,11 @@ fn state_only_fixture(client: u64) -> PreparedOrderedFixture {
 
 fn state_only_execute(
     f: &mut PreparedOrderedFixture,
-    device: u64,
+    secondary: Option<&PrivateIngress>,
     route: XAuthorityRoutedInput,
 ) -> PrivateOrderedRun {
     let lease = f.keeper.lease();
-    let ingress = f
-        .runner
-        .ingress_for(&lease, f.client, DeviceId::from_raw(device))
-        .unwrap();
+    let ingress = secondary.unwrap_or(&f.ingress);
     let sequence = ingress.submit(&lease, route).unwrap();
     assert!(matches!(f.runner.execute_accounted_step().unwrap(),
         PrivateAccountedStep::Step { step: PrivateOrderedStep::Decided(actual), .. } if actual == sequence));
@@ -68,7 +65,11 @@ fn state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions() {
     use sophia_input_authority::ReleaseOutcome;
     let mut f = state_only_fixture(9781);
     let surface = f.surface;
-    let empty = state_only_execute(&mut f, 1, state_only_key_route(surface, 997810, 42));
+    let secondary = f
+        .runner
+        .ingress_for(&f.keeper.lease(), f.client, DeviceId::from_raw(2))
+        .unwrap();
+    let empty = state_only_execute(&mut f, None, state_only_key_route(surface, 997810, 42));
     assert_eq!(empty.release, Some(ReleaseOutcome::NotHeld));
     assert!(!empty.keyboard_applied && !empty.owes_event && empty.event.is_none());
     assert_eq!(
@@ -76,11 +77,15 @@ fn state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions() {
         (crate::XkbPhysicalKeyState::Released, 0)
     );
 
-    let press = state_only_execute(&mut f, 1, key_service_route(surface, 997811, 42, true));
+    let press = state_only_execute(&mut f, None, key_service_route(surface, 997811, 42, true));
     assert!(press.first_press && press.keyboard_applied);
-    let joined = state_only_execute(&mut f, 2, key_service_route(surface, 997812, 42, true));
+    let joined = state_only_execute(
+        &mut f,
+        Some(&secondary),
+        key_service_route(surface, 997812, 42, true),
+    );
     assert!(!joined.first_press && !joined.keyboard_applied && !joined.owes_event);
-    let survivor = state_only_execute(&mut f, 1, state_only_key_route(surface, 997813, 42));
+    let survivor = state_only_execute(&mut f, None, state_only_key_route(surface, 997813, 42));
     assert_eq!(survivor.release, Some(ReleaseOutcome::SurvivorRemains));
     assert!(!survivor.keyboard_applied && !survivor.owes_event && survivor.event.is_none());
     assert_eq!(
@@ -89,7 +94,11 @@ fn state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions() {
     );
     assert!(f.runner.frontend().terminal.pending_custody.is_none());
 
-    let released = state_only_execute(&mut f, 2, state_only_key_route(surface, 997814, 42));
+    let released = state_only_execute(
+        &mut f,
+        Some(&secondary),
+        state_only_key_route(surface, 997814, 42),
+    );
     assert!(matches!(
         released.release,
         Some(ReleaseOutcome::DeliverTo(_))
@@ -144,7 +153,7 @@ fn state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions() {
 fn state_only_frozen_release_retains_original_request_then_applies_once_after_exact_thaw() {
     let mut f = state_only_fixture(9782);
     let surface = f.surface;
-    state_only_execute(&mut f, 1, key_service_route(surface, 997820, 42, true));
+    state_only_execute(&mut f, None, key_service_route(surface, 997820, 42, true));
     install_prepared_keyboard_freeze(&f);
     let first = f
         .ingress
