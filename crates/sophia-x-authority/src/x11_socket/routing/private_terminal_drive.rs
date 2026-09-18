@@ -6,6 +6,7 @@
 struct PrivateTerminalDriveCursor {
     completion: PrivateInvocationCompletionCursor,
     controls: usize,
+    control_custody: usize,
     control_credit: usize,
     control_reclaim: bool,
     inventory: usize,

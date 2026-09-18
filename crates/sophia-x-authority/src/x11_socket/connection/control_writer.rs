@@ -87,7 +87,7 @@ fn spawn_x11_control_writer(
                 && execution.lock().map_err(|_| X11SetupSocketError::new("control custody unavailable"))?
                     .source.fail_after_effect.load(Ordering::Acquire)
             {
-                return Err(X11SetupSocketError::new("staged interruption after actual control source effect"));
+                return Err(X11SetupSocketError::client_failure("staged interruption after actual control source effect"));
             }
         }};
     }
@@ -197,6 +197,7 @@ fn spawn_x11_control_writer(
                         &sequence,
                         records,
                     )?;
+                    record_private_focus_peer_flush(origin.as_ref(), claim.as_ref(), window, time_msec)?;
                     // Run, so it can no longer happen, and its origin is told
                     // by the same guard that would have told it had this queue
                     // gone instead. Not an outcome for that operation: only

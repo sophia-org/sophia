@@ -1261,3 +1261,7 @@ mod private_control_cleanup;
 #[cfg(unix)]
 #[path = "../../tests/support/private_control_effect_groups.rs"]
 mod private_control_effect_groups;
+
+#[cfg(unix)]
+#[path = "../../tests/support/private_control_peers.rs"]
+mod private_control_peers;

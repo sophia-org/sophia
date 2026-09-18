@@ -13,12 +13,24 @@ struct PrivateControlExecution {
     // numeric target records intent only; it never authorizes later delivery
     // or retirement against a replacement connection.
     generated_events: Vec<(Option<XServerFrontendClientId>, XClientEvent)>,
-    focus_peers: Vec<(
-        Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
-        XResourceId,
-        u32,
-    )>,
+    focus_peers: Vec<PrivateControlFocusPeer>,
     dependent_records: Vec<Vec<u8>>,
+}
+
+#[cfg(unix)]
+struct PrivateControlFocusPeer {
+    recipient: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+    window: XResourceId,
+    time: u32,
+    claim: Option<PrivateFocusClaim>,
+    flushed: bool,
+}
+
+#[cfg(unix)]
+impl PrivateControlExecution {
+    fn peer_debt_pending(&self) -> bool {
+        self.peer_generation_begun || self.focus_peers.iter().any(|peer| !peer.flushed)
+    }
 }
 
 #[cfg(unix)]
@@ -39,6 +51,17 @@ enum PrivateControlCleanupRefusal {
     UnsupportedProgress,
     RemovalWithheld,
     PublicationOutstanding,
+}
+
+#[cfg(unix)]
+impl ControlRecord {
+    fn source_debt_settled(&self) -> bool {
+        self.source.as_ref().is_none_or(|source| {
+            source.lock().is_ok_and(|source| {
+                !source.peer_debt_pending() && source.pending_metadata.is_none()
+            })
+        })
+    }
 }
 
 #[cfg(unix)]
@@ -117,17 +140,36 @@ impl ControlCompletionRegistry {
         custody: &mut usize,
     ) -> Result<bool, PrivateTerminalDriveRefusal> {
         use PrivateControlCleanupRefusal as Refusal;
+        // Visit the product of control records and physical custody slots.
+        // This cursor is independent of native-recipient maintenance, which
+        // must not change which pair this phase visits next.
+        let places = service
+            .owner
+            .inventory
+            .kept
+            .lock()
+            .map_err(|_| Refusal::Unavailable)?
+            .places
+            .len()
+            .max(1);
+        let place = *custody % places;
+        *custody = (place + 1) % places;
         let (token, execution) = {
             let held = self.inner.lock().map_err(|_| Refusal::Unavailable)?;
             if held.records.is_empty() {
                 return Ok(false);
             }
             let index = *cursor % held.records.len();
-            *cursor = (index + 1) % held.records.len();
+            if *custody == 0 {
+                *cursor = (index + 1) % held.records.len();
+            }
             let record = &held.records[index];
-            let ControlPhase::Abandoned(_) = record.phase else {
+            if !matches!(
+                record.phase,
+                ControlPhase::Abandoned(_) | ControlPhase::Settled(_)
+            ) {
                 return Ok(false);
-            };
+            }
             if record.dependents != 0 {
                 return Ok(false);
             }
@@ -153,7 +195,7 @@ impl ControlCompletionRegistry {
             {
                 return Err(Refusal::ForeignSource.into());
             }
-            if operation.peer_generation_begun || operation.pending_metadata.is_some() {
+            if operation.peer_debt_pending() || operation.pending_metadata.is_some() {
                 return Err(Refusal::UnsupportedProgress.into());
             }
             {
@@ -176,11 +218,12 @@ impl ControlCompletionRegistry {
                     return Err(Refusal::PublicationOutstanding.into());
                 }
             }
+            let mut examined_place = place;
             let _terminated = PrivateRecipientTermination::from_place(
                 service,
                 origin,
                 collected,
-                custody,
+                &mut examined_place,
                 &source.endpoint,
             )?;
             // This is the original connection's projection, not a lookup by a
@@ -212,7 +255,10 @@ impl ControlCompletionRegistry {
         let mut held = self.inner.lock().map_err(|_| Refusal::Unavailable)?;
         let Some(index) = held.records.iter().position(|record| {
             record.token == token
-                && matches!(record.phase, ControlPhase::Abandoned(_))
+                && matches!(
+                    record.phase,
+                    ControlPhase::Abandoned(_) | ControlPhase::Settled(_)
+                )
                 && record.dependents == 0
                 && record
                     .source
@@ -222,6 +268,8 @@ impl ControlCompletionRegistry {
             return Ok(false);
         };
         let removed = held.records.remove(index);
+        *cursor = index;
+        *custody = 0;
         drop(held);
         drop(removed);
         Ok(true)
@@ -244,6 +292,49 @@ fn retain_private_control_events(
             operation.generated_events.push((target, event));
         }
     }
+    Ok(())
+}
+
+/// Called only by the original dependent writer after its native projection
+/// step and its actual socket write/flush returned successfully.
+#[cfg(unix)]
+fn record_private_focus_peer_flush(
+    dependent: Option<&ControlDependent>,
+    claim: Option<&PrivateFocusClaim>,
+    window: XResourceId,
+    time: u32,
+) -> Result<(), X11SetupSocketError> {
+    let Some(held) = dependent.and_then(|dependent| dependent.held.as_ref()) else {
+        return Ok(());
+    };
+    let Some(execution) = held.registry.execution_of(held.origin) else {
+        return Ok(());
+    };
+    let mut operation = execution
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("dependent control custody unavailable"))?;
+    let Some(claim) = claim else {
+        return Err(X11SetupSocketError::new(
+            "dependent control has no original focus claim",
+        ));
+    };
+    let peer = operation
+        .focus_peers
+        .iter_mut()
+        .find(|peer| {
+            peer.window == window
+                && peer.time == time
+                && Arc::ptr_eq(&peer.recipient, &claim.connection)
+                && peer.claim.as_ref().is_some_and(|original| {
+                    original.issued.generation == claim.issued.generation
+                        && original.issued.window == claim.issued.window
+                        && original.authority == claim.authority
+                        && original.admission == claim.admission
+                        && original.connection_generation == claim.connection_generation
+                })
+        })
+        .ok_or_else(|| X11SetupSocketError::new("dependent flush names another original focus"))?;
+    peer.flushed = true;
     Ok(())
 }
 
@@ -291,6 +382,7 @@ impl XServerFrontendRouteRegistry {
         recipient: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
         window: XResourceId,
         time: u32,
+        claim: Option<&PrivateFocusClaim>,
     ) -> Result<(), XServerFrontendRouteError> {
         if let Some(execution) =
             token.and_then(|token| self.control_completion()?.execution_of(token))
@@ -298,10 +390,13 @@ impl XServerFrontendRouteRegistry {
             let mut operation = execution
                 .lock()
                 .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-            operation.peer_generation_begun = true;
-            operation
-                .focus_peers
-                .push((recipient.clone(), window, time));
+            operation.focus_peers.push(PrivateControlFocusPeer {
+                recipient: recipient.clone(),
+                window,
+                time,
+                claim: claim.cloned(),
+                flushed: false,
+            });
         }
         Ok(())
     }
@@ -357,7 +452,7 @@ impl PrivateRetainedExecutionResources {
                     service,
                     collected,
                     &mut cursor.controls,
-                    &mut cursor.custody,
+                    &mut cursor.control_custody,
                 )
                 .map(|retired| PrivateTerminalVisit::Control { retired })
         }

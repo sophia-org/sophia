@@ -543,7 +543,7 @@ impl ControlCompletionRegistry {
                     // Settled where it stands, so a recovery path allocates
                     // nothing after publishing and leaves no phase to fix up
                     // in a second pass.
-                    if held.dependents == 0 {
+                    if held.dependents == 0 && held.source_debt_settled() {
                         false
                     } else {
                         held.phase = ControlPhase::Settled(acknowledgement.client);

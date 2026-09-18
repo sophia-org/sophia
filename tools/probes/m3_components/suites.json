@@ -21,7 +21,10 @@
       "x11_socket::routing_tests::private_control_effect_groups::close_cleanup_uses_actual_owned_shutdown_and_original_teardown",
       "x11_socket::routing_tests::private_control_effect_groups::withdraw_cleanup_uses_actual_unmap_and_original_teardown",
       "x11_socket::routing_tests::private_control_effect_groups::generated_local_control_records_survive_interruption_until_exact_recipient_termination",
-      "x11_socket::routing_tests::private_control_effect_groups::refused_metadata_publication_keeps_its_actual_candidate_after_native_teardown"
+      "x11_socket::routing_tests::private_control_effect_groups::refused_metadata_publication_keeps_its_actual_candidate_after_native_teardown",
+      "x11_socket::routing_tests::private_control_peers::reversed_control_and_custody_order_eventually_visits_each_exact_recipient",
+      "x11_socket::routing_tests::private_control_peers::origin_ack_and_failed_peer_write_keep_exact_source_payload_and_credit",
+      "x11_socket::routing_tests::private_control_peers::origin_ack_and_original_peer_flush_retire_and_return_credit_once"
     ],
     "final-custody": [
       "x11_socket::routing_tests::final_completion_keeps_original_internal_home_when_external_custody_is_withheld",
