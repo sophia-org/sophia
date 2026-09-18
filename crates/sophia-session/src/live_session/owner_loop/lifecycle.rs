@@ -480,7 +480,7 @@
                         "sophia_session_app schema=1 status=exited id={id} source=managed exit_status={status}",
                     );
                     let exiting_admission = secondary_children[secondary_index]
-                        .matches_admission(&session_launches);
+                        .matches_admission(session_launches);
                     if exiting_admission
                         && status.success()
                         && let Some(admission) = session_launches.complete_successful_exit(

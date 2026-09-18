@@ -27,6 +27,8 @@ struct SessionLoopResources<'a> {
     metadata_broker: &'a mut Option<LiveMetadataBroker>,
     metadata_shell: &'a mut Option<LiveMetadataShell>,
     shell_components: &'a mut Option<metadata_shell::component_session::ShellComponentSession>,
+    component_catalog: &'a mut component_catalog::ComponentCatalog,
+    session_launches: &'a mut SessionLaunchQueue,
     /// Which connectors share one logical output, from the profile loaded at
     /// startup. Fixed for the session's life: a rescan that regrouped differently
     /// would change the desktop's identity behind policy's back.
@@ -306,6 +308,8 @@ fn run_session_loop_inner(
         metadata_broker,
         metadata_shell,
         shell_components,
+        component_catalog,
+        session_launches,
         mirror_grouping,
         initial_head_mapping,
     } = resources;
@@ -403,7 +407,6 @@ fn run_session_loop_inner(
     let mut staged_cpu_buffer_handles = Vec::with_capacity(16);
     let mut layout_progress_deferred_reported = false;
     let mut committed_session_actions = VecDeque::new();
-    let mut session_launches = SessionLaunchQueue::default();
     let mut launch_admission_started_at: Option<Instant> = None;
     let mut present_observer = XPresentSessionObserver::new(protocol_router);
     let mut present_feedback = Vec::new();

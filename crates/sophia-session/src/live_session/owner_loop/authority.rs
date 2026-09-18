@@ -522,7 +522,7 @@
                         // A concurrently connecting application is not evidence for
                         // whichever registered launch happens to be awaiting a window.
                         let registered_process = secondary_children.iter()
-                            .find(|child| child.matches_admission(&session_launches))
+                            .find(|child| child.matches_admission(session_launches))
                             .and_then(|child| child.process_identity);
                         let registered_owner = registered_process.is_some_and(|process| {
                             layout.client_routes.admission_for_surface(surface).is_some_and(|admission| {

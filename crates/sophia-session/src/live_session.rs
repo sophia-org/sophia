@@ -86,6 +86,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 mod authority_file;
+mod component_catalog;
 mod component_lifecycle;
 mod component_service;
 mod cpu_visual_progress;
@@ -712,6 +713,8 @@ pub(crate) fn run_persistent_xterm_session(
         .is_some()
         .then(LiveMetadataBroker::start)
         .transpose()?;
+    let mut component_catalog = component_catalog::ComponentCatalog::default();
+    let mut session_launches = SessionLaunchQueue::default();
     let (mut shell_components, mut component_directory) =
         component_lifecycle::prepare(&config, client_render_devices.as_ref())?;
     let mut metadata_shell = config
@@ -1097,6 +1100,8 @@ pub(crate) fn run_persistent_xterm_session(
             metadata_broker: &mut metadata_broker,
             metadata_shell: &mut metadata_shell,
             shell_components: &mut shell_components,
+            component_catalog: &mut component_catalog,
+            session_launches: &mut session_launches,
             mirror_grouping: &mirror_grouping,
             initial_head_mapping,
         },
@@ -1176,6 +1181,7 @@ pub(crate) fn run_persistent_xterm_session(
     {
         outer_cleanup_failures.push(format!("shell admission shutdown failed: {error}"));
     }
+    component_catalog.stop(&mut session_launches, &mut outer_cleanup_failures);
     component_lifecycle::stop(
         shell_components.as_mut(),
         render_owners.runtime.as_mut(),
@@ -1241,6 +1247,8 @@ pub(crate) fn run_persistent_xterm_session(
                 native_error,
                 metadata_shell,
                 shell_components,
+                component_catalog,
+                session_launches,
                 component_directory,
             ),
         )));

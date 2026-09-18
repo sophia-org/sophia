@@ -155,3 +155,64 @@ fn stopping_during_catalog_refresh_drains_result_before_join_without_publication
     }
     assert_eq!(discarded, 1);
 }
+
+#[test]
+fn terminal_drain_joins_refresh_without_environment_or_connection() {
+    let mut owner = service(catalog::ApplicationLaunchCommand {
+        executable: "/bin/true".into(),
+        arguments: vec![],
+        working_directory: None,
+    });
+    let mut queue = SessionLaunchQueue::default();
+    assert!(owner.refresh(7));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !owner.drain_shutdown(&mut queue).unwrap() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "shutdown retained undrained catalog result"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(owner.drain_shutdown(&mut queue).unwrap());
+    assert!(!owner.refresh(8));
+    assert!(queue.admission().is_none());
+}
+
+#[test]
+fn terminal_drain_rejects_exact_queued_verification_and_never_executes_it() {
+    let command = catalog::ApplicationLaunchCommand {
+        executable: "/bin/true".into(),
+        arguments: vec![],
+        working_directory: None,
+    };
+    let mut h = Harness::with_command(command.clone());
+    let activation = h.accept();
+    assert_eq!(h.activate(activation, 0).status, 1);
+    let intent = h.queue.begin_next(true).unwrap();
+    assert!(h.queue.dispatch_catalog(intent.transaction));
+    let mut owner = service(command);
+    assert!(matches!(
+        owner.service(
+            Some(&h.peer.transport.connection(&mut h.epochs)),
+            &mut h.queue,
+            environment(),
+            10,
+        ),
+        catalog::NativeCatalogServiceEvent::Idle
+    ));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !owner.drain_shutdown(&mut h.queue).unwrap() {
+        assert!(
+            h.queue.admission().is_none(),
+            "shutdown kept native execution admission"
+        );
+        assert!(
+            std::time::Instant::now() < deadline,
+            "shutdown retained verification result"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(h.queue.admission().is_none());
+    assert!(owner.drain_shutdown(&mut h.queue).unwrap());
+    assert!(!owner.refresh(9));
+}

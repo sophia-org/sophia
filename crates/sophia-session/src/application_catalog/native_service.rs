@@ -64,6 +64,45 @@ impl NativeCatalogService {
         self.worker.poll_shutdown()
     }
 
+    /// Terminal owner visits drain at most one result without a process
+    /// environment or connection. No shutdown result can execute an application.
+    /// Keep this owner and its queue while the worker is still outstanding.
+    pub fn drain_shutdown(
+        &mut self,
+        launches: &mut SessionLaunchQueue,
+    ) -> Result<bool, &'static str> {
+        self.request_shutdown(launches);
+        if let Some(result) = self.worker.poll() {
+            match result {
+                ApplicationCatalogWorkerResult::NativeVerified(launch, _) => {
+                    launches.reject_native_before_execution(&launch);
+                    if self.pending.as_ref().is_none_or(|pending| {
+                        !pending.submitted || !Arc::ptr_eq(&pending.launch, &launch)
+                    }) {
+                        return Err("shutdown catalog result has no exact owner");
+                    }
+                    self.pending = None;
+                }
+                ApplicationCatalogWorkerResult::Built(_, _) => {}
+                ApplicationCatalogWorkerResult::Unavailable => {
+                    // The worker join still reports a panic independently.
+                    self.pending = None;
+                }
+                ApplicationCatalogWorkerResult::Verified(_, _) => {
+                    return Err("legacy verification reached native catalog shutdown");
+                }
+            }
+        }
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|pending| !pending.submitted)
+        {
+            self.pending = None;
+        }
+        self.poll_shutdown()
+    }
+
     /// One worker result and at most one dispatch submission per visit. Time is
     /// Session monotonic milliseconds; regression stops effects and drains work.
     pub fn service(

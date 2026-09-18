@@ -804,3 +804,40 @@ successful startup. A compiled removal of only the retry-deadline exclusion
 fails the same-instant retry assertion; restored disposable source and results
 are in `.artifacts/bemenu-live-component-scheduling-mutant/`. No GPU/device,
 native run, canonical gate, publication or installation was performed.
+
+### Outer catalog worker and shared launch-queue custody (2026-09-18)
+
+The shared Session launch queue now lives outside the owner loop and is borrowed
+by its existing consumers. A new outer-owned component catalog service begins
+its initial scan only for an explicitly selected native launcher while shell
+presentation is available. It retains the actual worker before submitting the
+bounded scan and stores the resulting immutable source snapshot; no connected
+native grant is supplied in this initial scan phase. It therefore publishes no
+catalog to a peer and authorizes no execution. A five-second initial-scan timeout
+returns through the outer owner path. The existing component configuration and
+native startup guards remain in place.
+
+Terminal cleanup drains the real catalog worker without a display/process
+execution environment. It rejects exact outstanding native verification before
+joining, consumes at most one worker result per visit, and retains the service
+on timeout/error. The outer Session error carrier owns both the catalog service
+and the shared queue, including errors returned before ordinary completion.
+This uses the existing worker and does not add a pool. The bounded terminal wait
+is not used on seat acknowledgement. Existing queue call sites only change from
+borrowing a local value to reborrowing the outer value.
+
+`.artifacts/bemenu-live-catalog-owner/`: final device-hidden Session 474 PASS/14
+ignored, native execution controls 4 PASS, catalog controls 4 PASS; strict Session
+Clippy, layout and workspace formatting PASS. The live-helper fixture directly
+prepares the internal selected profile (the public guard remains closed), scans
+an empty catalog on the real worker, and proves successful bounded shutdown
+cannot restart it. The two new terminal controls drain a real scan and an exact
+socket-admitted verification with no execution environment. Existing execution
+controls still run their private short-lived `/bin/true` child, not a GUI.
+A compiled omission of shutdown result draining fails the bounded join control;
+restored source and logs are in `.artifacts/bemenu-live-catalog-owner-mutant/`.
+Initial compile/type and strict-reborrow failures are retained separately from
+the final gates. Outer error-path placement is source integration, not an induced
+native failure. Catalog FIFO publication, open/focus/input, connected execution,
+close/reopen and the full physical harness remain unfinished. No hardware,
+native run, canonical gate, installation or publication claim.

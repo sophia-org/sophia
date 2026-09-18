@@ -42,3 +42,53 @@ session {
     }
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn component_catalog_scan_is_outer_owned_and_shutdown_cannot_restart_it() {
+    use super::super::{PreparedSessionProfile, component_catalog::ComponentCatalog};
+    use crate::session_actions::SessionLaunchQueue;
+    let profile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/fixtures/mixed_output_probe.kdl");
+    let mut config = PersistentXtermSessionConfig::from_args(&[format!(
+        "--desktop-profile={}",
+        profile.display()
+    )])
+    .unwrap();
+    // Prepare the internal selected state directly: the public configuration
+    // guard is intentionally still closed until all live input is integrated.
+    let mut candidate = config.session_profile.candidate().clone();
+    candidate
+        .components
+        .shell_components
+        .push(sophia_config::ShellComponentConfig {
+            id: "menu".into(),
+            role: sophia_config::ShellComponentRole::ApplicationLauncher,
+            executable: "/absent/bemenu-sophia".into(),
+            config: None,
+            gpu: sophia_config::ShellGpuMode::Denied,
+        });
+    config.session_profile = PreparedSessionProfile::new(candidate).unwrap();
+    config.application_catalog = Some(sophia_config::ApplicationCatalogConfig {
+        name: "empty".into(),
+        sources: vec![],
+        applications: vec![],
+        terminal: None,
+        terminal_arguments: vec![],
+    });
+    let mut owner = ComponentCatalog::default();
+    let mut queue = SessionLaunchQueue::default();
+    let authority = std::path::Path::new("/unavailable-test-authority");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !owner.visit_scan(&config, &mut queue, authority).unwrap() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(owner.visit_scan(&config, &mut queue, authority).unwrap());
+    assert!(queue.admission().is_none());
+    let mut failures = vec![];
+    owner.stop(&mut queue, &mut failures);
+    assert!(failures.is_empty(), "{failures:?}");
+    assert!(!owner.visit_scan(&config, &mut queue, authority).unwrap());
+    owner.stop(&mut queue, &mut failures);
+    assert!(failures.is_empty());
+}

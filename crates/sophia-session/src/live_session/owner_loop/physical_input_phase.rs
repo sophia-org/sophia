@@ -567,7 +567,7 @@ macro_rules! drain_physical_input {
                     && !is_shell_switcher_shortcut(action)
                 {
                     if let Some(wm) = wm_session.as_mut() {
-                        wm.enqueue_command_shortcut(action, &mut session_launches, secondary_children.len())?;
+                        wm.enqueue_command_shortcut(action, session_launches, secondary_children.len())?;
                     }
                     continue;
                 }
@@ -1084,6 +1084,9 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 .map(|execution| execution.phase),
             wm_session.as_ref().is_some_and(LiveWmSession::startup_output_topology_pending),
         );
+        if shell_components.is_some() && shell_presentation_available {
+            component_catalog.visit_scan(config, session_launches, xauthority)?;
+        }
         if shell_presentation_available {
             if let Some((runtime, native)) = runtime.as_ref().zip(native_scanout.as_ref()) {
                 content_mapping_evidence.observe(native, runtime.input_projections());
@@ -1188,7 +1191,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if let Some(runtime)=runtime.as_mut() {
-                if let Err(error)=shell.service_launcher(config,xauthority,&mut session_launches,secondary_children,&mut launch_admission_started_at,runtime,scene,native_scanout.as_mut()){
+                if let Err(error)=shell.service_launcher(config,xauthority,session_launches,secondary_children,&mut launch_admission_started_at,runtime,scene,native_scanout.as_mut()){
                     crate::session_eprintln!("sophia_launcher status=unavailable error={error}");
                     shell.cancel_launcher()?;
                     shell.recover_transport("launcher_failure")?;

@@ -254,7 +254,7 @@
                 config,
                 xauthority,
                 children: secondary_children,
-                launches: &mut session_launches,
+                launches: session_launches,
                 launch_admission_started_at: &mut launch_admission_started_at,
                 admission_pipeline_idle,
                 stable_admission_surface,
