@@ -221,6 +221,11 @@ struct ShelvedEgress {
     holds_batch: bool,
     observed_batch: bool,
     surface: Option<SurfaceId>,
+    /// The batch's payload shape, so a shelved raster batch is compared as
+    /// what it carried and not only as present: its transaction count and
+    /// its raster-response count.
+    transaction_count: usize,
+    raster_response_count: usize,
 }
 
 fn read_shelf(durable: &PrivateSettlementOwner) -> Vec<ShelvedEgress> {
@@ -240,6 +245,14 @@ fn read_shelf(durable: &PrivateSettlementOwner) -> Vec<ShelvedEgress> {
                         .as_ref()
                         .and_then(|batch| batch.transactions.first())
                         .map(|transaction| transaction.surface),
+                    transaction_count: envelope
+                        .batch
+                        .as_ref()
+                        .map_or(0, |batch| batch.transactions.len()),
+                    raster_response_count: envelope
+                        .batch
+                        .as_ref()
+                        .map_or(0, |batch| batch.raster_responses.len()),
                 })
                 .collect()
         })

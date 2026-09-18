@@ -32,14 +32,17 @@ struct AbandonedSettlements {
     /// RETAINED, NOT DISPOSED OF. This store is the one owner that outlives
     /// a service invocation, so this is where unsent work reaches when the
     /// frame that was sending it is gone. Plain data with no path back to
-    /// this store, bounded by one pending raster envelope per invocation.
-    /// Nothing here settles, retries or publishes it; a reader takes it.
+    /// this store, bounded by the failure capacity the shelf was sized to.
+    /// Nothing here settles, retries, publishes or removes it; readers read
+    /// it where it is, filed under the invocation that left it.
     unresolved_egress: Vec<(u64, XAuthorityBoundedEgressEnvelope)>,
     /// The number the next instance reservation is given. Minted on the
     /// existing reservation, before exposure, and never reused, so a
     /// retained obligation names the invocation that left it even after
     /// that invocation's frames and handles are gone. A counter, not a
-    /// history: nothing is kept per number.
+    /// history: nothing is kept per number, and a store that has issued
+    /// `u64::MAX - 1` refuses every reservation after it. Scoped to this
+    /// store: the same number from another store names something else.
     next_instance: u64,
     /// Obligations a sweep is part-way through.
     ///
@@ -582,9 +585,18 @@ impl PrivateSettlementOwner {
         {
             return Err(AdmissionRefusal::Saturated);
         }
+        // NEVER REUSED MEANS REFUSED BEFORE REISSUED. Both refusals come before
+        // either the charge or the counter moves, so a refused reservation
+        // leaves the accounting exactly as it found it. `u64::MAX` is never
+        // issued: it is the mark of a store whose identities are spent, and
+        // no release of a capacity charge brings one back.
+        let successor = held
+            .next_instance
+            .checked_add(1)
+            .ok_or(AdmissionRefusal::Exhausted)?;
         held.failure_slots = held.failure_slots.saturating_add(1);
         let instance = held.next_instance;
-        held.next_instance = held.next_instance.saturating_add(1);
+        held.next_instance = successor;
         Ok(instance)
     }
 

@@ -298,7 +298,10 @@ fn drive_routed_service(
 
 /// One retained obligation: the invocation that left it -- the number its
 /// store gave its reservation, before exposure -- and the transaction it was
-/// for. Transactions restart per frontend; the pair does not.
+/// for. Transactions restart per frontend; the pair does not, WITHIN THE
+/// STORE THAT ISSUED IT. The instance number is scoped to its originating
+/// store; the same pair read against another store names something else,
+/// and this pair grants nothing -- no replay, no driving.
 #[cfg(unix)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PrivateUnresolvedEgress {
@@ -384,8 +387,9 @@ struct PrivateServiceCollection<'s> {
 
 #[cfg(unix)]
 impl PrivateServiceCollection<'_> {
-    /// Move a pending envelope that still holds its batch, unsent, to the
-    /// store's shelf; drop one whose batch the transport already took.
+    /// File a pending envelope that still holds its batch, unsent, on the
+    /// store's shelf under this invocation; drop one whose batch the
+    /// transport already took.
     ///
     /// WHAT HAPPENED AT THE EFFECT DECIDES. The transport takes the batch
     /// out of the envelope when it accepts it, and the ticket is advanced
@@ -395,8 +399,8 @@ impl PrivateServiceCollection<'_> {
     /// is not shelved as such. An envelope still holding its batch was never
     /// accepted, and that is what the shelf keeps. NOT A SETTLEMENT EITHER
     /// WAY: cancelling a wait (where that is done) publishes that the batch
-    /// was not delivered; shelving grants no replay; a reader accounts for
-    /// what it takes.
+    /// was not delivered; shelving grants no replay; nothing takes it back
+    /// out, and its charge stays on the store while it is there.
     fn retain_pending(&mut self) -> Vec<PrivateUnresolvedEgress> {
         if let Some(envelope) = self.pending_raster_egress.take()
             && envelope.batch.is_some()

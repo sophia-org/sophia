@@ -106,7 +106,9 @@ fn an_unwind_inside_the_private_service_keeps_the_unsent_raster_envelope() {
     let entry = &after.shelf[0];
     assert!(entry.holds_batch, "an unsent envelope still holds its batch");
     assert!(entry.observed_batch, "and it is the observed raster batch");
+    assert_eq!(entry.transaction_count, 1, "carrying its one surface transaction");
     assert_eq!(entry.surface, Some(surface), "naming the surface the requirement was for");
+    assert_eq!(entry.raster_response_count, 1, "and its raster response, intact");
     assert!(
         transactions.try_recv().is_ok(),
         "the transport still holds the worker's item, so the raster batch was never accepted"
@@ -232,6 +234,8 @@ fn an_error_while_a_raster_envelope_waits_cancels_its_wait_and_retains_it() {
     assert_eq!(after.shelf.len(), 1);
     assert!(after.shelf[0].holds_batch, "cancelling a wait does not deliver the batch");
     assert_eq!(after.shelf[0].surface, Some(surface));
+    assert_eq!(after.shelf[0].transaction_count, 1);
+    assert_eq!(after.shelf[0].raster_response_count, 1, "its payload is intact");
     assert_kept_exactly_one(&after);
     assert_released(&after);
     let _ = std::fs::remove_file(&socket_path);
@@ -363,6 +367,8 @@ fn stop_with_a_waiting_envelope(
     assert_eq!(after.shelf.len(), 1, "the unsent envelope survives an ordinary stop");
     assert!(after.shelf[0].holds_batch);
     assert_eq!(after.shelf[0].surface, Some(surface));
+    assert_eq!(after.shelf[0].transaction_count, 1);
+    assert_eq!(after.shelf[0].raster_response_count, 1, "its payload is intact");
     assert!(
         transactions.try_recv().is_ok(),
         "the transport still holds the worker's item: the batch was never accepted"
@@ -443,6 +449,8 @@ fn a_shutdown_report_that_unwinds_during_a_stop_still_keeps_the_envelope() {
     assert!(reported.is_empty());
     assert_eq!(after.shelf.len(), 1, "the envelope survives the unwind");
     assert_eq!(after.shelf[0].surface, Some(surface));
+    assert_eq!(after.shelf[0].transaction_count, 1);
+    assert_eq!(after.shelf[0].raster_response_count, 1, "its payload is intact");
     assert_kept_exactly_one(&after);
     assert_same_custody(before, &after);
     assert_released(&after);
@@ -511,7 +519,7 @@ fn a_cancelled_submission_keeps_its_batch_in_the_slot() {
 }
 
 #[test]
-fn the_shelf_keeps_its_charge_on_the_store_until_taken() {
+fn the_shelf_keeps_its_charge_on_the_store_while_it_is_retained() {
     // ONE ORIGINAL STORE, CAPACITY ONE, TWO INVOCATIONS. The first leaves an
     // unsent envelope on the shelf and its launch owner goes. The second
     // cannot even construct a frontend: the shelved envelope keeps the one
@@ -587,6 +595,8 @@ fn the_shelf_keeps_its_charge_on_the_store_until_taken() {
     assert_eq!(shelf.len(), 1);
     assert!(shelf[0].holds_batch);
     assert_eq!(shelf[0].surface, Some(surface));
+    assert_eq!(shelf[0].transaction_count, 1);
+    assert_eq!(shelf[0].raster_response_count, 1);
     assert_eq!(shelf[0].obligation.instance, 1, "the first reservation's number");
     let owner_two = service_owner(&durable, 4);
     let refused = crate::PrivateXServerFrontend::new(private_service_parts(4), &owner_two);
@@ -746,4 +756,51 @@ fn an_invocation_that_owes_no_retained_egress_releases_its_charge_for_reuse() {
         .unwrap_or_else(|(refusal, _)| panic!("the charge was released for reuse: {refusal:?}"));
     drop(second.shutdown());
     drop((owner_two, durable));
+}
+
+
+#[test]
+fn a_store_refuses_a_reservation_before_it_would_reissue_an_identity() {
+    // REPRESENTATIONAL EXHAUSTION, STAGED. The counter is put one below its
+    // maximum directly -- pretending to run the enormous prefix would prove
+    // nothing -- and then the seam is exercised for real: the last admissible
+    // number is issued and charged; the successor is refused with the charge
+    // and the counter untouched; and giving an earlier capacity charge back
+    // does not bring a spent identity back.
+    let durable = PrivateSettlementOwner::with_capacity(4);
+    {
+        let mut held = durable.inner.lock().expect("a readable store");
+        held.next_instance = u64::MAX - 1;
+    }
+    let last = durable
+        .reserve_failure_slot()
+        .expect("the last admissible identity is issued");
+    assert_eq!(last, u64::MAX - 1);
+    let (slots_after_last, counter_after_last) = {
+        let held = durable.inner.lock().expect("readable");
+        (held.failure_slots, held.next_instance)
+    };
+    assert_eq!(slots_after_last, 1, "and charged");
+    assert_eq!(counter_after_last, u64::MAX, "the counter now marks exhaustion");
+
+    let refused = durable.reserve_failure_slot();
+    assert!(
+        matches!(refused, Err(AdmissionRefusal::Exhausted)),
+        "the successor is refused rather than reissued: {refused:?}"
+    );
+    {
+        let held = durable.inner.lock().expect("readable");
+        assert_eq!(held.failure_slots, 1, "a refusal charges nothing");
+        assert_eq!(held.next_instance, u64::MAX, "and moves nothing");
+    }
+
+    // Releasing the earlier charge frees capacity, not identity.
+    durable.release_failure_slot();
+    assert_eq!(durable.inner.lock().expect("readable").failure_slots, 0);
+    let still_refused = durable.reserve_failure_slot();
+    assert!(
+        matches!(still_refused, Err(AdmissionRefusal::Exhausted)),
+        "a spent identity is not restored by a returned charge: {still_refused:?}"
+    );
+    assert_eq!(durable.inner.lock().expect("readable").failure_slots, 0);
 }
