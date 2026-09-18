@@ -61,7 +61,7 @@ impl PrivateRetainedExecutionResources {
         if witness.completed.load(Ordering::Acquire) {
             return Self::retire_completed_custody(witness, origin, collected, service, cursor);
         }
-        if cursor.class == 11 {
+        if cursor.class == 13 {
             // A closed-empty queue is a positive read of the original queue,
             // taken without the aggregate store held. The final epoch check
             // then excludes movements throughout every row of this scan.
@@ -93,7 +93,7 @@ impl PrivateRetainedExecutionResources {
         if cursor.epoch != Some(epoch) {
             cursor.restart(Some(epoch));
         }
-        if cursor.class == 10 {
+        if cursor.class == 12 {
             drop(store);
             let custody = {
                 let kept = service
@@ -139,10 +139,26 @@ impl PrivateRetainedExecutionResources {
                 .terminal_in_flight
                 .get(row)
                 .map(|other| Arc::ptr_eq(witness, other)),
-            _ => store
+            9 => store
                 .unresolved_egress
                 .get(row)
                 .map(|(instance, _)| *instance == witness.instance),
+            10 => store.continuations.get(row).map(|place| match place {
+                PrivateOrderedContinuationPlace::Free => false,
+                PrivateOrderedContinuationPlace::Taken(home) => home.may_belong_to(origin),
+            }),
+            _ => store.holders.get(row).map(|place| match place {
+                PrivateHolderPlace::Free => false,
+                PrivateHolderPlace::Taken(holder) => holder
+                    .credit
+                    .maintenance_identity()
+                    .home
+                    .upgrade()
+                    .is_none_or(|home| home.may_belong_to(origin)),
+                // An unfinished destination does not identify a discharged
+                // obligation. Retain it until its original source answers.
+                _ => true,
+            }),
         };
         Ok(cursor.observe(matching))
     }

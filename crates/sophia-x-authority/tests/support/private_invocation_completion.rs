@@ -246,3 +246,38 @@ fn final_custody_preserves_unreadable_store_without_completion_or_capacity_retur
     assert!(owner.store.inner.is_poisoned());
     service.finish();
 }
+
+#[test]
+fn final_completion_keeps_original_internal_home_when_external_custody_is_withheld() {
+    let owner = Arc::new(service_owner(&PrivateSettlementOwner::with_capacity(16), 4));
+    let (service, custody) = closed_custody_service(owner.clone(), false);
+    assert!(
+        !custody
+            .cleanup_record()
+            .ordered_home
+            .storage_returned
+            .load(Ordering::Acquire)
+    );
+    let (index, original) = {
+        let mut kept = owner.inventory.kept.lock().unwrap();
+        let index = kept
+            .places
+            .iter()
+            .position(|slot| {
+                slot.as_ref()
+                    .is_some_and(|candidate| Arc::ptr_eq(candidate, &custody))
+            })
+            .unwrap();
+        (index, kept.places[index].take().unwrap())
+    };
+    for _ in 0..400 {
+        assert!(
+            !final_custody_step(&service).completed,
+            "the original internal continuation still owns output despite a missing external row"
+        );
+    }
+    assert_eq!(owner.store.inner.lock().unwrap().continuation_slots, 1);
+    owner.inventory.kept.lock().unwrap().places[index] = Some(original);
+    wait_final_custody(&service);
+    service.finish();
+}

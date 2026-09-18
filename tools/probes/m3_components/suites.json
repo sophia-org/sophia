@@ -2,6 +2,7 @@
   "schema": 1,
   "suites": {
     "final-custody": [
+      "x11_socket::routing_tests::final_completion_keeps_original_internal_home_when_external_custody_is_withheld",
       "x11_socket::routing_tests::final_custody_waits_for_actual_settlement_handoff_and_original_storage_return",
       "x11_socket::routing_tests::final_custody_reuses_original_slots_across_more_invocations_than_capacity",
       "x11_socket::routing_tests::completion_scan_restarts_for_a_same_invocation_obligation_moved_behind_its_cursor",

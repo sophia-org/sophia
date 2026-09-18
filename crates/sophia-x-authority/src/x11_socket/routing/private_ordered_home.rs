@@ -73,6 +73,13 @@ impl<R> PrivateHomeBorrow<R> {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Borrowed by a driver that is not attached yet.
 struct PrivateOrderedHome {
+    /// Bound by actual registration before publication. Weak: the durable
+    /// store must not own its registry through a retained output home.
+    origin: std::sync::OnceLock<
+        std::sync::Weak<
+            Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>,
+        >,
+    >,
     /// Set only by the exact occupied-slot return, never by later absence.
     storage_returned: AtomicBool,
     /// Both facts under one lock, because nothing reads one without the other:
@@ -112,6 +119,7 @@ impl PrivateOrderedHome {
     /// let alone bound, so there is nothing here and nothing has ended.
     fn empty() -> Self {
         Self {
+            origin: std::sync::OnceLock::new(),
             storage_returned: AtomicBool::new(false),
             state: Mutex::new(PrivateOrderedHomeState {
                 payload: None,
@@ -124,6 +132,12 @@ impl PrivateOrderedHome {
         self.state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn may_belong_to(&self, origin: &XServerFrontendRouteRegistry) -> bool {
+        self.origin.get().is_none_or(|registered| {
+            std::ptr::eq(registered.as_ptr(), Arc::as_ptr(&origin.clients))
+        })
     }
 
     /// Put this connection's ordered output in its home.
@@ -195,7 +209,10 @@ impl PrivateOrderedHome {
     /// `None` means a holder panicked inside this home. That is what promotion
     /// has always reported rather than recovering, because what it would go on
     /// to do is build an owner out of a payload nobody can vouch for.
-    fn occupy<R>(&self, act: impl FnOnce(&mut Option<PrivateOrderedContinuation>) -> R) -> Option<R> {
+    fn occupy<R>(
+        &self,
+        act: impl FnOnce(&mut Option<PrivateOrderedContinuation>) -> R,
+    ) -> Option<R> {
         let mut held = self.state.lock().ok()?;
         Some(act(&mut held.payload))
     }
