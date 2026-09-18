@@ -344,6 +344,16 @@ fn release_x11_client_lease(
     namespace: NamespaceId,
     lease: XServerFrontendClientLease,
 ) -> Result<crate::XAuthorityClientResourceRelease, X11SetupSocketError> {
+    release_x11_client_lease_with_control(state, namespace, lease, None)
+}
+
+#[cfg(unix)]
+fn release_x11_client_lease_with_control(
+    state: &X11CoreSocketServerState,
+    namespace: NamespaceId,
+    lease: XServerFrontendClientLease,
+    control: Option<&PrivateControlClientSource>,
+) -> Result<crate::XAuthorityClientResourceRelease, X11SetupSocketError> {
     // Keep authority resource destruction and property removal together. X11
     // request dispatch acquires the runtime lock before the property lock, so
     // this prevents another client observing a destroyed window with stale
@@ -357,12 +367,18 @@ fn release_x11_client_lease(
         .map_err(|error| {
             X11SetupSocketError::new(format!("failed to release X11 client resources: {error:?}"))
         })?;
+    if let Some(source) = control {
+        source.record_removal(state, &lease, &release)?;
+    }
     let mut properties = state
         .properties
         .lock()
         .map_err(|_| X11SetupSocketError::new("X11 property table lock poisoned"))?;
     for window in &release.destroyed_windows {
         properties.remove_window(namespace, *window);
+    }
+    if let Some(source) = control {
+        source.teardown.lock().map_err(|_| X11SetupSocketError::new("control teardown unavailable"))?.properties_removed = true;
     }
     Ok(release)
 }

@@ -75,6 +75,9 @@ fn spawn_x11_control_writer(
     protocol_routing: Option<XServerFrontendRouteRegistry>,
     channels: X11ControlChannels,
 ) -> Result<X11ControlWriter, X11SetupSocketError> {
+    let control_source = protocol_routing.as_ref()
+        .and_then(|routing| routing.client_senders(client).ok())
+        .and_then(|senders| senders.connection_state.get()?.control_source.get()?.upgrade());
     let stop = Arc::new(AtomicBool::new(false));
     let writer_stop = stop.clone();
     macro_rules! terminate_client {
@@ -216,6 +219,13 @@ fn spawn_x11_control_writer(
                 continue;
             };
 
+            let control_execution = match (completion, control_source.as_ref(), channels.completion()) {
+                (Some(token), Some(source), Some(registry)) if kind == XAuthorityControlKind::ConfigureSurface => {
+                    Some(registry.retain_execution_source(token, source, window)
+                        .map_err(|cause| X11SetupSocketError::new(format!("control custody unavailable: {cause:?}")))?)
+                }
+                _ => None,
+            };
             let event_sequence = sequence.load(Ordering::Acquire);
             let records = match command {
                 XAuthorityControlCommand::PublishMetadataRule { rule, .. } => {
@@ -394,6 +404,10 @@ fn spawn_x11_control_writer(
                     // progress, which is the safe reading: it says the effect
                     // may have happened, and nothing is discharged on it.
                     let _ = channels.record_progress(completion, ControlProgress::RuntimeApplied);
+                    #[cfg(test)]
+                    if control_source.as_ref().is_some_and(|source| source.fail_after_runtime.load(Ordering::Acquire)) {
+                        return Err(X11SetupSocketError::new("staged interruption after actual Configure runtime effect"));
+                    }
                     channels
                         .record_progress(completion, ControlProgress::ProjectionBegun)
                         .map_err(|refusal| {
@@ -421,6 +435,9 @@ fn spawn_x11_control_writer(
                     if previous_geometry == Some(geometry) {
                         Vec::new()
                     } else {
+                        if let Some(execution) = &control_execution {
+                            execution.lock().map_err(|_| X11SetupSocketError::new("control custody unavailable"))?.peer_generation_begun = true;
+                        }
                         // XLibre's Present hook runs before core event
                         // delivery for every real geometry change, including
                         // a pure move. Clients may merge both streams.
@@ -674,7 +691,11 @@ fn spawn_x11_control_writer(
             // partly happened and no acknowledgement follows. The completion
             // record stays in its applying phase rather than being closed as
             // unexecuted.
-            write_x11_control_records(&stream, &output_wire, byte_order, &sequence, records)?;
+            if let Some(execution) = &control_execution {
+                write_private_control_records(execution, &stream, &output_wire, byte_order, &sequence, records)?;
+            } else {
+                write_x11_control_records(&stream, &output_wire, byte_order, &sequence, records)?;
+            }
             channels.send_ack_for(
                 client,
                 XAuthorityControlAck {

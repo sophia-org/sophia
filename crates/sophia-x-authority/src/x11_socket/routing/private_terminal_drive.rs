@@ -5,6 +5,9 @@
 #[derive(Default)]
 struct PrivateTerminalDriveCursor {
     completion: PrivateInvocationCompletionCursor,
+    controls: usize,
+    control_credit: usize,
+    control_reclaim: bool,
     inventory: usize,
     native: usize,
     recording: usize,
@@ -20,6 +23,7 @@ struct PrivateTerminalDriveCursor {
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateTerminalDriveRefusal {
+    Control(PrivateControlCleanupRefusal),
     CompletionEpochExhausted,
     WorkerFailureRetained,
     ExecutionNotRetained,
@@ -40,6 +44,7 @@ enum PrivateTerminalDriveRefusal {
 #[cfg(unix)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PrivateTerminalVisit {
+    Control { retired: bool },
     SettlementStillOwned,
     InvocationScanning,
     InvocationOutstanding,
@@ -61,6 +66,7 @@ enum PrivateTerminalVisit {
 impl std::fmt::Debug for PrivateTerminalVisit {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Control { retired } => formatter.debug_struct("Control").field("retired", retired).finish(),
             Self::SettlementStillOwned => formatter.write_str("SettlementStillOwned"),
             Self::InvocationScanning => formatter.write_str("InvocationScanning"),
             Self::InvocationOutstanding => formatter.write_str("InvocationOutstanding"),
@@ -205,8 +211,10 @@ impl PrivateRetainedExecutionResources {
                 Err(cause) => (Err(Refusal::Supervisor(cause)), Err(cause)),
                 Ok(()) => {
                     let phase = cursor.phase;
-                    cursor.phase = (phase + 1) % 8;
-                    let outcome = if phase == 7 {
+                    cursor.phase = (phase + 1) % 9;
+                    let outcome = if phase == 8 {
+                        Self::visit_control_cleanup(&self.origin, service_owner, self.collected.as_ref(), cursor)
+                    } else if phase == 7 {
                         Self::visit_invocation_completion(
                             &self.lifetime.0,
                             &self.origin,

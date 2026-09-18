@@ -27,6 +27,18 @@
       "x11_socket::routing_tests::live_native_disposal_waits_for_the_original_press_completion_and_native_source",
       "x11_socket::routing_tests::live_native_disposal_is_charged_before_observing_and_returns_only_the_exact_record"
     ],
+    "control-cleanup": [
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_stop_keeps_actual_cancelled_teardown_publication_payload",
+      "x11_socket::routing_tests::final_custody_waits_for_actual_settlement_handoff_and_original_storage_return",
+      "x11_socket::routing_tests::final_custody_reuses_original_slots_across_more_invocations_than_capacity",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_normal_stop_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_unwind_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_replacement_removal_receipt_cannot_answer_original_source",
+      "x11_socket::routing_tests::private_control_cleanup::actual_partial_configure_cleanup_uses_original_removal_and_returns_its_credit",
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_withheld_source_removal_keeps_original_record_and_credit",
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_foreign_source_cannot_retire_an_identically_numbered_operation",
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_missing_teardown_publication_keeps_native_removal_separate"
+    ],
     "final-custody": [
       "x11_socket::routing_tests::final_completion_keeps_original_internal_home_when_external_custody_is_withheld",
       "x11_socket::routing_tests::final_custody_waits_for_actual_settlement_handoff_and_original_storage_return",

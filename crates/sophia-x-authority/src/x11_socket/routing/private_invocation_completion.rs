@@ -58,6 +58,10 @@ impl PrivateRetainedExecutionResources {
             cursor.restart(None);
             return Ok(PrivateTerminalVisit::SettlementStillOwned);
         }
+        if !matches!(origin.control_completion().and_then(|registry| registry.outstanding()), Some(0)) {
+            cursor.restart(None);
+            return Ok(PrivateTerminalVisit::InvocationOutstanding);
+        }
         if witness.completed.load(Ordering::Acquire) {
             return Self::retire_completed_custody(witness, origin, collected, service, cursor);
         }
@@ -175,6 +179,9 @@ impl PrivateRetainedExecutionResources {
     ) -> Result<PrivateTerminalVisit, PrivateTerminalDriveRefusal> {
         use PrivateTerminalDriveRefusal as Refusal;
         if !witness.completed.load(Ordering::Acquire) {
+            return Ok(PrivateTerminalVisit::InvocationOutstanding);
+        }
+        if !matches!(origin.control_completion().and_then(|registry| registry.outstanding()), Some(0)) {
             return Ok(PrivateTerminalVisit::InvocationOutstanding);
         }
         // A later unreadable aggregate cannot authorize releasing its custody.
