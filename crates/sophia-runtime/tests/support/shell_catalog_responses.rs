@@ -1,6 +1,8 @@
 //! Actual response credit/FIFO owners with supplied negotiated state and
 //! simulated drain. This is neither socket negotiation nor kernel backpressure.
 use super::*;
+#[path = "catalog_candidate_transport.rs"]
+mod candidates;
 use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT: AtomicU64 = AtomicU64::new(1);
 const GRANT: ContentGrant = ContentGrant {
@@ -14,6 +16,9 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
+        Self::with_control_limit(1)
+    }
+    fn with_control_limit(control_records: u32) -> Self {
         let directory = std::env::temp_dir().join(format!(
             "sophia-catalog-credit-{}-{}",
             std::process::id(),
@@ -26,7 +31,7 @@ impl Fixture {
         .unwrap();
         let mut epochs = crate::ContentEpochRegistry::new(64 * 1024 * 1024).unwrap();
         let mut limits = ContentLimits::prototype(GRANT);
-        limits.max_control_records = 1;
+        limits.max_control_records = control_records;
         transport
             .reserve_content_with_profile(
                 &mut epochs,

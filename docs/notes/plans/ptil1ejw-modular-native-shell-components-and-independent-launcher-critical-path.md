@@ -1517,3 +1517,24 @@ presentation/action integration. No physical run or install was performed.
 The combined candidate/response source also passes all 477 Session library tests
 with 15 ignored in the same device-hidden fresh-target run; layout passes with
 one documented external private-fixture mount, without changing the checker.
+
+### Persistent candidate transport (2026-09-18)
+
+Revision-8 assembly now reaches the existing candidate store through a bounded
+transport visit (at most 32 records and 64 KiB of payload). It validates the
+negotiated profile, exact grant and unique current output context before dequeue;
+legacy/transient candidate families refuse. Submission rechecks the published
+catalog while transferring actual resource leases. Allocation, Session action
+authorization and enabled Dock negotiation remain separate unfinished work.
+
+Device-hidden runtime library controls pass (20), including wire assembly through
+real leased submission and exact original-transaction Prepared/Presented FIFO
+responses. The controls supply negotiation, allocations and renderer completion;
+they are not a dock connection or native presentation. Missing/ambiguous End
+context and response saturation retain input; stale Begin settles one terminal.
+The existing 22 ordinary, 10 transient and six persistent store controls also
+pass. Strict runtime Clippy and layout pass. A separately compiled wrong-grant
+mutation fails the expected pre-dequeue refusal; the positive archive/target was
+not mutated. Evidence: `.artifacts/dock-candidate-transport`. Its initial check
+failed because the fixture granted a permit under a one-record budget; the fixed
+fixture admits its full limit at construction. No hardware or publication.

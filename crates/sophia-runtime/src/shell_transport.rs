@@ -37,6 +37,7 @@ mod negotiation;
 mod negotiation_policy;
 mod negotiation_service;
 pub use legacy::ShellSessionTransport;
+mod catalog_candidates;
 mod catalog_responses;
 mod content_actions;
 mod content_admission;
