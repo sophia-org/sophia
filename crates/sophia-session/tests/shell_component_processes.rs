@@ -184,3 +184,124 @@ mod peer;
 fn protected_component_peer() {
     peer::run();
 }
+
+#[cfg(feature = "native-session")]
+#[test]
+fn selected_component_launches_bind_only_their_socket_and_config() {
+    use sophia_session::shell_component_launch::ShellComponentLaunch;
+    let root = std::env::temp_dir().join(format!("component-launch-plan-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let mut owner = ShellComponentProcesses::new().unwrap();
+    for (name, role) in [
+        ("bar", ShellComponentRole::Bar),
+        ("menu", ShellComponentRole::ApplicationLauncher),
+    ] {
+        let config = root.join(format!("{name}.kdl"));
+        std::fs::write(&config, "// fixture").unwrap();
+        let directory = root.join(name);
+        let slot = owner
+            .add(name, role, &directory, rustix::process::geteuid().as_raw())
+            .unwrap();
+        let plan = ShellComponentLaunch::new(
+            sophia_config::ShellComponentConfig {
+                id: name.into(),
+                role,
+                executable: "/bin/true".into(),
+                config: Some(config.clone()),
+                gpu: sophia_config::ShellGpuMode::Denied,
+            },
+            Some(28),
+            None,
+        )
+        .unwrap();
+        // Reserve through the real process owner; inspect its actual closure
+        // inputs and production plan, then intentionally refuse before spawn.
+        let result =
+            owner.start(
+                slot,
+                |key, socket| {
+                    let (spec, gpu) = plan.prepare(key, socket).unwrap();
+                    assert!(gpu.is_none());
+                    assert_eq!(spec.args, [std::ffi::OsString::from("--serve")]);
+                    assert!(spec.process_group);
+                    assert!(
+                        spec.environment
+                            .iter()
+                            .any(|(k, v)| k == "SOPHIA_SHELL_SOCKET" && v == socket.as_os_str())
+                    );
+                    assert!(
+                        spec.environment
+                            .iter()
+                            .any(|(k, v)| k == "SOPHIA_SHELL_CONFIG" && v == config.as_os_str())
+                    );
+                    assert_eq!(
+                        spec.environment
+                            .iter()
+                            .any(|(k, _)| k == "SOPHIA_SHELL_BAR_THICKNESS"),
+                        role == ShellComponentRole::Bar
+                    );
+                    assert!(!spec.environment.iter().any(|(k, _)| k == "DISPLAY"
+                        || k == "XAUTHORITY"
+                        || k == "WAYLAND_DISPLAY"));
+                    let domain = spec.protection_domain.unwrap();
+                    assert!(domain.devices().is_empty());
+                    assert_eq!(domain.roles().len(), 1);
+                    assert!(
+                        domain
+                            .roles()
+                            .contains(&ProtectionDomainRole::MetadataShell)
+                    );
+                    assert_eq!(domain.paths().len(), 2);
+                    assert!(
+                        domain
+                            .paths()
+                            .iter()
+                            .all(|p| p.access == sophia_runtime::ProtectionPathAccess::ReadOnly)
+                    );
+                    assert!(domain.paths().iter().any(|p| p.source == directory));
+                    assert!(domain.paths().iter().any(|p| p.source == config));
+                    Err("inspected; deliberately no spawn".into())
+                },
+                ShellContentAdmissionPolicy::Granted {
+                    discrete_input: true,
+                },
+            );
+        assert!(result.is_err());
+        let key = owner.attempt(slot).unwrap();
+        assert!(!owner.process_retained(key));
+        assert_eq!(owner.phase(key).unwrap(), ComponentConnectionPhase::Revoked);
+    }
+    assert!(owner.collect().quiescent());
+    drop(owner);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(feature = "native-session")]
+#[test]
+fn component_launch_refuses_unadmitted_gpu_and_unbounded_panel() {
+    use sophia_session::shell_component_launch::ShellComponentLaunch;
+    let selection = sophia_config::ShellComponentConfig {
+        id: "bar".into(),
+        role: ShellComponentRole::Bar,
+        executable: "/bin/true".into(),
+        config: None,
+        gpu: sophia_config::ShellGpuMode::Denied,
+    };
+    for thickness in [None, Some(0)] {
+        assert!(ShellComponentLaunch::new(selection.clone(), thickness, None).is_err());
+    }
+    let mut direct = selection.clone();
+    direct.gpu = sophia_config::ShellGpuMode::Direct;
+    assert!(ShellComponentLaunch::new(direct, Some(28), None).is_err());
+    let plan = ShellComponentLaunch::new(selection, Some(28), None).unwrap();
+    assert!(
+        plan.prepare(
+            sophia_session::shell_component_connections::ComponentConnectionKey {
+                slot: 0,
+                grant: sophia_protocol::ContentGrant::default(),
+            },
+            std::path::Path::new("/tmp/not-a-live-socket/shell.sock")
+        )
+        .is_err()
+    );
+}

@@ -679,3 +679,30 @@ The compiled mutation bypassing only the old-Begin refusal fails with Stale;
 restored-source evidence is in `.artifacts/bemenu-native-reopening-mutant/`.
 These are component/socket controls, not protected-process/native close/reopen,
 GPU/KMS, full canonical or physical acceptance. No publication or installation.
+
+### Shared protected component launch construction (2026-09-18)
+
+The legacy live shell and new `ShellComponentLaunch` use the same production
+base-launch constructor: `--serve`, private read-only endpoint/config bindings,
+explicit socket/config environment and process group. The independent plan
+accepts an operator selection, requires an absolute executable and positive bar
+allowance, omits the allowance for the application launcher, and applies the
+existing exact per-attempt GPU policy after the real connection owner reserves
+its nonzero grant. Direct mode without an admitted device refuses; denied mode
+adds no device. GPU preparation/evidence is reused, not replaced by a Vulkan or
+launcher-specific admission path.
+
+This is construction for the live join, not an enabled component session. The
+existing configuration refusal stays in place; selected component service,
+catalog/input routing and final shutdown/error-carrier wiring still must be
+connected before it can be lifted.
+
+`.artifacts/bemenu-component-launch/`: device-hidden Session 471 PASS/14 ignored
+and process-owner 3 PASS/2 ignored, strict Session Clippy/layout PASS. The new
+controls reserve through the real process owner, inspect both actual launch
+plans and deliberately refuse before spawn. They assert exact separate endpoint
+and config bindings, read-only paths, MetadataShell-only role, no display env or
+devices in denied mode, bar-only allowance, missing GPU admission refusal and
+zero-grant refusal. Ignored protected-child controls were not run or relabelled.
+No protected process, GPU device, native display, installation, canonical or
+physical readiness evidence is produced by this construction checkpoint.

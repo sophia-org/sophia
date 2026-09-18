@@ -24,7 +24,7 @@ pub(super) struct ShellGpuLaunchPolicy {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct ShellGpuLaunchEvidence {
+pub struct ShellGpuLaunchEvidence {
     pub epoch: u64,
     pub major: u32,
     pub minor: u32,

@@ -156,3 +156,11 @@ mod prelude {
 }
 
 pub mod launch_origin;
+
+/// Operator launch policy sharing the live protected-shell construction path.
+#[cfg(feature = "native-session")]
+pub mod shell_component_launch {
+    pub use crate::live_session::metadata_shell::component_launch::{
+        ComponentGpuLaunchEvidence, ShellComponentLaunch,
+    };
+}

@@ -45,35 +45,12 @@ impl LiveMetadataShell {
             rustix::process::geteuid().as_raw(),
         )?;
         let socket = transport.socket_path().to_path_buf();
-        let mut domain = sophia_runtime::ProtectionDomainSpec::bubblewrap([
-            sophia_runtime::ProtectionDomainRole::MetadataShell,
-        ])?
-        .path(sophia_runtime::ProtectionPath::read_only(
-            socket
-                .parent()
-                .expect("metadata shell socket always has a parent"),
-        ))?;
-        let private_config = selected_config
-            .map(std::path::Path::to_path_buf)
-            .map(|p| p.canonicalize())
-            .transpose()?;
-        if let Some(path) = private_config.as_ref() {
-            domain = domain.path(sophia_runtime::ProtectionPath::read_only(path))?;
-        }
-        let mut spec = ProcessLaunchSpec::new(executable)
-            .arg("--serve")
-            .env(sophia_runtime::SOPHIA_SHELL_SOCKET_ENV, &socket)
-            .process_group()
-            .protection_domain(domain);
-        // The session decides how much desktop a panel may claim, so the
-        // thickness crosses into the protected domain the same way the socket
-        // does. Absent, the shell reserves nothing.
-        if let Some(thickness) = panel_thickness {
-            spec = spec.env("SOPHIA_SHELL_BAR_THICKNESS", thickness.to_string());
-        }
-        if let Some(path) = private_config {
-            spec = spec.env("SOPHIA_SHELL_CONFIG", path);
-        }
+        let spec = super::component_launch::base_launch_spec(
+            std::path::Path::new(executable),
+            &socket,
+            panel_thickness,
+            selected_config,
+        )?;
         let gpu = gpu::ShellGpuLaunchPolicy::new(gpu_mode, gpu_device)?;
         let supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec.clone());
         let shell = Self {
