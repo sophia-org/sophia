@@ -348,10 +348,6 @@ fn c_capacity() {
                 if !measuring {
                     return;
                 }
-                // ONE ACTUAL PRODUCTION TURN on the service's own prepared
-                // runner. The item it takes becomes the executor's; the rest
-                // stay in the order. Neither gives up a credit for being
-                // moved, so the total does not change.
                 let before = store.reserved();
                 let queued_before = runner
                     .frontend()
@@ -361,6 +357,62 @@ fn c_capacity() {
                     .expect("a readable order")
                     .ready
                     .len();
+
+                // ONE ITEM, THROUGH THE PRODUCTION STEP THE TURN ITSELF
+                // TAKES. A whole turn is allowed a budget that covers
+                // everything routed input can put in this order, so a turn
+                // can never leave a remainder to look at; stepping once does,
+                // and it is the same step, on the same prepared runner, in
+                // the service's own frame. The charge is read either side of
+                // it, so what is compared is a move and nothing else.
+                let stepped = {
+                    let PrivatePreparedRunner {
+                        frontend,
+                        keyboards,
+                        watch,
+                        ..
+                    } = &mut *runner;
+                    let private = frontend.as_mut().expect("the live runner");
+                    private
+                        .step_once(
+                            keyboards,
+                            &mut |_, _| Ok(()),
+                            watch.as_ref().expect("its own supervisor"),
+                        )
+                        .map(|step| {
+                            match step {
+                                PrivateOrderedStep::Decided(_) => "Decided",
+                                PrivateOrderedStep::Deferred { .. } => "Deferred",
+                                PrivateOrderedStep::Resumed { .. } => "Resumed",
+                                PrivateOrderedStep::Blocked(_) => "Blocked",
+                                PrivateOrderedStep::Idle => "Idle",
+                                // Named as what they are rather than folded
+                                // into the ones above: a step that took an
+                                // item and a step that did not are the whole
+                                // point of this reading.
+                                _ => "OtherStep",
+                            }
+                            .to_owned()
+                        })
+                        .map_err(|error| format!("{error:?}"))
+                };
+                let after_step = store.reserved();
+                let (queued_after_step, owned_after_step) = {
+                    let private = runner.frontend();
+                    (
+                        private
+                            .admission
+                            .ready
+                            .lock()
+                            .expect("a readable order")
+                            .ready
+                            .len(),
+                        private.terminal.turn.len()
+                            + usize::from(private.terminal.current.is_some()),
+                    )
+                };
+
+                // Then the actual turn, which finishes what it can.
                 let progress = runner.service_turn(lease).expect("an actual service turn");
                 let after = store.reserved();
                 let private = runner.frontend();
@@ -375,6 +427,10 @@ fn c_capacity() {
                     .send((
                         before,
                         queued_before,
+                        stepped,
+                        after_step,
+                        queued_after_step,
+                        owned_after_step,
                         progress.taken,
                         after,
                         queued_after,
@@ -407,21 +463,54 @@ fn c_capacity() {
         release.release();
 
         if measuring {
-            let (before, queued_before, taken, after, queued_after, in_turn, current) = reported
+            let (
+                before,
+                queued_before,
+                stepped,
+                after_step,
+                queued_after_step,
+                owned_after_step,
+                taken,
+                after,
+                queued_after,
+                in_turn,
+                current,
+            ) = reported
                 .recv_timeout(Duration::from_secs(5))
-                .expect("the actual turn reported");
+                .expect("the actual step and turn reported");
+            let stepped = stepped.expect("the production step decided its item");
+
+            // THE DISCRIMINATOR, and it is a state that actually existed: one
+            // item is the executor's, the rest are still in the order, and the
+            // charge has not moved, because moving an item is not disposing of
+            // it and no item's credit answers for another's.
+            assert_eq!(
+                queued_after_step,
+                queued_before - 1,
+                "exactly one item left the order on one production step"
+            );
+            assert_eq!(
+                owned_after_step, 1,
+                "and the executor owns exactly that one: {stepped}"
+            );
             assert!(
-                taken >= 1,
-                "the actual turn took work; it is bounded by the service budget, not by one"
+                queued_after_step >= 1,
+                "with a real remainder behind it, because the declared bound exceeds one"
+            );
+            assert_eq!(
+                after_step, before,
+                "the current item and the remainder each still hold their own credit"
+            );
+            assert_eq!(after_step, Some(C_RESERVATION_BOUND));
+
+            assert!(
+                taken + 1 >= 1,
+                "the actual turn then ran, bounded by the service budget"
             );
             assert_eq!(
                 queued_after,
-                queued_before - taken,
+                queued_after_step - taken,
                 "exactly what the turn took left the order"
-            );
-            assert!(
-                queued_after >= 1,
-                "a real remainder stayed behind this turn"
             );
             // EACH ITEM'S CREDIT IS ITS OWN. What the turn released is exactly
             // what the turn disposed of; the remainder it did not reach is
@@ -430,24 +519,24 @@ fn c_capacity() {
             // is released for an item that merely moved.
             assert_eq!(
                 after,
-                Some(C_RESERVATION_BOUND - (taken - in_turn - usize::from(current))),
-                "only the items this turn actually disposed of gave up a credit"
-            );
-            assert_eq!(
-                after,
                 Some(queued_after + in_turn + usize::from(current)),
                 "the charge is exactly one credit per item still owned, current and remainder alike"
             );
             assert_eq!(before, Some(C_RESERVATION_BOUND));
             remainder = Some(json!({
-                "charged_before_turn": before,
-                "charged_after_turn": after,
-                "taken": taken,
+                "charged_before": before,
                 "queued_before": queued_before,
-                "queued_after": queued_after,
+                "production_step": stepped,
+                "charged_after_one_step": after_step,
+                "queued_after_one_step": queued_after_step,
+                "owned_by_executor_after_one_step": owned_after_step,
+                "taken_by_the_following_turn": taken,
+                "charged_after_turn": after,
+                "queued_after_turn": queued_after,
                 "held_in_turn": in_turn,
                 "current_owned": current,
-                "seam": "acceptance runner hook took one actual turn inside the held frame",
+                "seam": "acceptance runner hook, inside the held frame: one production step, then the service's own turn",
+                "why_a_step": "the turn's budget covers everything routed input can put in this order, so only a single step leaves a current item and a remainder at the same instant",
             }));
         }
 
@@ -526,6 +615,9 @@ struct Interrupted {
     charged: Option<usize>,
     /// What the retained inventory of this service's own origin still carries.
     holds: usize,
+    /// Whose window each retained hold reached, so the retained work is
+    /// compared by identity and not only counted.
+    hold_identities: Vec<(u64, u64)>,
     settling: usize,
     current: bool,
     turn: usize,
@@ -554,6 +646,13 @@ fn interrupted_custody(service: &LifecycleService) -> Interrupted {
         origin_retained: mine.is_some(),
         charged: None,
         holds: mine.map_or(0, |inventory| inventory.holds.len()),
+        hold_identities: mine.map_or_else(Vec::new, |inventory| {
+            inventory
+                .holds
+                .iter()
+                .map(|hold| (hold.reached.client.0, hold.reached.window.local.raw()))
+                .collect()
+        }),
         settling: mine.map_or(0, |inventory| inventory.settling.len()),
         current: mine.is_some_and(|inventory| inventory.current.is_some()),
         turn: mine.map_or(0, |inventory| inventory.turn.len()),
@@ -701,17 +800,16 @@ fn c_interrupted_ownership() {
         // THE UNFINISHED WORK ITSELF IS STILL HERE. The held key was never
         // released, so its native obligation and the delivery custody that
         // carries it are retained rather than settled by the interruption.
-        assert!(
-            retained.holds >= 1,
-            "{kind}: the original held key is retained, unresolved: {retained:?}"
+        // THE EXACT HELD KEY, by identity. Not a count of holds: the retained
+        // work is this connection's press on this window, and nothing else.
+        assert_eq!(
+            retained.hold_identities,
+            vec![(client.0, u64::from(window))],
+            "{kind}: the retained hold is this invocation's own, unresolved: {retained:?}"
         );
         assert_eq!(
             retained.terminal_inventories, 1,
             "{kind}: exactly this invocation's inventory reached the store, whole: {retained:?}"
-        );
-        assert!(
-            retained.settling >= 1,
-            "{kind}: the release that ends the held key is retained beside it, not settled: {retained:?}"
         );
         assert!(
             !retained.pending_custody,
@@ -723,6 +821,12 @@ fn c_interrupted_ownership() {
         );
         // Whatever the exit could not finish stays owned, and every credit the
         // store still reports is one this invocation actually took.
+        // EVERY CREDIT COVERS A RETAINED ITEM, AND EVERY RETAINED ITEM ONE
+        // CREDIT. Which list the release is sitting in when the interruption
+        // lands is the executor's business and changes between revisions; what
+        // may never change is that the count of charges equals the count of
+        // things still owed. A settled item releases its own credit and no
+        // other's, and nothing is released for an item still owned.
         let carried = retained.owed
             + retained.outstanding.unwrap_or_default()
             + retained.indeterminate.unwrap_or_default()
@@ -730,9 +834,10 @@ fn c_interrupted_ownership() {
             + retained.delivering
             + retained.undelivered
             + usize::from(retained.current);
-        assert!(
-            retained.charged.unwrap_or_default() >= carried,
-            "{kind}: nothing owed had its credit released on a guess: {retained:?}"
+        assert_eq!(
+            retained.charged,
+            Some(carried),
+            "{kind}: the charge is exactly what is still owed, no more and no less: {retained:?}"
         );
         let answered = cells.iter().filter(|cell| cell.answer().is_some()).count();
         assert!(
@@ -750,7 +855,9 @@ fn c_interrupted_ownership() {
             "custody_identity": format!("{identity:?}"),
             "retained": format!("{retained:?}"),
             "retained_inventories": retained.terminal_inventories,
-            "retained_settling": retained.settling,
+            "retained_hold_identities": format!("{:?}", retained.hold_identities),
+            "retained_stage_settling": retained.settling,
+            "retained_stage_turn": retained.turn,
             "retained_pending_custody": retained.pending_custody,
             "original_cells_answered": answered,
             "original_cells_held": cells.len(),
@@ -1691,14 +1798,18 @@ pub(super) mod diagnostics {
 
     /// Diagnostics for `C.indeterminate_send`, on the real service.
     ///
-    /// NOT BOUND. Two of the four required subcases are not yet established.
-    /// `unknown_send_not_replayed` needs the unreported handover to persist, and
-    /// interrupting the invocation there leaves its connection worker unjoined,
-    /// so the case cannot also satisfy the harness's collection rule; the seam is
-    /// therefore held and released here, which shows the interval is real without
-    /// establishing what survives it. `partial_send_not_replayed` needs a prefix
-    /// of the same delivery on the wire, which whole frames from earlier
-    /// completed deliveries cannot establish.
+    /// NOT BOUND, because one of the four required subcases is still not
+    /// established. `partial_send_not_replayed` needs a prefix of the same
+    /// delivery: one capsule that owed more than one frame, of which some but
+    /// not all went out. Whole frames belonging to earlier completed
+    /// deliveries say nothing about the one that then stalled.
+    ///
+    /// `unknown_send_not_replayed` IS exercised here, by an actual
+    /// interruption between the handover and the record of its result. An
+    /// earlier version of this control claimed that interrupting there leaves
+    /// the invocation's connection worker unjoined. That was wrong: it was a
+    /// fixture-ordering error in this file, a third service finished without
+    /// being stopped first, and the claim is withdrawn.
     #[test]
     fn c_indeterminate_send_diagnostics() {
         let mut actors = Vec::new();
@@ -1907,10 +2018,17 @@ pub(super) mod diagnostics {
             !phases.is_empty(),
             "the release is retained by the store that outlived the invocation"
         );
+        // AN ACTUAL RETAINED MAINTENANCE VISIT BETWEEN THE TWO READINGS.
+        // Reading the same store twice establishes nothing about retrying;
+        // this asks the original keeper for a real visit, and what it answers
+        // is recorded as it comes, refusal included. What must not happen is
+        // that a visit rebuilds or re-offers a handover nobody can describe.
+        let visit = unknown.step();
+        let unknown_drive = unknown_store.drive();
         let unknown_after = retained_dispatch(&unknown);
         assert_eq!(
             unknown_after, phases,
-            "nothing revisits it, so nothing re-offers it"
+            "an actual maintenance visit did not re-offer or rebuild it: {visit:?}"
         );
         let replayed = read_event(&mut unknown_peer, 1);
         assert_eq!(
@@ -1926,7 +2044,9 @@ pub(super) mod diagnostics {
             "release_bytes_on_wire": release_wire.map(|bytes| bytes.to_vec()),
             "release_answer": release_cell.map(|answer| format!("{answer:?}")),
             "retained_phases": format!("{phases:?}"),
-            "retained_phases_after_further_reads": format!("{unknown_after:?}"),
+            "retained_phases_after_actual_maintenance_visit": format!("{unknown_after:?}"),
+            "maintenance_visit": format!("{visit:?}"),
+            "durable_drive": format!("{unknown_drive:?}"),
             "second_copy_on_wire": replayed.map(|bytes| bytes.to_vec()),
             "writer_receipt_is_the_writers_own": "the recipient half may be answered by the writer that flushed; the executor still cannot join it, and does not resend",
             "charged": unknown_store.reserved(),
@@ -2100,7 +2220,7 @@ pub(super) mod diagnostics {
                 "schema": 1,
                 "case": "C.indeterminate_send",
                 "bound": false,
-                "why_unbound": "unknown_send_not_replayed needs the unreported handover to persist, and interrupting the invocation there leaves its connection worker unjoined; partial_send_not_replayed needs a prefix of the same delivery on the wire, which whole frames from earlier completed deliveries cannot establish.",
+                "why_unbound": "partial_send_not_replayed is not established: it needs one capsule that owed more than one frame, of which some but not all went out, and no delivery driven here owed more than one. unknown_send_not_replayed is exercised by an actual post-handover interruption. The earlier claim that such an interruption leaves a connection worker unjoined was a fixture-ordering error in this control and is withdrawn.",
                 "partial_send_blocked_recipient": partial,
                 "unknown_send_interval": unknown_fact,
                 "enqueued_observation_only": enqueued,
