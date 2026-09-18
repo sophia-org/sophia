@@ -189,6 +189,27 @@ fn protected_component_peer() {
 #[test]
 #[ignore = "requires explicit Bemenu executable and nested device-hidden namespaces"]
 fn selected_bemenu_negotiates_through_production_protection() {
+    protected_bemenu(|_, _| {});
+}
+
+#[cfg(feature = "native-session")]
+#[path = "support/component_processes/bemenu.rs"]
+mod bemenu;
+
+#[cfg(feature = "native-session")]
+#[test]
+#[ignore = "requires explicit Bemenu executable and nested device-hidden namespaces"]
+fn protected_bemenu_uploads_catalog_pixels_to_real_content_stores() {
+    protected_bemenu(bemenu::exercise);
+}
+
+#[cfg(feature = "native-session")]
+fn protected_bemenu(
+    exercise: impl FnOnce(
+        &mut ShellComponentProcesses,
+        sophia_session::shell_component_connections::ComponentConnectionKey,
+    ),
+) {
     use sophia_session::shell_component_launch::ShellComponentLaunch;
     use std::time::{Duration, Instant};
     let executable = std::env::var_os("SOPHIA_TEST_BEMENU")
@@ -249,7 +270,9 @@ fn selected_bemenu_negotiates_through_production_protection() {
             assert_eq!(connection.content_grant(), Some(key.grant));
         })
         .unwrap();
+    exercise(&mut owner, key);
     owner.request_stop(key).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
     while owner.process_retained(key) {
         owner.visit(1024);
         assert!(Instant::now() < deadline, "Bemenu stop timed out");

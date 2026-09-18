@@ -1197,3 +1197,41 @@ Still required before lom-test: actual protected catalog/content/close/reopen,
 configuration and harness enablement, exact-source canonical validation. No
 hardware, GPU, native presentation, installation, push or physical readiness is
 claimed by this checkpoint.
+
+### Actual protected client text replacement interoperability
+
+The new explicit ignored process control uses the selected C executable and
+real protection/negotiation, actual NativeCatalogPublication, allocation,
+resource/candidate validation, focus and input ACK owners. Geometry and native
+Prepared/Presented are supplied by the fixture; it is not native rendering or
+the physical owner loop. The real Cairo upload contains two row targets; typing
+app2 produces the exact ACK and a newer one-row candidate with different bytes
+and selection 2, while the test still owns the previous pixel bundle.
+
+This exposed a real client/profile mismatch: Bemenu advanced interaction_generation
+with each offer, but both current Session content paths require 1. First upload
+succeeded; the edited candidate was rejected stale and timed out. Bemenu now
+keeps authority generation 1 and advances a separate target_counter. Candidate
+and query revision remain independent. This fixes the client to the current
+profile, without weakening the server validator or claiming a negotiated future
+authority-generation scheme. Evidence in `.artifacts/bemenu-protected-join`:
+`content-filter-execution.log` (original timeout),
+`content-filter-fixed-execution.log` (pass), and exact source result manifests.
+Bemenu's device-hidden gate passes; the single-field increment mutation compiles
+and fails its targeted connection assertion in
+`.artifacts/bemenu-interaction-mutant`. No live source mutation was used.
+
+New readiness finding: actual confined rasterization reports missing default
+Fontconfig config and unwritable cache locations. Resolve native font discovery
+and cache ownership before declaring lom-test ready. Also still open: actual
+close/reopen integration, combined bar/native service, configuration/harness and
+exact-source canonical. Supplied protocol presentation proves neither scanout
+nor native cleanup. No devices, display, installation or push in these checks.
+
+Client correction is signed Bemenu `5f0a3e4`. Final scoped run:
+`.artifacts/bemenu-protected-join/content-final-execution.log` and
+`content-final/result.json`: eight passing parent controls (five ordinary,
+three explicit protected controls); four ignored in the ordinary invocation,
+three deliberately selected separately including the Rust-peer parent. Child
+entry is exercised only through its parent. Scoped Clippy/layout/fmt pass. This
+is not a new canonical run; the earlier canonical identity remains unchanged.
