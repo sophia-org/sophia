@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 pub const WAIT: Duration = Duration::from_secs(8);
+pub mod containment;
 pub const COOKIE: [u8; 32] = [0x73; 32];
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
@@ -30,6 +31,8 @@ pub fn config(socket: &Path, grants: PrivateInputGrantPolicy) -> PrivateInputCon
     let output = OutputId::from_raw(1);
     PrivateInputConfig {
         session_generation: 1,
+        profile: sophia_protocol::NamespaceProfile::Confined,
+        capabilities: sophia_protocol::NamespaceCapabilities::NONE,
         socket_path: socket.to_owned(),
         namespace: NamespaceId::from_raw(731),
         binding: SeatBinding::new(instance, SeatId::from_raw(1)),

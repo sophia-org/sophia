@@ -488,6 +488,18 @@ fn cases(
         ]);
         if config.gate == Gate::M4 {
             command.arg("--include-ignored");
+            if row.case == "M4.no_ambient_fallback" {
+                // Only fabricated names inside the outer device-hidden scope.
+                // The nested private host must clear these before entry.
+                command
+                    .env("DISPLAY", ":64999")
+                    .env("WAYLAND_DISPLAY", "m4-fabricated-wayland")
+                    .env(
+                        "DBUS_SESSION_BUS_ADDRESS",
+                        "unix:path=/tmp/m4-fabricated-bus",
+                    )
+                    .env("XAUTHORITY", "/tmp/m4-fabricated-authority");
+            }
         }
         let run = process::run(&mut command, &log, Duration::from_secs(config.case_timeout))?;
         let text = std::fs::read_to_string(log).map_err(|e| e.to_string())?;

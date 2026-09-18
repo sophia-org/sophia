@@ -2,6 +2,9 @@
   "schema": 1,
   "cases": {
     "M4.construction": "construction",
-    "M4.authorization": "authorization"
+    "M4.authorization": "authorization",
+    "M4.connection_identity": "connection_identity",
+    "M4.containment": "containment",
+    "M4.no_ambient_fallback": "no_ambient_fallback"
   }
 }

@@ -12,6 +12,18 @@ use support::{Evidence, Instance, Order, Peer, config};
 
 #[test]
 #[ignore = "run through cargo xtask check m4-acceptance"]
+fn containment() {
+    support::containment::containment();
+}
+
+#[test]
+#[ignore = "run through cargo xtask check m4-acceptance"]
+fn no_ambient_fallback() {
+    support::containment::no_ambient_fallback();
+}
+
+#[test]
+#[ignore = "run through cargo xtask check m4-acceptance"]
 fn construction() {
     let mut evidence = Evidence::default();
     let instance = Instance::start(PrivateInputGrantPolicy::Disabled);
@@ -99,6 +111,121 @@ fn authorization() {
             "ordinary_recipient",
             "wrong_credentials",
             "foreign_instance",
+        ],
+    );
+}
+
+#[test]
+#[ignore = "run through cargo xtask check m4-acceptance"]
+fn connection_identity() {
+    use sophia_protocol::SurfaceId;
+    use sophia_session::private_input::PrivateInputSubmitError;
+    use sophia_x_authority::PrivateSendError;
+    use std::time::{Duration, Instant};
+
+    let instance = Instance::start(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
+    let (first, first_context) = instance.connect(Order::Little, Some(support::COOKIE));
+    let (second, second_context) = instance.connect(Order::Big, Some(support::COOKIE));
+    let first_input = instance
+        .handle()
+        .issue(first_context, support::device(11))
+        .unwrap();
+    let second_input = instance
+        .handle()
+        .issue(second_context, support::device(12))
+        .unwrap();
+    assert_ne!(first_context.client_id, second_context.client_id);
+    assert_ne!(
+        first_input.connection().client,
+        second_input.connection().client
+    );
+    assert_eq!(first_input.device(), support::device(11));
+    assert_eq!(second_input.device(), support::device(12));
+    for input in [&first_input, &second_input] {
+        let actual = instance
+            .handle()
+            .admitted()
+            .unwrap()
+            .into_iter()
+            .find(|row| row.admission == input.connection().admission)
+            .unwrap();
+        assert_eq!(input.connection().client, actual.client);
+        assert_eq!(
+            input.connection().connection_generation,
+            actual.connection_generation
+        );
+    }
+    let revoked = instance.handle().revoke(first_context).unwrap();
+    assert_eq!(revoked, first_input.connection());
+    assert!(matches!(
+        instance.handle().issue(first_context, support::device(13)),
+        Err(PrivateInputIssueRefusal::ConnectionGone)
+    ));
+    // Revocation must reject before consulting a target or taking queue space.
+    // This deliberately unbound surface is not a delivery or applied-state fixture.
+    assert!(matches!(
+        first_input.submit_key(SurfaceId::INVALID, 42, true),
+        Err(PrivateInputSubmitError::Refused(PrivateSendError::Denied(
+            _
+        )))
+    ));
+    assert!(
+        instance
+            .handle()
+            .admitted()
+            .unwrap()
+            .iter()
+            .any(|row| row.admission == second_context.client_id
+                && !row.closed
+                && row.lifecycle_open)
+    );
+    drop(first);
+    let deadline = Instant::now() + support::WAIT;
+    while instance
+        .handle()
+        .admission_record(first_context.client_id)
+        .unwrap()
+        .is_some()
+    {
+        assert!(
+            Instant::now() < deadline,
+            "departed admission stayed current"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let (replacement, replacement_context) = instance.connect(Order::Little, Some(support::COOKIE));
+    let replacement_input = instance
+        .handle()
+        .issue(replacement_context, support::device(11))
+        .unwrap();
+    assert_ne!(replacement_context.client_id, first_context.client_id);
+    assert_ne!(replacement_input.connection(), first_input.connection());
+    assert!(matches!(
+        first_input.submit_key(SurfaceId::INVALID, 42, true),
+        Err(PrivateInputSubmitError::Refused(PrivateSendError::Denied(
+            _
+        )))
+    ));
+    assert!(matches!(
+        instance.handle().issue(first_context, support::device(14)),
+        Err(PrivateInputIssueRefusal::UnknownAdmission)
+    ));
+    drop((
+        replacement,
+        second,
+        first_input,
+        second_input,
+        replacement_input,
+    ));
+    let mut evidence = Evidence::default();
+    evidence.collect(instance.finish(), false);
+    evidence.emit(
+        "connection_identity",
+        &[
+            "independent_callers",
+            "revoked_admission",
+            "reconnect",
+            "stale_handle",
         ],
     );
 }
