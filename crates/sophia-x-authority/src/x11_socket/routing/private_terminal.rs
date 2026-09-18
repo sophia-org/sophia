@@ -783,6 +783,8 @@ impl PrivateXServerFrontend {
             // publication stay owned for a later charged visit.
             if !matches!(disposed, Ok(true)) {
                 self.terminal.undelivered.push(PrivateUndelivered { item });
+            } else {
+                self.terminal.discard_item_unapplied_pending(&item);
             }
             return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
         };

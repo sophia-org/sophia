@@ -68,7 +68,8 @@ impl PrivateXServerFrontend {
         start(Some(sequence), std::time::Instant::now())?;
         let disposed = self.terminal.undelivered[0].item.retire_request();
         if matches!(disposed, Ok(true)) {
-            self.terminal.undelivered.remove(0);
+            let item = self.terminal.undelivered.remove(0).item;
+            self.terminal.discard_item_unapplied_pending(&item);
         } else {
             self.terminal.undelivered.rotate_left(1);
         }
@@ -81,6 +82,48 @@ impl PrivateXServerFrontend {
 
 #[cfg(unix)]
 impl PrivateTerminalInventory {
+    /// Actual no-effect completion retires only this request's unused
+    /// reservation. Native obligations and uncertain handovers stay owned.
+    fn discard_unapplied_pending(&mut self, custody: &PrivateOutstandingRequest) {
+        if custody.phase.get() == PrivateRequestPhase::Entered
+            || !matches!(
+                custody.observed_outcome.get(),
+                Some(
+                    sophia_input_authority::RequestCompletion::Refused(_)
+                        | sophia_input_authority::RequestCompletion::Cancelled
+                )
+            )
+            || !self.native_pending.is_none()
+            || self.transients.pending.is_some()
+        {
+            return;
+        }
+        let Some(held) = custody.input_completion() else {
+            return;
+        };
+        if self.pending_custody.as_ref().is_some_and(|pending| {
+            pending.dispatch == PrivateDispatchPhase::Untaken
+                && pending.pending.is_none()
+                && pending.attempt.is_none()
+                && pending
+                    .completion
+                    .as_ref()
+                    .is_some_and(|cell| Arc::ptr_eq(cell, &held.cell))
+        }) {
+            self.pending_custody = None;
+        }
+    }
+
+    fn discard_item_unapplied_pending(&mut self, item: &PrivateOrderedItem) {
+        match item {
+            PrivateOrderedItem::Ran { custody, .. }
+            | PrivateOrderedItem::Refused { custody, .. } => {
+                self.discard_unapplied_pending(custody);
+            }
+            PrivateOrderedItem::Parked { .. } => {}
+        }
+    }
+
     fn retire_request_one(
         &mut self,
         cursor: &mut usize,
@@ -99,28 +142,32 @@ impl PrivateTerminalInventory {
                 .expect("counted above")
                 .retire_request();
             if matches!(disposed, Ok(true)) {
-                self.current = None;
+                let item = self.current.take().expect("counted above");
+                self.discard_item_unapplied_pending(&item);
             }
             disposed
         } else if index < current + self.turn.len() {
             let index = index - current;
             let disposed = self.turn[index].retire_request();
             if matches!(disposed, Ok(true)) {
-                self.turn.remove(index);
+                let item = self.turn.remove(index);
+                self.discard_item_unapplied_pending(&item);
             }
             disposed
         } else if index < current + self.turn.len() + self.delivering.len() {
             let index = index - current - self.turn.len();
             let disposed = self.delivering[index].retire_request();
             if matches!(disposed, Ok(true)) {
-                self.delivering.remove(index);
+                let item = self.delivering.remove(index);
+                self.discard_item_unapplied_pending(&item);
             }
             disposed
         } else {
             let index = index - current - self.turn.len() - self.delivering.len();
             let disposed = self.undelivered[index].item.retire_request();
             if matches!(disposed, Ok(true)) {
-                self.undelivered.remove(index);
+                let item = self.undelivered.remove(index).item;
+                self.discard_item_unapplied_pending(&item);
             }
             disposed
         }
