@@ -45,3 +45,4 @@ include!("m3_acceptance_lifecycle.rs");
 
 include!("m3_acceptance_c.rs");
 include!("m3_acceptance_a_proofs.rs");
+include!("m3_acceptance_recipient.rs");

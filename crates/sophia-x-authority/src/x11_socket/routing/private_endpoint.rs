@@ -41,6 +41,8 @@ pub(crate) struct PrivateEndpointIdentity {
 #[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 impl PrivateEndpointIdentity {
     fn record_ordered_termination(&self) {
+        #[cfg(all(test, unix))]
+        routing_tests::m3_acceptance::before_recipient_termination(self);
         if let Some(original) = self.registration.get() {
             let _ = original.ordered_termination.set(());
         }
