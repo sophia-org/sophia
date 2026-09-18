@@ -4037,16 +4037,21 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
 
 /// The control source this connection's own registration published.
 fn control_source_of(custody: &Arc<PrivateEvidenceCustody>) -> Arc<PrivateControlClientSource> {
-    custody
-        .cleanup_record()
-        .connection_state
-        .get()
-        .expect("this connection's registration is applied")
-        .control_source
-        .get()
-        .expect("and published its own control source")
-        .upgrade()
-        .expect("which is still alive")
+    // WAITED FOR ON THIS EXACT CUSTODY. A newly minted custody is not a
+    // finished attachment: the registration and the control source it
+    // publishes are applied afterwards, so reading them the instant the
+    // connection is accepted races the setup that produces them. Nothing here
+    // substitutes a source or infers one; it waits for this connection's own.
+    waited_for_value(|| {
+        custody
+            .cleanup_record()
+            .connection_state
+            .get()?
+            .control_source
+            .get()?
+            .upgrade()
+    })
+    .expect("this connection's registration published its own control source")
 }
 
 /// The command this row submits for one kind, with the exact values its first
@@ -4151,10 +4156,15 @@ fn wait_out_allowance(
 /// was never touched; what a presentation control does is create `WM_STATE` and
 /// `_NET_WM_STATE` and put the state it was given into the latter, so that is
 /// what is read, before and after.
+struct PresentationState {
+    wm_state: Option<(Vec<u8>, u8, crate::XAtom)>,
+    net_wm_state: Option<(Vec<u8>, u8, crate::XAtom)>,
+}
+
 fn presentation_state_of(
     source: &PrivateControlClientSource,
     resource: XResourceId,
-) -> (bool, bool, Option<Vec<u8>>, Option<u8>) {
+) -> PresentationState {
     let named = |name: &str| {
         source
             .state
@@ -4172,28 +4182,27 @@ fn presentation_state_of(
         .properties
         .lock()
         .expect("a readable property table");
-    let record =
-        net_wm_state.and_then(|atom| properties.get(source.endpoint.namespace, resource, atom));
-    (
-        wm_state.is_some_and(|atom| {
-            properties
-                .get(source.endpoint.namespace, resource, atom)
-                .is_some()
-        }),
-        record.is_some(),
-        record.map(|held| held.bytes.clone()),
-        record.map(|held| held.format),
-    )
+    let read = |atom: Option<crate::XAtom>| {
+        atom.and_then(|atom| properties.get(source.endpoint.namespace, resource, atom))
+            .map(|held| (held.bytes.clone(), held.format, held.property_type))
+    };
+    PresentationState {
+        wm_state: read(wm_state),
+        net_wm_state: read(net_wm_state),
+    }
 }
 
-/// Whether those four bytes name exactly that atom, in one byte order or the
-/// other. Which order the recipient negotiated is not this row's subject; that
-/// the one state set is the one submitted, is.
-fn names_exactly_atom(bytes: &[u8], atom: crate::XAtom) -> bool {
-    let Ok(word) = <[u8; 4]>::try_from(bytes) else {
-        return false;
-    };
-    u32::from_le_bytes(word) == atom || u32::from_be_bytes(word) == atom
+/// These bytes, as the atoms they are, in the order this fixture's recipient
+/// negotiated.
+///
+/// LITTLE-ENDIAN, BECAUSE THAT IS WHAT THE HANDSHAKE AGREED. Accepting either
+/// order would accept a value encoded the wrong way round, which is precisely
+/// what a recipient could not read.
+fn atoms_of(bytes: &[u8]) -> Vec<crate::XAtom> {
+    bytes
+        .chunks_exact(4)
+        .map(|word| u32::from_le_bytes(word.try_into().expect("four bytes")))
+        .collect()
 }
 
 /// What this kind actually changed at the source before the writer was
@@ -4259,33 +4268,47 @@ fn first_effect_of(
             json!({"runtime_width": runtime, "selection_width": selected})
         }
         Kind::SetPresentationState | Kind::RestorePresentationState => {
-            let (wm_state, net_wm_state, bytes, format) = presentation_state_of(source, resource);
-            assert!(
-                wm_state,
-                "the first presentation state created this window's WM_STATE"
+            let held = presentation_state_of(source, resource);
+            let (wm_bytes, wm_format, wm_type) = held
+                .wm_state
+                .expect("the first presentation state created this window's WM_STATE");
+            let (net_bytes, net_format, net_type) =
+                held.net_wm_state.expect("and its _NET_WM_STATE");
+            let named = |name: &str| {
+                source
+                    .state
+                    .atoms
+                    .lock()
+                    .expect("a readable atom table")
+                    .intern(name, true)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| panic!("the atom {name} this control interned"))
+            };
+            assert_eq!(wm_format, 32, "WM_STATE is a pair of 32-bit values");
+            assert_eq!(
+                wm_type,
+                named(crate::X_ATOM_NAME_WM_STATE),
+                "typed as WM_STATE itself"
             );
-            assert!(net_wm_state, "and its _NET_WM_STATE");
-            assert_eq!(format, Some(32), "which is a list of atoms");
-            let bytes = bytes.expect("the state this control put there");
-            let fullscreen = source
-                .state
-                .atoms
-                .lock()
-                .expect("a readable atom table")
-                .intern(crate::X_ATOM_NAME_NET_WM_STATE_FULLSCREEN, true)
-                .ok()
-                .flatten()
-                .expect("the fullscreen atom this control interned");
-            assert!(
-                names_exactly_atom(&bytes, fullscreen),
-                "and it is exactly the one state submitted: {bytes:?} against {fullscreen}"
+            assert_eq!(
+                atoms_of(&wm_bytes),
+                vec![1, 0],
+                "holding the normal state and no icon window: {wm_bytes:?}"
+            );
+            assert_eq!(net_format, 32, "and _NET_WM_STATE is a list of atoms");
+            assert_eq!(net_type, crate::X_ATOM_ATOM, "typed as a list of atoms");
+            assert_eq!(
+                atoms_of(&net_bytes),
+                vec![named(crate::X_ATOM_NAME_NET_WM_STATE_FULLSCREEN)],
+                "holding exactly the one state submitted: {net_bytes:?}"
             );
             json!({
-                "wm_state_created": wm_state,
-                "net_wm_state_created": net_wm_state,
-                "net_wm_state_format": format,
-                "net_wm_state_bytes": bytes,
-                "fullscreen_atom": fullscreen,
+                "wm_state_bytes": wm_bytes,
+                "wm_state_format": wm_format,
+                "net_wm_state_bytes": net_bytes,
+                "net_wm_state_format": net_format,
+                "net_wm_state_atoms": atoms_of(&net_bytes),
             })
         }
         Kind::FocusSurface => {
@@ -4424,7 +4447,9 @@ fn control_cleanup_for_kind(
     // WHAT THIS WINDOW HAD BEFORE, so the change below is a change. A
     // presentation control creates both of these; a window nobody has set a
     // state on has neither.
-    let (wm_state_before, net_wm_state_before, _, _) = presentation_state_of(&source, resource);
+    let before = presentation_state_of(&source, resource);
+    let (wm_state_before, net_wm_state_before) =
+        (before.wm_state.is_some(), before.net_wm_state.is_some());
     if matches!(
         kind,
         XAuthorityControlKind::SetPresentationState
@@ -4438,14 +4463,14 @@ fn control_cleanup_for_kind(
     // INTERRUPTED AFTER ITS FIRST SOURCE EFFECT, which is the state the row is
     // about: something at the source changed and nothing answered for it.
     source.fail_after_effect.store(true, Ordering::Release);
+    // THE WHOLE COMMAND IS KEPT, so the record below is compared against what
+    // was actually submitted rather than against its kind alone.
+    let submitted = XAuthorityClientControlCommand {
+        client: source.endpoint.client,
+        command: control_command_for(kind, surface),
+    };
     control
-        .submit(
-            &lease,
-            XAuthorityClientControlCommand {
-                client: source.endpoint.client,
-                command: control_command_for(kind, surface),
-            },
-        )
+        .submit(&lease, submitted)
         .expect("the order accepts this kind");
     let completion = service
         .registry
@@ -4459,27 +4484,42 @@ fn control_cleanup_for_kind(
     })
     .expect("the actual writer was interrupted after its first source effect");
     assert_eq!(
+        cleanup.command, submitted,
+        "the record owed names the exact command submitted: its client, its transaction, its surface and its payload"
+    );
+    assert_eq!(
         cleanup.command.command.kind(),
         kind,
-        "the record owed is this kind's own"
+        "which is this kind's own"
     );
     let execution = completion
         .execution_of(cleanup.token)
         .expect("the execution that record belongs to");
-    assert!(
-        Arc::ptr_eq(
-            &execution.lock().expect("a readable execution").source,
-            &source
-        ),
-        "against this connection's own control source"
-    );
-    assert!(
-        !execution
-            .lock()
-            .expect("a readable execution")
-            .peer_generation_begun,
-        "with no peer generation begun for it"
-    );
+    {
+        let held = execution.lock().expect("a readable execution");
+        assert_eq!(
+            held.token, cleanup.token,
+            "the execution is the one this record was issued for"
+        );
+        assert!(
+            Arc::ptr_eq(&held.source, &source),
+            "against this connection's own control source"
+        );
+        assert!(
+            held.source.endpoint.matches(&source.endpoint),
+            "naming this connection's own endpoint"
+        );
+        assert_eq!(held.surface, surface, "and this surface");
+        assert_eq!(held.window, resource, "and this window");
+        assert!(
+            !held.peer_generation_begun,
+            "with no peer generation begun for it"
+        );
+        assert!(
+            held.pending_metadata.is_none(),
+            "and nothing left pending at the first-effect boundary"
+        );
+    }
     assert!(
         service.acks.try_recv().is_err(),
         "and the interruption published no acknowledgement"
@@ -4549,10 +4589,26 @@ fn control_cleanup_for_kind(
         ControlRecordState::Outstanding,
         "{label}: the record is still owed: {withheld_visits:?}"
     );
+    // THE SAME EXECUTION, AND THE STORE'S ONE CREDIT IS ITS ONE CREDIT. A
+    // count alone would agree with a record replaced by another; this is the
+    // execution this row began, still the only one outstanding, against the
+    // single credit the store is holding.
+    let execution_after = completion
+        .execution_of(cleanup.token)
+        .unwrap_or_else(|| panic!("{label}: the same execution is still held"));
+    assert!(
+        Arc::ptr_eq(&execution_after, &execution),
+        "{label}: and it is the very execution this row began"
+    );
+    assert_eq!(
+        completion.outstanding(),
+        Some(1),
+        "{label}: this record is the only one outstanding"
+    );
     assert_eq!(
         store.reserved(),
         Some(1),
-        "{label}: and its one credit is still taken"
+        "{label}: so the one credit the store holds is its own"
     );
 
     // AND WITH IT BACK, TWO SEPARATE VISITS. One retires the record; a later
@@ -4694,7 +4750,11 @@ fn control_cleanup_for_kind(
             .iter()
             .map(|window| format!("{window:?}"))
             .collect::<Vec<_>>(),
+        "submitted_command": format!("{submitted:?}"),
+        "record_names_the_submitted_command": true,
         "charged_control_refusals_for_this_record_while_withheld": withheld_refusals,
+        "same_execution_after_withheld_visits": true,
+        "outstanding_records_while_withheld": 1,
         "state_while_removal_withheld": "Outstanding",
         "presentation_state_before_the_control": json!({
             "wm_state": wm_state_before,
