@@ -931,7 +931,7 @@ impl PrivateXServerFrontend {
     /// A full queue, a disconnected client, a cleared mapper or an observed
     /// completion are none of them receipts, and a debt closed on any of those
     /// would be closed on something that did not happen.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     fn deliver_turn(&mut self, items: Vec<PrivateOrderedItem>) -> Vec<PrivateDelivered> {
         // Taken into storage this instance owns before anything is delivered.
         // Appended rather than assigned, so anything a previous interruption

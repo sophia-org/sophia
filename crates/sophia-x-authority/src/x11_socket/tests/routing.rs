@@ -16203,6 +16203,10 @@ fn a_refusal_is_retained_by_delivery_rather_than_discarded() {
     let (head_id, head) = retained.pop().unwrap();
     let head_cell = head.completion.clone();
     let private = fixture.runner.frontend.as_mut().unwrap();
+    let PrivateOrderedItem::Refused { custody, .. } = &private.terminal.undelivered[0].item else {
+        panic!("the unresolved head is first before the finite retry pass");
+    };
+    assert!(Arc::ptr_eq(&custody.input_completion().unwrap().cell, &head_cell));
     assert!(private.deliver_turn(Vec::new()).is_empty());
     assert_eq!(private.terminal.undelivered.len(), 1);
     let PrivateOrderedItem::Refused { custody, .. } = &private.terminal.undelivered[0].item else {
@@ -17281,6 +17285,12 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
         revoked[0].delivery, delivery,
         "and it is the one this control submitted"
     );
+    let cancelled = cell.answer().expect("the original cancellation was published");
+    assert_eq!(cancelled, XAuthorityClientInputDelivery {
+        client: XServerFrontendClientId::from_raw(0),
+        delivery,
+        outcome: XAuthorityInputDeliveryOutcome::EpochRevoked,
+    });
 
     let turn = private
         .route_pending_ordered(keyboards, watch)
@@ -17290,7 +17300,7 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
     };
     assert_eq!(*refusal, PrivateExecutionRefusal::DeliveryEnded);
     assert!(Arc::ptr_eq(&custody.input_completion().unwrap().cell, &cell));
-    assert_eq!(cell.answer(), Some(revoked[0]));
+    assert_eq!(cell.answer(), Some(cancelled));
     let delivered = private.deliver_turn(turn);
     assert!(
         delivered.is_empty(),
@@ -17305,7 +17315,7 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
         "the ledger never moved, so there is no hold for a release to answer"
     );
     assert!(private.terminal.undelivered.is_empty(), "the exact common refusal was observed");
-    assert_eq!(cell.answer(), Some(revoked[0]), "retirement never rewrites the original answer");
+    assert_eq!(cell.answer(), Some(cancelled), "retirement never rewrites the original answer");
     assert_eq!(keeper.store().reserved(), Some(reserved - 1), "only this request's storage returned");
     // The no-effect request retired; the independent lifecycle still needs
     // its own cleanup before this inventory can become empty.
@@ -17686,8 +17696,7 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
         "recipient closure refuses before recovery binding, not through its cancellation path");
     assert!(deliveries.try_recv().is_err());
 
-    assert!(matches!(custody.observe().unwrap(), Some(sophia_input_authority::RequestCompletion::Refused(_))));
-    assert_eq!(cell.answer(), None, "common observation is not delivery publication");
+    assert_eq!(cell.answer(), None, "the source refusal has not been published yet");
     assert!(private.deliver_turn(turn).is_empty());
     let rejected = XAuthorityClientInputDelivery {
         client: source_client,
@@ -18173,6 +18182,7 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
         .expect("the ledger to be readable");
     let cancelled = release_cell.answer().expect("the actual original cancellation");
     assert_eq!(cancelled.delivery, XAuthorityInputDeliveryId::from_raw(9982));
+    assert_eq!(cancelled.outcome, XAuthorityInputDeliveryOutcome::EpochRevoked);
 
     let turn = private
         .route_pending_ordered(keyboards, watch)
