@@ -18,6 +18,14 @@ pub fn spawn_catalog_process(
     command: &ApplicationLaunchCommand,
     environment: CatalogProcessEnvironment<'_>,
 ) -> std::io::Result<Child> {
+    spawn_catalog_process_with_transaction(command, environment, None)
+}
+
+pub(crate) fn spawn_catalog_process_with_transaction(
+    command: &ApplicationLaunchCommand,
+    environment: CatalogProcessEnvironment<'_>,
+    transaction: Option<u64>,
+) -> std::io::Result<Child> {
     let mut process = Command::new(&command.executable);
     process
         .args(&command.arguments)
@@ -36,7 +44,13 @@ pub fn spawn_catalog_process(
     if let Some(directory) = &command.working_directory {
         process.current_dir(directory);
     }
-    process.spawn()
+    crate::diagnostics::application::spawn(
+        &mut process,
+        crate::diagnostics::application::LaunchContext {
+            source: crate::diagnostics::application::LaunchSource::Catalog,
+            transaction,
+        },
+    )
 }
 
 /// Returned together so the process cannot be attributed using just a numeric
@@ -88,7 +102,11 @@ pub fn spawn_native_catalog(
             return Err(NativeCatalogSpawnError::Refused);
         }
     };
-    match spawn_catalog_process(&command, environment) {
+    match spawn_catalog_process_with_transaction(
+        &command,
+        environment,
+        Some(launch.transaction.raw()),
+    ) {
         Ok(child) => Ok(NativeCatalogChild { child, launch }),
         Err(error) => {
             launches.cancel_native_catalog(&launch);

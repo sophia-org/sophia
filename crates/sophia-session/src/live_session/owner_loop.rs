@@ -15,6 +15,7 @@ struct SessionLoopChannels<'a> {
 struct SessionLoopResources<'a> {
     launch_origins: &'a Arc<Mutex<crate::launch_origin::LaunchOriginRegistry>>,
     child: Option<&'a mut Child>,
+    primary_diagnostic: Option<crate::diagnostics::application::LaunchTicket>,
     secondary_children: &'a mut Vec<ManagedSessionChild>,
     physical_input: &'a mut Option<SessionPhysicalInput>,
     native_scanout: &'a mut Option<LiveProductionNativeScanout>,
@@ -296,6 +297,7 @@ fn run_session_loop_inner(
     let SessionLoopResources {
         launch_origins,
         mut child,
+        primary_diagnostic,
         secondary_children,
         physical_input,
         native_scanout,

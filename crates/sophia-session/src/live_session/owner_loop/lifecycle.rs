@@ -400,6 +400,7 @@
             && let Some(primary_child) = child.as_deref_mut()
             && let Some(status) = primary_child.try_wait()?
         {
+            crate::diagnostics::application::exited(primary_diagnostic, status);
             primary_exit_status = Some(status);
             if !status.success() && !config.normal_session {
                 let error =
@@ -481,11 +482,13 @@
         let mut secondary_index = 0;
         while secondary_index < secondary_children.len() {
             if let Some(status) = secondary_children[secondary_index].child.try_wait()? {
+                crate::diagnostics::application::exited(secondary_children[secondary_index].diagnostic, status);
                 if managed_child_exit_is_nonfatal(
                     config.normal_session,
                     secondary_children[secondary_index].launch_transaction,
                 ) {
-                    terminate_session_child(&mut secondary_children[secondary_index].child, true)?;
+                    let diagnostic = secondary_children[secondary_index].diagnostic;
+                    terminate_session_child(&mut secondary_children[secondary_index].child, true, diagnostic)?;
                     let launch_transaction =
                         secondary_children[secondary_index].launch_transaction;
                     let id = secondary_children[secondary_index]

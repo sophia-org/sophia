@@ -65,7 +65,7 @@ impl Directory {
         let file = File::from(openat(
             &self.fd,
             name,
-            flags | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            flags | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
             Mode::RUSR | Mode::WUSR,
         )?);
         let metadata = file.metadata()?;
@@ -88,12 +88,17 @@ impl Directory {
     }
 
     pub fn read(&self, name: &str, limit: u64) -> io::Result<String> {
+        String::from_utf8(self.read_bytes(name, limit)?)
+            .map_err(|_| invalid("diagnostic record is not UTF-8"))
+    }
+
+    pub fn read_bytes(&self, name: &str, limit: u64) -> io::Result<Vec<u8>> {
         let file = self.file(name, OFlags::RDONLY)?;
         if file.metadata()?.len() > limit {
             return Err(invalid("diagnostic record exceeds its bound"));
         }
-        let mut content = String::new();
-        file.take(limit + 1).read_to_string(&mut content)?;
+        let mut content = Vec::new();
+        file.take(limit + 1).read_to_end(&mut content)?;
         if content.len() as u64 > limit {
             return Err(invalid("diagnostic record exceeds its bound"));
         }
@@ -101,11 +106,15 @@ impl Directory {
     }
 
     pub fn replace(&self, name: &str, value: &str) -> io::Result<()> {
+        self.replace_bytes(name, value.as_bytes())
+    }
+
+    pub fn replace_bytes(&self, name: &str, value: &[u8]) -> io::Result<()> {
         // All callers hold the directory's lock. Never truncate an unchecked file.
         let temporary = format!("{name}.new");
         let mut file = self.file(&temporary, OFlags::WRONLY | OFlags::CREATE)?;
         file.set_len(0)?;
-        file.write_all(value.as_bytes())?;
+        file.write_all(value)?;
         file.sync_all()?;
         rustix::fs::renameat(&self.fd, temporary.as_str(), &self.fd, name)?;
         self.fd.sync_all()

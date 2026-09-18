@@ -1256,6 +1256,7 @@ impl PersistentXtermSessionConfig {
         display: &str,
         xauthority: &std::path::Path,
         control_socket: Option<&std::path::Path>,
+        context: crate::diagnostics::application::LaunchContext,
     ) -> Result<Child, Box<dyn std::error::Error>> {
         let mut command = std::process::Command::new(&app.executable);
         configure_control_environment(&mut command, control_socket);
@@ -1269,7 +1270,7 @@ impl PersistentXtermSessionConfig {
             .stdin(Stdio::null())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
-        Ok(command.spawn()?)
+        Ok(crate::diagnostics::application::spawn(&mut command, context)?)
     }
 
     fn launch_surface_proof_requested(&self) -> bool {

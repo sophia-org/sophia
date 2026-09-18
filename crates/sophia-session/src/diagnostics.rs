@@ -1,4 +1,5 @@
 //! Bounded, host-owned daily-session evidence. Proof archives have a separate owner.
+pub mod application;
 mod capture;
 mod commands;
 mod failure;

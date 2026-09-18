@@ -12,7 +12,10 @@ pub(super) fn try_run(args: &[String]) -> Result<bool, Error> {
     let Some(command) = args.get(1).map(String::as_str) else {
         return Ok(false);
     };
-    if !matches!(command, "mark" | "inspect" | "keep" | "list" | "_supervise") {
+    if !matches!(
+        command,
+        "mark" | "inspect" | "keep" | "list" | "launches" | "stderr" | "_supervise"
+    ) {
         return Ok(false);
     }
     let tail = &args[2..];
@@ -100,10 +103,76 @@ pub(super) fn try_run(args: &[String]) -> Result<bool, Error> {
             print!("{}", result.markers);
         }
         "keep" => {
-            if tail.len() != 1 {
-                return Err("usage: sophia session keep ID|latest".into());
+            if tail.is_empty()
+                || tail.len() > 2
+                || tail
+                    .get(1)
+                    .is_some_and(|arg| arg != "--include-application-stderr")
+            {
+                return Err(
+                    "usage: sophia session keep ID|latest [--include-application-stderr]".into(),
+                );
             }
-            println!("preserved={}", store.keep(&tail[0])?.display());
+            println!(
+                "preserved={}",
+                store
+                    .keep_with_application_stderr(&tail[0], tail.len() == 2)?
+                    .display()
+            );
+        }
+        "launches" => {
+            if tail.len() != 1 {
+                return Err("usage: sophia session launches ID|latest".into());
+            }
+            let records = store.application_records(&tail[0])?;
+            print!("{}", records.health);
+            for launch in records.launches.values() {
+                print!("{launch}");
+            }
+            println!(
+                "incomplete_tail={} rotated or dropped records may be absent; queued bytes are not persistence acknowledgements",
+                records.incomplete_tail
+            );
+        }
+        "stderr" => {
+            use std::io::Write;
+            if !(2..=3).contains(&tail.len()) || tail.get(2).is_some_and(|arg| arg != "--raw") {
+                return Err("usage: sophia session stderr ID|latest --launch=ID [--raw]".into());
+            }
+            let id: u64 = tail[1]
+                .strip_prefix("--launch=")
+                .ok_or("expected --launch=ID")?
+                .parse()?;
+            if id == 0 {
+                return Err("launch identity must be nonzero".into());
+            }
+            let records = store.application_records(&tail[0])?;
+            let mut found = false;
+            let mut next = 0;
+            for (launch, offset, bytes) in records.chunks {
+                if launch != id {
+                    continue;
+                }
+                found = true;
+                if offset != next {
+                    eprintln!("stderr unavailable range: {next}..{offset}");
+                }
+                next = offset + bytes.len() as u64;
+                if tail.len() == 3 {
+                    std::io::stdout().lock().write_all(&bytes)?;
+                } else {
+                    println!(
+                        "{offset}: {}",
+                        sophia_session::diagnostics::application::escape_bytes(&bytes)
+                    );
+                }
+            }
+            if !found {
+                eprintln!("no retained stderr bytes for launch {id}");
+            }
+            eprintln!(
+                "Retained bytes only; rotation, truncation, live collection, or an incomplete tail may omit output."
+            );
         }
         "list" => {
             if !tail.is_empty() {

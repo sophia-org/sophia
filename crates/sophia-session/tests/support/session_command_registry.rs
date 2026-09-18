@@ -363,6 +363,10 @@ shift
                 ":private-no-connection",
                 &xauthority,
                 socket,
+                crate::diagnostics::application::LaunchContext {
+                    source: crate::diagnostics::application::LaunchSource::Shortcut,
+                    transaction: Some(transaction.raw()),
+                },
             )
             .unwrap(),
         );
@@ -396,6 +400,10 @@ shift
                 ":private-no-connection",
                 &xauthority,
                 socket,
+                crate::diagnostics::application::LaunchContext {
+                    source: crate::diagnostics::application::LaunchSource::Shortcut,
+                    transaction: Some(transaction.raw()),
+                },
             )
             .is_err()
         );

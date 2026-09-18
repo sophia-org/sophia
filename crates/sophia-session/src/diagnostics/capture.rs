@@ -543,6 +543,29 @@ pub fn reduced_record(line: &str) -> Option<String> {
         let panic_line = name == "sophia_session_panic"
             && key == "source_line"
             && value.bytes().all(|c| c.is_ascii_digit());
+        let application_capture = name == "sophia_application_capture"
+            && ((key == "launch_id" && value.parse::<u64>().is_ok())
+                || (key == "status" && value == "incomplete")
+                || (key == "reason"
+                    && matches!(
+                        value,
+                        "shutdown_timeout"
+                            | "storage_failure"
+                            | "setup_failure"
+                            | "capture_unavailable"
+                    )));
+        let reload_reason = name == "sophia_config_reload"
+            && key == "reason"
+            && matches!(value, "prepare" | "read");
+        let application_launch = name == "sophia_application_launch"
+            && ((matches!(key, "launch_id" | "exit_code" | "exit_signal")
+                && value.parse::<u64>().is_ok())
+                || (key == "status" && matches!(value, "spawned" | "exited"))
+                || (key == "reason"
+                    && matches!(
+                        value,
+                        "not_found" | "permission_denied" | "resource_limit" | "spawn_failure"
+                    )));
         if interaction_field(name, key, value)
             || numeric
             || digest
@@ -555,6 +578,9 @@ pub fn reduced_record(line: &str) -> Option<String> {
             || failure_phase
             || panic_site
             || panic_line
+            || application_capture
+            || reload_reason
+            || application_launch
         {
             result.push(' ');
             result.push_str(field);

@@ -191,6 +191,7 @@ macro_rules! service_core_config_reload {
                         let snapshot = config.core_config_state.active().clone();
                         config.key_repeat_config = snapshot.input.repeat;
                         config.verbose_diagnostics = snapshot.verbose_diagnostics;
+                        crate::diagnostics::application::set_enabled(snapshot.application_stderr);
                         let repeat = KeyRepeatConfig::new(
                             snapshot.input.repeat.delay_msec,
                             snapshot.input.repeat.interval_msec,

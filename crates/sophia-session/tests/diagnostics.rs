@@ -6,6 +6,27 @@ use std::sync::Arc;
 use sophia_session::diagnostics::{Capture, Retention, Store, capture_line, reduced_record};
 
 #[test]
+fn launch_and_reload_diagnostics_keep_only_bounded_refusal_vocabulary() {
+    let record = reduced_record("sophia_application_launch schema=1 status=failed launch_id=19 transaction=22 reason=not_found executable=/secret args=secret env=secret").unwrap();
+    assert!(record.contains("reason=not_found"));
+    assert!(record.contains("launch_id=19"));
+    assert!(!record.contains("secret"));
+    for reason in ["prepare", "read"] {
+        let record = reduced_record(&format!(
+            "sophia_config_reload schema=1 status=rejected reason={reason} error=/private"
+        ))
+        .unwrap();
+        assert!(record.contains(&format!("reason={reason}")));
+        assert!(!record.contains("private"));
+    }
+    assert!(
+        !reduced_record("sophia_application_launch reason=unbounded_secret")
+            .unwrap()
+            .contains("unbounded_secret")
+    );
+}
+
+#[test]
 fn catalog_exit_evidence_keeps_outcome_and_exact_origin_without_payload() {
     for success in ["true", "false"] {
         let record = reduced_record(&format!("sophia_catalog_launch schema=1 status=process_exited transaction=3 connection_epoch=4 content_grant_epoch=5 success={success} payload=secret")).unwrap();

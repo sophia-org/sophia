@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) struct SessionProcessGuard {
     pub(super) child: Option<Child>,
+    pub(super) diagnostic: Option<crate::diagnostics::application::LaunchTicket>,
     pub(super) secondary_children: Vec<ManagedSessionChild>,
     pub(super) socket_path: Option<std::path::PathBuf>,
     pub(super) grouped: bool,
@@ -13,6 +14,7 @@ pub(super) struct ManagedSessionChild {
     pub(super) catalog_launch: bool,
     pub(super) native_catalog: Option<std::sync::Arc<crate::session_actions::NativeCatalogLaunch>>,
     pub(super) child: Child,
+    pub(super) diagnostic: Option<crate::diagnostics::application::LaunchTicket>,
     pub(super) process_identity: Option<crate::launch_origin::ProcessIdentity>,
 }
 
@@ -34,6 +36,7 @@ impl ManagedSessionChild {
             catalog_launch: false,
             native_catalog: None,
             process_identity: crate::launch_origin::read_process(child.id()).map(|p| p.identity),
+            diagnostic: crate::diagnostics::application::registration(child.id()),
             child,
         }
     }
@@ -45,6 +48,7 @@ impl ManagedSessionChild {
             catalog_launch: false,
             native_catalog: None,
             process_identity: crate::launch_origin::read_process(child.id()).map(|p| p.identity),
+            diagnostic: crate::diagnostics::application::registration(child.id()),
             child,
         }
     }
@@ -67,13 +71,14 @@ pub(super) fn spawn_catalog_child(
     xauthority: &std::path::Path,
     transaction: TransactionId,
 ) -> std::io::Result<ManagedSessionChild> {
-    let child = crate::application_catalog::spawn_catalog_process(
+    let child = crate::application_catalog::spawn_catalog_process_with_transaction(
         &command,
         crate::application_catalog::CatalogProcessEnvironment {
             display: &config.display,
             xauthority,
             control_socket: config.control_socket.as_deref(),
         },
+        Some(transaction.raw()),
     )?;
     let mut managed = ManagedSessionChild::for_launch(None, transaction, child);
     managed.catalog_launch = true;
@@ -90,8 +95,13 @@ pub(super) const fn managed_child_exit_is_nonfatal(
 pub(super) fn terminate_session_child(
     child: &mut Child,
     grouped: bool,
+    diagnostic: Option<crate::diagnostics::application::LaunchTicket>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let leader_exited = child.try_wait()?.is_some();
+    let status = child.try_wait()?;
+    if let Some(status) = status {
+        crate::diagnostics::application::exited(diagnostic, status);
+    }
+    let leader_exited = status.is_some();
     if grouped {
         let pid = rustix::process::Pid::from_raw(child.id() as i32)
             .ok_or("session child PID is invalid")?;
@@ -106,7 +116,8 @@ pub(super) fn terminate_session_child(
         }
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
-            if child.try_wait()?.is_some() {
+            if let Some(status) = child.try_wait()? {
+                crate::diagnostics::application::exited(diagnostic, status);
                 // The process-group leader can exit before terminal helpers
                 // that inherited the X connection. Drain the whole group or
                 // frontend shutdown can wait forever on an orphaned client.
@@ -122,7 +133,8 @@ pub(super) fn terminate_session_child(
         }
         child.kill()?;
     }
-    child.wait()?;
+    let status = child.wait()?;
+    crate::diagnostics::application::exited(diagnostic, status);
     Ok(())
 }
 
@@ -134,6 +146,9 @@ impl SessionProcessGuard {
         grouped: bool,
     ) -> Self {
         Self {
+            diagnostic: child
+                .as_ref()
+                .and_then(|child| crate::diagnostics::application::registration(child.id())),
             child,
             secondary_children,
             socket_path: Some(socket_path),
@@ -152,10 +167,10 @@ impl SessionProcessGuard {
 
     pub(super) fn terminate(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(mut child) = self.child.take() {
-            terminate_session_child(&mut child, self.grouped)?;
+            terminate_session_child(&mut child, self.grouped, self.diagnostic)?;
         }
         for mut child in self.secondary_children.drain(..) {
-            terminate_session_child(&mut child.child, self.grouped)?;
+            terminate_session_child(&mut child.child, self.grouped, child.diagnostic)?;
         }
         if let Some(socket_path) = self.socket_path.as_ref() {
             match std::fs::remove_file(socket_path) {

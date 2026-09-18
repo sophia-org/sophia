@@ -115,11 +115,11 @@ pub fn parse_core_config(
         .get("external-wm")
         .map(parse_external_wm)
         .transpose()?;
-    let verbose_diagnostics = document
+    let (verbose_diagnostics, application_stderr) = document
         .get("diagnostics")
         .map(parse_diagnostics)
         .transpose()?
-        .unwrap_or(false);
+        .unwrap_or((false, true));
     Ok(CoreConfigSnapshot {
         schema,
         generation,
@@ -133,6 +133,7 @@ pub fn parse_core_config(
         namespace_profile,
         external_wm,
         verbose_diagnostics,
+        application_stderr,
     })
 }
 
@@ -467,9 +468,12 @@ fn parse_external_wm(node: &KdlNode) -> Result<ExternalWmConfig, ConfigParseErro
     })
 }
 
-fn parse_diagnostics(node: &KdlNode) -> Result<bool, ConfigParseError> {
-    exact_shape(node, 0, &["verbose"], false)?;
-    optional_bool_property(node, "verbose", false)
+fn parse_diagnostics(node: &KdlNode) -> Result<(bool, bool), ConfigParseError> {
+    exact_shape(node, 0, &["verbose", "application-stderr"], false)?;
+    Ok((
+        optional_bool_property(node, "verbose", false)?,
+        optional_bool_property(node, "application-stderr", true)?,
+    ))
 }
 
 fn validate_root_names(document: &KdlDocument, allowed: &[&str]) -> Result<(), ConfigParseError> {

@@ -80,6 +80,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 },
             );
+    let application_capture = if ordinary && capture.is_some() {
+        capture_path.as_deref().and_then(|path| {
+            match sophia_session::diagnostics::application::ApplicationCapture::start(path)
+                .and_then(|capture| { capture.install()?; Ok(capture) }) {
+                Ok(capture) => Some(capture),
+                Err(_) => {
+                    session_stderr("sophia_application_capture schema=1 status=unavailable reason=setup_failure");
+                    None
+                }
+            }
+        })
+    } else {
+        None
+    };
     if capture.is_some() {
         let previous_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |information| {
@@ -100,6 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if is_run && result.is_err() {
         session_stderr("sophia_session_result schema=1 status=failed");
     }
+    drop(application_capture);
     drop(capture);
     if let Some((store, id)) = owned {
         let _ = store.finish(&id, Some(if result.is_ok() { 0 } else { 1 }));

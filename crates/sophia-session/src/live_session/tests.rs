@@ -522,6 +522,7 @@ fn a_head_showing_an_empty_desktop_still_completes() {
 fn blank_normal_session_process_guard_has_no_primary_child() {
     let mut guard = SessionProcessGuard {
         child: None,
+        diagnostic: None,
         secondary_children: Vec::new(),
         socket_path: None,
         grouped: true,

@@ -81,6 +81,38 @@ fn parses_complete_core_snapshot() {
         Some(ExternalWmInterface::SophiaWmV1)
     );
     assert!(snapshot.verbose_diagnostics);
+    assert!(snapshot.application_stderr);
+}
+
+#[test]
+fn application_stderr_defaults_on_and_can_change_live_independently() {
+    let active = parse_core_config(CORE.as_bytes(), ConfigGeneration::INITIAL).unwrap();
+    let disabled = CORE.replace(
+        "diagnostics verbose=#true",
+        "diagnostics verbose=#true application-stderr=#false",
+    );
+    let candidate = parse_core_config(disabled.as_bytes(), ConfigGeneration::INITIAL).unwrap();
+    assert!(!candidate.application_stderr);
+    let delta = CoreConfigDelta::between(&active, &candidate);
+    assert!(delta.diagnostics_changed);
+    assert!(!delta.restart_required);
+    let absent = CORE.replace("diagnostics verbose=#true", "");
+    assert!(
+        parse_core_config(absent.as_bytes(), ConfigGeneration::INITIAL)
+            .unwrap()
+            .application_stderr
+    );
+    assert!(
+        parse_core_config(
+            CORE.replace(
+                "diagnostics verbose=#true",
+                "diagnostics application-stderr=\"yes\""
+            )
+            .as_bytes(),
+            ConfigGeneration::INITIAL
+        )
+        .is_err()
+    );
 }
 
 #[test]

@@ -297,6 +297,9 @@ pub(crate) fn run_persistent_xterm_session(
     };
     let args = args.as_slice();
     let mut config = PersistentXtermSessionConfig::from_args(args)?;
+    crate::diagnostics::application::set_enabled(
+        config.core_config_state.active().application_stderr,
+    );
     if validate_only {
         crate::session_println!(
             "sophia_live_session_args schema=1 status=accepted arguments={}",
@@ -845,7 +848,15 @@ pub(crate) fn run_persistent_xterm_session(
         }
     }
     let child = match terminal_command
-        .map(|mut command| command.spawn())
+        .map(|mut command| {
+            crate::diagnostics::application::spawn(
+                &mut command,
+                crate::diagnostics::application::LaunchContext {
+                    source: crate::diagnostics::application::LaunchSource::Startup,
+                    transaction: None,
+                },
+            )
+        })
         .transpose()
     {
         Ok(child) => child,
@@ -914,6 +925,10 @@ pub(crate) fn run_persistent_xterm_session(
             &config.display,
             xauthority.path(),
             config.control_socket.as_deref(),
+            crate::diagnostics::application::LaunchContext {
+                source: crate::diagnostics::application::LaunchSource::Startup,
+                transaction: None,
+            },
         ) {
             Ok(child) => {
                 process.add_secondary_child(Some(app.id.clone()), child);
@@ -1069,6 +1084,7 @@ pub(crate) fn run_persistent_xterm_session(
         seat_active: true,
         ..Default::default()
     };
+    let primary_diagnostic = process.diagnostic;
     let (primary_child, secondary_children) = process.children_mut();
     let result = run_session_loop(
         &mut config,
@@ -1088,6 +1104,7 @@ pub(crate) fn run_persistent_xterm_session(
         SessionLoopResources {
             launch_origins: &launch_origins,
             child: primary_child,
+            primary_diagnostic,
             secondary_children,
             physical_input: &mut physical_input,
             native_scanout: &mut native_scanout,

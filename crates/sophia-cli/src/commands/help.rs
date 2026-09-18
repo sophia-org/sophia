@@ -57,7 +57,7 @@ pub(crate) fn print(verbose: bool) {
     );
     #[cfg(feature = "native-session")]
     println!(
-        "diagnostics: session mark [--session=ID|latest] [LABEL] | session inspect ID|latest [--marker=ID] | session keep ID|latest | session list"
+        "diagnostics: session mark [--session=ID|latest] [LABEL] | session inspect ID|latest [--marker=ID] | session keep ID|latest [--include-application-stderr] | session launches ID|latest | session stderr ID|latest --launch=ID [--raw] | session list"
     );
     println!("compatibility aliases: sophia-live-session, sophia-session-input-guard");
     #[cfg(feature = "native-session")]

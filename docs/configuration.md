@@ -492,6 +492,10 @@ Core reload is whole-file atomic:
 - application registry changes affect later launches;
 - repeat timing applies only after the shortcut/key ledger is idle;
 - fallback chrome and diagnostics apply live;
+- `diagnostics application-stderr=#true` defaults on for recorded daily sessions.
+  Disabling stops retention on existing application pipes while continuing to
+  drain them; re-enabling captures only later launches. See the private storage,
+  inspection and export limits in [Operations](operations.md).
 - input source, XKB, outputs, namespace, cursor asset, and external-WM launch
   changes mark the entire candidate `pending_restart`;
 - a pending-restart candidate does not partially apply its otherwise-live

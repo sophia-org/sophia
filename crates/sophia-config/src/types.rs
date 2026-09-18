@@ -303,6 +303,7 @@ pub struct CoreConfigSnapshot {
     pub namespace_profile: String,
     pub external_wm: Option<ExternalWmConfig>,
     pub verbose_diagnostics: bool,
+    pub application_stderr: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -376,7 +377,8 @@ impl CoreConfigDelta {
             chrome_changed: active.fallback_chrome != candidate.fallback_chrome
                 || active.max_chrome_width != candidate.max_chrome_width,
             cursor_changed: active.cursor != candidate.cursor,
-            diagnostics_changed: active.verbose_diagnostics != candidate.verbose_diagnostics,
+            diagnostics_changed: active.verbose_diagnostics != candidate.verbose_diagnostics
+                || active.application_stderr != candidate.application_stderr,
             restart_required: active.input.source != candidate.input.source
                 || active.input.xkb != candidate.input.xkb
                 || active.outputs != candidate.outputs

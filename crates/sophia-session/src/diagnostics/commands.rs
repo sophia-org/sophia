@@ -284,7 +284,7 @@ impl Store {
             .iter()
             .map(|r| {
                 if r.status == "running" {
-                    r.bytes.max(64 * 1024 * 1024)
+                    r.bytes.max(80 * 1024 * 1024)
                 } else {
                     r.bytes
                 }
@@ -449,6 +449,25 @@ impl Store {
     }
 
     pub fn keep(&self, selector: &str) -> io::Result<PathBuf> {
+        self.keep_with_application_stderr(selector, false)
+    }
+
+    pub fn application_records(
+        &self,
+        selector: &str,
+    ) -> io::Result<super::application::ApplicationRecords> {
+        let _lock = self.root.lock()?;
+        let record = self.select_unlocked(Some(selector))?;
+        let run = self.root.child(&record.id, false)?;
+        let _run_lock = run.lock()?;
+        super::application::read_records(&run)
+    }
+
+    pub fn keep_with_application_stderr(
+        &self,
+        selector: &str,
+        include: bool,
+    ) -> io::Result<PathBuf> {
         let _lock = self.root.lock()?;
         let record = self.select_unlocked(Some(selector))?;
         let run = self.root.child(&record.id, false)?;
@@ -460,16 +479,16 @@ impl Store {
         let mut checksums = String::new();
         for entry in fs::read_dir(&run.path)? {
             let name = entry?.file_name().to_string_lossy().into_owned();
-            if name == "lock" || name.ends_with(".new") {
+            if name == "lock"
+                || name.ends_with(".new")
+                || (!include && name.starts_with("application-"))
+            {
                 continue;
             }
-            let value = run.read(&name, SEGMENT_LIMIT)?;
-            snapshot.replace(&name, &value)?;
+            let value = run.read_bytes(&name, SEGMENT_LIMIT)?;
+            snapshot.replace_bytes(&name, &value)?;
             use sha2::Digest;
-            checksums.push_str(&format!(
-                "{:x}  {name}\n",
-                sha2::Sha256::digest(value.as_bytes())
-            ));
+            checksums.push_str(&format!("{:x}  {name}\n", sha2::Sha256::digest(&value)));
         }
         snapshot.replace("snapshot", &format!("schema=1\nsource_session={}\nsource_status={}\ncutoff_utc_msec={}\ncutoff_boot_msec={}\ncomplete={}\n", record.id, record.status, Stamp::now().utc_msec, Stamp::now().boot_msec, record.status == "exited" || record.status == "failed"))?;
         snapshot.replace("SHA256SUMS", &checksums)?;

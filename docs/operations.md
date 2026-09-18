@@ -174,9 +174,46 @@ between snapshots, not distinct lost frames.
 feedback record with `routed=true` means it was queued to the frontend
 connection, not that the client consumed it. Check the recorder's discarded
 and storage-error counts before drawing conclusions from absent events.
-Browser stderr is separate evidence: preserve it explicitly on a diagnostic
-browser launch. An application's output connected to `/dev/null` leaves no
-error log for the session recorder to recover.
+Application stderr is separate private evidence. Recorded daily sessions capture
+it by default for startup, shortcut and catalog launches. Use
+`sophia session launches latest` to find the session-scoped launch ID, then
+`sophia session stderr latest --launch=ID`. This displays escaped bytes, including
+terminal controls and invalid UTF-8. `--raw` deliberately writes the original
+retained bytes; redirect it to a private file rather than a terminal. No command
+can recover stderr discarded by an older release or a launch outside capture.
+
+Launch metadata records the requested executable (privately), source, transaction when
+available, request/spawn times, spawn outcome, and observed exit code or signal.
+It does not record arguments, environment, URLs or terminal input. Children
+inheriting the pipe belong to that initiating launch; their output does not prove
+the initiating process was still alive. Exit observation, pipe EOF, queued bytes
+and synchronized storage are separate facts. A successful spawn is not evidence
+that an application mapped a window or finished starting.
+
+Capture permits 64 concurrent registrations. A single nonblocking collector
+visits each stream once per turn, reads at most 4,060 bytes from each, and sleeps
+five milliseconds between turns. One separate storage worker owns filesystem
+writes and synchronization. The aggregate queued record storage is at most
+1 MiB; the worker additionally owns one record. Retention stops after the first
+1 MiB read from each launch, but pipes continue draining and discarded bytes are
+counted. Four rotating 4 MiB binary segments bound the session application store.
+Metadata shares that store and may rotate out. Stream-capacity or collector
+setup failure leaves application execution intact and records unavailable
+capture; it does not promise an exit record for that unregistered launch.
+
+Storage refusal or a full queue discards diagnostic bytes without retrying the
+application. Inspection reports original stream offsets and missing ranges.
+`application-health` reports rotation, refused registrations, storage errors,
+lost final metadata and synchronization status; it is private and shown by
+`session launches`. A missing or stale health record is not a healthy capture.
+Shutdown allows 250 ms for collection/storage completion. Descendant-held pipes
+and slow storage cannot hold logout; an unfinished tail is reported, not invented.
+
+Set `diagnostics application-stderr=#false` in the core KDL to disable retention.
+Live disabling drains existing pipes without keeping new bytes; already queued
+bytes may still be written. Re-enabling applies to subsequent launches, not the
+old pipes. Launch outcome metadata remains available. Stdout is unchanged, and
+proof runs keep their existing output ownership.
 
 Ordinary logout reports lifecycle and cleanup success independently of X11
 error replies. Those replies remain compatibility evidence in
@@ -202,15 +239,21 @@ Resource observations continue every five seconds throughout an ordinary
 recorded session. Storage keeps four event segments of at most 15 MiB each,
 with separate bounded identity and marker journals. Automatic history retains
 at most twenty finished sessions within a 1 GiB budget, reserving space for the
-active session's 64 MiB allowance. Active sessions are never deleted. If active
+active session's 80 MiB allowance, including application diagnostics. Active sessions are never deleted. If active
 sessions alone exceed the budget, their protection takes precedence.
 
-`keep ID` copies the evidence currently available into a private, checksummed
+`keep ID` copies structured evidence currently available into a private, checksummed
 snapshot outside automatic pruning. A running-session snapshot records its
 cutoff and is incomplete. Marking alone does not exempt a session from pruning;
 keep the evidence when an investigation needs it. Preserved snapshots remain
 until you remove them, and their storage total is reported separately. Existing
 archives are not migrated or pruned.
+
+Ordinary `inspect` and `keep` exclude private application records. Include them
+only with `sophia session keep latest --include-application-stderr`; the snapshot
+copies the exact binary records and hashes them without decoding or changing
+their bytes. Directories are private (0700), files are 0600, and unsafe ownership,
+symlinks, hardlinks and nonregular files are refused.
 
 Recording uses bounded queues and synchronizes periodically. Its health record
 reports discarded records, rotated bytes, storage failures, and the last
@@ -219,8 +262,9 @@ unsynchronized tail. An unfinished record with no live owner is `interrupted`;
 Sophia does not invent an exit code or crash cause. A clean process exit is
 `exited`, a nonzero exit is `failed`, and neither is a proof verdict.
 
-Daily capture accepts Sophia's structured evidence, not mixed application
-stdout/stderr. Sensitive fields and arbitrary strings are excluded. Labels are
+The structured daily recorder accepts Sophia's evidence, not mixed application
+stdout/stderr. The separate private stderr store above does not feed this stream.
+Sensitive fields and arbitrary strings are excluded from structured events. Labels are
 operator-supplied local notes, limited to 256 UTF-8 bytes without control
 characters. Session directories require mode 0700 and files mode 0600; unsafe
 owners and links are refused. The ownership manifest contains the minimal host

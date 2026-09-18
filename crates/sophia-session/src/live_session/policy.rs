@@ -751,6 +751,10 @@ fn execute_committed_session_actions(
             &config.display,
             xauthority,
             config.control_socket.as_deref(),
+            crate::diagnostics::application::LaunchContext {
+                source: crate::diagnostics::application::LaunchSource::Shortcut,
+                transaction: Some(intent.transaction.raw()),
+            },
         )
         .map(|child| (Some(command.id.clone()), child))
     } else {
