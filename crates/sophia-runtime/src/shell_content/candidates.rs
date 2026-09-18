@@ -8,6 +8,7 @@ use super::{
 
 mod demands;
 mod native;
+mod native_close;
 mod validation;
 use super::ContentStoreProfile;
 use demands::StandingDemand;

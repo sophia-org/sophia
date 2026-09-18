@@ -320,3 +320,189 @@ fn peer_eof_reports_disconnect_after_buffered_native_request_is_owned() {
 
 #[path = "support/native_launcher_focus.rs"]
 mod focus;
+
+#[test]
+fn native_close_cancels_unsubmitted_work_but_retains_submitted_owner() {
+    for phase in 0..4 {
+        let mut r = empty();
+        let mut peer = Peer::connected(&mut r);
+        let allocations = peer.allocation(&mut r);
+        peer.upload(&mut r);
+        peer.permit(&mut r);
+        let c = catalog();
+        if phase > 0 {
+            peer.send(ShellNativeLauncherRecord::CandidateBegin(begin()));
+            if phase > 1 {
+                peer.send(ShellNativeLauncherRecord::CandidateChunk(chunk()));
+                peer.send_content(ShellContentRecord::CandidateEnd(end()));
+            }
+            peer.transport
+                .service_native_launcher_content(&mut r, context(&allocations), native(&c), 0)
+                .unwrap();
+        }
+        let bundle = (phase == 3).then(|| {
+            peer.transport
+                .begin_native_launcher_submission(&mut r, 1, context(&allocations), native(&c), 0)
+                .unwrap()
+        });
+        let before = r.accounting();
+        let mut wrong = opening();
+        wrong.opening += 1;
+        assert!(
+            peer.transport
+                .close_native_launcher(&mut r, wrong, tx(80), ContentReason::Cancelled)
+                .is_err()
+        );
+        assert_eq!(r.accounting(), before);
+        peer.transport
+            .close_native_launcher(&mut r, opening(), tx(80), ContentReason::Cancelled)
+            .unwrap();
+        peer.transport.poll_io(&mut r).unwrap();
+        if phase == 0 {
+            let (_, ShellContentRecord::FramePermit(v)) =
+                decode_shell_content_frame(&peer.read()).unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!((v.state, v.reason), (3, ContentReason::Cancelled as u16));
+        } else if phase != 3 {
+            let (transaction, ShellContentRecord::CandidateOutcome(v)) =
+                decode_shell_content_frame(&peer.read()).unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(transaction, tx(20));
+            assert_eq!(
+                (v.kind, v.reason, v.candidate_generation),
+                (3, ContentReason::Cancelled as u16, 1)
+            );
+        }
+        assert!(matches!(
+            decode_shell_native_launcher_frame(&peer.read()).unwrap().1,
+            ShellNativeLauncherRecord::Closed(_)
+        ));
+        assert_eq!(peer.transport.native_launcher_state(), None);
+        assert_eq!(peer.transport.native_launcher_focus(), None);
+        let store = r.active_candidates_mut(GRANT).unwrap();
+        assert_eq!(store.pending_candidate_count(), 0);
+        assert_eq!(store.submitted_candidate_count(), usize::from(phase == 3));
+        if phase == 3 {
+            assert_eq!(
+                bundle
+                    .as_ref()
+                    .unwrap()
+                    .resource(RESOURCE)
+                    .unwrap()
+                    .bytes()
+                    .len(),
+                8
+            );
+            peer.transport
+                .content_prepared(&mut r, GRANT, OUTPUT, 1, 1, 1, 0)
+                .unwrap();
+            peer.transport
+                .content_presented(&mut r, GRANT, OUTPUT, 1, 9, 1, 1)
+                .unwrap();
+            peer.transport.poll_io(&mut r).unwrap();
+            for kind in [1, 2] {
+                let (_, ShellContentRecord::CandidateOutcome(v)) =
+                    decode_shell_content_frame(&peer.read()).unwrap()
+                else {
+                    panic!()
+                };
+                assert_eq!((v.kind, v.candidate_generation), (kind, 1));
+            }
+            assert_eq!(peer.transport.native_launcher_focus(), None);
+        }
+        // Extra service cannot duplicate terminal records.
+        peer.transport.poll_io(&mut r).unwrap();
+        peer.client.set_nonblocking(true).unwrap();
+        assert_eq!(
+            peer.client.read(&mut [0]).unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        // Active allocation remains owned: close is not pixel disappearance.
+        assert_eq!(r.allocations_mut(GRANT).unwrap().snapshots(), allocations);
+        peer.transport.disconnect(&mut r).unwrap();
+        r.collect();
+        if phase == 3 {
+            assert_eq!(r.accounting().memory.resident, 8);
+        }
+        drop(bundle);
+        r.collect();
+        assert_eq!(r.accounting().retired_epochs, 0);
+    }
+}
+
+#[test]
+fn native_close_refuses_pending_allocation_and_cancels_standing_demand() {
+    for proposal in [true, false] {
+        let mut r = empty();
+        let mut peer = Peer::connected(&mut r);
+        let c = catalog();
+        let allocations = if proposal {
+            peer.transport
+                .publish_content_output_facts(&mut r, tx(1), 5, vec![facts()])
+                .unwrap();
+            peer.transport.poll_io(&mut r).unwrap();
+            let _facts = peer.read();
+            peer.send(ShellNativeLauncherRecord::AllocationRequest(request(1)));
+            vec![]
+        } else {
+            let allocations = peer.allocation(&mut r);
+            peer.send_content(ShellContentRecord::FrameDemand(ContentFrameDemand {
+                grant: GRANT,
+                output: OUTPUT,
+                allocation: ALLOCATION,
+                demand_id: 1,
+                reason: 1,
+            }));
+            allocations
+        };
+        peer.transport
+            .service_native_launcher_content(&mut r, context(&allocations), native(&c), 0)
+            .unwrap();
+        peer.transport
+            .close_native_launcher(&mut r, opening(), tx(80), ContentReason::Cancelled)
+            .unwrap();
+        peer.transport.poll_io(&mut r).unwrap();
+        let (transaction, record) = decode_shell_content_frame(&peer.read()).unwrap();
+        assert_eq!(transaction, tx(20));
+        if proposal {
+            let ShellContentRecord::AllocationResult(v) = record else {
+                panic!()
+            };
+            assert_eq!(
+                (v.status, v.reason, v.allocation_request_id),
+                (2, ContentReason::Stale as u16, 1)
+            );
+            assert!(
+                r.allocations_mut(GRANT)
+                    .unwrap()
+                    .pending_request()
+                    .is_none()
+            );
+        } else {
+            let ShellContentRecord::FramePermit(v) = record else {
+                panic!()
+            };
+            assert_eq!(
+                (v.state, v.reason, v.permit_id),
+                (3, ContentReason::Cancelled as u16, 0)
+            );
+            assert!(
+                r.active_candidates_mut(GRANT)
+                    .unwrap()
+                    .next_demand()
+                    .is_none()
+            );
+        }
+        assert!(matches!(
+            decode_shell_native_launcher_frame(&peer.read()).unwrap().1,
+            ShellNativeLauncherRecord::Closed(_)
+        ));
+        peer.transport.disconnect(&mut r).unwrap();
+        r.collect();
+        assert_eq!(r.accounting().retired_epochs, 0);
+    }
+}

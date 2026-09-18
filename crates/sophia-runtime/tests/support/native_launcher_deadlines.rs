@@ -8,14 +8,21 @@ fn retained_enter_ack_deadline_starts_at_dispatch_but_keeps_original_timestamp()
     assert!(ack(&mut p, &mut r, edit.event, 1));
     assert_eq!(
         p.transport
-            .issue_native_launcher_input(&r, focus, tx(90), NativeLauncherInputKind::Accept, "", 11)
+            .issue_native_launcher_input(
+                &mut r,
+                focus,
+                tx(90),
+                NativeLauncherInputKind::Accept,
+                "",
+                11
+            )
             .unwrap(),
         None
     );
     let delivery = 1_500_000;
     assert!(
         !p.transport
-            .service_native_launcher_deadlines(&r, opening(), tx(91), delivery)
+            .service_native_launcher_deadlines(&mut r, opening(), tx(91), delivery)
             .unwrap()
     );
     present(&mut r, &mut p, &a, &c, 2, 2, true);
@@ -35,7 +42,7 @@ fn retained_enter_ack_deadline_starts_at_dispatch_but_keeps_original_timestamp()
     assert_eq!(enter.issued_mono_usec, 11);
     assert!(
         !p.transport
-            .service_native_launcher_deadlines(&r, opening(), tx(93), delivery + 1)
+            .service_native_launcher_deadlines(&mut r, opening(), tx(93), delivery + 1)
             .unwrap()
     );
     assert!(ack(&mut p, &mut r, enter.event, 1));
@@ -66,12 +73,12 @@ fn unacknowledged_input_expires_exactly_at_its_own_deadline() {
     let timeout = u64::from(limits().action_ack_timeout_ms) * 1000;
     assert!(
         !p.transport
-            .service_native_launcher_deadlines(&r, opening(), tx(70), timeout + 9)
+            .service_native_launcher_deadlines(&mut r, opening(), tx(70), timeout + 9)
             .unwrap()
     );
     assert!(
         p.transport
-            .service_native_launcher_deadlines(&r, opening(), tx(70), timeout + 10)
+            .service_native_launcher_deadlines(&mut r, opening(), tx(70), timeout + 10)
             .unwrap()
     );
     timed_out(&mut p, &mut r, focus);
@@ -85,19 +92,26 @@ fn acknowledged_edit_does_not_hide_a_waiting_enter_timeout() {
     assert!(ack(&mut p, &mut r, edit.event, 1));
     assert_eq!(
         p.transport
-            .issue_native_launcher_input(&r, focus, tx(71), NativeLauncherInputKind::Accept, "", 11)
+            .issue_native_launcher_input(
+                &mut r,
+                focus,
+                tx(71),
+                NativeLauncherInputKind::Accept,
+                "",
+                11
+            )
             .unwrap(),
         None
     );
     let timeout = u64::from(limits().presentation_timeout_ms) * 1000;
     assert!(
         !p.transport
-            .service_native_launcher_deadlines(&r, opening(), tx(72), timeout + 10)
+            .service_native_launcher_deadlines(&mut r, opening(), tx(72), timeout + 10)
             .unwrap()
     );
     assert!(
         p.transport
-            .service_native_launcher_deadlines(&r, opening(), tx(72), timeout + 11)
+            .service_native_launcher_deadlines(&mut r, opening(), tx(72), timeout + 11)
             .unwrap()
     );
     timed_out(&mut p, &mut r, focus);
@@ -110,19 +124,19 @@ fn clock_or_opening_mismatch_cannot_expire_successor_and_new_input_checks_deadli
     input(&mut p, &mut r, NativeLauncherInputKind::Text, "x", 10);
     assert!(
         !p.transport
-            .service_native_launcher_deadlines(&r, opening(), tx(73), 20)
+            .service_native_launcher_deadlines(&mut r, opening(), tx(73), 20)
             .unwrap()
     );
     assert!(
         p.transport
-            .service_native_launcher_deadlines(&r, opening(), tx(74), 19)
+            .service_native_launcher_deadlines(&mut r, opening(), tx(74), 19)
             .is_err()
     );
     let mut wrong = opening();
     wrong.opening += 1;
     assert!(
         p.transport
-            .service_native_launcher_deadlines(&r, wrong, tx(74), u64::MAX)
+            .service_native_launcher_deadlines(&mut r, wrong, tx(74), u64::MAX)
             .is_err()
     );
     assert_eq!(p.transport.native_launcher_focus(), Some(focus));
@@ -130,7 +144,7 @@ fn clock_or_opening_mismatch_cannot_expire_successor_and_new_input_checks_deadli
     assert!(
         p.transport
             .issue_native_launcher_input(
-                &r,
+                &mut r,
                 focus,
                 tx(75),
                 NativeLauncherInputKind::Next,

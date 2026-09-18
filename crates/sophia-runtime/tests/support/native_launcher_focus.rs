@@ -201,7 +201,7 @@ fn maximum_utf8_input_and_exact_ack_keep_original_binding() {
     assert!(
         p.transport
             .issue_native_launcher_input(
-                &r,
+                &mut r,
                 focus,
                 tx(41),
                 NativeLauncherInputKind::Text,
@@ -221,7 +221,14 @@ fn enter_waits_for_exact_revision_and_keeps_original_issuance_time() {
     let before = p.transport.content_accounting(&r).response_records;
     assert_eq!(
         p.transport
-            .issue_native_launcher_input(&r, focus, tx(41), NativeLauncherInputKind::Accept, "", 11)
+            .issue_native_launcher_input(
+                &mut r,
+                focus,
+                tx(41),
+                NativeLauncherInputKind::Accept,
+                "",
+                11
+            )
             .unwrap(),
         None
     );
@@ -234,7 +241,14 @@ fn enter_waits_for_exact_revision_and_keeps_original_issuance_time() {
     assert!(p.transport.native_launcher_focus().is_none());
     assert!(
         p.transport
-            .issue_native_launcher_input(&r, focus, tx(42), NativeLauncherInputKind::Text, "x", 12)
+            .issue_native_launcher_input(
+                &mut r,
+                focus,
+                tx(42),
+                NativeLauncherInputKind::Text,
+                "x",
+                12
+            )
             .is_err()
     );
     let current = p
@@ -273,7 +287,14 @@ fn a_later_edit_invalidates_unsent_enter_instead_of_retargeting_it() {
     input(&mut p, &mut r, NativeLauncherInputKind::Text, "a", 10);
     assert_eq!(
         p.transport
-            .issue_native_launcher_input(&r, focus, tx(41), NativeLauncherInputKind::Accept, "", 11)
+            .issue_native_launcher_input(
+                &mut r,
+                focus,
+                tx(41),
+                NativeLauncherInputKind::Accept,
+                "",
+                11
+            )
             .unwrap(),
         None
     );
@@ -305,7 +326,7 @@ fn bounded_receipts_refuse_new_input_without_advancing_revision() {
     assert_eq!(p.transport.native_launcher_state().unwrap().1, 17);
     assert_eq!(
         p.transport.issue_native_launcher_input(
-            &r,
+            &mut r,
             focus,
             tx(41),
             NativeLauncherInputKind::Text,
@@ -348,14 +369,21 @@ fn closing_uses_owned_credits_and_disarms_before_more_input() {
     assert!(saturated);
     let count = p.transport.content_accounting(&r).response_records;
     p.transport
-        .close_native_launcher(&r, opening(), tx(51), ContentReason::Cancelled)
+        .close_native_launcher(&mut r, opening(), tx(51), ContentReason::Cancelled)
         .unwrap();
     assert!(p.transport.native_launcher_state().is_none());
     assert!(p.transport.native_launcher_focus().is_none());
     assert_eq!(p.transport.content_accounting(&r).response_records, count);
     assert!(
         p.transport
-            .issue_native_launcher_input(&r, focus, tx(52), NativeLauncherInputKind::Text, "x", 20)
+            .issue_native_launcher_input(
+                &mut r,
+                focus,
+                tx(52),
+                NativeLauncherInputKind::Text,
+                "x",
+                20
+            )
             .is_err()
     );
     p.transport.poll_io(&mut r).unwrap();
@@ -413,7 +441,14 @@ fn old_focus_and_opening_callbacks_cannot_act_on_replacements() {
     wrong.presentation_epoch += 1;
     assert!(
         p.transport
-            .issue_native_launcher_input(&r, wrong, tx(60), NativeLauncherInputKind::Text, "x", 20)
+            .issue_native_launcher_input(
+                &mut r,
+                wrong,
+                tx(60),
+                NativeLauncherInputKind::Text,
+                "x",
+                20
+            )
             .is_err()
     );
     assert_eq!(p.transport.native_launcher_state().unwrap().1, 1);
@@ -421,19 +456,19 @@ fn old_focus_and_opening_callbacks_cannot_act_on_replacements() {
     wrong_opening.opening += 1;
     assert!(
         p.transport
-            .close_native_launcher(&r, wrong_opening, tx(61), ContentReason::Cancelled)
+            .close_native_launcher(&mut r, wrong_opening, tx(61), ContentReason::Cancelled)
             .is_err()
     );
     assert_eq!(p.transport.native_launcher_focus(), Some(focus));
     p.transport
-        .close_native_launcher(&r, opening(), tx(62), ContentReason::Cancelled)
+        .close_native_launcher(&mut r, opening(), tx(62), ContentReason::Cancelled)
         .unwrap();
     p.transport
         .publish_native_launcher_opening(&r, tx(63), wrong_opening)
         .unwrap();
     assert!(
         p.transport
-            .close_native_launcher(&r, opening(), tx(64), ContentReason::Cancelled)
+            .close_native_launcher(&mut r, opening(), tx(64), ContentReason::Cancelled)
             .is_err()
     );
     assert_eq!(

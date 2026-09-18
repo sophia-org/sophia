@@ -135,7 +135,7 @@ impl ShellComponentTransport {
     /// output credit but no fabricated Presented identity; later edits cancel it.
     pub fn issue_native_launcher_input(
         &mut self,
-        epochs: &crate::ContentEpochRegistry,
+        epochs: &mut crate::ContentEpochRegistry,
         expected: NativeLauncherBinding,
         transaction: TransactionId,
         kind: NativeLauncherInputKind,
@@ -360,7 +360,7 @@ impl ShellComponentTransport {
     /// FIFO transfer is temporarily refused. Closing never disposes pixel owners.
     pub fn close_native_launcher(
         &mut self,
-        epochs: &crate::ContentEpochRegistry,
+        epochs: &mut crate::ContentEpochRegistry,
         expected: NativeLauncherOpening,
         transaction: TransactionId,
         reason: ContentReason,
@@ -392,7 +392,7 @@ impl ShellComponentTransport {
 
     pub(in crate::shell_transport) fn flush_native_close(
         &mut self,
-        epochs: &crate::ContentEpochRegistry,
+        epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
         let Some((tx, reason)) = self.native_control.closing else {
             return Ok(());
@@ -425,6 +425,16 @@ impl ShellComponentTransport {
         if !self.control_capacity_available(epochs, 0) {
             return Ok(());
         }
+        epochs
+            .allocations_mut(self.store_grant)
+            .ok_or(ShellTransportError::MissingCapability)?
+            .close_native_proposals(opening)?;
+        self.flush_content_allocation_events(epochs)?;
+        epochs
+            .active_candidates_mut(self.store_grant)
+            .ok_or(ShellTransportError::MissingCapability)?
+            .close_native_opening(opening)?;
+        self.flush_content_candidate_events(epochs)?;
         if let Some(frame) = revoked {
             self.output.push(frame, true);
         }

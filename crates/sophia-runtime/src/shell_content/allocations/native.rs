@@ -58,3 +58,27 @@ impl ContentAllocationStore {
         self.pending.get(&request_id).and_then(|v| v.native_opening)
     }
 }
+
+impl ContentAllocationStore {
+    /// Closing rejects proposals, but does not dispose live allocations before
+    /// Session has removed their pixels. Each reserved reply remains charged.
+    pub(crate) fn close_native_proposals(
+        &mut self,
+        opening: NativeLauncherOpening,
+    ) -> Result<(), ContentAllocationError> {
+        if self.profile != ContentStoreProfile::NativeLauncher
+            || opening.grant != self.limits.grant
+            || opening.opening == 0
+            || self
+                .pending
+                .values()
+                .any(|v| v.native_opening != Some(opening.opening))
+        {
+            return Err(ContentAllocationError::Stale);
+        }
+        while let Some((&id, _)) = self.pending.first_key_value() {
+            self.reject(id, ContentAllocationError::Stale)?;
+        }
+        Ok(())
+    }
+}

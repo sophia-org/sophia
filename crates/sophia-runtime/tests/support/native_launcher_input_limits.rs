@@ -14,7 +14,7 @@ fn negotiated_payload_limit_bounds_text_before_receipt_or_revision_transfer() {
     let focus = initial_focus(&mut r, &mut p, &a, &c);
     assert_eq!(
         p.transport.issue_native_launcher_input(
-            &r,
+            &mut r,
             focus,
             tx(79),
             NativeLauncherInputKind::Text,
@@ -49,7 +49,7 @@ fn negotiated_receipt_limit_also_bounds_pending_enter() {
     let first = input(&mut p, &mut r, NativeLauncherInputKind::Text, "x", 10);
     assert_eq!(
         p.transport.issue_native_launcher_input(
-            &r,
+            &mut r,
             focus,
             tx(80),
             NativeLauncherInputKind::Next,
@@ -60,7 +60,14 @@ fn negotiated_receipt_limit_also_bounds_pending_enter() {
     );
     assert!(
         p.transport
-            .issue_native_launcher_input(&r, focus, tx(81), NativeLauncherInputKind::Accept, "", 11)
+            .issue_native_launcher_input(
+                &mut r,
+                focus,
+                tx(81),
+                NativeLauncherInputKind::Accept,
+                "",
+                11
+            )
             .is_err()
     );
     assert_eq!(p.transport.native_launcher_state().unwrap().1, 2);
@@ -68,7 +75,14 @@ fn negotiated_receipt_limit_also_bounds_pending_enter() {
     assert!(ack(&mut p, &mut r, first.event, 1));
     assert_eq!(
         p.transport
-            .issue_native_launcher_input(&r, focus, tx(82), NativeLauncherInputKind::Accept, "", 12)
+            .issue_native_launcher_input(
+                &mut r,
+                focus,
+                tx(82),
+                NativeLauncherInputKind::Accept,
+                "",
+                12
+            )
             .unwrap(),
         None
     );
@@ -90,7 +104,7 @@ fn zero_negotiated_actions_do_not_inherit_the_array_capacity() {
     let focus = initial_focus(&mut r, &mut p, &a, &c);
     assert_eq!(
         p.transport.issue_native_launcher_input(
-            &r,
+            &mut r,
             focus,
             tx(83),
             NativeLauncherInputKind::Accept,
@@ -140,7 +154,7 @@ fn native_receipts_and_pointer_cancellation_share_the_pending_limit() {
         .unwrap();
     assert_eq!(
         p.transport.issue_native_launcher_input(
-            &r,
+            &mut r,
             focus,
             tx(86),
             NativeLauncherInputKind::Next,
@@ -164,7 +178,14 @@ fn native_receipts_and_pointer_cancellation_share_the_pending_limit() {
     assert!(ack(&mut p, &mut r, next.event, 1));
     assert_eq!(
         p.transport
-            .issue_native_launcher_input(&r, focus, tx(88), NativeLauncherInputKind::Accept, "", 13)
+            .issue_native_launcher_input(
+                &mut r,
+                focus,
+                tx(88),
+                NativeLauncherInputKind::Accept,
+                "",
+                13
+            )
             .unwrap(),
         None
     );

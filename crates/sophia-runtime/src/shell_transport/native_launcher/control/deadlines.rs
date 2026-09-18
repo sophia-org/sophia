@@ -7,7 +7,7 @@ impl ShellComponentTransport {
     /// also calls this boundary; idle expiration requires the owner's visits.
     pub fn service_native_launcher_deadlines(
         &mut self,
-        epochs: &crate::ContentEpochRegistry,
+        epochs: &mut crate::ContentEpochRegistry,
         expected: NativeLauncherOpening,
         transaction: TransactionId,
         now_mono_usec: u64,

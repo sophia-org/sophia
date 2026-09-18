@@ -210,7 +210,7 @@ fn refused_outcome_survives_close_without_disarming_a_new_opening() {
     );
     f.transport
         .close_native_launcher(
-            &f.epochs,
+            &mut f.epochs,
             f.opening,
             TransactionId::from_raw(2),
             ContentReason::Cancelled,
@@ -222,7 +222,7 @@ fn refused_outcome_survives_close_without_disarming_a_new_opening() {
         .as_mut()
         .unwrap()
         .max_control_records = 3;
-    f.transport.flush_native_close(&f.epochs).unwrap();
+    f.transport.flush_native_close(&mut f.epochs).unwrap();
     assert!(f.transport.native_control.opening.is_none());
     assert_eq!(
         f.transport

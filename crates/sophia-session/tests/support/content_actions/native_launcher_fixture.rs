@@ -124,7 +124,7 @@ impl Harness {
             .peer
             .transport
             .issue_native_launcher_input(
-                &self.epochs,
+                &mut self.epochs,
                 self.focus,
                 tx(10),
                 NativeLauncherInputKind::Accept,

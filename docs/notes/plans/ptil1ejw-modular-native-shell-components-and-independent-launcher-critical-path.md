@@ -437,3 +437,46 @@ reopening. This backend boundary is not the completed close protocol or live
 component owner. The full launcher integration, fresh canonical gate and
 `lom-test` readiness remain open. No KMS/GPU/display action, install, push or M3
 import occurred.
+
+### Native close cancels unsubmitted protocol work over 1e85cce4
+
+The actual transport close FIFO path now settles pending allocation proposals
+and unsubmitted candidate-store work before queuing Closed. Pending allocation
+requests receive their reserved refusal; standing demands/unused permits receive
+Cancelled permits; incomplete assemblies and accepted-but-unsubmitted candidates
+receive Cancelled outcomes. Each response transfers the existing store credit;
+close does not fabricate spare output capacity or discard an owed response.
+The exact current transport opening is validated before this path, and stored
+candidate opening/catalog/output provenance is checked before candidate mutation.
+
+Submitted candidates remain non-cancellable. Their actual leases and remaining
+Prepared/Presented obligations survive close. Active allocations also remain
+owned: Session still must observe pixel removal before disposing them. Input is
+already disarmed by the retained closing state; a late Presented cannot recreate
+focus after Closed. The close/deadline/input APIs now borrow the registry mutably
+because their deadline path can settle these store obligations; affected fixtures
+were updated without changing their assertions.
+
+Device-hidden evidence in `.artifacts/bemenu-native-close-final`: 14 runtime
+library controls, 26 native transport controls and 10 native content controls
+pass. New private-socket controls cover standing demand, unused permit,
+incomplete assembly, pending and submitted candidate, pending allocation,
+wrong-opening refusal without accounting change, no duplicate replies, and
+late exact Prepared/Presented with a retained real pixel lease. These tests
+supply protection and renderer completion; they are not protected-process,
+Session owner-loop or native display execution. Runtime/Session strict
+lib-and-tests Clippy and layout pass.
+
+The compiled cancellation-omission mutant fails the exact new socket control:
+it receives Closed where the permit cancellation must precede it. That proves
+the permit branch is discriminated, not an independent mutation of every later
+phase. The disposable source was restored; evidence is in
+`.artifacts/bemenu-native-close-mutant`. Initial borrow-signature compilation
+errors are retained separately and are not test failures of the final source.
+
+Close/reopen is still incomplete at the live Session boundary: it must retain
+and service the removal receipt, drain late input/resource records, settle active
+allocations and consumers, and prevent a fresh opening until those obligations
+permit it. Component process/catalog/focus/launch/shutdown integration and the
+final exact-source canonical plus `lom-test` harness remain required. No live
+endpoint, device, VT, installation, push or M3 import occurred.
