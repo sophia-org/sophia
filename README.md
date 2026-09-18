@@ -1,4 +1,4 @@
-# Sophia Stack
+# Sophia
 
 Sophia is a modern, transaction-driven X11 display server and compositor. It keeps X11’s flexible application model and adds explicit authority boundaries and synchronized visual commits.
 
