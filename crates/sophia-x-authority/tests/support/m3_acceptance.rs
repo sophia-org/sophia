@@ -44,3 +44,4 @@ pub(crate) use lifecycle_support::{
 include!("m3_acceptance_lifecycle.rs");
 
 include!("m3_acceptance_c.rs");
+include!("m3_acceptance_a_proofs.rs");

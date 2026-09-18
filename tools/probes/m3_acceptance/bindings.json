@@ -5,6 +5,8 @@
     "C.interrupted_ownership": "x11_socket::routing_tests::m3_acceptance::c_interrupted_ownership",
     "C.poison": "x11_socket::routing_tests::m3_acceptance::c_poison",
     "C.exact_origin": "x11_socket::routing_tests::m3_acceptance::c_exact_origin",
+    "A.press_release_repress": "x11_socket::routing_tests::m3_acceptance::a_press_release_repress",
+    "A.partial_proof": "x11_socket::routing_tests::m3_acceptance::a_partial_proof",
     "D.ready_before_exposure": "x11_socket::routing_tests::m3_acceptance::d_ready_before_exposure",
     "D.start_failures": "x11_socket::routing_tests::m3_acceptance::d_start_failures",
     "D.worker_exit": "x11_socket::routing_tests::m3_acceptance::d_worker_exit",
