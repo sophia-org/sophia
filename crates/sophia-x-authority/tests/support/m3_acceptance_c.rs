@@ -1546,6 +1546,81 @@ fn finish_labelled(
     service.finish(custodies)
 }
 
+/// What the connection's own ordered home is actually holding.
+///
+/// READ FROM THE HOME, NOT FROM A SUMMARY. A retained-release list is empty
+/// for an axis transient, which is not a held release in terminal dispatch,
+/// so comparing that list either side of a visit compares nothing. This reads
+/// the home's own standing and the capsule its serving owner still has, with
+/// the frame bytes and the progress through them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct HeldCapsule {
+    standing: PrivateHomeStanding,
+    serving: bool,
+    delivery: Option<u64>,
+    frames_owed: usize,
+    frame_index: usize,
+    frame_bytes: Option<Vec<u8>>,
+    sent: Option<usize>,
+    blocked_micros: u128,
+    /// The finalizer this capsule carried from the debt that owns it, by
+    /// address, retained beside the reading so it is compared as identity.
+    finalizer: Option<usize>,
+    answers_for_this_origin: bool,
+    in_flight: bool,
+}
+
+/// Read this connection's home. `None` when it holds no serving owner at all.
+fn held_capsule(
+    home: &Arc<PrivateOrderedHome>,
+    registry: &XServerFrontendRouteRegistry,
+) -> Option<HeldCapsule> {
+    let held = home
+        .state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let standing = held.standing;
+    let PrivateOrderedContinuation::Serving { owner, .. } = held.payload.as_ref()? else {
+        return Some(HeldCapsule {
+            standing,
+            serving: false,
+            delivery: None,
+            frames_owed: 0,
+            frame_index: 0,
+            frame_bytes: None,
+            sent: None,
+            blocked_micros: 0,
+            finalizer: None,
+            answers_for_this_origin: false,
+            in_flight: false,
+        });
+    };
+    let (capsule, in_flight) = match owner.in_flight() {
+        Some(capsule) => (capsule, true),
+        None => (owner.retained_unanswered().first()?, false),
+    };
+    let frame = capsule.send.frame.as_ref();
+    Some(HeldCapsule {
+        standing,
+        serving: true,
+        delivery: capsule.delivery().emission().delivery().map(|id| id.raw()),
+        frames_owed: capsule.delivery().emission().frame_count(),
+        frame_index: capsule.frame_index(),
+        frame_bytes: frame.map(|frame| frame.bytes.as_ref().to_vec()),
+        sent: frame.and_then(|frame| match frame.progress {
+            X11OrderedSendProgress::Sent(offset) => Some(offset),
+            X11OrderedSendProgress::Unknown { .. } => None,
+        }),
+        blocked_micros: capsule.send.blocked.as_micros(),
+        finalizer: capsule
+            .delivery()
+            .finalizer()
+            .map(|held| Arc::as_ptr(held) as usize),
+        answers_for_this_origin: capsule.delivery().emission().answers_for(registry),
+        in_flight,
+    })
+}
+
 /// One retained release, named by what identifies it rather than summarised.
 ///
 /// EQUAL SUMMARIES ARE NOT THE SAME RECORD. A phase, a pending flag and an
@@ -2037,6 +2112,13 @@ fn blocked_recipient_attempt(
     let closed = blocked.closed();
     let attempts_after_close = send_entries_so_far();
     let before = retained_dispatch(&blocked);
+    // THE HOME AND THE CAPSULE IT STILL HOLDS, read from the home itself.
+    // The retained-release list is empty for an axis transient, so comparing
+    // it either side of the visit compares nothing; this is the custody the
+    // row is actually about.
+    let home = Arc::clone(&custody.cleanup_record().ordered_home);
+    let capsule_before = held_capsule(&home, &blocked.registry)
+        .unwrap_or_else(|| panic!("{label}: this connection's home still holds its serving owner"));
 
     // ARMED AGAIN, AROUND THE VISIT ALONE. Whether the store looks the same
     // afterwards settles nothing for this capsule: an axis capsule is not a
@@ -2096,6 +2178,8 @@ fn blocked_recipient_attempt(
     );
     let drive = store.drive();
     let after = retained_dispatch(&blocked);
+    let capsule_after = held_capsule(&home, &blocked.registry)
+        .unwrap_or_else(|| panic!("{label}: the home still holds it after the visit"));
     let (observed_frames, send_entries, queue_handovers) = take_observations();
 
     let wanted = stalled_delivery.map(XAuthorityInputDeliveryId::from_raw);
@@ -2185,6 +2269,45 @@ fn blocked_recipient_attempt(
         after, before,
         "{label}: the retained reading is unchanged across the visit"
     );
+    // THE EXACT CAPSULE, and exactly what it still owes. One of its two
+    // frames went; the second is the one in hand, none of its bytes sent, its
+    // full length still owed, carrying the finalizer of the debt that owns it
+    // and answering for this invocation's own origin.
+    assert_eq!(
+        capsule_before.delivery, stalled_delivery,
+        "{label}: the capsule the home holds is the one that stalled: {capsule_before:?}"
+    );
+    assert!(
+        capsule_before.serving && capsule_before.answers_for_this_origin,
+        "{label}: held by this connection's own serving owner: {capsule_before:?}"
+    );
+    assert_eq!(
+        (capsule_before.frames_owed, capsule_before.frame_index),
+        (2, 1),
+        "{label}: it owed two frames and is holding the second: {capsule_before:?}"
+    );
+    assert_eq!(
+        capsule_before.sent,
+        Some(0),
+        "{label}: with none of that frame's bytes sent: {capsule_before:?}"
+    );
+    assert_eq!(
+        capsule_before.frame_bytes.as_ref().map(Vec::len),
+        Some(32),
+        "{label}: and its full length still in hand: {capsule_before:?}"
+    );
+    assert!(
+        capsule_before.finalizer.is_some(),
+        "{label}: carrying the finalizer of the debt that owns it: {capsule_before:?}"
+    );
+    assert!(
+        capsule_before.blocked_micros > 0,
+        "{label}: having actually waited on its recipient: {capsule_before:?}"
+    );
+    assert_eq!(
+        capsule_after, capsule_before,
+        "{label}: and the charged visit left every one of those unchanged"
+    );
     // ANSWERED ONCE. A resend that did reach the recipient would publish a
     // second receipt for the same delivery; none arrives.
     let second_receipt = blocked
@@ -2246,6 +2369,8 @@ fn blocked_recipient_attempt(
             .take(4)
             .collect::<Vec<_>>(),
         "retained_after_exit": format!("{before:?}"),
+        "held_capsule_before_visit": format!("{capsule_before:?}"),
+        "held_capsule_after_visit": format!("{capsule_after:?}"),
         "maintenance_visit": format!("{visit:?}"),
         "what_the_visit_reported": visit.detail.clone(),
         "typed_visit_refusal": format!("{:?}", visit.output_refusal),
@@ -2283,7 +2408,7 @@ fn blocked_recipient_attempt(
             .collect::<Vec<_>>(),
         "committed_frames_retried": resent_committed,
         "second_receipt_for_it": second_receipt.map(|receipt| format!("{receipt:?}")),
-        "no_replay_rests_on": "the attempt this invocation's own charged visit made, recorded before the write so a resend cannot hide behind a closed socket; what that visit reported doing with the frame it still held; and the delivery being answered once. It does NOT rest on the retained readings either side, which are empty for an axis capsule because it is not a held release in terminal dispatch.",
+        "no_replay_rests_on": "the attempt this invocation's own charged visit made, recorded before the write so a resend cannot hide behind a closed socket; the typed result that visit reported for the frame it still held; the capsule the home itself still holds, compared either side of the visit by delivery, frames owed, frame index, exact frame bytes, send progress, accumulated wait and carried finalizer; and the delivery being answered once. The retained-release list is empty for an axis transient and establishes nothing here, which is why it is not what this rests on.",
         "durable_drive": format!("{drive:?}"),
         "closed_error": closed.error.clone(),
         "what_a_prefix_means_here": "one whole frame of a capsule that owed more than one, with the rest stopped. The seam reports whole frames of the exact watched invocation and no byte offset, so nothing below claims a split inside a frame.",
