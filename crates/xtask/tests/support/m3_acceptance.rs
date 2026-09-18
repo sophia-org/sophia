@@ -374,6 +374,28 @@ fn component_names_are_closed_nonempty_unique_and_not_acceptance_aliases() {
 }
 
 #[test]
+fn session_components_select_one_exact_library_and_never_the_acceptance_row() {
+    use super::components;
+    let session = "private_input::tests::running_worker_is_collected".to_owned();
+    let projection =
+        "private_input::committed::generations::tests::source_generation_is_separate".to_owned();
+    components::validate_names(&[session.clone(), projection]).unwrap();
+    assert!(components::validate_names(&["private_input::tests::lifetime".into()]).is_err());
+    assert!(
+        components::validate_names(&[
+            session.clone(),
+            "x11_socket::routing_tests::component_control".into(),
+        ])
+        .is_err()
+    );
+    let mut config = component_config();
+    config.component_tests = vec![session];
+    assert!(components::session_target(&config));
+    config.component_suite = None;
+    assert!(!components::session_target(&config));
+}
+
+#[test]
 fn diagnostics_require_the_exact_separate_module_and_valid_names() {
     use super::components;
     for suffix in ["unknown_handover", "recipient::original_termination"] {

@@ -12,6 +12,7 @@ use sophia_x_authority::{PrivateAdmittedConnection, XAuthorityObservedTransactio
 struct SourceGeneration {
     admission: ClientAdmissionId,
     previous: u64,
+    removed: bool,
 }
 
 #[derive(Default)]
@@ -28,6 +29,7 @@ impl GenerationLedger {
     ) -> Result<AuthorityTransactionIntake, TransactionOutcome> {
         let mut transactions = batch.transactions.clone();
         let mut surfaces = BTreeSet::new();
+        let mut new_sources = 0;
         for transaction in &mut transactions {
             if transaction.transaction != batch.transaction || !surfaces.insert(transaction.surface)
             {
@@ -53,11 +55,15 @@ impl GenerationLedger {
             if let Some(prior) = self.sources.get(&transaction.surface) {
                 if prior.admission != admission.client_id
                     || transaction.previous_committed_generation <= prior.previous
+                    || prior.removed
                 {
                     return Err(TransactionOutcome::RejectedStaleSurface);
                 }
-            } else if self.sources.len() + surfaces.len() > super::PRIVATE_INPUT_BRIDGE_BOUND {
-                return Err(TransactionOutcome::RejectedInvalidSurface);
+            } else {
+                new_sources += 1;
+                if self.sources.len() + new_sources > super::PRIVATE_INPUT_BRIDGE_BOUND {
+                    return Err(TransactionOutcome::RejectedInvalidSurface);
+                }
             }
             // X's raster generation advances when it publishes an update;
             // Engine advances only when it commits one. The FIFO owner binds
@@ -93,6 +99,7 @@ impl GenerationLedger {
                     SourceGeneration {
                         admission: admission.client_id,
                         previous: transaction.previous_committed_generation,
+                        removed: false,
                     },
                 );
             }
@@ -102,8 +109,14 @@ impl GenerationLedger {
             .any(|commit| commit.outcome == TransactionOutcome::Committed)
         {
             for surface in &batch.removed_surfaces {
-                self.sources.remove(surface);
+                if let Some(source) = self.sources.get_mut(surface) {
+                    source.removed = true;
+                }
             }
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/private_input_generations.rs"]
+mod tests;

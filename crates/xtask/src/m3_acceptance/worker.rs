@@ -349,15 +349,18 @@ fn build_private_host(config: &Config, report: &mut Report) -> Result<(), String
 }
 
 fn build(config: &Config, report: &mut Report) -> Result<PathBuf, String> {
+    let session_component = super::components::session_target(config);
     let package = if config.self_test {
         "xtask"
-    } else if config.gate == Gate::M4 {
+    } else if config.gate == Gate::M4 || session_component {
         "sophia-session"
     } else {
         "sophia-x-authority"
     };
     let target = if config.self_test {
         "xtask"
+    } else if session_component {
+        "sophia_session"
     } else if config.gate == Gate::M4 {
         "private_input_acceptance"
     } else {
@@ -375,7 +378,7 @@ fn build(config: &Config, report: &mut Report) -> Result<PathBuf, String> {
     ]);
     if config.self_test {
         command.args(["--bin", "xtask"]);
-    } else if config.gate == Gate::M4 {
+    } else if config.gate == Gate::M4 && !session_component {
         command.args(["--test", "private_input_acceptance"]);
     } else {
         command.arg("--lib");

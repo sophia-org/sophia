@@ -172,6 +172,23 @@
       "x11_socket::routing_tests::stopped_service_held_pointer_reconciles_and_disposes_exact_native_record",
       "x11_socket::routing_tests::private_native_tests::stopped_donor_scan_retains_exact_dependents_and_progresses_past_foreign_residuals"
     ],
+    "private-session-generations": [
+      "private_input::committed::generations::tests::source_generation_is_separate",
+      "private_input::committed::generations::tests::rejected_source_is_not_reprepared_but_new_source_can_commit",
+      "private_input::committed::generations::tests::stale_admission_and_duplicate_surface_refuse_the_whole_batch",
+      "private_input::committed::generations::tests::a_removed_incarnation_cannot_be_reprepared",
+      "private_input::committed::generations::tests::engine_still_rejects_an_overtaken_prepared_candidate"
+    ],
+    "private-session-lifetime": [
+      "private_input::tests::running_worker_is_collected",
+      "private_input::tests::dropping_the_controller_stops_even_while_a_submission_is_held",
+      "private_input::tests::stopping_twice_joins_once",
+      "private_input::tests::an_unreadable_bridge_retains_custody_rather_than_reporting_nothing_owed",
+      "private_input::tests::an_unreadable_surface_ledger_refuses_rather_than_reporting_an_empty_one",
+      "private_input::tests::a_control_for_a_departed_connection_is_refused",
+      "private_input::tests::a_primary_absent_from_the_topology_is_refused_rather_than_replaced",
+      "private_input::tests::a_multihead_topology_is_refused_rather_than_narrowed_to_one_head"
+    ],
     "private-session-bind": [
       "x11_socket::routing_tests::private_exclusive_bind::exclusive_bind_refuses_an_occupied_path_and_keeps_the_first_owner",
       "x11_socket::routing_tests::private_exclusive_bind::exclusive_bind_refuses_a_stale_path_rather_than_reclaiming_it",

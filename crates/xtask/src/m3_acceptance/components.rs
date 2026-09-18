@@ -49,15 +49,39 @@ pub(super) fn validate_names(tests: &[String]) -> Result<(), String> {
         || tests.len() > 256
         || tests.iter().collect::<BTreeSet<_>>().len() != tests.len()
         || tests.iter().any(|test| !component_name(test))
+        || tests
+            .iter()
+            .any(|test| session_name(test) != session_name(&tests[0]))
     {
         return Err("component suite must contain 1..=256 unique exact component names".into());
     }
     Ok(())
 }
 
+fn session_name(test: &str) -> bool {
+    test.starts_with("private_input::tests::")
+        || test.starts_with("private_input::committed::generations::tests::")
+}
+
+pub(super) fn session_target(config: &Config) -> bool {
+    config.component_suite.is_some()
+        && config
+            .component_tests
+            .first()
+            .is_some_and(|test| session_name(test))
+}
+
 fn component_name(test: &str) -> bool {
-    let Some(path) = test.strip_prefix("x11_socket::routing_tests::") else {
-        return false;
+    let path = if session_name(test) {
+        if test == "private_input::tests::lifetime" {
+            return false;
+        }
+        test
+    } else {
+        let Some(path) = test.strip_prefix("x11_socket::routing_tests::") else {
+            return false;
+        };
+        path
     };
     // A diagnostic can borrow private acceptance fixtures without becoming
     // an acceptance case. Only this separate module is allowed; every test
