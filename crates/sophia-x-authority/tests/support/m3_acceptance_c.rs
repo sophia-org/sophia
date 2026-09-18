@@ -1252,3 +1252,153 @@ fn c_exact_origin() {
         &actors,
     );
 }
+
+
+/// The part of `C.indeterminate_send` that the production service can reach
+/// today. NOT BOUND as that case: two of its four required subcases --
+/// `partial_send_not_replayed` and `unknown_send_not_replayed` -- need a
+/// delivery whose transmission is partial or unreported, and neither state is
+/// reachable from an integrated test on this source. `PrivateDispatchPhase::
+/// Indeterminate` arises only from an interruption between the handover and
+/// the record of its result, which has no production seam; and the ordered
+/// writer's `Blocked` limit needs a recipient that stops taking bytes while
+/// the ordered path keeps flowing, which one connection cannot be driven into
+/// from the producer side while a grant holds one live request at a time.
+///
+/// What is established here is the other half of the requirement, on the real
+/// service, so it is ready to be promoted the moment those two are reachable.
+#[test]
+fn c_indeterminate_send_reachable_controls() {
+    let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+    let mut service = LifecycleService::launch_over_store(
+        "c-indeterminate",
+        12050,
+        None,
+        false,
+        1,
+        store.clone(),
+    );
+    service.start();
+    let (mut peer, custody) = service.connect();
+    let (surface, sequence, ingress) = focus_window(&service, &mut peer, 0x320701, 12050);
+    let client = custody.cleanup_record().client;
+    let producers = leased_producers(&service, client, C_PRODUCERS);
+
+    // ENQUEUED WORK IS OBSERVED, NOT RESENT. One press and one release put
+    // exactly one copy of each on the recipient's socket. The runner goes on
+    // taking turns afterwards; no further copy appears and no further receipt
+    // is published, because what an enqueued capsule still owes is its
+    // receipt and nothing keeps a replayable copy of the event.
+    observe_turns(&service.registry);
+    let delivered = press_and_release(
+        &service,
+        &ingress,
+        &mut peer,
+        surface,
+        sequence,
+        0x320701,
+        12060,
+    );
+    assert!(waited_for(|| store.reserved() == Some(0)));
+    let extra_wire = read_event(&mut peer, 1);
+    let extra_receipt = service.deliveries.recv_timeout(Duration::from_millis(200));
+    assert_eq!(extra_wire, None, "an enqueued capsule is not sent again");
+    assert!(
+        extra_receipt.is_err(),
+        "and its receipt was published once: {extra_receipt:?}"
+    );
+    let turns = take_turns(&service.registry);
+    let dispatched: usize = turns.iter().map(|turn| turn.dispatched).sum();
+    assert_eq!(
+        dispatched, 2,
+        "exactly the press and the release reached a recipient queue"
+    );
+
+    // A REFUSED OUTCOME PUBLICATION STAYS OWNED. The recipient selected
+    // buttons, so motion is refused by the actual source; its refusal is then
+    // published through the completion the request was admitted with. With
+    // that admission removed from the ledger the publication cannot happen,
+    // and the item, its actual outcome and its credit stay exactly where they
+    // were rather than being discarded or counted as answered.
+    let held = hold_runner(&service);
+    let entered = held.entered();
+    let refused_delivery = XAuthorityInputDeliveryId::from_raw(12070);
+    producers[1]
+        .submit(&service.owner.lease(), motion_to(surface, refused_delivery))
+        .expect("the order accepts a request the source will refuse");
+    let cell = delivery_cell(&service.registry, 12070).expect("its own completion");
+    let taken = service
+        .registry
+        .input_recovery
+        .state
+        .lock()
+        .expect("a readable ledger")
+        .tickets
+        .remove(&refused_delivery)
+        .expect("the admission this request was given");
+    held.release();
+
+    // Give the runner real turns to try, and fail, to publish.
+    let (report, reported) = sync_channel(1);
+    arm_runner(
+        &service.registry,
+        Box::new(move |runner, lease| {
+            for _ in 0..4 {
+                let _ = runner.service_turn(lease);
+            }
+            let private = runner.frontend();
+            report
+                .send((
+                    private.terminal.undelivered.len(),
+                    private.terminal.turn.len(),
+                    private.terminal.current.is_some(),
+                ))
+                .expect("the case is waiting for this reading");
+        }),
+    );
+    let (undelivered, in_turn, current) = reported
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the actual runner reported what it still owns");
+    let charged_while_unpublishable = store.reserved();
+    assert_eq!(
+        cell.answer(),
+        None,
+        "nothing was published for it, and nothing was invented in its place"
+    );
+    assert!(
+        undelivered + in_turn + usize::from(current) >= 1,
+        "the item itself is retained by the executor that could not publish it"
+    );
+    assert_eq!(
+        charged_while_unpublishable,
+        Some(1),
+        "and it is still holding the one credit it took"
+    );
+
+    // Its admission goes back. What is retained is the item's own outcome
+    // against its own completion; nothing was answered while it was gone.
+    service
+        .registry
+        .input_recovery
+        .state
+        .lock()
+        .expect("a readable ledger")
+        .tickets
+        .insert(refused_delivery, taken);
+    assert_eq!(
+        cell.answer(),
+        None,
+        "restoring the admission publishes nothing by itself"
+    );
+
+    service.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    let closed = service.closed();
+    let retained = interrupted_custody(&service);
+    assert!(
+        retained.charged.is_some(),
+        "the store still says what it holds"
+    );
+    let _ = (delivered, entered, closed);
+    let actors = service.finish(&[custody]);
+    assert!(!actors.is_empty());
+}
