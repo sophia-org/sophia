@@ -16,6 +16,9 @@ pub(super) struct KeyHold {
     evdev: u32,
     key: u8,
     plan: KeyPlan,
+    /// Nearest registered compositor surface of the selected X window, read
+    /// under the caller's surfaces guard and this source's exact tree guard.
+    reached_surface: Option<SurfaceId>,
     activation: Option<crate::KeyboardActivation>,
     route_lease: Option<sophia_protocol::ApplicationRouteLeaseIdentity>,
     status: Status,
@@ -23,6 +26,7 @@ pub(super) struct KeyHold {
     activation_retirement: Option<KeyActivationRetirement>,
     press_emission: Option<PrivateOrderedEmission>,
     release_emission: Option<PrivateOrderedEmission>,
+    release_xkb_applied: bool,
 }
 
 pub(super) struct KeyActivationRetirement {
@@ -36,6 +40,17 @@ impl KeyHold {
     }
     pub(super) fn delivered_window(&self) -> XResourceId {
         self.plan.target.window
+    }
+    pub(super) fn reached_surface(&self) -> Option<SurfaceId> {
+        self.reached_surface
+    }
+    pub(super) fn namespace(&self) -> NamespaceId {
+        self.origin.namespace
+    }
+    /// Positive evidence that this source's release mapping returned. False
+    /// does not prove an interrupted source call had no effect.
+    pub(super) fn release_xkb_applied(&self) -> bool {
+        self.release_xkb_applied
     }
     pub(super) fn connection(&self) -> RetainedConnection {
         RetainedConnection {
@@ -145,6 +160,7 @@ impl BaseGuards<'_> {
         permit: &mut ExecutionPermit<'_>,
         capability: DeviceCapability,
         route: &XAuthorityRoutedInput,
+        surfaces: &BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>,
         keyboards: &mut PrivateKeyboards,
         storage: &mut Option<KeyHold>,
         may_have_applied: &Cell<bool>,
@@ -237,6 +253,7 @@ impl BaseGuards<'_> {
                 permit,
                 capability,
                 route,
+                surfaces,
                 keyboard,
                 storage,
                 may_have_applied,
@@ -273,6 +290,7 @@ impl BaseGuards<'_> {
                 permit,
                 capability,
                 route,
+                surfaces,
                 keyboard,
                 storage,
                 may_have_applied,
@@ -294,6 +312,7 @@ impl BaseGuards<'_> {
         permit: &mut ExecutionPermit<'_>,
         capability: DeviceCapability,
         route: &XAuthorityRoutedInput,
+        surfaces: &BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>,
         keyboard: &mut crate::XkbKeyboardState,
         storage: &mut Option<KeyHold>,
         may_have_applied: &Cell<bool>,
@@ -348,6 +367,19 @@ impl BaseGuards<'_> {
             &prepared,
             position,
         )?;
+        // Describe the window already selected above. This lookup neither
+        // chooses another recipient nor substitutes the pointer's surface.
+        let reached_surface = selections
+            .ordered_ancestry(plan.target.window)
+            .map_err(Refusal::Resolution)?
+            .as_slice()
+            .iter()
+            .find_map(|window| {
+                surfaces.iter().find_map(|(surface, route)| {
+                    (route.namespace == self.origin.namespace && route.window == *window)
+                        .then_some(*surface)
+                })
+            });
         match self
             .origin
             .registry
@@ -375,6 +407,7 @@ impl BaseGuards<'_> {
             evdev,
             key,
             plan,
+            reached_surface,
             activation: None,
             route_lease: route.route_lease,
             status: Status::PressEntered,
@@ -382,6 +415,7 @@ impl BaseGuards<'_> {
             activation_retirement: None,
             press_emission: None,
             release_emission: None,
+            release_xkb_applied: false,
         });
         may_have_applied.set(true);
         let applied = permit

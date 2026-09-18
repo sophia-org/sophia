@@ -1157,6 +1157,11 @@ include!("tests/private_producer_runner.rs");
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_key_service.rs"
+));
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/tests/support/dispatch_ticket_failure.rs"
 ));
 

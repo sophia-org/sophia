@@ -194,6 +194,7 @@ fn resolve_and_apply(
     native_pending: &mut PrivateNativePending,
     pending_custody: &mut Option<PrivateDeliveryCustody>,
     next_event_order: &mut u64,
+    keyboards: &mut PrivateKeyboards,
     notes: &mut PrivateTransactionNotes<'_>,
 ) -> Result<(), sophia_input_authority::RegistrationError> {
     let unavailable = sophia_input_authority::RegistrationError::RoutingUnavailable;
@@ -746,7 +747,7 @@ fn resolve_and_apply(
                 let reached = PrivateReachedResources {
                     client: XServerFrontendClientId::from_raw(incarnation.recipient),
                     window: reached_window,
-                    surface: route.request.target_surface,
+                    surface: Some(route.request.target_surface),
                     namespace: surface_route.namespace,
                     seat: route.request.seat,
                     grant,
@@ -802,11 +803,12 @@ fn resolve_and_apply(
             });
             Ok(())
         }
-        // Refused before the transaction was entered, with their own causes.
-        // Reaching here would mean something admitted a kind this path does
-        // not run.
-        InputEventKind::Key { .. }
-        | InputEventKind::PointerMotion
+        InputEventKind::Key { .. } => resolve_and_apply_key(
+            permit, bindings, registry, holds, settling, route, grant, capability,
+            native, native_pending, pending_custody, next_event_order, keyboards, notes,
+        ),
+        // Unsupported kinds were refused before entering the transaction.
+        InputEventKind::PointerMotion
         | InputEventKind::PointerAxis { .. } => {
             Err(sophia_input_authority::RegistrationError::StaleExecution)
         }
@@ -846,17 +848,17 @@ fn execute_owned(
             return Err(PrivateExecutionRefusal::SeatUnavailable);
         }
 
-        // Refused before the transaction, so each reason is its own. Deciding
-        // these inside would mean borrowing an authority error to stand for a
-        // question the authority was never asked -- and a caller acting on a
-        // release barrier that is really an unapplied focus looks in entirely
-        // the wrong place.
+        // Unsupported kinds and modes refuse before the transaction. A key's
+        // applied focus is checked by its source under the native guards.
         match route.request.kind {
-            InputEventKind::PointerButton { .. } => {}
-            InputEventKind::Key { .. } => return Err(PrivateExecutionRefusal::FocusNotApplied),
+            InputEventKind::PointerButton { .. } | InputEventKind::Key { .. } => {}
             InputEventKind::PointerMotion | InputEventKind::PointerAxis { .. } => {
                 return Err(PrivateExecutionRefusal::Unmappable);
             }
+        }
+
+        if route.mode == XAuthorityRoutedInputMode::StateOnly {
+            return Err(PrivateExecutionRefusal::StateOnlyUnsupported);
         }
 
         // Claimed, not consulted. Accepted work waits its turn in the shared
@@ -908,6 +910,7 @@ fn execute_owned(
                     native_pending,
                     pending_custody,
                     next_event_order,
+                    keyboards,
                     &mut notes,
                 )
             })

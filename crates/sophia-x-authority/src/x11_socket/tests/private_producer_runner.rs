@@ -2,18 +2,15 @@
 // reclamation visit (held, retired, reused; refused by the allowance;
 // unwatched; interrupted), a control the supervisor will not watch, and the
 // two retained diagnostics of this checkpoint's input limitations (keys
-// refused by the runner's blanket key refusal; an overlapping-button
+// without a native pointer observation; an overlapping-button
 // release never delivered). Harness in `private_producer_service.rs`.
 
 /// RETAINED DIAGNOSTIC, NOT A DELIVERY CLAIM: a key through the service.
 /// The window selects KeyPress/KeyRelease, the applied focus names it and
-/// was acknowledged, and the runner still refuses the key: the ordered
-/// execution refuses every `InputEventKind::Key` as FocusNotApplied before
-/// any focus transaction (its blanket key refusal), so no key reaches a
-/// client through this service today. The prepared XKB history is not
-/// exercised by this path; keyboard integration is a remaining item.
+/// was acknowledged, but no native pointer source has observed the pointer.
+/// The native keyboard source refuses MissingQueryScope before applying.
 #[test]
-fn a_key_through_the_service_is_refused_by_the_runners_blanket_key_refusal() {
+fn a_key_through_the_service_requires_a_native_pointer_observation() {
     let (launched, socket_path) = launch_producing("producer-key", 9610, 4);
     launched.access.await_ready(Duration::from_secs(15)).expect("readiness");
     let mut client = connect_private_client(&socket_path);
@@ -61,8 +58,8 @@ fn a_key_through_the_service_is_refused_by_the_runners_blanket_key_refusal() {
     assert_eq!(order.refused, 1);
     assert_eq!(
         order.last_refusal,
-        Some(PrivateExecutionRefusal::FocusNotApplied),
-        "the runner's blanket key refusal, with focus applied (masks {event_mask:#x}): {order:?}"
+        Some(PrivateExecutionRefusal::Native(private_native::Refusal::MissingQueryScope)),
+        "the native source requires a pointer observation (masks {event_mask:#x}): {order:?}"
     );
     let _ = std::fs::remove_file(&socket_path);
 }
