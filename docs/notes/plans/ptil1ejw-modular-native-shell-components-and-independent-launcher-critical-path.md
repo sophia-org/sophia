@@ -223,6 +223,14 @@ services, presented focus/launch authority and the Bemenu backend remain on the
 critical path. The ten store controls use supplied
 renderer transitions and do not qualify a physical run.
 
+The next transport slice retains actual candidate Presented metadata for exact
+focus installation, bounded semantic input/ACK receipts and a pending Enter tied
+to its issued revision. Closing and timeout disarm that exact opening while
+keeping notification credits in the same FIFO. These are private socket controls
+with supplied renderer completions; physical keyboard/capture routing, idle
+deadline visits in Session, application admission and Bemenu remain to be joined.
+See the [focus ownership record](../investigations/v7m2c9ra-native-launcher-wire-contract.md#native-focus-and-input-over-6c65ccad).
+
 ## Dependencies and boundaries
 
 Sequence: t104 → t105 → t106 → t107 → t108. t106 also depends on existing anchored

@@ -231,3 +231,51 @@ ignoring operator refusal, accepting a foreign grant, removing the payload bound
 doubling the negotiated record bound and suppressing EOF notification. The source snapshot is restored after
 each mutation. These are deterministic private-socket accounting/role controls,
 not evidence of natural kernel saturation or physical input dispatch.
+
+## Native focus and input over 6c65ccad
+
+The transport now retains non-owning metadata from the actual candidate store's
+successful Presented transition. Prepared cannot install focus. Focus names the
+exact grant, opening, output, allocation, catalog, candidate, presentation,
+interaction, state revision and a checked connection-local lease. The matching
+Presented outcome enters the common FIFO first. A newer Presented disarms the
+previous focus until the matching new focus is installed; stale callbacks must
+also supply and match their original focus or opening, rather than acting on
+whatever happens to be current.
+
+Native control records use a 512-byte accounting envelope, sufficient for the
+largest bounded UTF-8 input. Opening reserves its future Closed response; focus
+reserves FocusRevoked; an unsent Enter reserves its eventual Input response.
+These credits share the existing aggregate record/byte limits with resource,
+candidate and FIFO owners. Encoding/refusal retains the producer; successful
+enqueue is followed by Copy-state transfer without callbacks or I/O. Close
+disarms first and retains refused notifications for polling. This is a returned
+failure contract, not panic recovery or proof of displayed-resource withdrawal.
+
+Sixteen fixed input receipts retain exact events across model replacement.
+Wrong or duplicate ACKs cannot settle a different receipt. ACKed Accept metadata
+remains distinct from application admission, which is not implemented here.
+Enter while edits are awaiting presentation is retained against that exact
+revision, with its original transaction and issuance time. Only matching focus
+can issue it; another edit cancels the intent. Empty selection cannot retarget it.
+Native candidate intake and renderer handoff check the transport's issued state,
+not merely a caller-supplied revision.
+
+The monotonic deadline visit checks unacknowledged input against the negotiated
+ACK timeout and pending Enter against the presentation timeout. New issuance
+also visits it. Expiry closes the exact opening; clock regression or a stale
+opening cannot close a successor. Idle timeout enforcement still requires the
+Session owner to call this visit before input/ACK service. Pixel consumers remain
+owned independently; no resource release or launch is inferred from closing.
+
+Nineteen private-socket controls pass, eleven new in this slice. They use real
+stores, FIFO and encoded input/ACKs with supplied geometry, catalog, protection
+and renderer transitions. Six compiled mutations fail their intended controls:
+omitting expected focus, omitting expected opening, comparing only an ACK event
+number, issuing Enter before its revision is presented, omitting timeout, and
+trusting a stale caller revision at intake. Each disposable source is restored.
+Evidence is under `.artifacts/bemenu-native-focus/`. The socket saturation control
+counts all successfully queued bulk records, including those already written to
+the kernel, before checking the two reserved terminal notifications. It is not
+a latency or owner-loop fairness test. No physical input, supervised launcher,
+catalog execution, native display or Bemenu backend has run in these controls.

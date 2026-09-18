@@ -345,6 +345,9 @@ impl ShellComponentTransport {
         if connected && !self.control_capacity_available(epochs, 0) {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
+        let native_presented = epochs.candidates_mut(grant).and_then(|s| {
+            s.native_presented_metadata(output, candidate_generation, presentation_epoch)
+        });
         epochs
             .candidates_mut(grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -356,6 +359,9 @@ impl ShellComponentTransport {
                 wm_commit_generation,
             )?;
         if connected {
+            if let Some(shown) = native_presented {
+                self.native_control.presented = Some(shown);
+            }
             self.flush_content_candidate_events(epochs)?;
         }
         epochs.collect();

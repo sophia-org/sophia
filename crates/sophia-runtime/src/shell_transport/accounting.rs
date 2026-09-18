@@ -1,7 +1,7 @@
 //! Snapshot the existing epoch, input and aggregate response owners.
 
 use super::ShellComponentTransport;
-use super::{ShellSessionTransport, control_budget::CONTROL_FRAME_BYTES};
+use super::ShellSessionTransport;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ShellContentShutdown {
@@ -71,7 +71,8 @@ impl ShellComponentTransport {
         let (bulk_records, bulk_bytes) = epochs.bulk_occupancy(self.store_grant);
         let reserved = epochs.control_occupancy(self.store_grant)
             + self.action_cancellations.len()
-            + usize::from(self.indicator_response.is_some());
+            + usize::from(self.indicator_response.is_some())
+            + self.native_control.credits();
         let controls = reserved - bulk_records + self.output.controls();
         let negotiating = usize::from(self.negotiation.is_some());
         ShellContentAccounting {
@@ -81,7 +82,7 @@ impl ShellComponentTransport {
                 + negotiating * super::negotiation_service::REPLY_RECORDS,
             response_bytes: bulk_bytes
                 + self.output.bulk_bytes()
-                + controls * CONTROL_FRAME_BYTES
+                + controls * self.control_frame_bytes()
                 + negotiating * super::negotiation_service::REPLY_BYTES,
             input_records: self.inbox.len() + negotiating,
             input_bytes: self.input.len()

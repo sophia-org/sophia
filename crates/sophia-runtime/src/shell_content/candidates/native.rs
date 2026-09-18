@@ -218,3 +218,28 @@ pub(super) fn validate_binding(
         _ => Err(ContentCandidateError::Stale),
     }
 }
+
+impl ContentCandidateStore {
+    pub(crate) fn native_presented_metadata(
+        &self,
+        output: ContentOutputId,
+        generation: u64,
+        presentation_epoch: u64,
+    ) -> Option<crate::shell_transport::native_launcher::control::NativePresented> {
+        let candidate = self.submitted.get(&output)?;
+        if candidate.begin.candidate_generation != generation {
+            return None;
+        }
+        Some(
+            crate::shell_transport::native_launcher::control::NativePresented {
+                grant: candidate.begin.grant,
+                output,
+                allocation: candidate.surfaces.first()?.allocation,
+                candidate_generation: generation,
+                presentation_epoch,
+                interaction_generation: candidate.begin.interaction_generation,
+                content: candidate.native_launcher?,
+            },
+        )
+    }
+}

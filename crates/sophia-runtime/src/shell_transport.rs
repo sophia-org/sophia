@@ -29,7 +29,7 @@ mod accounting;
 mod connection;
 pub use connection::ShellTransportConnection;
 mod legacy;
-mod native_launcher;
+pub(crate) mod native_launcher;
 mod negotiation;
 mod negotiation_policy;
 mod negotiation_service;
@@ -117,6 +117,7 @@ pub struct ShellComponentTransport {
     output: outbox::ShellOutbox,
     action_cancellations: Vec<sophia_protocol::ContentAction>,
     indicator_response: Option<indicator_responses::PendingIndicatorResponse>,
+    native_control: native_launcher::control::NativeControl,
     inbox: VecDeque<Vec<u8>>,
     connection_epoch: u64,
     reserved_limits: Option<ContentLimits>,
@@ -157,6 +158,7 @@ impl ShellComponentTransport {
             output: outbox::ShellOutbox::default(),
             action_cancellations: Vec::with_capacity(16),
             indicator_response: None,
+            native_control: native_launcher::control::NativeControl::default(),
             inbox: VecDeque::new(),
             connection_epoch: 0,
             reserved_limits: None,
@@ -394,6 +396,7 @@ impl ShellComponentTransport {
         self.output.clear();
         self.action_cancellations.clear();
         self.indicator_response = None;
+        self.native_control = native_launcher::control::NativeControl::default();
         self.inbox.clear();
         self.requested_candidate = None;
         self.pending_candidate = None;
@@ -502,6 +505,8 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::NotConnected);
         }
         self.flush_indicator_response(epochs)?;
+        self.flush_native_close(epochs)?;
+        self.flush_native_accept(epochs)?;
         let stream = self
             .stream
             .as_mut()

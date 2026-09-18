@@ -5,6 +5,14 @@ use super::ShellComponentTransport;
 pub(super) const CONTROL_FRAME_BYTES: usize = 256;
 
 impl ShellComponentTransport {
+    pub(super) fn control_frame_bytes(&self) -> usize {
+        if self.supports_native_launcher() {
+            512
+        } else {
+            CONTROL_FRAME_BYTES
+        }
+    }
+
     /// Existing reducer credits name exact accepted obligations. Queued events
     /// remain charged there until custody moves into the same wire FIFO.
     pub(super) fn control_capacity_available(
@@ -18,15 +26,16 @@ impl ShellComponentTransport {
         let (bulk_records, bulk_bytes) = epochs.bulk_occupancy(self.store_grant);
         let reserved = epochs.control_occupancy(self.store_grant)
             + self.action_cancellations.len()
-            + usize::from(self.indicator_response.is_some());
+            + usize::from(self.indicator_response.is_some())
+            + self.native_control.credits();
         let controls = reserved - bulk_records + self.output.controls() + additional;
         let records = reserved + self.output.records() + additional;
         records <= limits.max_control_records as usize
-            && controls.saturating_mul(CONTROL_FRAME_BYTES)
+            && controls.saturating_mul(self.control_frame_bytes())
                 <= limits.reserved_control_queue_bytes as usize
             && bulk_bytes
                 .saturating_add(self.output.bulk_bytes())
-                .saturating_add(controls.saturating_mul(CONTROL_FRAME_BYTES))
+                .saturating_add(controls.saturating_mul(self.control_frame_bytes()))
                 <= limits.max_output_queue_bytes as usize
     }
 
@@ -45,7 +54,8 @@ impl ShellComponentTransport {
         let (bulk_records, bulk_bytes) = epochs.bulk_occupancy(self.store_grant);
         let reserved = epochs.control_occupancy(self.store_grant)
             + self.action_cancellations.len()
-            + usize::from(self.indicator_response.is_some());
+            + usize::from(self.indicator_response.is_some())
+            + self.native_control.credits();
         let Some(records) = reserved.checked_sub(usize::from(transfer)) else {
             return false;
         };
@@ -62,9 +72,9 @@ impl ShellComponentTransport {
         let records = records + self.output.records() + 1;
         let bulk = bulk_bytes + self.output.bulk_bytes() + if control { 0 } else { bytes };
         records <= limits.max_control_records as usize
-            && controls.saturating_mul(CONTROL_FRAME_BYTES)
+            && controls.saturating_mul(self.control_frame_bytes())
                 <= limits.reserved_control_queue_bytes as usize
-            && bulk.saturating_add(controls.saturating_mul(CONTROL_FRAME_BYTES))
+            && bulk.saturating_add(controls.saturating_mul(self.control_frame_bytes()))
                 <= limits.max_output_queue_bytes as usize
             && (control
                 || bulk

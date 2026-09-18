@@ -14,6 +14,9 @@ impl ShellComponentTransport {
         now_msec: u64,
     ) -> Result<usize, ShellTransportError> {
         self.require_native_launcher(epochs)?;
+        if self.native_launcher_state() != Some((current.opening, current.state_revision)) {
+            return Err(ShellTransportError::WrongCandidate);
+        }
         if current.opening.grant != self.store_grant || current.opening.output != context.output {
             return Err(ShellTransportError::WrongContentGrant);
         }
@@ -195,6 +198,9 @@ impl ShellComponentTransport {
         now_msec: u64,
     ) -> Result<ContentRenderBundle, ShellTransportError> {
         self.require_native_launcher(epochs)?;
+        if self.native_launcher_state() != Some((current.opening, current.state_revision)) {
+            return Err(ShellTransportError::WrongCandidate);
+        }
         epochs
             .active_candidates_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?

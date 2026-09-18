@@ -1,5 +1,6 @@
 //! Real private socket and content owners, supplied protection/geometry/catalog
-//! and renderer completions. No supervised child, focus, launch or native display.
+//! and renderer completions, including transport-owned focus/input transitions.
+//! No supervised child, physical input, application launch or native display.
 use sophia_protocol::*;
 use sophia_runtime::*;
 use std::io::{Read, Write};
@@ -93,6 +94,14 @@ impl Peer {
             decode_shell_content_frame(&peer.read()).unwrap().1,
             ShellContentRecord::Limits(limits())
         );
+        peer.transport
+            .publish_native_launcher_opening(r, tx(2), opening())
+            .unwrap();
+        peer.transport.poll_io(r).unwrap();
+        assert_eq!(
+            decode_shell_native_launcher_frame(&peer.read()).unwrap().1,
+            ShellNativeLauncherRecord::Opening(opening())
+        );
         peer
     }
     fn read(&mut self) -> Vec<u8> {
@@ -120,18 +129,13 @@ impl Peer {
         self.transport
             .publish_content_output_facts(r, tx(1), 5, vec![facts()])
             .unwrap();
-        self.transport
-            .publish_native_launcher_opening(r, tx(2), opening())
-            .unwrap();
+
         self.transport.poll_io(r).unwrap();
         assert!(matches!(
             decode_shell_content_frame(&self.read()).unwrap().1,
             ShellContentRecord::OutputFacts(_)
         ));
-        assert_eq!(
-            decode_shell_native_launcher_frame(&self.read()).unwrap().1,
-            ShellNativeLauncherRecord::Opening(opening())
-        );
+
         self.send(ShellNativeLauncherRecord::AllocationRequest(request(1)));
         let c = catalog();
         assert_eq!(
@@ -560,3 +564,6 @@ fn peer_eof_reports_disconnect_after_buffered_native_request_is_owned() {
     r.collect();
     assert!(r.accounting().quiescent());
 }
+
+#[path = "support/native_launcher_focus.rs"]
+mod focus;
