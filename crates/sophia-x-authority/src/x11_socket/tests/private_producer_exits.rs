@@ -162,6 +162,7 @@ fn a_held_press_is_retained_exactly_through_an_ordinary_stop() {
     let client_ended = eof_within(&mut client, 3);
     let registry = launched.registry.clone();
     let outcome = produced_outcome(launched, "held press, stop");
+    assert_retained_execution_then_abandoned(&outcome);
     let seen = observe_worker(&custody, &registry);
     assert!(client_ended);
     assert_eq!(outcome.ok, Some(true), "{:?}", outcome.error);
@@ -206,6 +207,7 @@ fn a_held_press_is_retained_exactly_through_a_service_error() {
     let client_ended = eof_within(&mut client, 3);
     let registry = launched.registry.clone();
     let outcome = produced_outcome(launched, "held press, error");
+    assert_retained_execution_then_abandoned(&outcome);
     let seen = observe_worker(&custody, &registry);
     assert!(client_ended);
     assert_eq!(outcome.ok, Some(false));
@@ -253,6 +255,7 @@ fn a_held_press_is_retained_exactly_through_an_unwind() {
     let client_ended = eof_within(&mut client, 3);
     let registry = launched.registry.clone();
     let outcome = produced_outcome(launched, "held press, unwind");
+    assert_retained_execution_then_abandoned(&outcome);
     let seen = observe_worker(&custody, &registry);
     assert!(outcome.unwound, "the injected panic unwound the operation");
     assert!(client_ended, "the guard's Drop stopped and interrupted the connection");
@@ -299,9 +302,11 @@ fn a_service_whose_runner_cannot_be_prepared_fails_before_its_loop_and_ends_its_
         .ingress_for(XServerFrontendClientId::from_raw(7), DeviceId::from_raw(1))
         .expect("the frontend exposes an ingress");
     let lease = owner.lease();
+    let mut execution = PrivateServiceExecutionKeeper::new();
     let outcome = serve_private_frontend_until_stopped(
         private,
         &lease,
+        &mut execution,
         private_service_config(&socket_path, NamespaceId::from_raw(9612), 4),
         transaction_sender,
         service_commands,

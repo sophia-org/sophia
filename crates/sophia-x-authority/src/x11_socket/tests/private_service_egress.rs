@@ -254,9 +254,11 @@ fn a_lease_on_a_different_owner_is_refused_before_a_listener_is_bound() {
     let (transaction_sender, _transactions) = sync_channel(4);
     let (_commands, service_commands) = sync_channel::<XServerFrontendServiceCommand>(1);
     let config = private_service_config(&socket_path, namespace, 4);
+    let mut execution = PrivateServiceExecutionKeeper::new();
     let refused = serve_private_frontend_until_stopped(
         private,
         &owner_b.lease(),
+        &mut execution,
         config,
         transaction_sender,
         service_commands,
@@ -288,11 +290,13 @@ fn a_refused_private_frontend_returns_its_parts_and_binds_nothing() {
     let (transaction_sender, _transactions) = sync_channel(4);
     let (_commands, service_commands) = sync_channel::<XServerFrontendServiceCommand>(1);
     let config = private_service_config(&socket_path, namespace, 4);
+    let mut execution = PrivateServiceExecutionKeeper::new();
     let refused = run_x_server_frontend_private_until_stopped(
         config,
         transaction_sender,
         private_service_parts(4),
         &owner,
+        &mut execution,
         service_commands,
             PrivateProducerPort::unattended(),
         Arc::new(|_| {}),
@@ -552,9 +556,11 @@ fn the_shelf_keeps_its_charge_on_the_store_while_it_is_retained() {
             raster: private.broker.raster_router(),
         });
         let lease = owner.lease();
+        let mut execution = PrivateServiceExecutionKeeper::new();
         let outcome = serve_private_frontend_until_stopped(
             private,
             &lease,
+            &mut execution,
             private_service_config(&path, namespace, 4),
             transaction_sender,
             service_commands,
@@ -650,9 +656,11 @@ fn obligations_from_two_invocations_stay_distinct_after_their_frames_are_gone() 
                 raster: private.broker.raster_router(),
             });
             let lease = owner.lease();
+            let mut execution = PrivateServiceExecutionKeeper::new();
             let outcome = serve_private_frontend_until_stopped(
                 private,
                 &lease,
+                &mut execution,
                 private_service_config(&path, namespace, 4),
                 transaction_sender,
                 service_commands,
@@ -729,9 +737,11 @@ fn an_invocation_that_owes_no_retained_egress_releases_its_charge_for_reuse() {
         let outcome = std::thread::scope(|scope| {
             let service = scope.spawn(|| {
                 let lease = owner.lease();
+                let mut execution = PrivateServiceExecutionKeeper::new();
                 let outcome = serve_private_frontend_until_stopped(
                     private,
                     &lease,
+                    &mut execution,
                     config,
                     transaction_sender,
                     service_commands,

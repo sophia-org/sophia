@@ -47,6 +47,8 @@ pub enum PrivateRunnerRefusal {
 /// ```
 #[cfg(unix)]
 pub struct PrivatePreparedRunner {
+    // Publish loss of original execution history before resources disappear.
+    lifetime: PrivateExecutionLifetimeOwner,
     // Close the gate and transports before frontend Drop can enter common.
     watch: Option<private_watchdog::PrivateWatchdogOwner>,
     frontend: Option<PrivateXServerFrontend>,
@@ -314,8 +316,14 @@ impl PrivateXServerFrontend {
             return Err((PrivateRunnerRefusal::StateUnavailable, self));
         }
         self.native_owner = Some(native_owner);
+        let witness = Arc::new(PrivateExecutionWitness {
+            instance: self.instance,
+            state: std::sync::atomic::AtomicU8::new(0),
+        });
+        self.terminal.execution = Some(witness.clone());
         let watch = self.pending_watch.take();
         Ok(PrivatePreparedRunner {
+            lifetime: PrivateExecutionLifetimeOwner(witness),
             watch,
             frontend: Some(self),
             keyboards,
@@ -538,13 +546,6 @@ impl PrivatePreparedRunner {
             watch.close_production();
         }
         self.prefer_cleanup = true;
-    }
-
-    /// Give the frontend back unsettled, for a service that must not finalise
-    /// it: admission is closed first, as `shutdown` closes it.
-    pub(crate) fn release_frontend(mut self) -> PrivateXServerFrontend {
-        drop(self.watch.take());
-        self.frontend.take().expect("live runner")
     }
 
     pub fn seat(&self) -> SeatId {

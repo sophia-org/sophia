@@ -40,6 +40,8 @@ struct PrivateAttemptCustody {
 
 #[cfg(unix)]
 struct PrivateTerminalInventory {
+    /// Readable resource loss without ownership of thread-local execution.
+    execution: Option<Arc<PrivateExecutionWitness>>,
     /// The registry that can answer for everything here.
     ///
     /// Inseparable from the obligations rather than held alongside them. A
@@ -204,6 +206,7 @@ impl PrivateTerminalInventory {
             "the complete native custody storage fits the allocator byte bound"
         );
         Self {
+            execution: None,
             origin,
             controller,
             lifecycle,
@@ -290,6 +293,7 @@ impl PrivateTerminalInventory {
         std::mem::replace(
             self,
             Self {
+                execution: None,
                 origin: self.origin.clone(),
                 controller: self.controller.clone(),
                 lifecycle: self.lifecycle.clone(),

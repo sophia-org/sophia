@@ -335,10 +335,12 @@ fn launch_attached_with(
         } else {
             private_service_config(&socket_path, namespace, 4)
         };
+        let mut execution = PrivateServiceExecutionKeeper::new();
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             serve_private_frontend_until_stopped(
                 private,
                 &lease,
+                &mut execution,
                 config,
                 transaction_sender,
                 service_commands,
@@ -405,6 +407,9 @@ fn launch_attached_with(
             None => (None, None, Vec::new(), Vec::new()),
         };
         let after = inspect_after(owner, durable);
+        assert_eq!(execution.execution().map(|reading| reading.availability),
+            Some(PrivateExecutionAvailability::Retained),
+            "the outer execution keeper survives collection failures and unwinds");
         AttachedOutcome {
             unwound,
             ok,

@@ -370,6 +370,8 @@ impl std::fmt::Debug for PrivateServiceFailure {
 /// `Drop` below runs it when nothing else did -- which is the unwind case.
 #[cfg(unix)]
 struct PrivateServiceCollection<'s, 'o> {
+    execution: &'s mut PrivateServiceExecutionKeeper,
+    connections: Option<PrivateConnectionsCollected>,
     frontend: XServerFrontend,
     egress: Arc<XAuthorityOrderedEgress>,
     /// The one raster envelope that can be waiting to leave. It lives HERE,
@@ -400,8 +402,8 @@ struct PrivateServiceCollection<'s, 'o> {
     uncollected_mark: Arc<Mutex<Vec<usize>>>,
     /// The prepared runner, owned here for the invocation: the loop borrows
     /// it, the exit closes its admission first, and it is taken out (to be
-    /// shut down or released) only after collection. On an unwind it drops
-    /// after this guard's body has collected, its watchdog already gone.
+    /// shut down or released) only after collection. On unwind its original
+    /// execution resources move to the caller's same-thread keeper.
     runner: Option<PrivatePreparedRunner>,
     /// The producer port, closed as the exit's first act.
     port: PrivateProducerPort,
@@ -413,7 +415,7 @@ impl PrivateServiceCollection<'_, '_> {
     /// THE FIRST ACT OF EVERY EXIT: nothing more is issued from the port and
     /// the producers already issued refuse. The port closes (standing Ended,
     /// its request channel gone) and the runner's supervising watchdog owner
-    /// is dropped, which closes the independent gate every producer's
+    /// closes production through the independent gate every producer's
     /// acceptance consults. That is a gate, not the admission's queue: no
     /// lock of the accepted order is taken and nothing is drained; an
     /// acceptance already inside the queue stays there for the settlement to
@@ -497,8 +499,8 @@ impl PrivateServiceCollection<'_, '_> {
         // this collection's own word that the connection frames are gone:
         // each custody discharges its own where its prerequisites are
         // established and refuses, visibly, where not.
-        let collected = self.connections_collected();
-        self.maintenance = run_deferred_cleanups(&self.service, &self.registry, collected.as_ref());
+        self.connections = self.connections_collected();
+        self.maintenance = run_deferred_cleanups(&self.service, &self.registry, self.connections.as_ref());
         // MARKED DONE ONLY AT THE END. A collection that unwound part-way
         // (the envelope cancellation reports to an observer that can panic)
         // is not a collection, and the guard below must still stop and wait.
@@ -568,11 +570,19 @@ impl Drop for PrivateServiceCollection<'_, '_> {
             self.note_uncollected(&uncollected);
             self.workers = workers;
             self.uncollected = uncollected;
-            let collected = self.connections_collected();
+            if self.connections.is_none() {
+                self.connections = self.connections_collected();
+            }
             self.maintenance =
-                run_deferred_cleanups(&self.service, &self.registry, collected.as_ref());
+                run_deferred_cleanups(&self.service, &self.registry, self.connections.as_ref());
             let _ = self.retain_pending();
             self.collected = true;
+        }
+        // Handoff still happens when collection reported failures. The
+        // frontend's fallback owns the inventory; the outer keeper owns the
+        // exact execution resources until a later authorized visit or loss.
+        if let Some(runner) = self.runner.take() {
+            drop(self.execution.retain(runner, self.connections.take()));
         }
     }
 }
@@ -587,12 +597,20 @@ impl Drop for PrivateServiceCollection<'_, '_> {
 /// refused construction returns the parts. Session has not selected this
 /// entry point; it exists beside the public one and nothing switches to it
 /// here.
+///
+/// The execution keeper is established on this thread outside this call and
+/// any catch_unwind scope. Collection hands it the original keyboard history,
+/// supervisor and accounting even when the service fails or unwinds. An
+/// occupied keeper refuses a new invocation before binding. Dropping the
+/// keeper records history loss beside the independently retained obligations.
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)] // Separate durable and same-thread owners are mandatory.
 pub fn run_x_server_frontend_private_until_stopped(
     config: XServerFrontendConfig,
     transaction_sender: SyncSender<XAuthorityObservedTransactionBatch>,
     parts: PrivateFrontendParts,
     owner: &PrivateServiceOwner,
+    execution: &mut PrivateServiceExecutionKeeper,
     service_commands: Receiver<XServerFrontendServiceCommand>,
     producers: PrivateProducerPort,
     backpressure_observer: Arc<XAuthorityBackpressureObserver>,
@@ -610,6 +628,7 @@ pub fn run_x_server_frontend_private_until_stopped(
     serve_private_frontend_until_stopped(
         private,
         &service,
+        execution,
         config,
         transaction_sender,
         service_commands,
@@ -625,9 +644,11 @@ pub fn run_x_server_frontend_private_until_stopped(
 /// owner exists from construction, and a lease that is not on that owner is
 /// refused before a listener is bound.
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)] // Internal form keeps the same ownership boundary.
 pub(crate) fn serve_private_frontend_until_stopped(
     private: PrivateXServerFrontend,
     service: &PrivateServiceLease<'_>,
+    execution: &mut PrivateServiceExecutionKeeper,
     config: XServerFrontendConfig,
     transaction_sender: SyncSender<XAuthorityObservedTransactionBatch>,
     service_commands: Receiver<XServerFrontendServiceCommand>,
@@ -637,13 +658,16 @@ pub(crate) fn serve_private_frontend_until_stopped(
     // THE LEASE IS CHECKED BEFORE ANYTHING IS BOUND. A foreign lease is not
     // a service that failed; it is a service that never began, and the
     // frontend it was handed is finalised into its own owner's store.
-    if !private.broker.registry.leased_by(service) {
+    if !private.broker.registry.leased_by(service) || execution.resources.is_some() {
+        let message = if execution.resources.is_some() {
+            "private execution keeper already retains an invocation"
+        } else {
+            "private service lease is not on the owner that keeps this frontend's registry"
+        };
         producers.close();
         let settlement = private.shutdown();
         return Err(PrivateServiceFailure::Failed {
-            error: X11SetupSocketError::new(
-                "private service lease is not on the owner that keeps this frontend's registry",
-            ),
+            error: X11SetupSocketError::new(message),
             settlement: Box::new(settlement),
             unresolved_egress: Vec::new(),
             workers: Vec::new(),
@@ -737,14 +761,15 @@ pub(crate) fn serve_private_frontend_until_stopped(
     });
 
     // THE RUNNER LIVES IN THE COLLECTION GUARD: the guard's Drop body
-    // collects first and the runner (its watchdog already dropped by that
-    // body) and the frontend it holds drop after, so on an unwind the
-    // private frontend's own fallback runs only after every worker is
-    // collected. The loop borrows the runner from the guard.
+    // collects first and hands its original execution resources to the outer
+    // keeper before finalizing the frontend. The same handoff runs on unwind,
+    // including when collection has failures. The loop borrows the runner.
     let instance = runner.frontend().instance;
     let registry = runner.frontend().broker.registry.clone();
     let uncollected_mark = runner.frontend().uncollected_mark();
     let mut collection = PrivateServiceCollection {
+        execution,
+        connections: None,
         frontend,
         egress: ordered_egress.clone(),
         pending_raster_egress: None,
@@ -802,6 +827,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
     // exit's first act; what remains is to finalise or release the frontend
     // the runner still holds, below, once the guard is gone.
     let runner = collection.runner.take().expect("owned until collection");
+    let private = collection.execution.retain(runner, collection.connections.take());
     drop(observer);
     let report = ordered_egress.report();
     let status = if service_result.is_err() {
@@ -836,7 +862,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
         }
         return Err(PrivateServiceFailure::Uncollected {
             error: service_result.err(),
-            frontend: Box::new(runner.release_frontend()),
+            frontend: Box::new(private),
             unresolved_egress,
             workers,
             uncollected,
@@ -845,7 +871,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             order: boxed_order,
         });
     }
-    let settlement = runner.shutdown();
+    let settlement = private.shutdown();
     match (service_result, report) {
         (Ok(()), Ok(_)) if cleanup_failures.is_empty() => Ok(PrivateServiceReturn {
             settlement,
