@@ -35,6 +35,7 @@ run. Completed evidence directories are retained under their original names.
 | `47dd3c6a` | `m4-c0acc0f2-source/.artifacts/acceptance-47dd3c6a` | Aggregate failed, 2/8 passed: authorization in both byte orders and connection identity. Construction found live listener displacement. Two nested-host fixtures also failed; those failures are separate from the listener defect. |
 | `30035134` | `m4-c0acc0f2-source/.artifacts/harness-30035134` | Ten runner controls passed, including kernel namespace and delegated-descriptor checks. Acceptance remained `NOT_RUN`, 0/8. |
 | `652208c4` | `m4-c0acc0f2-source/.artifacts/acceptance-652208c4` | Six groups passed together with no failed rows: construction, authorization, connection identity, containment, no ambient fallback and evidence integrity. Commit routing and lifetime were unbound; the aggregate remained `NOT_RUN`. Source was attested inside containment and unchanged afterward. |
+| `34fac795` | `m4-c0acc0f2-source/.artifacts/acceptance-34fac795` | The same six groups passed. The newly bound commit-routing control failed waiting for a committed admission; lifetime remained unbound. The aggregate is `FAIL`, with the exact source attested and unchanged. |
 
 ## Findings
 
@@ -61,6 +62,16 @@ dropped refused effects. The bridge must retain each intake and committed effect
 in order, capture geometry from that commit, and keep the exact command through
 refusal. Later effects must not overtake a refused head. These are source
 findings; a compiling rewrite is not their acceptance evidence.
+
+The first integrated draw exposed a second mapping error. MapWindow publishes
+its lifecycle fact in one batch; a subsequent drawing response carries its
+transaction without repeating that fact. Rebuilding the mapped set from each
+batch independently forgets the earlier map and suppresses the committed draw's
+admission. The bridge needs ordered lifecycle state for the same surface and
+admission, retired by withdrawal/removal. This does not authorize using a later
+map for an earlier effect or inferring mapping from Engine snapshot presence.
+The next wire fixture also waits for a real GetGeometry reply and preserves
+nonempty commit reports, distinguishing malformed requests from a missing join.
 
 **Collection and observation.** Readiness must come from the prepared service's
 port, and status reads must not drive recovery. An unwind needs its actual

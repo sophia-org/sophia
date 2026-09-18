@@ -94,6 +94,16 @@ pub(super) fn run_for(
         return Err("M4 acceptance does not accept an M3 component suite".into());
     }
     let mut opts = options(arguments)?;
+    if gate == Gate::M4
+        && !arguments
+            .iter()
+            .any(|arg| arg.starts_with("--case-timeout="))
+    {
+        // Integrity checks hash the actual Session, host and auxiliary debug
+        // executables. Keep a bounded default that includes that work at the
+        // reduced priority used alongside an interactive desktop.
+        opts.case_timeout = 180;
+    }
     if suite.is_some() && opts.self_test {
         return Err("component suites and harness self-tests are separate runs".into());
     }

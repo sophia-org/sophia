@@ -6,7 +6,7 @@ Run from a clean, committed checkout:
 cargo xtask check m4-acceptance \
   --output=/absolute/repository/.artifacts/m4-run \
   --target-dir=/absolute/repository/.artifacts/m4-target \
-  --case-timeout=120
+  --case-timeout=180
 ```
 
 The output directory must be new. Use a fresh target for each source snapshot.
@@ -14,6 +14,8 @@ The runner archives the committed source, builds offline inside containment,
 and records source, executable and process-collection identities. Builds use
 two jobs. CPU affinity and scheduling priority may be set on the outer command
 to leave room for the desktop.
+The default case deadline is 180 seconds, including the integrity row's hashes
+of the actual debug executables; an explicit `--case-timeout` overrides it.
 
 `report.json` is the result. All eight inventory rows must pass before M4
 passes. An unbound row remains `NOT_RUN`; a failed row keeps the aggregate
