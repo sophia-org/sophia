@@ -376,12 +376,26 @@ impl LifecycleService {
         fault: Option<AttachFault>,
         unwind: bool,
     ) -> Self {
+        Self::launch_with_capacity(tag, namespace, fault, unwind, 1)
+    }
+
+    pub(super) fn launch_with_capacity(
+        tag: &str,
+        namespace: u64,
+        fault: Option<AttachFault>,
+        unwind: bool,
+        capacity: usize,
+    ) -> Self {
         let path = private_service_socket(tag);
-        let config = private_service_config(&path, NamespaceId::from_raw(namespace), 1);
+        let config = if capacity > 1 {
+            distinct_config(&path, NamespaceId::from_raw(namespace), capacity)
+        } else {
+            private_service_config(&path, NamespaceId::from_raw(namespace), capacity)
+        };
         let (commands, command_rx) = sync_channel(8);
         let (transaction_tx, transactions) = sync_channel(if unwind { 1 } else { 64 });
-        let (parts, acks, deliveries) = producing_parts(1);
-        let owner = Arc::new(service_owner(&PrivateSettlementOwner::default(), 1));
+        let (parts, acks, deliveries) = producing_parts(capacity);
+        let owner = Arc::new(service_owner(&PrivateSettlementOwner::default(), capacity));
         let service_owner = Arc::clone(&owner);
         let (port, access) = PrivateProducerAccess::for_service();
         let (begin, begun) = sync_channel(1);
@@ -556,9 +570,15 @@ impl LifecycleService {
     }
 
     pub(super) fn connect(&self) -> (UnixStream, Arc<PrivateEvidenceCustody>) {
+        let previous = kept_custodies(&self.registry);
         let mut peer = connect_private_client(&self.path);
         handshake(&mut peer);
-        let custody = self.custody();
+        let custody = waited_for_value(|| {
+            kept_custodies(&self.registry)
+                .into_iter()
+                .find(|candidate| !previous.iter().any(|old| Arc::ptr_eq(old, candidate)))
+        })
+        .expect("the newly accepted connection's exact custody");
         (peer, custody)
     }
 
