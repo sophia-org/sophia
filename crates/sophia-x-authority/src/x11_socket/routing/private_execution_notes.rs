@@ -86,6 +86,7 @@ impl<'a> PrivateTransactionNotes<'a> {
 struct PrivateDeliveryClaim<'a> {
     recovery: &'a InputRecovery,
     delivery: Option<XAuthorityInputDeliveryId>,
+    completion: Option<&'a Arc<PrivateDeliveryCompletion>>,
     /// Read at drop, not at construction. The transaction writes through this
     /// as it goes, so every way out of the execution -- a decision, an error
     /// returned from a fallible call, an unwind -- gives the claim back with
@@ -96,7 +97,12 @@ struct PrivateDeliveryClaim<'a> {
 #[cfg(unix)]
 impl Drop for PrivateDeliveryClaim<'_> {
     fn drop(&mut self) {
-        self.recovery.resolve_claim(self.delivery, self.applied.get());
+        match (self.delivery, self.completion) {
+            (Some(delivery), Some(cell)) => {
+                self.recovery.resolve_claim_for_held(delivery, cell, self.applied.get());
+            }
+            _ => self.recovery.resolve_claim(self.delivery, self.applied.get()),
+        }
     }
 }
 
@@ -120,6 +126,9 @@ struct PrivateOrderedDecision {
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PrivateExecutionRefusal {
+    /// The original recovery cell is missing or has been replaced. This is
+    /// not proof that the accepted original delivery ended.
+    CompletionMismatch(PrivateCompletionMismatch),
     /// The keyboard state offered is not this instance's.
     ForeignKeyboards,
     /// This seat has no keyboard state and one could not be built. Refused

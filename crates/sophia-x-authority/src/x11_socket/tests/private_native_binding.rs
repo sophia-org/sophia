@@ -33,6 +33,7 @@ fn press_with_recovery_transition(
         ExecutionClaim::Claimed
     );
     let _claim = PrivateDeliveryClaim {
+        completion: None,
         recovery,
         delivery: route.delivery,
         applied,

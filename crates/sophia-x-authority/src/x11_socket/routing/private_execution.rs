@@ -880,7 +880,17 @@ fn execute_owned(
         // outcome the effect then contradicts. No guard spans that gap -- the
         // ledger's own is released before this takes common and the X guards,
         // which is the rank -- so what spans it is this claim.
-        match broker.registry.input_recovery.claim_execution(route.delivery) {
+        let held_completion = custody.input_completion();
+        let claim = match held_completion {
+            Some(held) if route.delivery == Some(held.delivery) => broker.registry.input_recovery
+                .claim_execution_for_held(held.delivery, &held.cell)
+                .map_err(PrivateExecutionRefusal::CompletionMismatch)?,
+            Some(_) => return Err(PrivateExecutionRefusal::CompletionMismatch(PrivateCompletionMismatch::Replaced)),
+            // Unprepared/private-component calls did not pass through the
+            // producing admission. Actual prepared ingress carries its cell.
+            None => broker.registry.input_recovery.claim_execution(route.delivery),
+        };
+        match claim {
             ExecutionClaim::Claimed => {}
             ExecutionClaim::Ended => return Err(PrivateExecutionRefusal::DeliveryEnded),
             ExecutionClaim::Contended => {
@@ -901,6 +911,7 @@ fn execute_owned(
         let _claim = PrivateDeliveryClaim {
             recovery: &broker.registry.input_recovery,
             delivery: route.delivery,
+            completion: held_completion.map(|held| &held.cell),
             applied: &applied,
         };
 

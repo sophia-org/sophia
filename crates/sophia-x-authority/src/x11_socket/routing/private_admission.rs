@@ -408,7 +408,7 @@ impl PrivateIngress {
         // The stamp is captured through the coordinator here, and that guard is
         // released before common is taken below. The coordinator is never
         // reached from under common.
-        let mut envelope = self.sender.stamp_and_reserve(route)?;
+        let (mut envelope, completion) = self.sender.stamp_and_reserve(route)?;
         if let Some(role) = &self.role {
             // Reserved before the work is published, under common and nothing
             // else: no X, client or route guard is held here, and common is
@@ -442,7 +442,10 @@ impl PrivateIngress {
                 return Err(PrivateSendError::Exhausted(envelope.route));
             };
             match role.reserve(stamp, request) {
-                Ok(reservation) => envelope.reservation = Some(reservation),
+                Ok(mut reservation) => {
+                    reservation.input_completion = completion;
+                    envelope.reservation = Some(reservation);
+                }
                 Err(refusal) => {
                     // Nothing was published, so the delivery reservation this
                     // send already took is rolled back before anything else.

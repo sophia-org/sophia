@@ -22,9 +22,15 @@ struct PrivateCompletionUnreadable;
 
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PrivateCompletionMismatch {
+pub(crate) enum PrivateCompletionMismatch {
     Missing,
     Replaced,
+}
+
+#[cfg(unix)]
+struct PrivateAcceptedInputCompletion {
+    delivery: XAuthorityInputDeliveryId,
+    cell: Arc<PrivateDeliveryCompletion>,
 }
 
 #[cfg(unix)]
@@ -219,8 +225,19 @@ impl InputRecovery {
         epoch: u64,
         now: Instant,
     ) -> Result<(), RecoveryAdmissionRefusal> {
+        self.admit_with_completion(route, epoch, now).map(|_| ())
+    }
+
+    /// Mint the held cell with its admission under one ledger guard. A later
+    /// lookup by delivery id cannot recover which cell acceptance promised.
+    fn admit_with_completion(
+        &self,
+        route: &XAuthorityRoutedInput,
+        epoch: u64,
+        now: Instant,
+    ) -> Result<Option<PrivateAcceptedInputCompletion>, RecoveryAdmissionRefusal> {
         let Some(delivery) = route.delivery else {
-            return Ok(());
+            return Ok(None);
         };
         let Ok(mut state) = self.state.lock() else {
             return Err(RecoveryAdmissionRefusal::LedgerUnavailable);
@@ -231,6 +248,7 @@ impl InputRecovery {
         if state.tickets.len() >= self.capacity {
             return Err(RecoveryAdmissionRefusal::LedgerFull);
         }
+        let completion = Arc::new(PrivateDeliveryCompletion::default());
         state.tickets.insert(
             delivery,
             TrackedInputDelivery {
@@ -246,12 +264,12 @@ impl InputRecovery {
                     client: None,
                 },
                 terminal: None,
-                completion: Arc::new(PrivateDeliveryCompletion::default()),
+                completion: Arc::clone(&completion),
                 observed: false,
                 routing_finished: false,
             },
         );
-        Ok(())
+        Ok(Some(PrivateAcceptedInputCompletion { delivery, cell: completion }))
     }
 
     fn abort_enqueue(&self, delivery: Option<XAuthorityInputDeliveryId>) {
@@ -389,7 +407,6 @@ impl InputRecovery {
 
     /// Deferred private work owns the original completion, not permission to
     /// execute whatever admission currently occupies the same numeric id.
-    #[cfg_attr(not(test), expect(dead_code, reason = "The frozen private request owner will claim its original completion."))]
     fn claim_execution_for_held(
         &self,
         id: XAuthorityInputDeliveryId,
@@ -452,7 +469,6 @@ impl InputRecovery {
         self.resolve_claim_matching(id, None, may_have_applied);
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "The frozen private request owner will release its original completion claim."))]
     fn resolve_claim_for_held(
         &self,
         id: XAuthorityInputDeliveryId,

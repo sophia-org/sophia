@@ -11,6 +11,8 @@
       "x11_socket::routing_tests::retained_failed_application_keeps_item_credit_after_completion_and_revocation"
     ],
     "frozen-requests": [
+      "x11_socket::routing_tests::prepared_producer_retains_the_original_completion_through_ordered_execution",
+      "x11_socket::routing_tests::prepared_producer_never_reclaims_a_missing_or_replaced_accepted_completion",
       "x11_socket::routing_tests::exact_input_claim_preserves_original_cancellation_across_no_effect_deferral",
       "x11_socket::routing_tests::missing_or_replaced_unanswered_input_completion_cannot_be_claimed_or_released",
       "x11_socket::routing_tests::private_guarded_deferral_keeps_original_request_and_executes_once",

@@ -393,6 +393,7 @@ impl PrivateKeyboards {
 /// producer cannot disable disposal by asserting that it published.
 #[cfg(unix)]
 pub struct PrivateReservation {
+    input_completion: Option<PrivateAcceptedInputCompletion>,
     controller: PrivateAuthorityController,
     /// Taken when the work reaches the order. `None` afterwards, so the drop
     /// below knows an unpublished reservation from one that has an owner.
@@ -422,6 +423,7 @@ impl PrivateReservation {
             .take()
             .expect("a reservation reaches the order at most once");
         PrivateOutstandingRequest {
+            input_completion: self.input_completion.take(),
             controller: self.controller.clone(),
             submit: self.submit,
             token,
@@ -476,6 +478,9 @@ impl Drop for PrivateReservation {
 /// connection test compares against what the caller passed in.
 #[cfg(unix)]
 pub struct PrivateOutstandingRequest {
+    /// Captured atomically with recovery admission before queue publication.
+    /// A thaw may not adopt a replacement cell for the same delivery id.
+    input_completion: Option<PrivateAcceptedInputCompletion>,
     /// The prepared order's accepted-item charge, never released by Drop.
     /// Weak ownership prevents store -> terminal -> store cycles.
     accepted_store_credit: Option<PrivateAcceptedItemCredit>,
@@ -537,6 +542,10 @@ enum PrivateRequestPhase {
 
 #[cfg(unix)]
 impl PrivateOutstandingRequest {
+    fn input_completion(&self) -> Option<&PrivateAcceptedInputCompletion> {
+        self.input_completion.as_ref()
+    }
+
     /// The capability this request was reserved under.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn capability(&self) -> sophia_input_authority::DeviceCapability {
@@ -735,6 +744,7 @@ impl PrivateReservationRole {
                 .map_err(PrivateAuthorityRefusal::Authority)
         })??;
         Ok(PrivateReservation {
+            input_completion: None,
             controller: self.controller.clone(),
             token: Some(token),
             connection: self.connection,

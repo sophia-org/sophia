@@ -124,7 +124,7 @@ impl XAuthorityRoutedInputSender {
     fn stamp_and_reserve(
         &self,
         route: XAuthorityRoutedInput,
-    ) -> Result<XAuthorityEpochRoutedInput, PrivateSendError> {
+    ) -> Result<(XAuthorityEpochRoutedInput, Option<PrivateAcceptedInputCompletion>), PrivateSendError> {
         let stamp = match self.stamp() {
             Ok(stamp) => stamp,
             Err(()) => return Err(PrivateSendError::Denied(route)),
@@ -137,9 +137,9 @@ impl XAuthorityRoutedInputSender {
         };
         match self
             .recovery
-            .admit_typed(&envelope.route, envelope.control_epoch, Instant::now())
+            .admit_with_completion(&envelope.route, envelope.control_epoch, Instant::now())
         {
-            Ok(()) => Ok(envelope),
+            Ok(completion) => Ok((envelope, completion)),
             Err(RecoveryAdmissionRefusal::LedgerFull) => {
                 Err(PrivateSendError::Saturated(envelope.route))
             }

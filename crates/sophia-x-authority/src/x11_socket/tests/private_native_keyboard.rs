@@ -126,6 +126,7 @@ mod keys {
             );
             let applied = Cell::new(false);
             let _claim = PrivateDeliveryClaim {
+                completion: None,
                 recovery,
                 delivery: route.delivery,
                 applied: &applied,
