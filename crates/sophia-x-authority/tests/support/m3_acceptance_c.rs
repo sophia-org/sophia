@@ -4120,6 +4120,82 @@ fn control_command_for(
     }
 }
 
+/// Wait out an allowance that names a delay.
+///
+/// Returns the refusal that cannot be waited out when one is met, so a caller
+/// fails on it rather than spinning against it.
+fn wait_out_allowance(
+    refusal: Option<sophia_input_authority::ServiceStartRefusal>,
+) -> Option<String> {
+    use sophia_input_authority::ServiceStartRefusal as Refusal;
+    match refusal {
+        None => None,
+        Some(
+            Refusal::StartsExhausted { retry_after }
+            | Refusal::TimeExhausted { retry_after }
+            | Refusal::CleanupStartsReserved { retry_after }
+            | Refusal::CleanupTimeReserved { retry_after },
+        ) => {
+            std::thread::sleep(retry_after.min(Duration::from_millis(50)));
+            None
+        }
+        Some(other @ (Refusal::ClockRegressed | Refusal::Interrupted)) => {
+            Some(format!("{other:?}"))
+        }
+    }
+}
+
+/// One window's presentation properties, by the atoms that carry them.
+///
+/// A COUNT IS NOT A WITNESS. "Some properties exist" is true of a window that
+/// was never touched; what a presentation control does is create `WM_STATE` and
+/// `_NET_WM_STATE` and put the state it was given into the latter, so that is
+/// what is read, before and after.
+fn presentation_state_of(
+    source: &PrivateControlClientSource,
+    resource: XResourceId,
+) -> (bool, bool, Option<Vec<u8>>, Option<u8>) {
+    let named = |name: &str| {
+        source
+            .state
+            .atoms
+            .lock()
+            .expect("a readable atom table")
+            .intern(name, true)
+            .ok()
+            .flatten()
+    };
+    let wm_state = named(crate::X_ATOM_NAME_WM_STATE);
+    let net_wm_state = named(crate::X_ATOM_NAME_NET_WM_STATE);
+    let properties = source
+        .state
+        .properties
+        .lock()
+        .expect("a readable property table");
+    let record =
+        net_wm_state.and_then(|atom| properties.get(source.endpoint.namespace, resource, atom));
+    (
+        wm_state.is_some_and(|atom| {
+            properties
+                .get(source.endpoint.namespace, resource, atom)
+                .is_some()
+        }),
+        record.is_some(),
+        record.map(|held| held.bytes.clone()),
+        record.map(|held| held.format),
+    )
+}
+
+/// Whether those four bytes name exactly that atom, in one byte order or the
+/// other. Which order the recipient negotiated is not this row's subject; that
+/// the one state set is the one submitted, is.
+fn names_exactly_atom(bytes: &[u8], atom: crate::XAtom) -> bool {
+    let Ok(word) = <[u8; 4]>::try_from(bytes) else {
+        return false;
+    };
+    u32::from_le_bytes(word) == atom || u32::from_be_bytes(word) == atom
+}
+
 /// What this kind actually changed at the source before the writer was
 /// interrupted, read back from the source's own tables and state.
 ///
@@ -4183,18 +4259,34 @@ fn first_effect_of(
             json!({"runtime_width": runtime, "selection_width": selected})
         }
         Kind::SetPresentationState | Kind::RestorePresentationState => {
-            let properties = source
-                .state
-                .properties
-                .lock()
-                .expect("readable properties")
-                .properties_for_window(source.endpoint.namespace, resource)
-                .len();
+            let (wm_state, net_wm_state, bytes, format) = presentation_state_of(source, resource);
             assert!(
-                properties > 0,
-                "the presentation change reached this window's properties"
+                wm_state,
+                "the first presentation state created this window's WM_STATE"
             );
-            json!({"properties_on_this_window": properties})
+            assert!(net_wm_state, "and its _NET_WM_STATE");
+            assert_eq!(format, Some(32), "which is a list of atoms");
+            let bytes = bytes.expect("the state this control put there");
+            let fullscreen = source
+                .state
+                .atoms
+                .lock()
+                .expect("a readable atom table")
+                .intern(crate::X_ATOM_NAME_NET_WM_STATE_FULLSCREEN, true)
+                .ok()
+                .flatten()
+                .expect("the fullscreen atom this control interned");
+            assert!(
+                names_exactly_atom(&bytes, fullscreen),
+                "and it is exactly the one state submitted: {bytes:?} against {fullscreen}"
+            );
+            json!({
+                "wm_state_created": wm_state,
+                "net_wm_state_created": net_wm_state,
+                "net_wm_state_format": format,
+                "net_wm_state_bytes": bytes,
+                "fullscreen_atom": fullscreen,
+            })
         }
         Kind::FocusSurface => {
             let focus = source
@@ -4329,6 +4421,20 @@ fn control_cleanup_for_kind(
             "the focus this clear is going to move actually moved here first"
         );
     }
+    // WHAT THIS WINDOW HAD BEFORE, so the change below is a change. A
+    // presentation control creates both of these; a window nobody has set a
+    // state on has neither.
+    let (wm_state_before, net_wm_state_before, _, _) = presentation_state_of(&source, resource);
+    if matches!(
+        kind,
+        XAuthorityControlKind::SetPresentationState
+            | XAuthorityControlKind::RestorePresentationState
+    ) {
+        assert!(
+            !wm_state_before && !net_wm_state_before,
+            "{label}: this window carried no presentation state before the control"
+        );
+    }
     // INTERRUPTED AFTER ITS FIRST SOURCE EFFECT, which is the state the row is
     // about: something at the source changed and nothing answered for it.
     source.fail_after_effect.store(true, Ordering::Release);
@@ -4404,27 +4510,49 @@ fn control_cleanup_for_kind(
         "which names this window as destroyed: {destroyed:?}"
     );
     let credit_with_record = store.reserved();
+    assert_eq!(
+        credit_with_record,
+        Some(1),
+        "{label}: the record this row is about carries exactly one credit"
+    );
     let mut withheld_visits = BoundedTrace::default();
-    let mut charged_while_withheld = 0usize;
-    for _ in 0..400 {
+    let mut withheld_refusals = 0usize;
+    let withheld_deadline = std::time::Instant::now() + Duration::from_secs(15);
+    // A CHARGED CONTROL VISIT THAT REFUSED FOR THIS RECORD'S WITHHELD REMOVAL,
+    // not merely some charged step. Any charged Output or Terminal visit would
+    // pass for one while never reaching this record at all.
+    while std::time::Instant::now() < withheld_deadline && withheld_refusals < 3 {
         let visit = service.step();
-        if visit.charged {
-            charged_while_withheld += 1;
+        if visit.charged
+            && visit.terminal_refusal
+                == Some(PrivateTerminalDriveRefusal::Control(
+                    PrivateControlCleanupRefusal::RemovalWithheld,
+                ))
+        {
+            assert!(
+                visit.supervision_ok,
+                "{label}: that refusal came from a supervised visit: {visit:?}"
+            );
+            withheld_refusals += 1;
+        }
+        if let Some(fatal) = wait_out_allowance(visit.allowance_refusal) {
+            panic!("{label}: a visit refused for something waiting cannot fix: {fatal}");
         }
         withheld_visits.push(|| format!("{visit:?}"));
     }
+    assert!(
+        withheld_refusals >= 1,
+        "{label}: a charged control visit refused this record for its withheld removal: {withheld_visits:?}"
+    );
     assert_eq!(
         completion.state_of(cleanup.token),
         ControlRecordState::Outstanding,
-        "the record is still owed while its source removal is withheld: {withheld_visits:?}"
+        "{label}: the record is still owed: {withheld_visits:?}"
     );
-    assert!(
-        store.reserved().is_some_and(|held| held > 0),
-        "and its credit is still taken"
-    );
-    assert!(
-        charged_while_withheld > 0,
-        "on visits that were actually charged: {withheld_visits:?}"
+    assert_eq!(
+        store.reserved(),
+        Some(1),
+        "{label}: and its one credit is still taken"
     );
 
     // AND WITH IT BACK, TWO SEPARATE VISITS. One retires the record; a later
@@ -4433,7 +4561,11 @@ fn control_cleanup_for_kind(
     let mut control_visits: Vec<ControlVisit> = Vec::new();
     let mut retired_at: Option<ControlVisit> = None;
     let mut reclaimed_at: Option<ControlVisit> = None;
-    for at in 0..2_000usize {
+    let cleanup_deadline = std::time::Instant::now() + Duration::from_secs(20);
+    for at in 0..20_000usize {
+        if std::time::Instant::now() >= cleanup_deadline {
+            break;
+        }
         let state_before = completion.state_of(cleanup.token);
         let credit_before = store.reserved();
         let visit = service.step();
@@ -4467,6 +4599,12 @@ fn control_cleanup_for_kind(
             if control_visits.len() < TRACE_BOUND {
                 control_visits.push(seen);
             }
+        }
+        if let Some(fatal) = wait_out_allowance(visit.allowance_refusal) {
+            panic!("{label}: a cleanup visit refused for something waiting cannot fix: {fatal}");
+        }
+        if !visit.supervision_ok && visit.charged {
+            panic!("{label}: a charged cleanup visit lost its supervisor: {visit:?}");
         }
         if retired_at.is_some() && reclaimed_at.is_some() {
             break;
@@ -4556,8 +4694,12 @@ fn control_cleanup_for_kind(
             .iter()
             .map(|window| format!("{window:?}"))
             .collect::<Vec<_>>(),
-        "charged_visits_while_removal_withheld": charged_while_withheld,
+        "charged_control_refusals_for_this_record_while_withheld": withheld_refusals,
         "state_while_removal_withheld": "Outstanding",
+        "presentation_state_before_the_control": json!({
+            "wm_state": wm_state_before,
+            "net_wm_state": net_wm_state_before,
+        }),
         "credit_while_removal_withheld": credit_with_record,
         "visit_that_retired_the_record": format!("{retired:?}"),
         "what_the_retiring_visit_was": retired.visit.clone(),
