@@ -519,6 +519,8 @@ impl XServerFrontendRouteRegistry {
         claim: &PrivateFocusClaim,
         change: X11FocusChange,
     ) -> Result<X11AppliedFocus, X11FocusApplyError> {
+        #[cfg(all(test, unix))]
+        crate::x11_socket::routing_tests::m3_acceptance::before_focus_apply(self);
         let owner = self.private_applied.get().ok_or(X11FocusApplyError::State(
             PrivateAppliedRegistryRefusal::NoPrivateOwner,
         ))?;

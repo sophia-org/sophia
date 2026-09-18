@@ -14,6 +14,10 @@
     "D.registration_destruction": "x11_socket::routing_tests::m3_acceptance::d_registration_destruction",
     "D.service_exit": "x11_socket::routing_tests::m3_acceptance::d_service_exit",
     "D.namespace_reuse": "x11_socket::routing_tests::m3_acceptance::d_namespace_reuse",
-    "D.scheduler": "x11_socket::routing_tests::m3_acceptance::d_scheduler"
+    "D.scheduler": "x11_socket::routing_tests::m3_acceptance::d_scheduler",
+    "B.applied_focus": "x11_socket::routing_tests::m3_acceptance::b_applied_focus",
+    "B.keyboard_history": "x11_socket::routing_tests::m3_acceptance::b_keyboard_history",
+    "B.ordered_input": "x11_socket::routing_tests::m3_acceptance::b_ordered_input",
+    "B.shared_hold": "x11_socket::routing_tests::m3_acceptance::b_shared_hold"
   }
 }
