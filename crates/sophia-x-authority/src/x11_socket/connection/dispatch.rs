@@ -914,13 +914,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 // not after the peer has already observed the request. The
                 // protocol writer stamps and writes under this same lock,
                 // so publication cannot overtake one of its older events.
-                let _output = lock_x11_non_control_output(
-                    &output_stream,
-                    &output_wire,
-                    &output_control_pending,
-                    None,
-                )?
-                .expect("an uncancellable wait yields the socket");
+                // Publication emits no bytes and must not wait for control
+                // priority: this request may supersede that queued control.
+                // The eventual reply still takes the ordinary output turn.
+                let _output = enter_x11_wire(&output_stream, &output_wire)?;
                 event_sequence.store(sequence, Ordering::Release);
             }
             let transaction = state.allocate_transaction()?;
