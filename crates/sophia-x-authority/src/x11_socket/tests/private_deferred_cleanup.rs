@@ -680,3 +680,106 @@ fn a_refusal_after_effects_keeps_them_while_an_early_refusal_has_none() {
     assert_eq!(late_seen.number, Some(PrivateNumberStanding::Held));
     drop(custody);
 }
+
+
+// Independent probes from the 73543ee9 review, landed as written (names
+// kept). FIXTURE-TOKEN SCOPE: the collection tokens are STAGE-ONLY stand-ins
+// for the absent service frame; no production collector or new driving is
+// added, and nothing here says anything about concurrent visitors.
+#[test]
+fn review_holder_refusal_restores_the_lease_and_later_resumes_exactly_once() {
+    let f = worker_fixture(XServerFrontendClientId(9651));
+    f.permit();
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let registry = worker_registry(&f.fixture.runner);
+    let durable = &f.fixture.durable;
+    start_worker(&f, &custody, None);
+    drop(f.fixture.registration);
+    let _ = stop_and_collect(&f.fixture.keeper.lease(), registry, &custody);
+    let token = collected_for(registry);
+    // A real outstanding promise causes preparation to refuse. Its own
+    // destination guard remains here until the second visit can proceed.
+    let destination = {
+        let slot = custody.cleanup_record().ordered_continuation.lock().unwrap();
+        durable.prepare_internal_holder(slot.as_ref().unwrap()).unwrap()
+    };
+    let before = cleanup_seen(&custody, registry, durable);
+    let refused = custody.visit_deferred_cleanup(Some(&token));
+    let after_refusal = cleanup_seen(&custody, registry, durable);
+    drop(destination);
+    let after_returning_destination = cleanup_seen(&custody, registry, durable);
+    let resumed = custody.visit_deferred_cleanup(Some(&token));
+    let after_resume = cleanup_seen(&custody, registry, durable);
+    let repeated = custody.visit_deferred_cleanup(Some(&token));
+    assert_eq!(refused.result, Err(PrivateDeferredCleanupRefusal::HolderRefused(PrivateHolderRefusal::AlreadyHeld)));
+    assert!(after_refusal.lease_on_record);
+    assert_eq!(after_refusal.abandoned, before.abandoned);
+    assert_eq!(after_refusal.number, Some(PrivateNumberStanding::Held));
+    assert!(after_refusal.row && !after_refusal.committed);
+    assert_eq!(after_returning_destination.destination, Some("reserved"));
+    let report = resumed.result.expect("the original lease is still usable");
+    assert_eq!(report.namespace, PrivateNamespaceClearance::Established);
+    assert!(after_resume.committed && !after_resume.lease_on_record);
+    assert_eq!(after_resume.number, None);
+    assert_eq!(after_resume.abandoned, before.abandoned);
+    assert_eq!(repeated, resumed);
+    assert_eq!(cleanup_seen(&custody, registry, durable), after_resume);
+}
+
+#[test]
+fn review_unreadable_home_keeps_its_poison_and_exact_join_evidence() {
+    let f = worker_fixture(XServerFrontendClientId(9652));
+    f.permit();
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let registry = worker_registry(&f.fixture.runner);
+    start_worker(&f, &custody, None);
+    drop(f.fixture.registration);
+    let _ = stop_and_collect(&f.fixture.keeper.lease(), registry, &custody);
+    // Poison only after collecting the worker, to isolate maintenance's
+    // handling of the original home from the worker's unreadable exit.
+    let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = f.home.state.lock().unwrap();
+        panic!("review home holder interrupted");
+    }));
+    let outcome = custody.visit_deferred_cleanup(Some(&collected_for(registry)));
+    let evidence = f.home.borrow(|continuation| match continuation {
+        PrivateOrderedContinuation::Setup { evidence, .. }
+        | PrivateOrderedContinuation::Serving { evidence, .. } => evidence.clone(),
+    }).expect("the original continuation remains");
+    assert!(poisoned.is_err());
+    assert!(f.home.unreadable());
+    assert_eq!(f.home.standing(), PrivateHomeStanding::Retained);
+    assert!(evidence.source_poisoned);
+    let PrivateOrderedWorkerExit::Joined(join) = evidence.worker else { panic!("joined evidence expected") };
+    assert!(std::ptr::eq(join.as_ptr(), Arc::as_ptr(custody.join())));
+    assert_eq!(outcome.result.unwrap().namespace, PrivateNamespaceClearance::Established);
+    assert!(f.home.peek_retained(|_| ()).is_none(), "retained readers must still see unreadable");
+}
+
+#[test]
+fn review_joined_home_adds_no_store_cycle_through_the_actual_panic_payload() {
+    let (store, join, custody_weak, home) = {
+        let f = worker_fixture(XServerFrontendClientId(9653));
+        f.permit();
+        let custody = custody_for(&f, &f.fixture.keeper);
+        let registry = worker_registry(&f.fixture.runner);
+        visitable(&f);
+        let payload = f.fixture.durable.clone();
+        let context = custody.prepare_control().unwrap();
+        assert_eq!(context.start(|| std::thread::Builder::new().spawn(move || {
+            std::panic::panic_any(payload)
+        })), PrivateStartupOutcome::Started);
+        drop(f.fixture.registration);
+        let workers = stop_and_collect(&f.fixture.keeper.lease(), registry, &custody);
+        assert_eq!(workers[0].join, Some(PrivateJoinKind::Panicked));
+        let outcome = custody.visit_deferred_cleanup(Some(&collected_for(registry)));
+        assert_eq!(outcome.result.unwrap().namespace, PrivateNamespaceClearance::Established);
+        let Some(PrivateJoinResult::Panicked(payload)) = custody.join().result() else { panic!("actual panic payload expected") };
+        assert!(payload.lock().unwrap().downcast_ref::<PrivateSettlementOwner>().unwrap().is_same_store(&f.fixture.durable));
+        (Arc::downgrade(&f.fixture.durable.inner), Arc::downgrade(custody.join()), Arc::downgrade(&custody.custody), Arc::downgrade(&f.home))
+    };
+    assert!(custody_weak.upgrade().is_none(), "the owner's custody has ended");
+    assert!(join.upgrade().is_none(), "the home does not own the panic payload");
+    assert!(home.upgrade().is_none(), "no store/home/join/payload cycle");
+    assert!(store.upgrade().is_none(), "the exact payload's store is released");
+}

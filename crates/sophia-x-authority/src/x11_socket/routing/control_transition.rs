@@ -332,6 +332,11 @@ pub struct PrivateXServerFrontend {
     /// boundary for such an operation, so the honest state is that the order
     /// stays blocked until there is one.
     parked_barrier: Option<crate::ReadySequence>,
+    /// A control or lease-release operation the ordered path is routing
+    /// right now, in this instance's own custody for the whole interval
+    /// between the budget admitting its dequeue and its outcome being
+    /// recorded. See `PrivateRoutingAttempt`.
+    routing: Option<PrivateRoutingAttempt>,
     /// Whether the ordered consumer has taken this order.
     ///
     /// Claimed when a reserving producer is exposed and never cleared: an
@@ -624,6 +629,7 @@ impl PrivateXServerFrontend {
             keyboards_issued: std::sync::atomic::AtomicBool::new(false),
             parked: None,
             parked_barrier: None,
+            routing: None,
             ordered_runner: false,
             terminal,
         })
@@ -814,6 +820,51 @@ impl PrivateXServerFrontend {
     /// cannot be watched, but the registry it is reported to is this
     /// instance's: a retired record means an outcome was reached, and only
     /// then is the credit released. Accepted, applying and owed all keep it.
+    /// A BOUNDED VISIT of the outstanding list, from a retained cursor: at
+    /// most `bound` identities are observed, each reclaimed only where its
+    /// terminal outcome is already recorded and observed (an ended public
+    /// delivery, a retired control record). An identity still pending is an
+    /// observation that reclaimed nothing; a lease identity and an unknown
+    /// outcome stay charged, as in the full scan. Returns (observed,
+    /// reclaimed). The caller accounts and supervises the visit; this
+    /// releases durable capacity exactly once per identity it removes.
+    pub(crate) fn reclaim_settled_visit(&mut self, cursor: &mut usize, bound: usize) -> (usize, usize) {
+        let recovery = &self.broker.registry.input_recovery;
+        let mut observed = 0;
+        let mut reclaimed = 0;
+        let mut visits = 0;
+        // Each identity at most once per visit: the bound and the list's
+        // length both cap it, so a short list is not walked round twice.
+        let limit = bound.min(self.outstanding.len());
+        while visits < limit && !self.outstanding.is_empty() {
+            if *cursor >= self.outstanding.len() {
+                *cursor = 0;
+            }
+            let settled = match &self.outstanding[*cursor] {
+                PrivateIdentity::Delivery(Some(delivery)) => {
+                    matches!(recovery.delivery_state(*delivery), DeliveryState::Ended)
+                }
+                PrivateIdentity::Control {
+                    completion: Some(token),
+                    ..
+                } => matches!(self.completion.state_of(*token), ControlRecordState::Retired),
+                PrivateIdentity::Delivery(None)
+                | PrivateIdentity::Control { completion: None, .. }
+                | PrivateIdentity::Lease(_) => false,
+            };
+            observed += 1;
+            visits += 1;
+            if settled {
+                self.outstanding.remove(*cursor);
+                self.durable.release();
+                reclaimed += 1;
+            } else {
+                *cursor += 1;
+            }
+        }
+        (observed, reclaimed)
+    }
+
     pub fn reclaim_settled(&mut self) -> usize {
         let recovery = &self.broker.registry.input_recovery;
         let before = self.outstanding.len();

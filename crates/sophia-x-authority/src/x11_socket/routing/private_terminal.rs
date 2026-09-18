@@ -127,6 +127,44 @@ enum PrivateDeliveryStep {
 /// afterwards is never the only holder of accepted work: a failure there ends
 /// the call, not the obligation. Two of these are facts about the order rather
 /// than about an item -- nothing waiting, or nothing may run yet -- and a
+/// One control or lease-release operation being routed from the order.
+///
+/// FRONTEND-OWNED FOR THE WHOLE INTERVAL. Between the supervisor taking the
+/// dequeue and the outcome being recorded, the exact operation, its sequence
+/// and its identity live here and nowhere else: not in a local a call could
+/// take with the frame, and not in the parked slot it came from. `attempted`
+/// flips true, and the identity goes to `outstanding`, immediately before the
+/// effect is run and never after: an unwind inside the effect leaves an
+/// attempted attempt with its credit owed exactly once; an unwind before it
+/// leaves an unattempted one that owes no newly attempted effect but still
+/// owns the accepted operation, its sequence and its credit, and owes its
+/// eventual outcome. Either blocks the order until
+/// something answers for it. Nothing here turns an attempt back into a
+/// parked operation and nothing infers a receipt; shutdown settlement hands
+/// an un-attempted one to the durable owner as it hands a parked operation,
+/// and an attempted one is already answered for by its outstanding identity.
+#[cfg(unix)]
+struct PrivateRoutingAttempt {
+    sequence: crate::ReadySequence,
+    identity: PrivateIdentity,
+    /// The operation itself until the effect takes it; `None` from the
+    /// moment the effect may have begun.
+    operation: Option<PrivateOperation>,
+    attempted: bool,
+}
+
+/// Where a control may interrupt a routing attempt, test builds only.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivateRoutingPoint {
+    /// Admitted and in custody, the watchdog begun, the effect not yet run.
+    AfterAdmitted,
+    /// The effect ran and answered; its summary is not yet recorded.
+    AfterEffect,
+}
+
+/// What one step of the ordered path did, for the caller that has to
+/// account for it: a runner charging a budget and marking a watchdog. A
 /// caller told only "no item" could not tell them apart.
 #[cfg(unix)]
 enum PrivateOrderedStep {
@@ -160,6 +198,16 @@ enum PrivateOrderedStep {
     /// One item was taken that this path does not execute, and is held as the
     /// parked operation. The order is blocked behind it now.
     Parked(crate::ReadySequence),
+    /// One control or lease-release operation was taken, watched, and handed
+    /// to the registry -- routed to its client's writer, or the lease retired
+    /// -- by the effect the unprepared route runs. Routed is not answered:
+    /// its credit stays outstanding until its terminal outcome is observed,
+    /// and nothing is stored in the turn for it.
+    Routed(crate::ReadySequence),
+    /// Routed as above, but the supervisor would not take the finish: the
+    /// effect happened and is recorded; that anything was still watching when
+    /// it returned did not.
+    RoutedUnwatched(crate::ReadySequence),
 }
 
 /// to expose now.
@@ -271,7 +319,7 @@ impl PrivateXServerFrontend {
         // it before one call protects it from that call and from nothing else:
         // a later turn that dequeued into the same slot would overwrite the
         // only record of work already taken, whose application is unknown.
-        if self.terminal.current.is_some() {
+        if self.terminal.current.is_some() || self.routing.is_some() {
             return Err(XServerFrontendRouteError::OrderedItemUnresolved);
         }
         // Anything an earlier turn parked still holds its place. Nothing after
@@ -317,13 +365,15 @@ impl PrivateXServerFrontend {
                     Some(PrivateOrderedStep::Parked(sequence))
                 }
             },
-            // An operation this path does not execute. Parked in place, and
-            // the order is blocked: later input must not apply past an earlier
-            // operation that has neither run nor been cancelled.
+            // A CONTROL OR LEASE RELEASE SHARES THIS ORDER AND IS EXECUTED
+            // FROM IT, by the same effect the unprepared route runs. Until the
+            // budget admits the dequeue below it is held parked with the
+            // barrier up, so a refused start leaves it owned and the order
+            // blocked behind it rather than lost or overtaken.
             other => {
                 self.parked = Some((sequence, other));
                 self.parked_barrier = Some(sequence);
-                Some(PrivateOrderedStep::Parked(sequence))
+                None
             }
         };
         // Offered every dequeue, including one that will only be parked:
@@ -337,6 +387,63 @@ impl PrivateXServerFrontend {
         // fail to come back.
         if let Some(parked) = taken {
             return Ok(parked);
+        }
+        // ADMITTED, AND NOT INPUT: the held operation is routed now, from
+        // this instance's custody and under the supervisor. Out of the parked
+        // slot into the attempt BEFORE the watchdog begins, so no interval
+        // holds it in a local; the barrier stays up until the outcome is
+        // recorded. The registry hands a control to its client's writer or
+        // retires the lease -- real registry, input and focus guards -- so the
+        // watchdog is begun before those acquisitions and finished only after
+        // the outcome is durably recorded. Routed is not a receipt: the
+        // identity is outstanding, as the unprepared route records it, until
+        // `reclaim_settled` sees its terminal outcome; a lease identity has
+        // none and is never freed here. A refusal from the registry is the
+        // step's error with the identity still recorded, so a failure cannot
+        // look like a completion and free its credit.
+        if self.terminal.current.is_none()
+            && let Some((parked_sequence, _)) = self.parked
+            && parked_sequence == sequence
+        {
+            // WATCHED FIRST, WHILE STILL PARKED: a supervisor that will not
+            // take it leaves the operation exactly where it was, parked and
+            // un-attempted. It owes no newly attempted effect; it still owns
+            // the accepted operation, its sequence and its credit, and owes
+            // its eventual outcome. The order stays blocked on it.
+            let Ok(watched) = watch.begin_dequeued(taken_at) else {
+                return Ok(PrivateOrderedStep::Unwatched(sequence));
+            };
+            let (_, operation) = self.parked.take().expect("checked above");
+            let identity = PrivateIdentity::of(&operation);
+            self.routing = Some(PrivateRoutingAttempt {
+                sequence,
+                identity,
+                operation: Some(operation),
+                attempted: false,
+            });
+            #[cfg(all(test, unix))]
+            routing_tests::stage_routing(PrivateRoutingPoint::AfterAdmitted);
+            // THE EFFECT MAY BEGIN: attempted and outstanding are published
+            // together, immediately before the call, with no fallible step
+            // between them and it. From here an unwind leaves an attempted
+            // attempt owing its credit exactly once.
+            let attempt = self.routing.as_mut().expect("placed above");
+            attempt.attempted = true;
+            let operation = attempt.operation.take().expect("held until attempted");
+            self.outstanding.push(identity);
+            let routed = self.run_one(operation);
+            #[cfg(all(test, unix))]
+            routing_tests::stage_routing(PrivateRoutingPoint::AfterEffect);
+            // RECORDED BEFORE THE FINISH: the attempt is over either way (the
+            // operation was consumed), the barrier comes down, and only then
+            // is the supervisor asked to take the finish.
+            self.routing = None;
+            self.parked_barrier = None;
+            routed?;
+            return Ok(match watched.finish() {
+                Ok(()) => PrivateOrderedStep::Routed(sequence),
+                Err(_) => PrivateOrderedStep::RoutedUnwatched(sequence),
+            });
         }
         // In this instance's hands, and common not yet taken. The instant is
         // the one read at the dequeue, so what the supervisor measures starts
@@ -419,10 +526,22 @@ impl PrivateXServerFrontend {
                     self.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
                     break;
                 }
-                PrivateOrderedStep::Decided(_) | PrivateOrderedStep::DecidedUnwatched(_) => {}
+                PrivateOrderedStep::Decided(_)
+                | PrivateOrderedStep::DecidedUnwatched(_)
+                | PrivateOrderedStep::Routed(_)
+                | PrivateOrderedStep::RoutedUnwatched(_) => {}
             }
         }
         Ok(std::mem::take(&mut self.terminal.turn))
+    }
+
+    /// The routing attempt in custody, if any: its sequence, identity and
+    /// whether its effect may have begun. Read, never taken.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn routing_attempt(&self) -> Option<(crate::ReadySequence, PrivateIdentity, bool)> {
+        self.routing
+            .as_ref()
+            .map(|attempt| (attempt.sequence, attempt.identity, attempt.attempted))
     }
 
     /// What an earlier turn parked, if anything.

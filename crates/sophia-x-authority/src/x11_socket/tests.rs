@@ -1150,6 +1150,10 @@ include!("tests/private_worker_attachment_exits.rs");
 include!("tests/private_failed_retention.rs");
 include!("tests/private_deferred_cleanup.rs");
 include!("tests/private_deferred_cleanup_service.rs");
+include!("tests/private_producer_service.rs");
+include!("tests/private_producer_port.rs");
+include!("tests/private_producer_exits.rs");
+include!("tests/private_producer_runner.rs");
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),

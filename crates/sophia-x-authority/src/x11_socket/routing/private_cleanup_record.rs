@@ -11,8 +11,10 @@
 // the only production trigger, but it now DECIDES: a connection with a
 // private source runs the synchronous body below only when its registered
 // departure establishes that nothing was ever started, and otherwise leaves
-// the duty here, recorded as deferred, for the custody's keeper. Nothing yet
-// executes a deferred duty. See `private_destruction.rs`.
+// the duty here, recorded as deferred, for the custody's keeper. A deferred
+// duty is executed by that keeper's service after collection, through the
+// custody (`private_deferred_cleanup.rs`), using `clear_namespace_under_number`
+// below and never `retain_ordered_continuation`. See `private_destruction.rs`.
 //
 // KEEPING IT IS NOT RUNNING IT. An inert record that is never published
 // executes nothing, and a record retained after its registration has gone does

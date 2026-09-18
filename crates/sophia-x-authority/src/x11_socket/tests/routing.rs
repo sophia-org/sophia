@@ -15754,18 +15754,18 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
         .expect("an ingress");
     let mut keyboards = private.keyboards().expect("this instance's state");
 
-    // A control first, then input. The control carries its own accepted
-    // completion registration and this path does not execute it.
+    // An operation this path parks first, then input. A routed input that
+    // carries no reservation is one the ordered path does not execute (a
+    // control is routed from this order now, so it is no longer the
+    // example): it stays parked, and the order is blocked behind it.
     private
-        .control_producer()
-        .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
-            client,
-            command: XAuthorityControlCommand::FocusSurface {
-                transaction: TransactionId::from_raw(8310),
-                surface,
-            },
-        })
-        .expect("the order to accept the control");
+        .submit(&service_keeper.lease(), button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(8310),
+            272,
+            true,
+        ))
+        .expect("the order to accept the unreserved input");
     ingress
         .submit(&service_keeper.lease(), button_to(
             surface,
@@ -15808,8 +15808,8 @@ fn no_input_applies_past_an_earlier_operation_that_has_not_run() {
     // took it and then dropped it has answered nothing. Until a path exists
     // that executes or cancels such an operation, the order stays blocked --
     // which is the honest state rather than a convenient one.
-    let (_, parked) = private.take_parked().expect("the parked control");
-    assert!(matches!(parked, PrivateOperation::Control(_, _)));
+    let (_, parked) = private.take_parked().expect("the parked operation");
+    assert!(matches!(parked, PrivateOperation::RoutedInput(_)));
     let after = private
         .route_pending_ordered(&mut keyboards, &control_watchdog())
         .expect("a readable order");
@@ -16371,7 +16371,7 @@ fn a_parked_operation_is_handed_to_the_durable_owner_at_shutdown() {
         .expect("the surface to register");
     let mut keyboards = private.keyboards().expect("this instance's state");
 
-    // A control the ordered path does not execute, which parks the order.
+    // A control, parked below by a refused start.
     private
         .control_producer()
         .submit(&service_keeper.lease(), XAuthorityClientControlCommand {
@@ -16382,13 +16382,19 @@ fn a_parked_operation_is_handed_to_the_durable_owner_at_shutdown() {
             },
         })
         .expect("the order to accept the control");
-    let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
-        .expect("a readable order");
-    assert!(matches!(
-        turn.as_slice(),
-        [PrivateOrderedItem::Parked { .. }]
-    ));
+    // PARKED BY A REFUSED START. A control is routed from this order now,
+    // so what parks it is the budget hook refusing its dequeue: the control
+    // stays parked, un-attempted, behind its barrier.
+    assert!(
+        private
+            .step_once(
+                &mut keyboards,
+                &mut |_, _| Err(XServerFrontendRouteError::OrderedItemUnresolved),
+                &control_watchdog(),
+            )
+            .is_err(),
+        "a refused start is the step's error"
+    );
     assert!(private.parked().is_some());
 
     let owed_before = durable.owed().expect("a readable owner");
@@ -16543,13 +16549,19 @@ fn a_parked_control_is_answered_exactly_once_after_shutdown() {
             },
         })
         .expect("the order to accept the control");
-    let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
-        .expect("a readable order");
-    assert!(matches!(
-        turn.as_slice(),
-        [PrivateOrderedItem::Parked { .. }]
-    ));
+    // PARKED BY A REFUSED START. A control is routed from this order now,
+    // so what parks it is the budget hook refusing its dequeue: the control
+    // stays parked, un-attempted, behind its barrier.
+    assert!(
+        private
+            .step_once(
+                &mut keyboards,
+                &mut |_, _| Err(XServerFrontendRouteError::OrderedItemUnresolved),
+                &control_watchdog(),
+            )
+            .is_err(),
+        "a refused start is the step's error"
+    );
 
     // The credit this operation holds, read before shutdown. This does not
     // reserve a second one -- an earlier version of this comment said it did,
@@ -16742,13 +16754,19 @@ fn a_parked_control_whose_registry_is_unreadable_is_kept_whole() {
             },
         })
         .expect("the order to accept the control");
-    let turn = private
-        .route_pending_ordered(&mut keyboards, &control_watchdog())
-        .expect("a readable order");
-    assert!(matches!(
-        turn.as_slice(),
-        [PrivateOrderedItem::Parked { .. }]
-    ));
+    // PARKED BY A REFUSED START. A control is routed from this order now,
+    // so what parks it is the budget hook refusing its dequeue: the control
+    // stays parked, un-attempted, behind its barrier.
+    assert!(
+        private
+            .step_once(
+                &mut keyboards,
+                &mut |_, _| Err(XServerFrontendRouteError::OrderedItemUnresolved),
+                &control_watchdog(),
+            )
+            .is_err(),
+        "a refused start is the step's error"
+    );
     assert_eq!(durable.reserved().expect("a readable owner"), 1);
 
     // The completion registry becomes unreadable before shutdown.
@@ -19195,16 +19213,23 @@ fn a_blocked_order_takes_nothing_and_marks_nothing() {
     } = &mut runner;
     let private = frontend.as_mut().expect("a live runner");
     let watch = watch.as_ref().expect("a sealed watch");
-    // A control command is an operation this path does not execute, so the
+    // A control whose dequeue the budget hook refuses stays parked, and the
     // order parks behind it.
     private
         .control_producer()
         .submit(&keeper.lease(), configure(client, surface, 13021))
         .expect("the order to accept it");
-    let step = private
-        .step_once(keyboards, &mut |_, _| Ok(()), watch)
-        .expect("a readable order");
-    assert!(matches!(step, PrivateOrderedStep::Parked(_)));
+    assert!(
+        private
+            .step_once(
+                keyboards,
+                &mut |_, _| Err(XServerFrontendRouteError::OrderedItemUnresolved),
+                watch,
+            )
+            .is_err(),
+        "a refused start is the step's error, and the control stays parked"
+    );
+    assert!(private.parked().is_some());
 
     // Blocked is not idle. A runner told only "no item" would charge a start
     // and mark a watchdog for work it could never have run, and would keep
@@ -19879,12 +19904,16 @@ fn a_refused_entry_advancing_is_a_step_with_nothing_to_report() {
     let client = XServerFrontendClientId(1603);
     let surface = SurfaceId::new(1603, 1);
     let mut fixture = ordered_ingress_fixture(client, surface);
-    // A control command is an operation the ordered path does not execute, so
-    // the order parks behind it.
+    // A routed input without a reservation is an operation the ordered path
+    // does not execute, so the order parks behind it.
     fixture
         .private
-        .control_producer()
-        .submit(&fixture._keeper.lease(), configure(client, surface, 16031))
+        .submit(&fixture._keeper.lease(), button_to(
+            surface,
+            XAuthorityInputDeliveryId::from_raw(16031),
+            272,
+            true,
+        ))
         .expect("the order to accept it");
     let turn = fixture
         .private

@@ -56,6 +56,33 @@ pub struct PrivatePreparedRunner {
     service_origin: std::time::Instant,
     service: sophia_input_authority::ServiceBudget,
     prefer_cleanup: bool,
+    /// Where the bounded reclamation visit resumes in the outstanding list.
+    reclaim_cursor: usize,
+}
+
+/// How many outstanding identities one accounted reclamation visit observes
+/// at most.
+#[cfg(unix)]
+const PRIVATE_RECLAIM_VISIT_BOUND: usize = 8;
+
+/// What one accounted reclamation visit did.
+#[cfg(unix)]
+enum PrivateAccountedReclaim {
+    /// Nothing outstanding: no start spent, nothing watched.
+    Idle,
+    /// The cleanup allowance refused the visit; nothing observed.
+    Yield {
+        cause: sophia_input_authority::ServiceStartRefusal,
+    },
+    /// The visit ran under a charged cleanup start.
+    Visited {
+        observed: usize,
+        reclaimed: usize,
+        charge: Option<sophia_input_authority::ServiceCharge>,
+        /// The supervisor would not take the visit (nothing observed) or
+        /// its finish (what was reclaimed stands).
+        unwatched: bool,
+    },
 }
 
 /// Processing, enqueue and settlement are counted separately. An enqueued
@@ -106,6 +133,26 @@ pub struct PrivateRunnerProgress {
     /// All charged starts, including service of previously decided work.
     pub starts: usize,
     pub terminal_steps: usize,
+    /// Control and lease-release operations handed on from the order this
+    /// turn: routed, not answered.
+    pub routed: usize,
+    /// Credits given back this turn by the accounted, watched, bounded visit
+    /// of outstanding work's terminal outcomes: control records retired,
+    /// public deliveries ended. Lease identities and unknown outcomes are
+    /// never among them.
+    pub reclaimed: usize,
+    /// Outstanding identities the visit looked at this turn (reclaimed or
+    /// still pending).
+    pub reclaim_observed: usize,
+    /// The cleanup allowance's refusal of the visit, if it refused.
+    pub reclaim_refusal: Option<sophia_input_authority::ServiceStartRefusal>,
+    /// The supervisor would not take the visit or its finish.
+    pub reclaim_unwatched: bool,
+    /// The last control or lease release routed this turn, by its position
+    /// in the order.
+    pub last_routed: Option<crate::ReadySequence>,
+    /// Why the last refused execution this turn was refused.
+    pub(crate) last_refusal: Option<PrivateExecutionRefusal>,
 }
 
 #[cfg(unix)]
@@ -275,6 +322,7 @@ impl PrivateXServerFrontend {
             service_origin: std::time::Instant::now(),
             service: sophia_input_authority::ServiceBudget::planned(std::time::Duration::ZERO),
             prefer_cleanup: true,
+            reclaim_cursor: 0,
         })
     }
 }
@@ -459,6 +507,43 @@ impl PrivatePreparedRunner {
         })
     }
 
+    /// Whether this turn moved anything: took, decided, routed, delivered
+    /// or settled. An allowance refusal or a blocked order is not progress.
+    pub(crate) fn advanced(progress: &PrivateRunnerProgress) -> bool {
+        progress.starts != 0
+            || progress.terminal_steps != 0
+            || progress.taken != 0
+            || progress.routed != 0
+            || progress.dispatched != 0
+            || progress.recipient_settled != 0
+            || progress.reclaimed != 0
+    }
+
+    /// The frontend this runner executes over, for the service loop that
+    /// admits connections through its broker and attaches their workers.
+    /// Borrowed from the runner, never taken: the runner stays the one owner
+    /// of the prepared path on this thread.
+    pub(crate) fn frontend(&self) -> &PrivateXServerFrontend {
+        self.frontend.as_ref().expect("live runner")
+    }
+
+    /// Close producer admission: the supervising watchdog owner is dropped,
+    /// which fails an active execution, closes the sealed gate the frontend's
+    /// admission consults (so every producer refuses from here) and detaches
+    /// the supervisor without joining it. The frontend, its accepted order
+    /// and its retained work are untouched; this is the first act of a
+    /// service exit, before anything is waited for.
+    pub(crate) fn close_admission(&mut self) {
+        drop(self.watch.take());
+    }
+
+    /// Give the frontend back unsettled, for a service that must not finalise
+    /// it: admission is closed first, as `shutdown` closes it.
+    pub(crate) fn release_frontend(mut self) -> PrivateXServerFrontend {
+        drop(self.watch.take());
+        self.frontend.take().expect("live runner")
+    }
+
     pub fn seat(&self) -> SeatId {
         self.seat
     }
@@ -513,7 +598,6 @@ impl PrivatePreparedRunner {
     /// takes accepted work and advances connections whose evidence lives
     /// outside this service, and one that could run with no keeper would be
     /// serving connections nothing can afterwards answer for.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn service_turn(
         &mut self,
         service: &PrivateServiceLease<'_>,
@@ -715,11 +799,29 @@ impl PrivatePreparedRunner {
                     progress.blocked = Some(sequence);
                     break;
                 }
+                PrivateOrderedStep::Routed(sequence) => {
+                    progress.routed += 1;
+                    progress.last_routed = Some(sequence);
+                }
+                PrivateOrderedStep::RoutedUnwatched(sequence) => {
+                    progress.routed += 1;
+                    progress.last_routed = Some(sequence);
+                    progress.unwatched = Some(sequence);
+                    break;
+                }
                 PrivateOrderedStep::Decided(sequence)
                 | PrivateOrderedStep::DecidedUnwatched(sequence) => {
                     let frontend = self.frontend.as_ref().expect("live runner");
-                    progress.refused += usize::from(matches!(frontend.terminal.turn.last(),
-                        Some(PrivateOrderedItem::Refused { sequence: stored, .. }) if *stored==sequence));
+                    if let Some(PrivateOrderedItem::Refused {
+                        sequence: stored,
+                        refusal,
+                        ..
+                    }) = frontend.terminal.turn.last()
+                        && *stored == sequence
+                    {
+                        progress.refused += 1;
+                        progress.last_refusal = Some(*refusal);
+                    }
                     if matches!(step, PrivateOrderedStep::DecidedUnwatched(_)) {
                         progress.unwatched = Some(sequence);
                         break;
@@ -730,9 +832,112 @@ impl PrivatePreparedRunner {
                 break;
             }
         }
+        // THE LIVE RECLAMATION, ON AN OTHERWISE IDLE TURN, UNDER THE CLEANUP
+        // ALLOWANCE AND THE WATCHDOG: a bounded, cursor-resumed visit of the
+        // outstanding list, spending one charged cleanup start when there is
+        // anything to visit and none when there is not. Deliveries keep
+        // their cleanup starts: a turn that moved work does not also spend
+        // one here. What the visit reclaims is what its owners already
+        // recorded and observed; a pending outcome is an observation, not a
+        // completion. This is what lets a continuing service reuse control
+        // capacity; it borrows no second budget.
+        if !Self::advanced(&progress) {
+            match self.reclaim_accounted_step()? {
+                PrivateAccountedReclaim::Idle => {}
+                PrivateAccountedReclaim::Yield { cause } => {
+                    progress.reclaim_refusal = Some(cause);
+                }
+                PrivateAccountedReclaim::Visited {
+                    observed,
+                    reclaimed,
+                    charge,
+                    unwatched,
+                } => {
+                    progress.reclaim_observed = observed;
+                    progress.reclaimed = reclaimed;
+                    progress.reclaim_unwatched = unwatched;
+                    progress.record_charge(charge);
+                }
+            }
+        }
         let frontend = self.frontend.as_ref().expect("live runner");
         progress.blocked = progress.blocked.or_else(|| frontend.blocked());
         Ok(progress)
+    }
+
+    /// One accounted reclamation visit: idle with nothing outstanding;
+    /// otherwise a cleanup start is asked of the budget and, if admitted,
+    /// the supervisor is begun BEFORE the recovery and completion guards
+    /// are read, the bounded visit runs, and the supervisor's finish is
+    /// asked only after the visit's releases are done -- a late failure
+    /// there is recorded, and undoes none of them. An interrupted visit
+    /// (an unwind inside it) drops the run, which closes the budget, and
+    /// leaves the list exactly as far as it got.
+    fn reclaim_accounted_step(
+        &mut self,
+    ) -> Result<PrivateAccountedReclaim, XServerFrontendRouteError> {
+        use sophia_input_authority::{CleanupReadiness, ServiceWork};
+        let Self {
+            watch,
+            frontend,
+            service_origin,
+            service,
+            reclaim_cursor,
+            ..
+        } = self;
+        let frontend = frontend.as_mut().expect("live runner");
+        if frontend.outstanding.is_empty() {
+            return Ok(PrivateAccountedReclaim::Idle);
+        }
+        let admission = match service.prepare(
+            service_origin.elapsed(),
+            ServiceWork::Cleanup,
+            CleanupReadiness::Eligible,
+        ) {
+            Ok(admission) => admission,
+            Err(cause) => return Ok(PrivateAccountedReclaim::Yield { cause }),
+        };
+        let began = std::time::Instant::now();
+        let Some(elapsed) = began.checked_duration_since(*service_origin) else {
+            return Ok(PrivateAccountedReclaim::Yield {
+                cause: sophia_input_authority::ServiceStartRefusal::ClockRegressed,
+            });
+        };
+        let run = match admission.dequeued(elapsed, CleanupReadiness::Eligible) {
+            Ok(run) => run,
+            Err(cause) => return Ok(PrivateAccountedReclaim::Yield { cause }),
+        };
+        let watched = watch
+            .as_ref()
+            .expect("prepared supervisor")
+            .begin_dequeued(began)
+            .ok();
+        let (observed, reclaimed, unwatched) = match watched {
+            Some(mut watched) => {
+                if watched.applying().is_err() {
+                    (0, 0, true)
+                } else {
+                    // STAGE-ONLY interruption point, test builds only: inside
+                    // the watched, charged visit, before its first guard.
+                    #[cfg(all(test, unix))]
+                    routing_tests::stage_reclaim_visit();
+                    let (observed, reclaimed) =
+                        frontend.reclaim_settled_visit(reclaim_cursor, PRIVATE_RECLAIM_VISIT_BOUND);
+                    let unwatched = watched.finish().is_err();
+                    (observed, reclaimed, unwatched)
+                }
+            }
+            None => (0, 0, true),
+        };
+        let charge = run
+            .finish(service_origin.elapsed())
+            .map_err(|_| XServerFrontendRouteError::OrderedItemUnresolved)?;
+        Ok(PrivateAccountedReclaim::Visited {
+            observed,
+            reclaimed,
+            charge: Some(charge),
+            unwatched,
+        })
     }
 
     pub fn shutdown(mut self) -> PrivateSettlement {

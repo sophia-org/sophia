@@ -451,6 +451,7 @@ fn a_private_service_admits_a_real_connection_and_stops_in_order() {
             private_service_parts(4),
             owner,
             service_commands,
+            PrivateProducerPort::unattended(),
             Arc::new(|_| {}),
         );
         let reported = outcome.as_ref().map(|ret| ret.unresolved_egress.clone()).ok();
@@ -486,6 +487,7 @@ fn losing_the_command_channel_stops_the_private_service_in_the_same_order() {
             private_service_parts(4),
             owner,
             service_commands,
+            PrivateProducerPort::unattended(),
             Arc::new(|_| {}),
         );
         (outcome.is_ok(), inspect_after(owner, durable))
@@ -523,6 +525,7 @@ fn an_error_after_a_connection_exists_collects_a_worker_blocked_on_egress() {
             private_service_parts(4),
             owner,
             service_commands,
+            PrivateProducerPort::unattended(),
             observer,
         );
         let error = outcome.err().map(|failure| format!("{failure:?}"));
@@ -603,6 +606,7 @@ fn launch_held(
                 config,
                 transaction_sender,
                 service_commands,
+            PrivateProducerPort::unattended(),
                 observer,
             )
         }));
@@ -633,44 +637,76 @@ fn launch_held(
 }
 
 #[test]
-fn the_private_adapter_routes_through_the_frontends_own_leased_operation() {
-    // A LABELLED ADAPTER SEAM, not a socket run. The service's routing
-    // adapter must be the private frontend's own leased route_pending -- with
-    // its ordered-runner guard -- and not the broker's routed-input drain,
-    // which has no such guard and drains a different order. With the ordered
-    // runner engaged, the private operation refuses; the broker's would have
-    // returned Ok(0).
-    let durable = PrivateSettlementOwner::default();
-    let owner = service_owner(&durable, 4);
-    let mut private = crate::PrivateXServerFrontend::new(private_service_parts(4), &owner)
-        .unwrap_or_else(|(refusal, _)| panic!("a frontend: {refusal:?}"));
+fn the_private_adapter_serves_the_order_through_the_prepared_runner() {
+    // A LABELLED ADAPTER SEAM, not a socket run. The service's order
+    // adapter must be the prepared runner's own leased turn -- its budget,
+    // its watchdog, its one consumer -- and not the broker's routed-input
+    // drain. Nothing accepted is a turn that moved nothing; work submitted
+    // through the runner's real ingress is taken by the next turn and
+    // counted in the invocation's tally; a foreign lease is refused by the
+    // runner's own check before anything is taken.
+    let (mut runner, owner, registration, _channels, _acks, _deliveries) =
+        prepared_runner_fixture();
     let lease = owner.lease();
+    let mut port = PrivateProducerPort::unattended();
+    let mut order = PrivateOrderTally::default();
     {
         let mut adapter = LeasedPrivateBroker {
-            frontend: &mut private,
+            runner: &mut runner,
+            port: &mut port,
+            order: &mut order,
             service: &lease,
         };
-        assert!(
-            matches!(adapter.route_pending(), Ok(0)),
-            "nothing accepted, nothing run"
-        );
+        assert!(matches!(adapter.serve_order(), Ok(0)), "nothing accepted, nothing moved");
     }
-    private.ordered_runner = true;
+    assert_eq!(order.turns, 1);
+    assert_eq!(order.taken, 0);
+    let ingress = runner
+        .ingress_for(&lease, XServerFrontendClientId::from_raw(9000), DeviceId::from_raw(1))
+        .expect("the runner's own producer");
+    ingress
+        .submit(
+            &lease,
+            button_to(
+                SurfaceId::new(9000, 1),
+                XAuthorityInputDeliveryId::from_raw(93001),
+                272,
+                true,
+            ),
+        )
+        .expect("the order accepts it");
     {
         let mut adapter = LeasedPrivateBroker {
-            frontend: &mut private,
+            runner: &mut runner,
+            port: &mut port,
+            order: &mut order,
             service: &lease,
         };
-        let refused = adapter.route_pending().expect_err("the private operation refuses");
-        assert!(
-            refused
-                .to_string()
-                .contains("ordered input consumer already drains this order"),
-            "the private operation's own refusal, not the broker's silence: {refused}"
-        );
+        assert!(matches!(adapter.serve_order(), Ok(1)), "the turn took it");
     }
-    private.ordered_runner = false;
-    drop((private.shutdown(), owner, durable));
+    assert_eq!(order.turns, 2);
+    assert_eq!(order.taken, 1, "the runner took the submitted work");
+    let other = PrivateSettlementOwner::default();
+    let foreign_owner = service_owner(&other, 4);
+    let foreign = foreign_owner.lease();
+    {
+        let mut adapter = LeasedPrivateBroker {
+            runner: &mut runner,
+            port: &mut port,
+            order: &mut order,
+            service: &foreign,
+        };
+        let refused = adapter.serve_order().expect_err("a foreign lease is refused");
+        assert!(
+            refused.to_string().contains("kept by a different owner"),
+            "the runner's own refusal: {refused}"
+        );
+        assert!(adapter.attach_ready().is_err());
+        assert!(adapter.answer_producers().is_err());
+    }
+    assert_eq!(order.turns, 2, "a refused turn is not a turn");
+    drop(registration);
+    drop((runner.shutdown(), owner));
 }
 
 fn lifecycle_still_accepting(registry: &XServerFrontendRouteRegistry) -> bool {

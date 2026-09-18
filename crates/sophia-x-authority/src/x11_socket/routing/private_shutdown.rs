@@ -105,6 +105,15 @@ impl PrivateXServerFrontend {
             };
         }
         self.settled = true;
+        // A ROUTING ATTEMPT THAT NEVER RAN ITS EFFECT is settled as the parked
+        // operation it still is; one whose effect may have begun has its
+        // identity outstanding below and its operation consumed, so nothing
+        // is carried twice and nothing is inferred delivered.
+        if let Some(attempt) = self.routing.take()
+            && let Some(operation) = attempt.operation
+        {
+            self.parked = Some((attempt.sequence, operation));
+        }
         // The parked operation never ran and carries no custody, so the
         // durable owner is exactly its home: it is work this instance accepted
         // and could not answer, which is what that owner exists for. Handed

@@ -355,13 +355,26 @@ pub struct PrivateServiceLease<'o> {
 }
 
 #[cfg(unix)]
-impl PrivateServiceLease<'_> {
+impl<'o> PrivateServiceLease<'o> {
     /// The store the leased owner is established over.
     ///
     /// For a service that has to leave unresolved work somewhere that
     /// outlives its own frame; it grants nothing else.
     pub(crate) fn store(&self) -> &PrivateSettlementOwner {
         self.owner.store()
+    }
+
+    /// The owner this lease is on, for an act that asks the owner's own
+    /// identity rather than the lease's checked reach: preparing the runner
+    /// asks it before anything is installed.
+    pub(crate) fn owner(&self) -> &'o PrivateServiceOwner {
+        self.owner
+    }
+
+    /// This lease's keeper identity, for a request that has to say from
+    /// another thread which owner it is on.
+    pub(crate) fn keeper(&self) -> PrivateCustodyKeeper {
+        self.owner.keeper()
     }
 }
 

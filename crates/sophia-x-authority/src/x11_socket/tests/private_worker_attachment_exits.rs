@@ -229,6 +229,7 @@ fn launch_two_origins(
                 distinct_config(socket, NamespaceId::from_raw(namespace), 3),
                 transaction_sender,
                 commands,
+            PrivateProducerPort::unattended(),
                 Arc::new(|_| {}),
             )
         };
@@ -870,6 +871,7 @@ fn launch_recovering(
             config,
             transaction_sender,
             service_commands,
+            PrivateProducerPort::unattended(),
             Arc::new(|_| {}),
         );
         assert!(

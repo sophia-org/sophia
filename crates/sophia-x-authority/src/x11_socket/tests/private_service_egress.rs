@@ -260,6 +260,7 @@ fn a_lease_on_a_different_owner_is_refused_before_a_listener_is_bound() {
         config,
         transaction_sender,
         service_commands,
+            PrivateProducerPort::unattended(),
         Arc::new(|_| {}),
     );
     let PrivateServiceFailure::Failed {
@@ -293,6 +294,7 @@ fn a_refused_private_frontend_returns_its_parts_and_binds_nothing() {
         private_service_parts(4),
         &owner,
         service_commands,
+            PrivateProducerPort::unattended(),
         Arc::new(|_| {}),
     );
     let PrivateServiceFailure::Refused { refusal, parts } =
@@ -556,6 +558,7 @@ fn the_shelf_keeps_its_charge_on_the_store_while_it_is_retained() {
             private_service_config(&path, namespace, 4),
             transaction_sender,
             service_commands,
+            PrivateProducerPort::unattended(),
             observer,
         );
         let _ = done.send(());
@@ -653,6 +656,7 @@ fn obligations_from_two_invocations_stay_distinct_after_their_frames_are_gone() 
                 private_service_config(&path, namespace, 4),
                 transaction_sender,
                 service_commands,
+            PrivateProducerPort::unattended(),
                 observer,
             );
             let _ = done.send(());
@@ -731,6 +735,7 @@ fn an_invocation_that_owes_no_retained_egress_releases_its_charge_for_reuse() {
                     config,
                     transaction_sender,
                     service_commands,
+            PrivateProducerPort::unattended(),
                     Arc::new(|_| {}),
                 );
                 let _ = done.send(());

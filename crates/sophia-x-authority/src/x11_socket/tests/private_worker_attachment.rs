@@ -342,6 +342,7 @@ fn launch_attached_with(
                 config,
                 transaction_sender,
                 service_commands,
+            PrivateProducerPort::unattended(),
                 observer,
             )
         }));
@@ -882,4 +883,102 @@ fn pause_after_registration_drop(
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .push((PausedFrame::of(registry, client), Mutex::new(paused)));
     release
+}
+
+// STAGE-ONLY hook for the ordered path's routing attempt: armed on this
+// thread for one point of the next attempt; fires once.
+type StagedRoutingHook = (PrivateRoutingPoint, Box<dyn FnOnce()>);
+thread_local! {
+    static STAGE_ROUTING: std::cell::RefCell<Option<StagedRoutingHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub(super) fn stage_routing(point: PrivateRoutingPoint) {
+    let armed = STAGE_ROUTING
+        .try_with(|slot| {
+            let mut held = slot.borrow_mut();
+            if held.as_ref().is_some_and(|(at, _)| *at == point) {
+                held.take().map(|(_, hook)| hook)
+            } else {
+                None
+            }
+        })
+        .ok()
+        .flatten();
+    if let Some(hook) = armed {
+        hook();
+    }
+}
+
+#[allow(dead_code)]
+fn stage_routing_at(point: PrivateRoutingPoint, hook: impl FnOnce() + 'static) {
+    STAGE_ROUTING.with(|slot| *slot.borrow_mut() = Some((point, Box::new(hook))));
+}
+
+// STAGE-ONLY hook for the accounted reclamation visit: armed on this thread
+// for the next visit; fires once, inside the charged, watched interval.
+thread_local! {
+    static STAGE_RECLAIM_VISIT: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub(super) fn stage_reclaim_visit() {
+    let armed = STAGE_RECLAIM_VISIT
+        .try_with(|slot| slot.borrow_mut().take())
+        .ok()
+        .flatten();
+    if let Some(hook) = armed {
+        hook();
+    }
+}
+
+#[allow(dead_code)]
+fn stage_reclaim_visit_with(hook: impl FnOnce() + 'static) {
+    STAGE_RECLAIM_VISIT.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+// STAGE-ONLY SCHEDULING HOOK for the service exit: the interval after
+// producer admission is closed and before the collection stops or waits for
+// anything. Keyed by the registry the service is over.
+type PausedExit = (usize, Mutex<std::sync::mpsc::Receiver<()>>);
+static PAUSED_AFTER_ADMISSION_CLOSED: Mutex<Vec<PausedExit>> = Mutex::new(Vec::new());
+
+pub(super) fn stage_after_admission_closed(registry: &XServerFrontendRouteRegistry) {
+    let key = Arc::as_ptr(&registry.clients) as usize;
+    let paused = {
+        let mut held = PAUSED_AFTER_ADMISSION_CLOSED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        held.iter()
+            .position(|(paused, _)| *paused == key)
+            .map(|index| held.remove(index).1)
+    };
+    if let Some(release) = paused {
+        let release = release
+            .into_inner()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = release.recv_timeout(Duration::from_secs(20));
+    }
+}
+
+/// Arm the pause for a service over this registry; the returned sender
+/// releases it. `pause_reached` says whether the exit has reached it.
+#[allow(dead_code)]
+fn pause_after_admission_closed(registry: &XServerFrontendRouteRegistry) -> SyncSender<()> {
+    let (release, paused) = sync_channel::<()>(1);
+    PAUSED_AFTER_ADMISSION_CLOSED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((Arc::as_ptr(&registry.clients) as usize, Mutex::new(paused)));
+    release
+}
+
+#[allow(dead_code)]
+fn admission_pause_pending(registry: &XServerFrontendRouteRegistry) -> bool {
+    let key = Arc::as_ptr(&registry.clients) as usize;
+    PAUSED_AFTER_ADMISSION_CLOSED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .any(|(paused, _)| *paused == key)
 }

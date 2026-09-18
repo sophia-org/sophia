@@ -288,7 +288,7 @@ fn focus_encoding_takes_input_authority_before_event_selections() {
 }
 
 #[test]
-fn runner_accounts_a_park_once_and_never_charges_idle_or_blocked_reads() {
+fn runner_accounts_a_routed_control_and_a_park_once_and_never_charges_idle_or_blocked_reads() {
     let (mut runner, _durable, _registration, _channels, _acks, _deliveries) =
         prepared_runner_fixture();
     for _ in 0..3 {
@@ -301,7 +301,9 @@ fn runner_accounts_a_park_once_and_never_charges_idle_or_blocked_reads() {
         ));
     }
     assert_eq!(runner.service.usage().starts, 0);
-    let sequence = runner
+    // A CONTROL IS ROUTED FROM THIS ORDER: one charged start, one routed
+    // step, nothing parked, the order open after it.
+    let routed = runner
         .control_producer(&_durable.lease())
         .expect("its own owner")
         .submit(&_durable.lease(), configure(
@@ -311,14 +313,38 @@ fn runner_accounts_a_park_once_and_never_charges_idle_or_blocked_reads() {
         ))
         .unwrap();
     assert!(matches!(runner.execute_accounted_step().unwrap(),
-        PrivateAccountedStep::Step { step: PrivateOrderedStep::Parked(s), charge: Some(_) } if s==sequence));
+        PrivateAccountedStep::Step { step: PrivateOrderedStep::Routed(s), charge: Some(_) } if s==routed));
     assert_eq!(runner.service.usage().starts, 1);
+    assert!(runner.frontend().parked().is_none(), "routed, not parked");
+    assert!(runner.frontend().routing_attempt().is_none(), "and its attempt is over");
+    assert!(matches!(
+        runner.execute_accounted_step().unwrap(),
+        PrivateAccountedStep::Step {
+            step: PrivateOrderedStep::Idle,
+            charge: None
+        }
+    ));
+    // A PARK: a routed input without a reservation is an operation this
+    // path does not execute. One charged start, then blocked reads that
+    // charge nothing.
+    let sequence = runner
+        .frontend()
+        .submit(&_durable.lease(), button_to(
+            SurfaceId::new(9000, 1),
+            XAuthorityInputDeliveryId::from_raw(91001),
+            272,
+            true,
+        ))
+        .unwrap();
+    assert!(matches!(runner.execute_accounted_step().unwrap(),
+        PrivateAccountedStep::Step { step: PrivateOrderedStep::Parked(s), charge: Some(_) } if s==sequence));
+    assert_eq!(runner.service.usage().starts, 2);
     let charged = runner.service.usage().charged;
     for _ in 0..3 {
         assert!(matches!(runner.execute_accounted_step().unwrap(),
             PrivateAccountedStep::Step { step: PrivateOrderedStep::Blocked(s), charge: None } if s==sequence));
     }
-    assert_eq!(runner.service.usage().starts, 1);
+    assert_eq!(runner.service.usage().starts, 2);
     assert_eq!(runner.service.usage().charged, charged);
     assert!(!runner.service.is_interrupted());
 }

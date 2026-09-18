@@ -13,8 +13,10 @@
 // loop is factored out of the public entry point unchanged and driven here
 // against the private frontend's own broker, but every reach to that broker
 // goes through the checked service lease: a frontend whose registry is not
-// kept by the leased owner refuses before a listener is bound. No producer,
-// runner or ordered worker is exposed or started by this path.
+// kept by the leased owner refuses before a listener is bound. No producer
+// or runner is exposed by this path; the ordered worker a ready connection
+// gets is started by this loop's own visit (`attach_ready`), stopped and
+// collected by its collection, and its deferred cleanup discharged after.
 //
 // EXIT ORDER IS CONTROL FLOW, NOT CONVENTION. On ordinary stop, on loss of
 // the command channel, on an error after a connection exists, and on an
@@ -26,83 +28,6 @@
 // the unwind path does it through the collection guard's `Drop`, which the
 // existing public frontend has no equivalent of. The private frontend is
 // declared before that guard so that it is dropped after it.
-
-/// How the routed loop reaches its broker.
-///
-/// The public service owns its broker and reaches it directly. The private
-/// service reaches it through the lease, and a reach that the lease does not
-/// cover is refused rather than performed.
-#[cfg(unix)]
-trait RoutedBrokerAccess {
-    fn broker(&mut self) -> Result<&XServerFrontendRouteBroker, X11SetupSocketError>;
-    fn route_pending(&mut self) -> Result<usize, X11SetupSocketError>;
-    /// Start a registered worker for every ready connection that has none.
-    ///
-    /// THE PUBLIC PATH HAS NONE: nothing is registered there and nothing is
-    /// started. The private path visits from the service frame, which is the
-    /// one place holding the checked lease and the frontend together.
-    fn attach_ready(&mut self) -> Result<usize, X11SetupSocketError>;
-}
-
-#[cfg(unix)]
-impl RoutedBrokerAccess for XServerFrontendRouteBroker {
-    fn broker(&mut self) -> Result<&XServerFrontendRouteBroker, X11SetupSocketError> {
-        Ok(self)
-    }
-    fn route_pending(&mut self) -> Result<usize, X11SetupSocketError> {
-        XServerFrontendRouteBroker::route_pending(self)
-            .map_err(|error| X11SetupSocketError::new(error.to_string()))
-    }
-    fn attach_ready(&mut self) -> Result<usize, X11SetupSocketError> {
-        Ok(0)
-    }
-}
-
-/// The private frontend's broker, reachable only while the lease covers it.
-#[cfg(unix)]
-struct LeasedPrivateBroker<'a, 'o> {
-    frontend: &'a mut PrivateXServerFrontend,
-    service: &'a PrivateServiceLease<'o>,
-}
-
-#[cfg(unix)]
-impl LeasedPrivateBroker<'_, '_> {
-    fn check(&self) -> Result<(), X11SetupSocketError> {
-        if self.frontend.broker.registry.leased_by(self.service) {
-            Ok(())
-        } else {
-            Err(X11SetupSocketError::new(
-                "private service lease is not on the owner that keeps this frontend's registry",
-            ))
-        }
-    }
-}
-
-#[cfg(unix)]
-impl RoutedBrokerAccess for LeasedPrivateBroker<'_, '_> {
-    fn broker(&mut self) -> Result<&XServerFrontendRouteBroker, X11SetupSocketError> {
-        self.check()?;
-        Ok(&self.frontend.broker)
-    }
-    /// THE PRIVATE FRONTEND'S OWN LEASED ROUTING, not the broker's. The
-    /// broker operation drains the routed-input order; the private frontend's
-    /// drains the private accepted order under its own lease check, its
-    /// ordered-runner guard and its budget. Reaching past it to the broker
-    /// with an owner check wrapped around the reach preserved none of that.
-    /// This service drives no second input order: nothing feeds the broker's
-    /// routed-input queue on this path, and adding that would be a deliberate
-    /// step, not housekeeping.
-    fn route_pending(&mut self) -> Result<usize, X11SetupSocketError> {
-        self.frontend
-            .route_pending(self.service)
-            .map(|ran| ran.len())
-            .map_err(|error| X11SetupSocketError::new(error.to_string()))
-    }
-    fn attach_ready(&mut self) -> Result<usize, X11SetupSocketError> {
-        self.check()?;
-        Ok(attach_ready_workers(self.frontend, self.service))
-    }
-}
 
 /// The routed service loop, shared by the public and private entry points.
 ///
@@ -281,7 +206,10 @@ fn drive_routed_service(
             }
         }
         if !ordered_egress.cancelled() {
-            let routed = broker.route_pending()?;
+            // PRODUCERS FIRST, THEN THE ORDER: a request answered this turn
+            // can submit work the same turn's service takes.
+            progressed |= broker.answer_producers()? != 0;
+            let routed = broker.serve_order()?;
             progressed |= routed != 0;
             // AFTER ROUTING, FROM THIS FRAME. A connection that published its
             // readiness since the last turn gets its worker here; one that
@@ -347,6 +275,9 @@ pub struct PrivateServiceReturn {
     /// after collection. A refusal here is an owned duty, readable through
     /// the owner's custody; it is not a settled connection.
     pub maintenance: Vec<PrivateDeferredCleanupOutcome>,
+    /// What the prepared runner's order did over the invocation: counts for
+    /// the owner to read beside the exact work in the store and the homes.
+    pub order: PrivateOrderTally,
 }
 
 /// Why a private service invocation did not return a settlement.
@@ -370,6 +301,8 @@ pub enum PrivateServiceFailure {
         unresolved_egress: Vec<PrivateUnresolvedEgress>,
         workers: Vec<PrivateWorkerCollection>,
         maintenance: Vec<PrivateDeferredCleanupOutcome>,
+        /// Boxed only for size; the same tally a success returns inline.
+        order: Box<PrivateOrderTally>,
     },
     /// A registered worker this invocation started was not joined by its
     /// collection, so private state was NOT finalised over it.
@@ -389,6 +322,8 @@ pub enum PrivateServiceFailure {
         /// beside the service's own error rather than folded into it.
         collection_failures: Vec<String>,
         maintenance: Vec<PrivateDeferredCleanupOutcome>,
+        /// Boxed only for size; the same tally a success returns inline.
+        order: Box<PrivateOrderTally>,
     },
 }
 
@@ -453,10 +388,37 @@ struct PrivateServiceCollection<'s, 'o> {
     /// -- after a return the caller drops, or after an unwind that returns
     /// nothing -- retains the instance rather than settling over the actor.
     uncollected_mark: Arc<Mutex<Vec<usize>>>,
+    /// The prepared runner, owned here for the invocation: the loop borrows
+    /// it, the exit closes its admission first, and it is taken out (to be
+    /// shut down or released) only after collection. On an unwind it drops
+    /// after this guard's body has collected, its watchdog already gone.
+    runner: Option<PrivatePreparedRunner>,
+    /// The producer port, closed as the exit's first act.
+    port: PrivateProducerPort,
+    order: PrivateOrderTally,
 }
 
 #[cfg(unix)]
 impl PrivateServiceCollection<'_, '_> {
+    /// THE FIRST ACT OF EVERY EXIT: nothing more is issued from the port and
+    /// the producers already issued refuse. The port closes (standing Ended,
+    /// its request channel gone) and the runner's supervising watchdog owner
+    /// is dropped, which closes the independent gate every producer's
+    /// acceptance consults. That is a gate, not the admission's queue: no
+    /// lock of the accepted order is taken and nothing is drained; an
+    /// acceptance already inside the queue stays there for the settlement to
+    /// account for. Nothing is waited for and nothing retained is touched.
+    /// Safe to repeat.
+    fn close_producer_admission(&mut self) {
+        self.port.close();
+        if let Some(runner) = self.runner.as_mut() {
+            runner.close_admission();
+        }
+        // STAGE-ONLY SCHEDULING HOOK, TEST BUILDS ONLY: the interval after
+        // admission is closed and before anything is stopped or waited for.
+        #[cfg(all(test, unix))]
+        routing_tests::stage_after_admission_closed(&self.registry);
+    }
     /// File a pending envelope that still holds its batch, unsent, on the
     /// store's shelf under this invocation; drop one whose batch the
     /// transport already took.
@@ -496,6 +458,7 @@ impl PrivateServiceCollection<'_, '_> {
     /// collection cannot depend on a receiver anybody drains.
     fn collect(&mut self, unblock: bool) -> (Vec<String>, Vec<PrivateUnresolvedEgress>) {
         let mut failures = Vec::new();
+        self.close_producer_admission();
         if unblock {
             self.egress.cancel();
             if let Some(envelope) = self.pending_raster_egress.as_mut()
@@ -577,6 +540,7 @@ impl Drop for PrivateServiceCollection<'_, '_> {
         // the private frontend, declared before this guard and therefore
         // dropped after it, is not finalised over a worker still running.
         if !self.collected {
+            self.close_producer_admission();
             // Cancel first, so a worker parked in an egress wait can end;
             // then stop and wait. The pending raster envelope, if any, is
             // NOT cancelled here -- cancelling reports to the backpressure
@@ -620,6 +584,7 @@ pub fn run_x_server_frontend_private_until_stopped(
     parts: PrivateFrontendParts,
     owner: &PrivateServiceOwner,
     service_commands: Receiver<XServerFrontendServiceCommand>,
+    producers: PrivateProducerPort,
     backpressure_observer: Arc<XAuthorityBackpressureObserver>,
 ) -> Result<PrivateServiceReturn, PrivateServiceFailure> {
     let private = match PrivateXServerFrontend::new(parts, owner) {
@@ -638,6 +603,7 @@ pub fn run_x_server_frontend_private_until_stopped(
         config,
         transaction_sender,
         service_commands,
+        producers,
         backpressure_observer,
     )
 }
@@ -650,17 +616,19 @@ pub fn run_x_server_frontend_private_until_stopped(
 /// refused before a listener is bound.
 #[cfg(unix)]
 pub(crate) fn serve_private_frontend_until_stopped(
-    mut private: PrivateXServerFrontend,
+    private: PrivateXServerFrontend,
     service: &PrivateServiceLease<'_>,
     config: XServerFrontendConfig,
     transaction_sender: SyncSender<XAuthorityObservedTransactionBatch>,
     service_commands: Receiver<XServerFrontendServiceCommand>,
+    mut producers: PrivateProducerPort,
     backpressure_observer: Arc<XAuthorityBackpressureObserver>,
 ) -> Result<PrivateServiceReturn, PrivateServiceFailure> {
     // THE LEASE IS CHECKED BEFORE ANYTHING IS BOUND. A foreign lease is not
     // a service that failed; it is a service that never began, and the
     // frontend it was handed is finalised into its own owner's store.
     if !private.broker.registry.leased_by(service) {
+        producers.close();
         let settlement = private.shutdown();
         return Err(PrivateServiceFailure::Failed {
             error: X11SetupSocketError::new(
@@ -670,12 +638,14 @@ pub(crate) fn serve_private_frontend_until_stopped(
             unresolved_egress: Vec::new(),
             workers: Vec::new(),
             maintenance: Vec::new(),
+            order: Box::default(),
         });
     }
     let namespace = config.namespace();
     let frontend = match XServerFrontend::bind(config) {
         Ok(frontend) => frontend,
         Err(error) => {
+            producers.close();
             let settlement = private.shutdown();
             return Err(PrivateServiceFailure::Failed {
                 error,
@@ -683,6 +653,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
                 unresolved_egress: Vec::new(),
                 workers: Vec::new(),
                 maintenance: Vec::new(),
+                order: Box::default(),
             });
         }
     };
@@ -695,6 +666,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             runtime.set_input_authority(private.broker.registry.input_authority.clone());
         })
     {
+        producers.close();
         let settlement = private.shutdown();
         return Err(PrivateServiceFailure::Failed {
             error,
@@ -702,25 +674,35 @@ pub(crate) fn serve_private_frontend_until_stopped(
             unresolved_egress: Vec::new(),
             workers: Vec::new(),
             maintenance: Vec::new(),
+            order: Box::default(),
         });
     }
-    // THE APPLIED REGISTRY IS PREPARED FOR THIS SERVICE'S NAMESPACE after the
-    // listener is bound and before any connection can be admitted: promotion establishes each connection's
-    // served endpoint through it, and an instance that never prepared it
-    // could promote nothing. This is the owner alone; the private input
-    // pipeline stays unattached.
-    if let Err(refusal) = private.prepare_applied_for_service(namespace) {
-        let settlement = private.shutdown();
-        return Err(PrivateServiceFailure::Failed {
-            error: X11SetupSocketError::new(format!(
-                "private applied registry could not be prepared: {refusal:?}"
-            )),
-            settlement: Box::new(settlement),
-            unresolved_egress: Vec::new(),
-            workers: Vec::new(),
-            maintenance: Vec::new(),
-        });
-    }
+    // THE ONE CONTINUING EXECUTION OWNER IS PREPARED HERE, after the
+    // listener is bound and before any connection can be admitted or any
+    // producer asked for: one keyboard history, namespace, seat and native
+    // association for the invocation, and the applied owner installed once
+    // as part of it (promotion establishes each connection's served endpoint
+    // through that owner). The runner is made on this thread and never
+    // leaves it. A refusal hands the frontend back, and it is finalised into
+    // its settlement like every other setup refusal; the port is closed, so
+    // a caller sees Ended, never a service that stays NotReady for good.
+    let runner = match private.prepare_runner(namespace, service.owner()) {
+        Ok(runner) => runner,
+        Err((refusal, private)) => {
+            producers.close();
+            let settlement = private.shutdown();
+            return Err(PrivateServiceFailure::Failed {
+                error: X11SetupSocketError::new(format!(
+                    "private runner could not be prepared: {refusal:?}"
+                )),
+                settlement: Box::new(settlement),
+                unresolved_egress: Vec::new(),
+                workers: Vec::new(),
+                maintenance: Vec::new(),
+                order: Box::default(),
+            });
+        }
+    };
     let cancellation = Arc::new(AtomicBool::new(false));
     let ordered_egress = Arc::new(XAuthorityOrderedEgress::new(
         transaction_sender,
@@ -744,34 +726,50 @@ pub(crate) fn serve_private_frontend_until_stopped(
         Ok(receipt)
     });
 
-    // DECLARATION ORDER IS LOAD-BEARING: `private` above, `collection`
-    // below, so that on an unwind the collection guard drops first and the
+    // THE RUNNER LIVES IN THE COLLECTION GUARD: the guard's Drop body
+    // collects first and the runner (its watchdog already dropped by that
+    // body) and the frontend it holds drop after, so on an unwind the
     // private frontend's own fallback runs only after every worker is
-    // collected. Nothing enforces this by type.
+    // collected. The loop borrows the runner from the guard.
+    let instance = runner.frontend().instance;
+    let registry = runner.frontend().broker.registry.clone();
+    let uncollected_mark = runner.frontend().uncollected_mark();
     let mut collection = PrivateServiceCollection {
         frontend,
         egress: ordered_egress.clone(),
         pending_raster_egress: None,
         store: service.store(),
-        instance: private.instance,
+        instance,
         collected: false,
         service: *service,
-        registry: private.broker.registry.clone(),
+        registry,
         workers: Vec::new(),
         uncollected: Vec::new(),
         maintenance: Vec::new(),
-        uncollected_mark: private.uncollected_mark(),
+        uncollected_mark,
+        runner: Some(runner),
+        port: producers,
+        order: PrivateOrderTally::default(),
     };
+    // READY ONLY NOW: prepared (the applied owner installed with it), bound,
+    // and guarded so that every exit from here closes the port. A caller
+    // asking before this was refused at its own side, nothing queued.
+    collection.port.publish_ready();
     let service_result = {
-        let mut broker = LeasedPrivateBroker {
-            frontend: &mut private,
-            service,
-        };
         let PrivateServiceCollection {
             frontend,
             pending_raster_egress,
+            runner,
+            port,
+            order,
             ..
         } = &mut collection;
+        let mut broker = LeasedPrivateBroker {
+            runner: runner.as_mut().expect("owned until collection"),
+            port,
+            order,
+            service,
+        };
         drive_routed_service(
             frontend,
             &mut broker,
@@ -788,6 +786,12 @@ pub(crate) fn serve_private_frontend_until_stopped(
     let workers = std::mem::take(&mut collection.workers);
     let uncollected = std::mem::take(&mut collection.uncollected);
     let maintenance = std::mem::take(&mut collection.maintenance);
+    let order = collection.order;
+    let boxed_order = Box::new(order);
+    // OUT OF THE GUARD ONLY AFTER COLLECTION: admission was closed as the
+    // exit's first act; what remains is to finalise or release the frontend
+    // the runner still holds, below, once the guard is gone.
+    let runner = collection.runner.take().expect("owned until collection");
     drop(observer);
     let report = ordered_egress.report();
     let status = if service_result.is_err() {
@@ -822,21 +826,23 @@ pub(crate) fn serve_private_frontend_until_stopped(
         }
         return Err(PrivateServiceFailure::Uncollected {
             error: service_result.err(),
-            frontend: Box::new(private),
+            frontend: Box::new(runner.release_frontend()),
             unresolved_egress,
             workers,
             uncollected,
             collection_failures,
             maintenance,
+            order: boxed_order,
         });
     }
-    let settlement = private.shutdown();
+    let settlement = runner.shutdown();
     match (service_result, report) {
         (Ok(()), Ok(_)) if cleanup_failures.is_empty() => Ok(PrivateServiceReturn {
             settlement,
             unresolved_egress,
             workers,
             maintenance,
+            order,
         }),
         (Ok(()), Ok(_)) => Err(PrivateServiceFailure::Failed {
             error: X11SetupSocketError::new("private service stopped, but collection failed")
@@ -845,6 +851,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             unresolved_egress,
             workers,
             maintenance,
+            order: Box::new(order),
         }),
         (Ok(()), Err(error)) => Err(PrivateServiceFailure::Failed {
             error: error.with_cleanup_failures(cleanup_failures),
@@ -852,6 +859,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             unresolved_egress,
             workers,
             maintenance,
+            order: Box::new(order),
         }),
         (Err(original), report) => {
             let mut cleanup_failures = cleanup_failures;
@@ -864,6 +872,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
                 unresolved_egress,
                 workers,
                 maintenance,
+                order: Box::new(order),
             })
         }
     }

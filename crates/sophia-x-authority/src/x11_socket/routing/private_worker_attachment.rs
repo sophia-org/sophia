@@ -200,26 +200,6 @@ impl PrivateXServerFrontend {
         Arc::clone(&self.uncollected)
     }
 
-    /// Prepare this instance's applied registry for the service's namespace,
-    /// so a promoted home can establish the endpoint identity it serves.
-    ///
-    /// THE ONE PREPARATION PROMOTION NEEDS, AND NO MORE. Promotion asks the
-    /// applied registry for the connection's endpoint; an applied owner that
-    /// was never installed answers "preparation incomplete" and nothing is
-    /// promoted. The prepared runner installs the same owner as part of
-    /// preparing the private input pipeline; this installs only the owner,
-    /// once, for the service's own namespace, and attaches no producer,
-    /// runner or executor. Connections that arrive afterwards bind their
-    /// selections to it as they attach their state.
-    pub(crate) fn prepare_applied_for_service(
-        &self,
-        namespace: NamespaceId,
-    ) -> Result<(), PrivateAppliedRegistryRefusal> {
-        self.broker
-            .registry
-            .install_private_applied(&self.participant, namespace)
-            .map(|_publication| ())
-    }
 }
 
 #[cfg(unix)]
