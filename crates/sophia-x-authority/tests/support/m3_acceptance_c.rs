@@ -1641,6 +1641,16 @@ struct QueueHandover {
     accepted: bool,
 }
 
+/// One actual visit to a pending transient, recorded after its own cell was
+/// read. Identified by that cell, which the case holds, not by a count.
+#[derive(Clone, Debug)]
+struct TransientVisit {
+    completion: usize,
+    dispatch: String,
+    answer_seen: bool,
+}
+
+static TRANSIENT_VISITS: Mutex<Vec<TransientVisit>> = Mutex::new(Vec::new());
 static QUEUE_HANDOVERS: Mutex<Vec<QueueHandover>> = Mutex::new(Vec::new());
 static SEND_ENTRIES: Mutex<Vec<SendEntry>> = Mutex::new(Vec::new());
 
@@ -1679,6 +1689,30 @@ pub(crate) fn queue_handover_subject(
     emission.delivery()
 }
 
+/// Production's entry into the transient-visit recording.
+pub(crate) fn observed_transient_visit(
+    completion: Option<&Arc<PrivateDeliveryCompletion>>,
+    dispatch: PrivateDispatchPhase,
+    answer_seen: bool,
+) {
+    if WATCHED_ORIGIN.lock().unwrap().is_none() {
+        return;
+    }
+    let Some(completion) = completion else {
+        return;
+    };
+    let mut seen = TRANSIENT_VISITS.lock().unwrap();
+    if seen.len() >= 4096 {
+        OBSERVER_OVERFLOWED.store(true, Ordering::Release);
+        return;
+    }
+    seen.push(TransientVisit {
+        completion: Arc::as_ptr(completion) as usize,
+        dispatch: format!("{dispatch:?}"),
+        answer_seen,
+    });
+}
+
 /// Production's entry into the queue-handover recording.
 pub(crate) fn observed_queue_handover(
     subject: Option<XAuthorityInputDeliveryId>,
@@ -1709,8 +1743,14 @@ fn observe_frames(registry: &XServerFrontendRouteRegistry) {
     OBSERVED_FRAMES.lock().unwrap().clear();
     SEND_ENTRIES.lock().unwrap().clear();
     QUEUE_HANDOVERS.lock().unwrap().clear();
+    TRANSIENT_VISITS.lock().unwrap().clear();
     OBSERVER_OVERFLOWED.store(false, Ordering::Release);
     *WATCHED_ORIGIN.lock().unwrap() = Some(registry.clone());
+}
+
+/// The transient visits recorded so far, read without disarming.
+fn transient_visits_snapshot() -> Vec<TransientVisit> {
+    TRANSIENT_VISITS.lock().unwrap().clone()
 }
 
 /// The queue handovers recorded so far, read without disarming.
@@ -1998,17 +2038,32 @@ fn blocked_recipient_attempt(
     // making no attempt at all is the expected result, and is asserted as one.
     let mut visit = blocked.step();
     let mut visits = vec![format!("{visit:?}")];
-    let visit_deadline = std::time::Instant::now() + Duration::from_secs(8);
-    while !visit.charged && std::time::Instant::now() < visit_deadline {
-        let Some(sophia_input_authority::ServiceStartRefusal::StartsExhausted { retry_after }) =
-            visit.allowance_refusal
-        else {
-            break;
-        };
-        std::thread::sleep(retry_after.min(Duration::from_millis(50)));
+    let visit_deadline = std::time::Instant::now() + Duration::from_secs(10);
+    // THE OUTPUT VISIT IS THE ONE THIS ROW IS ABOUT. The scheduler takes its
+    // phases in turn, so a charged Terminal visit is a legitimate answer and
+    // not this one; it is recorded and stepped past. Only an allowance that
+    // says it is retryable is waited out, for the delay it reports; any other
+    // refusal ends the loop and is asserted on rather than slept through.
+    while !(visit.phase == PrivateMaintenancePhase::Output && visit.charged)
+        && std::time::Instant::now() < visit_deadline
+    {
+        match visit.allowance_refusal {
+            Some(sophia_input_authority::ServiceStartRefusal::StartsExhausted { retry_after }) => {
+                std::thread::sleep(retry_after.min(Duration::from_millis(50)));
+            }
+            Some(other) => panic!(
+                "{label}: the retained visit refused for something waiting cannot fix: {other:?} in {visits:?}"
+            ),
+            None => {}
+        }
         visit = blocked.step();
         visits.push(format!("{visit:?}"));
     }
+    assert_eq!(
+        visit.phase,
+        PrivateMaintenancePhase::Output,
+        "{label}: a charged retained output visit was reached: {visits:?}"
+    );
     let drive = store.drive();
     let after = retained_dispatch(&blocked);
     let (observed_frames, send_entries, queue_handovers) = take_observations();
@@ -2227,7 +2282,7 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
     );
     service.start();
     let (mut peer, custody) = service.connect();
-    let (surface, _sequence, ingress) = focus_window(&service, &mut peer, window, namespace);
+    let (surface, sequence, ingress) = focus_window(&service, &mut peer, window, namespace);
     observe_frames(&service.registry);
 
     let delivery = 14_000 + namespace;
@@ -2273,33 +2328,76 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
     // pending transient. A turn that yields on its allowance is followed only
     // where the allowance itself says it is retryable.
     let (report, reported) = sync_channel(1);
+    let inspected = Arc::clone(&cell);
     arm_runner(
         &service.registry,
         Box::new(move |runner, lease| {
             let mut visits = Vec::new();
+            let mut charged = 0usize;
             let mut observed = 0usize;
-            let deadline = std::time::Instant::now() + Duration::from_secs(6);
+            let mut record_states = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(8);
             while observed < 2 && std::time::Instant::now() < deadline {
+                // THE EXACT PENDING RECORD, found by the completion this case
+                // holds rather than by position, read either side of a visit.
+                let state = runner
+                    .frontend()
+                    .terminal
+                    .transients
+                    .records
+                    .iter()
+                    .find(|record| {
+                        record
+                            .custody
+                            .completion
+                            .as_ref()
+                            .is_some_and(|held| Arc::ptr_eq(held, &inspected))
+                    })
+                    .map(|record| {
+                        format!(
+                            "dispatch={:?} pending={} outcome_seen={:?}",
+                            record.custody.dispatch,
+                            record.custody.pending.is_some(),
+                            record.custody.outcome_seen
+                        )
+                    });
+                record_states.push(state);
                 match runner.service_turn(lease) {
                     Ok(progress) => {
-                        observed += progress.transient_observed;
+                        let supervised = !progress.watch_failed;
+                        let took_a_start = progress.starts > 0;
                         visits.push(format!(
-                            "starts={} taken={} observed={} transient_observed={} allowance={:?} watch_failed={}",
+                            "starts={} charged={took_a_start} supervised={supervised} taken={} observed={} transient_observed={} allowance={:?}",
                             progress.starts,
                             progress.taken,
                             progress.observed,
                             progress.transient_observed,
-                            progress.allowance,
-                            progress.watch_failed
+                            progress.allowance
                         ));
-                        if let Some(
-                            sophia_input_authority::ServiceStartRefusal::StartsExhausted {
-                                retry_after,
-                            },
-                        ) = progress.allowance
-                        {
-                            std::thread::sleep(retry_after.min(Duration::from_millis(50)));
+                        assert!(
+                            supervised,
+                            "a visit over the pending capsule kept its supervisor: {visits:?}"
+                        );
+                        match progress.allowance {
+                            // The one refusal waiting can fix, for the delay it
+                            // reports and no longer.
+                            Some(
+                                sophia_input_authority::ServiceStartRefusal::StartsExhausted {
+                                    retry_after,
+                                },
+                            ) => std::thread::sleep(retry_after.min(Duration::from_millis(50))),
+                            Some(other) => panic!(
+                                "a visit refused for something waiting cannot fix: {other:?} in {visits:?}"
+                            ),
+                            None => {
+                                assert!(
+                                    took_a_start,
+                                    "a visit that was not refused took a start and was charged: {visits:?}"
+                                );
+                                charged += 1;
+                            }
                         }
+                        observed += progress.transient_observed;
                     }
                     Err(error) => {
                         visits.push(format!("{error:?}"));
@@ -2307,15 +2405,46 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
                     }
                 }
             }
-            report.send((visits, observed)).expect("the case is waiting");
+            report
+                .send((visits, charged, observed, record_states))
+                .expect("the case is waiting");
         }),
     );
-    let (visits, observations) = reported
-        .recv_timeout(Duration::from_secs(10))
+    let (visits, charged_visits, observations, record_states) = reported
+        .recv_timeout(Duration::from_secs(12))
         .expect("the actual runner reported its visits over the pending capsule");
     assert!(
         observations >= 2,
         "the pending transient was observed by more than one charged visit: {visits:?}"
+    );
+    assert!(
+        charged_visits >= 2,
+        "and those visits were charged rather than refused: {visits:?}"
+    );
+    // THE CELL WAS ACTUALLY READ, not merely counted. A visit that reported
+    // progress without looking at this completion leaves nothing here.
+    let visits_of_this_cell = transient_visits_snapshot()
+        .into_iter()
+        .filter(|visit| visit.completion == Arc::as_ptr(&cell) as usize)
+        .collect::<Vec<_>>();
+    assert!(
+        visits_of_this_cell.len() >= 2,
+        "this exact completion was read by more than one visit: {visits_of_this_cell:?}"
+    );
+    assert!(
+        visits_of_this_cell
+            .iter()
+            .all(|visit| visit.dispatch == "Enqueued" && !visit.answer_seen),
+        "each found it enqueued and unanswered: {visits_of_this_cell:?}"
+    );
+    assert!(
+        record_states
+            .iter()
+            .flatten()
+            .all(|state| state.contains("dispatch=Enqueued")
+                && state.contains("pending=false")
+                && state.contains("outcome_seen=None")),
+        "and the record itself stayed enqueued, with no capsule copy and no outcome: {record_states:?}"
     );
     let handovers_during = queue_handovers_snapshot()
         .iter()
@@ -2333,9 +2462,12 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
     // RELEASED. The worker takes its home back and writes what it already had.
     drop(held_home);
     let mut completion = None;
+    let mut released_frames = Vec::new();
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     while std::time::Instant::now() < deadline && completion.is_none() {
-        let _ = read_event(&mut peer, 1);
+        if let Some(event) = read_event(&mut peer, 1) {
+            released_frames.push(event);
+        }
         while let Ok(receipt) = service.deliveries.try_recv() {
             assert_eq!(
                 receipt.delivery, wanted,
@@ -2358,6 +2490,22 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
         .recv_timeout(Duration::from_millis(300))
         .ok();
     assert!(second.is_none(), "with no second receipt: {second:?}");
+    // THE TWO EXACT WHEEL FRAMES, hand-encoded from the X protocol and the
+    // request this case submitted: an emulated wheel button down with nothing
+    // held, then up with that button in the prior state.
+    assert_eq!(
+        released_frames,
+        vec![
+            expected_transient_event(4, 5, sequence, window, 0, 30),
+            expected_transient_event(5, 5, sequence, window, 1 << 12, 30),
+        ],
+        "the released capsule put out its own two frames and no others"
+    );
+    assert_eq!(
+        read_event(&mut peer, 1),
+        None,
+        "and nothing followed them"
+    );
 
     service.command(XServerFrontendServiceCommand::StopAndDisconnect);
     let closed = service.closed();
@@ -2389,6 +2537,10 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
         "hold": "the connection's own ordered home, which its worker must take to serve a step",
         "frames_while_held": frames_while_held,
         "charged_visits": visits,
+        "charged_visit_count": charged_visits,
+        "record_state_at_each_visit": record_states,
+        "visits_that_read_this_exact_cell": visits_of_this_cell.len(),
+        "released_frames": released_frames.iter().map(|frame| frame.to_vec()).collect::<Vec<_>>(),
         "transient_observations": observations,
         "queue_handovers_accepted": handovers_total,
         "frame_sequence_after_release": frame_sequence,

@@ -49,7 +49,18 @@ impl PrivateTransientInventory {
         if custody.dispatch != PrivateDispatchPhase::Enqueued {
             return Some(false);
         }
-        let Some(answer) = custody.completion.as_ref().and_then(|cell| cell.answer()) else {
+        let seen = custody.completion.as_ref().and_then(|cell| cell.answer());
+        // READ-ONLY ACCEPTANCE OBSERVATION OF THE VISIT ITSELF, taken after
+        // this cell has actually been read. A progress counter says a visit
+        // was reported; only this says the cell was looked at, which is the
+        // difference between observing a pending delivery and claiming to.
+        #[cfg(all(test, unix))]
+        routing_tests::m3_acceptance::observed_transient_visit(
+            custody.completion.as_ref(),
+            custody.dispatch,
+            seen.is_some(),
+        );
+        let Some(answer) = seen else {
             return Some(false);
         };
         custody.outcome_seen = Some(answer.outcome);
