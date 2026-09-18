@@ -5,6 +5,19 @@ use std::sync::Arc;
 
 use sophia_session::diagnostics::{Capture, Retention, Store, capture_line, reduced_record};
 
+#[test]
+fn catalog_exit_evidence_keeps_outcome_and_exact_origin_without_payload() {
+    for success in ["true", "false"] {
+        let record = reduced_record(&format!("sophia_catalog_launch schema=1 status=process_exited transaction=3 connection_epoch=4 content_grant_epoch=5 success={success} payload=secret")).unwrap();
+        assert!(record.contains("status=process_exited"));
+        assert!(record.contains("transaction=3"));
+        assert!(record.contains("connection_epoch=4"));
+        assert!(record.contains("content_grant_epoch=5"));
+        assert!(record.contains(&format!("success={success}")));
+        assert!(!record.contains("secret"));
+    }
+}
+
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {

@@ -42,12 +42,12 @@ fn decode_create_colormap(
     })
 }
 
-fn decode_alloc_named_color(
+fn decode_named_color(
     context: XWireClientContext,
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(
-        X_ALLOC_NAMED_COLOR,
+        bytes[0],
         X_ALLOC_NAMED_COLOR_REQ_LEN,
         bytes.len(),
     )?;
@@ -61,22 +61,20 @@ fn decode_alloc_named_color(
     let expected_len = X_ALLOC_NAMED_COLOR_REQ_LEN + padded_len(name_len);
     if bytes.len() != expected_len {
         return Err(XWireParseError::InvalidLength {
-            opcode: X_ALLOC_NAMED_COLOR,
+            opcode: bytes[0],
             expected_at_least: expected_len,
             actual: bytes.len(),
         });
     }
-    let name = core::str::from_utf8(
-        &bytes[X_ALLOC_NAMED_COLOR_REQ_LEN..X_ALLOC_NAMED_COLOR_REQ_LEN + name_len],
-    )
-    .map_err(|_| XWireParseError::InvalidLength {
-        opcode: X_ALLOC_NAMED_COLOR,
-        expected_at_least: expected_len,
-        actual: bytes.len(),
-    })?;
-    Ok(XWireRequest::AllocNamedColor {
-        colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-        name: name.to_owned(),
+    // Core color names are STRING8 (Latin-1), not UTF-8. Unknown names
+    // reach dispatch as BadName rather than becoming framing errors.
+    let name = bytes[X_ALLOC_NAMED_COLOR_REQ_LEN..X_ALLOC_NAMED_COLOR_REQ_LEN + name_len]
+        .iter().copied().map(char::from).collect();
+    let colormap = XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1);
+    Ok(if bytes[0] == X_LOOKUP_COLOR {
+        XWireRequest::LookupColor { colormap, name }
+    } else {
+        XWireRequest::AllocNamedColor { colormap, name }
     })
 }
 

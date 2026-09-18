@@ -44,6 +44,81 @@ fn owner(id: u64) -> Owner {
 }
 
 #[test]
+fn seat_release_drives_exact_owner_before_broker_acknowledgement() {
+    use sophia_backend_live::LiveSeatDisableOutcome as Outcome;
+    let value = owner(91);
+    let joined = value.joined.clone();
+    let bytes = value.bytes.clone();
+    value.disposed.set(true);
+    let mut state = NativeRetirement::default();
+    state
+        .begin(&mut Some(value), RetirementMode::Drained, "vt")
+        .unwrap();
+    for _ in 0..3 {
+        assert_eq!(
+            state
+                .poll_seat_release(|| panic!("premature disable"))
+                .unwrap(),
+            None
+        );
+        assert_eq!(Arc::strong_count(&bytes), 2);
+    }
+    joined.set(true);
+    assert_eq!(
+        state
+            .poll_seat_release(|| {
+                assert_eq!(
+                    Arc::strong_count(&bytes),
+                    1,
+                    "actual owner dropped before broker request"
+                );
+                Ok(Outcome::Pending { leases: 1 })
+            })
+            .unwrap(),
+        Some(Outcome::Pending { leases: 1 })
+    );
+    assert_eq!(
+        state
+            .poll_seat_release(|| Ok(Outcome::Acknowledged))
+            .unwrap(),
+        Some(Outcome::Acknowledged)
+    );
+    assert_eq!(state.completion().unwrap().identity, 91);
+    let next = owner(92);
+    state.admit(&next).unwrap();
+    assert!(
+        state
+            .poll_seat_release(|| panic!("old completion authorized successor"))
+            .is_err()
+    );
+}
+
+#[test]
+fn revoked_unresolved_owner_and_timeout_survive_release_without_ack() {
+    let value = owner(93);
+    let joined = value.joined.clone();
+    let bytes = value.bytes.clone();
+    let mut state = NativeRetirement::default();
+    state
+        .begin(&mut Some(value), RetirementMode::DeviceRevoked, "disable")
+        .unwrap();
+    state.pending.as_mut().unwrap().started = Instant::now() - Duration::from_secs(3);
+    assert!(
+        state
+            .poll_seat_release(|| panic!("timeout acknowledged"))
+            .is_err()
+    );
+    joined.set(true);
+    assert!(
+        state
+            .poll_seat_release(|| panic!("unresolved scanout acknowledged"))
+            .is_err()
+    );
+    assert_eq!(Arc::strong_count(&bytes), 2);
+    assert!(state.completion().is_err());
+}
+
+#[test]
 fn final_accounting_requires_exact_completion_even_with_empty_slots() {
     let mut state = NativeRetirement::<Owner>::default();
     assert!(state.finish_completed().is_err());

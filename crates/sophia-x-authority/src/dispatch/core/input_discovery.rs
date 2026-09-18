@@ -24,6 +24,7 @@ fn dispatch_core_input_discovery_request(
             | XWireRequest::CreateColormap { .. }
             | XWireRequest::FreeColormap { .. }
             | XWireRequest::AllocNamedColor { .. }
+            | XWireRequest::LookupColor { .. }
             | XWireRequest::AllocColor { .. }
     ) {
         return Unhandled(request);
@@ -396,25 +397,31 @@ fn dispatch_core_input_discovery_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::AllocNamedColor { colormap, name } => {
+                XWireRequest::AllocNamedColor { colormap, ref name }
+                | XWireRequest::LookupColor { colormap, ref name } => {
+                    let lookup = matches!(request, XWireRequest::LookupColor { .. });
                     let output = match runtime.colormap_visual(context.namespace, colormap) {
                         Err(_) => color_error(
                             context,
                             XErrorCode::BadColor,
                             u32::try_from(colormap.local.raw()).unwrap_or(0),
                         ),
-                        Ok(visual_id) => match x_lookup_color_name(&name) {
+                        Ok(visual_id) => match x_lookup_color_name(name) {
                             None => color_error(context, XErrorCode::BadName, 0),
                             Some(exact) => {
                                 let visual = x_true_color_visual(visual_id)
                                     .expect("registered colormaps must name advertised visuals");
                                 let screen = visual.screen_color(exact);
-                                XClientOutput::Reply(XClientReply::AllocNamedColor {
+                                XClientOutput::Reply(if lookup {
+                                    XClientReply::LookupColor {
+                                        sequence: context.sequence, exact, screen,
+                                    }
+                                } else { XClientReply::AllocNamedColor {
                                     sequence: context.sequence,
                                     pixel: visual.pixel(screen),
                                     exact,
                                     screen,
-                                })
+                                } })
                             }
                         },
                     };

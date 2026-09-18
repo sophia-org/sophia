@@ -61,7 +61,10 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
         ),
         ("sophia_native_launcher", "slot") => number(1),
         ("sophia_native_launcher", "transaction") => number(u64::MAX),
-        ("sophia_catalog_launch", "status") => value == "process_started",
+        ("sophia_catalog_launch", "status") => {
+            matches!(value, "process_started" | "process_exited")
+        }
+        ("sophia_catalog_launch", "success") => matches!(value, "true" | "false"),
         ("sophia_catalog_launch", "cause") => matches!(value, "persistent" | "transient"),
         (
             "sophia_catalog_launch",

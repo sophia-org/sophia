@@ -212,9 +212,9 @@ cat <<'INSTRUCTIONS'
 Three-component smoke: automatic exit after 90 seconds; watchdog at 110 seconds.
 On BOTH monitors confirm Lom above and Provlita below, without overlap. The Terminal
 tile is enabled; Browser/Files are deliberately unavailable unless in your catalog.
-Click Terminal once on EACH dock; close each terminal before the next launch.
+Click Terminal once on EACH dock; type 'exit' and Enter before the next launch.
 On EACH monitor open Bemenu using your WM binding (Super+Space in the selected profile),
-type terminal, launch that entry once, then close it. Also reopen and dismiss with Escape.
+type terminal, launch that entry once, then type 'exit' and Enter. Also reopen and dismiss with Escape.
 Check clocks and workspace switching continue on both bars, and dock clicks do not
 take keyboard focus. Four terminal launches total. Let the session exit automatically.
 This smoke does not measure latency or test component restarts. Record placement,

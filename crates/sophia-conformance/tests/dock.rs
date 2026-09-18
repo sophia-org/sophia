@@ -33,10 +33,14 @@ fn positive() -> String {
                     "sophia_catalog_launch schema=1 status=process_started transaction={} cause={cause} connection_epoch={g} content_grant_epoch={g} output={output} event_id={output}\n",
                     g * 10 + output
                 );
+                log += &format!(
+                    "sophia_catalog_launch schema=1 status=process_exited transaction={} connection_epoch={g} content_grant_epoch={g} success=true\n",
+                    g * 10 + output
+                );
             }
         }
     }
-    log + "sophia_shell_components_shutdown schema=1 status=quiescent\n"
+    log + "sophia_live_session_protocol_error_tally schema=3 total=0\nsophia_shell_components_shutdown schema=1 status=quiescent\n"
 }
 
 #[test]
@@ -73,6 +77,9 @@ fn three_component_smoke_requires_exact_independent_lifetimes_and_real_launch_re
         ("cause=persistent", "cause=transient"),
         ("output=2", "output=0"),
         ("sophia_catalog_launch", "client_claimed_launch"),
+        ("success=true", "success=false"),
+        ("total=0", "total=4"),
+        ("status=process_exited", "status=unknown"),
     ] {
         assert!(good.contains(from));
         assert!(verify(&good.replace(from, to)).is_err(), "{from} -> {to}");
@@ -80,6 +87,7 @@ fn three_component_smoke_requires_exact_independent_lifetimes_and_real_launch_re
     for prefix in [
         "sophia_shell_components_shutdown",
         "sophia_shell_component_catalog",
+        "sophia_live_session_protocol_error_tally",
     ] {
         assert!(
             verify(

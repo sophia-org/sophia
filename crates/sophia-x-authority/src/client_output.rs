@@ -805,6 +805,11 @@ pub enum XClientReply {
         exact: XColorRgb16,
         screen: XColorRgb16,
     },
+    LookupColor {
+        sequence: u16,
+        exact: XColorRgb16,
+        screen: XColorRgb16,
+    },
     AllocColor {
         sequence: u16,
         pixel: u32,

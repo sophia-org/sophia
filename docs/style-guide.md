@@ -437,6 +437,10 @@ post-negotiation state with real local socket handshakes. Its test body lives in
 `tests/support/shell_startup.rs`; supplied protection evidence is not a native
 supervisor proof. The exception permits that exact external fixture mount only.
 
+The `seat.rs` mount exercises the private broker disable boundary with supplied
+backend effects. It verifies pending leases never invoke disable, without opening
+libseat or exporting test-only production APIs. Tests remain outside `src`.
+
 The `native_owner_retirement.rs` mount exercises the private production retirement
 owner with simulated worker/disposition effects. Its external fixture checks
 held bytes, exact successor identity, and terminal error custody without exposing

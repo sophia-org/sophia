@@ -1128,6 +1128,11 @@
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
     },
+    "92": {
+      "name": "X_LOOKUP_COLOR",
+      "cases": [],
+      "coverage_debt": "Real-socket Rust regressions cover LookupColor; an independent t057 wire case remains unimplemented."
+    },
     "93": {
       "name": "X_CREATE_CURSOR",
       "cases": [],

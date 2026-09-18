@@ -678,6 +678,7 @@ fn run_session_loop_inner(
     let mut seat_state = sophia_backend_live::LiveSeatState::Active;
     let mut pending_virtual_terminal: Option<(u8, Instant)> = None;
     let mut requested_virtual_terminal = None;
+    let mut seat_release_started = None;
     let mut seat_release_prepared = false;
     let mut observed_wm_restart_count = wm_session.as_ref().map_or(0, |wm| wm.restarts);
     let mut output_proof_rollback_after_apply =

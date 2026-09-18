@@ -304,6 +304,10 @@ pub enum XWireRequest {
         colormap: XResourceId,
         name: String,
     },
+    LookupColor {
+        colormap: XResourceId,
+        name: String,
+    },
     GetInputFocus,
     SetInputFocus {
         focus: XResourceId,
@@ -1312,7 +1316,8 @@ pub fn decode_x11_core_request(
             })
         }
         X_ALLOC_COLOR => decode_alloc_color(context, bytes),
-        X_ALLOC_NAMED_COLOR => decode_alloc_named_color(context, bytes),
+        X_ALLOC_NAMED_COLOR => decode_named_color(context, bytes),
+        X_LOOKUP_COLOR => decode_named_color(context, bytes),
         X_QUERY_COLORS => decode_query_colors(context, bytes),
         X_CREATE_CURSOR => decode_create_cursor(context, bytes),
         X_CREATE_GLYPH_CURSOR => decode_create_glyph_cursor(context, bytes),

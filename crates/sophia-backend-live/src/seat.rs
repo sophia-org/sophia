@@ -51,11 +51,29 @@ impl LiveSeatState {
     }
 }
 
+/// A disable request never disposes of device owners on the caller's behalf.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveSeatDisableOutcome {
+    Pending { leases: usize },
+    Acknowledged,
+}
+
+fn try_disable(
+    leases: usize,
+    disable: impl FnOnce() -> Result<(), String>,
+) -> Result<LiveSeatDisableOutcome, String> {
+    if leases != 0 {
+        return Ok(LiveSeatDisableOutcome::Pending { leases });
+    }
+    disable()?;
+    Ok(LiveSeatDisableOutcome::Acknowledged)
+}
+
 enum LiveSeatCommand {
     Open(PathBuf, SyncSender<Result<(u64, OwnedFd), String>>),
     Close(u64),
     Switch(u8, SyncSender<Result<(), String>>),
-    Disable(SyncSender<Result<(), String>>),
+    Disable(SyncSender<Result<LiveSeatDisableOutcome, String>>),
     Shutdown,
 }
 
@@ -180,8 +198,14 @@ impl LiveSeatController {
         self.request(|reply| LiveSeatCommand::Switch(terminal, reply))
     }
 
-    pub fn acknowledge_disable(&mut self) -> Result<(), String> {
-        self.request(LiveSeatCommand::Disable)
+    pub fn acknowledge_disable(&mut self) -> Result<LiveSeatDisableOutcome, String> {
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        self.commands
+            .send(LiveSeatCommand::Disable(reply_tx))
+            .map_err(|_| "libseat broker stopped before disable".to_owned())?;
+        reply_rx
+            .recv()
+            .map_err(|_| "libseat broker dropped disable reply".to_owned())?
     }
 
     fn request(
@@ -261,15 +285,10 @@ fn run_broker(
                 let _ = reply.send(result);
             }
             Ok(LiveSeatCommand::Disable(reply)) => {
-                let result = if devices.is_empty() {
+                let result = try_disable(devices.len(), || {
                     seat.disable()
                         .map_err(|error| format!("libseat disable acknowledgement failed: {error}"))
-                } else {
-                    Err(format!(
-                        "refusing libseat disable with {} leased devices",
-                        devices.len()
-                    ))
-                };
+                });
                 let _ = reply.send(result);
             }
             Ok(LiveSeatCommand::Shutdown) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -280,3 +299,7 @@ fn run_broker(
         let _ = seat.close_device(device);
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/seat_disable.rs"]
+mod disable_tests;

@@ -16,6 +16,7 @@ fn encode_core_late_reply(
             | XClientReply::GetProperty { .. }
             | XClientReply::GetSelectionOwner { .. }
             | XClientReply::AllocNamedColor { .. }
+            | XClientReply::LookupColor { .. }
             | XClientReply::AllocColor { .. }
             | XClientReply::ListProperties { .. }
             | XClientReply::QueryColors { .. }
@@ -186,6 +187,16 @@ fn encode_core_late_reply(
                             .map(|resource| u32::try_from(resource.local.raw()).unwrap_or(0))
                             .unwrap_or(0),
                     );
+                    out
+                }
+                XClientReply::LookupColor { sequence, exact, screen } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    for (offset, value) in [(8, exact.red), (10, exact.green),
+                        (12, exact.blue), (14, screen.red), (16, screen.green),
+                        (18, screen.blue)] {
+                        put_u16(byte_order, &mut out[offset..offset + 2], value);
+                    }
                     out
                 }
                 XClientReply::AllocNamedColor {

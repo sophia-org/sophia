@@ -1660,3 +1660,13 @@ failed the conformance-reader anchor guard. The dock reader now uses the shared
 `record_after_marker` convention and tests tracing-decorated positive and fatal
 logs. The checker/allowlist was not relaxed. That first FAIL remains retained;
 the corrected signed successor requires its own canonical result.
+
+### First attended dock repair (2026-09-18)
+
+The first run reached the dock and application execution but failed native
+acceptance. Four xterms encountered missing LookupColor; a later VT handoff
+separately hit an outstanding seat lease. The [retained investigation](../investigations/d7k4q2vm-dock-smoke-exposes-color-lookup-and-seat-retirement-order.md)
+records the source repairs, discriminating private-xterm/mutation controls,
+Provlita vector tiles and strengthened child-exit evidence. The command remains
+`lom-test dock`; use shell `exit` for the four terminal launches and keep a
+VT-release test separate. No t107/t108 or physical acceptance is closed here.

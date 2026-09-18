@@ -62,6 +62,7 @@ const X_CREATE_COLORMAP: u8 = 78;
 const X_FREE_COLORMAP: u8 = 79;
 const X_ALLOC_COLOR: u8 = 84;
 const X_ALLOC_NAMED_COLOR: u8 = 85;
+const X_LOOKUP_COLOR: u8 = 92;
 const X_QUERY_COLORS: u8 = 91;
 const X_CREATE_CURSOR: u8 = 93;
 const X_CREATE_GLYPH_CURSOR: u8 = 94;

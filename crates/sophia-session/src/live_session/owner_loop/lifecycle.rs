@@ -253,11 +253,15 @@
                 && native_recovery_allowed!()
                 && requested_virtual_terminal.is_some()
             {
+                let _ = native_retirement.poll()?;
                 std::thread::sleep(Duration::from_millis(2));
                 continue;
             }
             if seat_state == sophia_backend_live::LiveSeatState::ReleasePending {
-                crate::session_println!("sophia_live_seat schema=1 status=release_pending");
+                if seat_release_started.is_none() {
+                    seat_release_started = Some(Instant::now());
+                    crate::session_println!("sophia_live_seat schema=1 status=release_pending");
+                }
                 if !seat_release_prepared {
                     let revoked_input_leases = advance_application_input_security_epoch(
                         &mut application_route_leases,
@@ -297,8 +301,20 @@
                     );
                 }
                 close_native_owner!("seat_release", RetirementMode::DeviceRevoked);
-                controller.acknowledge_disable()?;
+                seat_release_prepared = true;
+                // Poll before asking the broker: destruction queues the exact
+                // lease close. Neither a pending owner nor a broker delay is
+                // permission to discard custody or acknowledge early.
+                let outcome = native_retirement.poll_seat_release(|| controller.acknowledge_disable())?;
+                if !matches!(outcome, Some(sophia_backend_live::LiveSeatDisableOutcome::Acknowledged)) {
+                    if seat_release_started.expect("release started").elapsed() >= Duration::from_secs(2) {
+                        return Err(format!("seat release timed out: broker={outcome:?}").into());
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                    continue;
+                }
                 seat_state = seat_state.released();
+                seat_release_started = None;
                 render_owners.seat_active = false;
                 seat_release_prepared = false;
                 requested_virtual_terminal = None;
@@ -501,6 +517,14 @@
                             "sophia_session_app schema=2 status=failed id={id} source=action transaction={} application={} reason=exit_before_admission exit_status={status}",
                             admission.intent.transaction.raw(),
                             admission.intent.application.raw(),
+                        );
+                    }
+                    if let Some(launch) = &secondary_children[secondary_index].native_catalog {
+                        let grant = launch.cause.grant();
+                        crate::session_println!(
+                            "sophia_catalog_launch schema=1 status=process_exited transaction={} connection_epoch={} content_grant_epoch={} success={}",
+                            launch.transaction.raw(), grant.connection_epoch, grant.content_grant_epoch,
+                            status.success(),
                         );
                     }
                     secondary_children.remove(secondary_index);

@@ -1353,10 +1353,9 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         }
         *failure_phase = crate::diagnostics::SessionFailurePhase::Lifecycle;
         include!("lifecycle.rs");
-        // Seat disable acknowledgement precedes worker retirement visits.
-        if requested_virtual_terminal.is_none() {
-            let _ = native_retirement.poll()?;
-        }
+        // A pending VT switch must not park the owner which still holds the
+        // final seat-device lease. This visit never performs KMS operations.
+        let _ = native_retirement.poll()?;
         *failure_phase = crate::diagnostics::SessionFailurePhase::WindowManagement;
         include!("wm_phase.rs");
         *failure_phase = crate::diagnostics::SessionFailurePhase::Authority;

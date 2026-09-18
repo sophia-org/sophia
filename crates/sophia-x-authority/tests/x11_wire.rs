@@ -31,6 +31,7 @@ include!("x11_wire/resources_frontend.rs");
 include!("x11_wire/admission_frontend.rs");
 include!("x11_wire/extension_enumeration_socket.rs");
 include!("x11_wire/no_operation_socket.rs");
+include!("x11_wire/lookup_color.rs");
 include!("x11_wire/extension_minor_classification.rs");
 include!("x11_wire/setup_failure_containment.rs");
 include!("x11_wire/xfixes_stalled_watcher.rs");

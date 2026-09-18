@@ -71,7 +71,9 @@ pub fn verify(text: &str) -> Result<String, String> {
     let mut facts = BTreeSet::new();
     let mut presented = BTreeMap::<Grant, BTreeMap<u64, BTreeSet<u64>>>::new();
     let mut launched = BTreeMap::<Grant, BTreeSet<u64>>::new();
-    let mut transactions = BTreeSet::new();
+    let mut transactions = BTreeMap::new();
+    let mut exited = BTreeSet::new();
+    let mut protocol_tally = false;
     let mut retired = BTreeSet::new();
     let (mut committed, mut catalog, mut shutdown) = (0, 0, 0);
     for (index, raw) in text.lines().enumerate() {
@@ -125,6 +127,23 @@ pub fn verify(text: &str) -> Result<String, String> {
             return Err("component work after shutdown".into());
         }
         match name {
+            "sophia_live_session_protocol_error_tally" => {
+                number(&f, "total", 0, 0)?;
+                if protocol_tally {
+                    return Err("duplicate protocol tally".into());
+                }
+                protocol_tally = true;
+            }
+            "sophia_catalog_launch" if status == "process_exited" => {
+                number(&f, "schema", 1, 1)?;
+                let transaction = number(&f, "transaction", 1, u64::MAX)?;
+                if f.get("success") != Some(&"true")
+                    || transactions.get(&transaction) != Some(&grant(&f)?)
+                    || !exited.insert(transaction)
+                {
+                    return Err("failed/unknown/duplicate catalog child exit".into());
+                }
+            }
             "sophia_shell_component" => {
                 number(&f, "schema", 1, 1)?;
                 let g = grant(&f)?;
@@ -239,7 +258,10 @@ pub fn verify(text: &str) -> Result<String, String> {
                 {
                     return Err("launch before presentation".into());
                 }
-                if !transactions.insert(number(&f, "transaction", 1, u64::MAX)?) {
+                if transactions
+                    .insert(number(&f, "transaction", 1, u64::MAX)?, g)
+                    .is_some()
+                {
                     return Err("duplicate launch".into());
                 }
                 launched.entry(g).or_default().insert(output);
@@ -259,6 +281,9 @@ pub fn verify(text: &str) -> Result<String, String> {
     }
     if roles.len() != 3 || committed != 1 || catalog != 1 || shutdown != 1 {
         return Err("missing/repeated lifecycle evidence".into());
+    }
+    if !protocol_tally || exited.len() != transactions.len() {
+        return Err("missing clean child exits or protocol tally".into());
     }
     let mut coverage = None;
     for (role, (g, _)) in &roles {

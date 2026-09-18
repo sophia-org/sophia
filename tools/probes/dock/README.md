@@ -21,20 +21,25 @@ automatically. The explicit test catalog includes `registered:terminal`; example
 Browser/Files tiles remain unavailable when their identities are absent.
 
 The session lasts 90 seconds, with the existing 110-second recovery watchdog.
-On each monitor click Terminal on the dock once and close it; then open Bemenu
+On each monitor click Terminal on the dock once, confirm it stays open, and type
+`exit` followed by Enter; then open Bemenu
 with the WM binding (Super+Space in the operator profile), search for terminal,
-launch it once and close it. Reopen/dismiss Bemenu to check query reset. Check
+launch it once and exit its shell the same way. Reopen/dismiss Bemenu to check query reset. Check
 workspace switching and moving clocks on both bars throughout. Let the session
 end automatically. Record visual placement, focus behavior and any flashing.
 
 The Rust `cargo xtask dock verify HOST_LOG` reader requires three distinct
 role/slot/grant identities, the exact per-role revision/GPU policy, matching
 two-output presentation, actual Session-adopted launches from menu and dock on
-each output, and quiescent component shutdown. It rejects restarts, failed
+each output, matching successful child exits, a zero protocol-refusal tally,
+and quiescent component shutdown. It rejects restarts, failed
 service, malformed identities and missing launch/presentation evidence. A clean
 native exit and TTY/keyd restoration are separate launcher checks. No client ACK
 substitutes for an actual launched process. Source/build and transcript evidence
 are retained under `.artifacts/lom-panel-native/<timestamp>`.
+
+VT switching is a separate attended lifecycle check; do not mix it into this
+automatic-exit smoke. Record release/resume and retained-owner evidence separately.
 
 Passing this transcript is not visual acceptance, measured latency, restart
 isolation, GPU quota enforcement or complete t005/t006 acceptance. Unexpected

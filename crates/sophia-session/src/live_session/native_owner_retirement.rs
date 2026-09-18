@@ -227,6 +227,22 @@ impl<O: RetirementOwner> NativeRetirement<O> {
         self.pending.is_some()
     }
 
+    /// A release visit drives the retained owner before the broker observes
+    /// its leases. No acknowledgement may race ahead of exact retirement.
+    pub fn poll_seat_release(
+        &mut self,
+        acknowledge: impl FnOnce() -> Result<sophia_backend_live::LiveSeatDisableOutcome, String>,
+    ) -> Result<Option<sophia_backend_live::LiveSeatDisableOutcome>, Box<dyn std::error::Error>>
+    {
+        if !self.poll()? {
+            return Ok(None);
+        }
+        if self.latest.is_some() {
+            self.completion()?;
+        }
+        Ok(Some(acknowledge()?))
+    }
+
     /// Neither mode runs KMS here. Active callers must already have drained;
     /// revoked owners with residual scanout custody remain unresolved. The
     /// worker result queue and Mixed owners are dropped only after BOTH checks.
