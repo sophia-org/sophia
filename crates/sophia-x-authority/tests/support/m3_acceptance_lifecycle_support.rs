@@ -412,6 +412,11 @@ pub(super) struct Maintained {
     /// Why a yielded visit yielded, typed rather than only formatted. A case
     /// that must establish a closed budget cannot do it from a Debug string.
     pub(super) allowance_refusal: Option<sophia_input_authority::ServiceStartRefusal>,
+    /// Why a charged retained output visit refused, typed. A case that must
+    /// establish what a visit did with a frame it still held cannot take that
+    /// from a formatted report either.
+    pub(super) output_refusal: Option<PrivateRetainedDriveRefusal>,
+    pub(super) supervision_ok: bool,
     pub(super) settled: Option<bool>,
     pub(super) charged: bool,
     pub(super) modifiers: Option<u16>,
@@ -609,6 +614,18 @@ impl LifecycleService {
                                 phase: report.phase(),
                                 status: report.status(),
                                 allowance_refusal: report.allowance_refusal(),
+                                output_refusal: match &report.outcome {
+                                    PrivateMaintenanceOutcome::Output(
+                                        PrivateRetainedDriveStep::Charged { outcome, .. },
+                                    ) => outcome.as_ref().err().copied(),
+                                    _ => None,
+                                },
+                                supervision_ok: matches!(
+                                    &report.outcome,
+                                    PrivateMaintenanceOutcome::Output(
+                                        PrivateRetainedDriveStep::Charged { supervision, .. },
+                                    ) if supervision.is_ok()
+                                ),
                                 settled: report.output_settled(),
                                 charged: report.charge().is_some_and(Result::is_ok),
                                 modifiers: resources.keyboards.modifiers(resources.seat),

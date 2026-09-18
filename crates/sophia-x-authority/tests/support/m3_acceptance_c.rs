@@ -1969,9 +1969,20 @@ fn blocked_recipient_attempt(
         visit.charged,
         "{label}: a charged visit was reached within the budget's own retry window: {visits:?}"
     );
+    // TYPED, AND EXACT. What the charged visit did with the frame it still
+    // held is the whole of the no-replay claim on this side, so it is compared
+    // as the value it is: the frame preserved, incomplete, with none of its
+    // bytes sent and its full length still owed.
+    assert_eq!(
+        visit.output_refusal,
+        Some(PrivateRetainedDriveRefusal::FramePreserved(
+            PrivateRetainedFrame::Incomplete { sent: 0, len: 32 }
+        )),
+        "{label}: the charged visit preserved the frame it still held rather than rebuilding it: {visit:?}"
+    );
     assert!(
-        visit.detail.contains("FramePreserved"),
-        "{label}: the charged visit reported preserving the frame it still held, in its own words, rather than rebuilding it: {visit:?}"
+        visit.supervision_ok,
+        "{label}: under successful supervision, so the refusal is the visit's decision and not a lost guard: {visit:?}"
     );
     assert_eq!(
         first_attempt,
@@ -2057,6 +2068,8 @@ fn blocked_recipient_attempt(
         "retained_after_exit": format!("{before:?}"),
         "maintenance_visit": format!("{visit:?}"),
         "what_the_visit_reported": visit.detail.clone(),
+        "typed_visit_refusal": format!("{:?}", visit.output_refusal),
+        "visit_supervision_ok": visit.supervision_ok,
         "visits_until_charged": visits,
         "send_attempts_for_this_capsule_after_the_stall": attempts_after_the_stall
             .iter()
