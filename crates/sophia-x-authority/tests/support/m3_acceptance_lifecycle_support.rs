@@ -322,8 +322,51 @@ pub(super) fn take_turns(registry: &XServerFrontendRouteRegistry) -> Vec<Private
 type DequeueReading = (
     crate::ReadySequence,
     sophia_input_authority::CleanupReadiness,
+    Option<sophia_input_authority::ServiceCharge>,
 );
 static DEQUEUES: Mutex<Vec<(usize, Vec<DequeueReading>)>> = Mutex::new(Vec::new());
+static DEQUEUE_DELAYS: Mutex<Vec<(usize, Duration)>> = Mutex::new(Vec::new());
+
+pub(super) fn delay_next_dequeue(registry: &XServerFrontendRouteRegistry) {
+    DEQUEUE_DELAYS.lock().unwrap().push((
+        Arc::as_ptr(&registry.clients) as usize,
+        Duration::from_millis(3),
+    ));
+}
+
+pub(crate) fn dequeue_started(registry: &XServerFrontendRouteRegistry) {
+    let delay = {
+        let mut held = DEQUEUE_DELAYS.lock().unwrap();
+        held.iter()
+            .position(|(key, _)| *key == Arc::as_ptr(&registry.clients) as usize)
+            .map(|index| held.remove(index).1)
+    };
+    if let Some(delay) = delay {
+        // A labelled bounded delay inside the original admitted operation,
+        // without changing its clock, counters, request, or effect.
+        std::thread::sleep(delay);
+    }
+}
+
+pub(crate) fn dequeue_finished(
+    registry: &XServerFrontendRouteRegistry,
+    sequence: crate::ReadySequence,
+    charge: sophia_input_authority::ServiceCharge,
+) {
+    if let Some((_, readings)) = DEQUEUES
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|(key, _)| *key == Arc::as_ptr(&registry.clients) as usize)
+    {
+        let last = readings
+            .iter_mut()
+            .rev()
+            .find(|(at, _, _)| *at == sequence)
+            .expect("actual budget start was recorded");
+        assert!(last.2.replace(charge).is_none());
+    }
+}
 
 pub(crate) fn dequeue_accounting(
     registry: &XServerFrontendRouteRegistry,
@@ -337,7 +380,7 @@ pub(crate) fn dequeue_accounting(
         .find(|(key, _)| *key == Arc::as_ptr(&registry.clients) as usize)
     {
         assert!(readings.len() < 4096, "bounded dequeue evidence");
-        readings.push((sequence, cleanup));
+        readings.push((sequence, cleanup, None));
     }
 }
 

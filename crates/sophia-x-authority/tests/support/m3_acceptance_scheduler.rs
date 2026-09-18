@@ -36,6 +36,10 @@ fn scheduler_accounting_and_maintenance() -> (Value, Vec<String>) {
     observe_dequeues(&service.registry);
     let mut positions = Vec::new();
     for (offset, pressed) in [(0, true), (1, false)] {
+        if !pressed {
+            std::thread::sleep(Duration::from_millis(17));
+        }
+        delay_next_dequeue(&service.registry);
         let accepted = ingress
             .submit(
                 &service.owner.lease(),
@@ -53,6 +57,7 @@ fn scheduler_accounting_and_maintenance() -> (Value, Vec<String>) {
             Some(expected_button_event(pressed, sequence, 0x310701, 1))
         );
     }
+    std::thread::sleep(Duration::from_millis(17));
     // The fault is the existing unreserved ingress, actually accepted by this
     // frontend. It must park once, without repeatedly spending starts.
     let (reported, reading) = sync_channel(1);
@@ -119,8 +124,26 @@ fn scheduler_accounting_and_maintenance() -> (Value, Vec<String>) {
     let turns = take_turns(&service.registry);
     let dequeues = take_dequeues(&service.registry);
     assert_eq!(dequeues.len(), 3);
-    assert_eq!(dequeues[0], (positions[0], CleanupReadiness::NoneEligible));
-    assert_eq!(dequeues[1], (positions[1], CleanupReadiness::Eligible));
+    assert_eq!(
+        (dequeues[0].0, dequeues[0].1),
+        (positions[0], CleanupReadiness::NoneEligible)
+    );
+    assert_eq!(
+        (dequeues[1].0, dequeues[1].1),
+        (positions[1], CleanupReadiness::Eligible)
+    );
+    let donated = dequeues[0].2.unwrap();
+    let reserved = dequeues[1].2.unwrap();
+    assert!(donated.elapsed >= Duration::from_millis(3));
+    assert!(reserved.elapsed >= Duration::from_millis(3));
+    assert!(
+        donated.cleanup_reservation_overrun.is_zero(),
+        "original budget actually donated this operation's cleanup allowance"
+    );
+    assert!(
+        !reserved.cleanup_reservation_overrun.is_zero(),
+        "original budget actually preserved the eligible cleanup reservation"
+    );
     assert_eq!(dequeues[2].0, parked);
     let taken: usize = turns.iter().map(|turn| turn.taken).sum();
     assert_eq!(

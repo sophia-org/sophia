@@ -72,6 +72,8 @@ impl PrivatePreparedRunner {
                 match admission.dequeued(elapsed, cleanup) {
                     Ok(run) => {
                         running = Some(run);
+                        #[cfg(all(test, unix))]
+                        routing_tests::m3_acceptance::dequeue_started(&registry);
                         Ok(())
                     }
                     Err(cause) => {
@@ -91,6 +93,10 @@ impl PrivatePreparedRunner {
             .map(|run| run.finish(service_origin.elapsed()))
             .transpose()
             .map_err(|_| XServerFrontendRouteError::OrderedItemUnresolved)?;
+        #[cfg(all(test, unix))]
+        if let (Some(sequence), Some(charge)) = (taken, charge) {
+            routing_tests::m3_acceptance::dequeue_finished(&registry, sequence, charge);
+        }
         if let Some(cause) = refused {
             if frontend
                 .as_ref()
