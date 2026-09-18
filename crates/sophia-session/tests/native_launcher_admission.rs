@@ -191,3 +191,113 @@ fn saturated_socket_defers_admission_then_delivers_one_exact_queue_outcome() {
     assert_eq!(h.activate(activation, 0).status, 2);
     assert_eq!(h.queue.pending_len(), 1);
 }
+
+#[test]
+fn native_worker_returns_exact_queue_owner_without_restoring_revoked_authority() {
+    use sophia_session::application_catalog::*;
+    use std::sync::Arc;
+    for changed in [false, true] {
+        let mut h = Harness::new();
+        let activation = h.accept();
+        assert_eq!(h.activate(activation, 0).status, 1);
+        let payload = h.dispatch();
+        let registered = ["app1", "app2"].map(|name| RegisteredCatalogApplication {
+            name: name.into(),
+            command: ApplicationLaunchCommand {
+                executable: std::env::current_exe().unwrap(),
+                arguments: if changed {
+                    vec!["changed".into()]
+                } else {
+                    vec![]
+                },
+                working_directory: None,
+            },
+        });
+        let mut worker = ApplicationCatalogWorker::start(
+            sophia_config::ApplicationCatalogConfig {
+                name: "native-fixture".into(),
+                sources: vec![],
+                applications: vec!["app1".into(), "app2".into()],
+                terminal: None,
+                terminal_arguments: vec![],
+            },
+            registered.into(),
+            ApplicationCatalogEnvironment {
+                search_path: vec![],
+                locale: "C".into(),
+                current_desktop: vec![],
+            },
+        )
+        .unwrap();
+        assert!(worker.verify_native(Arc::clone(&payload)));
+        assert!(!worker.verify_native(Arc::clone(&payload)));
+        worker.request_shutdown();
+        assert!(!worker.verify_native(Arc::clone(&payload)));
+        assert!(!worker.poll_shutdown().unwrap()); // the result is still owned
+        assert_eq!(h.queue.revoke_native_catalog_grant(GRANT), 1);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let result = loop {
+            if let Some(result) = worker.poll() {
+                break result;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        };
+        let ApplicationCatalogWorkerResult::NativeVerified(returned, command) = result else {
+            panic!("wrong worker result");
+        };
+        assert!(Arc::ptr_eq(&payload, &returned));
+        assert_eq!(returned.activation, activation);
+        assert_eq!(command.is_err(), changed);
+        if let Ok(command) = command {
+            assert_eq!(Some(command), payload.entry.command);
+        }
+        assert!(!h.queue.native_catalog_admission(&returned));
+        while !worker.poll_shutdown().unwrap() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(worker.poll_shutdown().unwrap());
+    }
+}
+
+#[test]
+fn native_execution_attempt_is_exact_once_and_revocation_does_not_undo_it() {
+    let mut h = Harness::new();
+    let activation = h.accept();
+    assert_eq!(h.activate(activation, 0).status, 1);
+    let payload = h.dispatch();
+    assert!(!h.queue.dispatch_catalog(payload.transaction));
+    let command = payload.entry.command.clone().unwrap();
+    let mut wrong_grant = GRANT;
+    wrong_grant.content_grant_epoch += 1;
+    let mut wrong_command = command.clone();
+    wrong_command.arguments.push("substitution".into());
+    assert!(
+        !h.queue
+            .begin_native_catalog_execution(&payload, wrong_grant, &command)
+    );
+    assert!(
+        !h.queue
+            .begin_native_catalog_execution(&payload, GRANT, &wrong_command)
+    );
+    assert!(
+        h.queue
+            .begin_native_catalog_execution(&payload, GRANT, &command)
+    );
+    assert!(
+        !h.queue
+            .begin_native_catalog_execution(&payload, GRANT, &command)
+    );
+    assert!(!h.queue.dispatch_catalog(payload.transaction));
+    assert_eq!(h.queue.revoke_native_catalog_grant(GRANT), 0);
+    assert!(h.queue.native_catalog_admission(&payload));
+    // A failed spawn explicitly settles the same admission. No process is
+    // spawned here: this control exercises the queue's irreversible attempt.
+    h.queue.cancel_native_catalog(&payload);
+    assert!(!h.queue.native_catalog_admission(&payload));
+    assert!(
+        !h.queue
+            .begin_native_catalog_execution(&payload, GRANT, &command)
+    );
+}

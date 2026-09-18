@@ -333,3 +333,35 @@ Five separately compiled mutations fail their intended controls: omitted reply
 credit, lost reply on close, overwritten first outcome, replay after capacity
 refusal, and bypassed selected-row validation. Disposable source hashes were
 restored exactly; no mutation was applied to the live checkout.
+
+## Native verification and execution-attempt custody
+
+The existing catalog worker accepts the actual native queue payload by `Arc`
+and returns that same owner with its rebuilt-catalog verification result. Its
+legacy and native verification use one comparison/revalidation function. Changed
+command/source data is refused. The result itself cannot restore queue authority
+lost through grant revocation. Nonblocking shutdown stops submissions, retains an
+outstanding result until `poll` takes it, and joins only a finished worker. An
+owner dropped without join is still abandonment; live native supervision must
+retain and service this owner rather than infer shutdown from disconnection.
+
+The queue retains dispatch-consumed and execution-attempted state. Taking a native
+dispatch cannot be rearmed to start another verification. The execution gate
+requires that dispatch, exact current queue payload, current grant and the exact
+verified command. It consumes the one attempt before spawn. Grant revocation
+before that gate withdraws admission; after it, revocation cannot erase the
+first-window attribution of a possibly started application. Explicit failed-spawn
+settlement cancels the exact admission. This is not proof a process was spawned:
+the live execution caller and typed child-origin join remain unfinished.
+
+`.artifacts/bemenu-native-execution` retains eight native admission controls,
+four catalog controls and twelve queue controls, all run device-hidden with no
+application spawn. The native worker control uses actual worker filesystem
+verification and checks exact payload identity, changed-command refusal,
+revocation and result-before-join custody. The execution-attempt control exercises
+the actual queue transition, not an OS execution or first-window event.
+
+Strict Session Clippy and layout pass. Three separately compiled mutations fail
+their intended controls: execution replay, wrong grant acceptance and ignored
+changed command. All four tested source files match the restored disposable
+archive. Full canonical validation for this successor is not yet claimed.

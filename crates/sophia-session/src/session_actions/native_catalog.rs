@@ -105,6 +105,29 @@ impl SessionLaunchQueue {
             })
     }
 
+    /// Consume the one execution attempt immediately before the Session's spawn
+    /// call. Verification alone cannot grant authority. Once attempted, grant
+    /// revocation must not erase an application's first-window attribution;
+    /// spawn failure is settled separately with exact cancellation.
+    pub fn begin_native_catalog_execution(
+        &mut self,
+        launch: &NativeCatalogLaunch,
+        current_grant: ContentGrant,
+        verified: &crate::application_catalog::ApplicationLaunchCommand,
+    ) -> bool {
+        if self.native_execution_attempted
+            || !self.native_dispatch_taken
+            || !self.native_catalog_admission(launch)
+            || current_grant != launch.activation.event.binding.grant
+            || launch.entry.command.as_ref() != Some(verified)
+        {
+            return false;
+        }
+        self.native_execution_attempted = true;
+        self.catalog_dispatch = None;
+        true
+    }
+
     pub fn take_native_catalog_dispatch(&mut self) -> Option<Arc<NativeCatalogLaunch>> {
         let dispatch = self.catalog_dispatch?;
         let activation = dispatch.native?;
@@ -117,6 +140,7 @@ impl SessionLaunchQueue {
         }
         let result = Arc::clone(current);
         self.catalog_dispatch = None;
+        self.native_dispatch_taken = true;
         Some(result)
     }
 
@@ -131,10 +155,11 @@ impl SessionLaunchQueue {
                 .is_none_or(|v| v.activation.event.binding.grant != grant)
         });
         let mut removed = before - self.pending.len();
-        if self
-            .admitted_native
-            .as_ref()
-            .is_some_and(|v| v.activation.event.binding.grant == grant)
+        if !self.native_execution_attempted
+            && self
+                .admitted_native
+                .as_ref()
+                .is_some_and(|v| v.activation.event.binding.grant == grant)
         {
             self.take_admission();
             removed += 1;

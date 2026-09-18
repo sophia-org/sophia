@@ -75,6 +75,8 @@ pub struct SessionLaunchQueue {
     catalog_dispatch: Option<CatalogDispatch>,
     admitted_native: Option<Arc<NativeCatalogLaunch>>,
     next_native_transaction: u64,
+    native_execution_attempted: bool,
+    native_dispatch_taken: bool,
     admission: Option<SessionLaunchAdmission>,
     peak_depth: usize,
     rejected: usize,
@@ -106,7 +108,11 @@ impl SessionLaunchQueue {
                 .is_some_and(|a| a.intent.transaction == transaction)
     }
     pub fn dispatch_catalog(&mut self, transaction: TransactionId) -> bool {
-        if !self.catalog_admission(transaction) || self.catalog_dispatch.is_some() {
+        if !self.catalog_admission(transaction)
+            || self.catalog_dispatch.is_some()
+            || self.native_execution_attempted
+            || self.native_dispatch_taken
+        {
             return false;
         }
         self.catalog_dispatch = Some(CatalogDispatch {
@@ -226,6 +232,8 @@ impl SessionLaunchQueue {
     fn take_admission(&mut self) -> Option<SessionLaunchAdmission> {
         self.admitted_command = None;
         self.admitted_native = None;
+        self.native_execution_attempted = false;
+        self.native_dispatch_taken = false;
         self.catalog_dispatch = None;
         self.admission.take()
     }
