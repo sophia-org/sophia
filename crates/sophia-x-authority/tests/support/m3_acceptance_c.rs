@@ -2569,7 +2569,8 @@ fn blocked_recipient_attempt(
     // answer. Nothing here is done to produce send observations: the visit
     // making no attempt at all is the expected result, and is asserted as one.
     let mut visit = blocked.step();
-    let mut visits = vec![format!("{visit:?}")];
+    let mut visits = BoundedTrace::default();
+    visits.push(|| format!("{visit:?}"));
     let mut terminal_visits: Vec<String> = Vec::new();
     let visit_deadline = std::time::Instant::now() + Duration::from_secs(10);
     // THE OUTPUT VISIT IS THE ONE THIS ROW IS ABOUT. The scheduler takes its
@@ -2613,7 +2614,7 @@ fn blocked_recipient_attempt(
                 visit.terminal_visit, visit.terminal_refusal
             ));
         }
-        visits.push(format!("{visit:?}"));
+        visits.push(|| format!("{visit:?}"));
     }
     assert_eq!(
         visit.phase,
@@ -2907,7 +2908,7 @@ fn blocked_recipient_attempt(
         "what_the_visit_reported": visit.detail.clone(),
         "typed_visit_refusal": format!("{:?}", visit.output_refusal),
         "visit_supervision_ok": visit.supervision_ok,
-        "visits_until_charged": visits,
+        "visits_until_charged": visits.evidence(),
         "charged_terminal_visits_stepped_past": terminal_visits,
         "send_attempts_for_this_capsule_after_the_stall": attempts_after_the_stall
             .iter()
@@ -3322,7 +3323,7 @@ fn focus_window_without_motion(
 /// phase live inside the runner, and reading them afterwards would read the
 /// aftermath of whatever the service did next.
 struct RefusedReading {
-    turns: Vec<String>,
+    turns: BoundedTrace,
     undelivered: usize,
     /// The completion the retained item is still carrying, as the original
     /// handle, to be compared with the one this request's admission minted.
@@ -3342,6 +3343,55 @@ struct RefusedReading {
     /// cannot fix one, so the loop stops and the case fails on it rather than
     /// continuing quietly.
     unexpected_allowance: Option<String>,
+}
+
+/// A bounded record of repeated readings.
+///
+/// AN UNBOUNDED TRACE IS ITS OWN FAILURE. A loop that formats one line per
+/// turn can grow a log by hundreds of megabytes while establishing nothing the
+/// first few lines did not, and the formatting is most of the cost. This keeps
+/// a bounded head, counts everything, and says how much it left out.
+#[derive(Default, Clone)]
+struct BoundedTrace {
+    kept: Vec<String>,
+    total: usize,
+}
+
+const TRACE_BOUND: usize = 32;
+
+impl BoundedTrace {
+    /// Record one reading. The line is not built at all once the bound is
+    /// reached, so a long idle loop costs a counter and nothing else.
+    fn push(&mut self, line: impl FnOnce() -> String) {
+        self.total += 1;
+        if self.kept.len() < TRACE_BOUND {
+            self.kept.push(line());
+        }
+    }
+
+    fn elided(&self) -> usize {
+        self.total - self.kept.len()
+    }
+
+    fn evidence(&self) -> Value {
+        json!({
+            "kept": self.kept,
+            "total": self.total,
+            "elided": self.elided(),
+        })
+    }
+}
+
+impl std::fmt::Debug for BoundedTrace {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            out,
+            "{:?} (+{} more, {} in all)",
+            self.kept,
+            self.elided(),
+            self.total
+        )
+    }
 }
 
 /// Whether that accepted-item credit is drawn on this store.
@@ -3463,9 +3513,9 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                 hook_cell.lock().unwrap().clone().expect(
                     "the case shared the request's own completion before releasing the runner",
                 );
-            let mut turns = Vec::new();
+            let mut turns = BoundedTrace::default();
             let mut reading = RefusedReading {
-                turns: Vec::new(),
+                turns: BoundedTrace::default(),
                 undelivered: 0,
                 carried: None,
                 route_delivery: None,
@@ -3482,20 +3532,22 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                 let progress = match runner.service_turn(lease) {
                     Ok(progress) => progress,
                     Err(error) => {
-                        turns.push(format!("{error:?}"));
+                        turns.push(|| format!("{error:?}"));
                         break;
                     }
                 };
-                turns.push(format!(
-                    "starts={} taken={} refused={} settled={} terminal_steps={} allowance={:?} watch_failed={}",
-                    progress.starts,
-                    progress.taken,
-                    progress.refused,
-                    progress.settled,
-                    progress.terminal_steps,
-                    progress.allowance,
-                    progress.watch_failed
-                ));
+                turns.push(|| {
+                    format!(
+                        "starts={} taken={} refused={} settled={} terminal_steps={} allowance={:?} watch_failed={}",
+                        progress.starts,
+                        progress.taken,
+                        progress.refused,
+                        progress.settled,
+                        progress.terminal_steps,
+                        progress.allowance,
+                        progress.watch_failed
+                    )
+                });
                 reading.turns_taken += 1;
                 reading.supervised = reading.supervised && !progress.watch_failed;
                 // STOP ON THE THING ITSELF. A retained item appears in the
@@ -3720,7 +3772,7 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                 .send((runner.frontend().terminal.undelivered.len(), before))
                 .expect("the case is waiting");
             second_pause.wait();
-            let mut turns = Vec::new();
+            let mut turns = BoundedTrace::default();
             let mut starts = 0;
             let mut turns_taken = 0usize;
             let mut supervised = true;
@@ -3732,18 +3784,20 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                 let progress = match runner.service_turn(lease) {
                     Ok(progress) => progress,
                     Err(error) => {
-                        turns.push(format!("{error:?}"));
+                        turns.push(|| format!("{error:?}"));
                         break;
                     }
                 };
-                turns.push(format!(
-                    "starts={} settled={} terminal_steps={} allowance={:?} watch_failed={}",
-                    progress.starts,
-                    progress.settled,
-                    progress.terminal_steps,
-                    progress.allowance,
-                    progress.watch_failed
-                ));
+                turns.push(|| {
+                    format!(
+                        "starts={} settled={} terminal_steps={} allowance={:?} watch_failed={}",
+                        progress.starts,
+                        progress.settled,
+                        progress.terminal_steps,
+                        progress.allowance,
+                        progress.watch_failed
+                    )
+                });
                 starts += progress.starts;
                 turns_taken += 1;
                 supervised = supervised && !progress.watch_failed;
@@ -3942,7 +3996,7 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
         "removed_entry_claimed": false,
         "removed_entry_may_have_applied": false,
         "restoring_replaced_another_admission": false,
-        "turns_while_the_admission_was_gone": reading.turns,
+        "turns_while_the_admission_was_gone": reading.turns.evidence(),
         "retained_undelivered": reading.undelivered,
         "retained_item_carries_this_requests_completion": true,
         "retained_item_route_delivery": reading.route_delivery.map(|id| id.raw()),
@@ -3968,7 +4022,7 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
             "still_holds_its_credit_against_this_store": true,
         }),
         "published_by_restoring_admission": published_by_restoring.map(|answer| format!("{answer:?}")),
-        "turns_after_restoring": second_turns,
+        "turns_after_restoring": second_turns.evidence(),
         "starts_after_restoring": second_starts,
         "published_by_the_charged_retry": format!("{published:?}"),
         "receipt_for_this_delivery": format!("{receipt:?}"),
