@@ -214,7 +214,14 @@ impl ContentAllocationStore {
         presented_parents: &[(ContentAllocationId, u64)],
         now: u64,
     ) -> Result<(), ContentAllocationError> {
-        if self.profile != ContentStoreProfile::Legacy {
+        // Persistent catalog components reuse edge allocations, but cannot
+        // inherit a bar popout or a transient launcher's opening-bound surface.
+        let allowed = match self.profile {
+            ContentStoreProfile::Legacy => true,
+            ContentStoreProfile::PersistentCatalog => request.role == 1,
+            ContentStoreProfile::NativeLauncher => false,
+        };
+        if !allowed {
             return Err(ContentAllocationError::Malformed);
         }
         self.request_inner(transaction, request, presented_parents, None, now)

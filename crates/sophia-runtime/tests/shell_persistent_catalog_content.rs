@@ -21,6 +21,71 @@ fn allocation() -> ContentAllocationSnapshot {
     allocation.role = 1;
     allocation
 }
+
+#[test]
+fn persistent_allocations_use_edge_custody_without_popout_or_opening_authority() {
+    let mut registry = registry();
+    let store = registry.allocations_mut(GRANT).unwrap();
+    store
+        .publish_outputs(tx(1), 5, vec![fixture::facts()])
+        .unwrap();
+    store.take_event().unwrap();
+    let request = ContentAllocationRequest {
+        grant: GRANT,
+        output: OUTPUT,
+        allocation_request_id: 1,
+        operation: 1,
+        role: 1,
+        edge: 1,
+        prior: ContentAllocationId::default(),
+        parent: ContentAllocationId::default(),
+        parent_presentation_epoch: 0,
+        anchor_parent_rect: ContentPixelRect::default(),
+        desired_width: 64,
+        desired_height: 32,
+        margins: ContentMargins::default(),
+    };
+    for role in [2, 3] {
+        let mut wrong = request.clone();
+        wrong.role = role;
+        assert!(store.request(tx(2), wrong, &[], 0).is_err());
+        assert!(store.pending_request().is_none());
+        assert!(store.pending_event().is_none());
+    }
+    assert!(
+        store
+            .request_native_launcher(tx(2), fixture::request(1), fixture::opening(), 0)
+            .is_err()
+    );
+    store.request(tx(2), request.clone(), &[], 0).unwrap();
+    assert_eq!(store.pending_native_opening(1), None);
+    let mut wrong = allocation();
+    wrong.native_opening = Some(7);
+    assert!(store.grant(1, wrong, &[]).is_err());
+    assert_eq!(store.pending_request().unwrap().1, request);
+    store.grant(1, allocation(), &[]).unwrap();
+    assert!(
+        matches!(store.take_event().unwrap().record, ShellContentRecord::AllocationResult(v) if v.status == 1)
+    );
+    assert_eq!(store.snapshots(), vec![allocation()]);
+    let mut release = request;
+    release.allocation_request_id = 2;
+    release.operation = 3;
+    release.prior = allocation().allocation;
+    release.desired_width = 0;
+    release.desired_height = 0;
+    store.request(tx(3), release, &[], 0).unwrap();
+    // A release proposal is not disposition: the actual owner remains until
+    // Session removes its content and explicitly completes this request.
+    assert_eq!(store.snapshots(), vec![allocation()]);
+    store.release(2).unwrap();
+    assert!(store.snapshots().is_empty());
+    assert!(store.pending_request().is_none());
+    assert!(
+        matches!(store.take_event().unwrap().record, ShellContentRecord::AllocationResult(v) if v.status == 3)
+    );
+    assert!(store.take_event().is_none());
+}
 fn begin() -> CatalogCandidateBegin {
     CatalogCandidateBegin {
         content: fixture::begin().content,

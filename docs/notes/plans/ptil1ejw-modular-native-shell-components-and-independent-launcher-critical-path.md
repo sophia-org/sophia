@@ -1538,3 +1538,12 @@ mutation fails the expected pre-dequeue refusal; the positive archive/target was
 not mutated. Evidence: `.artifacts/dock-candidate-transport`. Its initial check
 failed because the fixture granted a permit under a one-record budget; the fixed
 fixture admits its full limit at construction. No hardware or publication.
+
+Persistent allocation service reuses the existing edge request/grant/release
+owner, restricted to role 1. Popout and transient-opening requests refuse; a
+release proposal does not discard its live allocation until Session completes it.
+Device-hidden validation in `.artifacts/dock-edge-allocation/check.log`: 20 runtime
+library, 11 ordinary allocation, 10 transient and seven persistent controls pass,
+with strict runtime Clippy. The new control supplies Engine allocation decisions;
+it does not exercise physical work-area reservation. Initial Clippy rejected a
+redundant Boolean expression, replaced with an explicit profile match.
