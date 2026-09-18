@@ -168,7 +168,8 @@ remains separately labelled.
 
 The public C foundation now includes atomic typed application-catalog assembly
 (kinds 114–116) and typed native-launcher records (six inbound kinds and five
-outbound encoders), checked against independent Rust golden bytes. Native input
+outbound encoders), plus immutable resource transfer/reply codecs (kinds 165–171),
+checked against independent Rust golden bytes. Native input
 text is borrowed; encoding/decoding grants no lifecycle authority. Content/focus
 lifecycle and live independent admission/Bemenu integration remain open; isolated
 protected component supervision has separate headless coverage.

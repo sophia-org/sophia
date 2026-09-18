@@ -521,3 +521,26 @@ promote Prepared content, and no encoded ACK/Activate establishes queue ownershi
 peer receipt or launch authority. The joined client owner still must validate
 exact current Presented bindings and retain response/resource obligations across
 partial I/O, newer content, revocation and disconnect.
+
+
+## C immutable resource vocabulary
+
+The C client can now encode ResourceBegin/Chunk/End/Cancel/Retire and decode
+ResourceStatus/Released through `sophia_shell_content_resource.h`. These records
+are shared content vocabulary, not native-launcher-specific messages. Shapes,
+reduced scales, resource dimensions, canonical whole-row chunk count, byte bounds
+and status/reason combinations follow the Rust codec. Negotiated limits still
+need separate validation by the client owner. Chunk encoding copies from caller
+storage without a payload-sized stack buffer or heap allocation; all refusal
+checks precede destination writes.
+
+The independent golden comparison covers all seven kinds; additional controls
+cover every short output/truncated reply, maximum-size chunks, overflow/zero
+identities, wrong direction/transaction, scale/geometry/count errors and terminal
+status bounds. Device-hidden C gate and focused Clang ASan/UBSan pass; compiled
+resource-generation and offset-bound mutants fail. Evidence is retained at
+`.artifacts/bemenu-resource-codec`. This still establishes codecs only. In
+particular a rejected Retire can leave a resident resource live, while an aborted
+incomplete transfer has different disposition; neither a generic status nor an
+unmatched Released may grant slot reuse. The future shared client owner must
+retain the exact request/generation and aggregate credits through those paths.
