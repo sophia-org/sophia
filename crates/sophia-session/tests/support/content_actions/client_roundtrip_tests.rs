@@ -379,7 +379,7 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
             scale: 1,
         }];
         let expected_serial = next_transaction;
-        let snapshot = crate::live_session::metadata_shell::indicators::indicator_snapshot(
+        let snapshot = crate::shell_indicator_projection::indicator_snapshot(
             &publication,
             Some(activation.output),
             activation.connection_epoch,
@@ -632,7 +632,8 @@ fn shared_wm_admission_keeps_unpublished_and_capacity_refusals_out_of_the_queue(
 #[test]
 fn owner_decision_finishes_refusals_without_replaying_wm_admission() {
     use crate::live_session::LiveWmRequestAdmission as Admission;
-    use crate::live_session::metadata_shell::indicators::{LiveIndicatorState, indicator_snapshot};
+    use crate::live_session::metadata_shell::indicators::LiveIndicatorState;
+    use crate::shell_indicator_projection::indicator_snapshot;
     use ShellIndicatorActivationStatus as Status;
     for (initial, linked, admission, expected, calls) in [
         (
@@ -746,7 +747,8 @@ fn owner_decision_finishes_refusals_without_replaying_wm_admission() {
 
 #[test]
 fn direct_mode_keeps_snapshot_and_event_high_water_checks() {
-    use crate::live_session::metadata_shell::indicators::{LiveIndicatorState, indicator_snapshot};
+    use crate::live_session::metadata_shell::indicators::LiveIndicatorState;
+    use crate::shell_indicator_projection::indicator_snapshot;
     let mut h = Harness::new();
     let mut indicators = LiveIndicatorState::default();
     let mut calls = 0;
