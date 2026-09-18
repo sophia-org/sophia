@@ -91,13 +91,15 @@ pub(super) fn rectangles_overlap(left: ContentPixelRect, right: ContentPixelRect
 pub(super) fn valid_chunk_rows(
     chunk: &ContentCandidateChunk,
     max_margin: u32,
-    native: bool,
+    profile: ContentStoreProfile,
 ) -> bool {
     chunk.surfaces.iter().all(|surface| {
-        (if native {
+        (if profile == ContentStoreProfile::NativeLauncher {
             surface.role == 3
                 && surface.reservation_extent == 0
                 && surface.anchor_parent_rect == ContentPixelRect::default()
+        } else if profile == ContentStoreProfile::PersistentCatalog {
+            surface.role == 1
         } else {
             (1..=2).contains(&surface.role)
         }) && (1..=4).contains(&surface.edge)
@@ -115,7 +117,12 @@ pub(super) fn valid_chunk_rows(
             && placement.destination_x_px >= 0
             && placement.destination_y_px >= 0
     }) && chunk.targets.iter().all(|target| {
-        target.action_kind == if native { 2 } else { 1 }
+        target.action_kind
+            == match profile {
+                ContentStoreProfile::Legacy => 1,
+                ContentStoreProfile::NativeLauncher => 2,
+                ContentStoreProfile::PersistentCatalog => 3,
+            }
             && target.target_id > 0
             && target.target_generation > 0
             && target.action_id > 0

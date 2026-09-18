@@ -108,8 +108,12 @@ impl ContentCandidateStore {
         // The same permit and response-credit owner settles a refused native
         // Begin. A validation failure must not silently consume a peer request.
         match binding {
-            Ok(binding) => self.begin_inner(transaction, begin.content, Some(binding), None, now),
-            Err(error) => self.begin_inner(transaction, begin.content, None, Some(error), now),
+            Ok(binding) => {
+                self.begin_inner(transaction, begin.content, Some(binding), None, None, now)
+            }
+            Err(error) => {
+                self.begin_inner(transaction, begin.content, None, None, Some(error), now)
+            }
         }
     }
 
@@ -137,7 +141,14 @@ impl ContentCandidateStore {
         if self.profile != ContentStoreProfile::NativeLauncher {
             return Err(ContentCandidateError::Malformed);
         }
-        self.end_inner(transaction, end, context, Some(current), resources, now)
+        self.end_inner(
+            transaction,
+            end,
+            context,
+            CandidateAuthority::Native(current),
+            resources,
+            now,
+        )
     }
 
     /// Recheck live opening/catalog/geometry immediately before transferring the

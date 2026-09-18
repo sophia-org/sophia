@@ -1474,3 +1474,23 @@ and compared every changed file to the candidate before execution.
 Removing the exact connected-owner guard in a separate archive compiles and
 fails the wrong-peer assertion. The positive source is retained separately and
 was never mutated. Layout passes; no canonical or hardware acceptance is claimed.
+
+### Persistent candidate store (2026-09-18)
+
+The actual content store now accepts typed persistent catalog candidates under
+the persistent profile. Begin binds the Session-supplied catalog generation;
+End and render submission revalidate generation, connection epoch, available
+unique catalog slots and current allocation identity. Only role-1 surfaces and
+kind-3 targets are admitted. Legacy and transient entry points remain separate.
+The renderer bundle carries passive catalog metadata alongside its real leases.
+Consumed Begin generations cannot be reused after a terminal refusal.
+
+Six device-hidden persistent controls plus 22 ordinary and 10 native-launcher
+candidate controls pass; strict runtime library/test Clippy passes. Removing
+catalog-generation equality in a separate compiled archive fails the pending
+owner revalidation control. Evidence: `.artifacts/dock-candidate-binding`, final
+`generation-check.log` and `catalog-mutant.log`. These tests supply catalog,
+allocation and renderer completions. They prove store custody and refusal, not
+socket negotiation, launch authorization, native rendering or dock readiness.
+Transport/Session persistent service integration remains open and admission
+remains refused; no hardware, installation or publication occurred.

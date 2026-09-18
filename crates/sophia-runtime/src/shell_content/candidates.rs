@@ -9,10 +9,13 @@ use super::{
 mod demands;
 mod native;
 mod native_close;
+mod persistent;
 mod validation;
 use super::ContentStoreProfile;
 use demands::StandingDemand;
 pub use native::{NativeLauncherCandidateBinding, NativeLauncherCandidateContext};
+use persistent::CandidateAuthority;
+pub use persistent::PersistentCatalogCandidateBinding;
 use validation::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -77,6 +80,7 @@ struct Permit {
 
 struct Assembly {
     native_launcher: Option<NativeLauncherCandidateBinding>,
+    persistent_catalog: Option<PersistentCatalogCandidateBinding>,
     transaction: TransactionId,
     begin: ContentCandidateBegin,
     deadline: u64,
@@ -88,6 +92,7 @@ struct Assembly {
 
 struct Candidate {
     native_launcher: Option<NativeLauncherCandidateBinding>,
+    persistent_catalog: Option<PersistentCatalogCandidateBinding>,
     transaction: TransactionId,
     begin: ContentCandidateBegin,
     surfaces: Vec<ContentSurface>,
@@ -103,6 +108,7 @@ struct Candidate {
 #[derive(Clone)]
 pub struct ContentRenderBundle {
     pub native_launcher: Option<NativeLauncherCandidateBinding>,
+    pub persistent_catalog: Option<PersistentCatalogCandidateBinding>,
     pub grant: ContentGrant,
     pub output: ContentOutputId,
     pub candidate_generation: u64,
@@ -377,7 +383,7 @@ impl ContentCandidateStore {
         if self.profile != ContentStoreProfile::Legacy {
             return Err(ContentCandidateError::Malformed);
         }
-        self.begin_inner(transaction, begin, None, None, now)
+        self.begin_inner(transaction, begin, None, None, None, now)
     }
 
     fn begin_inner(
@@ -385,6 +391,7 @@ impl ContentCandidateStore {
         transaction: TransactionId,
         begin: ContentCandidateBegin,
         native_launcher: Option<NativeLauncherCandidateBinding>,
+        persistent_catalog: Option<PersistentCatalogCandidateBinding>,
         invalid_native: Option<ContentCandidateError>,
         now: u64,
     ) -> Result<(), ContentCandidateError> {
@@ -415,6 +422,11 @@ impl ContentCandidateStore {
             None
         };
         self.permits.remove(&begin.output);
+        // A consumed Begin owns this generation even when its contents refuse.
+        // Retrying under a fresh permit must not recycle that terminal identity.
+        self.last_candidate_generation = self
+            .last_candidate_generation
+            .max(begin.candidate_generation);
         if let Some(error) = invalid {
             self.response_credits -= 2;
             self.outcome(
@@ -432,11 +444,11 @@ impl ContentCandidateStore {
         let deadline = now
             .checked_add(u64::from(self.limits.candidate_timeout_ms))
             .ok_or(ContentCandidateError::Malformed)?;
-        self.last_candidate_generation = begin.candidate_generation;
         self.assemblies.insert(
             begin.output,
             Assembly {
                 native_launcher,
+                persistent_catalog,
                 transaction,
                 begin,
                 deadline,
@@ -489,6 +501,7 @@ impl ContentCandidateStore {
                     .map_or(0, |binding| 108 + 2 * binding.rows().len()),
             )
             .saturating_add(next_surfaces.saturating_mul(64))
+            .saturating_add(usize::from(assembly.persistent_catalog.is_some()) * 8)
             .saturating_add(next_placements.saturating_mul(32))
             .saturating_add(next_targets.saturating_mul(48));
         if !transaction.is_valid()
@@ -498,11 +511,7 @@ impl ContentCandidateStore {
             || next_placements > assembly.begin.placement_count as usize
             || next_targets > assembly.begin.target_count as usize
             || data_bytes > self.limits.max_candidate_bytes as usize
-            || !valid_chunk_rows(
-                &chunk,
-                self.limits.max_margin_logical,
-                assembly.native_launcher.is_some(),
-            )
+            || !valid_chunk_rows(&chunk, self.limits.max_margin_logical, self.profile)
         {
             self.reject_assembly(output, ContentCandidateError::Malformed);
             return Err(ContentCandidateError::Malformed);
@@ -525,7 +534,14 @@ impl ContentCandidateStore {
         if self.profile != ContentStoreProfile::Legacy {
             return Err(ContentCandidateError::Malformed);
         }
-        self.end_inner(transaction, end, context, None, resources, now)
+        self.end_inner(
+            transaction,
+            end,
+            context,
+            CandidateAuthority::Legacy,
+            resources,
+            now,
+        )
     }
 
     fn end_inner(
@@ -533,7 +549,7 @@ impl ContentCandidateStore {
         transaction: TransactionId,
         end: ContentCandidateEnd,
         context: ContentCandidateContext<'_>,
-        native_context: Option<NativeLauncherCandidateContext<'_>>,
+        authority: CandidateAuthority<'_>,
         resources: &ContentResourceStore,
         now: u64,
     ) -> Result<(), ContentCandidateError> {
@@ -547,14 +563,7 @@ impl ContentCandidateStore {
                 (assembly.begin.candidate_generation == end.candidate_generation).then_some(*output)
             })
             .ok_or(ContentCandidateError::Stale)?;
-        let result = self.validate_end(
-            transaction,
-            &end,
-            context,
-            native_context,
-            resources,
-            output,
-        );
+        let result = self.validate_end(transaction, &end, context, authority, resources, output);
         match result {
             Ok(candidate) => {
                 self.assemblies.remove(&output);
@@ -573,7 +582,7 @@ impl ContentCandidateStore {
         transaction: TransactionId,
         end: &ContentCandidateEnd,
         context: ContentCandidateContext<'_>,
-        native_context: Option<NativeLauncherCandidateContext<'_>>,
+        authority: CandidateAuthority<'_>,
         resources: &ContentResourceStore,
         output: ContentOutputId,
     ) -> Result<Candidate, ContentCandidateError> {
@@ -600,7 +609,17 @@ impl ContentCandidateStore {
             &assembly.surfaces,
             &assembly.targets,
             context.allocations,
-            native_context,
+            match authority {
+                CandidateAuthority::Native(current) => Some(current),
+                _ => None,
+            },
+        )?;
+        persistent::validate_binding(
+            assembly.persistent_catalog,
+            &assembly.begin,
+            &assembly.surfaces,
+            &assembly.targets,
+            authority,
         )?;
         validate_surfaces(&assembly.surfaces, context.allocations, output)?;
         validate_targets(&assembly.targets, &assembly.surfaces, context.allocations)?;
@@ -617,6 +636,7 @@ impl ContentCandidateStore {
         }
         Ok(Candidate {
             native_launcher: assembly.native_launcher,
+            persistent_catalog: assembly.persistent_catalog,
             transaction: assembly.transaction,
             begin: assembly.begin.clone(),
             surfaces: assembly.surfaces.clone(),
@@ -683,6 +703,7 @@ impl ContentCandidateStore {
         }
         let bundle = ContentRenderBundle {
             native_launcher: candidate.native_launcher,
+            persistent_catalog: candidate.persistent_catalog,
             grant: self.limits.grant,
             output,
             candidate_generation,
