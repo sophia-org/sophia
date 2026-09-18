@@ -834,6 +834,7 @@ fn dispatch_custody(
     /// own job -- this only says whether there is one to choose.
     fn owes_native_recording(&self) -> bool {
         self.owes_receipt_settlement()
+            || (self.terminal.settling.len() > 1 && self.terminal.shared_activation.pending())
             || self.owes_attempt_return()
             || self
                 .terminal
@@ -879,5 +880,15 @@ fn dispatch_custody(
             }
         }
         None
+    }
+
+    fn join_shared_activations(&mut self) -> Option<PrivateDeliveryStep> {
+        let terminal = &mut self.terminal;
+        terminal.shared_activation.visit(&mut terminal.settling)
+            .map(|(observed, joined)| {
+                terminal.shared_activation_turn = false;
+                terminal.native_class_debt = terminal.native_class_debt.saturating_add(1);
+                PrivateDeliveryStep::SharedActivation { observed, joined }
+            })
     }
 }

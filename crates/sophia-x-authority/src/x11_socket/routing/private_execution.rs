@@ -56,6 +56,7 @@ impl PrivateXServerFrontend {
         let Some(native) = native_owner.as_ref() else {
             return Err(PrivateExecutionRefusal::NativeUnprepared);
         };
+        terminal.shared_activation.invalidate();
         let PrivateTerminalInventory {
             current,
             holds,
@@ -132,6 +133,7 @@ impl PrivateXServerFrontend {
         let Some(native) = native_owner.as_ref() else {
             return Err(PrivateExecutionRefusal::NativeUnprepared);
         };
+        terminal.shared_activation.invalidate();
         let PrivateTerminalInventory {
             holds,
             settling,

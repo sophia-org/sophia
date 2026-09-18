@@ -113,6 +113,8 @@ struct PrivateTerminalInventory {
 
     /// Releases whose delivery was decided and whose debt is still open.
     settling: Vec<PrivateSettlingRelease>,
+    shared_activation: PrivateSharedActivationScan,
+    shared_activation_turn: bool,
     /// How many terminal steps have gone to deliveries since native work last
     /// had a turn.
     ///
@@ -217,6 +219,8 @@ impl PrivateTerminalInventory {
             native_class_debt: 0,
             native_turn_debt: 0,
             settling,
+            shared_activation: PrivateSharedActivationScan::default(),
+            shared_activation_turn: true,
             current: None,
             turn: Vec::with_capacity(capacity),
             delivering: Vec::with_capacity(capacity),
@@ -301,6 +305,8 @@ impl PrivateTerminalInventory {
                 native_class_debt: 0,
                 native_turn_debt: 0,
                 settling: Vec::new(),
+                shared_activation: PrivateSharedActivationScan::default(),
+                shared_activation_turn: true,
                 current: None,
                 turn: Vec::new(),
                 delivering: Vec::new(),

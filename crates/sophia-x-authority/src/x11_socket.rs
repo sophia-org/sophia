@@ -107,6 +107,7 @@ include!("x11_socket/routing/private_native_custody.rs");
 pub(crate) use private_native::PrivateOrderedEmission;
 include!("x11_socket/routing/private_terminal.rs");
 include!("x11_socket/routing/private_terminal_native.rs");
+include!("x11_socket/routing/private_shared_activation.rs");
 include!("x11_socket/routing/private_inventory.rs");
 include!("x11_socket/routing/private_settlement.rs");
 include!("x11_socket/routing/private_settlement_failed.rs");

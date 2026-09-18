@@ -71,6 +71,8 @@ pub struct PrivateOrderTally {
     pub terminal_steps: usize,
     pub dispatched: usize,
     pub recipient_settled: usize,
+    pub activation_pairs_observed: usize,
+    pub activations_joined: usize,
     pub allowance_refusals: usize,
     pub blocked_turns: usize,
     pub unwatched_turns: usize,
@@ -95,6 +97,8 @@ impl PrivateOrderTally {
         self.terminal_steps += progress.terminal_steps;
         self.dispatched += progress.dispatched;
         self.recipient_settled += progress.recipient_settled;
+        self.activation_pairs_observed += progress.activation_pairs_observed;
+        self.activations_joined += progress.activations_joined;
         self.allowance_refusals += usize::from(progress.allowance.is_some());
         self.blocked_turns += usize::from(progress.blocked.is_some());
         self.unwatched_turns += usize::from(progress.unwatched.is_some());

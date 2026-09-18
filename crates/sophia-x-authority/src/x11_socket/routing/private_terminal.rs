@@ -105,6 +105,9 @@ enum PrivateDeliveryStep {
         #[cfg_attr(not(test), allow(dead_code))]
         recorded: bool,
     },
+    /// Source receipt comparisons and exact joins, separate from recording
+    /// the resulting native proof or settling a recipient's delivery.
+    SharedActivation { observed: usize, joined: usize },
     /// The entry at the head cannot be described, so nothing may be done with
     /// it. Not the same as nothing waiting.
     ///
@@ -709,10 +712,19 @@ impl PrivateXServerFrontend {
             }
             // Its turn comes back once something else has had one.
             self.terminal.press_stall = 0;
+            if self.terminal.shared_activation_turn
+                && let Some(step) = self.join_shared_activations()
+            {
+                return Ok(step);
+            }
             if let Some(recorded) = self.record_one_native() {
+                self.terminal.shared_activation_turn = true;
                 self.terminal.native_class_debt =
                     self.terminal.native_class_debt.saturating_add(1);
                 return Ok(PrivateDeliveryStep::Recorded { recorded });
+            }
+            if let Some(step) = self.join_shared_activations() {
+                return Ok(step);
             }
             return Ok(match self.attempt_one_delivery() {
                 Some(enqueued) => {

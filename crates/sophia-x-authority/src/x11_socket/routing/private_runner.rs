@@ -100,6 +100,8 @@ pub struct PrivateRunnerProgress {
     /// Separate from `settled`: a native bit is one half of a debt, and a
     /// recording is not a receipt.
     pub recorded: usize,
+    pub activation_pairs_observed: usize,
+    pub activations_joined: usize,
     /// Whether the supervisor failed during this turn.
     ///
     /// Separate from `unwatched`, which names an entry: native work has none,
@@ -710,6 +712,19 @@ impl PrivatePreparedRunner {
                                 // and where it happened.
                                 progress.enqueued += usize::from(enqueued);
                                 progress.relinquished += usize::from(relinquished);
+                                if watch_failed {
+                                    break;
+                                }
+                                self.prefer_cleanup = false;
+                                if overran || unwatched.is_some() {
+                                    break;
+                                }
+                                continue;
+                            }
+                            PrivateDeliveryStep::SharedActivation { observed, joined } => {
+                                progress.terminal_steps += 1;
+                                progress.activation_pairs_observed += observed;
+                                progress.activations_joined += joined;
                                 if watch_failed {
                                     break;
                                 }
