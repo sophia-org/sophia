@@ -850,6 +850,68 @@ fn run_x11_core_socket_server_once_with_trace_observer(
     )
 }
 
+/// Binds the private X11 core socket, refusing any path that already exists.
+///
+/// THE KERNEL DECIDES, AND IT DECIDES ATOMICALLY. There is no stat, no connect
+/// probe and no unlink here: `bind(2)` on a path that exists fails with
+/// `EADDRINUSE` on its own, and that refusal cannot be raced. Every preflight
+/// alternative is weaker. A stat cannot tell a live listener's socket from a
+/// crash leftover, because both are sockets. A connect probe can, but only with
+/// a window between the probe and the bind in which the owner may appear or
+/// depart, and it costs a live server an accept it must drain. A lock file
+/// excludes only those who agree to take the lock, so it would still leave this
+/// path unlinking a pre-existing listener that never took one.
+///
+/// So a stale path in this mode is an explicit refusal rather than authority to
+/// reclaim it. A private service that finds its socket occupied has not
+/// established anything and must say so, because the alternative is what this
+/// exists to prevent: unlinking a live listener's inode, binding a fresh one at
+/// the same path, and leaving the displaced service serving an unreachable
+/// inode while both believe they are the owner.
+///
+/// Reclaiming a genuinely stale path is a separate decision for whoever can
+/// establish that nothing is serving it. It is not this function's to make, and
+/// it is deliberately not offered as a flag here.
+#[cfg(unix)]
+pub fn bind_x11_core_socket_server_exclusive(
+    path: impl AsRef<Path>,
+) -> Result<UnixListener, X11SetupSocketError> {
+    let path = path.as_ref();
+    let listener = UnixListener::bind(path).map_err(|error| {
+        if error.kind() == ErrorKind::AddrInUse {
+            return X11SetupSocketError::new(format!(
+                "refusing to bind X11 core socket {}: the path is already \
+                 present and this service binds exclusively; another service \
+                 may be serving it, and it is not reclaimed",
+                path.display()
+            ));
+        }
+        X11SetupSocketError::new(format!(
+            "failed to bind X11 core socket {}: {error}",
+            path.display()
+        ))
+    })?;
+    restrict_x11_core_socket_to_owner(path)?;
+    Ok(listener)
+}
+
+/// The permission narrowing both bind paths share.
+#[cfg(unix)]
+fn restrict_x11_core_socket_to_owner(path: &Path) -> Result<(), X11SetupSocketError> {
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(|error| {
+        X11SetupSocketError::new(format!(
+            "failed to restrict X11 core socket {} to its owner: {error}",
+            path.display()
+        ))
+    })
+}
+
+/// Binds the X11 core socket, removing a pre-existing socket at the path.
+///
+/// THE LEGACY PATH, AND IT RECLAIMS. Kept unchanged for the established callers
+/// that depend on being able to restart over their own leftover socket. It
+/// cannot distinguish a leftover from a live listener, which is exactly why the
+/// private service uses [`bind_x11_core_socket_server_exclusive`] instead.
 #[cfg(unix)]
 pub fn bind_x11_core_socket_server(
     path: impl AsRef<Path>,
@@ -885,12 +947,7 @@ pub fn bind_x11_core_socket_server(
             path.display()
         ))
     })?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(|error| {
-        X11SetupSocketError::new(format!(
-            "failed to restrict X11 core socket {} to its owner: {error}",
-            path.display()
-        ))
-    })?;
+    restrict_x11_core_socket_to_owner(path)?;
     Ok(listener)
 }
 

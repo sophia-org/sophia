@@ -133,12 +133,39 @@ pub enum PrivateInputRefusal {
     ConstructionRefused(String),
     /// The namespace registry would not admit this service's namespace.
     Namespace(sophia_runtime::NamespaceRegistryError),
-    /// The configured topology names no output to serve. Refused rather than
+    /// The configured topology cannot be served as stated. Refused rather than
     /// substituted, because an invented output would commit geometry against a
     /// screen nobody asked for.
-    Topology,
+    Topology(PrivateInputTopologyRefusal),
     /// The service thread could not be started.
     Thread(std::io::Error),
+}
+
+/// Why a configured topology cannot be served.
+///
+/// NAMED, NOT COLLAPSED. "The topology was refused" leaves an operator
+/// guessing; each of these is a different thing to go and fix.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PrivateInputTopologyRefusal {
+    /// The topology declares no outputs at all, so there is no coordinate
+    /// space to route into.
+    NoOutputs,
+    /// The topology names a primary that is not among its own outputs.
+    ///
+    /// REFUSED, NOT REPAIRED. An earlier version fell back to the first output
+    /// here, which silently served a different screen from the one configured
+    /// and made every committed geometry a claim about the wrong output.
+    PrimaryAbsent { primary: sophia_protocol::OutputId },
+    /// The topology declares more than one output.
+    ///
+    /// REFUSED BECAUSE THIS ASSEMBLY CANNOT HONOUR IT. The headless assembly
+    /// ticks exactly one output: its per-output frame clock is advanced only
+    /// for the headless engine's own output. Admitting a head for every
+    /// declared output would produce heads that are never ticked and never
+    /// present, which is a narrowing of the configuration dressed up as
+    /// support for it. A multihead private service needs a backend that drives
+    /// more than one output, and until there is one this says so plainly.
+    MultipleOutputs { count: usize },
 }
 
 /// How far the service has got, as a value rather than a guess.
@@ -198,6 +225,13 @@ pub struct PrivateInputOutcome {
     /// collecting every actor says nothing about whether anything is owed, and
     /// a store that could not be read says less still.
     pub settlement: PrivateInputSettlement,
+    /// Committed decisions this service never managed to hand to the order.
+    ///
+    /// ITS OWN FACT, BECAUSE THE STORE HAS NEVER SEEN IT. This work was
+    /// committed by the coordinator and refused or never reached by the order,
+    /// so it is owed and yet appears nowhere in the settlement the X store
+    /// reports. An outcome that showed only the store would call this nothing.
+    pub bridge_undelivered: usize,
 }
 
 impl core::fmt::Debug for PrivateInputOutcome {
@@ -214,6 +248,7 @@ impl core::fmt::Debug for PrivateInputOutcome {
             .field("visits", &self.visits)
             .field("interrupted", &self.interrupted)
             .field("settlement", &self.settlement)
+            .field("bridge_undelivered", &self.bridge_undelivered)
             .field("retains_obligations", &self.retains_obligations())
             .finish()
     }
@@ -239,7 +274,8 @@ impl PrivateInputOutcome {
         let outstanding = !settlement.readable
             || settlement.reserved_credits.is_some_and(|held| held > 0)
             || settlement.owed.is_some_and(|held| held > 0)
-            || settlement.indeterminate.is_some_and(|held| held > 0);
+            || settlement.indeterminate.is_some_and(|held| held > 0)
+            || self.bridge_undelivered > 0;
         self.retained = outstanding.then_some(runtime);
         self
     }
@@ -603,7 +639,10 @@ impl PrivateInputHandle {
     /// made on throughout.
     pub fn stop(self) -> PrivateInputOutcome {
         let runtime = Arc::clone(&self.runtime);
-        runtime.stop().with_retention(runtime)
+        runtime
+            .stop_once()
+            .unwrap_or_default()
+            .with_retention(runtime)
     }
 }
 
@@ -616,11 +655,19 @@ impl Drop for PrivateInputHandle {
     /// change that: the owner and the keeper outlive the invocation, so the
     /// stop still reaches them.
     fn drop(&mut self) {
-        // Only the last holder stops it, and the report is discarded rather
-        // than the stop skipped. Anything still owed stays owned by the
-        // durable store this runtime keeps, which outlives the facade.
-        if Arc::strong_count(&self.runtime) == 1 {
-            let _ = self.runtime.stop();
-        }
+        // THE CONTROLLER STOPS, WHOEVER ELSE STILL HOLDS THE RUNTIME. An
+        // earlier version stopped only when this was the last `Arc`, which
+        // meant any live `PrivateInputSubmission` -- an adapter holding exactly
+        // the custody this design hands out -- silently turned a drop into no
+        // stop at all. The runtime then dropped its `JoinHandle` without
+        // joining, leaving the service thread running with nobody to answer
+        // for it. Adapters keep runtime custody; they are not controllers, and
+        // their custody is not a veto on stopping.
+        //
+        // Stopping is idempotent, so an explicit `stop` followed by this drop
+        // joins once. The report is discarded rather than the stop skipped,
+        // and anything still owed stays owned by the durable store this
+        // runtime keeps, which outlives the facade.
+        let _ = self.runtime.stop_once();
     }
 }

@@ -242,7 +242,7 @@ fn committed_routing() {
 
     let mut evidence = Evidence::default();
     for order in [Order::Little, Order::Big] {
-        let instance = Instance::start(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
+        let mut instance = Instance::start(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
         let (mut peer, context) = instance.connect(order, Some(support::COOKIE));
         let submission = instance
             .handle()
@@ -252,7 +252,7 @@ fn committed_routing() {
         let deadline = Instant::now() + support::WAIT;
         let admitted = loop {
             let committed = instance
-                .handle()
+                .handle_mut()
                 .apply_committed(Duration::from_millis(10))
                 .unwrap();
             assert!(committed.refused.is_empty(), "{committed:?}");

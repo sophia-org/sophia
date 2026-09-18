@@ -124,6 +124,12 @@ impl Instance {
         self.handle.as_ref().unwrap()
     }
 
+    /// The controller, exclusively. `apply_committed` takes `&mut self` so two
+    /// callers cannot submit the same committed command twice.
+    pub fn handle_mut(&mut self) -> &mut PrivateInputHandle {
+        self.handle.as_mut().unwrap()
+    }
+
     pub fn connect(
         &self,
         order: Order,

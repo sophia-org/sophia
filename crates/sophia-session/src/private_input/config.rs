@@ -84,4 +84,11 @@ pub struct PrivateInputConfig {
     /// to route into, and inventing one would make every routed position a
     /// fiction.
     pub output_topology: sophia_protocol::OutputTopologySnapshot,
+    /// The frame clock the headless assembly runs on.
+    ///
+    /// STATED, NOT DEFAULTED. The assembly's convenience constructor picks a
+    /// clock for you, which would make the timing of committed frames an
+    /// accident of which constructor was called. The caller says which clock
+    /// this service runs on.
+    pub frame_clock: sophia_engine::DeterministicFrameClock,
 }

@@ -22,8 +22,32 @@ pub struct XServerFrontend {
 
 #[cfg(unix)]
 impl XServerFrontend {
+    /// Binds the frontend, reclaiming a pre-existing socket at the path.
+    ///
+    /// The established behaviour, for callers that restart over their own
+    /// leftover socket. It cannot tell a leftover from a live listener; a
+    /// service that must not displace one uses [`Self::bind_exclusive`].
     pub fn bind(config: XServerFrontendConfig) -> Result<Self, X11SetupSocketError> {
         let listener = bind_x11_core_socket_server(config.socket_path())?;
+        Self::over_listener(config, listener)
+    }
+
+    /// Binds the frontend, refusing a path that already exists.
+    ///
+    /// The kernel refuses atomically, so two services racing this at one path
+    /// leave exactly one owner and the loser learns it lost. Nothing is
+    /// unlinked, so a live listener is never displaced.
+    pub fn bind_exclusive(config: XServerFrontendConfig) -> Result<Self, X11SetupSocketError> {
+        let listener = bind_x11_core_socket_server_exclusive(config.socket_path())?;
+        Self::over_listener(config, listener)
+    }
+
+    /// Everything after the listener exists, shared by both bind paths so the
+    /// two cannot drift into configuring the same frontend differently.
+    fn over_listener(
+        config: XServerFrontendConfig,
+        listener: UnixListener,
+    ) -> Result<Self, X11SetupSocketError> {
         let state = X11CoreSocketServerState::with_output_topology_and_xkb_config(
             config.output_topology().clone(),
             config.xkb_config(),

@@ -727,7 +727,12 @@ pub(crate) fn serve_private_frontend_until_stopped(
         });
     }
     let namespace = config.namespace();
-    let frontend = match XServerFrontend::bind(config) {
+    // EXCLUSIVE, ALWAYS, AND NOT A CHOICE THE CALLER MAKES. A private service
+    // that found its socket occupied and reclaimed it would displace whatever
+    // was serving there, leaving that service on an unlinked inode no client
+    // can reach while both believe they own the path. An occupied path here is
+    // a refusal to start.
+    let frontend = match XServerFrontend::bind_exclusive(config) {
         Ok(frontend) => frontend,
         Err(error) => {
             producers.close();

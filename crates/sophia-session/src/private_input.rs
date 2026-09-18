@@ -33,7 +33,7 @@ pub use control::{
 pub use handle::{
     PrivateInputHandle, PrivateInputOutcome, PrivateInputReadiness, PrivateInputRefusal,
     PrivateInputService, PrivateInputSettlement, PrivateInputStatus, PrivateInputThreadJoin,
-    PrivateInputUnavailable, PrivateInputWaitExpired,
+    PrivateInputTopologyRefusal, PrivateInputUnavailable, PrivateInputWaitExpired,
 };
 pub use submission::{
     PrivateInputAccepted, PrivateInputConnection, PrivateInputSubmission, PrivateInputSubmitError,

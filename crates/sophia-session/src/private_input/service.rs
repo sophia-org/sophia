@@ -20,7 +20,7 @@ use sophia_x_authority::{
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
 
@@ -28,7 +28,7 @@ use super::admission::{PrivateInputAdmissionPolicy, PrivateInputAdmissionRecord}
 use super::config::PrivateInputConfig;
 use super::handle::{
     PrivateInputOutcome, PrivateInputReadiness, PrivateInputRefusal, PrivateInputSettlement,
-    PrivateInputThreadJoin, PrivateInputVisit,
+    PrivateInputThreadJoin, PrivateInputTopologyRefusal, PrivateInputVisit,
 };
 
 /// Everything Session owns for one private input service.
@@ -60,7 +60,13 @@ pub(super) struct PrivateInputRuntime {
     /// ORDERED AND POPPED ONLY ON TRANSFER. A later effect must not overtake
     /// an earlier one that the order refused: accepting a configure before its
     /// own admission would apply an update to a window that was never mapped.
-    pub(super) bridge: Mutex<std::collections::VecDeque<super::committed::PrivateInputBridgeEntry>>,
+    pub(super) bridge: Mutex<super::committed::PrivateInputBridge>,
+    /// Whether a stop has already been performed.
+    ///
+    /// ONE STOP, WHOEVER ASKS. The controller stops on drop even while an
+    /// adapter still holds the runtime, so an explicit stop followed by the
+    /// controller going out of scope must not stop and join twice.
+    pub(super) stopped: AtomicBool,
     /// Surfaces this service has already admitted, with the exact connection
     /// each was admitted for. Keyed by the whole SurfaceId, whose own
     /// generation is the incarnation, so a surface destroyed and created again
@@ -141,6 +147,36 @@ impl PrivateInputRuntime {
             session_generation,
         } = config;
 
+        // THE TOPOLOGY IS VALIDATED BEFORE ANYTHING IS CONSTRUCTED. It was
+        // previously checked after the authority instance and the registry
+        // existed, which meant a refusable configuration had already allocated
+        // capacity and installed a namespace it would then abandon. Nothing is
+        // built until the configuration it would be built from is known good.
+        if output_topology.outputs.is_empty() {
+            return Err(PrivateInputRefusal::Topology(
+                PrivateInputTopologyRefusal::NoOutputs,
+            ));
+        }
+        if output_topology.outputs.len() > 1 {
+            return Err(PrivateInputRefusal::Topology(
+                PrivateInputTopologyRefusal::MultipleOutputs {
+                    count: output_topology.outputs.len(),
+                },
+            ));
+        }
+        // THE CONFIGURED PRIMARY OR NOTHING. Falling back to the first output
+        // would serve a different screen from the one configured and make every
+        // committed geometry a claim about the wrong output.
+        let primary = *output_topology
+            .outputs
+            .iter()
+            .find(|entry| entry.output == output_topology.primary)
+            .ok_or(PrivateInputRefusal::Topology(
+                PrivateInputTopologyRefusal::PrimaryAbsent {
+                    primary: output_topology.primary,
+                },
+            ))?;
+
         // THE AUTHORITY FIRST, with its issuer and submit handles. They are
         // bound together at construction so the gate the frontend installs is
         // built from this instance rather than paired with it afterwards.
@@ -175,12 +211,6 @@ impl PrivateInputRuntime {
         // deterministic output would have committed geometry against a size
         // nobody configured, and the declared X topology would then be a claim
         // about the Engine rather than a fact about it.
-        let primary = output_topology
-            .outputs
-            .iter()
-            .find(|entry| entry.output == output_topology.primary)
-            .or_else(|| output_topology.outputs.first())
-            .ok_or(PrivateInputRefusal::Topology)?;
         // THE PLANNED ASSEMBLY, NOT A COORDINATOR ON ITS OWN. Building the
         // coordinator directly would quietly narrow the plan to the one part
         // of it this path happens to call, and would leave the frame clock
@@ -399,7 +429,8 @@ impl PrivateInputRuntime {
             transactions: Mutex::new(transactions),
             closed: Mutex::new(closed),
             assembly: Mutex::new(assembly),
-            bridge: Mutex::new(std::collections::VecDeque::new()),
+            bridge: Mutex::new(super::committed::PrivateInputBridge::default()),
+            stopped: AtomicBool::new(false),
             admitted_surfaces: Mutex::new(std::collections::BTreeMap::new()),
             seat: binding.seat(),
             started: std::time::Instant::now(),
@@ -479,6 +510,17 @@ impl PrivateInputRuntime {
     /// report is taken, allowed maintenance runs, and only then is the thread
     /// joined. The thread's own join is reported apart from the workers it
     /// collected.
+    /// Stop exactly once, whoever asks first.
+    ///
+    /// Returns `None` when a stop has already been performed, so the
+    /// controller's drop can always ask without joining a thread twice.
+    pub(super) fn stop_once(&self) -> Option<PrivateInputOutcome> {
+        if self.stopped.swap(true, Ordering::SeqCst) {
+            return None;
+        }
+        Some(self.stop())
+    }
+
     pub(super) fn stop(&self) -> PrivateInputOutcome {
         // Producer admission closes as the service ends: the port lives inside
         // the invocation, so stopping it is what shuts the door. Nothing here
@@ -499,7 +541,11 @@ impl PrivateInputRuntime {
         // COMMITTED WORK THE ORDER NEVER TOOK. The X store has never seen it,
         // so it appears in no settlement reading; counting it here is what
         // stops a stop from looking finished while this is still owed.
-        let bridge_undelivered = self.bridge.lock().map(|held| held.len()).unwrap_or(0);
+        let bridge_undelivered = self
+            .bridge
+            .lock()
+            .map(|held| held.outstanding())
+            .unwrap_or(0);
         let mut outcome = PrivateInputOutcome {
             service_thread,
             settlement,
