@@ -52,6 +52,14 @@ fn three_component_smoke_requires_exact_independent_lifetimes_and_real_launch_re
         .map(|line| format!("1\t2\tinfo\t{line}\n"))
         .collect::<String>();
     assert!(verify(&structured).is_ok());
+    let decorated = good
+        .lines()
+        .map(|line| format!("2026-09-18 INFO session: {line}\n"))
+        .collect::<String>();
+    assert!(verify(&decorated).is_ok());
+    assert!(
+        verify(&(decorated + "2026-09-18 ERROR session: sophia_runtime_fatal schema=1\n")).is_err()
+    );
     for (from, to) in [
         ("role=dock", "role=bar"),
         ("revision=8", "revision=7"),

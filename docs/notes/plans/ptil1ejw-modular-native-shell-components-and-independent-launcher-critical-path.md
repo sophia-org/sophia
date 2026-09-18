@@ -1654,3 +1654,9 @@ The [physical instructions](../../../tools/probes/dock/README.md) define a
 90-second four-launch smoke. It is not the 40-action latency workload, restart
 acceptance, or complete t107/t108/Provlita t005/t006 acceptance. No native run,
 GPU enumeration, installation, M3 import or publication occurred in this slice.
+
+The first frozen canonical attempt on `7a31de06` passed workspace tests but
+failed the conformance-reader anchor guard. The dock reader now uses the shared
+`record_after_marker` convention and tests tracing-decorated positive and fatal
+logs. The checker/allowlist was not relaxed. That first FAIL remains retained;
+the corrected signed successor requires its own canonical result.

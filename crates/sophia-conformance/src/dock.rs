@@ -87,7 +87,12 @@ pub fn verify(text: &str) -> Result<String, String> {
         } else {
             raw
         };
-        let mut words = line.split_whitespace();
+        // Native logs may carry tracing prefixes as well as recorder columns.
+        let Some(record) = crate::direct_scanout::record_after_marker(line, "sophia_") else {
+            continue;
+        };
+        let record = format!("sophia_{record}");
+        let mut words = record.split_whitespace();
         let Some(name) = words.next() else { continue };
         let mut f = Fields::new();
         for word in words {
@@ -108,9 +113,14 @@ pub fn verify(text: &str) -> Result<String, String> {
             return Err("runtime failure or retained ownership".into());
         }
         if shutdown != 0
-            && (name.starts_with("sophia_shell_component")
-                || name == "sophia_live_shell_content"
-                || name == "sophia_catalog_launch")
+            && matches!(
+                name,
+                "sophia_shell_component"
+                    | "sophia_shell_component_catalog"
+                    | "sophia_shell_components_shutdown"
+                    | "sophia_live_shell_content"
+                    | "sophia_catalog_launch"
+            )
         {
             return Err("component work after shutdown".into());
         }
