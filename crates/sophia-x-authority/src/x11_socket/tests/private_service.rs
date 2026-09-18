@@ -445,11 +445,13 @@ fn a_private_service_admits_a_real_connection_and_stops_in_order() {
     let (commands, service_commands) = sync_channel(4);
     let config = private_service_config(&socket_path, namespace, 4);
     let (handle, finished) = launch(4, move |durable, owner| {
+        let mut execution = PrivateServiceExecutionKeeper::new();
         let outcome = run_x_server_frontend_private_until_stopped(
             config,
             transaction_sender,
             private_service_parts(4),
             owner,
+            &mut execution,
             service_commands,
             PrivateProducerPort::unattended(),
             Arc::new(|_| {}),
@@ -481,11 +483,13 @@ fn losing_the_command_channel_stops_the_private_service_in_the_same_order() {
     let (commands, service_commands) = sync_channel::<XServerFrontendServiceCommand>(4);
     let config = private_service_config(&socket_path, namespace, 4);
     let (handle, finished) = launch(4, move |durable, owner| {
+        let mut execution = PrivateServiceExecutionKeeper::new();
         let outcome = run_x_server_frontend_private_until_stopped(
             config,
             transaction_sender,
             private_service_parts(4),
             owner,
+            &mut execution,
             service_commands,
             PrivateProducerPort::unattended(),
             Arc::new(|_| {}),
@@ -519,11 +523,13 @@ fn an_error_after_a_connection_exists_collects_a_worker_blocked_on_egress() {
     let observer = recording_observer(Arc::clone(&seen), None, Arc::new(Mutex::new(None)));
     let config = private_service_config(&socket_path, namespace, 4);
     let (handle, finished) = launch(4, move |durable, owner| {
+        let mut execution = PrivateServiceExecutionKeeper::new();
         let outcome = run_x_server_frontend_private_until_stopped(
             config,
             transaction_sender,
             private_service_parts(4),
             owner,
+            &mut execution,
             service_commands,
             PrivateProducerPort::unattended(),
             observer,
@@ -599,10 +605,12 @@ fn launch_held(
         });
         let lease = owner.lease();
         let config = private_service_config(&socket_path, namespace, 4);
+        let mut execution = PrivateServiceExecutionKeeper::new();
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             serve_private_frontend_until_stopped(
                 private,
                 &lease,
+                &mut execution,
                 config,
                 transaction_sender,
                 service_commands,

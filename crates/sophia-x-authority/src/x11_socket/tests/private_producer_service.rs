@@ -30,6 +30,10 @@ struct ProducingLaunch {
 
 /// What the invocation returned, whole, plus the owner's state after.
 struct ProducedOutcome {
+    execution: Option<PrivateExecutionReading>,
+    execution_abandoned: Vec<PrivateExecutionReading>,
+    execution_inventory_matches: bool,
+    execution_collected: bool,
     unwound: bool,
     ok: Option<bool>,
     error: Option<String>,
@@ -169,10 +173,12 @@ fn launch_producing_observed(
             .unwrap_or_else(|(refusal, _)| panic!("a frontend over this owner: {refusal:?}"));
         let _ = registry_out.send((private.broker.registry.clone(), private.broker.raster_router()));
         let lease = service_owner.lease();
+        let mut execution = PrivateServiceExecutionKeeper::new();
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             serve_private_frontend_until_stopped(
                 private,
                 &lease,
+                &mut execution,
                 config,
                 transaction_sender,
                 service_commands,
@@ -259,8 +265,22 @@ fn launch_producing_observed(
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let execution_inventory_matches = service_durable.inner.lock().map(|held| {
+            held.terminal.iter().all(|inventory| execution.resources_for_inventory(inventory).is_ok())
+        }).unwrap_or(false);
+        let execution_reading = execution.execution();
+        let execution_collected = execution.resources.as_ref().is_some_and(|resources| resources.collected.is_some());
+        drop(execution);
+        let execution_abandoned = service_durable.retained_executions().expect("readable durable owner");
+        let holds_after_execution_loss = service_durable.inner.lock().expect("readable inventory")
+            .terminal.iter().flat_map(|terminal| holds_of(Some(terminal))).collect::<Vec<_>>();
+        assert_eq!(store_holds, holds_after_execution_loss, "execution loss preserves unresolved debt");
         let _ = done.send(());
         ProducedOutcome {
+            execution: execution_reading,
+            execution_abandoned,
+            execution_inventory_matches,
+            execution_collected,
             unwound,
             ok,
             error,

@@ -223,9 +223,11 @@ fn launch_two_origins(
         let lease = owner.lease();
         let run = |private, socket: &std::path::Path, namespace, commands| {
             let (transaction_sender, _transactions) = sync_channel(64);
+            let mut execution = PrivateServiceExecutionKeeper::new();
             serve_private_frontend_until_stopped(
                 private,
                 &lease,
+                &mut execution,
                 distinct_config(socket, NamespaceId::from_raw(namespace), 3),
                 transaction_sender,
                 commands,
@@ -865,9 +867,11 @@ fn launch_recovering(
         });
         let lease = owner.lease();
         let config = private_service_config(&socket_path, namespace, 4);
+        let mut execution = PrivateServiceExecutionKeeper::new();
         let outcome = serve_private_frontend_until_stopped(
             private,
             &lease,
+            &mut execution,
             config,
             transaction_sender,
             service_commands,
