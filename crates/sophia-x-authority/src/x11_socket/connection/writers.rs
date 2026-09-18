@@ -372,6 +372,7 @@ fn spawn_x11_protocol_event_writer(
             set_x11_protocol_event_sequence(&mut event, sequence.load(Ordering::Acquire));
             let record = encode_x_client_event(byte_order, event);
             receiver.retain_wire_record(&envelope, &record)?;
+            crate::evidence::present_event(client, None, "write_started", event);
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
                 tracing::trace!(
                     "sophia_x11_socket_write schema=1 writer=protocol bytes={} payload_redacted=true",
@@ -389,6 +390,7 @@ fn spawn_x11_protocol_event_writer(
             stream.flush().map_err(|error| {
                 x11_peer_write_error("failed to flush X11 protocol event", error)
             })?;
+            crate::evidence::present_event(client, None, "written", event);
             receiver.record_flushed(&envelope)?;
             // Giving up the dependency may enter the completion registry.
             // Release wire first: source retirement takes completion before

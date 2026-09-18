@@ -316,6 +316,13 @@ pub fn reduced_record(line: &str) -> Option<String> {
         {
             continue;
         }
+        if super::x_lifecycle::record(name) {
+            if super::x_lifecycle::field(name, key, value) {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
         if matches!(
             name,
             "sophia_live_session_input_recovery"

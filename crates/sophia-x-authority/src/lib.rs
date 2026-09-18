@@ -17,6 +17,7 @@ mod device_bundle;
 mod dispatch;
 mod drawing;
 mod event;
+mod evidence;
 mod explicit_pointer_grab;
 mod font;
 mod frontend_config;

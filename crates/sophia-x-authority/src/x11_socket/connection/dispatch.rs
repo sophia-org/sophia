@@ -2609,6 +2609,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     first_error_resource,
                 );
             }
+            crate::evidence::window_dispatch(
+                client, sequence, major_opcode,
+                (major_opcode == 1 && request.len() >= 32)
+                    .then(|| setup.byte_order.u16(&request[22..24])),
+                output,
+            );
             let encoded_outputs = output.encoded_outputs(setup.byte_order);
             let receipt = observer(pending_observation.take().expect("one observation per allocated ticket"))?;
             if let Some(receipt) = receipt { last_published_observation = Some(receipt); }

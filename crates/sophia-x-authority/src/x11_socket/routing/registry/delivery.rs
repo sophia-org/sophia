@@ -692,10 +692,23 @@ impl XServerFrontendRouteRegistry {
     ) -> Result<(), XServerFrontendWatcherRefusal> {
         let (incarnation, sender) = match self.client_senders(client) {
             Ok(senders) => (senders.connection_state.clone(), senders.protocol),
-            Err(XServerFrontendRouteError::UnknownClient { .. }) => return Ok(()),
+            Err(XServerFrontendRouteError::UnknownClient { .. }) => {
+                crate::evidence::present_event(client, None, "peer_gone", event);
+                return Ok(());
+            }
             Err(error) => return Err(XServerFrontendWatcherRefusal::Route(error)),
         };
-        match self.route_to_client(client, &incarnation, sender.0, X11ProtocolEvent::untracked(event)) {
+        let result = self.route_to_client(client, &incarnation, sender.0, X11ProtocolEvent::untracked(event));
+        let status = match &result {
+            Ok(()) => "queued",
+            Err(
+                XServerFrontendRouteError::UnknownClient { .. }
+                | XServerFrontendRouteError::ClientQueueDisconnected { .. },
+            ) => "peer_gone",
+            Err(_) => "queue_failed",
+        };
+        crate::evidence::present_event(client, None, status, event);
+        match result {
             Ok(()) => Ok(()),
             Err(
                 XServerFrontendRouteError::UnknownClient { .. }

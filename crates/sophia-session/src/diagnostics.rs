@@ -10,6 +10,7 @@ pub use recovery::SessionCompletionFailure;
 mod session_failure;
 mod storage;
 mod supervise;
+mod x_lifecycle;
 pub use supervise::supervise;
 
 pub use capture::{
