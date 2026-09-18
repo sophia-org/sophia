@@ -2054,6 +2054,7 @@ fn blocked_recipient_attempt(
     // making no attempt at all is the expected result, and is asserted as one.
     let mut visit = blocked.step();
     let mut visits = vec![format!("{visit:?}")];
+    let mut terminal_visits: Vec<String> = Vec::new();
     let visit_deadline = std::time::Instant::now() + Duration::from_secs(10);
     // THE OUTPUT VISIT IS THE ONE THIS ROW IS ABOUT. The scheduler takes its
     // phases in turn, so a charged Terminal visit is a legitimate answer and
@@ -2073,6 +2074,19 @@ fn blocked_recipient_attempt(
             None => {}
         }
         visit = blocked.step();
+        // A charged terminal visit is a real answer, recorded as what it was
+        // rather than skipped silently, and required to have kept its
+        // supervisor before this case steps past it.
+        if visit.phase == PrivateMaintenancePhase::Terminal && visit.charged {
+            assert!(
+                visit.supervision_ok,
+                "{label}: a charged terminal visit kept its supervisor: {visit:?}"
+            );
+            terminal_visits.push(format!(
+                "visit={:?} refusal={:?}",
+                visit.terminal_visit, visit.terminal_refusal
+            ));
+        }
         visits.push(format!("{visit:?}"));
     }
     assert_eq!(
@@ -2237,6 +2251,7 @@ fn blocked_recipient_attempt(
         "typed_visit_refusal": format!("{:?}", visit.output_refusal),
         "visit_supervision_ok": visit.supervision_ok,
         "visits_until_charged": visits,
+        "charged_terminal_visits_stepped_past": terminal_visits,
         "send_attempts_for_this_capsule_after_the_stall": attempts_after_the_stall
             .iter()
             .map(|entry| json!({
