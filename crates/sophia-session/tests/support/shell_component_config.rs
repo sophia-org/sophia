@@ -2,44 +2,115 @@ use super::PersistentXtermSessionConfig;
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
-fn component_selection_refuses_before_legacy_fallback_or_executable_inspection() {
+fn component_selection_validates_roles_without_legacy_fallback_or_execution() {
     let root = std::env::temp_dir().join(format!("shell-component-startup-{}", std::process::id()));
     std::fs::create_dir(&root).unwrap();
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
     let path = root.join("desktop.kdl");
-    std::fs::write(
-        &path,
-        r#"schema 1
-shell { enabled #true; }
-session {
-  shell-component "panel" "bar" { executable "/absent/lom"; gpu "direct"; }
-  shell-component "menu" "application-launcher" { executable "/absent/bemenu-sophia"; }
-  startup
-}
-"#,
-    )
-    .unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-    for fallback in [
-        None,
-        Some("--shell-process=/absent/legacy"),
-        Some("--shell-process-default=/absent/default"),
+    let core = root.join("core.kdl");
+    std::fs::write(&core, "schema 2\nsession { application-catalog \"installed\" launch-policy=\"trusted-host\" { source \"/absent/applications\"; }; }\n").unwrap();
+    std::fs::set_permissions(&core, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let bar = r#"shell-component "panel" "bar" { executable "/absent/lom"; gpu "direct"; };"#;
+    let launcher =
+        r#"shell-component "menu" "application-launcher" { executable "/absent/bemenu-sophia"; };"#;
+    let source = |roles: &str, panel: &str, input: &str, catalog: &str| {
+        format!(
+            "schema 1\nshell {{ enabled #true; content #true; {input} {panel} }}\nsession {{ {roles} {catalog} startup; }}\n"
+        )
+    };
+    let catalog = r#"application-catalog "installed";"#;
+    let input = "content-input #true;";
+    let valid = source(&format!("{bar} {launcher}"), "panel 32;", input, catalog);
+    let args = vec![
+        format!("--config={}", core.display()),
+        format!("--desktop-profile={}", path.display()),
+        "--session-mode=normal".into(),
+        "--wm-process=/absent/hagia".into(),
+        "--wm-interface=sophia_wm_v1".into(),
+        "--shell-process-default=/absent/narthex".into(),
+    ];
+    let parse = |text: &str, args: &[String]| {
+        std::fs::write(&path, text).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        PersistentXtermSessionConfig::from_args(args)
+    };
+    for text in [
+        &valid,
+        &source(bar, "panel 32;", "", ""),
+        &source(launcher, "", input, catalog),
     ] {
-        let mut args = vec![
-            format!("--desktop-profile={}", path.display()),
-            "--session-mode=normal".to_owned(),
-        ];
-        if let Some(fallback) = fallback {
-            args.push(fallback.to_owned());
-        }
-        let error = PersistentXtermSessionConfig::from_args(&args)
-            .unwrap_err()
-            .to_string();
-        assert_eq!(
-            error,
-            "independent shell components require revision-7 Session admission, which is not implemented"
-        );
+        let config = parse(text, &args).unwrap();
+        assert!(config.shell_process.is_none());
+        assert!(config.shell_config.is_none());
+        assert!(config.applications.startup.is_empty());
+        assert!(!config.shell_dropped);
     }
+    for (text, expected) in [
+        (
+            source(launcher, "", "", catalog),
+            "native launcher requires",
+        ),
+        (source(launcher, "", input, ""), "native launcher requires"),
+        (source(bar, "", "", ""), "positive shell"),
+        (
+            valid.replace("content #true;", "content #false;"),
+            "require shell content",
+        ),
+        (
+            valid.replace("panel 32;", "panel 32; gpu \"direct\";"),
+            "per component",
+        ),
+    ] {
+        let error = parse(&text, &args).unwrap_err().to_string();
+        assert!(error.contains(expected), "{error}");
+    }
+    let no_default: Vec<_> = args
+        .iter()
+        .filter(|a| !a.starts_with("--shell-process-default="))
+        .cloned()
+        .collect();
+    let independent = parse(&valid, &no_default).unwrap();
+    assert!(independent.shell_process.is_none());
+    let entries = &independent
+        .session_profile
+        .candidate()
+        .components
+        .shell_components;
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].gpu, sophia_config::ShellGpuMode::Direct);
+    assert_eq!(entries[1].gpu, sophia_config::ShellGpuMode::Denied);
+    let no_wm: Vec<_> = args
+        .iter()
+        .filter(|a| !a.starts_with("--wm-process=") && !a.starts_with("--wm-interface="))
+        .cloned()
+        .collect();
+    assert!(parse(&valid, &no_wm).is_err());
+    assert!(
+        parse(&valid.replace("installed", "unknown"), &args)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown application catalog")
+    );
+    assert!(parse(&source(launcher, "panel 32;", input, catalog), &args).is_err());
+    let mut conflicting = args.clone();
+    conflicting.push("--shell-process=/absent/legacy".into());
+    assert!(
+        parse(&valid, &conflicting)
+            .unwrap_err()
+            .to_string()
+            .contains("conflict")
+    );
+    let non_normal: Vec<_> = args
+        .iter()
+        .filter(|a| *a != "--session-mode=normal")
+        .cloned()
+        .collect();
+    assert!(
+        parse(&valid, &non_normal)
+            .unwrap_err()
+            .to_string()
+            .contains("normal-session")
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -54,8 +125,7 @@ fn component_catalog_scan_is_outer_owned_and_shutdown_cannot_restart_it() {
         profile.display()
     )])
     .unwrap();
-    // Prepare the internal selected state directly: the public configuration
-    // guard is intentionally still closed until all live input is integrated.
+    // Isolate worker lifetime from profile/catalog parsing covered above.
     let mut candidate = config.session_profile.candidate().clone();
     candidate
         .components

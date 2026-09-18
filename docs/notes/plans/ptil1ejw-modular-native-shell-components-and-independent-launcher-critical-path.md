@@ -1276,3 +1276,30 @@ execute Lom. Requesting process stop can still race with EOF and report client
 service code 4; no graceful client-exit claim is made. No new canonical, hardware,
 install, push, or physical readiness claim. Remaining work is public profile and
 harness enablement, compatibility/build identity and exact-source canonical gates.
+
+### Public component selection, 2026-09-18
+
+Session configuration now selects the implemented independent owners instead of
+unconditionally refusing revision-7 components. Explicit components require a
+normal enabled shell with a Sophia WM and content permission. A bar requires a
+positive panel allowance; a launcher requires content input and a selected,
+known application catalog. Launcher-only selection reserves no panel band.
+GPU permission is per component: global direct permission is refused for this
+mode. No absent executable is inspected or started during config preparation.
+
+An explicit legacy `--shell-process` conflicts; the installed
+`--shell-process-default` fallback is ignored. Component configuration also
+ignores ambient `SOPHIA_SHELL_CONFIG`, using the separately selected per-role
+configuration grants. Legacy single-shell selection retains its existing checks.
+The role matrix exercises actual Session parsing with nonexistent application,
+WM and shell paths, checks no startup applications and no fallback selection,
+and covers missing catalog/input/panel, unknown catalog, absent WM, wrong mode,
+global GPU permission and explicit legacy conflict.
+
+Evidence is `.artifacts/bemenu-component-config`: the initial fixture had a KDL
+separator error (retained); corrected role controls pass. The device-hidden
+Session library run passes 476 tests with 14 ignored. No actual process launch,
+GPU, display or native acceptance is inferred from configuration tests. This
+replaces the public guard only; the `lom-test` wrapper still selects the legacy
+single-shell profile and needs a separate explicit component profile/harness
+join before a physical run. No canonical successor or physical readiness claim.

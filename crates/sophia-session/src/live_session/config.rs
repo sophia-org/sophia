@@ -309,11 +309,6 @@ impl PersistentXtermSessionConfig {
             input: input_profile_candidate,
             output: output_profile_candidate,
         } = prepared_desktop;
-        // The typed profile must not silently fall back to the legacy shell
-        // while the shared component admission/transport owner is unfinished.
-        if !session_profile_candidate.components.shell_components.is_empty() {
-            return Err("independent shell components require revision-7 Session admission, which is not implemented".into());
-        }
         let session_profile = PreparedSessionProfile::new(session_profile_candidate)?;
         let input_profile = PreparedInputProfile::new(input_profile_candidate)?;
         let output_profile = PreparedOutputProfile::new(output_profile_candidate)?;
@@ -750,7 +745,18 @@ impl PersistentXtermSessionConfig {
         if wm_process.is_none() && arg_value(args, "--wm-interface").is_some() {
             return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
         }
+        let independent_shell = !components.shell_components.is_empty();
+        let component_bar = components.shell_components.iter()
+            .any(|entry| entry.role == sophia_config::ShellComponentRole::Bar);
+        let component_launcher = components.shell_components.iter()
+            .any(|entry| entry.role == sophia_config::ShellComponentRole::ApplicationLauncher);
         let explicit_shell_process = arg_value(args, "--shell-process");
+        if independent_shell && explicit_shell_process.is_some() {
+            return Err("independent shell components conflict with --shell-process".into());
+        }
+        if independent_shell && (!normal_session || !shell_enabled) {
+            return Err("independent shell components require an enabled normal-session shell".into());
+        }
         let default_shell_process = arg_value(args, "--shell-process-default");
         for process in [&explicit_shell_process, &default_shell_process].into_iter().flatten() {
             if !std::path::Path::new(process).is_absolute() {
@@ -785,7 +791,12 @@ impl PersistentXtermSessionConfig {
             && (wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1
                 || resolved_shell_process().is_none());
         let live_shell_enabled = shell_enabled && normal_session && !shell_dropped;
-        let shell_process = if live_shell_enabled {
+        let shell_process = if independent_shell {
+            if wm_process.is_none() || wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1 {
+                return Err("independent shell components require a Sophia WM".into());
+            }
+            None
+        } else if live_shell_enabled {
             if wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1 {
                 return Err("an enabled shell requires --wm-interface=sophia_wm_v1".into());
             }
@@ -803,7 +814,9 @@ impl PersistentXtermSessionConfig {
             }
             None
         };
-        let shell_config = std::env::var_os("SOPHIA_SHELL_CONFIG")
+        // Component configs are explicit per-role grants, never the legacy
+        // ambient config or the installed fallback shell's private settings.
+        let shell_config = if independent_shell { None } else { std::env::var_os("SOPHIA_SHELL_CONFIG")
             .map(std::path::PathBuf::from)
             .or_else(|| components.shell_config.clone())
             .or_else(|| {
@@ -814,7 +827,8 @@ impl PersistentXtermSessionConfig {
                     && components.shell_client.is_none())
                     .then(|| user_config_root.as_ref().map(|root| root.join("narthex/config.kdl")))
                     .flatten().filter(|path| path.is_file())
-            });
+            })
+        };
         if let Some(path) = &shell_config {
             if shell_process.is_none() {
                 return Err("a private shell config requires an enabled shell".into());
@@ -828,7 +842,7 @@ impl PersistentXtermSessionConfig {
         // a desktop it cannot get should say so at startup.
         let shell_panel_thickness =
             sophia_config::desktop_profile_shell_panel_thickness(&desktop_profile);
-        if shell_panel_thickness.is_some() && shell_process.is_none() {
+        if shell_panel_thickness.is_some() && shell_process.is_none() && !component_bar {
             return Err(if shell_enabled {
                 "shell { panel } requires --session-mode=normal"
             } else {
@@ -841,11 +855,22 @@ impl PersistentXtermSessionConfig {
         let shell_content_input_enabled =
             sophia_config::desktop_profile_shell_content_input_enabled(&desktop_profile);
         let shell_gpu_mode = sophia_config::desktop_profile_shell_gpu_mode(&desktop_profile);
+        if independent_shell {
+            if !shell_content_enabled {
+                return Err("independent shell components require shell content".into());
+            }
+            if component_launcher && (!shell_content_input_enabled || application_catalog.is_none()) {
+                return Err("native launcher requires content-input and an application catalog".into());
+            }
+            if shell_gpu_mode == sophia_config::ShellGpuMode::Direct {
+                return Err("independent shell GPU grants must be declared per component".into());
+            }
+        }
         if shell_content_enabled {
-            if shell_process.is_none() {
+            if shell_process.is_none() && !independent_shell {
                 return Err("shell { content #true; } requires an enabled shell".into());
             }
-            if shell_panel_thickness.is_none() {
+            if shell_panel_thickness.is_none() && (!independent_shell || component_bar) {
                 return Err("shell content requires a positive shell { panel } allowance".into());
             }
         }
