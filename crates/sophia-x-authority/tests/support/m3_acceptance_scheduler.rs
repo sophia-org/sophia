@@ -260,10 +260,14 @@ fn scheduler_guard_supervision() -> (Value, Vec<String>) {
     let maintenance = service.step();
     assert_eq!(
         maintenance.status,
-        PrivateMaintenanceStatus::Refused,
+        PrivateMaintenanceStatus::SupervisionFailed,
         "original failed supervisor is not replaced for maintenance"
     );
-    assert!(!maintenance.charged);
+    assert!(
+        maintenance.charged,
+        "the admitted maintenance attempt accounts its failed watchdog entry"
+    );
+    assert_eq!(maintenance.settled, None);
     let observed = json!({"fault_seam":"actual worker body paused; original common guard held across execution start","worker":format!("{worker:?}"),"sequence":format!("{sequence:?}"),"watched_turn":format!("{watched:?}"),"collection":format!("{:?}",closed.workers),"maintenance":maintenance.detail});
     (observed, service.finish(&[custody]))
 }
