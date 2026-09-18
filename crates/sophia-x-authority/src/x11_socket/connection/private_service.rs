@@ -75,11 +75,18 @@ impl RoutedBrokerAccess for LeasedPrivateBroker<'_, '_> {
         self.check()?;
         Ok(&self.frontend.broker)
     }
+    /// THE PRIVATE FRONTEND'S OWN LEASED ROUTING, not the broker's. The
+    /// broker operation drains the routed-input order; the private frontend's
+    /// drains the private accepted order under its own lease check, its
+    /// ordered-runner guard and its budget. Reaching past it to the broker
+    /// with an owner check wrapped around the reach preserved none of that.
+    /// This service drives no second input order: nothing feeds the broker's
+    /// routed-input queue on this path, and adding that would be a deliberate
+    /// step, not housekeeping.
     fn route_pending(&mut self) -> Result<usize, X11SetupSocketError> {
-        self.check()?;
         self.frontend
-            .broker
-            .route_pending()
+            .route_pending(self.service)
+            .map(|ran| ran.len())
             .map_err(|error| X11SetupSocketError::new(error.to_string()))
     }
 }
@@ -232,9 +239,14 @@ fn drive_routed_service(
                     Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
                 }
             }
-            if let Some(envelope) = pending_raster_egress.take() {
-                let was_waiting = envelope.waiting_since.is_some();
-                *pending_raster_egress = ordered_egress.try_submit(envelope)?;
+            if pending_raster_egress.is_some() {
+                // IN PLACE: the envelope stays in the caller's slot while the
+                // observer is consulted, so an unwind there leaves it where
+                // its owner can still reach it.
+                let was_waiting = pending_raster_egress
+                    .as_ref()
+                    .is_some_and(|envelope| envelope.waiting_since.is_some());
+                ordered_egress.try_submit(pending_raster_egress)?;
                 progressed |= !was_waiting && pending_raster_egress.is_none();
             }
         }
@@ -321,15 +333,41 @@ impl std::fmt::Debug for PrivateServiceFailure {
 /// explicit sequence runs on those paths and reports its failures, and the
 /// `Drop` below runs it when nothing else did -- which is the unwind case.
 #[cfg(unix)]
-struct PrivateServiceCollection {
+struct PrivateServiceCollection<'s> {
     frontend: XServerFrontend,
     egress: Arc<XAuthorityOrderedEgress>,
+    /// The one raster envelope that can be waiting to leave. It lives HERE,
+    /// in the guard, and is submitted in place, so that neither a return nor
+    /// an unwind finds it in a local that has gone.
     pending_raster_egress: Option<XAuthorityBoundedEgressEnvelope>,
+    /// Where unresolved egress goes when this frame ends: the store the
+    /// leased owner is established over, which outlives the invocation.
+    store: &'s PrivateSettlementOwner,
     collected: bool,
 }
 
 #[cfg(unix)]
-impl PrivateServiceCollection {
+impl PrivateServiceCollection<'_> {
+    /// Move a pending envelope that still holds its batch, unsent, to the
+    /// store's shelf; drop one whose batch the transport already took.
+    ///
+    /// WHAT HAPPENED AT THE EFFECT DECIDES. The transport takes the batch
+    /// out of the envelope when it accepts it, and the ticket is advanced
+    /// under the order lock before the observer is told; an observer that
+    /// unwinds after that leaves an envelope with no batch, and that is
+    /// delivered work with an unfinished report -- not unsent work, and it
+    /// is not shelved as such. An envelope still holding its batch was never
+    /// accepted, and that is what the shelf keeps. NOT A SETTLEMENT EITHER
+    /// WAY: cancelling a wait (where that is done) publishes that the batch
+    /// was not delivered; shelving grants no replay; a reader accounts for
+    /// what it takes.
+    fn retain_pending(&mut self) {
+        if let Some(envelope) = self.pending_raster_egress.take()
+            && envelope.batch.is_some()
+        {
+            self.store.retain_unresolved_egress(envelope);
+        }
+    }
     /// Stop admission, unblock what a worker could be parked in, stop every
     /// current worker, then wait for every one.
     ///
@@ -344,11 +382,14 @@ impl PrivateServiceCollection {
         let mut failures = Vec::new();
         if unblock {
             self.egress.cancel();
-            if let Some(mut envelope) = self.pending_raster_egress.take()
-                && let Err(error) = self.egress.cancel_envelope(&mut envelope)
+            if let Some(envelope) = self.pending_raster_egress.as_mut()
+                && let Err(error) = self.egress.cancel_envelope(envelope)
             {
                 failures.push(format!("pending raster cancellation failed: {error}"));
             }
+            // Cancelled or not, an unsent batch is unresolved: it goes to
+            // the store, not to the floor.
+            self.retain_pending();
         }
         failures.extend(self.stop_and_wait());
         // MARKED DONE ONLY AT THE END. A collection that unwound part-way
@@ -372,7 +413,7 @@ impl PrivateServiceCollection {
 }
 
 #[cfg(unix)]
-impl Drop for PrivateServiceCollection {
+impl Drop for PrivateServiceCollection<'_> {
     fn drop(&mut self) {
         // Reached with `collected` false only when the operation unwound
         // before its explicit collection. Nothing here can report, so it
@@ -382,12 +423,16 @@ impl Drop for PrivateServiceCollection {
         if !self.collected {
             // Cancel first, so a worker parked in an egress wait can end;
             // then stop and wait. The pending raster envelope, if any, is
-            // NOT cancelled here: cancelling it reports to the backpressure
-            // observer, and an observer that panicked once may panic again
-            // -- during an unwind, that is an abort. Its cancellation stays
-            // unpublished: a retained unknown, not a settlement.
+            // NOT cancelled here -- cancelling reports to the backpressure
+            // observer, and an observer that panicked once may panic again;
+            // during an unwind that is an abort -- but an unsent batch IS
+            // retained: it goes to the store, where the owner the caller
+            // kept can reach it. Its cancellation stays unpublished; the
+            // work does not go missing, and a batch the transport already
+            // took is not called unsent.
             self.egress.cancel();
             let _ = self.stop_and_wait();
+            self.retain_pending();
             self.collected = true;
         }
     }
@@ -515,6 +560,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
         frontend,
         egress: ordered_egress.clone(),
         pending_raster_egress: None,
+        store: service.store(),
         collected: false,
     };
     let service_result = {

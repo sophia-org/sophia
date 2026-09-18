@@ -355,6 +355,17 @@ pub struct PrivateServiceLease<'o> {
 }
 
 #[cfg(unix)]
+impl PrivateServiceLease<'_> {
+    /// The store the leased owner is established over.
+    ///
+    /// For a service that has to leave unresolved work somewhere that
+    /// outlives its own frame; it grants nothing else.
+    pub(crate) fn store(&self) -> &PrivateSettlementOwner {
+        self.owner.store()
+    }
+}
+
+#[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Asked by a caller no production site has yet.
 impl PrivateServiceLease<'_> {
     /// Whether this lease's owner is the one keeping that inventory.

@@ -367,9 +367,25 @@ impl XAuthorityOrderedEgress {
         }
     }
 
+    /// Cancel every submission, present and future.
+    ///
+    /// UNDER THE ORDER LOCK, OR THE WAITER SLEEPS PAST IT. A submitter reads
+    /// the cancellation flag under that lock and then waits on `turn`; a
+    /// store and a notification made outside the lock can land between its
+    /// read and its wait, and the only notification it will ever get has
+    /// gone by. Holding the lock while storing and notifying leaves the
+    /// waiter exactly two places to be: before its read, where it sees the
+    /// flag, or inside the wait, where it is woken. A poisoned lock still
+    /// notifies -- cancellation is what a poisoned service needs most -- and
+    /// nothing here is called with the lock already held.
     fn cancel(&self) {
+        let order = match self.state.lock() {
+            Ok(order) => order,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         self.cancellation.store(true, Ordering::Release);
         self.turn.notify_all();
+        drop(order);
     }
 
     fn cancelled(&self) -> bool {
@@ -550,13 +566,27 @@ impl XAuthorityOrderedEgress {
         }
     }
 
+    /// Submit the envelope in `slot` without blocking, leaving it there while
+    /// it waits.
+    ///
+    /// IN PLACE, BECAUSE THE OBSERVER IS CALLED FROM HERE. `begin_wait`
+    /// reports to a caller-supplied observer while the envelope is still
+    /// unsent; an envelope moved into a local for that call was destroyed by
+    /// a panic in the observer before any owner could retain it. The envelope
+    /// leaves the slot only once it has been advanced -- sent, or carrying no
+    /// batch -- or cancelled. A slot that still holds it after this returns,
+    /// or after this unwinds, holds exactly the unresolved work.
     fn try_submit(
         &self,
-        mut envelope: XAuthorityBoundedEgressEnvelope,
-    ) -> Result<Option<XAuthorityBoundedEgressEnvelope>, X11SetupSocketError> {
+        slot: &mut Option<XAuthorityBoundedEgressEnvelope>,
+    ) -> Result<(), X11SetupSocketError> {
+        let Some(envelope) = slot.as_mut() else {
+            return Ok(());
+        };
         if self.cancelled() {
-            self.cancel_envelope(&mut envelope)?;
-            return Ok(None);
+            self.cancel_envelope(envelope)?;
+            *slot = None;
+            return Ok(());
         }
         let state = self.state()?;
         let ticket = envelope.transaction.raw();
@@ -567,30 +597,32 @@ impl XAuthorityOrderedEgress {
         }
         if ticket > state.next_ticket {
             drop(state);
-            self.begin_wait(&mut envelope)?;
-            return Ok(Some(envelope));
+            self.begin_wait(envelope)?;
+            return Ok(());
         }
         drop(state);
         let Some(batch) = envelope.batch.take() else {
-            self.advance(&mut envelope, false)?;
-            return Ok(None);
+            self.advance(envelope, false)?;
+            *slot = None;
+            return Ok(());
         };
         match self.sender.try_send(batch) {
             Ok(()) => {
-                self.advance(&mut envelope, true)?;
-                Ok(None)
+                self.advance(envelope, true)?;
+                *slot = None;
+                Ok(())
             }
             Err(TrySendError::Full(batch)) => {
                 envelope.batch = Some(batch);
-                self.begin_wait(&mut envelope)?;
-                Ok(Some(envelope))
+                self.begin_wait(envelope)?;
+                Ok(())
             }
             Err(TrySendError::Disconnected(batch)) => {
                 envelope.batch = Some(batch);
                 self.transport_disconnected.store(true, Ordering::Release);
                 self.cancel();
                 self.finish_wait(
-                    &mut envelope,
+                    envelope,
                     XAuthorityBackpressureTelemetryKind::TransportFailure,
                     Some(XAuthorityBackpressureFailure::Disconnected),
                 )?;

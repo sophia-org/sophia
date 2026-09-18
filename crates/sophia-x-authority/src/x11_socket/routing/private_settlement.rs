@@ -25,6 +25,16 @@ pub struct PrivateSettlementOwner {
 #[cfg(unix)]
 struct AbandonedSettlements {
     held: Vec<(XServerFrontendRouteRegistry, PrivateOperation)>,
+    /// Authority egress a private service could not resolve before it
+    /// returned or unwound: an observed transaction batch that was never
+    /// sent and never cancelled as delivered.
+    ///
+    /// RETAINED, NOT DISPOSED OF. This store is the one owner that outlives
+    /// a service invocation, so this is where unsent work reaches when the
+    /// frame that was sending it is gone. Plain data with no path back to
+    /// this store, bounded by one pending raster envelope per invocation.
+    /// Nothing here settles, retries or publishes it; a reader takes it.
+    unresolved_egress: Vec<XAuthorityBoundedEgressEnvelope>,
     /// Obligations a sweep is part-way through.
     ///
     /// Owned here rather than in a local, so a sweep that unwinds leaves them
@@ -252,6 +262,7 @@ impl PrivateSettlementOwner {
         Self {
             inner: Arc::new(Mutex::new(AbandonedSettlements {
                 held: Vec::with_capacity(capacity),
+                unresolved_egress: Vec::new(),
                 in_flight: Vec::with_capacity(capacity),
                 outstanding_in_flight: Vec::with_capacity(capacity),
                 failed_in_flight: Vec::with_capacity(capacity),
@@ -330,6 +341,29 @@ impl PrivateSettlementOwner {
     ///
     /// `None` where the owner cannot be read: nothing owed and nothing
     /// knowable are different answers.
+    /// Keep authority egress a service could not resolve.
+    fn retain_unresolved_egress(&self, envelope: XAuthorityBoundedEgressEnvelope) {
+        let mut held = match self.inner.lock() {
+            Ok(held) => held,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        held.unresolved_egress.push(envelope);
+    }
+
+    /// How much unresolved egress this store is keeping; `None` if unreadable.
+    pub fn unresolved_egress(&self) -> Option<usize> {
+        Some(self.inner.lock().ok()?.unresolved_egress.len())
+    }
+
+    /// Take the unresolved egress out, for a reader that will account for it.
+    #[cfg_attr(not(test), allow(dead_code))] // Read by the controls; production only shelves.
+    fn take_unresolved_egress(&self) -> Vec<XAuthorityBoundedEgressEnvelope> {
+        match self.inner.lock() {
+            Ok(mut held) => std::mem::take(&mut held.unresolved_egress),
+            Err(poisoned) => std::mem::take(&mut poisoned.into_inner().unresolved_egress),
+        }
+    }
+
     pub fn owed(&self) -> Option<usize> {
         self.inner.lock().ok().map(|held| held.held.len())
     }
