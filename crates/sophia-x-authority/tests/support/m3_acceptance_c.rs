@@ -1351,157 +1351,6 @@ fn every_control_kind(
         .collect()
 }
 
-/// Per-kind diagnostics for `C.control_cleanup`, on the real service.
-///
-/// NOT BOUND as that case. The row asks for actual cleanup of all nine kinds,
-/// and on this source only `ConfigureSurface` reports the steps that let an
-/// abandoned record be discharged; the other eight report nothing and are
-/// retained as unproved, which is the honest outcome of the rule but not
-/// evidence that each kind's cleanup was performed. The production repair for
-/// that is owned elsewhere; what is kept here is the measurement, so the
-/// difference between a discharge and a retention is recorded per kind rather
-/// than argued about.
-#[test]
-fn c_control_cleanup_diagnostics() {
-    // EXECUTED, on its own invocation. `CloseSurface` can end the recipient's
-    // connection, so the kinds that are meant to run and the kinds that are
-    // meant never to run cannot share one.
-    let executed_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-    let mut executed_service = LifecycleService::launch_over_store(
-        "c-control-executed",
-        12060,
-        None,
-        false,
-        1,
-        executed_store.clone(),
-    );
-    executed_service.start();
-    let (mut executed_peer, executed_custody) = executed_service.connect();
-    let (executed_surface, _seq, _ingress) =
-        focus_window(&executed_service, &mut executed_peer, 0x320801, 12060);
-    let executed_client = executed_custody.cleanup_record().client;
-    let executed_lease = executed_service.owner.lease();
-    let executed_control = executed_service
-        .access
-        .control_producer(&executed_lease)
-        .expect("the service's own control producer");
-    let mut executed = Vec::new();
-    for (kind, command) in every_control_kind(executed_client, executed_surface, 12400) {
-        let transaction = command.command.transaction().raw();
-        let accepted = executed_control
-            .submit(&executed_lease, command)
-            .map(|_| ())
-            .map_err(|(refusal, _)| format!("{refusal:?}"));
-        let outcome = accepted.is_ok().then(|| {
-            ack_for(&executed_service.acks, transaction)
-                .map(|ack| format!("{:?}", ack.acknowledgement.outcome))
-        });
-        executed.push(json!({
-            "kind": format!("{kind:?}"),
-            "transaction": transaction,
-            "accepted": format!("{accepted:?}"),
-            "outcome": outcome,
-        }));
-    }
-    executed_service.command(XServerFrontendServiceCommand::StopAndDisconnect);
-    let executed_closed = executed_service.closed();
-    let mut actors = executed_service.finish(&[executed_custody]);
-
-    // ACCEPTED AND NEVER EXECUTED, on a second invocation whose runner is
-    // held, so each kind is taken into the order and no executor claims it.
-    let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-    let mut service = LifecycleService::launch_over_store(
-        "c-control-unexecuted",
-        12061,
-        None,
-        false,
-        1,
-        store.clone(),
-    );
-    service.start();
-    let (mut peer, custody) = service.connect();
-    let (surface, _sequence, _ingress) = focus_window(&service, &mut peer, 0x320901, 12061);
-    let client = custody.cleanup_record().client;
-    let lease = service.owner.lease();
-    let control = service
-        .access
-        .control_producer(&lease)
-        .expect("the second service's own control producer");
-    let held = hold_runner(&service);
-    let entered = held.entered();
-    let mut unexecuted = Vec::new();
-    for (kind, command) in every_control_kind(client, surface, 12500) {
-        let transaction = command.command.transaction().raw();
-        let accepted = control
-            .submit(&lease, command)
-            .map(|_| ())
-            .map_err(|(refusal, _)| format!("{refusal:?}"));
-        unexecuted.push(json!({
-            "kind": format!("{kind:?}"),
-            "transaction": transaction,
-            "accepted": format!("{accepted:?}"),
-        }));
-    }
-    let charged_with_nine_accepted = store.reserved();
-    let completion = service.registry.control_completion();
-    let reconciled_while_live = completion
-        .as_ref()
-        .map(|registry| format!("{:?}", registry.reconcile_client(client)));
-    let cleanups_owed_while_live = completion
-        .as_ref()
-        .map(|registry| format!("{:?}", registry.cleanups_owed().map(|owed| owed.len())));
-
-    service.command(XServerFrontendServiceCommand::StopAndDisconnect);
-    held.release();
-    let closed = service.closed();
-
-    // The production reconciliation, reached where production reaches it.
-    let drive = store.drive();
-    let reconciled_after_exit = completion
-        .as_ref()
-        .map(|registry| format!("{:?}", registry.reconcile_unstarted()));
-    let cleanups_owed_after_exit = completion
-        .as_ref()
-        .map(|registry| format!("{:?}", registry.cleanups_owed().map(|owed| owed.len())));
-    let retained = interrupted_custody(&service);
-    actors.extend(service.finish(&[custody]));
-
-    assert!(drive.readable, "the store could be looked at");
-    assert_eq!(executed.len(), 9, "every named kind was actually executed");
-    assert_eq!(unexecuted.len(), 9, "and every one accepted without one");
-    let accepted_unexecuted = unexecuted
-        .iter()
-        .filter(|row| row["accepted"].as_str() == Some("Ok(())"))
-        .count();
-    assert!(
-        accepted_unexecuted >= 8,
-        "the held order took the named kinds; what it refused is recorded: {unexecuted:?}"
-    );
-    println!(
-        "sophia_m3_control_cleanup_diagnostics {}",
-        json!({
-            "schema": 1,
-            "case": "C.control_cleanup",
-            "bound": false,
-            "why_unbound": "actual cleanup is established for ConfigureSurface only; the other eight kinds report no steps and are retained as unproved. Recorded, not weakened.",
-            "executed_through_real_writer": executed,
-            "executed_closed_error": executed_closed.error,
-            "accepted_and_never_executed": unexecuted,
-            "accepted_unexecuted_count": accepted_unexecuted,
-            "charged_with_nine_accepted": charged_with_nine_accepted,
-            "reconcile_client_while_live": reconciled_while_live,
-            "cleanups_owed_while_live": cleanups_owed_while_live,
-            "reconcile_unstarted_after_exit": reconciled_after_exit,
-            "cleanups_owed_after_exit": cleanups_owed_after_exit,
-            "drive": format!("{drive:?}"),
-            "retained": format!("{retained:?}"),
-            "closed_error": closed.error,
-            "held_on": format!("{entered:?}"),
-            "collected_actors": actors,
-        })
-    );
-}
-
 /// One armed interruption of an ordered handover, keyed by the exact origin
 /// and delivery it belongs to.
 ///
@@ -1544,6 +1393,29 @@ pub(crate) fn after_ordered_handover(
     }
 }
 
+/// Finish one invocation, naming it.
+///
+/// `LifecycleService::finish` asserts on join evidence a stopped and
+/// collected invocation already has; its precondition is actual service exit.
+/// Three invocations sharing that helper produced one unlabelled assertion,
+/// and it was read as belonging to the wrong one. This says which.
+fn finish_labelled(
+    what: &str,
+    service: LifecycleService,
+    custodies: &[Arc<PrivateEvidenceCustody>],
+) -> Vec<String> {
+    for custody in custodies {
+        if custody.ever_started() {
+            assert_eq!(
+                custody.join().phase(),
+                PrivateReapingPhase::Joined,
+                "{what}: this invocation must have exited and been collected before it is finished"
+            );
+        }
+    }
+    service.finish(custodies)
+}
+
 /// What one retained release still says about its own transmission.
 fn retained_dispatch(service: &LifecycleService) -> Vec<(String, bool, bool)> {
     let held = service
@@ -1570,401 +1442,15 @@ fn retained_dispatch(service: &LifecycleService) -> Vec<(String, bool, bool)> {
     seen
 }
 
-/// Diagnostics for `C.indeterminate_send`, on the real service.
-///
-/// NOT BOUND. Two of the four required subcases are not yet established.
-/// `unknown_send_not_replayed` needs the unreported handover to persist, and
-/// interrupting the invocation there leaves its connection worker unjoined,
-/// so the case cannot also satisfy the harness's collection rule; the seam is
-/// therefore held and released here, which shows the interval is real without
-/// establishing what survives it. `partial_send_not_replayed` needs a prefix
-/// of the same delivery on the wire, which whole frames from earlier
-/// completed deliveries cannot establish.
-#[test]
-fn c_indeterminate_send_diagnostics() {
-    let mut actors = Vec::new();
-
-    // ENQUEUED WORK IS OBSERVED, NOT RESENT, and a refused publication stays
-    // owned. Both on one invocation, because both are about what an executor
-    // does with work it has already handed on or already decided.
-    let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-    let mut service = LifecycleService::launch_over_store(
-        "c-indeterminate",
-        12050,
-        None,
-        false,
-        1,
-        store.clone(),
-    );
-    service.start();
-    let (mut peer, custody) = service.connect();
-    let (surface, sequence, ingress) = focus_window(&service, &mut peer, 0x320701, 12050);
-    let client = custody.cleanup_record().client;
-    let producers = leased_producers(&service, client, C_PRODUCERS);
-
-    observe_turns(&service.registry);
-    let delivered = press_and_release(
-        &service,
-        &ingress,
-        &mut peer,
-        surface,
-        sequence,
-        0x320701,
-        12060,
-    );
-    assert!(waited_for(|| store.reserved() == Some(0)));
-    let extra_wire = read_event(&mut peer, 1);
-    let extra_receipt = service.deliveries.recv_timeout(Duration::from_millis(200));
-    assert_eq!(extra_wire, None, "an enqueued capsule is not sent again");
-    assert!(
-        extra_receipt.is_err(),
-        "and its receipt was published once: {extra_receipt:?}"
-    );
-    let turns = take_turns(&service.registry);
-    let dispatched: usize = turns.iter().map(|turn| turn.dispatched).sum();
-    assert_eq!(
-        dispatched, 2,
-        "exactly the press and the release reached a recipient queue"
-    );
-    let enqueued = json!({
-        "delivered": delivered,
-        "dispatched_over_all_turns": dispatched,
-        "further_wire_copies": 0,
-        "further_receipts": 0,
-        "turns_taken": turns.len(),
-    });
-
-    let held = hold_runner(&service);
-    let entered = held.entered();
-    let refused_delivery = XAuthorityInputDeliveryId::from_raw(12070);
-    producers[1]
-        .submit(&service.owner.lease(), motion_to(surface, refused_delivery))
-        .expect("the order accepts a request the source will refuse");
-    let cell = delivery_cell(&service.registry, 12070).expect("its own completion");
-    let taken = service
-        .registry
-        .input_recovery
-        .state
-        .lock()
-        .expect("a readable ledger")
-        .tickets
-        .remove(&refused_delivery)
-        .expect("the admission this request was given");
-    held.release();
-    let (report, reported) = sync_channel(1);
-    arm_runner(
-        &service.registry,
-        Box::new(move |runner, lease| {
-            for _ in 0..4 {
-                let _ = runner.service_turn(lease);
-            }
-            let private = runner.frontend();
-            report
-                .send((
-                    private.terminal.undelivered.len(),
-                    private.terminal.turn.len(),
-                    private.terminal.current.is_some(),
-                ))
-                .expect("the case is waiting for this reading");
-        }),
-    );
-    let (undelivered, in_turn, current) = reported
-        .recv_timeout(Duration::from_secs(5))
-        .expect("the actual runner reported what it still owns");
-    assert_eq!(cell.answer(), None, "nothing was published for it");
-    assert!(
-        undelivered + in_turn + usize::from(current) >= 1,
-        "the item is retained by the executor that could not publish it"
-    );
-    assert_eq!(store.reserved(), Some(1), "and keeps the credit it took");
-    service
-        .registry
-        .input_recovery
-        .state
-        .lock()
-        .expect("a readable ledger")
-        .tickets
-        .insert(refused_delivery, taken);
-    assert_eq!(
-        cell.answer(),
-        None,
-        "restoring the admission publishes nothing by itself"
-    );
-    let refused = json!({
-        "delivery": 12070,
-        "published_while_admission_gone": Option::<String>::None,
-        "retained_undelivered": undelivered,
-        "retained_in_turn": in_turn,
-        "retained_current": current,
-        "credit_still_held": store.reserved(),
-        "published_by_restoring_admission": Option::<String>::None,
-        "held_on": format!("{entered:?}"),
-    });
-    service.command(XServerFrontendServiceCommand::StopAndDisconnect);
-    let closed_first = service.closed();
-    actors.extend(service.finish(&[custody]));
-
-    // A HANDOVER BEGUN AND NEVER REPORTED. The capsule left, and the record
-    // of what the handover returned never happened, so nothing can say
-    // whether the recipient has it. It is not offered again.
-    let unknown_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-    let mut unknown = LifecycleService::launch_over_store(
-        "c-unknown-send",
-        12051,
-        None,
-        false,
-        1,
-        unknown_store.clone(),
-    );
-    unknown.start();
-    let (mut unknown_peer, unknown_custody) = unknown.connect();
-    let (unknown_surface, unknown_sequence, unknown_ingress) =
-        focus_window(&unknown, &mut unknown_peer, 0x320a01, 12051);
-    let press = XAuthorityInputDeliveryId::from_raw(12080);
-    let release = XAuthorityInputDeliveryId::from_raw(12081);
-    unknown_ingress
-        .submit(
-            &unknown.owner.lease(),
-            button_to(unknown_surface, press, 272, true),
-        )
-        .expect("an actual press");
-    assert_eq!(
-        read_event(&mut unknown_peer, 3),
-        Some(expected_button_event(true, unknown_sequence, 0x320a01, 1))
-    );
-    assert_eq!(
-        receipt_for(&unknown.deliveries, 12080),
-        XAuthorityInputDeliveryOutcome::Flushed
-    );
-    let release_cell_before = delivery_cell(&unknown.registry, 12081);
-    let (handover_pause, handover_release) = Pause::pair();
-    arm_handover(
-        &unknown.registry,
-        release,
-        Box::new(move || handover_pause.wait()),
-    );
-    unknown_ingress
-        .submit(
-            &unknown.owner.lease(),
-            button_to(unknown_surface, release, 272, false),
-        )
-        .expect("an actual release, whose handover this case interrupts");
-    // The service thread really is inside that interval: it reached the seam
-    // between handing the capsule over and recording what the handover
-    // returned, and stays there until this case lets it go.
-    let inside_interval = handover_release.entered();
-    handover_release.release();
-    unknown.command(XServerFrontendServiceCommand::StopAndDisconnect);
-    let unknown_closed = unknown.closed();
-    // The capsule had already been handed over, so the recipient does hold
-    // the bytes. What no longer exists is anything that knows it.
-    let release_wire = read_event(&mut unknown_peer, 3);
-    let release_cell = delivery_cell(&unknown.registry, 12081)
-        .or(release_cell_before)
-        .and_then(|cell| cell.answer());
-    let phases = retained_dispatch(&unknown);
-    let unknown_after = retained_dispatch(&unknown);
-    assert_eq!(
-        unknown_after, phases,
-        "nothing revisits it, so nothing re-offers it"
-    );
-    // The debt is the retained release itself, not an accepted-item credit:
-    // that credit is returned when the item is disposed of and its event
-    // moves into separately reserved storage, which had already happened.
-    // What the interruption must not do is settle the release or discard it.
-    assert!(
-        !phases.is_empty(),
-        "the release is retained by the store that outlived the invocation"
-    );
-    let replayed = read_event(&mut unknown_peer, 1);
-    assert_eq!(
-        replayed, None,
-        "the release reached the recipient once and was not sent again"
-    );
-    let unknown_fact = json!({
-        "press_delivery": 12080,
-        "release_delivery": 12081,
-        "seam": "labelled test-only, keyed by this origin and this delivery, one shot, immediately after the handover returned and before its result was recorded",
-        "interval_entered_on": format!("{inside_interval:?}"),
-        "seam_mode": "held and released, not unwound: interrupting the invocation here leaves its connection worker unjoined, which no acceptance case may do",
-        "unwound": unknown_closed.unwound,
-        "release_bytes_on_wire": release_wire.map(|bytes| bytes.to_vec()),
-        "release_answer": release_cell.map(|answer| format!("{answer:?}")),
-        "retained_phases": format!("{phases:?}"),
-        "retained_phases_after_further_reads": format!("{unknown_after:?}"),
-        "second_copy_on_wire": replayed.map(|bytes| bytes.to_vec()),
-        "writer_receipt_is_the_writers_own": "the recipient half may be answered by the writer that flushed; the executor still cannot join it, and does not resend",
-        "charged": unknown_store.reserved(),
-    });
-    actors.extend(unknown.finish(&[unknown_custody]));
-
-    // A RECIPIENT THAT STOPS TAKING ITS BYTES. The peer's receive buffer is
-    // bounded to a real, small size and then never read, so the writer's own
-    // send blocks against an actual socket rather than a simulated one. What
-    // the declared limit then produces is an outcome that establishes
-    // nothing, and a capsule that is never rebuilt from it.
-    let blocked_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-    let mut blocked = LifecycleService::launch_over_store(
-        "c-blocked-send",
-        12052,
-        None,
-        false,
-        1,
-        blocked_store.clone(),
-    );
-    blocked.start();
-    let (mut blocked_peer, blocked_custody) = blocked.connect();
-    let (blocked_surface, blocked_sequence, blocked_ingress) =
-        focus_window(&blocked, &mut blocked_peer, 0x320b01, 12052);
-    // Fixture setup on the case's own end of the real connection: a bound on
-    // what this recipient can hold. Nothing about the service is simulated.
-    let bounded_buffer =
-        rustix::net::sockopt::set_socket_recv_buffer_size(&blocked_peer, 2048).is_ok();
-    let buffer_size = rustix::net::sockopt::socket_recv_buffer_size(&blocked_peer).ok();
-    // From here the recipient never reads again, and the writer's own steps
-    // are recorded so a prefix of the delivery that stalls is established by
-    // what the writer did, not by counting frames of the ones before it.
-    observe_frames();
-    let mut pairs = 0u64;
-    let mut outcomes: Vec<String> = Vec::new();
-    let mut stalled = None;
-    // Bounded well inside the harness's own per-case allowance: this case
-    // must report what it found, never run into a deadline.
-    let blocking_deadline = std::time::Instant::now() + Duration::from_secs(25);
-    'blocking: for round in 0..2_000u64 {
-        if std::time::Instant::now() >= blocking_deadline {
-            stalled = Some(("the recipient never stopped the writer within the bound", 0));
-            break 'blocking;
-        }
-        for pressed in [true, false] {
-            let id = 12600 + round * 2 + u64::from(!pressed);
-            if blocked_ingress
-                .submit(
-                    &blocked.owner.lease(),
-                    button_to(
-                        blocked_surface,
-                        XAuthorityInputDeliveryId::from_raw(id),
-                        272,
-                        pressed,
-                    ),
-                )
-                .is_err()
-            {
-                stalled = Some(("submission refused while the recipient is full", id));
-                break 'blocking;
-            }
-            match blocked.deliveries.recv_timeout(Duration::from_secs(12)) {
-                Ok(receipt) => {
-                    let name = format!("{:?}", receipt.outcome);
-                    if receipt.outcome != XAuthorityInputDeliveryOutcome::Flushed {
-                        outcomes.push(name.clone());
-                        stalled = Some(("an outcome that establishes nothing", id));
-                        break 'blocking;
-                    }
-                    outcomes.push(name);
-                }
-                Err(_) => {
-                    stalled = Some(("no receipt within the bound", id));
-                    break 'blocking;
-                }
-            }
-        }
-        pairs += 1;
-    }
-    let flushed_before_stall = outcomes
-        .iter()
-        .filter(|outcome| outcome.as_str() == "Flushed")
-        .count();
-    let stalling_outcome = outcomes
-        .iter()
-        .rev()
-        .find(|outcome| outcome.as_str() != "Flushed")
-        .cloned();
-    let blocked_phases = retained_dispatch(&blocked);
-    let observed = take_observed_frames();
-    let stalled_delivery = stalled.map(|(_, id)| id).filter(|id| *id != 0);
-    let same_capsule = stalled_delivery.map(|id| {
-        let (advanced, owed, failure) =
-            frames_of(&observed, XAuthorityInputDeliveryId::from_raw(id));
-        json!({
-            "delivery": id,
-            "frames_this_delivery_owed": owed,
-            "frames_of_it_that_went_out_whole": advanced,
-            "writer_failure_on_it": failure,
-            "is_a_prefix_of_the_same_delivery": owed > 1 && advanced >= 1 && advanced < owed,
-        })
-    });
-    let multi_frame_deliveries: Vec<_> = observed
-        .iter()
-        .filter(|step| step.frames > 1)
-        .map(|step| json!({"delivery": step.delivery.map(|id| id.raw()), "frames": step.frames, "index": step.index, "advanced": step.advanced}))
-        .take(12)
-        .collect();
-    let writer_failures: Vec<_> = observed
-        .iter()
-        .filter(|step| step.failure.is_some())
-        .map(|step| json!({"delivery": step.delivery.map(|id| id.raw()), "socket": step.socket, "frames": step.frames, "index": step.index, "failure": step.failure.clone()}))
-        .take(8)
-        .collect();
-    let partial = json!({
-        "writer_steps_recorded": observed.len(),
-        "same_capsule_prefix": same_capsule,
-        "multi_frame_deliveries_seen": multi_frame_deliveries,
-        "writer_failures": writer_failures,
-        "recipient_buffer_bounded": bounded_buffer,
-        "recipient_buffer_bytes": buffer_size,
-        "pairs_delivered_before_stall": pairs,
-        "flushed_before_stall": flushed_before_stall,
-        "stalled": stalled.map(|(why, id)| json!({"why": why, "delivery": id})),
-        "stalling_outcome": stalling_outcome,
-        "retained_phases": format!("{blocked_phases:?}"),
-        "prefix_on_wire": if flushed_before_stall > 0 {
-            "this recipient took earlier whole frames, so the wire holds committed bytes before the stall"
-        } else {
-            "no frame was established as taken before the stall, so no prefix is claimed"
-        },
-        "limitation": "the harness cannot read the writer's own written-byte count, so a blocked-after-prefix send and a blocked-before-write send are reported by what the recipient actually took, never inferred",
-    });
-    assert!(
-        bounded_buffer,
-        "the case could bound its own end of the real connection"
-    );
-    assert!(
-        stalling_outcome
-            .as_deref()
-            .is_none_or(|outcome| outcome != "Flushed"),
-        "whatever ended the run was not a flush: {partial}"
-    );
-    let blocked_after = retained_dispatch(&blocked);
-    assert_eq!(
-        blocked_after, blocked_phases,
-        "nothing rebuilt or re-offered the stalled capsule"
-    );
-    let _ = blocked_sequence;
-    actors.extend(blocked.finish(&[blocked_custody]));
-
-    println!(
-        "sophia_m3_indeterminate_send_diagnostics {}",
-        json!({
-            "schema": 1,
-            "case": "C.indeterminate_send",
-            "bound": false,
-            "why_unbound": "unknown_send_not_replayed needs the unreported handover to persist, and interrupting the invocation there leaves its connection worker unjoined; partial_send_not_replayed needs a prefix of the same delivery on the wire, which whole frames from earlier completed deliveries cannot establish.",
-            "partial_send_blocked_recipient": partial,
-            "unknown_send_interval": unknown_fact,
-            "enqueued_observation_only": enqueued,
-            "refused_publication_retained": refused,
-            "first_invocation_order": format!("{:?}", closed_first.order),
-            "collected_actors": actors,
-        })
-    );
-}
-
 /// One step of the actual writer, as it happened, for the delivery it was
-/// serving. Recorded only while a case is watching.
+/// serving.
+///
+/// WHOLE FRAMES, NOT BYTES. `advanced` names a frame this delivery owed that
+/// went out entire. The writer's own byte offset within a frame is not
+/// reported here, so nothing built from these may claim a partial-byte
+/// prefix; what they establish is how much of one capsule was committed.
 #[derive(Clone, Debug)]
 struct ObservedFrame {
-    socket: i32,
     delivery: Option<XAuthorityInputDeliveryId>,
     frames: usize,
     index: usize,
@@ -1973,39 +1459,49 @@ struct ObservedFrame {
 }
 
 static OBSERVED_FRAMES: Mutex<Vec<ObservedFrame>> = Mutex::new(Vec::new());
-static OBSERVING_FRAMES: AtomicBool = AtomicBool::new(false);
+/// The one invocation whose writer is being watched.
+///
+/// EXACT ORIGIN IDENTITY, not a socket and not a client number. A descriptor
+/// is reused as connections come and go, and the acceptance binary runs cases
+/// beside each other; recording every service while armed would let one
+/// case's steps be read as another's.
+static WATCHED_ORIGIN: Mutex<Option<XServerFrontendRouteRegistry>> = Mutex::new(None);
 
-/// Start recording the writer's own progress. Bounded, and cleared here so a
-/// case never reads another case's steps.
-fn observe_frames() {
+/// Start recording one invocation's writer progress. Bounded, and cleared
+/// here so a case never reads another case's steps.
+fn observe_frames(registry: &XServerFrontendRouteRegistry) {
     OBSERVED_FRAMES.lock().unwrap().clear();
-    OBSERVING_FRAMES.store(true, Ordering::Release);
+    *WATCHED_ORIGIN.lock().unwrap() = Some(registry.clone());
 }
 
 fn take_observed_frames() -> Vec<ObservedFrame> {
-    OBSERVING_FRAMES.store(false, Ordering::Release);
+    *WATCHED_ORIGIN.lock().unwrap() = None;
     std::mem::take(&mut OBSERVED_FRAMES.lock().unwrap())
 }
 
 /// Production's entry into that recording. Reads nothing back and changes
-/// nothing; when no case is watching it returns immediately.
+/// nothing; with no origin watched, or with a step belonging to another
+/// origin, it returns immediately.
 pub(crate) fn observed_ordered_frame(
-    socket: i32,
-    delivery: Option<XAuthorityInputDeliveryId>,
-    frames: usize,
+    emission: Option<&PrivateOrderedEmission>,
     index: usize,
     advanced: Option<usize>,
     failure: Option<String>,
 ) {
-    if !OBSERVING_FRAMES.load(Ordering::Acquire) {
+    let watched = WATCHED_ORIGIN.lock().unwrap().clone();
+    let (Some(watched), Some(emission)) = (watched, emission) else {
+        return;
+    };
+    // The emission's own answer about whose registry it belongs to, compared
+    // by Arc identity. Two live invocations can number a client alike.
+    if !emission.answers_for(&watched) {
         return;
     }
     let mut seen = OBSERVED_FRAMES.lock().unwrap();
     if seen.len() < 4096 {
         seen.push(ObservedFrame {
-            socket,
-            delivery,
-            frames,
+            delivery: emission.delivery(),
+            frames: emission.frame_count(),
             index,
             advanced,
             failure,
@@ -2013,8 +1509,9 @@ pub(crate) fn observed_ordered_frame(
     }
 }
 
-/// What the writer's own steps say about one delivery: how many of its frames
-/// went out whole, how many it owed, and the failure that ended it if any.
+/// What the writer's own steps say about one delivery of the watched
+/// invocation: how many of its frames went out whole, how many it owed, and
+/// the failure that ended it if any. Whole frames only; no byte offset.
 fn frames_of(
     observed: &[ObservedFrame],
     delivery: XAuthorityInputDeliveryId,
@@ -2029,4 +1526,589 @@ fn frames_of(
         .iter()
         .find_map(|step| step.failure.clone());
     (advanced, owed, failure)
+}
+
+/// Controls that measure rather than accept.
+///
+/// Nothing here is an acceptance case and nothing here may be bound to a
+/// row: each one exists because its row is not established yet, and keeps
+/// the measurement that says why. They live under their own name so the
+/// component runner can tell them from the cases beside them, and the
+/// helpers they share with those cases stay where the cases can reach them.
+pub(super) mod diagnostics {
+    use super::*;
+
+    /// Per-kind diagnostics for `C.control_cleanup`, on the real service.
+    ///
+    /// NOT BOUND as that case. The row asks for actual cleanup of all nine kinds,
+    /// and on this source only `ConfigureSurface` reports the steps that let an
+    /// abandoned record be discharged; the other eight report nothing and are
+    /// retained as unproved, which is the honest outcome of the rule but not
+    /// evidence that each kind's cleanup was performed. The production repair for
+    /// that is owned elsewhere; what is kept here is the measurement, so the
+    /// difference between a discharge and a retention is recorded per kind rather
+    /// than argued about.
+    #[test]
+    fn c_control_cleanup_diagnostics() {
+        // EXECUTED, on its own invocation. `CloseSurface` can end the recipient's
+        // connection, so the kinds that are meant to run and the kinds that are
+        // meant never to run cannot share one.
+        let executed_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+        let mut executed_service = LifecycleService::launch_over_store(
+            "c-control-executed",
+            12060,
+            None,
+            false,
+            1,
+            executed_store.clone(),
+        );
+        executed_service.start();
+        let (mut executed_peer, executed_custody) = executed_service.connect();
+        let (executed_surface, _seq, _ingress) =
+            focus_window(&executed_service, &mut executed_peer, 0x320801, 12060);
+        let executed_client = executed_custody.cleanup_record().client;
+        let executed_lease = executed_service.owner.lease();
+        let executed_control = executed_service
+            .access
+            .control_producer(&executed_lease)
+            .expect("the service's own control producer");
+        let mut executed = Vec::new();
+        for (kind, command) in every_control_kind(executed_client, executed_surface, 12400) {
+            let transaction = command.command.transaction().raw();
+            let accepted = executed_control
+                .submit(&executed_lease, command)
+                .map(|_| ())
+                .map_err(|(refusal, _)| format!("{refusal:?}"));
+            let outcome = accepted.is_ok().then(|| {
+                ack_for(&executed_service.acks, transaction)
+                    .map(|ack| format!("{:?}", ack.acknowledgement.outcome))
+            });
+            executed.push(json!({
+                "kind": format!("{kind:?}"),
+                "transaction": transaction,
+                "accepted": format!("{accepted:?}"),
+                "outcome": outcome,
+            }));
+        }
+        executed_service.command(XServerFrontendServiceCommand::StopAndDisconnect);
+        let executed_closed = executed_service.closed();
+        let mut actors = executed_service.finish(&[executed_custody]);
+
+        // ACCEPTED AND NEVER EXECUTED, on a second invocation whose runner is
+        // held, so each kind is taken into the order and no executor claims it.
+        let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+        let mut service = LifecycleService::launch_over_store(
+            "c-control-unexecuted",
+            12061,
+            None,
+            false,
+            1,
+            store.clone(),
+        );
+        service.start();
+        let (mut peer, custody) = service.connect();
+        let (surface, _sequence, _ingress) = focus_window(&service, &mut peer, 0x320901, 12061);
+        let client = custody.cleanup_record().client;
+        let lease = service.owner.lease();
+        let control = service
+            .access
+            .control_producer(&lease)
+            .expect("the second service's own control producer");
+        let held = hold_runner(&service);
+        let entered = held.entered();
+        let mut unexecuted = Vec::new();
+        for (kind, command) in every_control_kind(client, surface, 12500) {
+            let transaction = command.command.transaction().raw();
+            let accepted = control
+                .submit(&lease, command)
+                .map(|_| ())
+                .map_err(|(refusal, _)| format!("{refusal:?}"));
+            unexecuted.push(json!({
+                "kind": format!("{kind:?}"),
+                "transaction": transaction,
+                "accepted": format!("{accepted:?}"),
+            }));
+        }
+        let charged_with_nine_accepted = store.reserved();
+        let completion = service.registry.control_completion();
+        let reconciled_while_live = completion
+            .as_ref()
+            .map(|registry| format!("{:?}", registry.reconcile_client(client)));
+        let cleanups_owed_while_live = completion
+            .as_ref()
+            .map(|registry| format!("{:?}", registry.cleanups_owed().map(|owed| owed.len())));
+
+        service.command(XServerFrontendServiceCommand::StopAndDisconnect);
+        held.release();
+        let closed = service.closed();
+
+        // The production reconciliation, reached where production reaches it.
+        let drive = store.drive();
+        let reconciled_after_exit = completion
+            .as_ref()
+            .map(|registry| format!("{:?}", registry.reconcile_unstarted()));
+        let cleanups_owed_after_exit = completion
+            .as_ref()
+            .map(|registry| format!("{:?}", registry.cleanups_owed().map(|owed| owed.len())));
+        let retained = interrupted_custody(&service);
+        actors.extend(service.finish(&[custody]));
+
+        assert!(drive.readable, "the store could be looked at");
+        assert_eq!(executed.len(), 9, "every named kind was actually executed");
+        assert_eq!(unexecuted.len(), 9, "and every one accepted without one");
+        let accepted_unexecuted = unexecuted
+            .iter()
+            .filter(|row| row["accepted"].as_str() == Some("Ok(())"))
+            .count();
+        assert!(
+            accepted_unexecuted >= 8,
+            "the held order took the named kinds; what it refused is recorded: {unexecuted:?}"
+        );
+        println!(
+            "sophia_m3_control_cleanup_diagnostics {}",
+            json!({
+                "schema": 1,
+                "case": "C.control_cleanup",
+                "bound": false,
+                "why_unbound": "actual cleanup is established for ConfigureSurface only; the other eight kinds report no steps and are retained as unproved. Recorded, not weakened.",
+                "executed_through_real_writer": executed,
+                "executed_closed_error": executed_closed.error,
+                "accepted_and_never_executed": unexecuted,
+                "accepted_unexecuted_count": accepted_unexecuted,
+                "charged_with_nine_accepted": charged_with_nine_accepted,
+                "reconcile_client_while_live": reconciled_while_live,
+                "cleanups_owed_while_live": cleanups_owed_while_live,
+                "reconcile_unstarted_after_exit": reconciled_after_exit,
+                "cleanups_owed_after_exit": cleanups_owed_after_exit,
+                "drive": format!("{drive:?}"),
+                "retained": format!("{retained:?}"),
+                "closed_error": closed.error,
+                "held_on": format!("{entered:?}"),
+                "collected_actors": actors,
+            })
+        );
+    }
+
+    /// Diagnostics for `C.indeterminate_send`, on the real service.
+    ///
+    /// NOT BOUND. Two of the four required subcases are not yet established.
+    /// `unknown_send_not_replayed` needs the unreported handover to persist, and
+    /// interrupting the invocation there leaves its connection worker unjoined,
+    /// so the case cannot also satisfy the harness's collection rule; the seam is
+    /// therefore held and released here, which shows the interval is real without
+    /// establishing what survives it. `partial_send_not_replayed` needs a prefix
+    /// of the same delivery on the wire, which whole frames from earlier
+    /// completed deliveries cannot establish.
+    #[test]
+    fn c_indeterminate_send_diagnostics() {
+        let mut actors = Vec::new();
+
+        // ENQUEUED WORK IS OBSERVED, NOT RESENT, and a refused publication stays
+        // owned. Both on one invocation, because both are about what an executor
+        // does with work it has already handed on or already decided.
+        let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+        let mut service = LifecycleService::launch_over_store(
+            "c-indeterminate",
+            12050,
+            None,
+            false,
+            1,
+            store.clone(),
+        );
+        service.start();
+        let (mut peer, custody) = service.connect();
+        let (surface, sequence, ingress) = focus_window(&service, &mut peer, 0x320701, 12050);
+        let client = custody.cleanup_record().client;
+        let producers = leased_producers(&service, client, C_PRODUCERS);
+
+        observe_turns(&service.registry);
+        let delivered = press_and_release(
+            &service,
+            &ingress,
+            &mut peer,
+            surface,
+            sequence,
+            0x320701,
+            12060,
+        );
+        assert!(waited_for(|| store.reserved() == Some(0)));
+        let extra_wire = read_event(&mut peer, 1);
+        let extra_receipt = service.deliveries.recv_timeout(Duration::from_millis(200));
+        assert_eq!(extra_wire, None, "an enqueued capsule is not sent again");
+        assert!(
+            extra_receipt.is_err(),
+            "and its receipt was published once: {extra_receipt:?}"
+        );
+        let turns = take_turns(&service.registry);
+        let dispatched: usize = turns.iter().map(|turn| turn.dispatched).sum();
+        assert_eq!(
+            dispatched, 2,
+            "exactly the press and the release reached a recipient queue"
+        );
+        let enqueued = json!({
+            "delivered": delivered,
+            "dispatched_over_all_turns": dispatched,
+            "further_wire_copies": 0,
+            "further_receipts": 0,
+            "turns_taken": turns.len(),
+        });
+
+        let held = hold_runner(&service);
+        let entered = held.entered();
+        let refused_delivery = XAuthorityInputDeliveryId::from_raw(12070);
+        producers[1]
+            .submit(&service.owner.lease(), motion_to(surface, refused_delivery))
+            .expect("the order accepts a request the source will refuse");
+        let cell = delivery_cell(&service.registry, 12070).expect("its own completion");
+        let taken = service
+            .registry
+            .input_recovery
+            .state
+            .lock()
+            .expect("a readable ledger")
+            .tickets
+            .remove(&refused_delivery)
+            .expect("the admission this request was given");
+        held.release();
+        let (report, reported) = sync_channel(1);
+        arm_runner(
+            &service.registry,
+            Box::new(move |runner, lease| {
+                for _ in 0..4 {
+                    let _ = runner.service_turn(lease);
+                }
+                let private = runner.frontend();
+                report
+                    .send((
+                        private.terminal.undelivered.len(),
+                        private.terminal.turn.len(),
+                        private.terminal.current.is_some(),
+                    ))
+                    .expect("the case is waiting for this reading");
+            }),
+        );
+        let (undelivered, in_turn, current) = reported
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the actual runner reported what it still owns");
+        assert_eq!(cell.answer(), None, "nothing was published for it");
+        assert!(
+            undelivered + in_turn + usize::from(current) >= 1,
+            "the item is retained by the executor that could not publish it"
+        );
+        assert_eq!(store.reserved(), Some(1), "and keeps the credit it took");
+        service
+            .registry
+            .input_recovery
+            .state
+            .lock()
+            .expect("a readable ledger")
+            .tickets
+            .insert(refused_delivery, taken);
+        assert_eq!(
+            cell.answer(),
+            None,
+            "restoring the admission publishes nothing by itself"
+        );
+        let refused = json!({
+            "delivery": 12070,
+            "published_while_admission_gone": Option::<String>::None,
+            "retained_undelivered": undelivered,
+            "retained_in_turn": in_turn,
+            "retained_current": current,
+            "credit_still_held": store.reserved(),
+            "published_by_restoring_admission": Option::<String>::None,
+            "held_on": format!("{entered:?}"),
+        });
+        service.command(XServerFrontendServiceCommand::StopAndDisconnect);
+        let closed_first = service.closed();
+        actors.extend(finish_labelled(
+            "enqueued-and-refused-publication invocation",
+            service,
+            &[custody],
+        ));
+
+        // A HANDOVER BEGUN AND NEVER REPORTED. The capsule left, and the record
+        // of what the handover returned never happened, so nothing can say
+        // whether the recipient has it. It is not offered again.
+        let unknown_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+        let mut unknown = LifecycleService::launch_over_store(
+            "c-unknown-send",
+            12051,
+            None,
+            false,
+            1,
+            unknown_store.clone(),
+        );
+        unknown.start();
+        let (mut unknown_peer, unknown_custody) = unknown.connect();
+        let (unknown_surface, unknown_sequence, unknown_ingress) =
+            focus_window(&unknown, &mut unknown_peer, 0x320a01, 12051);
+        let press = XAuthorityInputDeliveryId::from_raw(12080);
+        let release = XAuthorityInputDeliveryId::from_raw(12081);
+        unknown_ingress
+            .submit(
+                &unknown.owner.lease(),
+                button_to(unknown_surface, press, 272, true),
+            )
+            .expect("an actual press");
+        assert_eq!(
+            read_event(&mut unknown_peer, 3),
+            Some(expected_button_event(true, unknown_sequence, 0x320a01, 1))
+        );
+        assert_eq!(
+            receipt_for(&unknown.deliveries, 12080),
+            XAuthorityInputDeliveryOutcome::Flushed
+        );
+        let release_cell_before = delivery_cell(&unknown.registry, 12081);
+        arm_handover(
+            &unknown.registry,
+            release,
+            Box::new(|| panic!("labelled acceptance interruption between handover and its record")),
+        );
+        unknown_ingress
+            .submit(
+                &unknown.owner.lease(),
+                button_to(unknown_surface, release, 272, false),
+            )
+            .expect("an actual release, whose handover this case interrupts");
+        let unknown_closed = unknown.closed();
+        assert!(
+            unknown_closed.unwound,
+            "the interruption ended the invocation it happened in"
+        );
+        // The capsule had already been handed over, so the recipient does hold
+        // the bytes. What no longer exists is anything that knows it.
+        let release_wire = read_event(&mut unknown_peer, 3);
+        let release_cell = delivery_cell(&unknown.registry, 12081)
+            .or(release_cell_before)
+            .and_then(|cell| cell.answer());
+        let phases = retained_dispatch(&unknown);
+        // THE RECORD SAYS WHAT HAPPENED TO IT, which is that nobody knows. The
+        // handover was begun and its result never written down, and that is the
+        // one state this subcase is about.
+        assert!(
+            phases.iter().any(|(phase, _, _)| phase == "Indeterminate"),
+            "the retained release says its handover was begun and never reported: {phases:?}"
+        );
+        // AND IT KEEPS NOTHING TO SEND AGAIN. The capsule left; no replayable
+        // copy stayed behind, so nothing could re-offer it even if something
+        // decided to.
+        assert!(
+            phases
+                .iter()
+                .all(|(phase, replayable, _)| phase != "Indeterminate" || !*replayable),
+            "and keeps no replayable copy of what it handed over: {phases:?}"
+        );
+        // The debt is the retained release itself, not an accepted-item credit:
+        // that credit is returned when the item is disposed of and its event
+        // moves into separately reserved storage, which had already happened.
+        // What the interruption must not do is settle the release or discard it.
+        assert!(
+            !phases.is_empty(),
+            "the release is retained by the store that outlived the invocation"
+        );
+        let unknown_after = retained_dispatch(&unknown);
+        assert_eq!(
+            unknown_after, phases,
+            "nothing revisits it, so nothing re-offers it"
+        );
+        let replayed = read_event(&mut unknown_peer, 1);
+        assert_eq!(
+            replayed, None,
+            "the release reached the recipient once and was not sent again"
+        );
+        let unknown_fact = json!({
+            "press_delivery": 12080,
+            "release_delivery": 12081,
+            "seam": "labelled test-only, keyed by this origin and this delivery, one shot, immediately after the handover returned and before its result was recorded",
+            "seam_mode": "one shot, an actual interruption: the result of the handover is never recorded, which is the state the subcase is about",
+            "unwound": unknown_closed.unwound,
+            "release_bytes_on_wire": release_wire.map(|bytes| bytes.to_vec()),
+            "release_answer": release_cell.map(|answer| format!("{answer:?}")),
+            "retained_phases": format!("{phases:?}"),
+            "retained_phases_after_further_reads": format!("{unknown_after:?}"),
+            "second_copy_on_wire": replayed.map(|bytes| bytes.to_vec()),
+            "writer_receipt_is_the_writers_own": "the recipient half may be answered by the writer that flushed; the executor still cannot join it, and does not resend",
+            "charged": unknown_store.reserved(),
+        });
+        actors.extend(finish_labelled(
+            "unknown-handover invocation",
+            unknown,
+            &[unknown_custody],
+        ));
+
+        // A RECIPIENT THAT STOPS TAKING ITS BYTES. The peer's receive buffer is
+        // bounded to a real, small size and then never read, so the writer's own
+        // send blocks against an actual socket rather than a simulated one. What
+        // the declared limit then produces is an outcome that establishes
+        // nothing, and a capsule that is never rebuilt from it.
+        let blocked_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+        let mut blocked = LifecycleService::launch_over_store(
+            "c-blocked-send",
+            12052,
+            None,
+            false,
+            1,
+            blocked_store.clone(),
+        );
+        blocked.start();
+        let (mut blocked_peer, blocked_custody) = blocked.connect();
+        let (blocked_surface, blocked_sequence, blocked_ingress) =
+            focus_window(&blocked, &mut blocked_peer, 0x320b01, 12052);
+        // Fixture setup on the case's own end of the real connection: a bound on
+        // what this recipient can hold. Nothing about the service is simulated.
+        let bounded_buffer =
+            rustix::net::sockopt::set_socket_recv_buffer_size(&blocked_peer, 2048).is_ok();
+        let buffer_size = rustix::net::sockopt::socket_recv_buffer_size(&blocked_peer).ok();
+        // From here the recipient never reads again, and the writer's own steps
+        // are recorded so a prefix of the delivery that stalls is established by
+        // what the writer did, not by counting frames of the ones before it.
+        observe_frames(&blocked.registry);
+        let mut pairs = 0u64;
+        let mut outcomes: Vec<String> = Vec::new();
+        let mut stalled = None;
+        // Bounded well inside the harness's own per-case allowance: this case
+        // must report what it found, never run into a deadline.
+        let blocking_deadline = std::time::Instant::now() + Duration::from_secs(25);
+        'blocking: for round in 0..2_000u64 {
+            if std::time::Instant::now() >= blocking_deadline {
+                stalled = Some(("the recipient never stopped the writer within the bound", 0));
+                break 'blocking;
+            }
+            for pressed in [true, false] {
+                let id = 12600 + round * 2 + u64::from(!pressed);
+                if blocked_ingress
+                    .submit(
+                        &blocked.owner.lease(),
+                        button_to(
+                            blocked_surface,
+                            XAuthorityInputDeliveryId::from_raw(id),
+                            272,
+                            pressed,
+                        ),
+                    )
+                    .is_err()
+                {
+                    stalled = Some(("submission refused while the recipient is full", id));
+                    break 'blocking;
+                }
+                match blocked.deliveries.recv_timeout(Duration::from_secs(12)) {
+                    Ok(receipt) => {
+                        let name = format!("{:?}", receipt.outcome);
+                        if receipt.outcome != XAuthorityInputDeliveryOutcome::Flushed {
+                            outcomes.push(name.clone());
+                            stalled = Some(("an outcome that establishes nothing", id));
+                            break 'blocking;
+                        }
+                        outcomes.push(name);
+                    }
+                    Err(_) => {
+                        stalled = Some(("no receipt within the bound", id));
+                        break 'blocking;
+                    }
+                }
+            }
+            pairs += 1;
+        }
+        let flushed_before_stall = outcomes
+            .iter()
+            .filter(|outcome| outcome.as_str() == "Flushed")
+            .count();
+        let stalling_outcome = outcomes
+            .iter()
+            .rev()
+            .find(|outcome| outcome.as_str() != "Flushed")
+            .cloned();
+        let observed = take_observed_frames();
+        // PRE-STOP FACTS ARE ALREADY IN HAND above: what the recipient took, what
+        // ended the run, and the writer's own steps. Only now is this invocation
+        // asked to stop, and only after it has actually exited is its retained
+        // inventory a thing that exists to be read. Finishing it before that
+        // would be asking a live service for evidence its own exit produces.
+        blocked.command(XServerFrontendServiceCommand::StopAndDisconnect);
+        let blocked_closed = blocked.closed();
+        let blocked_phases = retained_dispatch(&blocked);
+        let stalled_delivery = stalled.map(|(_, id)| id).filter(|id| *id != 0);
+        let same_capsule = stalled_delivery.map(|id| {
+            let (advanced, owed, failure) =
+                frames_of(&observed, XAuthorityInputDeliveryId::from_raw(id));
+            json!({
+                "delivery": id,
+                "frames_this_delivery_owed": owed,
+                "frames_of_it_that_went_out_whole": advanced,
+                "writer_failure_on_it": failure,
+                "is_a_prefix_of_the_same_delivery": owed > 1 && advanced >= 1 && advanced < owed,
+            })
+        });
+        let multi_frame_deliveries: Vec<_> = observed
+            .iter()
+            .filter(|step| step.frames > 1)
+            .map(|step| json!({"delivery": step.delivery.map(|id| id.raw()), "frames_owed": step.frames, "frame_index": step.index, "whole_frame_that_went": step.advanced}))
+            .take(12)
+            .collect();
+        let writer_failures: Vec<_> = observed
+            .iter()
+            .filter(|step| step.failure.is_some())
+            .map(|step| json!({"delivery": step.delivery.map(|id| id.raw()), "frames_owed": step.frames, "frame_index": step.index, "failure": step.failure.clone()}))
+            .take(8)
+            .collect();
+        let partial = json!({
+            "writer_steps_recorded": observed.len(),
+            "same_capsule_prefix": same_capsule,
+            "multi_frame_deliveries_seen": multi_frame_deliveries,
+            "writer_failures": writer_failures,
+            "recipient_buffer_bounded": bounded_buffer,
+            "recipient_buffer_bytes": buffer_size,
+            "pairs_delivered_before_stall": pairs,
+            "flushed_before_stall": flushed_before_stall,
+            "stalled": stalled.map(|(why, id)| json!({"why": why, "delivery": id})),
+            "stalling_outcome": stalling_outcome,
+            "retained_phases_after_exit": format!("{blocked_phases:?}"),
+            "closed_error": blocked_closed.error.clone(),
+            "prefix_on_wire": if flushed_before_stall > 0 {
+                "this recipient took earlier whole frames, so the wire holds committed bytes before the stall"
+            } else {
+                "no frame was established as taken before the stall, so no prefix is claimed"
+            },
+            "limitation": "the seam reports whole frames of the exact watched invocation, never a byte offset. A same-capsule whole-frame prefix is established when one delivery owed more than one frame and fewer than all of them went out; a partial-byte prefix is not claimed at all.",
+        });
+        assert!(
+            bounded_buffer,
+            "the case could bound its own end of the real connection"
+        );
+        assert!(
+            stalling_outcome
+                .as_deref()
+                .is_none_or(|outcome| outcome != "Flushed"),
+            "whatever ended the run was not a flush: {partial}"
+        );
+        let blocked_after = retained_dispatch(&blocked);
+        assert_eq!(
+            blocked_after, blocked_phases,
+            "nothing rebuilt or re-offered the stalled capsule"
+        );
+        let _ = blocked_sequence;
+        actors.extend(finish_labelled(
+            "blocked-recipient invocation",
+            blocked,
+            &[blocked_custody],
+        ));
+
+        println!(
+            "sophia_m3_indeterminate_send_diagnostics {}",
+            json!({
+                "schema": 1,
+                "case": "C.indeterminate_send",
+                "bound": false,
+                "why_unbound": "unknown_send_not_replayed needs the unreported handover to persist, and interrupting the invocation there leaves its connection worker unjoined; partial_send_not_replayed needs a prefix of the same delivery on the wire, which whole frames from earlier completed deliveries cannot establish.",
+                "partial_send_blocked_recipient": partial,
+                "unknown_send_interval": unknown_fact,
+                "enqueued_observation_only": enqueued,
+                "refused_publication_retained": refused,
+                "first_invocation_order": format!("{:?}", closed_first.order),
+                "collected_actors": actors,
+            })
+        );
+    }
+
 }

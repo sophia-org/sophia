@@ -464,13 +464,7 @@ fn serve_one_ordered_delivery(
     // or control flow here depends on it.
     #[cfg(all(test, unix))]
     routing_tests::m3_acceptance::observed_ordered_frame(
-        std::os::fd::AsRawFd::as_raw_fd(socket),
-        in_flight
-            .as_ref()
-            .and_then(|held| held.delivery().emission().delivery()),
-        in_flight
-            .as_ref()
-            .map_or(0, |held| held.delivery().emission().frame_count()),
+        in_flight.as_ref().map(|held| held.delivery().emission()),
         in_flight.as_ref().map_or(0, |held| held.frame_index()),
         match &written {
             Ok(X11OrderedWriteStep::Advanced { frame }) => Some(*frame),
