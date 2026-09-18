@@ -36,14 +36,20 @@ fn construction() {
     }
     // A second production owner must not displace the live listener.
     let second =
-        PrivateInputService::start(config(instance.socket(), PrivateInputGrantPolicy::Disabled));
-    if let Ok(second) = second {
-        assert_ne!(
-            second.await_ready(support::WAIT).unwrap(),
-            PrivateInputReadiness::Ready
-        );
-        evidence.collect(second.stop(), true);
+        PrivateInputService::start(config(instance.socket(), PrivateInputGrantPolicy::Disabled))
+            .expect("the valid second configuration must reach the listener bind");
+    assert_eq!(
+        second.await_ready(support::WAIT).unwrap(),
+        PrivateInputReadiness::Stopped
+    );
+    let refused = second.stop();
+    match refused.failure.as_ref() {
+        Some(sophia_x_authority::PrivateServiceFailure::Failed { error, .. }) => {
+            assert!(error.to_string().contains("binds exclusively"), "{error}");
+        }
+        other => panic!("expected the occupied listener refusal, got {other:?}"),
     }
+    evidence.collect(refused, true);
     // Verify that the first owner still serves after the refused bind.
     drop(Peer::connect(instance.socket(), Order::Little, None).unwrap());
     evidence.collect(instance.finish(), false);
