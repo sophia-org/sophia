@@ -94,6 +94,11 @@ impl Guards<'_> {
             hold.status = Status::Retained(Residual::IncarnationMismatch);
             return Ok((outcome, Err(PrivateAppliedRefusal::Interrupted)));
         }
+        hold.release_disposition = if route.mode == XAuthorityRoutedInputMode::StateOnly {
+            KeyReleaseDisposition::RecipientTerminationRequired
+        } else {
+            KeyReleaseDisposition::Deliver
+        };
         let keyboard = match key_state(self.origin, keyboards) {
             Ok(state) if state.physical_key_state(hold.key) == crate::XkbPhysicalKeyState::Held => {
                 state
@@ -182,6 +187,12 @@ impl Guards<'_> {
                 grant: hold.grant,
             });
             hold.status = Status::NativeReconciled;
+        }
+        if hold.release_disposition == KeyReleaseDisposition::RecipientTerminationRequired {
+            // Common and the original XKB history have released the key. No
+            // protocol key or StateNotify is constructed; the original
+            // recipient still requires its own exact termination evidence.
+            return Ok((outcome, Ok(None)));
         }
         let built = (|| {
             if !query_present || buttons.is_none() {

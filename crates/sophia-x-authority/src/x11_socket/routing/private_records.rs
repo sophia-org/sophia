@@ -398,7 +398,8 @@ impl PrivateSettlingRelease {
         // ORDER FIRST. A release cannot be handed over while the press it
         // ends is still owed one, or has begun one that never reported: the
         // recipient would see the button come up before it went down.
-        !self.press_handover_unfinished()
+        self.binding != PrivateReleaseBinding::RecipientTerminationRequired
+            && !self.press_handover_unfinished()
             && self.native_recorded
             && self.custody.attempt.is_none()
             && matches!(
@@ -514,6 +515,9 @@ impl PrivateSettlingRelease {
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateReleaseBinding {
+    /// StateOnly ended the aggregate without producing an event. Only exact
+    /// termination of the inherited endpoint can supply its recipient half.
+    RecipientTerminationRequired,
     /// Bound to the recipient its press reached. An event is owed.
     Reached,
     /// The ledger will not carry it: a terminal outcome is already recorded

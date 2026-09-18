@@ -214,7 +214,10 @@ fn execute_owned(
             return Err(PrivateExecutionRefusal::Unmappable);
         }
 
-        if route.mode == XAuthorityRoutedInputMode::StateOnly {
+        if route.mode == XAuthorityRoutedInputMode::StateOnly
+            && (!matches!(route.request.kind, InputEventKind::Key { pressed: false, .. })
+                || route.delivery.is_some())
+        {
             return Err(PrivateExecutionRefusal::StateOnlyUnsupported);
         }
         if route.mode == XAuthorityRoutedInputMode::Repeat {

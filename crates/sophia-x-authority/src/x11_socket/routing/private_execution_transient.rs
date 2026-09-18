@@ -37,7 +37,7 @@ fn resolve_and_apply_transient(
     })?;
     prepare_key_custody(
         registry,
-        route.delivery,
+        route,
         pending_custody,
         next_event_order,
         notes,

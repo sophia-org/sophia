@@ -1,3 +1,10 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum KeyReleaseDisposition {
+    Unapplied,
+    Deliver,
+    RecipientTerminationRequired,
+}
+
 /// One native keyboard obligation. The executor must install this slot before
 /// asking the source to apply, and retain it through terminal handover.
 pub(super) struct KeyHold {
@@ -28,6 +35,7 @@ pub(super) struct KeyHold {
     press_emission: Option<PrivateOrderedEmission>,
     release_emission: Option<PrivateOrderedEmission>,
     release_xkb_applied: bool,
+    release_disposition: KeyReleaseDisposition,
 }
 
 pub(super) struct KeyActivationRetirement {
@@ -52,6 +60,9 @@ impl KeyHold {
     /// does not prove an interrupted source call had no effect.
     pub(super) fn release_xkb_applied(&self) -> bool {
         self.release_xkb_applied
+    }
+    pub(super) fn release_disposition(&self) -> KeyReleaseDisposition {
+        self.release_disposition
     }
     pub(super) fn connection(&self) -> RetainedConnection {
         RetainedConnection {
@@ -419,6 +430,7 @@ impl BaseGuards<'_> {
             press_emission: None,
             release_emission: None,
             release_xkb_applied: false,
+            release_disposition: KeyReleaseDisposition::Unapplied,
         });
         may_have_applied.set(true);
         let applied = permit

@@ -23,6 +23,13 @@
       "x11_socket::routing_tests::service_shift_a_chord_uses_one_history_and_settles_exact_native_and_writer_obligations",
       "x11_socket::routing_tests::service_key_join_survivor_and_focus_move_keep_the_original_history_and_endpoint"
     ],
+    "state-only": [
+      "x11_socket::routing_tests::state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions",
+      "x11_socket::routing_tests::state_only_frozen_release_retains_original_request_then_applies_once_after_exact_thaw",
+      "x11_socket::routing_tests::service_state_only_release_suppresses_wire_output_and_keeps_recipient_debt",
+      "x11_socket::routing_tests::service_state_only_press_is_refused_before_native_application",
+      "x11_socket::routing_tests::service_keyboard_async_thaw_keeps_original_shift_request_and_exact_writer_order"
+    ],
     "keyboard-thaw": [
       "x11_socket::routing_tests::native_keyboard_thaw_receipt_requires_all_exact_async_contributions",
       "x11_socket::routing_tests::unsupported_allow_events_cannot_be_upgraded_into_an_async_thaw_receipt",
@@ -56,7 +63,7 @@
       "x11_socket::routing_tests::dropping_a_deferred_private_request_does_not_dispose_its_accepted_cell",
       "x11_socket::routing_tests::an_entered_private_request_cannot_be_relabelled_as_effect_free_deferral",
       "x11_socket::routing_tests::deferred_private_request_rechecks_its_exact_admission_before_the_source",
-      "x11_socket::routing_tests::service_state_only_key_is_explicitly_refused_before_native_application",
+      "x11_socket::routing_tests::service_state_only_press_is_refused_before_native_application",
       "x11_socket::routing_tests::service_repeat_key_is_explicitly_refused_before_native_application",
       "x11_socket::routing_tests::service_shift_a_chord_uses_one_history_and_settles_exact_native_and_writer_obligations",
       "x11_socket::routing_tests::service_key_join_survivor_and_focus_move_keep_the_original_history_and_endpoint"

@@ -175,8 +175,8 @@ pub(crate) enum PrivateExecutionRefusal {
     SeatUnavailable,
     /// The input does not name anything this authority can validate.
     Unmappable,
-    /// Ordered native StateOnly/thaw custody is not implemented. This mode
-    /// cannot be treated as an ordinary delivery.
+    /// StateOnly supports key releases without a delivery cell. Other shapes
+    /// cannot be treated as an ordinary delivery or a physical key release.
     StateOnlyUnsupported,
     /// Repetition is a delivery policy, not another aggregate press or join.
     /// The private source does not yet own an ordered repeat operation.

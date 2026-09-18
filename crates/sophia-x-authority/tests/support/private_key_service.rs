@@ -248,7 +248,7 @@ fn service_shift_a_chord_uses_one_history_and_settles_exact_native_and_writer_ob
 }
 
 #[test]
-fn service_state_only_key_is_explicitly_refused_before_native_application() {
+fn service_state_only_press_is_refused_before_native_application() {
     assert_unsupported_key_service_mode(
         XAuthorityRoutedInputMode::StateOnly,
         PrivateExecutionRefusal::StateOnlyUnsupported,
