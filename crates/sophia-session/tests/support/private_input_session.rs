@@ -136,6 +136,55 @@ impl Fixture {
             .custody_snapshot(&runtime.owner.lease())
             .unwrap()
     }
+
+    /// Wait until a custody place reports a started worker.
+    ///
+    /// REQUIRED BEFORE ANY FAULT. Registered attachment is production and the
+    /// acceptance rows collect registered workers, so `NeverStarted` is not
+    /// lifetime evidence -- it is the state before the thing being tested has
+    /// happened. Damaging a service that has not yet started a worker would
+    /// prove nothing about custody at all.
+    fn running_row(&mut self) -> sophia_x_authority::PrivateCustodySnapshotRow {
+        let deadline = std::time::Instant::now() + WAIT;
+        loop {
+            let _ = self.handle_mut().apply_committed(Duration::from_millis(5));
+            let snapshot = self.custody();
+            if let Some(row) = snapshot
+                .rows
+                .iter()
+                .find(|row| row.worker == PrivateCustodyWorkerStanding::Running)
+            {
+                return *row;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "no custody place reported a started worker within the bound: {snapshot:?}"
+            );
+            std::thread::yield_now();
+        }
+    }
+
+    /// Issue real input authority for the first admitted connection.
+    ///
+    /// THE ACTUAL ADAPTER CUSTODY. Cloning the runtime `Arc` is not this: a
+    /// submission is what the design deliberately hands out, and it is the
+    /// thing whose presence used to make the controller's drop skip its stop.
+    fn issue_submission(&self) -> crate::private_input::PrivateInputSubmission {
+        let admitted = self.handle().admitted().unwrap();
+        let seen = *admitted.first().expect("the peer is admitted");
+        let record = self
+            .handle()
+            .admission_record(seen.admission)
+            .unwrap()
+            .expect("the policy kept its own record");
+        assert!(
+            record.instance_verified,
+            "the peer presented evidence bound to this instance"
+        );
+        self.handle()
+            .issue(record.context, sophia_protocol::DeviceId::from_raw(1))
+            .expect("grants are enabled and the connection is live")
+    }
 }
 
 impl Drop for Fixture {
@@ -160,62 +209,43 @@ fn lifetime() {
     let mut fixture = Fixture::started(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
     let mut peer = fixture.connect();
     let _window = peer.create_map_and_draw();
-    // Drive the service so the connection's worker is actually attached rather
-    // than merely accepted.
-    let _ = fixture
-        .handle_mut()
-        .apply_committed(Duration::from_millis(10));
 
-    // RUNNING, AND SAID TO BE RUNNING. A place that holds a custody for a live
-    // connection must not read as one that never started anything.
-    let running = fixture.custody();
-    assert!(
-        running.places >= 1,
-        "the inventory is sized for connections: {running:?}"
+    // A STARTED WORKER, WAITED FOR RATHER THAN ASSUMED. Registered attachment
+    // is production; a place reporting NeverStarted is the state before the
+    // thing under test has happened, not evidence about it.
+    let running = fixture.running_row();
+    assert_eq!(running.worker, PrivateCustodyWorkerStanding::Running);
+    assert_eq!(
+        running.handle_present,
+        Some(true),
+        "a running worker's handle is in its slot: {running:?}"
+    );
+    assert_eq!(
+        running.departing,
+        Some(false),
+        "nothing has told this connection to depart: {running:?}"
+    );
+    assert_eq!(
+        running.join,
+        PrivateCustodyJoinStanding::Unpublished,
+        "no join can have been published while the worker runs: {running:?}"
     );
     assert!(
-        !running.inventory_poisoned,
-        "nothing has damaged the inventory: {running:?}"
+        running.publication_right_unclaimed,
+        "no attempt has claimed the right to publish a join: {running:?}"
     );
-    // A CONNECTED PEER HAS A CUSTODY PLACE. Registration reserves one before
-    // the connection's row is published, so an admitted peer is one this
-    // inventory is holding evidence for.
-    assert!(
-        running.taken >= 1,
-        "an admitted peer occupies a custody place: {running:?}"
-    );
-    assert!(
-        !running.rows.is_empty(),
-        "an occupied place produces a row: {running:?}"
-    );
-    // WHAT IS NOT ASSERTED, AND WHY. This does not require a row to report a
-    // started worker. Nothing in the production path starts one yet, so
-    // demanding `Running` here would be asserting behaviour that does not
-    // exist and would fail for the right reason in the wrong place. What is
-    // required is that every row is a readable, self-consistent answer; when
-    // worker startup lands, `Running` becomes assertable here without changing
-    // anything else.
-    for row in &running.rows {
-        assert_ne!(
-            row.worker,
-            PrivateCustodyWorkerStanding::Unreadable,
-            "nothing has poisoned this slot: {row:?}"
-        );
-        assert_eq!(
-            row.join,
-            PrivateCustodyJoinStanding::Unpublished,
-            "no join can have been published while the service is running: {row:?}"
-        );
-        if row.worker == PrivateCustodyWorkerStanding::NeverStarted {
-            assert_eq!(
-                row.handle_present,
-                Some(false),
-                "a place that started nothing holds no handle: {row:?}"
-            );
-        }
-    }
 
-    // COLLECTED.
+    let whole = fixture.custody();
+    assert!(!whole.inventory_poisoned, "{whole:?}");
+    assert!(whole.taken >= 1, "{whole:?}");
+    assert_eq!(
+        whole.places, 4,
+        "the inventory is sized to the configured client bound: {whole:?}"
+    );
+
+    // COLLECTED, then custody read afterwards through a runtime kept for the
+    // purpose rather than through a service that is still running.
+    let runtime = std::sync::Arc::clone(&fixture.handle().runtime);
     let handle = fixture.handle.take().unwrap();
     let outcome = handle.stop();
     assert_eq!(
@@ -224,8 +254,8 @@ fn lifetime() {
         "the service thread is joined by the stop: {outcome:?}"
     );
 
-    // A JOINED THREAD IS NOT A LIVE EXECUTION. The reading reported is taken
-    // from the durable witness after the join, so it cannot claim an execution
+    // A JOINED THREAD IS NOT A LIVE EXECUTION. The reading reported comes from
+    // the durable witness after the join, so it cannot claim an execution
     // belonging to a thread that has already gone.
     if let Some(execution) = outcome.execution {
         assert_ne!(
@@ -235,10 +265,52 @@ fn lifetime() {
         );
     }
 
-    // CUSTODY AFTER COLLECTION. Read from what the stop retained, not from a
-    // running service.
+    // EXACT RETAINED WORK. The bridge was readable throughout, so the count is
+    // a count and not an absence, and custody is retained exactly when
+    // something is still owed.
+    let undelivered = outcome
+        .bridge_undelivered
+        .expect("the bridge was readable, so it reports a count");
+    assert_eq!(
+        outcome.retains_obligations(),
+        undelivered > 0 || !outcome.settlement.readable,
+        "custody is retained exactly when something is still owed: {outcome:?}"
+    );
+
+    // AFTER-JOIN CUSTODY. The worker was collected, so its place says so: the
+    // handle has gone to whoever joined it and the result is published.
+    let after = runtime
+        .owner
+        .custody_snapshot(&runtime.owner.lease())
+        .expect("the owner still keeps its inventory after the stop");
+    assert!(!after.inventory_poisoned, "{after:?}");
+    let collected = after
+        .rows
+        .iter()
+        .find(|row| row.join != PrivateCustodyJoinStanding::Unpublished);
+    assert!(
+        collected.is_some(),
+        "collection publishes a join result into the custody place: {after:?}"
+    );
+    let collected = collected.unwrap();
+    assert_ne!(
+        collected.worker,
+        PrivateCustodyWorkerStanding::Unreadable,
+        "collection leaves a readable place: {collected:?}"
+    );
+    assert_ne!(
+        collected.worker,
+        PrivateCustodyWorkerStanding::NeverStarted,
+        "a place that published a join started something: {collected:?}"
+    );
+    assert!(
+        !collected.publication_right_unclaimed,
+        "the attempt that published took the right: {collected:?}"
+    );
+
     drop(peer);
     drop(outcome);
+    drop(runtime);
 }
 
 /// A handle that goes out of scope while an adapter still holds the runtime
@@ -254,21 +326,20 @@ fn dropping_the_controller_stops_even_while_a_submission_is_held() {
     let mut fixture = Fixture::started(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
     let mut peer = fixture.connect();
     let _window = peer.create_map_and_draw();
+    let running = fixture.running_row();
+    assert_eq!(running.worker, PrivateCustodyWorkerStanding::Running);
 
-    let admitted = fixture.handle().admitted().unwrap();
-    assert!(
-        !admitted.is_empty(),
-        "the peer is admitted before anything is issued"
-    );
-
+    // A REAL SUBMISSION, HELD ACROSS THE DROP. This is the custody the design
+    // hands to adapters, and holding it is what used to make the controller's
+    // drop skip its stop and leave the JoinHandle dropped unjoined.
+    let submission = fixture.issue_submission();
     let runtime = std::sync::Arc::clone(&fixture.handle().runtime);
-    // The controller goes while `runtime` is still held, which is exactly the
-    // custody an adapter keeps.
+
     drop(fixture.handle.take());
 
     assert!(
         runtime.stop_once().is_none(),
-        "the controller's drop already performed the one stop"
+        "the controller's drop performed the one stop even though a submission was live"
     );
     assert!(
         runtime
@@ -278,6 +349,8 @@ fn dropping_the_controller_stops_even_while_a_submission_is_held() {
             .unwrap_or(false),
         "the service thread was joined rather than dropped unjoined"
     );
+    // Still held, which is the whole point of the arrangement.
+    drop(submission);
     drop(peer);
     drop(runtime);
 }
