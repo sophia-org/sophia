@@ -493,3 +493,31 @@ two deliberate ignored entry points. This supersedes the earlier negotiating-
 only fixture scope, but still uses test peers, no renderer, no Bemenu UI and no
 live Session owner loop. It does not establish the client's receipt of every
 resource response before the parent stops it.
+
+
+## Typed public C native records
+
+The public C header now exposes owned scalar identities for the six inbound
+native records and checked encoders for all five outbound kinds. Input text is a
+bounded borrowed slice valid only until its frame is consumed; clients must copy
+it before retaining an edit. Decode refuses outbound kinds and leaves the prior
+result untouched on malformed/truncated input. Encoders validate before changing
+the destination or returned length. Candidate/chunk arrays have explicit 32-row
+bounds and encode only the parentless transient native surface policy.
+
+`tools/check_shell_c_wire.sh` runs the typed codec against the pinned Rust golden
+frames. It checks every binding field, UTF-8 borrowing, all output bytes, every
+short destination/truncated inbound payload, invalid selection/duplicate rows,
+zero transactions, invalid ACK/activation revisions, signed margins and maximal
+row/chunk counts. The focused codec also passes Clang AddressSanitizer and
+UndefinedBehaviorSanitizer in the device-hidden runner. GCC sanitizer linking was
+unavailable on this host; that failed build is not sanitizer evidence. Compiled
+mutants replacing event revision with binding revision and replacing candidate
+rows with selection each fail their intended assertions. Evidence is retained in
+`.artifacts/bemenu-native-codec`.
+
+These are codecs, not a focus/resource/candidate lifecycle. No decoded Focus may
+promote Prepared content, and no encoded ACK/Activate establishes queue ownership,
+peer receipt or launch authority. The joined client owner still must validate
+exact current Presented bindings and retain response/resource obligations across
+partial I/O, newer content, revocation and disconnect.

@@ -6,7 +6,7 @@ trap 'rm -rf "$build"' EXIT HUP INT TERM
 cd "$root"
 ulimit -c 0
 python3 -B tools/check_shell_c_wire_inventory.py
-for test in test corpus budget_test catalog_test native_test; do
+for test in test corpus budget_test catalog_test native_test native_codec_test; do
     if [ "$test" = budget_test ]; then
         set -- -Wl,--wrap=recv -Wl,--wrap=send
     else
@@ -15,13 +15,15 @@ for test in test corpus budget_test catalog_test native_test; do
     "${CC:-cc}" -std=c99 -Wall -Wextra -Werror -pedantic \
         bindings/c/shell_wire/frame.c bindings/c/shell_wire/io.c \
         bindings/c/shell_wire/negotiation.c bindings/c/shell_wire/catalog.c \
-        bindings/c/shell_wire/native_launcher.c "bindings/c/tests/sophia_shell_wire_$test.c" \
+        bindings/c/shell_wire/native_launcher.c bindings/c/shell_wire/native_launcher_codec.c \
+        bindings/c/shell_wire/native_launcher_content.c "bindings/c/tests/sophia_shell_wire_$test.c" \
         "$@" -o "$build/$test"
 done
 "$build/test"
 "$build/budget_test"
 "$build/catalog_test" protocol/golden/sophia-shell-launcher.frames
 "$build/native_test" protocol/golden/sophia-shell-native-launcher.frames
+"$build/native_codec_test" protocol/golden/sophia-shell-native-launcher.frames
 for corpus in sophia-shell-v1 sophia-shell-tabs sophia-shell-reference \
     sophia-shell-launcher sophia-shell-content sophia-shell-indicators sophia-shell-native-launcher; do
     "$build/corpus" "protocol/golden/$corpus.frames"

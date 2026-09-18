@@ -167,8 +167,11 @@ remains separately labelled.
 **Deliver developer examples and a joined conformance gate.**
 
 The public C foundation now includes atomic typed application-catalog assembly
-(kinds 114–116) with an independent Rust-golden payload reader. Content/focus
-lifecycle, protected independent admission and Bemenu integration remain open.
+(kinds 114–116) and typed native-launcher records (six inbound kinds and five
+outbound encoders), checked against independent Rust golden bytes. Native input
+text is borrowed; encoding/decoding grants no lifecycle authority. Content/focus
+lifecycle and live independent admission/Bemenu integration remain open; isolated
+protected component supervision has separate headless coverage.
 
 Provide a minimal independent non-Rust launcher client and optional Rust lifecycle
 helpers using the same schema. Document admission, supported/denied capabilities,
