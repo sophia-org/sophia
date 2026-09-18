@@ -23,8 +23,23 @@ fn send(
     transport: &mut ShellSessionTransport,
     frame: Result<Vec<u8>, IpcCodecError>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    transport.send_async(frame.map_err(|e| format!("{e:?}"))?)?;
-    Ok(())
+    let frame = frame.map_err(|e| format!("{e:?}"))?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        // Refusal precedes FIFO ownership. Retry this exact frame only; once
+        // accepted, a later I/O error must not replay it.
+        match transport.enqueue_async(frame.clone()) {
+            Ok(()) => {
+                transport.poll_io()?;
+                return Ok(());
+            }
+            Err(ShellTransportError::ActivationQueueSaturated) if Instant::now() < deadline => {
+                transport.poll_io()?;
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = std::env::args_os()
@@ -63,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tx = TransactionId::from_raw(1);
     let catalog = fixture::catalog(4096);
     for frame in encode_shell_application_catalog(tx, &catalog).map_err(|e| format!("{e:?}"))? {
-        transport.send_async(frame)?;
+        send(&mut transport, Ok(frame))?;
     }
     let request = ShellLauncherRequest {
         connection_epoch: 5,
