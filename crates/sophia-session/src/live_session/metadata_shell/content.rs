@@ -192,12 +192,12 @@ impl LiveContentSession {
             .collect::<Vec<_>>();
         self.stage = ContentServiceStage::Demands;
         transport.service_content_demands(&content_outputs, &allocations)?;
-        while let Some((_, demand)) = transport.next_content_demand() {
+        while let Some((demand_transaction, demand)) = transport.next_content_demand() {
             let permit = self.next_permit_id;
             self.next_permit_id = permit
                 .checked_add(1)
                 .ok_or("shell content permit identity exhausted")?;
-            transport.grant_content_demand(transaction()?, demand.output, permit, now)?;
+            transport.grant_content_demand(demand_transaction, demand.output, permit, now)?;
         }
         let contexts = content_outputs
             .iter()

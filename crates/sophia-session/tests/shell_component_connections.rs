@@ -584,6 +584,55 @@ fn borrowed_native_content_places_real_wire_request_without_granting_early_focus
     assert_eq!(result.status, 1);
     assert_eq!(result.grant, key.grant);
     assert_eq!((result.pixel.x, result.pixel.width), (250, 300));
+    let demand_transaction = TransactionId::from_raw(913);
+    client
+        .write_all(
+            &encode_shell_content_frame(
+                demand_transaction,
+                &ShellContentRecord::FrameDemand(ContentFrameDemand {
+                    grant: key.grant,
+                    output: opening.output,
+                    allocation: result.allocation,
+                    demand_id: 1,
+                    reason: 1,
+                }),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let serial_before = serial;
+    h.owner
+        .with_connection(key, |t| {
+            service
+                .service_open(
+                    t,
+                    &catalog,
+                    &mut runtime,
+                    &scene,
+                    None,
+                    &outputs,
+                    &[(outputs[0].id, root)],
+                    root,
+                    &mut || {
+                        serial += 1;
+                        Ok(TransactionId::from_raw(serial))
+                    },
+                )
+                .unwrap();
+            t.poll_io().unwrap();
+        })
+        .unwrap();
+    let (permit_transaction, ShellContentRecord::FramePermit(permit)) =
+        decode_shell_content_frame(&read_frame(&mut client)).unwrap()
+    else {
+        panic!("permit missing")
+    };
+    assert_eq!(permit_transaction, demand_transaction);
+    assert_eq!(
+        serial, serial_before,
+        "reply must not mint a server transaction"
+    );
+    assert_eq!((permit.demand_id, permit.state), (1, 1));
     h.owner.close(key).unwrap();
     h.owner.collect();
     let replacement = h.owner.reserve_attempt(1).unwrap();

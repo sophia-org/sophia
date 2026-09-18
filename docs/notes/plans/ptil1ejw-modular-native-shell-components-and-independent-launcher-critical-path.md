@@ -480,3 +480,30 @@ allocations and consumers, and prevent a fresh opening until those obligations
 permit it. Component process/catalog/focus/launch/shutdown integration and the
 final exact-source canonical plus `lom-test` harness remain required. No live
 endpoint, device, VT, installation, push or M3 import occurred.
+
+### Permit reply correlation over b08cee0b
+
+Following the close/reopen path exposed an actual Session/Bemenu integration
+mismatch. Bemenu requires the permit reply to echo its demand transaction, but
+both Session content services discarded that transaction and minted an unrelated
+server transaction for the grant. Panel and native services now pass the exact
+owned demand transaction to `grant_content_demand`. Server-originated output
+publications retain their own checked serial source; answering a demand does not
+consume that counter.
+
+The actual shared-registry/private-socket native service fixture sends demand
+transaction 913, deliberately distinct from the server counter, and asserts both
+the reply transaction and an unchanged server counter. Device-hidden Session
+471 PASS/14 ignored and component-connection 7 PASS, strict Session Clippy and
+layout are retained in `.artifacts/bemenu-native-permit-transaction`. The compiled
+old-behavior mutant fails the reply identity assertion and its isolated source
+was restored (`.artifacts/bemenu-native-permit-mutant`). This is allocation/demand
+service evidence without a native frame or protected child, not physical
+readiness or a general wire revision change.
+
+The same inspection found Bemenu's permit receiver currently accepts only grant
+and timeout states, not the Cancelled state emitted by normal close. That client
+repair and handling of late in-flight Begin/chunk/end records remain required
+with the Session closing/removal owner. They are not silently classified as
+malicious traffic or covered by the current passing server controls. Live join,
+reopening, fresh canonical and `lom-test` readiness remain open.
