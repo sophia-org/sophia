@@ -48,7 +48,8 @@ fn service_keyboard_async_thaw_keeps_original_shift_request_and_exact_writer_ord
     launched.commands.send(XServerFrontendServiceCommand::StopAndDisconnect).unwrap();
     let outcome = produced_outcome(launched, "original keyboard thaw");
     assert_eq!(outcome.ok, Some(true), "{:?}", outcome.error);
-    assert_eq!(pressed, Some(expected_key_service_event(sequence + 2, window, 50, true, 0)));
+    assert_eq!(pressed, Some(expected_key_service_event(sequence + 2, window, 50, true, 0)),
+        "order {:?}; original {original_answer:?}; release {release_answer:?}; submission {released_submission:?}; terminal {:?}; key releases {:?}", outcome.order, outcome.terminal, outcome.key_releases);
     assert_eq!(released_submission, Ok(()));
     assert_eq!(released, Some(expected_key_service_event(sequence + 2, window, 50, false, 1)));
     assert_eq!(original_answer.unwrap().outcome, XAuthorityInputDeliveryOutcome::Flushed);
