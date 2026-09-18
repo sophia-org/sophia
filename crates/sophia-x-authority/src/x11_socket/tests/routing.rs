@@ -16166,6 +16166,48 @@ fn a_refusal_is_retained_by_delivery_rather_than_discarded() {
         matches!(custody.observe(), Ok(None)),
         "no outcome was taken, which is a different answer from a stale request"
     );
+
+    // A finite turn must still reach a publishable tail behind an unresolved
+    // head. These are actual prepared/common refusals; removing their original
+    // tickets is a staged publication fault, not a replacement completion.
+    let durable = PrivateSettlementOwner::with_capacity(4);
+    let ready_client = XServerFrontendClientId::from_raw(872);
+    let mut fixture = prepared_ordered_fixture_with_store(ready_client, durable.clone());
+    let recovery = fixture.runner.frontend().broker.registry.input_recovery.clone();
+    let mut retained = Vec::new();
+    for raw in [8721, 8722] {
+        let id = XAuthorityInputDeliveryId::from_raw(raw);
+        fixture.ingress.submit(&fixture.keeper.lease(), motion_to(fixture.surface, id)).unwrap();
+        step_refused_request(&mut fixture);
+        let entry = recovery.state.lock().unwrap().tickets.remove(&id).unwrap();
+        retained.push((id, entry));
+        assert!(fixture.runner.frontend.as_mut().unwrap().deliver_turn(Vec::new()).is_empty());
+    }
+    assert_eq!(durable.reserved(), Some(2));
+    let (tail_id, tail) = retained.pop().unwrap();
+    let tail_cell = tail.completion.clone();
+    assert!(recovery.state.lock().unwrap().tickets.insert(tail_id, tail).is_none());
+    let (head_id, head) = retained.pop().unwrap();
+    let head_cell = head.completion.clone();
+    let private = fixture.runner.frontend.as_mut().unwrap();
+    assert!(private.deliver_turn(Vec::new()).is_empty());
+    assert_eq!(private.terminal.undelivered.len(), 1);
+    let PrivateOrderedItem::Refused { custody, .. } = &private.terminal.undelivered[0].item else {
+        panic!("the unresolved original head remains owned");
+    };
+    assert!(Arc::ptr_eq(&custody.input_completion().unwrap().cell, &head_cell));
+    assert_eq!(head_cell.answer(), None);
+    assert_eq!(tail_cell.answer(), Some(XAuthorityClientInputDelivery {
+        client: ready_client,
+        delivery: tail_id,
+        outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
+    }));
+    assert_eq!(durable.reserved(), Some(1), "only the tail returned its original credit");
+    assert!(recovery.state.lock().unwrap().tickets.insert(head_id, head).is_none());
+    assert!(private.deliver_turn(Vec::new()).is_empty());
+    assert!(private.terminal.undelivered.is_empty());
+    assert_eq!(head_cell.answer().unwrap().outcome, XAuthorityInputDeliveryOutcome::RouteRejected);
+    assert_eq!(durable.reserved(), Some(0));
 }
 
 #[test]
