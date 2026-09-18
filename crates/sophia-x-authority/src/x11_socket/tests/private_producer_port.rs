@@ -369,7 +369,7 @@ fn two_connections_on_one_service_each_receive_only_their_own_presses() {
 }
 
 #[test]
-fn two_origins_on_one_owner_issue_producers_only_for_their_own_connections() {
+fn two_origins_each_over_its_own_owner_issue_producers_only_for_their_own_connections() {
     let (origin_a, socket_a) = launch_producing("producer-origin-a", 9605, 4);
     let (origin_b, socket_b) = launch_producing("producer-origin-b", 9606, 4);
     origin_a.access.await_ready(Duration::from_secs(15)).expect("A ready");
@@ -380,9 +380,13 @@ fn two_origins_on_one_owner_issue_producers_only_for_their_own_connections() {
         admitted_connection(&origin_b, &socket_b, 0x0e51);
     let id_a = custody_a.cleanup_record().client;
     let id_b = custody_b.cleanup_record().client;
-    // The two services are separate owners: each port answers only a lease
-    // on its own owner, and A's runner knows nothing of B's connection even
-    // when asked under A's own lease with B's number.
+    // These fresh origins deliberately collide on the local client number.
+    // Their different windows produce distinct surface IDs, so B's surface
+    // is absent from A even though B's client number names A's own client.
+    // Each port still requires its own owner's lease.
+    assert_eq!(id_a, id_b, "the same local client number in two origins");
+    assert_ne!(surface_a, surface_b, "distinct surfaces in the two origins");
+    assert_ne!(window_a, window_b, "distinct wire targets despite local ID collisions");
     let owner_a = Arc::clone(&origin_a.owner);
     let owner_b = Arc::clone(&origin_b.owner);
     let lease_a = owner_a.lease();
@@ -392,7 +396,8 @@ fn two_origins_on_one_owner_issue_producers_only_for_their_own_connections() {
         Some(PrivateProducerRefusal::ForeignServiceOwner),
         "B's lease at A's port"
     );
-    let crossed = origin_a.access.ingress_for(&lease_a, id_b, DeviceId::from_raw(1));
+    let crossed = origin_a.access.ingress_for(&lease_a, id_b, DeviceId::from_raw(1))
+        .expect("B's local number names A's own connection at A's port");
     let control_a = origin_a.access.control_producer(&lease_a).expect("A's control");
     let control_b = origin_b.access.control_producer(&lease_b).expect("B's control");
     let (focus_a, focus_in_a) = apply_focus(&origin_a, &control_a, &mut client_a, id_a, surface_a, 96501);
@@ -409,6 +414,34 @@ fn two_origins_on_one_owner_issue_producers_only_for_their_own_connections() {
         .expect("accepted by B");
     let on_b = read_event(&mut client_b, 5);
     let on_a_from_b = read_event(&mut client_a, 1);
+    // Return each pointer to neutral before the crossed request. Repeating a
+    // held press could join an existing hold without owing an event and make
+    // silence look like cross-target refusal.
+    ingress_a
+        .submit(&lease_a, button_to(surface_a, XAuthorityInputDeliveryId::from_raw(96511), 272, false))
+        .expect("A's release accepted");
+    let release_a = read_event(&mut client_a, 5);
+    ingress_b
+        .submit(&lease_b, button_to(surface_b, XAuthorityInputDeliveryId::from_raw(96611), 272, false))
+        .expect("B's release accepted");
+    let release_b = read_event(&mut client_b, 5);
+    let releases_answered = waited_for(|| {
+        delivery_cell(&origin_a.registry, 96511).is_some_and(|cell| cell.answer().is_some())
+            && delivery_cell(&origin_b.registry, 96611).is_some_and(|cell| cell.answer().is_some())
+    });
+    // Both services are still serving. A's ingress carries A's origin, so an
+    // accepted press naming B's surface cannot resolve through B's registry.
+    // Capture its actual admission and both live wires before either stop;
+    // the returned tally below establishes its execution refusal.
+    let crossed_submission = crossed
+        .submit(&lease_a, button_to(surface_b, XAuthorityInputDeliveryId::from_raw(96520), 272, true))
+        .map_err(|refusal| format!("{refusal:?}"));
+    let crossed_on_a = read_event(&mut client_a, 1);
+    let crossed_on_b = read_event(&mut client_b, 1);
+    let crossed_answer = delivery_cell(&origin_a.registry, 96520).and_then(|cell| cell.answer());
+    let ports_live = (origin_a.access.standing(), origin_b.access.standing());
+    let frames_live = (custody_a.cleanup_record().destruction_standing(), custody_b.cleanup_record().destruction_standing());
+    let writers_live = (control_a.routing.control_writer_present(id_a), control_b.routing.control_writer_present(id_b));
     origin_a.commands.send(XServerFrontendServiceCommand::StopAndDisconnect).expect("A listening");
     origin_b.commands.send(XServerFrontendServiceCommand::StopAndDisconnect).expect("B listening");
     let registry_a = origin_a.registry.clone();
@@ -417,20 +450,16 @@ fn two_origins_on_one_owner_issue_producers_only_for_their_own_connections() {
     let outcome_b = produced_outcome(origin_b, "origin B");
     let seen_a = observe_worker(&custody_a, &registry_a);
     let seen_b = observe_worker(&custody_b, &registry_b);
-    // Whether B's number is a stranger to A or happens to be A's own number
-    // for a different connection, A never addresses B's connection: the
-    // ingress it might issue is for its own client of that number.
-    if let Ok(crossed) = crossed {
-        let submitted = crossed
-            .submit(&lease_a, button_to(surface_b, XAuthorityInputDeliveryId::from_raw(96520), 272, true))
-            .map(|_| ())
-            .map_err(|refusal| format!("{refusal:?}"));
-        assert_eq!(
-            read_event(&mut client_b, 1),
-            None,
-            "nothing of it reaches B's wire, whether A's order accepted it ({submitted:?}) or not"
-        );
-    }
+    assert_eq!(release_a, Some(expected_button_event(false, sequence_a, window_a, 1)));
+    assert_eq!(release_b, Some(expected_button_event(false, sequence_b, window_b, 1)));
+    assert!(releases_answered, "both original holds released and answered before crossing");
+    assert!(crossed_submission.is_ok(), "crossed admission: {crossed_submission:?}");
+    assert_eq!(crossed_on_a, None, "the foreign surface is not re-addressed to A's window");
+    assert_eq!(crossed_on_b, None, "nothing reaches B's live wire");
+    assert_eq!(crossed_answer, None, "execution refusal is not a delivery receipt");
+    assert_eq!(ports_live, (PrivatePortStanding::Ready, PrivatePortStanding::Ready));
+    assert_eq!(frames_live, (PrivateDestructionStanding::NotRequested, PrivateDestructionStanding::NotRequested));
+    assert_eq!(writers_live, (true, true), "both wires still had their live connection writers");
     assert_eq!((focus_a, focus_b), (Some(XAuthorityControlOutcome::Delivered), Some(XAuthorityControlOutcome::Delivered)));
     assert_eq!(focus_in_a, Some(expected_focus_in(sequence_a, window_a)));
     assert_eq!(focus_in_b, Some(expected_focus_in(sequence_b, window_b)));
@@ -439,6 +468,11 @@ fn two_origins_on_one_owner_issue_producers_only_for_their_own_connections() {
     assert_eq!((on_b_from_a, on_a_from_b), (None, None), "no cross-targeting");
     assert_eq!(outcome_a.ok, Some(true), "{:?}", outcome_a.error);
     assert_eq!(outcome_b.ok, Some(true), "{:?}", outcome_b.error);
+    let order_a = outcome_a.order.expect("A's actual execution tally");
+    assert_eq!((order_a.taken, order_a.refused, order_a.routed, order_a.dispatched), (4, 1, 1, 2), "{order_a:?}");
+    assert_eq!(order_a.last_refusal, Some(PrivateExecutionRefusal::NotDecided(
+        sophia_input_authority::RequestCompletion::Refused(sophia_input_authority::RegistrationError::RoutingUnavailable),
+    )), "the crossed surface was refused during A's guarded resolution: {order_a:?}");
     assert_collected_running(&seen_a, "A");
     assert_collected_running(&seen_b, "B");
     let _ = std::fs::remove_file(&socket_a);

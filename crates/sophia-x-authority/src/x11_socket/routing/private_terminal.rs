@@ -120,13 +120,6 @@ enum PrivateDeliveryStep {
     },
 }
 
-/// What one bounded step of the order did.
-///
-/// Carries a sequence and never an item. What was taken is stored in this
-/// instance before the step returns, so a caller doing fallible accounting
-/// afterwards is never the only holder of accepted work: a failure there ends
-/// the call, not the obligation. Two of these are facts about the order rather
-/// than about an item -- nothing waiting, or nothing may run yet -- and a
 /// One control or lease-release operation being routed from the order.
 ///
 /// FRONTEND-OWNED FOR THE WHOLE INTERVAL. Between the supervisor taking the
@@ -163,9 +156,14 @@ pub enum PrivateRoutingPoint {
     AfterEffect,
 }
 
-/// What one step of the ordered path did, for the caller that has to
-/// account for it: a runner charging a budget and marking a watchdog. A
-/// caller told only "no item" could not tell them apart.
+/// What one bounded step of the ordered path did, for the caller that has to
+/// account for it: a runner charging a budget and marking a watchdog.
+///
+/// Carries a sequence and never an item. What was taken is stored in this
+/// instance before the step returns, so a caller doing fallible accounting
+/// afterwards is never the only holder of accepted work: a failure there ends
+/// the call, not the obligation. Idle and blocked describe the order rather
+/// than an item; a caller told only "no item" could not tell them apart.
 #[cfg(unix)]
 enum PrivateOrderedStep {
     /// The order had nothing waiting.
@@ -210,7 +208,7 @@ enum PrivateOrderedStep {
     RoutedUnwatched(crate::ReadySequence),
 }
 
-/// to expose now.
+/// The execution result and custody one ordered item exposes to its caller.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))]
 enum PrivateOrderedItem {
@@ -389,10 +387,11 @@ impl PrivateXServerFrontend {
             return Ok(parked);
         }
         // ADMITTED, AND NOT INPUT: the held operation is routed now, from
-        // this instance's custody and under the supervisor. Out of the parked
-        // slot into the attempt BEFORE the watchdog begins, so no interval
-        // holds it in a local; the barrier stays up until the outcome is
-        // recorded. The registry hands a control to its client's writer or
+        // this instance's custody and under the supervisor. The watchdog
+        // begins while the operation is still parked, then the operation
+        // moves into the owned attempt before its effect. The barrier stays
+        // up until the outcome is recorded. The registry hands a control to
+        // its client's writer or
         // retires the lease -- real registry, input and focus guards -- so the
         // watchdog is begun before those acquisitions and finished only after
         // the outcome is durably recorded. Routed is not a receipt: the

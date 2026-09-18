@@ -27,6 +27,11 @@ trait RoutedBrokerAccess {
     /// Answer the producer requests waiting at the port, if this service has
     /// one. The public broker has none.
     fn answer_producers(&mut self) -> Result<usize, X11SetupSocketError>;
+    /// End private issuance and acceptance at a cancelling stop decision,
+    /// before reporting cancellation or stopping connection workers. Accepted
+    /// work stays with its existing owners. Safe to repeat; the public broker
+    /// has no private producers to close.
+    fn close_private_producers(&mut self);
 }
 
 #[cfg(unix)]
@@ -44,6 +49,7 @@ impl RoutedBrokerAccess for XServerFrontendRouteBroker {
     fn answer_producers(&mut self) -> Result<usize, X11SetupSocketError> {
         Ok(0)
     }
+    fn close_private_producers(&mut self) {}
 }
 
 /// What one invocation's order did, over every turn, for the owner to read
@@ -103,7 +109,8 @@ impl PrivateOrderTally {
 ///
 /// THE RUNNER IS BORROWED FROM THE COLLECTION GUARD that owns it for the
 /// invocation, so nothing here can move it off the service thread or
-/// finalise it; the guard's exit closes its admission before any wait.
+/// finalise it. A cancelling loop exit closes its producers through this
+/// adapter; the guard repeats that closure before collection on every exit.
 #[cfg(unix)]
 struct LeasedPrivateBroker<'a, 'o> {
     runner: &'a mut PrivatePreparedRunner,
@@ -156,5 +163,8 @@ impl RoutedBrokerAccess for LeasedPrivateBroker<'_, '_> {
         self.order.producers_refused += refused;
         Ok(issued + refused)
     }
+    fn close_private_producers(&mut self) {
+        self.port.close();
+        self.runner.close_admission();
+    }
 }
-
