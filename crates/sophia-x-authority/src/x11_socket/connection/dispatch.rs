@@ -679,6 +679,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         } else {
             (None, input_receiver, control_channels, None)
         };
+    let control_cleanup_source = match (protocol_routing.as_ref(), route_registration.as_ref()) {
+        (Some(routing), Some(registration)) => routing.prepare_control_source(registration, state, resource_id_range)?,
+        _ => None,
+    };
     let mut last_published_observation = None;
     let standalone_query_authority = if protocol_routing.is_none() {
         Some(state.runtime.lock()
@@ -2703,12 +2707,20 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         .release_client_device_bundle(client.raw());
     let client_lease = state.release_client(client)?;
     debug_assert_eq!(client_lease.resource_id_range, resource_id_range);
-    let mut release = release_x11_client_lease(state, namespace, client_lease)?;
+    let mut release = if let Some(source) = &control_cleanup_source {
+        release_x11_client_lease_with_control(state, namespace, client_lease, Some(source))?
+    } else {
+        release_x11_client_lease(state, namespace, client_lease)?
+    };
     release.released_dma_bufs.extend(state.runtime.lock()
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
         .take_retired_pixmap_registrations(namespace));
     release.released_dma_bufs.sort_unstable();
     release.released_dma_bufs.dedup();
+    if let Some(source) = &control_cleanup_source {
+        source.teardown.lock().map_err(|_| X11SetupSocketError::new("control teardown unavailable"))?
+            .removed.as_mut().ok_or_else(|| X11SetupSocketError::new("control removal receipt missing"))?.resources = release.clone();
+    }
     // The selections this client owned ended with it, and its watchers are
     // owed that. Drained before the subscriptions are retired below, because
     // those are what name the recipients.
@@ -2891,7 +2903,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             metadata_candidates: Vec::new(),
         };
         
-        observer(X11DispatchObservation {
+        let observation = X11DispatchObservation {
             transaction,
             client,
             admission: admission_lease.as_ref().map(|lease| lease.context()),
@@ -2914,8 +2926,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             released_dma_bufs: release.released_dma_bufs,
             released_fences: release.released_fences,
             server_reply_fd_count: 0,
-        }).map(|_| ())
+        };
+        if let Some(source) = &control_cleanup_source {
+            source.retain_teardown_publication(&observation)?;
+        }
+        observer(observation).map(|_| ())
     };
+    if cleanup_observer_result.is_ok() && let Some(source) = &control_cleanup_source {
+        source.finish_teardown()?;
+    }
     let admission_result = admission_lease.as_mut().map_or(Ok(()), |lease| {
         lease.revoke().map_err(|error| {
             X11SetupSocketError::new(format!("failed to revoke X11 client admission: {error}"))

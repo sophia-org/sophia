@@ -167,6 +167,8 @@ include!("x11_socket/connection/event_state.rs");
 include!("x11_socket/connection/focus.rs");
 include!("x11_socket/connection/writers.rs");
 include!("x11_socket/connection/control_writer.rs");
+include!("x11_socket/connection/private_control_source.rs");
+include!("x11_socket/routing/private_control_cleanup.rs");
 
 #[cfg(unix)]
 const X11_CLIENT_RESOURCE_RANGE_SIZE: u32 = X_SETUP_DEFAULT_RESOURCE_ID_MASK + 1;

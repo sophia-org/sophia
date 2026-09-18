@@ -1254,3 +1254,6 @@ include!(concat!(
 ));
 
 include!("tests/ordered_codec.rs");
+
+#[path = "../../tests/support/private_control_cleanup.rs"]
+mod private_control_cleanup;

@@ -4,6 +4,7 @@
 /// guard. Removing the route removes its discoverability, with no history map.
 #[cfg(unix)]
 struct PrivateAppliedClientState {
+    control_source: std::sync::OnceLock<std::sync::Weak<PrivateControlClientSource>>,
     registry: std::sync::Weak<
         Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>,
     >,
@@ -111,6 +112,7 @@ impl XServerFrontendRouteRegistry {
         entry
             .connection_state
             .set(PrivateAppliedClientState {
+                control_source: std::sync::OnceLock::new(),
                 registry: Arc::downgrade(&self.clients),
                 namespace,
                 selections,
