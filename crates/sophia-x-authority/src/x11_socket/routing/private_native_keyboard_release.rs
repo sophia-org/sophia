@@ -101,6 +101,7 @@ impl Guards<'_> {
         let (_, modifiers) = keyboard
             .map_evdev_key(hold.evdev, false)
             .expect("retained valid key");
+        hold.release_xkb_applied = true;
         let Some(after) = keyboard.ordered_state() else {
             hold.status = Status::Retained(Residual::KeyboardUnavailable);
             return Ok((outcome, Err(PrivateAppliedRefusal::Interrupted)));

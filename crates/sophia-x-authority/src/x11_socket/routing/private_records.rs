@@ -16,7 +16,9 @@
 pub struct PrivateReachedResources {
     client: XServerFrontendClientId,
     window: XResourceId,
-    surface: SurfaceId,
+    /// The compositor surface containing the reached window, when registered.
+    /// An X root or unregistered target can have no compositor surface.
+    surface: Option<SurfaceId>,
     namespace: NamespaceId,
     /// The seat whose pointer state this hold moved.
     ///
@@ -54,7 +56,7 @@ impl PrivateReachedResources {
     pub fn window(self) -> XResourceId {
         self.window
     }
-    pub fn surface(self) -> SurfaceId {
+    pub fn surface(self) -> Option<SurfaceId> {
         self.surface
     }
     pub fn namespace(self) -> NamespaceId {

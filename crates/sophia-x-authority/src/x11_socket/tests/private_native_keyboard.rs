@@ -133,10 +133,12 @@ mod keys {
             base.run(&base.role, |permit, bindings| {
                 let registry = &base.private.broker.registry;
                 let clients = registry.clients.lock().unwrap();
+                let surfaces = registry.surfaces.lock().unwrap();
                 base.owner.lock_base()?.press_key(
                     permit,
                     base.role.capability,
                     &route,
+                    &surfaces,
                     keyboards,
                     hold,
                     &applied,
@@ -924,4 +926,5 @@ mod keys {
     }
     include!("private_native_key_routing.rs");
     include!("../../../tests/support/private_native_custody.rs");
+    include!("../../../tests/support/private_key_metadata.rs");
 }

@@ -1,5 +1,5 @@
-// Source/custody controls only. Key dispatch remains refused by the executor;
-// these do not establish a service key path or surviving runner XKB history.
+// Source/custody controls only. These do not by themselves establish a
+// service key path or surviving runner XKB history.
 
 fn press_key_into_inventory(
     fixture: &mut KeyFixture,
@@ -103,7 +103,13 @@ fn key_native_custody_carries_both_events_and_only_its_source_proof() {
     let reached = PrivateReachedResources {
         client: client(),
         window: window(),
-        surface: surface(),
+        surface: inventory
+            .native_pending
+            .key_slot()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .reached_surface(),
         namespace: namespace(),
         seat: seat(),
         grant: fixture.base.role.capability.grant(),

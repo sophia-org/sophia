@@ -12701,9 +12701,10 @@ fn a_key_press_refuses_rather_than_delivering_on_queued_focus() {
         keycode: 30,
         pressed: true,
     };
+    private.broker.registry.input_recovery.admit_typed(&key, 1, Instant::now()).unwrap();
     let refused = private.run_ordered_input(keyboards, &key, &custody, watch);
     assert!(
-        matches!(refused, Err(crate::PrivateExecutionRefusal::FocusNotApplied)),
+        matches!(refused, Err(crate::PrivateExecutionRefusal::Native(private_native::Refusal::Resolution(PrivateAppliedRefusal::FocusNotApplied)))),
         "the reason is the missing applied focus, not an authority error standing in for it, got {refused:?}"
     );
 
@@ -15650,7 +15651,7 @@ fn a_consumer_refusal_hands_back_the_custody_it_was_accepted_with() {
     );
     assert!(matches!(
         refusal,
-        crate::PrivateExecutionRefusal::FocusNotApplied
+        crate::PrivateExecutionRefusal::Native(private_native::Refusal::Resolution(PrivateAppliedRefusal::FocusNotApplied))
     ));
     assert_eq!(
         route.request.target_surface, surface,
@@ -15661,8 +15662,10 @@ fn a_consumer_refusal_hands_back_the_custody_it_was_accepted_with() {
     // something is not the order never having accepted it, so the custody is
     // still here to be settled rather than erased by the decision.
     assert!(
-        matches!(custody.observe(), Ok(None)),
-        "nothing ran, so there is no outcome yet -- but the right to take one survived"
+        matches!(custody.observe(), Ok(Some(sophia_input_authority::RequestCompletion::Refused(
+            sophia_input_authority::RegistrationError::StaleExecution
+        )))),
+        "the guarded source refused; its authority completion remains observable"
     );
 }
 

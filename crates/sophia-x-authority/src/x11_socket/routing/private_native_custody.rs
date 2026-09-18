@@ -96,10 +96,6 @@ impl PrivateNativeHold {
         }
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "ordered key execution remains disabled")
-    )]
     fn key(&self) -> Option<&private_native::KeyHold> {
         match self {
             Self::Pointer(_) => None,
@@ -107,10 +103,6 @@ impl PrivateNativeHold {
         }
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "ordered key execution remains disabled")
-    )]
     fn key_mut(&mut self) -> Option<&mut private_native::KeyHold> {
         match self {
             Self::Pointer(_) => None,
@@ -167,13 +159,6 @@ impl PrivateNativePending {
         }
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "source composition precedes ordered key enablement"
-        )
-    )]
     fn key_slot(
         &mut self,
     ) -> Result<&mut Option<private_native::KeyHold>, private_native::Refusal> {
@@ -193,6 +178,13 @@ impl PrivateNativePending {
         match self {
             Self::Pointer(hold) => hold.as_ref(),
             Self::Key(_) => None,
+        }
+    }
+
+    fn key(&self) -> Option<&private_native::KeyHold> {
+        match self {
+            Self::Pointer(_) => None,
+            Self::Key(hold) => hold.as_ref(),
         }
     }
 

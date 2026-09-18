@@ -127,10 +127,9 @@ pub(crate) enum PrivateExecutionRefusal {
     SeatUnavailable,
     /// The input does not name anything this authority can validate.
     Unmappable,
-    /// A new key press needs an authoritative reached target, and the only
-    /// focus record available is an intent that was queued rather than one a
-    /// writer applied. Refused rather than delivered somewhere plausible.
-    FocusNotApplied,
+    /// Ordered native StateOnly/thaw custody is not implemented. This mode
+    /// cannot be treated as an ordinary delivery.
+    StateOnlyUnsupported,
     /// This executor already holds as many records as it may.
     ///
     /// Refused before the effect, so nothing is applied that could not then be

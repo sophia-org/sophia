@@ -19,6 +19,7 @@ struct ProducingLaunch {
     handle: std::thread::JoinHandle<ProducedOutcome>,
     finished: Receiver<()>,
     registry: XServerFrontendRouteRegistry,
+    controller: PrivateAuthorityController,
     raster: XServerFrontendRasterRouter,
     commands: SyncSender<XServerFrontendServiceCommand>,
     transactions: Receiver<XAuthorityObservedTransactionBatch>,
@@ -52,6 +53,9 @@ struct ProducedOutcome {
     /// The returned settlement's terminal counts (holds, settling,
     /// delivering, undelivered, pending custody), if a settlement returned.
     terminal: Option<(usize, usize, usize, usize, bool)>,
+    /// Exact source proof and writer completion observations, read while the
+    /// returned inventory still owns each release (no proof is fabricated).
+    key_releases: Vec<KeyServiceReleaseObservation>,
 }
 
 /// A hold record's exact identity: whose window it reached, and whether its
@@ -171,7 +175,7 @@ fn launch_producing_observed(
         *service_thread.lock().expect("a writable slot") = Some(std::thread::current().id());
         let private = crate::PrivateXServerFrontend::new(parts, &service_owner)
             .unwrap_or_else(|(refusal, _)| panic!("a frontend over this owner: {refusal:?}"));
-        let _ = registry_out.send((private.broker.registry.clone(), private.broker.raster_router()));
+        let _ = registry_out.send((private.broker.registry.clone(), private.broker.raster_router(), private.controller.clone()));
         let lease = service_owner.lease();
         let mut execution = PrivateServiceExecutionKeeper::new();
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -189,10 +193,12 @@ fn launch_producing_observed(
         let unwound = outcome.is_err();
         let mut retained_holds = Vec::new();
         let mut terminal = None;
+        let mut key_releases = Vec::new();
         let (ok, error, workers, uncollected, maintenance, order) = match outcome.ok() {
             Some(Ok(ret)) => {
                 retained_holds = holds_of(ret.settlement.terminal.as_ref());
                 terminal = terminal_counts(ret.settlement.terminal.as_ref());
+                key_releases = observe_key_service_releases(ret.settlement.terminal.as_ref());
                 (
                     Some(true),
                     None,
@@ -213,6 +219,7 @@ fn launch_producing_observed(
                 let order = *order;
                 retained_holds = holds_of(settlement.terminal.as_ref());
                 terminal = terminal_counts(settlement.terminal.as_ref());
+                key_releases = observe_key_service_releases(settlement.terminal.as_ref());
                 (
                     Some(false),
                     Some(error.to_string()),
@@ -292,9 +299,10 @@ fn launch_producing_observed(
             retained_holds,
             store_holds,
             terminal,
+            key_releases,
         }
     });
-    let (registry, raster) = registry_in
+    let (registry, raster, controller) = registry_in
         .recv_timeout(Duration::from_secs(15))
         .expect("the launch built its frontend");
     (
@@ -302,6 +310,7 @@ fn launch_producing_observed(
             handle,
             finished,
             registry,
+            controller,
             raster,
             commands,
             transactions,
