@@ -773,7 +773,7 @@ fn a_press_before_applied_focus_is_answered_refused_and_a_fresh_press_can_follow
     assert_eq!(focus_in, Some(expected_focus_in(sequence, window)));
     assert_eq!(still_nothing, None, "the applied focus replays nothing");
     assert_eq!(answered_after_focus.map(|receipt| receipt.outcome), Some(XAuthorityInputDeliveryOutcome::RouteRejected));
-    assert_eq!(new_press, Some(expected_button_event(true, sequence, window, 1)));
+    assert_eq!(new_press, Some(expected_button_event(true, sequence, window, 1)), "fresh={fresh_answer:?}; order={order:?}; error={:?}; terminal={:?}", outcome.error, outcome.terminal);
     assert_eq!(fresh_answer.map(|receipt| receipt.outcome), Some(XAuthorityInputDeliveryOutcome::Flushed));
     assert!(client_ended);
     assert_eq!(outcome.ok, Some(true), "{:?}", outcome.error);
