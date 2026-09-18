@@ -1,6 +1,12 @@
 {
   "schema": 1,
   "suites": {
+    "transient-thaw": [
+      "x11_socket::routing_tests::service_pointer_async_thaw_keeps_original_motion_axis_cells_and_output_order",
+      "x11_socket::routing_tests::service_motion_and_axis_use_the_original_request_and_reclaim_exact_writer_receipts",
+      "x11_socket::routing_tests::transient_full_queue_preserves_exact_pair_token_and_accumulator_without_reselection",
+      "x11_socket::routing_tests::transient_axis_smooth_and_emulated_selections_are_independent_and_accumulate_once"
+    ],
     "final-custody": [
       "x11_socket::routing_tests::final_completion_keeps_original_internal_home_when_external_custody_is_withheld",
       "x11_socket::routing_tests::final_custody_waits_for_actual_settlement_handoff_and_original_storage_return",

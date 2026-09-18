@@ -35,6 +35,9 @@ fn resolve_and_apply_transient(
         notes.native_refusal = Some(cause);
         Error::RoutingUnavailable
     })?;
+    if notes.defer_freeze(guards.freeze(bindings, &clients, notes.freeze_witness(), false))? {
+        return Ok(());
+    }
     prepare_key_custody(
         registry,
         route,
