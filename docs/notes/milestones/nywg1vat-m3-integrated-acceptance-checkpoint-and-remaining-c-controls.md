@@ -23,6 +23,11 @@ unchanged-source check are recorded in that report. All A, B and D cases and
 four C cases pass together. C.indeterminate_send and C.control_cleanup remain
 unbound, so the aggregate is NOT_RUN.
 
+The integration branch repeated that result on signed `39374df4`: 18 PASS,
+zero FAIL, the same two cases NOT_RUN, with source attestation and unchanged
+source confirmed. That run also includes the final B allowance-wait helper;
+its report is `.artifacts/m3-finish/parent-39374df4-acceptance/report.json`.
+
 The earlier signed source `8b4be691e3d71459102245a1dccf6d15ea2ca401` was run
 through `cargo xtask check m3-acceptance`. The report is
 `.artifacts/m3-finish/parent-all-bound-18/report.json` in the common repository.
