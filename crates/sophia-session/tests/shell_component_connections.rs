@@ -633,6 +633,57 @@ fn borrowed_native_content_places_real_wire_request_without_granting_early_focus
         "reply must not mint a server transaction"
     );
     assert_eq!((permit.demand_id, permit.state), (1, 1));
+    h.owner
+        .with_connection(key, |t| {
+            let close_tx = TransactionId::from_raw(914);
+            let mut wrong = opening;
+            wrong.opening += 1;
+            assert!(
+                service
+                    .begin_close(t, wrong, close_tx, ContentReason::Cancelled)
+                    .is_err()
+            );
+            service
+                .begin_close(t, opening, close_tx, ContentReason::Cancelled)
+                .unwrap();
+            assert!(
+                service
+                    .begin_close(
+                        t,
+                        opening,
+                        TransactionId::from_raw(915),
+                        ContentReason::Cancelled
+                    )
+                    .is_err()
+            );
+            // No native candidate was submitted. Pixel absence must not imply that
+            // the active allocation or the connection's grant has been released.
+            for _ in 0..2 {
+                assert!(
+                    service
+                        .service_close_pixels(t, &mut runtime, &scene, None)
+                        .unwrap()
+                );
+                assert_eq!(t.content_allocation_snapshots().len(), 1);
+                assert_eq!(t.content_grant(), Some(key.grant));
+            }
+            assert!(
+                service
+                    .service_open(
+                        t,
+                        &catalog,
+                        &mut runtime,
+                        &scene,
+                        None,
+                        &outputs,
+                        &[(outputs[0].id, root)],
+                        root,
+                        &mut || Ok(TransactionId::from_raw(916)),
+                    )
+                    .is_err()
+            );
+        })
+        .unwrap();
     h.owner.close(key).unwrap();
     h.owner.collect();
     let replacement = h.owner.reserve_attempt(1).unwrap();

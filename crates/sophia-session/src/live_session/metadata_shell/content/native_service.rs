@@ -5,6 +5,8 @@ use sophia_runtime::{ContentCandidateContext, NativeLauncherCandidateContext};
 
 #[path = "native_service/allocation.rs"]
 mod allocation;
+#[path = "native_service/closing.rs"]
+mod closing;
 
 type ServiceResult<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -14,6 +16,9 @@ type ServiceResult<T> = Result<T, Box<dyn std::error::Error>>;
 pub struct NativeLauncherContentService {
     grant: ContentGrant,
     content: LiveContentSession,
+    opening: Option<sophia_protocol::NativeLauncherOpening>,
+    submitted: Option<u64>,
+    closing: Option<closing::Closing>,
 }
 
 impl NativeLauncherContentService {
@@ -26,6 +31,9 @@ impl NativeLauncherContentService {
                 .content_grant()
                 .ok_or(ShellTransportError::MissingCapability)?,
             content: LiveContentSession::new(true, true, None),
+            opening: None,
+            submitted: None,
+            closing: None,
         })
     }
 
@@ -62,6 +70,10 @@ impl NativeLauncherContentService {
         let (opening, state_revision) = transport
             .native_launcher_state()
             .ok_or(ShellTransportError::WrongCandidate)?;
+        if self.closing.is_some() || self.opening.is_some_and(|owned| owned != opening) {
+            return Err(ShellTransportError::WrongActivation.into());
+        }
+        self.opening = Some(opening);
         if catalog.connection_epoch != self.grant.connection_epoch
             || catalog.generation != opening.catalog_generation
         {
@@ -131,6 +143,7 @@ impl NativeLauncherContentService {
                 sophia_backend_live::LiveShellContentLayer::Launcher,
                 now,
             )?;
+            self.submitted = Some(generation);
         }
         Ok(())
     }

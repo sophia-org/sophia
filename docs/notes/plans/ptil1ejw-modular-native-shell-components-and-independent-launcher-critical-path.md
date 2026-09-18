@@ -592,3 +592,26 @@ receipt, allocation invalidation, resource consumption and reopen gating. The
 live component process/catalog/keyboard/launch/shutdown join, exact canonical and
 `lom-test` readiness remain open. No display/device/VT run, installation, push or
 M3 import occurred.
+
+### Session retains the exact native close through pixel removal (2026-09-18)
+
+`NativeLauncherContentService` now retains the serviced opening, last submitted
+candidate, close transaction/reason and backend removal receipt across visits.
+Close is recorded before fallible transport work; contradictory retries refuse.
+Closing service drains the existing bounded late-content/input paths, observes
+real pending presentation, and uses the existing exact backend removal API.
+A receipt remains owned until actual replacement presentation confirms absence.
+Neither a true pixel-absence result nor an empty drain permits reopening or
+releases allocations. This tranche intentionally retains the close afterward;
+allocation invalidation, actual resource settlement and live owner integration
+remain required next work, not completed lifecycle claims.
+
+Evidence: `.artifacts/bemenu-session-close-owner/` records device-hidden Session
+471 PASS / 14 ignored and seven component-connection tests PASS, strict Session
+Clippy and layout. The extended private-socket control refuses wrong opening and
+changed close transaction, repeats the no-submitted-pixels transition, retains
+the actual active allocation and grant, and refuses open service afterward.
+That control does not execute the submitted native removal branch, a protected
+child, GPU/KMS, or live close/reopen. Existing backend removal evidence retains
+its separate scope. No current canonical, publication or physical readiness is
+claimed by this checkpoint.
