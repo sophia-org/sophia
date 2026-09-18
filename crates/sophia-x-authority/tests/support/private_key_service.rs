@@ -212,7 +212,9 @@ fn service_shift_a_chord_uses_one_history_and_settles_exact_native_and_writer_ob
         order.turns >= 7,
         "each event waited for its writer before the next submission"
     );
-    assert_eq!(outcome.key_releases.len(), 3);
+    assert!(outcome.key_releases.len() <= 3);
+    assert_eq!(order.native_disposed + outcome.terminal.unwrap().1, 4,
+        "all three key releases and the pointer release are either exactly disposed or still owned");
     for release in &outcome.key_releases {
         assert_eq!(release.reached.client(), client_id);
         assert_eq!(release.reached.window().local.raw(), u64::from(window));
@@ -474,7 +476,9 @@ fn service_key_join_survivor_and_focus_move_keep_the_original_history_and_endpoi
     let outcome = produced_outcome(launched, "joined key and focus move");
     let order = outcome.order.unwrap();
     assert_eq!((order.refused, order.dispatched), (0, 6), "{order:?}");
-    assert_eq!(outcome.key_releases.len(), 2);
+    assert!(outcome.key_releases.len() <= 2);
+    assert_eq!(order.native_disposed + outcome.terminal.unwrap().1, 3,
+        "both key releases and the pointer release have an exact disposition");
     for release in outcome.key_releases {
         assert_eq!(release.reached.client(), client_1);
         assert_eq!(release.reached.surface(), Some(surface_1));

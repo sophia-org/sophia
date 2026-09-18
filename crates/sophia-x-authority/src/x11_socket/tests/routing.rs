@@ -13066,6 +13066,7 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
                 PrivateDeliveryStep::Idle => panic!("traffic was ready, so no step is idle"),
                 PrivateDeliveryStep::SharedActivation { .. } => {}
                 PrivateDeliveryStep::TransientReceipt { .. } => {}
+                PrivateDeliveryStep::NativeDisposal { .. } => {}
                 PrivateDeliveryStep::Blocked(_) => panic!("no entry is indeterminate here"),
             }
         }

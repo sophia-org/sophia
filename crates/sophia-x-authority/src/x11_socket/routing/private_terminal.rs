@@ -110,6 +110,8 @@ enum PrivateDeliveryStep {
     SharedActivation { observed: usize, joined: usize },
     /// One exact transient completion observed; no common hold is settled.
     TransientReceipt { disposed: bool },
+    /// One completed native record or one of its exact dependencies visited.
+    NativeDisposal { disposed: bool },
     /// The entry at the head cannot be described, so nothing may be done with
     /// it. Not the same as nothing waiting.
     ///
@@ -633,6 +635,14 @@ impl PrivateXServerFrontend {
                     enqueued: false,
                     relinquished,
                 });
+            }
+            // Completed records receive alternating native turns even under
+            // continuing deliveries. Their original custody remains installed
+            // until both source facts and every receipt dependency agree.
+            self.terminal.live_disposal.due = !self.terminal.live_disposal.due;
+            if self.terminal.live_disposal.due && self.terminal.owes_live_native_disposal() {
+                let disposed = self.terminal.dispose_live_native_one();
+                return Ok(PrivateDeliveryStep::NativeDisposal { disposed });
             }
             // ARBITRATED, NOT RANKED. Recording has to come first for any ONE
             // release, because the ledger refuses an attempt until that

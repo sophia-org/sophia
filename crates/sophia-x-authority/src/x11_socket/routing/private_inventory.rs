@@ -4,6 +4,13 @@
 // and an obligation that lives in several places is one that can be answered
 // in several places -- or, when an instance goes, in none.
 
+/// Native record capacity is fixed before producer exposure. It follows the
+/// planned authority's input slots, independently of the supplied authority's
+/// capacity or the queue's size. A completed record returns this storage only
+/// after its native, recipient and dependent-receipt obligations settle.
+#[cfg(unix)]
+const PRIVATE_HOLD_RECORDS: usize = sophia_input_authority::Capacity::PLANNED.input_slots();
+
 /// What an instance still owes, in one place that can be handed on.
 ///
 /// Reachable through the live owner, through the settlement handle it returns,
@@ -121,6 +128,7 @@ struct PrivateTerminalInventory {
     settling: Vec<PrivateSettlingRelease>,
     shared_activation: PrivateSharedActivationScan,
     shared_activation_turn: bool,
+    live_disposal: PrivateLiveNativeDisposal,
     /// How many terminal steps have gone to deliveries since native work last
     /// had a turn.
     ///
@@ -243,6 +251,7 @@ impl PrivateTerminalInventory {
             settling,
             shared_activation: PrivateSharedActivationScan::default(),
             shared_activation_turn: true,
+            live_disposal: PrivateLiveNativeDisposal::default(),
             current: None,
             frozen,
             current_freeze: None,
@@ -346,6 +355,7 @@ impl PrivateTerminalInventory {
                 settling: Vec::new(),
                 shared_activation: PrivateSharedActivationScan::default(),
                 shared_activation_turn: true,
+                live_disposal: PrivateLiveNativeDisposal::default(),
                 current: None,
                 frozen: std::collections::VecDeque::new(),
                 current_freeze: None,

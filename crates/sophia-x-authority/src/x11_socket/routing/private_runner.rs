@@ -105,6 +105,9 @@ pub struct PrivateRunnerProgress {
     pub activation_pairs_observed: usize,
     pub activations_joined: usize,
     pub transient_observed: usize,
+    /// Charged live native-custody visits and completed records disposed.
+    pub native_disposal_observed: usize,
+    pub native_disposed: usize,
     pub transient_disposed: usize,
     /// Whether the supervisor failed during this turn.
     ///
@@ -744,6 +747,15 @@ impl PrivatePreparedRunner {
                                 progress.terminal_steps += 1;
                                 progress.transient_observed += 1;
                                 progress.transient_disposed += usize::from(disposed);
+                                if watch_failed { break; }
+                                self.prefer_cleanup = false;
+                                if overran || unwatched.is_some() { break; }
+                                continue;
+                            }
+                            PrivateDeliveryStep::NativeDisposal { disposed } => {
+                                progress.terminal_steps += 1;
+                                progress.native_disposal_observed += 1;
+                                progress.native_disposed += usize::from(disposed);
                                 if watch_failed { break; }
                                 self.prefer_cleanup = false;
                                 if overran || unwatched.is_some() { break; }

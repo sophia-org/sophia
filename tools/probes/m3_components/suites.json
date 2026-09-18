@@ -1,6 +1,14 @@
 {
   "schema": 1,
   "suites": {
+    "live-native-disposal": [
+      "x11_socket::routing_tests::live_native_disposal_waits_for_the_original_press_completion_and_native_source",
+      "x11_socket::routing_tests::live_native_disposal_is_charged_before_observing_and_returns_only_the_exact_record",
+      "x11_socket::routing_tests::service_live_pointer_records_reuse_beyond_the_preallocated_native_bound",
+      "x11_socket::routing_tests::service_live_modifier_records_reuse_beyond_the_preallocated_native_bound",
+      "x11_socket::routing_tests::service_shift_a_chord_uses_one_history_and_settles_exact_native_and_writer_obligations",
+      "x11_socket::routing_tests::service_key_join_survivor_and_focus_move_keep_the_original_history_and_endpoint"
+    ],
     "item-credit": [
       "x11_socket::routing_tests::a_press_before_applied_focus_is_answered_refused_and_a_fresh_press_can_follow_focus",
       "x11_socket::routing_tests::actual_refusal_answers_its_original_delivery_and_allows_bounded_grant_reuse",

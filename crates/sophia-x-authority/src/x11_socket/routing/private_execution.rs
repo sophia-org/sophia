@@ -4,29 +4,6 @@
 // is what happens to one admitted input once it is runnable, and the order its
 // steps happen in is the whole of it.
 
-/// How many holds and settling releases one executor may record.
-///
-/// A policy chosen here, set to the planned authority's input slots because a
-/// hold exists per input aggregate and that is the shape the approved plan
-/// fixes. **Not** a reading of the authority actually supplied to this
-/// instance -- the same distinction as the per-binding grant records. An
-/// authority built larger still gets this many records here; one built smaller
-/// refuses on its own capacity first.
-///
-/// What it does do is keep the records within this policy, enforced before the
-/// effect rather than reserved after it, because reserved storage says a push
-/// will not allocate and says nothing about how many pushes there can be. What
-/// it does **not** do is prove that every supplied authority or carried
-/// generation fits without admission backpressure, and it does not retire
-/// anything: a continuation still held after its debt is settled needs an
-/// owner that retires it, which a count cannot be.
-///
-/// The ready queue's capacity bounds neither: it bounds what one turn admits,
-/// and a hold outlives the turn that began it across any number of drains and
-/// refills.
-#[cfg(unix)]
-const PRIVATE_HOLD_RECORDS: usize = sophia_input_authority::Capacity::PLANNED.input_slots();
-
 #[cfg(unix)]
 impl PrivateXServerFrontend {
     /// Run the item this instance currently owns.
@@ -58,6 +35,7 @@ impl PrivateXServerFrontend {
         };
         terminal.shared_activation.invalidate();
         let blocked_by_frozen = !terminal.current_is_frozen && !terminal.frozen.is_empty();
+        let previous_shape = terminal.native_shape();
         let PrivateTerminalInventory {
             current,
             current_freeze,
@@ -72,7 +50,7 @@ impl PrivateXServerFrontend {
         let Some(PrivateOrderedItem::Refused { custody, route, .. }) = current.as_ref() else {
             return Err(PrivateExecutionRefusal::NotAttempted);
         };
-        execute_owned(
+        let outcome = execute_owned(
             watched,
             native,
             native_pending,
@@ -89,7 +67,11 @@ impl PrivateXServerFrontend {
             custody,
             Some(current_freeze),
             blocked_by_frozen,
-        )
+        );
+        if previous_shape != terminal.native_shape() {
+            terminal.live_disposal.invalidate();
+        }
+        outcome
     }
 
     /// Run one admitted input through the ordered path.
@@ -140,6 +122,7 @@ impl PrivateXServerFrontend {
             return Err(PrivateExecutionRefusal::NativeUnprepared);
         };
         terminal.shared_activation.invalidate();
+        let previous_shape = terminal.native_shape();
         let PrivateTerminalInventory {
             holds,
             settling,
@@ -167,6 +150,9 @@ impl PrivateXServerFrontend {
             None,
             false,
         );
+        if previous_shape != terminal.native_shape() {
+            terminal.live_disposal.invalidate();
+        }
         // Finished on every normal way out, refusals included. What the
         // execution decided wins over a supervisor that would not take the
         // finish: the refusal is the cause, and reporting the watch instead
