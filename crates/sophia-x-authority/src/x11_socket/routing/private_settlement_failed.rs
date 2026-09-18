@@ -132,12 +132,21 @@ impl PrivateSettlementOwner {
             // moved into recovery, nothing is drained from its queue and its
             // charge is not released: recovering it would be settling over
             // the actor by another name.
-            let (standing, recoverable): (Vec<FailedInstance>, Vec<FailedInstance>) =
-                std::mem::take(failed)
-                    .into_iter()
-                    .partition(|instance| !instance.uncollected.is_empty());
-            *failed = standing;
-            failed_in_flight.extend(recoverable);
+            //
+            // MOVED IN PLACE, ONE AT A TIME, BETWEEN THE TWO BUFFERS RESERVED
+            // AT CONSTRUCTION. Neither vector is replaced: the storage the
+            // owner reserved before any instance was exposed is what the next
+            // failure hands its queue into, and a recovery that swapped it
+            // for a fresh allocation would make that failure allocate during
+            // its own cleanup.
+            let mut index = 0;
+            while index < failed.len() {
+                if failed[index].uncollected.is_empty() {
+                    failed_in_flight.push(failed.remove(index));
+                } else {
+                    index += 1;
+                }
+            }
         }
         let mut recovered = 0usize;
         while !held.failed_in_flight.is_empty() {
