@@ -43,6 +43,45 @@ impl PrivateExecutionWitness {
     }
 }
 
+/// A durable handle to one invocation's execution witness.
+///
+/// READABLE AFTER THE KEEPER IS GONE, WHICH IS THE WHOLE POINT.
+/// [`PrivateServiceExecutionKeeper::execution`] is a snapshot taken while the
+/// keeper still exists, so a reading taken before the keeper drops reports the
+/// execution as retained no matter what happens to it afterwards. Reporting
+/// that as an outcome makes a joined thread look like a live execution.
+///
+/// This handle outlives both the keeper and the thread it ran on. When the
+/// keeper drops, its lifetime owner publishes abandonment into this same
+/// witness, so a reader that joins the thread first and reads afterwards sees
+/// what is true after the join instead of what was true before it.
+#[cfg(unix)]
+#[derive(Clone)]
+pub struct PrivateExecutionWitnessHandle(Arc<PrivateExecutionWitness>);
+
+#[cfg(unix)]
+impl PrivateExecutionWitnessHandle {
+    /// The availability as it stands now, not as it stood when taken.
+    pub fn reading(&self) -> PrivateExecutionReading {
+        self.0.reading()
+    }
+
+    /// Positive completion of the invocation this witness belongs to.
+    pub fn completed(&self) -> bool {
+        self.0.completed.load(Ordering::Acquire)
+    }
+}
+
+#[cfg(unix)]
+impl core::fmt::Debug for PrivateExecutionWitnessHandle {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("PrivateExecutionWitnessHandle")
+            .field("reading", &self.reading())
+            .finish()
+    }
+}
+
 // The terminal inventory owns only a witness. It cannot keep the executor
 // alive, form a cycle, or move XKB state to another thread. This owner's
 // destruction publishes loss even when a thread unwinds.
@@ -124,6 +163,17 @@ impl PrivateServiceExecutionKeeper {
         self.resources
             .as_ref()
             .map(|resources| resources.lifetime.0.reading())
+    }
+
+    /// A handle to this invocation's witness that outlives the keeper.
+    ///
+    /// Taken while the keeper is alive and read after it is gone, so a caller
+    /// that joins the serving thread can report what the execution is rather
+    /// than what it was.
+    pub fn execution_witness(&self) -> Option<PrivateExecutionWitnessHandle> {
+        self.resources
+            .as_ref()
+            .map(|resources| PrivateExecutionWitnessHandle(Arc::clone(&resources.lifetime.0)))
     }
 
     /// Positive completion of this closed invocation's accepted obligations.

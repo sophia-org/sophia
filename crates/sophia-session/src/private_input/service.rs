@@ -83,6 +83,17 @@ pub(super) struct PrivateInputRuntime {
     pub(super) registry: Arc<Mutex<NamespaceRegistry>>,
     pub(super) admitted: Arc<Mutex<BTreeMap<ClientAdmissionId, PrivateInputAdmissionRecord>>>,
     pub(super) readiness: Arc<Mutex<PrivateInputReadiness>>,
+    /// A handle to the invocation's execution witness, readable after the
+    /// serving thread has been joined.
+    ///
+    /// NOT A READING TAKEN ON THE THREAD. A reading taken while the keeper
+    /// still existed says the execution is retained however the thread then
+    /// ends, so reporting it would make a joined thread look like a live
+    /// execution. The keeper's own drop publishes abandonment into this
+    /// witness, so a reader that joins first and reads afterwards is told what
+    /// is true after the join.
+    pub(super) execution_witness:
+        Arc<Mutex<Option<sophia_x_authority::PrivateExecutionWitnessHandle>>>,
     pub(super) grants: super::PrivateInputGrantPolicy,
     pub(super) commands: SyncSender<XServerFrontendServiceCommand>,
     /// The receiving ends Session owns.
@@ -289,6 +300,8 @@ impl PrivateInputRuntime {
 
         let readiness = Arc::new(Mutex::new(PrivateInputReadiness::Binding));
         let thread_readiness = Arc::clone(&readiness);
+        let execution_witness = Arc::new(Mutex::new(None));
+        let thread_witness = Arc::clone(&execution_witness);
         let thread_owner = Arc::clone(&owner);
         let observer: Arc<sophia_x_authority::XAuthorityBackpressureObserver> =
             Arc::new(|_telemetry| {});
@@ -367,7 +380,19 @@ impl PrivateInputRuntime {
                         );
                     }
                 }
+                // THE AT-CLOSE READING, kept as itself: what the keeper held
+                // when the invocation ended, before maintenance and before the
+                // keeper's own drop.
                 report.execution = keeper.execution();
+                // AND A HANDLE THAT OUTLIVES BOTH, so the stop can report what
+                // the execution is after joining rather than what it was
+                // before. Taken here because the keeper must still exist to
+                // give it out; read only after the join.
+                if let Some(handle) = keeper.execution_witness()
+                    && let Ok(mut held) = thread_witness.lock()
+                {
+                    *held = Some(handle);
+                }
                 // ALLOWED MAINTENANCE, AFTER COLLECTION, ON THIS THREAD. The
                 // keeper never leaves the thread it was made on and is never
                 // rebuilt. A bounded number of visits rather than a wait for
@@ -422,6 +447,7 @@ impl PrivateInputRuntime {
             registry,
             admitted,
             readiness,
+            execution_witness,
             grants,
             commands,
             acknowledgements: Mutex::new(acknowledgements),
@@ -537,6 +563,15 @@ impl PrivateInputRuntime {
             },
             None => PrivateInputThreadJoin::NeverStarted,
         };
+        // AFTER THE JOIN, AND ONLY AFTER IT. The thread has ended, so the
+        // keeper has dropped and its lifetime owner has published whatever
+        // became of the execution. Reading here cannot report a retained
+        // execution for a thread that has already gone.
+        let execution = self
+            .execution_witness
+            .lock()
+            .ok()
+            .and_then(|held| held.as_ref().map(|witness| witness.reading()));
         let settlement = self.settlement();
         // COMMITTED WORK THE ORDER NEVER TOOK. The X store has never seen it,
         // so it appears in no settlement reading; counting it here is what
@@ -553,11 +588,13 @@ impl PrivateInputRuntime {
             outcome.failure = closed.failure;
             outcome.unresolved_egress = closed.unresolved_egress;
             outcome.workers = closed.workers;
-            outcome.execution = closed.execution;
+            outcome.execution_at_close = closed.execution;
             outcome.maintenance = closed.maintenance;
             outcome.visits = closed.visits;
             outcome.interrupted = closed.interrupted;
         }
+        // LAST, so the thread's own pre-drop reading cannot overwrite it.
+        outcome.execution = execution;
         outcome
     }
 }

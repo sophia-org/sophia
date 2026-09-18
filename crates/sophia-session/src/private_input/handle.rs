@@ -204,9 +204,24 @@ pub struct PrivateInputOutcome {
     /// no report, which an unwind does not: an empty vector would claim it
     /// collected none, and that is a different statement.
     pub workers: Option<Vec<PrivateWorkerCollection>>,
-    /// What the keeper still held once the invocation ended, however it ended.
-    /// Absent once the keeper is gone; never fabricated from a prior reading.
+    /// What the execution is once the serving thread has been joined.
+    ///
+    /// READ AFTER THE JOIN, FROM A WITNESS THAT OUTLIVES THE THREAD. An earlier
+    /// version reported the reading the thread itself took before its keeper
+    /// dropped, which said the execution was retained however the thread then
+    /// ended -- so a joined thread reported a live execution. A joined thread
+    /// does not imply a live execution, and this no longer says it does.
+    /// Absent when preparation never reached an execution owner; never
+    /// fabricated from a prior reading.
     pub execution: Option<sophia_x_authority::PrivateExecutionReading>,
+    /// What the keeper held when the invocation ended, before maintenance and
+    /// before the keeper's own drop.
+    ///
+    /// KEPT AS ITS OWN FACT rather than folded into `execution`. The two
+    /// answer different questions -- what the invocation left behind, and what
+    /// survived the thread -- and a run where they disagree is exactly the
+    /// story worth reading.
+    pub execution_at_close: Option<sophia_x_authority::PrivateExecutionReading>,
     /// The durable owner, kept alive by this outcome while anything is still
     /// owed. Private because it is custody, not a report: a reader can ask
     /// whether obligations remain, and cannot take them. Skipped in `Debug`
@@ -249,6 +264,7 @@ impl core::fmt::Debug for PrivateInputOutcome {
             .field("unresolved_egress", &self.unresolved_egress)
             .field("workers", &self.workers)
             .field("execution", &self.execution)
+            .field("execution_at_close", &self.execution_at_close)
             .field("service_thread", &self.service_thread)
             .field("maintenance", &self.maintenance)
             .field("visits", &self.visits)
