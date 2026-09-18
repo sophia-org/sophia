@@ -409,6 +409,9 @@ pub(super) enum Maintenance {
 pub(super) struct Maintained {
     pub(super) phase: PrivateMaintenancePhase,
     pub(super) status: PrivateMaintenanceStatus,
+    /// Why a yielded visit yielded, typed rather than only formatted. A case
+    /// that must establish a closed budget cannot do it from a Debug string.
+    pub(super) allowance_refusal: Option<sophia_input_authority::ServiceStartRefusal>,
     pub(super) settled: Option<bool>,
     pub(super) charged: bool,
     pub(super) modifiers: Option<u16>,
@@ -605,6 +608,7 @@ impl LifecycleService {
                             .send(Maintained {
                                 phase: report.phase(),
                                 status: report.status(),
+                                allowance_refusal: report.allowance_refusal(),
                                 settled: report.output_settled(),
                                 charged: report.charge().is_some_and(Result::is_ok),
                                 modifiers: resources.keyboards.modifiers(resources.seat),

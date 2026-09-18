@@ -1590,6 +1590,22 @@ struct ObservedFrame {
     failure: Option<String>,
 }
 
+/// One attempt to put a frame on the wire, recorded before the syscall.
+///
+/// THE ATTEMPT, NOT ITS RESULT. A socket that refuses everything answers a
+/// replay of a committed frame exactly as it answers never having tried, and
+/// a replay that afterwards restored every summary field would leave the
+/// returns identical. This is the only record that separates them.
+#[derive(Clone, Debug)]
+struct SendEntry {
+    delivery: Option<XAuthorityInputDeliveryId>,
+    frames: usize,
+    frame_index: usize,
+    sent_before: Option<usize>,
+    frame_len: usize,
+}
+
+static SEND_ENTRIES: Mutex<Vec<SendEntry>> = Mutex::new(Vec::new());
 static OBSERVED_FRAMES: Mutex<Vec<ObservedFrame>> = Mutex::new(Vec::new());
 /// The one invocation whose writer is being watched.
 ///
@@ -1603,12 +1619,56 @@ static WATCHED_ORIGIN: Mutex<Option<XServerFrontendRouteRegistry>> = Mutex::new(
 /// here so a case never reads another case's steps.
 fn observe_frames(registry: &XServerFrontendRouteRegistry) {
     OBSERVED_FRAMES.lock().unwrap().clear();
+    SEND_ENTRIES.lock().unwrap().clear();
     *WATCHED_ORIGIN.lock().unwrap() = Some(registry.clone());
 }
 
-fn take_observed_frames() -> Vec<ObservedFrame> {
+/// How many send attempts have been recorded so far.
+///
+/// A case marks this at each boundary rather than disarming, because the
+/// observer has to stay armed across the invocation's close and its
+/// maintenance visit: those are exactly the intervals in which an unwanted
+/// resend would happen.
+fn send_entries_so_far() -> usize {
+    SEND_ENTRIES.lock().unwrap().len()
+}
+
+/// The writer returns recorded so far, read without disarming.
+fn frames_so_far() -> Vec<ObservedFrame> {
+    OBSERVED_FRAMES.lock().unwrap().clone()
+}
+
+fn take_observations() -> (Vec<ObservedFrame>, Vec<SendEntry>) {
     *WATCHED_ORIGIN.lock().unwrap() = None;
-    std::mem::take(&mut OBSERVED_FRAMES.lock().unwrap())
+    let frames = std::mem::take(&mut *OBSERVED_FRAMES.lock().unwrap());
+    let entries = std::mem::take(&mut *SEND_ENTRIES.lock().unwrap());
+    (frames, entries)
+}
+
+/// Production's entry into the send-attempt recording.
+pub(crate) fn observed_send_entry(
+    emission: &PrivateOrderedEmission,
+    frame_index: usize,
+    progress: Option<(Option<usize>, usize)>,
+) {
+    let watched = WATCHED_ORIGIN.lock().unwrap().clone();
+    let Some(watched) = watched else {
+        return;
+    };
+    if !emission.answers_for(&watched) {
+        return;
+    }
+    let (sent_before, frame_len) = progress.unwrap_or((None, 0));
+    let mut seen = SEND_ENTRIES.lock().unwrap();
+    if seen.len() < 8192 {
+        seen.push(SendEntry {
+            delivery: emission.delivery(),
+            frames: emission.frame_count(),
+            frame_index,
+            sent_before,
+            frame_len,
+        });
+    }
 }
 
 /// Production's entry into that recording. Reads nothing back and changes
@@ -1794,17 +1854,21 @@ fn blocked_recipient_attempt(
             }
         }
     }
-    let observed = take_observed_frames();
+    // THE OBSERVER STAYS ARMED. Disarming here would blind the case to exactly
+    // the intervals a resend would use: the invocation's own close, and the
+    // maintenance visit after it. Boundaries are marked instead.
+    let attempts_after_traffic = send_entries_so_far();
     // What the writer committed of the stalling capsule, before anything else
     // touches it.
     let stalled_delivery = stalled.map(|(_, id)| id).filter(|id| *id != 0);
     let (advanced, owed, failure) = stalled_delivery
-        .map(|id| frames_of(&observed, XAuthorityInputDeliveryId::from_raw(id)))
+        .map(|id| frames_of(&frames_so_far(), XAuthorityInputDeliveryId::from_raw(id)))
         .unwrap_or((0, 0, None));
     let is_prefix = owed > 1 && advanced >= 1 && advanced < owed;
 
     blocked.command(XServerFrontendServiceCommand::StopAndDisconnect);
     let closed = blocked.closed();
+    let attempts_after_close = send_entries_so_far();
     let before = retained_dispatch(&blocked);
 
     // ARMED AGAIN, AROUND THE VISIT ALONE. Whether the store looks the same
@@ -1814,21 +1878,36 @@ fn blocked_recipient_attempt(
     // of this capsule on the wire again, and because the attempt is recorded
     // before the write, a retry of a frame already committed is visible
     // whether or not a closed socket would have taken it.
-    observe_frames(&blocked.registry);
     let visit = blocked.step();
     let drive = store.drive();
-    let during_visit = take_observed_frames();
     let after = retained_dispatch(&blocked);
+    let (observed_frames, send_entries) = take_observations();
 
     let wanted = stalled_delivery.map(XAuthorityInputDeliveryId::from_raw);
-    let touched_this_capsule: Vec<_> = during_visit
+    // Every send attempt made after this invocation's traffic stopped: its
+    // close, and its maintenance visit. For the capsule that stalled, none of
+    // them may target a frame it had already committed.
+    let attempts_after_the_stall: Vec<_> = send_entries
         .iter()
-        .filter(|step| step.delivery == wanted)
+        .skip(attempts_after_traffic)
+        .filter(|entry| entry.delivery == wanted)
         .collect();
-    let resent_committed = touched_this_capsule
+    let resent_committed = attempts_after_the_stall
         .iter()
-        .filter(|step| step.attempted.is_some_and(|frame| frame < advanced))
+        .filter(|entry| entry.frame_index < advanced)
         .count();
+    let touched_this_capsule: Vec<_> = observed_frames
+        .iter()
+        .filter(|step| step.delivery == wanted && step.attempted.is_some())
+        .collect();
+    // The exact frame sequence this capsule's own send attempts walked, so a
+    // prefix is read from the order of attempts and not only from counting
+    // how many reports came back advanced.
+    let attempted_frame_sequence: Vec<usize> = send_entries
+        .iter()
+        .filter(|entry| entry.delivery == wanted)
+        .map(|entry| entry.frame_index)
+        .collect();
     assert!(
         visit.charged,
         "{label}: the visit actually ran and was charged rather than yielding: {visit:?}"
@@ -1882,8 +1961,8 @@ fn blocked_recipient_attempt(
             "writer_failure_on_it": failure,
             "same_capsule_whole_frame_prefix": is_prefix,
         })),
-        "writer_steps_recorded": observed.len(),
-        "multi_frame_deliveries_seen": observed
+        "writer_steps_recorded": observed_frames.len(),
+        "multi_frame_deliveries_seen": observed_frames
             .iter()
             .filter(|step| step.frames > 1)
             .map(|step| json!({
@@ -1894,7 +1973,7 @@ fn blocked_recipient_attempt(
             }))
             .take(8)
             .collect::<Vec<_>>(),
-        "writer_failures": observed
+        "writer_failures": observed_frames
             .iter()
             .filter(|step| step.failure.is_some())
             .map(|step| json!({
@@ -1908,7 +1987,20 @@ fn blocked_recipient_attempt(
         "retained_after_exit": format!("{before:?}"),
         "maintenance_visit": format!("{visit:?}"),
         "what_the_visit_reported": visit.detail.clone(),
-        "frames_the_visit_tried_for_this_capsule": touched_this_capsule
+        "send_attempts_for_this_capsule_after_the_stall": attempts_after_the_stall
+            .iter()
+            .map(|entry| json!({
+                "frame_index": entry.frame_index,
+                "frames_owed": entry.frames,
+                "bytes_of_it_already_sent": entry.sent_before,
+                "frame_length": entry.frame_len,
+            }))
+            .collect::<Vec<_>>(),
+        "attempted_frame_sequence_for_this_capsule": attempted_frame_sequence,
+        "send_attempts_before_close": attempts_after_traffic,
+        "send_attempts_by_close": attempts_after_close,
+        "send_attempts_total": send_entries.len(),
+        "writer_returns_for_this_capsule": touched_this_capsule
             .iter()
             .map(|step| json!({
                 "attempted_frame": step.attempted,

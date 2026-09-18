@@ -317,6 +317,25 @@ fn write_one_ordered_frame(
             .begin_frame(frame)
             .map_err(X11OrderedWriteFailure::Send)?;
     }
+    // READ-ONLY ACCEPTANCE OBSERVATION AT SEND ENTRY: before any byte of this
+    // frame can leave, with the capsule still in hand. It records the attempt
+    // rather than its result, which is the difference that matters. A replay
+    // that afterwards restored every summary field, or one a closed socket
+    // refused outright, is visible here and nowhere else.
+    #[cfg(all(test, unix))]
+    routing_tests::m3_acceptance::observed_send_entry(
+        held.delivery().emission(),
+        held.frame_index(),
+        held.send.frame.as_ref().map(|frame| {
+            (
+                match frame.progress {
+                    X11OrderedSendProgress::Sent(offset) => Some(offset),
+                    X11OrderedSendProgress::Unknown { .. } => None,
+                },
+                frame.bytes.as_ref().len(),
+            )
+        }),
+    );
     send_pending_frame(socket, &mut held.send).map_err(X11OrderedWriteFailure::Send)?;
     let frame = held.frame_index();
     held.advance_frame().map_err(X11OrderedWriteFailure::Send)?;
