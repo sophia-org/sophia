@@ -462,6 +462,7 @@ usage: cargo xtask <command>
       Run the full offline gate, or only the exact source-layout debt gate.
 
   check m3-acceptance --output=/NEW/DIR --target-dir=/OWNED/TARGET [--self-test]
+  check m4-acceptance --output=/NEW/DIR --target-dir=/OWNED/TARGET [--self-test]
   check m3-components --suite=NAME --output=/NEW/DIR --target-dir=/OWNED/TARGET
       Run only the device-hidden M3 acceptance harness; missing cases fail the gate.
 

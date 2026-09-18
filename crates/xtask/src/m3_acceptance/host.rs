@@ -1,4 +1,4 @@
-use super::{catalog, identity, process, types::*};
+use super::{identity, process, types::*};
 use serde_json::json;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -81,6 +81,18 @@ pub(super) fn run(
     arguments: &[String],
     suite: Option<&str>,
 ) -> Result<Vec<String>, String> {
+    run_for(repo, arguments, suite, Gate::M3)
+}
+
+pub(super) fn run_for(
+    repo: &Path,
+    arguments: &[String],
+    suite: Option<&str>,
+    gate: Gate,
+) -> Result<Vec<String>, String> {
+    if gate == Gate::M4 && suite.is_some() {
+        return Err("M4 acceptance does not accept an M3 component suite".into());
+    }
     let mut opts = options(arguments)?;
     if suite.is_some() && opts.self_test {
         return Err("component suites and harness self-tests are separate runs".into());
@@ -113,10 +125,15 @@ pub(super) fn run(
         .map_err(|e| e.to_string())?;
     lock.try_lock()
         .map_err(|e| format!("target already owned by another harness: {e}"))?;
-    execute(repo, &opts, suite)
+    execute(repo, &opts, suite, gate)
 }
 
-fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<String>, String> {
+fn execute(
+    repo: &Path,
+    opts: &Options,
+    suite: Option<&str>,
+    gate: Gate,
+) -> Result<Vec<String>, String> {
     let source = identity::snapshot(repo, &opts.output)?;
     let build_target_namespace = target_namespace(&source.content_sha256)?;
     let build_target = opts.target.join(&build_target_namespace);
@@ -127,11 +144,12 @@ fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<Strin
     }
     std::fs::create_dir_all(&build_target).map_err(|e| e.to_string())?;
     let snapshot = opts.output.join("source");
-    let harness = snapshot.join("tools/probes/m3_acceptance");
+    let harness = snapshot.join(gate.directory());
     let toolchain = identity::toolchain(repo, &opts.output)?;
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let config = Config {
         schema: 1,
+        gate,
         run_id: format!(
             "{}-{}",
             std::process::id(),
@@ -165,10 +183,17 @@ fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<Strin
             .collect::<Result<_, String>>()?,
     };
     identity::json(&opts.output.join("config.json"), &config)?;
-    let inventory = catalog::inventory(&harness.join("inventory.json"))?;
+    let inventory = super::m4::inventory(gate, &harness.join("inventory.json"))?;
     let mut report = super::worker::initial(&config, &inventory, &opts.output.join("config.json"))?;
     identity::json(&opts.output.join("report.json"), &report)?;
-    let outcome = launch(opts, &snapshot, &toolchain, &executable, &build_target);
+    let outcome = launch(
+        opts,
+        &snapshot,
+        &toolchain,
+        &executable,
+        &build_target,
+        gate,
+    );
     match outcome {
         Ok(execution) => {
             let inner = opts.output.join("evidence/inner-report.json");
@@ -201,6 +226,14 @@ fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<Strin
         }
     }
     let success = super::worker::successful(&report, &config);
+    if gate == Gate::M4
+        && success
+        && let Err(error) = super::m4::validate_binary(&report, &opts.output)
+    {
+        report.overall = Verdict::Fail;
+        report.harness_error = Some(error);
+    }
+    let success = super::worker::successful(&report, &config);
     identity::json(&opts.output.join("report.json"), &report)?;
     if let Some(components) = &report.components {
         let summary = format!(
@@ -222,13 +255,15 @@ fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<Strin
         };
     }
     let summary = format!(
-        "M3 acceptance: {:?}; {}/20 cases passed; {}",
+        "{:?} acceptance: {:?}; {}/{} cases passed; {}",
+        gate,
         report.overall,
         report
             .cases
             .iter()
             .filter(|row| row.status == Verdict::Pass)
             .count(),
+        inventory.cases.len(),
         opts.output.join("report.json").display()
     );
     if success {
@@ -262,6 +297,7 @@ fn launch(
     toolchain: &Path,
     executable: &Path,
     build_target: &Path,
+    gate: Gate,
 ) -> Result<Execution, String> {
     let registry = opts.registry.canonicalize().map_err(|e| e.to_string())?;
     if ["cache", "index", "src"]
@@ -291,7 +327,7 @@ fn launch(
     identity::json(
         &plan,
         &json!({"mounts":mounts,"timeout":opts.timeout,
-        "bwrap":bwrap,
+        "bwrap":bwrap,"gate":gate.command(),
         "isolation_directory":source.join("tools/probes/x11_conformance")}),
     )?;
     process::run(

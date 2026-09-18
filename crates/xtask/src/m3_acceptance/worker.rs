@@ -7,7 +7,6 @@ use std::time::Duration;
 
 const SOURCE: &str = "/work/source";
 const EVIDENCE: &str = "/work/evidence";
-const HARNESS: &str = "/work/source/tools/probes/m3_acceptance";
 
 pub(super) fn initial(
     config: &Config,
@@ -21,6 +20,8 @@ pub(super) fn initial(
             "m3_components"
         } else if config.self_test {
             "harness_self_test"
+        } else if config.gate == Gate::M4 {
+            "m4_acceptance"
         } else {
             "m3_acceptance"
         }
@@ -109,7 +110,7 @@ pub(super) fn validate_report(report: &Report, config: &Config, path: &Path) -> 
     {
         return Err("launcher timed out or left uncollected processes".into());
     }
-    if !config.self_test && report.overall != catalog::overall(&report.cases)? {
+    if !config.self_test && report.overall != super::m4::overall(config.gate, &report.cases)? {
         return Err("reported aggregate contradicts mandatory cases".into());
     }
     Ok(())
@@ -125,7 +126,12 @@ pub(super) fn run() -> Result<(), String> {
     let containment: Containment =
         identity::read_json(&Path::new(EVIDENCE).join("containment.json"))?;
     validate_containment(&containment, &config)?;
-    let inventory = catalog::inventory(&Path::new(HARNESS).join("inventory.json"))?;
+    let inventory = super::m4::inventory(
+        config.gate,
+        &Path::new(SOURCE)
+            .join(config.gate.directory())
+            .join("inventory.json"),
+    )?;
     let mut report = initial(&config, &inventory, config_path)?;
     report.containment = Some(containment);
     save(&report)?;
@@ -166,6 +172,10 @@ pub(super) fn successful(report: &Report, config: &Config) -> bool {
 }
 
 fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Result<(), String> {
+    let harness = Path::new(SOURCE).join(config.gate.directory());
+    if config.gate == Gate::M4 && config.component_suite.is_some() {
+        return Err("M3 component evidence cannot qualify as M4".into());
+    }
     if let Some(suite) = &config.component_suite {
         if config.self_test
             || super::components::suite(Path::new(SOURCE), suite)? != config.component_tests
@@ -186,8 +196,8 @@ fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Resul
             != super::host::target_namespace(&config.source.content_sha256)?
         || identity::contents(Path::new(SOURCE))? != config.source.content_sha256
         || identity::digest(Path::new("/work/xtask"))? != config.xtask_sha256
-        || identity::digest(&Path::new(HARNESS).join("inventory.json"))? != config.inventory_sha256
-        || identity::digest(&Path::new(HARNESS).join("bindings.json"))? != config.bindings_sha256
+        || identity::digest(&harness.join("inventory.json"))? != config.inventory_sha256
+        || identity::digest(&harness.join("bindings.json"))? != config.bindings_sha256
     {
         return Err("contained source or harness/configuration bytes differ from snapshot".into());
     }
@@ -215,6 +225,9 @@ fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Resul
         return Err("private runtime loader preparation failed".into());
     }
     let binary = build(config, report)?;
+    if config.gate == Gate::M4 {
+        build_activation_probe(config, report)?;
+    }
     let listed = process::capture(
         process::private_command(&binary).args(["--list", "--format=terse"]),
         &Path::new(EVIDENCE).join("tests-list.log"),
@@ -248,18 +261,55 @@ fn cargo() -> Command {
         .env("CARGO_HOME", "/work/cargo")
         .env("CARGO_TARGET_DIR", "/work/target")
         .env("CARGO_NET_OFFLINE", "true")
+        .env("CARGO_BUILD_JOBS", "2")
         .env("PWD", SOURCE);
     command
+}
+
+fn build_activation_probe(config: &Config, report: &mut Report) -> Result<(), String> {
+    let mut command = cargo();
+    command.args([
+        "build",
+        "--offline",
+        "--locked",
+        "-p",
+        "sophia-conformance",
+        "--example",
+        "private_instance_probe",
+    ]);
+    let built = process::run(
+        &mut command,
+        &Path::new(EVIDENCE).join("activation-build.log"),
+        Duration::from_secs(config.build_timeout),
+    )?;
+    if !built.clean() {
+        return Err("activation probe build failed or leaked a process".into());
+    }
+    let path = Path::new(EVIDENCE).join("private-instance-probe");
+    std::fs::copy("/work/target/debug/examples/private_instance_probe", &path)
+        .map_err(|e| e.to_string())?;
+    let binary = report
+        .binary
+        .as_mut()
+        .ok_or("test binary identity missing")?;
+    binary["activation_probe"] = serde_json::json!({
+        "path":"evidence/private-instance-probe", "sha256":identity::digest(&path)?
+    });
+    save(report)
 }
 
 fn build(config: &Config, report: &mut Report) -> Result<PathBuf, String> {
     let package = if config.self_test {
         "xtask"
+    } else if config.gate == Gate::M4 {
+        "sophia-session"
     } else {
         "sophia-x-authority"
     };
     let target = if config.self_test {
         "xtask"
+    } else if config.gate == Gate::M4 {
+        "private_input_acceptance"
     } else {
         "sophia_x_authority"
     };
@@ -275,6 +325,8 @@ fn build(config: &Config, report: &mut Report) -> Result<PathBuf, String> {
     ]);
     if config.self_test {
         command.args(["--bin", "xtask"]);
+    } else if config.gate == Gate::M4 {
+        command.args(["--test", "private_input_acceptance"]);
     } else {
         command.arg("--lib");
     }
@@ -328,24 +380,27 @@ fn self_tests(
     binary: &Path,
     available: &BTreeSet<&str>,
 ) -> Result<(), String> {
+    let prefix = if config.gate == Gate::M4 {
+        "m3_acceptance::m4_tests::"
+    } else {
+        "m3_acceptance::tests::"
+    };
     let count = available
         .iter()
-        .filter(|name| name.starts_with("m3_acceptance::tests::"))
+        .filter(|name| name.starts_with(prefix))
         .count();
     if count == 0 {
         return Err("no harness self-tests in the built binary".into());
     }
     let log = Path::new(EVIDENCE).join("self-tests.log");
-    let run = process::run(
-        process::private_command(binary).args([
-            "m3_acceptance::tests::",
-            "--test-threads=1",
-            "--show-output",
-            "--color=never",
-        ]),
-        &log,
-        Duration::from_secs(config.case_timeout),
-    )?;
+    let mut command = process::private_command(binary);
+    command.args([prefix, "--test-threads=1", "--show-output", "--color=never"]);
+    if config.gate == Gate::M4 {
+        // These controls require the probe built and attested above; ordinary
+        // workspace tests cannot furnish that execution boundary.
+        command.arg("--include-ignored");
+    }
+    let run = process::run(&mut command, &log, Duration::from_secs(config.case_timeout))?;
     let text = std::fs::read_to_string(log).map_err(|e| e.to_string())?;
     let passed = run.clean()
         && text.contains(&format!(
@@ -366,7 +421,12 @@ fn cases(
     binary: &Path,
     available: &BTreeSet<&str>,
 ) -> Result<(), String> {
-    let bindings = catalog::bindings(&Path::new(HARNESS).join("bindings.json"))?;
+    let bindings = super::m4::bindings(
+        config.gate,
+        &Path::new(SOURCE)
+            .join(config.gate.directory())
+            .join("bindings.json"),
+    )?;
     let hash = identity::digest(binary)?;
     for (index, row) in inventory.cases.iter().enumerate() {
         let Some(exact) = bindings.cases.get(&row.case) else {
@@ -394,7 +454,7 @@ fn cases(
             Duration::from_secs(config.case_timeout),
         )?;
         let text = std::fs::read_to_string(log).map_err(|e| e.to_string())?;
-        match evidence::validate_case(row, exact, &run, &text) {
+        match super::m4::validate_case(config.gate, row, exact, &run, &text) {
             Ok(evidence) => {
                 result.status = Verdict::Pass;
                 result.subcases = evidence.subcases.clone();
@@ -407,12 +467,12 @@ fn cases(
             }
         }
         result.execution = Some(run);
-        report.overall = catalog::overall(&report.cases)?;
+        report.overall = super::m4::overall(config.gate, &report.cases)?;
         save(report)?;
     }
     if identity::digest(binary)? != hash {
         return Err("binary changed during cases".into());
     }
-    report.overall = catalog::overall(&report.cases)?;
+    report.overall = super::m4::overall(config.gate, &report.cases)?;
     Ok(())
 }

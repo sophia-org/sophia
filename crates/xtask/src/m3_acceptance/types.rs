@@ -96,6 +96,10 @@ pub(super) struct SourceIdentity {
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) struct Config {
     pub schema: u32,
+    /// The closed inventory and build target this invocation may execute.
+    /// Older M3 records default to their original inventory.
+    #[serde(default)]
+    pub gate: Gate,
     pub run_id: String,
     pub self_test: bool,
     #[serde(default)]
@@ -111,6 +115,30 @@ pub(super) struct Config {
     pub bindings_sha256: String,
     pub xtask_sha256: String,
     pub toolchain_sha256: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum Gate {
+    #[default]
+    M3,
+    M4,
+}
+
+impl Gate {
+    pub(super) fn command(self) -> &'static str {
+        match self {
+            Self::M3 => "m3-acceptance",
+            Self::M4 => "m4-acceptance",
+        }
+    }
+
+    pub(super) fn directory(self) -> &'static str {
+        match self {
+            Self::M3 => "tools/probes/m3_acceptance",
+            Self::M4 => "tools/probes/m4_acceptance",
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

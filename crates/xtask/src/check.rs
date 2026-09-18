@@ -13,6 +13,7 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
     match arguments {
         [] => all(repo),
         [subject, rest @ ..] if subject == "m3-acceptance" => crate::m3_acceptance::run(repo, rest),
+        [subject, rest @ ..] if subject == "m4-acceptance" => crate::m3_acceptance::run_m4(repo, rest),
         [subject, rest @ ..] if subject == "m3-components" => {
             crate::m3_acceptance::run_components(repo, rest)
         }

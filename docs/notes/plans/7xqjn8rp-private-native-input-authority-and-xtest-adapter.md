@@ -99,6 +99,33 @@ Separate targets and worktrees prevent stale include-file and build-cache
 comparisons. No merge precedes coordination of runtime, gate and tracking diffs.
 Passing one milestone does not enable discovery or close the full task.
 
+### M4 execution contract
+
+M4 starts from the integrated M3 and Brave repair at `7d8b0175`. Session owns
+the private authority, issuer, admissions, service owner, receipts and execution
+keeper. An adapter receives a retained submission handle. Naming a connection
+does not authorize it: grant issuance checks the exact admission under the
+existing authority boundary, and submission revalidates it.
+
+The contained host uses production headless Engine assembly and committed
+transactions. Topology and frame time are explicit; service deadlines and
+watchdog time remain monotonic. No fixture supplies applied routing state.
+The host requires kernel namespace activation and rejects ambient options.
+Explicitly delegated control descriptors remain distinct from unrelated
+inherited descriptors and inaccessible outside endpoints.
+
+`cargo xtask check m4-acceptance` has eight mandatory groups: construction,
+authorization, connection identity, committed routing, lifetime, containment,
+absence of ambient fallback, and evidence integrity. Unbound cases remain
+`NOT_RUN`; harness self-tests do not qualify as Session acceptance. Source,
+binary and actor-collection evidence accompany the final result. M3 retains
+its separate twenty-case inventory and must pass again on the integrated tree.
+
+Claude owns the Session service and the narrow X-authority accessors; Codex
+owns the host, containment and acceptance runner. Work shares one M4 branch
+with disjoint paths and serialized signed checkpoints. No XTEST request,
+public discovery, hardware acceptance or t094 completion belongs to this slice.
+
 ### M3 closure gates (all required under t093)
 
 | Gate | Remaining implementation | Required production evidence |

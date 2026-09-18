@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "plan_source_commit": "7d8b0175afca7a52be3e9cb475401fd6c63b6b29",
+  "cases": [
+    {
+      "case": "M4.construction",
+      "gate": "M4",
+      "required": true,
+      "requirement": "Session prepares the private owner before readiness and returns setup failures without losing parts.",
+      "subcases": [
+        "default_build",
+        "explicit_topology",
+        "bind_refusal",
+        "ready_after_preparation"
+      ]
+    },
+    {
+      "case": "M4.authorization",
+      "gate": "M4",
+      "required": true,
+      "requirement": "Only enabled, exact-instance verified admissions receive input capabilities.",
+      "subcases": [
+        "authenticated_enabled",
+        "disabled",
+        "ordinary_recipient",
+        "wrong_credentials",
+        "foreign_instance"
+      ]
+    },
+    {
+      "case": "M4.connection_identity",
+      "gate": "M4",
+      "required": true,
+      "requirement": "Issuance and submission remain bound to the original live admission.",
+      "subcases": [
+        "independent_callers",
+        "revoked_admission",
+        "reconnect",
+        "stale_handle"
+      ]
+    },
+    {
+      "case": "M4.committed_routing",
+      "gate": "M4",
+      "required": true,
+      "requirement": "Session commits real X transactions and controls before exact key and pointer delivery.",
+      "subcases": [
+        "real_surface_commit",
+        "focus_acknowledged",
+        "little_endian",
+        "big_endian",
+        "receipt_identity"
+      ]
+    },
+    {
+      "case": "M4.lifetime",
+      "gate": "M4",
+      "required": true,
+      "requirement": "Session closes admission, collects actors and keeps unresolved obligations on every exit.",
+      "subcases": [
+        "stop",
+        "command_loss",
+        "service_error",
+        "unwind",
+        "retained_obligations"
+      ]
+    },
+    {
+      "case": "M4.containment",
+      "gate": "M4",
+      "required": true,
+      "requirement": "Kernel-validated isolation excludes fabricated outside endpoints and undelegated descriptors.",
+      "subcases": [
+        "outside_endpoint",
+        "outside_authorized_control",
+        "unrelated_descriptor_closed",
+        "delegated_descriptor_works",
+        "forged_activation_refused"
+      ]
+    },
+    {
+      "case": "M4.no_ambient_fallback",
+      "gate": "M4",
+      "required": true,
+      "requirement": "Private host startup ignores ambient endpoints and refuses ambient options.",
+      "subcases": [
+        "poisoned_environment",
+        "ambient_options_refused",
+        "no_devices",
+        "no_controlling_terminal"
+      ]
+    },
+    {
+      "case": "M4.evidence_integrity",
+      "gate": "M4",
+      "required": true,
+      "requirement": "The gate refuses incomplete and foreign evidence independently of process success.",
+      "subcases": [
+        "missing",
+        "duplicate",
+        "skipped",
+        "timeout",
+        "wrong_source",
+        "wrong_binary"
+      ]
+    }
+  ]
+}
