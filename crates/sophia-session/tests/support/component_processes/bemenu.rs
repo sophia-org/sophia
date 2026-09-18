@@ -43,7 +43,7 @@ pub(super) fn exercise(owner: &mut ShellComponentProcesses, key: ComponentConnec
             .unwrap()
             .unwrap()
     );
-    let opening = NativeLauncherOpening {
+    let mut opening = NativeLauncherOpening {
         grant: key.grant,
         opening: 1,
         output: ContentOutputId {
@@ -75,7 +75,16 @@ pub(super) fn exercise(owner: &mut ShellComponentProcesses, key: ComponentConnec
     let mut expected_event = None;
     let mut acknowledged = false;
     let mut previous: Option<ContentRenderBundle> = None;
-    for (revision, rows) in [(1, 2), (2, 1)] {
+    let mut last_candidate = 0;
+    for (reopened, revision, rows) in [(false, 1, 2), (false, 2, 1), (true, 1, 2)] {
+        if reopened {
+            close(owner, key, opening, previous.take().unwrap());
+            opening.opening += 1;
+            owner
+                .with_connection(key, |t| t.publish_native_launcher_opening(tx(30), opening))
+                .unwrap()
+                .unwrap();
+        }
         let deadline = Instant::now() + Duration::from_secs(4);
         let bundle = loop {
             assert!(
@@ -158,6 +167,12 @@ pub(super) fn exercise(owner: &mut ShellComponentProcesses, key: ComponentConnec
             std::thread::sleep(Duration::from_millis(1));
         };
         assert_eq!(bundle.grant, key.grant);
+        assert!(bundle.candidate_generation > last_candidate);
+        last_candidate = bundle.candidate_generation;
+        assert_eq!(
+            bundle.native_launcher.as_ref().unwrap().opening,
+            opening.opening
+        );
         assert_eq!(bundle.surfaces.len(), 1);
         assert_eq!(bundle.targets.len(), rows);
         assert_eq!(
@@ -204,15 +219,17 @@ pub(super) fn exercise(owner: &mut ShellComponentProcesses, key: ComponentConnec
                     key.grant,
                     opening.output,
                     bundle.candidate_generation,
-                    revision,
+                    last_candidate,
                     1,
                     1,
                 )
                 .unwrap();
-                let binding = t.install_native_launcher_focus(tx(4 + revision)).unwrap();
+                let binding = t
+                    .install_native_launcher_focus(tx(4 + last_candidate))
+                    .unwrap();
                 assert_eq!(binding.grant, key.grant);
                 assert_eq!(binding.candidate_generation, bundle.candidate_generation);
-                if revision == 1 {
+                if revision == 1 && !reopened {
                     expected_event = t
                         .issue_native_launcher_input(
                             binding,
@@ -229,9 +246,83 @@ pub(super) fn exercise(owner: &mut ShellComponentProcesses, key: ComponentConnec
             .unwrap();
         previous = Some(bundle);
     }
-    drop(previous);
+    close(owner, key, opening, previous.take().unwrap());
 }
 
 fn tx(value: u64) -> TransactionId {
     TransactionId::from_raw(value)
+}
+
+// Supplied presentation has ended; the real renderer-facing byte lease remains
+// held until this fixture releases it. No native pixel-removal claim is made.
+fn close(
+    owner: &mut ShellComponentProcesses,
+    key: ComponentConnectionKey,
+    opening: NativeLauncherOpening,
+    held: ContentRenderBundle,
+) {
+    owner
+        .with_connection(key, |t| {
+            t.close_native_launcher(
+                opening,
+                tx(100 + opening.opening * 10),
+                ContentReason::Cancelled,
+            )
+            .unwrap();
+            assert!(t.native_launcher_focus().is_none());
+            for allocation in t.content_allocation_snapshots() {
+                t.invalidate_content_allocation(
+                    tx(101 + opening.opening * 10),
+                    allocation.allocation,
+                    ContentReason::Revoked,
+                )
+                .unwrap();
+            }
+        })
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(4);
+    loop {
+        let retiring = owner
+            .with_connection(key, |t| {
+                t.service_closed_native_content(opening, 0).unwrap();
+                t.service_closed_native_input(opening).unwrap();
+                assert!(!t.closed_native_owners_settled(opening).unwrap());
+                t.content_usage().unwrap().retiring
+            })
+            .unwrap();
+        if retiring > 0 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "real Bemenu did not retire closed pixels"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        !held
+            .resource(held.placements[0].resource)
+            .unwrap()
+            .bytes()
+            .is_empty()
+    );
+    drop(held);
+    loop {
+        let settled = owner
+            .with_connection(key, |t| {
+                t.service_closed_native_content(opening, 0).unwrap();
+                t.service_closed_native_input(opening).unwrap();
+                t.closed_native_owners_settled(opening).unwrap()
+            })
+            .unwrap();
+        if settled {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "real closed owners did not settle after lease release"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(owner.process_retained(key));
 }

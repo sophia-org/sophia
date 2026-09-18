@@ -1235,3 +1235,44 @@ three explicit protected controls); four ignored in the ordinary invocation,
 three deliberately selected separately including the Rust-peer parent. Child
 entry is exercised only through its parent. Scoped Clippy/layout/fmt pass. This
 is not a new canonical run; the earlier canonical identity remains unchanged.
+
+### Protected font setup and same-connection close/reopen, 2026-09-18
+
+Bemenu `6a4b8e9` owns native-only Fontconfig initialization and a mode-0700 private
+/tmp cache. It uses already-visible /usr system font roots, refuses an empty font
+set and matches generic monospace without host /etc or user-font mounts. Cleanup
+unlinks flat entries through its retained directory descriptor; symlink targets
+are untouched, unexpected directories/failure are reported. The upstream plugin
+retains its original behavior. Full device-hidden Bemenu gate and focused font
+controls pass; two compiled mutations (empty-font admission, skipped cleanup)
+fail. Actual protected catalog/text raster now emits no Fontconfig diagnostics.
+This does not establish user-font admission or every distribution's font layout.
+
+Bemenu `7d2d239` resets query/selection only after an accepted fresh Opening. The
+actual protected test first reproduced a reopened menu retaining the one-row
+app2 filter. After correction it receives the full two-row catalog again without
+reconnecting. An invalid-opening mutation fails the query-preservation control.
+The original timeout/mismatch evidence is retained, not replaced with a pass.
+
+The real process control now runs with a separately protected Rust bar peer in
+the same ShellComponentProcesses and aggregate content registry. Bar connection,
+grant and exact byte lease survive native text/filter, close and reopen. The
+launcher closure reaches actual Retiring bytes and cannot settle while the test
+holds its renderer-facing bundle; dropping that actual owner permits settlement.
+It then reopens, uploads a newer candidate with reset query, closes again and
+settles before process stop. Final accounting is quiescent after both peers and
+the bar lease end. Eight parent controls pass in the final scoped run, alongside
+strict scoped Clippy/layout/fmt. Four ignored tests in the ordinary run remain
+explicitly selected separately (three parents; child entry only through parents).
+
+Evidence: `.artifacts/bemenu-protected-join/reopen-final/result.json` and
+`reopen-final-execution.log`; `.artifacts/bemenu-native-fonts/result.json`;
+`.artifacts/bemenu-fonts-{no-fonts,cache-leak}-mutant`;
+`.artifacts/bemenu-reopen-{query,unvalidated-mutant}`. Initial Fontconfig-only
+probe was noisy and is not the repair. Geometry/Prepared/Presented/Focus are
+supplied to the real transport; this test does not execute Session native
+projection/removal, a GPU worker/KMS or physical input, nor does the fixture bar
+execute Lom. Requesting process stop can still race with EOF and report client
+service code 4; no graceful client-exit claim is made. No new canonical, hardware,
+install, push, or physical readiness claim. Remaining work is public profile and
+harness enablement, compatibility/build identity and exact-source canonical gates.

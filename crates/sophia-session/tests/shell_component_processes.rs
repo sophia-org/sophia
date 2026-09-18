@@ -217,6 +217,40 @@ fn protected_bemenu(
     let directory = std::env::temp_dir().join(format!("protected-bemenu-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
     let mut owner = ShellComponentProcesses::new().unwrap();
+    // A real protected fixture bar retains pixels in the same aggregate owner.
+    // It does not render through Lom/GPU; the launcher below is the actual C app.
+    let bar_slot = owner
+        .add(
+            "bar",
+            ShellComponentRole::Bar,
+            &directory.join("bar"),
+            rustix::process::geteuid().as_raw(),
+        )
+        .unwrap();
+    let bar = owner
+        .start(
+            bar_slot,
+            |key, socket| {
+                let domain =
+                    ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
+                        .map_err(|e| e.to_string())?
+                        .path(sophia_runtime::ProtectionPath::read_only(
+                            socket.parent().unwrap(),
+                        ))
+                        .map_err(|e| e.to_string())?;
+                Ok(ProcessLaunchSpec::new(std::env::current_exe().unwrap())
+                    .arg("protected_component_peer")
+                    .arg("--exact")
+                    .arg("--ignored")
+                    .env("SOPHIA_FIXTURE_ROLE", key.slot.to_string())
+                    .protection_domain(domain))
+            },
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: true,
+            },
+        )
+        .unwrap();
+    let bar_pixels = peer::receive_resource(&mut owner, bar);
     let slot = owner
         .add(
             "menu",
@@ -271,6 +305,13 @@ fn protected_bemenu(
         })
         .unwrap();
     exercise(&mut owner, key);
+    assert_ne!(bar.grant, key.grant);
+    assert!(owner.process_retained(bar));
+    assert_eq!(
+        owner.phase(bar).unwrap(),
+        ComponentConnectionPhase::Connected
+    );
+    assert_eq!(bar_pixels.bytes(), &[1, 2, 3, 255]);
     owner.request_stop(key).unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     while owner.process_retained(key) {
@@ -278,6 +319,14 @@ fn protected_bemenu(
         assert!(Instant::now() < deadline, "Bemenu stop timed out");
         std::thread::sleep(Duration::from_millis(1));
     }
+    assert!(owner.process_retained(bar));
+    owner.request_stop(bar).unwrap();
+    while owner.process_retained(bar) {
+        owner.visit(1024);
+        assert!(Instant::now() < deadline, "bar stop timed out");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    drop(bar_pixels);
     assert!(owner.finish_after_backend_drop(()).unwrap().1.quiescent());
     drop(owner);
     std::fs::remove_dir_all(directory).unwrap();
