@@ -1402,3 +1402,235 @@ fn c_indeterminate_send_reachable_controls() {
     let actors = service.finish(&[custody]);
     assert!(!actors.is_empty());
 }
+
+/// The nine named control kinds, each as the command a producer actually
+/// submits. Ordered so the two that can end the recipient's connection come
+/// last, and the ones that change nothing about it come first.
+fn every_control_kind(
+    client: XServerFrontendClientId,
+    surface: SurfaceId,
+    first_transaction: u64,
+) -> Vec<(XAuthorityControlKind, XAuthorityClientControlCommand)> {
+    let geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 8,
+        height: 8,
+    };
+    let state = sophia_protocol::PolicyPresentationState {
+        fullscreen: false,
+        maximized: true,
+        minimized: false,
+    };
+    let commands = [
+        XAuthorityControlCommand::PublishMetadataRule {
+            transaction: TransactionId::from_raw(first_transaction),
+            surface,
+            rule: sophia_protocol::MetadataDisclosureRule {
+                surface,
+                disclosure: sophia_protocol::MetadataDisclosure::ClassOnly,
+                trust_level: sophia_protocol::TrustLevel::Trusted,
+                icon: None,
+                generation: 1,
+            },
+        },
+        XAuthorityControlCommand::AdmitSurface {
+            transaction: TransactionId::from_raw(first_transaction + 1),
+            surface,
+            geometry,
+        },
+        XAuthorityControlCommand::ConfigureSurface {
+            transaction: TransactionId::from_raw(first_transaction + 2),
+            surface,
+            geometry: Rect {
+                width: 16,
+                height: 16,
+                ..geometry
+            },
+        },
+        XAuthorityControlCommand::SetPresentationState {
+            transaction: TransactionId::from_raw(first_transaction + 3),
+            surface,
+            state,
+        },
+        XAuthorityControlCommand::RestorePresentationState {
+            transaction: TransactionId::from_raw(first_transaction + 4),
+            surface,
+            state: sophia_protocol::PolicyPresentationState {
+                maximized: false,
+                ..state
+            },
+        },
+        XAuthorityControlCommand::FocusSurface {
+            transaction: TransactionId::from_raw(first_transaction + 5),
+            surface,
+        },
+        XAuthorityControlCommand::ClearFocus {
+            transaction: TransactionId::from_raw(first_transaction + 6),
+            surface,
+        },
+        XAuthorityControlCommand::WithdrawSurface {
+            transaction: TransactionId::from_raw(first_transaction + 7),
+            surface,
+        },
+        XAuthorityControlCommand::CloseSurface {
+            transaction: TransactionId::from_raw(first_transaction + 8),
+            surface,
+        },
+    ];
+    commands
+        .into_iter()
+        .map(|command| (command.kind(), XAuthorityClientControlCommand { client, command }))
+        .collect()
+}
+
+/// Per-kind diagnostics for `C.control_cleanup`, on the real service.
+///
+/// NOT BOUND as that case. The row asks for actual cleanup of all nine kinds,
+/// and on this source only `ConfigureSurface` reports the steps that let an
+/// abandoned record be discharged; the other eight report nothing and are
+/// retained as unproved, which is the honest outcome of the rule but not
+/// evidence that each kind's cleanup was performed. The production repair for
+/// that is owned elsewhere; what is kept here is the measurement, so the
+/// difference between a discharge and a retention is recorded per kind rather
+/// than argued about.
+#[test]
+fn c_control_cleanup_diagnostics() {
+    // EXECUTED, on its own invocation. `CloseSurface` can end the recipient's
+    // connection, so the kinds that are meant to run and the kinds that are
+    // meant never to run cannot share one.
+    let executed_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+    let mut executed_service = LifecycleService::launch_over_store(
+        "c-control-executed",
+        12060,
+        None,
+        false,
+        1,
+        executed_store.clone(),
+    );
+    executed_service.start();
+    let (mut executed_peer, executed_custody) = executed_service.connect();
+    let (executed_surface, _seq, _ingress) =
+        focus_window(&executed_service, &mut executed_peer, 0x320801, 12060);
+    let executed_client = executed_custody.cleanup_record().client;
+    let executed_lease = executed_service.owner.lease();
+    let executed_control = executed_service
+        .access
+        .control_producer(&executed_lease)
+        .expect("the service's own control producer");
+    let mut executed = Vec::new();
+    for (kind, command) in every_control_kind(executed_client, executed_surface, 12400) {
+        let transaction = command.command.transaction().raw();
+        let accepted = executed_control
+            .submit(&executed_lease, command)
+            .map(|_| ())
+            .map_err(|(refusal, _)| format!("{refusal:?}"));
+        let outcome = accepted.is_ok().then(|| {
+            ack_for(&executed_service.acks, transaction)
+                .map(|ack| format!("{:?}", ack.acknowledgement.outcome))
+        });
+        executed.push(json!({
+            "kind": format!("{kind:?}"),
+            "transaction": transaction,
+            "accepted": format!("{accepted:?}"),
+            "outcome": outcome,
+        }));
+    }
+    executed_service.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    let executed_closed = executed_service.closed();
+    let mut actors = executed_service.finish(&[executed_custody]);
+
+    // ACCEPTED AND NEVER EXECUTED, on a second invocation whose runner is
+    // held, so each kind is taken into the order and no executor claims it.
+    let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+    let mut service = LifecycleService::launch_over_store(
+        "c-control-unexecuted",
+        12061,
+        None,
+        false,
+        1,
+        store.clone(),
+    );
+    service.start();
+    let (mut peer, custody) = service.connect();
+    let (surface, _sequence, _ingress) = focus_window(&service, &mut peer, 0x320901, 12061);
+    let client = custody.cleanup_record().client;
+    let lease = service.owner.lease();
+    let control = service
+        .access
+        .control_producer(&lease)
+        .expect("the second service's own control producer");
+    let held = hold_runner(&service);
+    let entered = held.entered();
+    let mut unexecuted = Vec::new();
+    for (kind, command) in every_control_kind(client, surface, 12500) {
+        let transaction = command.command.transaction().raw();
+        let accepted = control
+            .submit(&lease, command)
+            .map(|_| ())
+            .map_err(|(refusal, _)| format!("{refusal:?}"));
+        unexecuted.push(json!({
+            "kind": format!("{kind:?}"),
+            "transaction": transaction,
+            "accepted": format!("{accepted:?}"),
+        }));
+    }
+    let charged_with_nine_accepted = store.reserved();
+    let completion = service.registry.control_completion();
+    let reconciled_while_live = completion
+        .as_ref()
+        .map(|registry| format!("{:?}", registry.reconcile_client(client)));
+    let cleanups_owed_while_live = completion
+        .as_ref()
+        .map(|registry| format!("{:?}", registry.cleanups_owed().map(|owed| owed.len())));
+
+    service.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    held.release();
+    let closed = service.closed();
+
+    // The production reconciliation, reached where production reaches it.
+    let drive = store.drive();
+    let reconciled_after_exit = completion
+        .as_ref()
+        .map(|registry| format!("{:?}", registry.reconcile_unstarted()));
+    let cleanups_owed_after_exit = completion
+        .as_ref()
+        .map(|registry| format!("{:?}", registry.cleanups_owed().map(|owed| owed.len())));
+    let retained = interrupted_custody(&service);
+    actors.extend(service.finish(&[custody]));
+
+    assert!(drive.readable, "the store could be looked at");
+    assert_eq!(executed.len(), 9, "every named kind was actually executed");
+    assert_eq!(unexecuted.len(), 9, "and every one accepted without one");
+    let accepted_unexecuted = unexecuted
+        .iter()
+        .filter(|row| row["accepted"].as_str() == Some("Ok(())"))
+        .count();
+    assert!(
+        accepted_unexecuted >= 8,
+        "the held order took the named kinds; what it refused is recorded: {unexecuted:?}"
+    );
+    println!(
+        "sophia_m3_control_cleanup_diagnostics {}",
+        json!({
+            "schema": 1,
+            "case": "C.control_cleanup",
+            "bound": false,
+            "why_unbound": "actual cleanup is established for ConfigureSurface only; the other eight kinds report no steps and are retained as unproved. Recorded, not weakened.",
+            "executed_through_real_writer": executed,
+            "executed_closed_error": executed_closed.error,
+            "accepted_and_never_executed": unexecuted,
+            "accepted_unexecuted_count": accepted_unexecuted,
+            "charged_with_nine_accepted": charged_with_nine_accepted,
+            "reconcile_client_while_live": reconciled_while_live,
+            "cleanups_owed_while_live": cleanups_owed_while_live,
+            "reconcile_unstarted_after_exit": reconciled_after_exit,
+            "cleanups_owed_after_exit": cleanups_owed_after_exit,
+            "drive": format!("{drive:?}"),
+            "retained": format!("{retained:?}"),
+            "closed_error": closed.error,
+            "held_on": format!("{entered:?}"),
+            "collected_actors": actors,
+        })
+    );
+}
