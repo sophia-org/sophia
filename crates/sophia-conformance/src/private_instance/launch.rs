@@ -6,7 +6,13 @@ use std::os::fd::{AsRawFd, BorrowedFd};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+
+// A nested namespace launcher can leave its short-lived namespace monitor as
+// an adopted child. One launch owns this private process's descendant scope;
+// concurrent unrelated process owners are deliberately not supported here.
+static LAUNCH_OWNER: Mutex<()> = Mutex::new(());
 
 pub struct Mount {
     pub source: PathBuf,
@@ -26,6 +32,14 @@ impl Launch {
     /// The caller keeps every delegated descriptor alive through spawn. No
     /// unrelated descriptor is added to the launcher's pass-fd inventory.
     pub fn spawn(self, delegated: &[BorrowedFd<'_>]) -> Result<Child, String> {
+        let owner = LAUNCH_OWNER
+            .try_lock()
+            .map_err(|_| "private launch already owned")?;
+        if !children()?.is_empty() {
+            return Err("private launch requires an empty child inventory".into());
+        }
+        rustix::process::set_child_subreaper(Some(rustix::process::getpid()))
+            .map_err(|e| e.to_string())?;
         if self.timeout.is_zero()
             || self.timeout > Duration::from_secs(1800)
             || self
@@ -93,7 +107,9 @@ impl Launch {
             process,
             deadline: Instant::now() + self.timeout + Duration::from_secs(3),
             waited: false,
+            root_reaped: false,
             log,
+            _owner: owner,
         })
     }
 }
@@ -115,7 +131,9 @@ pub struct Child {
     process: std::process::Child,
     deadline: Instant,
     waited: bool,
+    root_reaped: bool,
     log: PathBuf,
+    _owner: MutexGuard<'static, ()>,
 }
 
 impl Child {
@@ -125,7 +143,11 @@ impl Child {
 
     pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, String> {
         let result = self.process.try_wait().map_err(|e| e.to_string())?;
-        self.waited |= result.is_some();
+        self.root_reaped |= result.is_some();
+        if result.is_some() && !self.waited {
+            collect_monitors(false)?;
+            self.waited = true;
+        }
         Ok(result)
     }
 
@@ -143,11 +165,49 @@ impl Child {
     }
 
     fn kill_and_wait(&mut self) {
-        if let Some(pid) = rustix::process::Pid::from_raw(self.process.id() as i32) {
-            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+        if !self.root_reaped {
+            if let Some(pid) = rustix::process::Pid::from_raw(self.process.id() as i32) {
+                let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+            }
+            let _ = self.process.kill();
+            self.root_reaped = self.process.wait().is_ok();
         }
-        let _ = self.process.kill();
-        self.waited = self.process.wait().is_ok();
+        self.waited = self.root_reaped && collect_monitors(true).is_ok();
+    }
+}
+
+fn children() -> Result<std::collections::BTreeSet<u32>, String> {
+    let mut children = std::collections::BTreeSet::new();
+    for task in std::fs::read_dir("/proc/self/task").map_err(|e| e.to_string())? {
+        let task = task.map_err(|e| e.to_string())?;
+        let listed =
+            std::fs::read_to_string(task.path().join("children")).map_err(|e| e.to_string())?;
+        for pid in listed.split_whitespace() {
+            children.insert(pid.parse::<u32>().map_err(|e| e.to_string())?);
+        }
+    }
+    Ok(children)
+}
+
+fn collect_monitors(kill: bool) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let current = children()?;
+        if current.is_empty() {
+            return Ok(());
+        }
+        for raw in current {
+            let pid = rustix::process::Pid::from_raw(raw as i32).ok_or("invalid monitor pid")?;
+            if kill {
+                let _ = rustix::process::kill_process(pid, rustix::process::Signal::KILL);
+            }
+            rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::NOHANG)
+                .map_err(|e| e.to_string())?;
+        }
+        if Instant::now() >= deadline {
+            return Err("private namespace monitor did not finish; launch is not collected".into());
+        }
+        std::thread::sleep(Duration::from_millis(5));
     }
 }
 
