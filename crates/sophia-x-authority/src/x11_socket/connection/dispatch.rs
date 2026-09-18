@@ -680,7 +680,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             (None, input_receiver, control_channels, None)
         };
     let control_cleanup_source = match (protocol_routing.as_ref(), route_registration.as_ref()) {
-        (Some(routing), Some(registration)) => routing.prepare_control_source(registration, state, resource_id_range)?,
+        (Some(routing), Some(registration)) => routing.prepare_control_source(registration, state, resource_id_range, PrivateControlClientTables {
+            windows: surface_windows.clone(), rules: metadata_rules.clone(), generations: metadata_generations.clone(),
+        })?,
         _ => None,
     };
     let mut last_published_observation = None;

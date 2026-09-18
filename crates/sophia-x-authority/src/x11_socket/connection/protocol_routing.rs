@@ -18,6 +18,20 @@ fn route_core_lifecycle_events(
     client: XServerFrontendClientId,
     output: &mut XDispatchResult,
 ) -> Result<(), X11SetupSocketError> {
+    route_core_lifecycle_events_with_control(routing, client, output, None)
+}
+
+#[cfg(unix)]
+fn route_core_lifecycle_events_with_control(
+    routing: &XServerFrontendRouteRegistry,
+    client: XServerFrontendClientId,
+    output: &mut XDispatchResult,
+    execution: Option<&Arc<Mutex<PrivateControlExecution>>>,
+) -> Result<(), X11SetupSocketError> {
+    retain_private_control_events(execution, output.outputs.iter().filter_map(|item| match item {
+        crate::XClientOutput::Event(event) => Some((None, *event)),
+        _ => None,
+    }))?;
     const EXPOSURE_MASK: u32 = 1 << 15;
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
@@ -97,6 +111,7 @@ fn route_core_lifecycle_events(
                 ))
             })?;
         for recipient in subscribers.iter().copied().filter(|recipient| *recipient != client) {
+            retain_private_control_events(execution, [(Some(recipient), event)])?;
             routing.route_protocol(recipient, event).map_err(|error| {
                 X11SetupSocketError::new(format!(
                     "failed to route X11 lifecycle event: {error}"
@@ -129,6 +144,7 @@ fn route_core_lifecycle_events(
             })?;
         for recipient in subscribers {
             let parent_event = lifecycle_event_for_parent(event, parent);
+            retain_private_control_events(execution, [(Some(recipient), parent_event)])?;
             if recipient == client {
                 output.outputs.push(crate::XClientOutput::Event(parent_event));
             } else {
@@ -281,6 +297,18 @@ fn route_x11_present_configure(
     window: XResourceId,
     geometry: Rect,
 ) -> Result<Vec<XClientEvent>, X11SetupSocketError> {
+    route_x11_present_configure_with_control(routing, client, sequence, window, geometry, None)
+}
+
+#[cfg(unix)]
+fn route_x11_present_configure_with_control(
+    routing: &XServerFrontendRouteRegistry,
+    client: XServerFrontendClientId,
+    sequence: u16,
+    window: XResourceId,
+    geometry: Rect,
+    execution: Option<&Arc<Mutex<PrivateControlExecution>>>,
+) -> Result<Vec<XClientEvent>, X11SetupSocketError> {
     let width = crate::dispatch::clamp_u16(geometry.width);
     let height = crate::dispatch::clamp_u16(geometry.height);
     let subscribers = routing
@@ -301,9 +329,7 @@ fn route_x11_present_configure(
             subscribers.len(),
         );
     }
-    let mut local_events = Vec::new();
-    for (target, event_id) in subscribers {
-        let mut event = XClientEvent::PresentConfigureNotify {
+    let events: Vec<_> = subscribers.into_iter().map(|(target, event_id)| (target, XClientEvent::PresentConfigureNotify {
             sequence,
             event_id,
             window,
@@ -314,7 +340,10 @@ fn route_x11_present_configure(
             pixmap_width: width,
             pixmap_height: height,
             pixmap_flags: 0,
-        };
+        })).collect();
+    retain_private_control_events(execution, events.iter().map(|(target, event)| (Some(*target), *event)))?;
+    let mut local_events = Vec::new();
+    for (target, mut event) in events {
         if target == client {
             local_events.push(event);
         } else {

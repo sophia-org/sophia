@@ -618,6 +618,7 @@ impl XServerFrontendRouteRegistry {
                 client: route.client,
             });
         }
+        self.retain_control_route_source(route, completion)?;
         if let Some(result) = self.route_focus_control(route, completion) {
             return result;
         }

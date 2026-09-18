@@ -6,9 +6,21 @@ struct PrivateControlClientSource {
     completion: std::sync::Weak<Mutex<ControlCompletions>>,
     state: X11CoreSocketServerState,
     resource_range: crate::XWireClientResourceRange,
+    tables: PrivateControlClientTables,
     teardown: Mutex<PrivateControlTeardown>,
     #[cfg(all(test, unix))]
     fail_after_runtime: AtomicBool,
+    #[cfg(all(test, unix))]
+    fail_after_effect: AtomicBool,
+    #[cfg(all(test, unix))]
+    fail_before_write: AtomicBool,
+}
+
+#[cfg(unix)]
+struct PrivateControlClientTables {
+    windows: Arc<Mutex<BTreeMap<SurfaceId, XResourceId>>>,
+    rules: Arc<Mutex<BTreeMap<SurfaceId, MetadataDisclosureRule>>>,
+    generations: Arc<Mutex<BTreeMap<SurfaceId, u64>>>,
 }
 
 #[cfg(unix)]
@@ -36,6 +48,7 @@ impl XServerFrontendRouteRegistry {
         registration: &XServerFrontendClientRouteRegistration,
         state: &X11CoreSocketServerState,
         resource_range: crate::XWireClientResourceRange,
+        tables: PrivateControlClientTables,
     ) -> Result<Option<Arc<PrivateControlClientSource>>, X11SetupSocketError> {
         let Some(owner) = self.private_applied.get() else {
             return Ok(None);
@@ -79,9 +92,14 @@ impl XServerFrontendRouteRegistry {
             ),
             state: state.clone(),
             resource_range,
+            tables,
             teardown: Mutex::new(PrivateControlTeardown::default()),
             #[cfg(all(test, unix))]
             fail_after_runtime: AtomicBool::new(false),
+            #[cfg(all(test, unix))]
+            fail_after_effect: AtomicBool::new(false),
+            #[cfg(all(test, unix))]
+            fail_before_write: AtomicBool::new(false),
         });
         registration
             .connection_state
