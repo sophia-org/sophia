@@ -80,6 +80,68 @@ mod implementation {
         );
         assert!(owner.shared.inventory.is_poisoned());
     }
+
+    #[test]
+    fn production_closure_keeps_the_original_supervisor_and_identity_sequence() {
+        use std::io::Read;
+        let mut owner = PrivateWatchdogOwner::prepare(1).unwrap();
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        let _writer = socket.try_clone().unwrap();
+        let registration = owner
+            .attach_transport(socket)
+            .unwrap_or_else(|_| panic!("slot"));
+        let gate = owner.seal().unwrap();
+        let active = owner.begin_dequeued(Instant::now()).unwrap();
+        let identity = active.identity;
+        owner.close_production();
+        owner.close_production();
+        drop(registration);
+        peer.set_read_timeout(Some(super::TEST_LIMIT)).unwrap();
+        let ending = peer.read(&mut [0]);
+        let finished = active.finish();
+        let cleanup = owner.begin_dequeued(Instant::now()).unwrap();
+        let cleanup_identity = cleanup.identity;
+        let cleanup_finished = cleanup.finish();
+        let admission_closed = !gate.allows_execution();
+        let supervisor_alive = !gate.supervisor_finished();
+        let failure = gate.failure();
+        let (late, _peer) = UnixStream::pair().unwrap();
+        let late_refused = matches!(
+            owner.registrar().attach_transport(late),
+            Err((PrivateWatchdogRefusal::Closed, _))
+        );
+        drop(owner);
+        super::wait_for_exit(&gate);
+        assert_eq!(
+            ending.unwrap(),
+            0,
+            "the independent dup ended the actual wire"
+        );
+        assert_eq!(finished, Ok(()));
+        assert_eq!(
+            cleanup_identity,
+            identity + 1,
+            "cleanup continues the original supervisor"
+        );
+        assert_eq!(cleanup_finished, Ok(()));
+        assert!(admission_closed && supervisor_alive && late_refused);
+        assert_eq!(failure, None);
+    }
+
+    #[test]
+    fn production_closure_cannot_reset_an_abandoned_execution_failure() {
+        let mut owner = PrivateWatchdogOwner::prepare(0).unwrap();
+        let gate = owner.seal().unwrap();
+        drop(owner.begin_dequeued(Instant::now()).unwrap());
+        let failure = gate.failure().unwrap();
+        owner.close_production();
+        let refused = matches!(owner.begin_dequeued(Instant::now()), Err(PrivateWatchdogRefusal::Failed(observed)) if observed == failure);
+        drop(owner);
+        super::wait_for_exit(&gate);
+        assert!(refused);
+        assert_eq!(gate.failure(), Some(failure));
+        assert_eq!(failure.cause, PrivateWatchdogCause::ExecutionAbandoned);
+    }
 }
 
 use implementation::{
@@ -100,6 +162,36 @@ fn wait_for_exit(gate: &PrivateWatchdogGate) {
         assert!(Instant::now() < deadline, "supervisor did not return");
         std::thread::park_timeout(Duration::from_millis(1));
     }
+}
+
+#[test]
+fn cleanup_after_production_closes_is_still_watched_while_a_guard_is_held() {
+    let mut owner = PrivateWatchdogOwner::prepare(0).unwrap();
+    let gate = owner.seal().unwrap();
+    owner.close_production();
+    let guard = Arc::new(Mutex::new(()));
+    let held = guard.lock().unwrap();
+    let waiting = guard.clone();
+    let cleanup = owner.begin_dequeued(Instant::now()).unwrap();
+    let worker = std::thread::spawn(move || {
+        let _acquired = waiting.lock().unwrap();
+        cleanup.finish()
+    });
+    let deadline = Instant::now() + TEST_LIMIT;
+    while !gate.supervisor_finished() && Instant::now() < deadline {
+        std::thread::park_timeout(Duration::from_millis(1));
+    }
+    let failure_while_held = gate.failure();
+    let ended_while_held = gate.supervisor_finished();
+    drop(held);
+    let finish = worker.join().unwrap();
+    drop(owner);
+    wait_for_exit(&gate);
+    assert!(ended_while_held);
+    let failure =
+        failure_while_held.expect("the original watchdog covered cleanup guard acquisition");
+    assert_eq!(failure.cause, PrivateWatchdogCause::Deadline);
+    assert_eq!(finish, Err(PrivateWatchdogRefusal::Failed(failure)));
 }
 
 #[test]

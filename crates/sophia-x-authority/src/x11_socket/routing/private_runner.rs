@@ -527,14 +527,15 @@ impl PrivatePreparedRunner {
         self.frontend.as_ref().expect("live runner")
     }
 
-    /// Close producer admission: the supervising watchdog owner is dropped,
-    /// which fails an active execution, closes the sealed gate the frontend's
-    /// admission consults (so every producer refuses from here) and detaches
-    /// the supervisor without joining it. The frontend, its accepted order
-    /// and its retained work are untouched; this is the first act of a
-    /// service exit, before anything is waited for.
+    /// Close producer admission and interrupt transports without destroying
+    /// the original cleanup supervisor. Accepted work and its accounting stay
+    /// owned; later turns can service terminal work but cannot dequeue new
+    /// operations. Final runner disposal still stops the supervisor.
     pub(crate) fn close_admission(&mut self) {
-        drop(self.watch.take());
+        if let Some(watch) = self.watch.as_ref() {
+            watch.close_production();
+        }
+        self.prefer_cleanup = true;
     }
 
     /// Give the frontend back unsettled, for a service that must not finalise
@@ -625,6 +626,10 @@ impl PrivatePreparedRunner {
         // producers cannot keep this call open by continuously replenishing.
         let turn_starts = self.service.limits().starts as usize;
         while progress.starts < turn_starts {
+            let production_open = self.frontend().admission.lifecycle_open();
+            if !production_open {
+                self.prefer_cleanup = true;
+            }
             let mut cleanup_idle = false;
             if self.prefer_cleanup {
                 match self.deliver_accounted_step()? {
@@ -759,6 +764,9 @@ impl PrivatePreparedRunner {
                         }
                     }
                 }
+            }
+            if !production_open {
+                break;
             }
             let (step, charge) = match self.execute_accounted_step()? {
                 PrivateAccountedStep::Yield { cause, taken } => {

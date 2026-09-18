@@ -61,6 +61,8 @@ struct Inventory {
     next_identity: Option<u64>,
     failure: Option<PrivateWatchdogFailure>,
     stop: bool,
+    production_closed: bool,
+    interrupt_pending: bool,
     sealed: bool,
     transports: Vec<Option<Transport>>,
 }
@@ -139,6 +141,9 @@ impl Shared {
         if let Err(refusal) = self.check_live(&mut inventory) {
             return Err((refusal, socket));
         }
+        if inventory.production_closed {
+            return Err((PrivateWatchdogRefusal::Closed, socket));
+        }
         if preparing && inventory.sealed {
             return Err((PrivateWatchdogRefusal::Sealed, socket));
         }
@@ -185,6 +190,8 @@ impl PrivateWatchdogOwner {
                 next_identity: Some(1),
                 failure: None,
                 stop: false,
+                production_closed: false,
+                interrupt_pending: false,
                 sealed: false,
                 transports,
             }),
@@ -281,6 +288,21 @@ impl PrivateWatchdogOwner {
         })
     }
 
+    /// Irreversibly end producer admission and interrupt the current transports,
+    /// while keeping this same supervisor available for already-owned cleanup.
+    /// No queue or execution guard is acquired, no work is drained, and neither
+    /// a failure latch nor the execution identity sequence is reset. Only the
+    /// execution owner can begin a cleanup visit; the closed gate grants none.
+    pub(crate) fn close_production(&self) {
+        let mut inventory = self.shared.lock();
+        self.shared.closed.store(true, Ordering::Release);
+        if !inventory.production_closed {
+            inventory.production_closed = true;
+            inventory.interrupt_pending = true;
+        }
+        self.shared.changed.notify_all();
+    }
+
     /// Reap only a thread already known to have returned. No worker join is
     /// performed here, and Drop never joins even this supervisor.
     pub(crate) fn reap_finished(&mut self) -> Option<thread::Result<()>> {
@@ -365,7 +387,7 @@ impl Drop for PrivateWatchdogTransport {
         // Once failure selected this cohort, dropping a registration
         // cannot race its descriptor out from under the pending shutdown.
         // The failed inventory retains that bounded slot through cleanup.
-        if inventory.failure.is_some() || inventory.stop {
+        if inventory.failure.is_some() || inventory.stop || inventory.production_closed {
             return;
         }
         if inventory.transports[self.slot]
@@ -458,6 +480,13 @@ fn supervise(shared: &Shared) {
             drop(inventory);
             shutdown_transports(shared);
             return;
+        }
+        if inventory.interrupt_pending {
+            inventory.interrupt_pending = false;
+            drop(inventory);
+            shutdown_transports(shared);
+            inventory = shared.lock();
+            continue;
         }
         let result = if let Some(active) = inventory.active {
             let remaining = PRIVATE_EXECUTION_DEADLINE.saturating_sub(active.dequeued.elapsed());

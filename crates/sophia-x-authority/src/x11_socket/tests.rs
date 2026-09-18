@@ -1154,6 +1154,10 @@ include!("tests/private_producer_service.rs");
 include!("tests/private_producer_port.rs");
 include!("tests/private_producer_exits.rs");
 include!("tests/private_producer_runner.rs");
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_cleanup_supervision.rs"
+));
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
