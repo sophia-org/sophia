@@ -667,6 +667,23 @@ fn borrowed_native_content_places_real_wire_request_without_granting_early_focus
                 assert_eq!(t.content_allocation_snapshots().len(), 1);
                 assert_eq!(t.content_grant(), Some(key.grant));
             }
+            assert!(!t.closed_native_owners_settled(opening).unwrap());
+            let mut invalidations = 0;
+            for _ in 0..2 {
+                assert!(
+                    service
+                        .settle_close_resources(t, &mut || {
+                            invalidations += 1;
+                            Ok(TransactionId::from_raw(920))
+                        })
+                        .unwrap()
+                );
+                assert!(t.content_allocation_snapshots().is_empty());
+            }
+            assert_eq!(
+                invalidations, 1,
+                "repeat must not enqueue another invalidation"
+            );
             assert!(
                 service
                     .service_open(

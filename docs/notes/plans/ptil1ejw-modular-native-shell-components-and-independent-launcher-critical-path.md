@@ -615,3 +615,32 @@ That control does not execute the submitted native removal branch, a protected
 child, GPU/KMS, or live close/reopen. Existing backend removal evidence retains
 its separate scope. No current canonical, publication or physical readiness is
 claimed by this checkpoint.
+
+### Close resource settlement inspects actual owners (2026-09-18)
+
+Session can now invalidate the exact closing opening's allocations after its
+pixel-removal predicate succeeds. It validates the full allocation set before
+mutation, leaves queued invalidation responses in their existing store/FIFO,
+and retries only allocations still active. Saturation preserves the close.
+`closed_native_owners_settled` inspects actual resource/candidate/allocation
+owners and response credits, native response/input obligations, buffered input
+and the partial-write FIFO. High-water identities remain retained. It neither
+resets the grant nor manufactures ResourceReleased.
+
+A locally settled result is deliberately NOT a peer-close barrier: old records
+may still be in the peer outbox or socket. Session retains the closing state and
+still refuses open service. Safe old-opening dispatch during same-connection
+reopening remains required before enabling that transition. Live owner wiring,
+composed submitted-removal coverage, canonical validation and lom-test readiness
+remain open.
+
+`.artifacts/bemenu-close-settlement/`: device-hidden runtime 14 + native transport
+30 + native content 10 + Session 471 + component connections 7 PASS, 14 Session
+ignored; strict Runtime/Session Clippy and layout PASS. The actual private-peer
+resource control invalidates allocations, retains a real pixel lease, observes
+retiring bytes and false settlement, then drops the lease and consumes the real
+Released response before settlement becomes true. Session repeats invalidation
+service with one transaction allocation total and still refuses open service.
+The disposable compiled resource-check omission fails that held-owner assertion;
+source restoration and logs are in `.artifacts/bemenu-close-settlement-mutant/`.
+These tests do not execute native rendering, a supervised child or hardware.

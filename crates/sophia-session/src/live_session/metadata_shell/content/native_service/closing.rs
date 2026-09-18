@@ -106,4 +106,50 @@ impl NativeLauncherContentService {
             .is_some_and(|receipt| runtime.shell_component_removal_presented(receipt));
         Ok(close.pixels_absent)
     }
+    /// Invalidate exact opening allocations only after replacement presentation,
+    /// then inspect actual local owners. Even true is not a peer close barrier;
+    /// the retained close continues to reject open service.
+    pub fn settle_close_resources(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        transaction: &mut dyn FnMut() -> ServiceResult<TransactionId>,
+    ) -> ServiceResult<bool> {
+        self.validate(transport)?;
+        let close = self
+            .closing
+            .as_ref()
+            .ok_or(ShellTransportError::WrongActivation)?;
+        if !close.pixels_absent {
+            return Ok(false);
+        }
+        let opening = close.opening;
+        if transport.native_launcher_closed_opening() != Some(opening) {
+            return Err(ShellTransportError::WrongActivation.into());
+        }
+        let allocations = transport.content_allocation_snapshots();
+        // Validate the entire set before removing any member. A different
+        // opening is not ours to invalidate, even on the same connection.
+        if allocations
+            .iter()
+            .any(|v| v.native_opening != Some(opening.opening) || v.output != opening.output)
+        {
+            return Err(ShellTransportError::WrongActivation.into());
+        }
+        for allocation in allocations {
+            match transport.invalidate_content_allocation(
+                transaction()?,
+                allocation.allocation,
+                ContentReason::Revoked,
+            ) {
+                Ok(()) => {}
+                Err(ShellTransportError::ContentQueueSaturated) => return Ok(false),
+                Err(error) => return Err(error.into()),
+            }
+        }
+        // Store/FIFO own each invalidation after transfer; snapshots on retry
+        // contain only still-active allocations, never replaying a terminal.
+        transport.service_closed_native_content(opening, self.content.now_msec())?;
+        transport.service_closed_native_input(opening)?;
+        Ok(transport.closed_native_owners_settled(opening)?)
+    }
 }

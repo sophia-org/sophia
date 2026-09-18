@@ -603,6 +603,29 @@ fn late_closed_begin_gets_one_terminal_and_tails_cannot_reenter_submission() {
     };
     assert_eq!((v.state, v.demand_id, v.permit_id), (3, 2, 0));
     assert_eq!(r.allocations_mut(GRANT).unwrap().snapshots(), allocations);
+    assert!(
+        !peer
+            .transport
+            .closed_native_owners_settled(&r, opening())
+            .unwrap()
+    );
+    for allocation in &allocations {
+        peer.transport
+            .invalidate_content_allocation(
+                &mut r,
+                TransactionId::from_raw(990),
+                allocation.allocation,
+                ContentReason::Revoked,
+            )
+            .unwrap();
+    }
+    peer.transport.poll_io(&mut r).unwrap();
+    for _ in &allocations {
+        assert!(
+            matches!(decode_shell_content_frame(&peer.read()).unwrap().1,
+            ShellContentRecord::AllocationResult(v) if v.status == 4)
+        );
+    }
     let held = peer
         .transport
         .lease_content_resource(&r, GRANT, RESOURCE)
@@ -619,6 +642,12 @@ fn late_closed_begin_gets_one_terminal_and_tails_cannot_reenter_submission() {
     );
     peer.transport.poll_io(&mut r).unwrap();
     assert_eq!(r.accounting().memory.retiring, 8);
+    assert!(
+        !peer
+            .transport
+            .closed_native_owners_settled(&r, opening())
+            .unwrap()
+    );
     peer.client.set_nonblocking(true).unwrap();
     assert_eq!(
         peer.client.read(&mut [0]).unwrap_err().kind(),
@@ -638,6 +667,11 @@ fn late_closed_begin_gets_one_terminal_and_tails_cannot_reenter_submission() {
         ShellContentRecord::ResourceReleased(_)
     ));
     assert_eq!(r.accounting().memory.retiring, 0);
+    assert!(
+        peer.transport
+            .closed_native_owners_settled(&r, opening())
+            .unwrap()
+    );
     peer.transport.disconnect(&mut r).unwrap();
     r.collect();
     assert_eq!(r.accounting().retired_epochs, 0);
