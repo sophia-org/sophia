@@ -26,6 +26,28 @@ pub(super) struct CatalogDispatch {
 }
 
 impl SessionLaunchQueue {
+    /// Match the managed child against the current admission without treating
+    /// numeric transactions from different catalog owners as interchangeable.
+    pub fn matches_child_launch(
+        &self,
+        transaction: TransactionId,
+        catalog: bool,
+        native: Option<&NativeCatalogLaunch>,
+    ) -> bool {
+        if self
+            .admission
+            .is_none_or(|a| a.intent.transaction != transaction)
+            || self.catalog_admission(transaction) != catalog
+        {
+            return false;
+        }
+        match (self.admitted_native.as_ref(), native) {
+            (None, None) => true,
+            (Some(_), Some(origin)) => self.native_catalog_admission(origin),
+            _ => false,
+        }
+    }
+
     pub fn enqueue_native_catalog(
         &mut self,
         activation: NativeLauncherActivation,
@@ -165,6 +187,12 @@ impl SessionLaunchQueue {
             removed += 1;
         }
         removed
+    }
+
+    pub fn reject_native_before_execution(&mut self, launch: &NativeCatalogLaunch) {
+        if !self.native_execution_attempted {
+            self.cancel_native_catalog(launch);
+        }
     }
 
     pub fn cancel_native_catalog(&mut self, launch: &NativeCatalogLaunch) {

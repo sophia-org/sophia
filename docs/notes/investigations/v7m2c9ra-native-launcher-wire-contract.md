@@ -365,3 +365,45 @@ Strict Session Clippy and layout pass. Three separately compiled mutations fail
 their intended controls: execution replay, wrong grant acceptance and ignored
 changed command. All four tested source files match the restored disposable
 archive. Full canonical validation for this successor is not yet claimed.
+
+## Managed application origin handoff
+
+The Session's real first-window and child-exit checks now delegate through
+`ManagedSessionChild::matches_admission` to the queue's exact origin match.
+Managed children can retain the native payload alongside their transaction.
+Native admission requires that payload, including its retained entry identity;
+a legacy catalog child with the same numeric transaction cannot settle it, and
+an old native child cannot settle a later legacy admission. Non-native matching
+keeps the existing catalog-versus-ordinary distinction.
+
+The legacy launch path now calls the extracted `spawn_catalog_child`, preserving
+its executable/argv, control/display environment, process group, standard streams
+and working directory. It returns the existing managed child owner and can carry
+a native payload. Native execution still needs to consume the exact attempt and
+call this helper through its live role owner; this extraction alone does not
+launch Bemenu or establish first-window acceptance.
+
+Focused device-hidden controls: nine native admission tests, twelve queue tests
+and one existing managed-exit policy test pass. Strict Session Clippy and layout
+pass. A separately compiled numeric-only-origin mutation fails the new matching
+control; all seven source files are restored byte-for-byte. The new control
+exercises the shared queue matcher, not actual X first-window or process-exit
+delivery. No application/native process was run by this slice.
+
+The next process control now exercises the actual shared OS spawn function with
+`/bin/true` inside the device-hidden test namespace. `spawn_native_catalog` reads
+the grant from the borrowed connection, consumes exact execution authority,
+returns the Child together with the same retained payload, and settles exact
+spawn failure. A stale duplicate cannot cancel the successful attempt. Failed
+verification or a disconnected grant settles only pre-execution admission.
+Conversion to `ManagedSessionChild` preserves this payload for the production
+first-window and exit checks; the live native role scheduler is not wired yet.
+
+The isolated child exits zero without a window. The initial test incorrectly
+expected successful catalog completion; its retained failure led to correcting
+the test to preserve existing policy: no window means failed admission, even
+with exit zero. Twelve native controls, twelve queue controls and one existing
+managed-exit control pass. This is actual short-lived process execution without
+a display connection, not a native graphical application or attended run. The
+verification result is supplied in the spawn control; actual worker verification
+is tested separately. No joined live-supervisor/worker/first-window claim follows.

@@ -11,16 +11,28 @@ pub(super) struct ManagedSessionChild {
     pub(super) id: Option<String>,
     pub(super) launch_transaction: Option<TransactionId>,
     pub(super) catalog_launch: bool,
+    pub(super) native_catalog: Option<std::sync::Arc<crate::session_actions::NativeCatalogLaunch>>,
     pub(super) child: Child,
     pub(super) process_identity: Option<crate::launch_origin::ProcessIdentity>,
 }
 
 impl ManagedSessionChild {
+    pub(super) fn matches_admission(&self, launches: &SessionLaunchQueue) -> bool {
+        self.launch_transaction.is_some_and(|transaction| {
+            launches.matches_child_launch(
+                transaction,
+                self.catalog_launch,
+                self.native_catalog.as_deref(),
+            )
+        })
+    }
+
     pub(super) fn new(id: Option<String>, child: Child) -> Self {
         Self {
             id,
             launch_transaction: None,
             catalog_launch: false,
+            native_catalog: None,
             process_identity: crate::launch_origin::read_process(child.id()).map(|p| p.identity),
             child,
         }
@@ -31,10 +43,41 @@ impl ManagedSessionChild {
             id,
             launch_transaction: Some(transaction),
             catalog_launch: false,
+            native_catalog: None,
             process_identity: crate::launch_origin::read_process(child.id()).map(|p| p.identity),
             child,
         }
     }
+}
+
+impl From<crate::application_catalog::NativeCatalogChild> for ManagedSessionChild {
+    fn from(value: crate::application_catalog::NativeCatalogChild) -> Self {
+        let mut managed = Self::for_launch(None, value.launch.transaction, value.child);
+        managed.catalog_launch = true;
+        managed.native_catalog = Some(value.launch);
+        managed
+    }
+}
+
+/// Shared process construction for catalog launches. The caller must consume
+/// exact admission before this effect and retain the returned child immediately.
+pub(super) fn spawn_catalog_child(
+    command: crate::application_catalog::ApplicationLaunchCommand,
+    config: &PersistentXtermSessionConfig,
+    xauthority: &std::path::Path,
+    transaction: TransactionId,
+) -> std::io::Result<ManagedSessionChild> {
+    let child = crate::application_catalog::spawn_catalog_process(
+        &command,
+        crate::application_catalog::CatalogProcessEnvironment {
+            display: &config.display,
+            xauthority,
+            control_socket: config.control_socket.as_deref(),
+        },
+    )?;
+    let mut managed = ManagedSessionChild::for_launch(None, transaction, child);
+    managed.catalog_launch = true;
+    Ok(managed)
 }
 
 pub(super) const fn managed_child_exit_is_nonfatal(

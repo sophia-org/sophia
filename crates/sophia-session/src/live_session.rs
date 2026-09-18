@@ -117,7 +117,7 @@ use policy_transport_worker::{
     PolicyTransportCommand, PolicyTransportEvent, PolicyTransportWorker,
 };
 use process_supervision::{
-    ManagedSessionChild, SessionProcessGuard, managed_child_exit_is_nonfatal,
+    ManagedSessionChild, SessionProcessGuard, managed_child_exit_is_nonfatal, spawn_catalog_child,
     terminate_session_child,
 };
 use proof_artifacts::{LiveClientStdoutCapture, LiveInputProofResult};

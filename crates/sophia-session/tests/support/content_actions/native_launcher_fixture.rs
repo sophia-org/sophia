@@ -18,6 +18,13 @@ pub(super) struct Harness {
 
 impl Harness {
     pub fn new() -> Self {
+        Self::with_command(ApplicationLaunchCommand {
+            executable: std::env::current_exe().unwrap(),
+            arguments: vec![],
+            working_directory: None,
+        })
+    }
+    pub fn with_command(command: ApplicationLaunchCommand) -> Self {
         let mut epochs = empty();
         let mut peer = Peer::connected(&mut epochs);
         let allocations = peer.allocation(&mut epochs);
@@ -25,11 +32,7 @@ impl Harness {
         // Inspect this executable as catalog input, never spawn it as an app.
         let registered = ["app1", "app2"].map(|name| RegisteredCatalogApplication {
             name: name.into(),
-            command: ApplicationLaunchCommand {
-                executable: std::env::current_exe().unwrap(),
-                arguments: vec![],
-                working_directory: None,
-            },
+            command: command.clone(),
         });
         let catalog = build_application_catalog(
             &sophia_config::ApplicationCatalogConfig {

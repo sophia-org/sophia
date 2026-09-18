@@ -301,29 +301,8 @@ impl LiveMetadataShell {
                             Ok(command) => {
                                 // Filesystem work has completed on the worker. There is
                                 // no further admission queue between revalidation and exec.
-                                let mut process = std::process::Command::new(&command.executable);
-                                configure_control_environment(
-                                    &mut process,
-                                    config.control_socket.as_deref(),
-                                );
-                                process
-                                    .args(&command.arguments)
-                                    .env("DISPLAY", &config.display)
-                                    .env("XAUTHORITY", xauthority)
-                                    .env_remove("ENV")
-                                    .env_remove("BASH_ENV")
-                                    .process_group(0)
-                                    .stdin(Stdio::null())
-                                    .stdout(Stdio::inherit())
-                                    .stderr(Stdio::inherit());
-                                if let Some(directory) = command.working_directory {
-                                    process.current_dir(directory);
-                                }
-                                match process.spawn() {
-                                    Ok(child) => {
-                                        let mut managed =
-                                            ManagedSessionChild::for_launch(None, tx, child);
-                                        managed.catalog_launch = true;
+                                match spawn_catalog_child(command, config, xauthority, tx) {
+                                    Ok(managed) => {
                                         children.push(managed);
                                         *admission_started = Some(Instant::now());
                                         ShellLaunchStatus::Started

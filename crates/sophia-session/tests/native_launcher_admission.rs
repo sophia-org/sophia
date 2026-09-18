@@ -1,6 +1,7 @@
 #![cfg(feature = "native-session")]
 //! Real socket/store intake and the shared Session admission sequence. Renderer
-//! completion/protection are supplied; no application is spawned by these tests.
+//! completion/protection are supplied. Only the explicit process control spawns
+//! a device-hidden /bin/true child; it opens no display connection.
 use sophia_engine::PresentedContentTarget;
 use sophia_protocol::*;
 use sophia_runtime::ShellTransportError;
@@ -300,4 +301,183 @@ fn native_execution_attempt_is_exact_once_and_revocation_does_not_undo_it() {
         !h.queue
             .begin_native_catalog_execution(&payload, GRANT, &command)
     );
+}
+
+#[test]
+fn managed_origin_match_requires_native_payload_not_just_catalog_transaction() {
+    let mut h = Harness::new();
+    let activation = h.accept();
+    assert_eq!(h.activate(activation, 0).status, 1);
+    let payload = h.dispatch();
+    assert!(
+        h.queue
+            .matches_child_launch(payload.transaction, true, Some(&payload))
+    );
+    assert!(
+        !h.queue
+            .matches_child_launch(payload.transaction, true, None)
+    );
+    assert!(
+        !h.queue
+            .matches_child_launch(payload.transaction, false, Some(&payload))
+    );
+    let mut other = (*payload).clone();
+    other.activation.event.binding.grant.content_grant_epoch += 1;
+    assert!(
+        !h.queue
+            .matches_child_launch(payload.transaction, true, Some(&other))
+    );
+    other = (*payload).clone();
+    other.entry = std::sync::Arc::new((*payload.entry).clone());
+    assert!(
+        !h.queue
+            .matches_child_launch(payload.transaction, true, Some(&other))
+    );
+    h.queue.cancel_native_catalog(&payload);
+    assert!(matches!(
+        h.queue.enqueue_catalog(
+            sophia_session::session_actions::SessionLaunchIntent {
+                transaction: payload.transaction,
+                application: SessionApplicationId::from_raw(1),
+                placement_classification: None,
+            },
+            0
+        ),
+        sophia_session::session_actions::SessionLaunchQueueOutcome::Queued { .. }
+    ));
+    h.queue.begin_next(true).unwrap();
+    assert!(
+        h.queue
+            .matches_child_launch(payload.transaction, true, None)
+    );
+    assert!(
+        !h.queue
+            .matches_child_launch(payload.transaction, true, Some(&payload))
+    );
+}
+
+#[test]
+fn native_process_spawn_retains_origin_and_duplicate_cannot_cancel_started_child() {
+    use sophia_session::application_catalog::*;
+    use std::sync::Arc;
+    let command = ApplicationLaunchCommand {
+        executable: "/bin/true".into(),
+        arguments: vec![],
+        working_directory: None,
+    };
+    let mut h = Harness::with_command(command.clone());
+    let activation = h.accept();
+    assert_eq!(h.activate(activation, 0).status, 1);
+    let payload = h.dispatch();
+    let environment = || CatalogProcessEnvironment {
+        display: ":unavailable",
+        xauthority: std::path::Path::new("/nonexistent"),
+        control_socket: None,
+    };
+    // Supplied verification result; real worker verification is a separate
+    // control above. This exercises real process creation in a private domain.
+    let mut child = spawn_native_catalog(
+        &h.peer.transport.connection(&mut h.epochs),
+        &mut h.queue,
+        Arc::clone(&payload),
+        Ok(command.clone()),
+        environment(),
+    )
+    .unwrap();
+    assert!(Arc::ptr_eq(&child.launch, &payload));
+    assert!(
+        h.queue
+            .matches_child_launch(payload.transaction, true, Some(&child.launch))
+    );
+    assert!(matches!(
+        spawn_native_catalog(
+            &h.peer.transport.connection(&mut h.epochs),
+            &mut h.queue,
+            Arc::clone(&payload),
+            Ok(command),
+            environment(),
+        ),
+        Err(NativeCatalogSpawnError::Refused)
+    ));
+    assert!(h.queue.native_catalog_admission(&payload));
+    assert!(child.child.wait().unwrap().success());
+    // true exits without a window, so existing catalog policy reports failed
+    // admission despite exit 0. This is not a first-window acceptance test.
+    assert!(
+        h.queue
+            .complete_successful_exit(payload.transaction, true)
+            .is_none()
+    );
+    assert_eq!(
+        h.queue.fail_current().unwrap().intent.transaction,
+        payload.transaction
+    );
+}
+
+#[test]
+fn native_spawn_refuses_failed_verification_and_revoked_connection_before_effect() {
+    use sophia_session::application_catalog::*;
+    for disconnected in [false, true] {
+        let command = ApplicationLaunchCommand {
+            executable: "/bin/true".into(),
+            arguments: vec![],
+            working_directory: None,
+        };
+        let mut h = Harness::with_command(command.clone());
+        let activation = h.accept();
+        assert_eq!(h.activate(activation, 0).status, 1);
+        let payload = h.dispatch();
+        if disconnected {
+            h.peer.transport.disconnect(&mut h.epochs).unwrap();
+        }
+        let verified = if disconnected {
+            Ok(command)
+        } else {
+            Err("changed".into())
+        };
+        assert!(matches!(
+            spawn_native_catalog(
+                &h.peer.transport.connection(&mut h.epochs),
+                &mut h.queue,
+                payload.clone(),
+                verified,
+                CatalogProcessEnvironment {
+                    display: ":unavailable",
+                    xauthority: std::path::Path::new("/nonexistent"),
+                    control_socket: None
+                },
+            ),
+            Err(NativeCatalogSpawnError::Refused)
+        ));
+        assert!(!h.queue.native_catalog_admission(&payload));
+    }
+}
+
+#[test]
+fn native_spawn_error_settles_exact_attempt_without_retry() {
+    use sophia_session::application_catalog::*;
+    let command = ApplicationLaunchCommand {
+        executable: "/bin/true".into(),
+        arguments: vec![],
+        working_directory: Some("/nonexistent-native-launch-fixture".into()),
+    };
+    let mut h = Harness::with_command(command.clone());
+    let activation = h.accept();
+    assert_eq!(h.activate(activation, 0).status, 1);
+    let payload = h.dispatch();
+    assert!(matches!(
+        spawn_native_catalog(
+            &h.peer.transport.connection(&mut h.epochs),
+            &mut h.queue,
+            payload.clone(),
+            Ok(command),
+            CatalogProcessEnvironment {
+                display: ":unavailable",
+                xauthority: std::path::Path::new("/nonexistent"),
+                control_socket: None
+            },
+        ),
+        Err(NativeCatalogSpawnError::Spawn(_))
+    ));
+    assert!(!h.queue.native_catalog_admission(&payload));
 }
