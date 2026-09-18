@@ -18,6 +18,13 @@ failed, timed-out or uncollected tests prevent a component pass. CLI filters,
 replacement binaries and partial suites are unsupported. Add exact names to a
 new named suite when another component needs a repeatable gate.
 
+Diagnostics that need the acceptance module's private fixtures belong under
+`x11_socket::routing_tests::m3_acceptance::diagnostics::`. Add their exact full
+names to an explicit suite in `suites.json`; the prefix is not a filter and does
+not discover or run other tests. Every other test under `m3_acceptance` remains
+forbidden in component suites. Diagnostics cannot be bound in the acceptance
+inventory. No fixture visibility change is needed for this separate child module.
+
 The report's purpose is `m3_components`; its separate `components.verdict`
 describes only that suite. Aggregate acceptance remains `NOT_RUN`, with all
 20 acceptance rows unchanged. Component controls may use labelled fault seams;

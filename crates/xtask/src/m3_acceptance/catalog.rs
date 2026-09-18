@@ -25,6 +25,8 @@ pub(super) const CASES: [&str; 20] = [
     "D.scheduler",
 ];
 pub(super) const PREFIX: &str = "x11_socket::routing_tests::m3_acceptance::";
+pub(super) const DIAGNOSTIC_PREFIX: &str =
+    "x11_socket::routing_tests::m3_acceptance::diagnostics::";
 
 pub(super) fn inventory(path: &Path) -> Result<Inventory, String> {
     let value: Inventory = serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
@@ -56,6 +58,11 @@ pub(super) fn bindings(path: &Path) -> Result<Bindings, String> {
         .map_err(|e| e.to_string())?;
     let mut unique = BTreeSet::new();
     for (case, test) in &value.cases {
+        if test.starts_with(DIAGNOSTIC_PREFIX) {
+            return Err(
+                "diagnostic controls cannot be bound as integrated acceptance cases".into(),
+            );
+        }
         let suffix = test.strip_prefix(PREFIX).unwrap_or_default();
         if value.schema != 1
             || !CASES.contains(&case.as_str())

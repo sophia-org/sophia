@@ -1,5 +1,5 @@
 //! Exact component controls. Their result cannot change acceptance verdicts.
-use super::{evidence, identity, process, types::*, worker};
+use super::{catalog, evidence, identity, process, types::*, worker};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -48,17 +48,32 @@ pub(super) fn validate_names(tests: &[String]) -> Result<(), String> {
     if tests.is_empty()
         || tests.len() > 256
         || tests.iter().collect::<BTreeSet<_>>().len() != tests.len()
-        || tests.iter().any(|test| {
-            !test.starts_with("x11_socket::routing_tests::")
-                || test.starts_with("x11_socket::routing_tests::m3_acceptance::")
-                || test
-                    .bytes()
-                    .any(|byte| !(byte.is_ascii_alphanumeric() || byte == b'_' || byte == b':'))
-        })
+        || tests.iter().any(|test| !component_name(test))
     {
         return Err("component suite must contain 1..=256 unique exact component names".into());
     }
     Ok(())
+}
+
+fn component_name(test: &str) -> bool {
+    let Some(path) = test.strip_prefix("x11_socket::routing_tests::") else {
+        return false;
+    };
+    // A diagnostic can borrow private acceptance fixtures without becoming
+    // an acceptance case. Only this separate module is allowed; every test
+    // still has to appear by exact name in the source-attested suite.
+    if path == "m3_acceptance"
+        || (test.starts_with(catalog::PREFIX) && !test.starts_with(catalog::DIAGNOSTIC_PREFIX))
+    {
+        return false;
+    }
+    path.split("::").all(|segment| {
+        let mut bytes = segment.bytes();
+        bytes
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    })
 }
 
 pub(super) fn initial(config: &Config) -> Option<ComponentReport> {
