@@ -199,7 +199,49 @@ control before changing presentation behavior. The isolated SelectionNotify
 sequence repair belongs to the integration owner and is not bundled into this
 diagnostic slice. Brave usability and physical acceptance remain open.
 
-## Related work
+## Skipped first-frame admission: isolated September 18 repair
+
+The next attended capture, installed `8276fa04`, identifies three full-size
+InputOutput windows requested by Brave itself. Surface 6291459 receives its
+first Complete/Idle at approximately 2.16 seconds. Its later transactions
+16521 and 17114, and replacement-client transactions 24989 and 25055, have
+acceptance and selected-candidate records but no feedback-ready records in the
+retained zero-drop snapshot. The other two windows have feedback for every
+accepted Present in that snapshot. Stderr records another GPU exit 512.
+Keyboard observation/routing continues; these counters do not establish
+browser receipt, focus identity, or application processing.
+
+Source inspection finds an independent terminal-state gap: backend first-
+visibility expiry can return Skip/Idle, while Session admission remains in
+AwaitingRetirement and quarantines successors until actual presentation of
+that same candidate. A terminal Skip cannot subsequently satisfy that wait.
+The two-second timing supports this explanation for the capture but the old
+records omit completion mode; this is not an exact live Skip attribution.
+
+The isolated control receives real X Present requests, supplies a terminal
+backend Skip, and drains it through the real Session observer/socket writer.
+Unmodified source delivers Skip/Idle but fails the assertion that admission
+reopens. The repair uses the session-wide transaction ticket to recover the
+exact admission candidate, returns that state to AwaitingPixels, removes only
+its exact resize wait and safe observation, and requests a layout turn. A
+newer retained candidate survives. No skipped frame becomes Managed or grants
+focus, and no buffer release rule changes.
+
+Both successor timings are covered: already quarantined before Skip and sent
+after Idle. The real layout stage, resolve and projection release the successor
+group; repeated old Skip cannot clear its wait or observation. Native retirement
+of the successor is supplied separately. Initial admission/placement is fixture
+state; the visibility timer, GPU, owner-loop seat processing, KMS and browser
+are not executed by this test. The backend outcome remains distinct from its
+wire delivery and from actual native presentation.
+
+Private evidence: `.artifacts/brave-live-8276fa04/`, including the original
+failure, successor controls, captured logs and transaction correlation. This
+work is isolated in `codex/brave-admission-skip`; root remains clean for the M3
+integration. Native acceptance, the browser's three-window origin beyond its
+explicit CreateWindow requests, and the keyboard symptom remain open.
+
+## Related investigations
 
 - [t003](../plans/queue-02-cp-14-3-development-session-readiness-and-milestone-14-c.md#t003)
   still requires usable Brave typing; Ghostty's accepted startup remains valid.

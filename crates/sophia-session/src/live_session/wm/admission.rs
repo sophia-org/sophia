@@ -666,6 +666,45 @@ impl PersistentLiveLayout {
         true
     }
 
+    fn observe_terminal_present_feedback(
+        &mut self,
+        outcome: &sophia_backend_live::LivePresentFeedbackOutcome,
+    ) {
+        for feedback in &outcome.feedback {
+            let sophia_backend_live::LivePresentProtocolFeedback::Complete {
+                transaction,
+                disposition: sophia_backend_live::LivePresentBufferDisposition::Skipped,
+                ..
+            } = feedback else {
+                continue;
+            };
+            // Frontend transaction tickets are session-wide. Recover the full
+            // bound candidate before changing either admission or resize state.
+            let candidate = self.admissions.pending_surfaces().find_map(|surface| {
+                match self.admissions.state(surface) {
+                    sophia_engine::SurfacePresentationAdmissionState::AwaitingRetirement {
+                        visual_candidate, ..
+                    } if visual_candidate.transaction == *transaction => Some(visual_candidate),
+                    _ => None,
+                }
+            });
+            let Some(candidate) = candidate else { continue; };
+            if !self.admissions.reject_retirement(candidate) {
+                continue;
+            }
+            self.awaiting_visual_commits.reject(candidate);
+            self.layout_epochs.reject_safe_observation(candidate);
+            crate::session_println!(
+                "sophia_live_visual_admission schema=1 status=retry_pixels transaction={} surface={}",
+                candidate.transaction.raw(),
+                candidate.surface.index(),
+            );
+            // A newer frame may already be quarantined. Give it a layout turn
+            // without replaying the skipped buffer or marking either presented.
+            self.constraint_relayout_required = true;
+        }
+    }
+
     fn remove_admission_groups(&mut self, surface: SurfaceId) {
         self.pre_admission_groups
             .retain(|group| !group.contains_surface(surface));

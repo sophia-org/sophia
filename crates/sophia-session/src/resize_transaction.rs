@@ -148,6 +148,19 @@ impl ResizeVisualCommitTracker {
         before.saturating_sub(self.awaiting.len())
     }
 
+    pub fn reject(&mut self, candidate: SurfaceTransactionKey) -> bool {
+        let key = (candidate.transaction, candidate.surface);
+        if self
+            .awaiting
+            .get(&key)
+            .is_none_or(|value| value.candidate != candidate)
+        {
+            return false;
+        }
+        self.awaiting.remove(&key);
+        true
+    }
+
     pub fn len(&self) -> usize {
         self.awaiting.len()
     }

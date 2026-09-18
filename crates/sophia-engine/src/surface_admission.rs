@@ -184,6 +184,30 @@ impl SurfaceAdmissionTable {
         true
     }
 
+    /// A terminally skipped frame cannot satisfy admission. Preserve the
+    /// acknowledged policy placement while waiting for replacement pixels.
+    pub fn reject_retirement(&mut self, candidate: SurfaceTransactionKey) -> bool {
+        let SurfacePresentationAdmissionState::AwaitingRetirement {
+            admission_transaction,
+            visual_candidate,
+            geometry,
+        } = self.state(candidate.surface)
+        else {
+            return false;
+        };
+        if visual_candidate != candidate {
+            return false;
+        }
+        self.states.insert(
+            candidate.surface,
+            SurfacePresentationAdmissionState::AwaitingPixels {
+                transaction: admission_transaction,
+                geometry,
+            },
+        );
+        true
+    }
+
     pub fn facts(&self, surface: SurfaceId) -> Option<SurfaceLayoutFacts> {
         self.facts.get(&surface).copied()
     }

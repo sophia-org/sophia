@@ -338,7 +338,7 @@
         match shutdown {
             Ok(report) => {
                 fatal_cleanup.presentations_shutdown = true;
-                match present_observer.drain_pending_feedback(runtime, &mut present_feedback) {
+                match present_observer.drain_pending_feedback_with_layout(runtime, &mut present_feedback, &mut layout, |_, _, _| None) {
                     Ok(()) => {}
                     Err(error) => cleanup_failures
                         .push(format!("presentation feedback cleanup failed: {error}")),

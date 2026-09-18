@@ -680,6 +680,12 @@ fn interaction_field(record: &str, key: &str, value: &str) -> bool {
             _ => false,
         };
     }
+    if record == "sophia_live_visual_admission"
+        && key == "status"
+        && matches!(value, "armed" | "committed" | "presented" | "retry_pixels")
+    {
+        return true;
+    }
     if record == "sophia_live_visual_progress" && visual_progress_field(key, value) {
         return true;
     }

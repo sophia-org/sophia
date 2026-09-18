@@ -27,6 +27,259 @@ struct FeedbackFrontend {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
+#[test]
+fn skipped_first_present_reopens_admission_without_claiming_presentation() {
+    skipped_admission_control(false);
+}
+
+#[test]
+fn skipped_first_present_preserves_already_quarantined_successor() {
+    skipped_admission_control(true);
+}
+
+fn skipped_admission_control(early_successor: bool) {
+    use crate::live_session::PersistentLiveLayout;
+    use sophia_engine::SurfacePresentationAdmissionState;
+    use sophia_protocol::{
+        LayoutNodeKind, SurfaceConstraints, SurfacePlacementPreference, SurfacePresentationIntent,
+        SurfacePresentationIntentKind, SurfacePresentationRole,
+    };
+
+    let mut client = FeedbackClient::new();
+    let batch = client.present_batch(81, 0);
+    let pixels = batch
+        .transactions
+        .first()
+        .expect("real Present transaction");
+    let candidate = pixels.key();
+    let surface = candidate.surface;
+    let geometry = pixels.target_geometry;
+    let admission = TransactionId::from_raw(8000);
+    let mut layout = PersistentLiveLayout::default();
+    layout.admissions.observe_intent(SurfacePresentationIntent {
+        surface,
+        kind: SurfacePresentationIntentKind::Request,
+        role: SurfacePresentationRole::PolicyManaged,
+        surface_kind: LayoutNodeKind::Toplevel,
+        placement_preference: SurfacePlacementPreference::Default,
+        presentation_owner: None,
+        stack_rank: 0,
+        geometry,
+        constraints: SurfaceConstraints {
+            min_size: None,
+            max_size: None,
+        },
+        generation: 1,
+    });
+    assert!(
+        layout
+            .admissions
+            .begin_control(surface, admission, geometry)
+    );
+    assert!(layout.admissions.acknowledge_control(surface, admission));
+    assert!(layout.admissions.begin_retirement(surface, candidate));
+    layout
+        .presentation_roles
+        .insert(surface, SurfacePresentationRole::PolicyManaged);
+    let extent = Size {
+        width: geometry.width,
+        height: geometry.height,
+    };
+    layout.layout_epochs.record_safe_observation(
+        candidate,
+        extent,
+        sophia_engine::SurfaceVisualEvidence::PresentedBuffer,
+    );
+    layout
+        .awaiting_visual_commits
+        .arm(crate::resize_transaction::ResizeVisualCommit {
+            candidate,
+            size: extent,
+            layout_size: extent,
+        })
+        .unwrap();
+    // The same pixmap is not modified; two Presents can name it. This tests
+    // distinct transaction ownership rather than pretending to draw while busy.
+    let queued = early_successor.then(|| {
+        let batch = client.present_batch(82, 0);
+        layout.observe_authority_batch(&batch);
+        batch
+    });
+    let mut runtime = LiveProductionVisualRuntime::new(
+        &[HeadlessOutput {
+            id: OutputId::from_raw(1),
+            size: Size {
+                width: 2,
+                height: 2,
+            },
+            scale: 1,
+        }],
+        None,
+    )
+    .unwrap();
+    // Supply the backend's terminal Skip, not a native presentation. Exercise
+    // its real drain and socket delivery; no GPU or visibility timer runs here.
+    runtime.route_present_feedback(LivePresentFeedbackOutcome {
+        feedback: vec![
+            LivePresentProtocolFeedback::Complete {
+                transaction: candidate.transaction,
+                ust: 0,
+                msc: 0,
+                disposition: LivePresentBufferDisposition::Skipped,
+            },
+            LivePresentProtocolFeedback::Idle {
+                transaction: candidate.transaction,
+            },
+        ],
+        idle_fence_triggered: false,
+        layout_comparison: None,
+    });
+    client
+        .observer
+        .drain_pending_feedback_with_layout(
+            &mut runtime,
+            &mut Vec::new(),
+            &mut layout,
+            |_, _, _| None,
+        )
+        .unwrap();
+    let complete = packet(&mut client.stream);
+    let idle = packet(&mut client.stream);
+    assert_eq!(complete[11], 2, "wire completion is Skip, never Copy/Flip");
+    assert_eq!(u16::from_le_bytes([idle[8], idle[9]]), 2);
+    client.barrier();
+    assert_eq!(
+        layout.admissions.state(surface),
+        SurfacePresentationAdmissionState::AwaitingPixels {
+            transaction: admission,
+            geometry,
+        },
+        "terminal Skip must not leave admission waiting for impossible native retirement"
+    );
+    assert_eq!(layout.focus_to_apply, None);
+    assert!(!layout.awaiting_visual_commits.surface_awaiting(surface));
+    if let Some(queued) = &queued {
+        assert_eq!(
+            layout
+                .layout_epochs
+                .safe_observation(surface)
+                .unwrap()
+                .candidate,
+            Some(queued.transactions[0].key())
+        );
+    } else {
+        assert!(layout.layout_epochs.safe_observation(surface).is_none());
+    }
+    assert!(!layout.complete_admission_retirement(candidate));
+
+    // Reuse only after the exact Idle. An old repeated terminal must not undo
+    // the successor's independent retirement or its retained observation.
+    let next = queued.unwrap_or_else(|| client.present_batch(82, 0));
+    let successor = next.transactions.first().unwrap().key();
+    assert_ne!(candidate.transaction, successor.transaction);
+    if !early_successor {
+        layout.observe_authority_batch(&next);
+    }
+    let recovery = TransactionId::from_raw(8001);
+    let proposal = crate::live_session::LiveWmProposal {
+        transaction: recovery,
+        layers: vec![sophia_protocol::LayerSnapshot {
+            input_region: None,
+            translation: None,
+            output: None,
+            surface,
+            authority_local_id: None,
+            namespace: None,
+            stack_rank: 0,
+            geometry,
+            source_size: extent,
+            source: sophia_protocol::BufferSource::None,
+            damage: sophia_protocol::Region::single(geometry),
+            opacity: 1.0,
+            crop: None,
+            transform: sophia_protocol::Transform::IDENTITY,
+            generation: 1,
+            resize_sync: sophia_protocol::ResizeSyncCapability::ImplicitOnly,
+        }],
+        requested_sizes: std::collections::BTreeMap::from([(surface, extent)]),
+        presentation_states: std::collections::BTreeMap::new(),
+        configure_deliveries: 0,
+        focus: None,
+        timeout: Duration::from_secs(1),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: sophia_protocol::TransactionCommit {
+                transaction: recovery,
+                outcome: sophia_protocol::TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+        },
+        moved_surfaces: 0,
+        source: None,
+        policy_settlement: None,
+    };
+    assert!(
+        layout
+            .stage(
+                proposal,
+                &mut crate::session_control::SessionControlQueue::default()
+            )
+            .unwrap()
+            .is_none()
+    );
+    assert!(layout.resolve_pending().is_some());
+    let (_, released) =
+        layout.projected_batch(&wm_update_coordinator_batch(TransactionId::from_raw(8002)));
+    assert_eq!(released.len(), 1, "successor leaves admission quarantine");
+    assert_eq!(released[0].transactions[0].key(), successor);
+    let stale = LivePresentFeedbackOutcome {
+        feedback: vec![LivePresentProtocolFeedback::Complete {
+            transaction: candidate.transaction,
+            ust: 0,
+            msc: 0,
+            disposition: LivePresentBufferDisposition::Skipped,
+        }],
+        idle_fence_triggered: false,
+        layout_comparison: None,
+    };
+    layout.observe_terminal_present_feedback(&stale);
+    assert!(
+        layout
+            .awaiting_visual_commits
+            .exact_candidate(successor, extent)
+    );
+    assert_eq!(
+        layout
+            .layout_epochs
+            .safe_observation(surface)
+            .unwrap()
+            .candidate,
+        Some(successor)
+    );
+    assert_eq!(
+        layout.admissions.state(surface),
+        SurfacePresentationAdmissionState::AwaitingRetirement {
+            admission_transaction: admission,
+            visual_candidate: successor,
+            geometry,
+        }
+    );
+    assert!(
+        !layout
+            .admissions
+            .reject_retirement(sophia_protocol::SurfaceTransactionKey {
+                target_buffer: sophia_protocol::BufferSource::None,
+                ..successor
+            })
+    );
+    assert!(layout.complete_visual_commit(successor, extent));
+    assert!(layout.complete_admission_retirement(successor));
+    layout.observe_terminal_present_feedback(&stale);
+    assert_eq!(
+        layout.admissions.state(surface),
+        SurfacePresentationAdmissionState::Managed
+    );
+}
+
 impl Drop for FeedbackFrontend {
     fn drop(&mut self) {
         let _ = self
@@ -184,6 +437,14 @@ impl FeedbackClient {
     }
 
     fn present(&mut self, serial: u32, options: u32) -> TransactionId {
+        self.present_batch(serial, options).transaction
+    }
+
+    fn present_batch(
+        &mut self,
+        serial: u32,
+        options: u32,
+    ) -> sophia_x_authority::XAuthorityObservedTransactionBatch {
         let mut present = request(X_PRESENT_MAJOR_OPCODE, 1, 72);
         put(&mut present, 4, self.window);
         put(&mut present, 8, self.pixmap);
@@ -199,7 +460,7 @@ impl FeedbackClient {
         loop {
             let batch = self.observed.recv_timeout(Duration::from_secs(2)).unwrap();
             if !batch.software_present_submissions.is_empty() {
-                break batch.transaction;
+                break batch;
             }
         }
     }
@@ -271,7 +532,7 @@ fn feedback_progress_precedes_no_engine_work_with_a_disarmed_native_deadline() {
         // this headless test; neither a timeout nor a WM update rescues it.
         client
             .observer
-            .drain_pending_feedback(&mut runtime, &mut pending)
+            .drain_pending_feedback_observed(&mut runtime, &mut pending, |_, _| None)
             .unwrap();
         let batch = wm_update_coordinator_batch(TransactionId::from_raw(ticket));
         if !authority_batch_has_engine_work(&batch) {

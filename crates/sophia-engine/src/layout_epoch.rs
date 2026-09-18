@@ -433,6 +433,18 @@ impl LayoutEpochCoordinator {
         self.safe_observations.get(&surface).copied()
     }
 
+    /// Invalidates only the terminal candidate, never a newer observation.
+    pub fn reject_safe_observation(&mut self, candidate: SurfaceTransactionKey) -> bool {
+        if self
+            .safe_observation(candidate.surface)
+            .is_none_or(|observed| observed.candidate != Some(candidate))
+        {
+            return false;
+        }
+        self.safe_observations.remove(&candidate.surface);
+        true
+    }
+
     pub fn required_visual_evidence(&self, surface: SurfaceId) -> SurfaceVisualEvidence {
         self.visual_evidence_requirements
             .get(&surface)

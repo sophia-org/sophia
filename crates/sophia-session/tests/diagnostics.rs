@@ -32,6 +32,20 @@ fn x_lifecycle_records_keep_bounded_identity_and_exact_delivery_stage() {
 }
 
 #[test]
+fn skipped_admission_evidence_is_distinct_from_presentation() {
+    for status in ["armed", "committed", "presented", "retry_pixels"] {
+        let record = format!(
+            "sophia_live_visual_admission schema=1 status={status} transaction=7 surface=3"
+        );
+        assert_eq!(reduced_record(&record), Some(record));
+    }
+    assert_eq!(
+        reduced_record("sophia_live_visual_admission status=private_text"),
+        Some("sophia_live_visual_admission".into())
+    );
+}
+
+#[test]
 fn launch_and_reload_diagnostics_keep_only_bounded_refusal_vocabulary() {
     let record = reduced_record("sophia_application_launch schema=1 status=failed launch_id=19 transaction=22 reason=not_found executable=/secret args=secret env=secret").unwrap();
     assert!(record.contains("reason=not_found"));

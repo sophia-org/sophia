@@ -159,19 +159,33 @@ impl XPresentSessionObserver {
         }
     }
 
-    fn drain_pending_feedback(
+    fn drain_pending_feedback_with_layout(
         &mut self,
         runtime: &mut LiveProductionVisualRuntime,
         pending: &mut Vec<sophia_backend_live::LivePresentFeedbackOutcome>,
+        layout: &mut PersistentLiveLayout,
+        mut comparison: impl FnMut(
+            &PersistentLiveLayout,
+            &LiveProductionVisualRuntime,
+            &sophia_backend_live::LivePresentFeedbackOutcome,
+        )
+            -> Option<(TransactionId, sophia_x_authority::XPresentLayoutComparison)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.drain_pending_feedback_with_allocation(runtime, pending, None)
+        self.drain_pending_feedback_observed(runtime, pending, |runtime, outcome| {
+            layout.observe_terminal_present_feedback(outcome);
+            comparison(layout, runtime, outcome)
+        })
     }
 
-    fn drain_pending_feedback_with_allocation(
+    fn drain_pending_feedback_observed(
         &mut self,
         runtime: &mut LiveProductionVisualRuntime,
         pending: &mut Vec<sophia_backend_live::LivePresentFeedbackOutcome>,
-        allocation: Option<window_allocation::LiveWindowAllocationView<'_>>,
+        mut observe: impl FnMut(
+            &LiveProductionVisualRuntime,
+            &sophia_backend_live::LivePresentFeedbackOutcome,
+        )
+            -> Option<(TransactionId, sophia_x_authority::XPresentLayoutComparison)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         pending.clear();
         runtime.drain_present_feedback_into(pending)?;
@@ -188,11 +202,7 @@ impl XPresentSessionObserver {
                     );
                 }
             }
-            let comparison = allocation.as_ref().and_then(|view| {
-                outcome.layout_comparison.as_deref().and_then(|evidence| {
-                    view.comparison(runtime.committed_surfaces(), evidence)
-                })
-            });
+            let comparison = observe(runtime, &outcome);
             self.observe_feedback(outcome, comparison);
         }
         Ok(())
