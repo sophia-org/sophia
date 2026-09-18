@@ -1422,3 +1422,30 @@ configuration. Strict config Clippy/fmt/layout pass. The prior exact canonical
 `19591816` completed PASS, but it predates this final provider-composition fix and
 is not relabelled as validation of the successor. No user config was rewritten,
 no live/native endpoint was contacted, and physical acceptance remains pending.
+
+### First launcher preflight: retired collection regression, 2026-09-18
+
+The operator's `20260918T105056Z` capture reached the protected GPU proof:
+exact DRM identity selected the RADV discrete adapter and the first candidate
+received the proof's synthetic presentation. Code 9 for the second candidate
+was intentional. The actual failure was `content lease or backing survived
+renderer release`, before native desktop takeover. This is not launcher or
+native presentation acceptance.
+
+The registry refactor made repeated exact-grant disconnect return without
+collection once the grant was already retired. The legacy transport proof
+disconnects while holding a render bundle, drops it, then disconnects again;
+the second call therefore observed uncollected retired bytes. The single-shell
+facade now explicitly collects after disconnect, including repeated calls,
+without changing the registry's exact revocation or granting a stale caller
+authority over another grant. Collection still requires real consumers to end.
+
+The real private-socket candidate fixture covers both Presented and
+RendererFailed, repeated disconnect with a held readable render bundle,
+post-drop byte/backing/accounting quiescence, and repeated settled calls.
+Ten device-hidden transport/component controls pass, including independent
+grant and successor protection. Removing only the collection in an isolated
+archive compiles and fails the new renderer-failure control with eight bytes
+still retained instead of zero. Evidence: `.artifacts/legacy-disconnect-collection`.
+This is returned-call resource ownership and accounting evidence, not GPU/KMS
+execution. No new native run was performed for this repair.

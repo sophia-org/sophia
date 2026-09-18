@@ -191,7 +191,12 @@ impl ShellSessionTransport {
         )
     }
     pub fn disconnect(&mut self) -> Result<(), ShellTransportError> {
-        self.state.disconnect(&mut self.content_epochs)
+        let result = self.state.disconnect(&mut self.content_epochs);
+        // A repeated disconnect cannot revoke the already-retired grant, but
+        // legacy callers also use it after their last render consumer ends.
+        // Collect the actual owners even when no new revocation took place.
+        self.content_epochs.collect();
+        result
     }
     pub fn authorize_protected_peer(
         &mut self,

@@ -26,6 +26,11 @@ an admitted choice; catalog selection does not run applications. Use an explicit
 Missing runtime dependencies or rejected catalog sources are failures, not
 permission to run a legacy launcher or change the selected catalog silently.
 
+The protected GPU preflight intentionally rejects its second candidate with
+`RendererFailed` (code 9), so Lom prints that rejection. The proof must then
+report successful renderer-lease cleanup and verification; the rejection alone
+is not the result. A subsequent cleanup error stops the command before takeover.
+
 After the separately armed protected GPU preflight, the command runs for 90
 seconds (110-second recovery watchdog). Move the pointer to each monitor and
 open the launcher, type a query, dismiss, reopen and check that the query resets.

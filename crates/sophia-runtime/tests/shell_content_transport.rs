@@ -159,6 +159,15 @@ fn admitted_resource_transfer_settles_and_releases_over_the_real_socket() {
 
 #[test]
 fn admitted_candidate_crosses_the_real_socket_and_keeps_outcomes_ordered() {
+    candidate_roundtrip(false);
+}
+
+#[test]
+fn renderer_failed_candidate_disconnect_collects_only_after_the_render_lease_ends() {
+    candidate_roundtrip(true);
+}
+
+fn candidate_roundtrip(renderer_failed: bool) {
     let mut session = ShellSessionTransport::bind_for_supervised_uid(
         directory(),
         rustix::process::geteuid().as_raw(),
@@ -340,10 +349,20 @@ fn admitted_candidate_crosses_the_real_socket_and_keeps_outcomes_ordered() {
         let mut outcomes = Vec::new();
         while outcomes.len() < 2 {
             if let ShellContentRecord::CandidateOutcome(outcome) = next_content(&mut client) {
+                if renderer_failed && outcome.kind == 3 {
+                    assert_eq!(outcome.reason, ContentReason::RendererFailed as u16);
+                }
                 outcomes.push((outcome.kind, outcome.presentation_epoch));
             }
         }
-        assert_eq!(outcomes, [(1, 0), (2, 9)]);
+        assert_eq!(
+            outcomes,
+            if renderer_failed {
+                vec![(1, 0), (3, 0)]
+            } else {
+                vec![(1, 0), (2, 9)]
+            }
+        );
     });
 
     let welcome = session
@@ -455,10 +474,13 @@ fn admitted_candidate_crosses_the_real_socket_and_keeps_outcomes_ordered() {
     session
         .content_prepared(grant, output, 1, 7, 8, 21)
         .unwrap();
-    session
-        .content_presented(grant, output, 1, 9, 7, 8)
-        .unwrap();
-    drop(render);
+    if renderer_failed {
+        session.content_renderer_failed(grant, output, 1).unwrap();
+    } else {
+        session
+            .content_presented(grant, output, 1, 9, 7, 8)
+            .unwrap();
+    }
     while !client.is_finished() {
         session.poll_io().unwrap();
         assert!(start.elapsed() < Duration::from_secs(2));
@@ -466,6 +488,21 @@ fn admitted_candidate_crosses_the_real_socket_and_keeps_outcomes_ordered() {
     }
     session.disconnect().unwrap();
     client.join().unwrap();
+    // Match the GPU preflight's disconnect / held renderer / release sequence.
+    // Neither repeated disconnect nor collection can release a live consumer.
+    assert!(session.content_reserved_bytes() > 0);
+    assert!(session.content_backing_reserved_bytes() > 0);
+    session.disconnect().unwrap();
+    assert_eq!(render.resource(resource_id(1)).unwrap().bytes().len(), 8);
+    assert!(session.content_reserved_bytes() > 0);
+    assert!(!session.content_accounting().quiescent());
+    drop(render);
+    session.disconnect().unwrap();
+    assert_eq!(session.content_reserved_bytes(), 0);
+    assert_eq!(session.content_backing_reserved_bytes(), 0);
+    assert!(session.content_accounting().quiescent());
+    session.disconnect().unwrap();
+    assert!(session.content_accounting().quiescent());
     assert_eq!(welcome.selected_revision, 6);
 }
 
