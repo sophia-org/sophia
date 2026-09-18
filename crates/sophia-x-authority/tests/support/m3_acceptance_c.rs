@@ -217,8 +217,14 @@ fn c_capacity() {
     // already taken is given back rather than held against work nobody
     // accepted.
     let deep = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-    let mut service =
-        LifecycleService::launch_over_store("c-capacity-order", 12000, None, false, 1, deep.clone());
+    let mut service = LifecycleService::launch_over_store(
+        "c-capacity-order",
+        12000,
+        None,
+        false,
+        1,
+        deep.clone(),
+    );
     service.start();
     let (mut peer, custody) = service.connect();
     let (surface, sequence, _focus_ingress) = focus_window(&service, &mut peer, 0x320101, 12000);
@@ -230,8 +236,13 @@ fn c_capacity() {
     let producers = leased_producers(&service, client, C_PRODUCERS);
     let held = hold_runner(&service);
     let paused_on = held.entered();
-    let (accepted, refusal) =
-        fill_until_refused(&service, &producers, surface, 12100, C_ORDER_INPUT_DEPTH + 8);
+    let (accepted, refusal) = fill_until_refused(
+        &service,
+        &producers,
+        surface,
+        12100,
+        C_ORDER_INPUT_DEPTH + 8,
+    );
     let charged_at_refusal = deep.reserved();
     let refusal = refusal.expect("the actual order refused before the store's bound was reached");
     assert_eq!(
@@ -728,7 +739,10 @@ fn c_interrupted_ownership() {
         // history this invocation actually made.
         let key = 12100 + index as u64 * 10;
         ingress
-            .submit(&service.owner.lease(), key_service_route(surface, key, 42, true))
+            .submit(
+                &service.owner.lease(),
+                key_service_route(surface, key, 42, true),
+            )
             .expect("an actual held key press");
         let key_bytes = expected_key_service_event(sequence, window, 50, true, 0);
         assert_eq!(read_event(&mut peer, 3), Some(key_bytes));
@@ -901,10 +915,7 @@ fn c_interrupted_ownership() {
                 "original_completion_and_origin",
                 json!({"all_exits": facts}),
             ),
-            (
-                "runner_loss_keyboard_custody",
-                json!({"all_exits": facts}),
-            ),
+            ("runner_loss_keyboard_custody", json!({"all_exits": facts})),
         ],
         &actors,
     );
@@ -932,7 +943,9 @@ fn admission_of(service: &LifecycleService) -> Arc<SharedAdmission> {
 /// Poison one lock and nothing else, through a caught unwind.
 fn poison_lock<T>(lock: &Mutex<T>, what: &'static str) {
     let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _held = lock.lock().expect("a readable lock before this case poisons it");
+        let _held = lock
+            .lock()
+            .expect("a readable lock before this case poisons it");
         panic!("labelled acceptance poison of {what}");
     }));
     assert!(poisoned.is_err(), "the poisoning unwind happened here");
@@ -949,13 +962,7 @@ fn c_poison() {
     let (surface, sequence, ingress) = focus_window(&service, &mut peer, 0x320401, 12020);
     let client = custody.cleanup_record().client;
     let delivered = press_and_release(
-        &service,
-        &ingress,
-        &mut peer,
-        surface,
-        sequence,
-        0x320401,
-        12030,
+        &service, &ingress, &mut peer, surface, sequence, 0x320401, 12030,
     );
     assert!(waited_for(|| store.reserved() == Some(0)));
 
@@ -965,8 +972,13 @@ fn c_poison() {
     let entered = held.entered();
     // One credit is deliberately left free, so what the next send meets is the
     // unreadable order itself rather than the store's bound in front of it.
-    let (accepted, refusal) =
-        fill_until_refused(&service, &producers, surface, 12200, C_RESERVATION_BOUND - 1);
+    let (accepted, refusal) = fill_until_refused(
+        &service,
+        &producers,
+        surface,
+        12200,
+        C_RESERVATION_BOUND - 1,
+    );
     assert_eq!(accepted, C_RESERVATION_BOUND - 1);
     assert_eq!(refusal, None, "the store still has a credit to give");
     let charged_before = store.reserved();
@@ -1126,7 +1138,10 @@ fn c_exact_origin() {
 
     // A COLLIDING LOCAL IDENTITY. Both invocations numbered their connection
     // the same; what tells them apart is the origin, never the number.
-    assert_eq!(client_a, client_b, "the two invocations collide on the number");
+    assert_eq!(
+        client_a, client_b,
+        "the two invocations collide on the number"
+    );
     assert!(
         !Arc::ptr_eq(&first.registry.clients, &second.registry.clients),
         "and are still different origins"
@@ -1398,8 +1413,6 @@ fn c_exact_origin() {
     );
 }
 
-
-
 /// The nine named control kinds, each as the command a producer actually
 /// submits. Ordered so the two that can end the recipient's connection come
 /// last, and the ones that change nothing about it come first.
@@ -1477,7 +1490,12 @@ fn every_control_kind(
     ];
     commands
         .into_iter()
-        .map(|command| (command.kind(), XAuthorityClientControlCommand { client, command }))
+        .map(|command| {
+            (
+                command.kind(),
+                XAuthorityClientControlCommand { client, command },
+            )
+        })
         .collect()
 }
 
@@ -1496,6 +1514,7 @@ fn arm_handover(
     delivery: XAuthorityInputDeliveryId,
     seam: HandoverSeam,
 ) {
+    *HANDOVER_WITNESS.lock().unwrap() = None;
     HANDOVER_SEAMS.lock().unwrap().push((
         Arc::as_ptr(&registry.clients) as usize,
         Some(delivery),
@@ -1506,9 +1525,35 @@ fn arm_handover(
 /// Production's entry into that seam, immediately after the handover returns
 /// and before anything is written down about it. Empty unless a case armed
 /// this exact origin and this exact delivery.
+/// What the release was, read at the handover and before the interruption.
+///
+/// THE WITNESS COMES FROM THE SEAM. Reading these afterwards compares one
+/// post-unwind reading with another and cannot say they are the release that
+/// was handed over; taken here, they are what it was at the moment nobody can
+/// describe afterwards.
+#[derive(Clone)]
+struct HandoverWitness {
+    delivery: Option<XAuthorityInputDeliveryId>,
+    incarnation: sophia_input_authority::HoldIncarnation,
+    attempt: Option<sophia_input_authority::AttemptToken>,
+    completion: Option<Arc<PrivateDeliveryCompletion>>,
+    reached_client: XServerFrontendClientId,
+    reached_window: XResourceId,
+}
+
+static HANDOVER_WITNESS: Mutex<Option<HandoverWitness>> = Mutex::new(None);
+
+fn handover_witness() -> Option<HandoverWitness> {
+    HANDOVER_WITNESS.lock().unwrap().clone()
+}
+
 pub(crate) fn after_ordered_handover(
     registry: &XServerFrontendRouteRegistry,
     delivery: Option<XAuthorityInputDeliveryId>,
+    incarnation: sophia_input_authority::HoldIncarnation,
+    attempt: Option<sophia_input_authority::AttemptToken>,
+    completion: Option<&Arc<PrivateDeliveryCompletion>>,
+    reached: PrivateReachedResources,
 ) {
     let origin = Arc::as_ptr(&registry.clients) as usize;
     let seam = {
@@ -1519,6 +1564,16 @@ pub(crate) fn after_ordered_handover(
             .map(|at| seams.remove(at).2)
     };
     if let Some(seam) = seam {
+        // Written down before the seam runs, because the seam is what makes
+        // this moment undescribable afterwards.
+        *HANDOVER_WITNESS.lock().unwrap() = Some(HandoverWitness {
+            delivery,
+            incarnation,
+            attempt,
+            completion: completion.cloned(),
+            reached_client: reached.client(),
+            reached_window: reached.window(),
+        });
         seam();
     }
 }
@@ -1723,12 +1778,7 @@ impl RetainedRelease {
 
 /// Every release this invocation's own origin still holds in the store.
 fn retained_dispatch(service: &LifecycleService) -> Vec<RetainedRelease> {
-    let held = service
-        .owner
-        .store
-        .inner
-        .lock()
-        .expect("a readable store");
+    let held = service.owner.store.inner.lock().expect("a readable store");
     let seen = held
         .terminal
         .iter()
@@ -1741,7 +1791,9 @@ fn retained_dispatch(service: &LifecycleService) -> Vec<RetainedRelease> {
                 attempt: release.attempt(),
                 completion: release.completion().cloned(),
                 pending_capsule: release.custody.pending.is_some(),
-                answered: release.completion().is_some_and(|cell| cell.answer().is_some()),
+                answered: release
+                    .completion()
+                    .is_some_and(|cell| cell.answer().is_some()),
                 reached_client: release.reached().client(),
                 reached_window: release.reached().window(),
             })
@@ -1845,6 +1897,43 @@ pub(crate) fn queue_handover_subject(
     emission.delivery()
 }
 
+/// One adjudication of an offer against its own admission, recorded with the
+/// answer the deciding branch gave it.
+#[derive(Clone, Copy, Debug)]
+struct AdjudicationSeen {
+    delivery: XAuthorityInputDeliveryId,
+    answer: PrivateAdjudication,
+}
+
+static ADJUDICATIONS: Mutex<Vec<AdjudicationSeen>> = Mutex::new(Vec::new());
+
+/// Production's entry into the adjudication recording, filtered to the one
+/// completion a case has armed.
+pub(crate) fn observed_adjudication(
+    completion: &Arc<PrivateDeliveryCompletion>,
+    delivery: XAuthorityInputDeliveryId,
+    answer: PrivateAdjudication,
+) {
+    let watched = WATCHED_COMPLETION.lock().unwrap().clone();
+    let Some(watched) = watched else {
+        return;
+    };
+    if !Arc::ptr_eq(&watched, completion) {
+        return;
+    }
+    let mut seen = ADJUDICATIONS.lock().unwrap();
+    if seen.len() >= 4096 {
+        OBSERVER_OVERFLOWED.store(true, Ordering::Release);
+        return;
+    }
+    seen.push(AdjudicationSeen { delivery, answer });
+}
+
+/// The adjudications recorded so far, read without disarming.
+fn adjudications_snapshot() -> Vec<AdjudicationSeen> {
+    ADJUDICATIONS.lock().unwrap().clone()
+}
+
 /// Production's entry into the transient-visit recording.
 pub(crate) fn observed_transient_visit(
     completion: Option<&Arc<PrivateDeliveryCompletion>>,
@@ -1872,6 +1961,7 @@ pub(crate) fn observed_transient_visit(
 /// Record visits to this exact completion and no other.
 fn watch_completion(cell: &Arc<PrivateDeliveryCompletion>) {
     TRANSIENT_VISITS.lock().unwrap().clear();
+    ADJUDICATIONS.lock().unwrap().clear();
     *WATCHED_COMPLETION.lock().unwrap() = Some(Arc::clone(cell));
 }
 
@@ -1880,10 +1970,7 @@ fn stop_watching_completion() {
 }
 
 /// Production's entry into the queue-handover recording.
-pub(crate) fn observed_queue_handover(
-    subject: Option<XAuthorityInputDeliveryId>,
-    accepted: bool,
-) {
+pub(crate) fn observed_queue_handover(subject: Option<XAuthorityInputDeliveryId>, accepted: bool) {
     let Some(delivery) = subject else {
         return;
     };
@@ -2033,9 +2120,7 @@ fn frames_of(
         .collect();
     let advanced = mine.iter().filter(|step| step.advanced.is_some()).count();
     let owed = mine.iter().map(|step| step.frames).max().unwrap_or(0);
-    let failure = mine
-        .iter()
-        .find_map(|step| step.failure.clone());
+    let failure = mine.iter().find_map(|step| step.failure.clone());
     (advanced, owed, failure)
 }
 
@@ -2136,7 +2221,10 @@ fn blocked_recipient_attempt(
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     'blocking: for round in 0..4_000u64 {
         if std::time::Instant::now() >= deadline {
-            stalled = Some(("the writer was never stopped within this attempt's bound", 0));
+            stalled = Some((
+                "the writer was never stopped within this attempt's bound",
+                0,
+            ));
             break 'blocking;
         }
         // ONE MULTI-FRAME CAPSULE AT A TIME, its receipt awaited before the
@@ -2681,15 +2769,16 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
     // EVERY LOOKUP HAS TO FIND IT. A record that could not be found says
     // nothing about its state, and a run of misses would otherwise pass.
     assert!(
-        !states.is_empty() && states.iter().all(|(before, after)| {
-            matches!(
-                (before, after),
-                (
-                    Some((PrivateDispatchPhase::Enqueued, false, None)),
-                    Some((PrivateDispatchPhase::Enqueued, false, None))
+        !states.is_empty()
+            && states.iter().all(|(before, after)| {
+                matches!(
+                    (before, after),
+                    (
+                        Some((PrivateDispatchPhase::Enqueued, false, None)),
+                        Some((PrivateDispatchPhase::Enqueued, false, None))
+                    )
                 )
-            )
-        }),
+            }),
         "the record stayed enqueued, with no capsule copy and no outcome, either side of every visit: {states:?}"
     );
     let visits_of_this_cell = transient_visits_snapshot();
@@ -2809,6 +2898,259 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
         "what_this_establishes": "a capsule held in its recipient's queue is observed by at least two of the service's own charged steps, each of which read its exact completion and found it enqueued and unanswered, is handed over exactly once, and on release puts its own two frames out once each for a single flush. This is a first write after a hold, not the resumption of a blocked frame; the partial case establishes prefix preservation.",
     });
     let collected = finish_labelled("enqueued-observation invocation", service, &[custody]);
+    (seen, collected)
+}
+
+/// A decided request whose outcome cannot be published, through two
+/// deterministic holds of the original runner.
+///
+/// The recipient's own selection refuses this request, so the executor decides
+/// it and then owes its refusal to the completion that request was admitted
+/// with. Taking that admission away while the runner is held means the
+/// publication is attempted and refused rather than never tried; giving it
+/// back while the runner is held again means the no-publication check cannot
+/// race the service's own legitimate retry.
+fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
+    let _observer = own_the_observer();
+    let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+    let mut service = LifecycleService::launch_over_store(
+        "c-refused-publication",
+        namespace,
+        None,
+        false,
+        1,
+        store.clone(),
+    );
+    service.start();
+    let (mut peer, custody) = service.connect();
+    let (surface, _sequence, _focus) = focus_window(&service, &mut peer, window, namespace);
+    let client = custody.cleanup_record().client;
+    let producers = leased_producers(&service, client, C_PRODUCERS);
+    let delivery = 12_070 + namespace;
+    let wanted = XAuthorityInputDeliveryId::from_raw(delivery);
+
+    // HOLD ONE. The request is submitted and its admission taken away while
+    // nothing can run, so what the runner then meets is a decided request
+    // whose completion it cannot reach.
+    let shared: Arc<Mutex<Option<Arc<PrivateDeliveryCompletion>>>> = Arc::default();
+    let hook_cell = Arc::clone(&shared);
+    let (pause, held) = Pause::pair();
+    let (report, reported) = sync_channel(1);
+    arm_runner(
+        &service.registry,
+        Box::new(move |runner, lease| {
+            pause.wait();
+            let _ = hook_cell;
+            let mut turns = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(6);
+            while std::time::Instant::now() < deadline
+                && runner.frontend().terminal.undelivered.is_empty()
+            {
+                match runner.service_turn(lease) {
+                    Ok(progress) => turns.push(format!(
+                        "starts={} taken={} refused={} settled={} allowance={:?}",
+                        progress.starts,
+                        progress.taken,
+                        progress.refused,
+                        progress.settled,
+                        progress.allowance
+                    )),
+                    Err(error) => {
+                        turns.push(format!("{error:?}"));
+                        break;
+                    }
+                }
+            }
+            let private = runner.frontend();
+            let outcome =
+                private
+                    .terminal
+                    .undelivered
+                    .first()
+                    .map(|undelivered| match &undelivered.item {
+                        PrivateOrderedItem::Refused { custody, .. } => {
+                            format!("{:?}", custody.observed_outcome.get())
+                        }
+                        PrivateOrderedItem::Ran { sequence, .. } => {
+                            format!("not a refused item: Ran at {sequence:?}")
+                        }
+                        PrivateOrderedItem::Parked { sequence } => {
+                            format!("not a refused item: Parked at {sequence:?}")
+                        }
+                    });
+            report
+                .send((turns, private.terminal.undelivered.len(), outcome))
+                .expect("the case is waiting");
+        }),
+    );
+    let first_hold = held.entered();
+    producers[0]
+        .submit(&service.owner.lease(), motion_to(surface, wanted))
+        .expect("the order accepts a request this recipient's selection refuses");
+    let cell = waited_for_value(|| delivery_cell(&service.registry, delivery))
+        .expect("the request's own completion, minted by its own admission");
+    *shared.lock().unwrap() = Some(Arc::clone(&cell));
+    watch_completion(&cell);
+    let taken = service
+        .registry
+        .input_recovery
+        .state
+        .lock()
+        .expect("a readable ledger")
+        .tickets
+        .remove(&wanted)
+        .expect("the admission this request was given");
+    held.release();
+
+    let (first_turns, undelivered, observed_outcome) = reported
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the actual runner reported what it did with the decided request");
+    assert_eq!(
+        undelivered, 1,
+        "the decided request is retained as undelivered: {first_turns:?}"
+    );
+    let observed_outcome =
+        observed_outcome.expect("the retained item reported the outcome it observed");
+    assert!(
+        observed_outcome.contains("Refused") || observed_outcome.contains("Cancelled"),
+        "and its own common outcome is the refusal the source decided: {observed_outcome}"
+    );
+    // THE PUBLICATION WAS ATTEMPTED AND REFUSED, on this exact completion,
+    // because its admission was gone. A run in which nothing was attempted
+    // would leave this empty.
+    let adjudications = adjudications_snapshot();
+    assert!(
+        adjudications
+            .iter()
+            .any(|seen| seen.delivery == wanted && seen.answer == PrivateAdjudication::Refused),
+        "an adjudication of this exact completion was refused for its missing admission: {adjudications:?}"
+    );
+    assert_eq!(
+        cell.answer(),
+        None,
+        "nothing was published for it: {adjudications:?}"
+    );
+    assert_eq!(
+        store.reserved(),
+        Some(1),
+        "and it still holds the one credit it took"
+    );
+
+    // HOLD TWO. The admission goes back while the runner is held, so the
+    // no-publication check cannot race a legitimate retry.
+    let (second_pause, second_held) = Pause::pair();
+    let (second_report, second_reported) = sync_channel(1);
+    arm_runner(
+        &service.registry,
+        Box::new(move |runner, lease| {
+            second_pause.wait();
+            let mut turns = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(6);
+            while std::time::Instant::now() < deadline
+                && !runner.frontend().terminal.undelivered.is_empty()
+            {
+                match runner.service_turn(lease) {
+                    Ok(progress) => turns.push(format!(
+                        "starts={} settled={} allowance={:?}",
+                        progress.starts, progress.settled, progress.allowance
+                    )),
+                    Err(error) => {
+                        turns.push(format!("{error:?}"));
+                        break;
+                    }
+                }
+            }
+            second_report
+                .send((turns, runner.frontend().terminal.undelivered.len()))
+                .expect("the case is waiting");
+        }),
+    );
+    let second_hold = second_held.entered();
+    service
+        .registry
+        .input_recovery
+        .state
+        .lock()
+        .expect("a readable ledger")
+        .tickets
+        .insert(wanted, taken);
+    let published_by_restoring = cell.answer();
+    assert_eq!(
+        published_by_restoring, None,
+        "giving the admission back publishes nothing by itself"
+    );
+    assert_eq!(
+        store.reserved(),
+        Some(1),
+        "and releases nothing by itself either"
+    );
+    second_held.release();
+
+    let (second_turns, undelivered_after) = second_reported
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the actual runner reported its retry");
+    assert!(
+        waited_for(|| cell.answer().is_some()),
+        "the charged retry published through the completion this request was admitted with: {second_turns:?}"
+    );
+    let published = cell.answer().expect("its answer");
+    assert_eq!(
+        published,
+        XAuthorityClientInputDelivery {
+            client,
+            delivery: wanted,
+            outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
+        },
+        "and what it published is the refusal, to that exact delivery"
+    );
+    assert!(
+        waited_for(|| store.reserved() == Some(0)),
+        "and exactly the one credit it was holding came back"
+    );
+    assert_eq!(
+        undelivered_after, 0,
+        "with nothing left undelivered: {second_turns:?}"
+    );
+    let answered_twice = adjudications_snapshot()
+        .iter()
+        .filter(|seen| seen.delivery == wanted && seen.answer == PrivateAdjudication::Answered)
+        .count();
+    assert_eq!(
+        answered_twice,
+        1,
+        "answered once, not twice: {:?}",
+        adjudications_snapshot()
+    );
+
+    service.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    let closed = service.closed();
+    let adjudications = adjudications_snapshot();
+    stop_watching_completion();
+    assert!(
+        !observation_overflowed(),
+        "no recorder dropped a record while this was measured"
+    );
+    let seen = json!({
+        "delivery": delivery,
+        "first_hold_on": format!("{first_hold:?}"),
+        "turns_while_the_admission_was_gone": first_turns,
+        "retained_undelivered": undelivered,
+        "its_own_observed_outcome": observed_outcome,
+        "adjudications_of_this_completion": adjudications
+            .iter()
+            .map(|seen| format!("{:?}", seen.answer))
+            .collect::<Vec<_>>(),
+        "published_while_admission_gone": Option::<String>::None,
+        "credit_while_admission_gone": 1,
+        "second_hold_on": format!("{second_hold:?}"),
+        "published_by_restoring_admission": published_by_restoring.map(|answer| format!("{answer:?}")),
+        "turns_after_restoring": second_turns,
+        "published_by_the_charged_retry": format!("{published:?}"),
+        "credit_after_retry": store.reserved(),
+        "closed_error": closed.error.clone(),
+        "what_this_establishes": "a decided request whose completion cannot be reached keeps its item, its own common outcome and its single credit; the publication is attempted and refused on that exact completion because its admission is gone; restoring the admission publishes nothing by itself; and the service's own charged retry then publishes the refusal to that exact delivery once and returns exactly the one credit.",
+    });
+    let collected = finish_labelled("refused-publication invocation", service, &[custody]);
     (seen, collected)
 }
 
@@ -2991,103 +3333,16 @@ pub(super) mod diagnostics {
     fn c_indeterminate_send_diagnostics() {
         let mut actors = Vec::new();
 
-        // A REFUSED PUBLICATION STAYS OWNED. Its own invocation, because what
-        // it needs is an executor that has decided and cannot publish.
-        let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-        let mut service = LifecycleService::launch_over_store(
-            "c-indeterminate",
-            12050,
-            None,
-            false,
-            1,
-            store.clone(),
-        );
-        service.start();
-        let (mut peer, custody) = service.connect();
-        let (surface, _sequence, _ingress) = focus_window(&service, &mut peer, 0x320701, 12050);
-        let client = custody.cleanup_record().client;
-        let producers = leased_producers(&service, client, C_PRODUCERS);
+        // A REFUSED PUBLICATION STAYS OWNED, through two deterministic holds
+        // of the original runner: one while its admission is taken away, and
+        // one while it is given back, so neither observation races the
+        // service's own legitimate retry.
+        let (refused, refused_actors) = refused_publication(12050, 0x320701);
+        actors.extend(refused_actors);
 
-        // ENQUEUED WORK IS OBSERVED, NOT RESENT, on an invocation of its own:
-        // a capsule handed to its writer that the recipient cannot take, the
-        // service's own charged turns over it, and one completion when the
-        // recipient reads again.
+        // ENQUEUED WORK IS OBSERVED, NOT RESENT, on an invocation of its own.
         let (enqueued, enqueued_actors) = enqueued_observation(12053, 0x320c01);
         actors.extend(enqueued_actors);
-
-        let held = hold_runner(&service);
-        let entered = held.entered();
-        let refused_delivery = XAuthorityInputDeliveryId::from_raw(12070);
-        producers[1]
-            .submit(&service.owner.lease(), motion_to(surface, refused_delivery))
-            .expect("the order accepts a request the source will refuse");
-        let cell = delivery_cell(&service.registry, 12070).expect("its own completion");
-        let taken = service
-            .registry
-            .input_recovery
-            .state
-            .lock()
-            .expect("a readable ledger")
-            .tickets
-            .remove(&refused_delivery)
-            .expect("the admission this request was given");
-        held.release();
-        let (report, reported) = sync_channel(1);
-        arm_runner(
-            &service.registry,
-            Box::new(move |runner, lease| {
-                for _ in 0..4 {
-                    let _ = runner.service_turn(lease);
-                }
-                let private = runner.frontend();
-                report
-                    .send((
-                        private.terminal.undelivered.len(),
-                        private.terminal.turn.len(),
-                        private.terminal.current.is_some(),
-                    ))
-                    .expect("the case is waiting for this reading");
-            }),
-        );
-        let (undelivered, in_turn, current) = reported
-            .recv_timeout(Duration::from_secs(5))
-            .expect("the actual runner reported what it still owns");
-        assert_eq!(cell.answer(), None, "nothing was published for it");
-        assert!(
-            undelivered + in_turn + usize::from(current) >= 1,
-            "the item is retained by the executor that could not publish it"
-        );
-        assert_eq!(store.reserved(), Some(1), "and keeps the credit it took");
-        service
-            .registry
-            .input_recovery
-            .state
-            .lock()
-            .expect("a readable ledger")
-            .tickets
-            .insert(refused_delivery, taken);
-        assert_eq!(
-            cell.answer(),
-            None,
-            "restoring the admission publishes nothing by itself"
-        );
-        let refused = json!({
-            "delivery": 12070,
-            "published_while_admission_gone": Option::<String>::None,
-            "retained_undelivered": undelivered,
-            "retained_in_turn": in_turn,
-            "retained_current": current,
-            "credit_still_held": store.reserved(),
-            "published_by_restoring_admission": Option::<String>::None,
-            "held_on": format!("{entered:?}"),
-        });
-        service.command(XServerFrontendServiceCommand::StopAndDisconnect);
-        let closed_first = service.closed();
-        actors.extend(finish_labelled(
-            "enqueued-and-refused-publication invocation",
-            service,
-            &[custody],
-        ));
 
         // A HANDOVER BEGUN AND NEVER REPORTED. The capsule left, and the record
         // of what the handover returned never happened, so nothing can say
@@ -3122,23 +3377,27 @@ pub(super) mod diagnostics {
             receipt_for(&unknown.deliveries, 12080),
             XAuthorityInputDeliveryOutcome::Flushed
         );
-        arm_handover(
-            &unknown.registry,
-            release,
-            Box::new(|| panic!("labelled acceptance interruption between handover and its record")),
-        );
+        // THE RUNNER IS HELD BEFORE THE RELEASE IS SUBMITTED, so its admission
+        // completion can be taken while nothing is able to consume it. Reading
+        // it after an unheld submit raced the very handover this case is
+        // about.
+        let (pause, held_runner) = Pause::pair();
+        arm_runner(&unknown.registry, Box::new(move |_, _| pause.wait()));
+        let held_on = held_runner.entered();
         unknown_ingress
             .submit(
                 &unknown.owner.lease(),
                 button_to(unknown_surface, release, 272, false),
             )
             .expect("an actual release, whose handover this case interrupts");
-        // THE ORIGINAL COMPLETION, CAPTURED ONCE IT EXISTS. Taking it before
-        // the release was submitted would have witnessed nothing: the cell is
-        // minted by the admission this request was given, so only a reading
-        // after that admission is a witness of the exact one it carries.
         let original_release_cell = waited_for_value(|| delivery_cell(&unknown.registry, 12081))
             .expect("the release's own completion, minted by its own admission");
+        arm_handover(
+            &unknown.registry,
+            release,
+            Box::new(|| panic!("labelled acceptance interruption between handover and its record")),
+        );
+        held_runner.release();
 
         let unknown_closed = unknown.closed();
         assert!(
@@ -3152,8 +3411,7 @@ pub(super) mod diagnostics {
         // neither authorises rebuilding the event; what this case establishes
         // is about the record, not about which of the two happened.
         let release_wire = read_event(&mut unknown_peer, 3);
-        let release_cell = delivery_cell(&unknown.registry, 12081)
-            .and_then(|cell| cell.answer());
+        let release_cell = delivery_cell(&unknown.registry, 12081).and_then(|cell| cell.answer());
         let phases = retained_dispatch(&unknown);
         // THE RECORD SAYS WHAT HAPPENED TO IT, which is that nobody knows. The
         // handover was begun and its result never written down, and that is the
@@ -3202,9 +3460,49 @@ pub(super) mod diagnostics {
             (unknown_client, u64::from(0x320a01u32)),
             "reaching this connection's own window: {retained_release:?}"
         );
+        // AND IT IS THE RELEASE THAT WAS HANDED OVER. The witness is taken at
+        // the seam, before the interruption, so this compares the retained
+        // record against what the release actually was at that moment rather
+        // than against a second reading of the same aftermath.
+        let witness = handover_witness()
+            .expect("the handover recorded what the release was before it was interrupted");
+        assert_eq!(
+            retained_release.delivery, witness.delivery,
+            "the retained record is the delivery that was handed over: {retained_release:?}"
+        );
+        assert_eq!(
+            retained_release.incarnation, witness.incarnation,
+            "with the incarnation it was handed over under"
+        );
+        assert_eq!(
+            retained_release.attempt, witness.attempt,
+            "and the attempt token it was dispatched with"
+        );
         assert!(
             retained_release.attempt.is_some(),
-            "under the attempt it was dispatched with: {retained_release:?}"
+            "which it actually had: {retained_release:?}"
+        );
+        assert!(
+            witness
+                .completion
+                .as_ref()
+                .is_some_and(|cell| retained_release.carries(cell)),
+            "carrying the completion the handover saw it carry"
+        );
+        assert!(
+            witness
+                .completion
+                .as_ref()
+                .is_some_and(|cell| Arc::ptr_eq(cell, &original_release_cell)),
+            "which is the one this case took from its own admission"
+        );
+        assert_eq!(
+            (witness.reached_client, witness.reached_window),
+            (
+                retained_release.reached_client,
+                retained_release.reached_window
+            ),
+            "and reaching the recipient it named then"
         );
 
         // The debt is the retained release itself, not an accepted-item credit:
@@ -3242,10 +3540,7 @@ pub(super) mod diagnostics {
             Some(sophia_input_authority::ServiceStartRefusal::Interrupted),
             "because the original budget was interrupted and never reopens: {visit:?}"
         );
-        assert!(
-            !visit.charged,
-            "so nothing was charged for it: {visit:?}"
-        );
+        assert!(!visit.charged, "so nothing was charged for it: {visit:?}");
         let unknown_after = retained_dispatch(&unknown);
         assert!(
             unknown_after.len() == phases.len()
@@ -3275,6 +3570,15 @@ pub(super) mod diagnostics {
             "retained_phases": format!("{phases:?}"),
             "retained_release": format!("{retained_release:?}"),
         "original_release_completion": Arc::as_ptr(&original_release_cell) as usize,
+        "runner_held_before_submit_on": format!("{held_on:?}"),
+        "handover_witness": format!(
+            "delivery={:?} incarnation={:?} attempt={:?} client={:?} window={:?}",
+            witness.delivery,
+            witness.incarnation,
+            witness.attempt,
+            witness.reached_client,
+            witness.reached_window
+        ),
         "retained_phases_after_actual_maintenance_visit": format!("{unknown_after:?}"),
             "maintenance_visit": format!("{visit:?}"),
             "durable_drive": format!("{unknown_drive:?}"),
@@ -3340,10 +3644,8 @@ pub(super) mod diagnostics {
                 "unknown_send_interval": unknown_fact,
                 "enqueued_observation_only": enqueued,
                 "refused_publication_retained": refused,
-                "first_invocation_order": format!("{:?}", closed_first.order),
                 "collected_actors": actors,
             })
         );
     }
-
 }

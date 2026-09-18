@@ -657,7 +657,14 @@ fn dispatch_custody(
         // produce that state on demand, so a case arms this exact origin and
         // delivery once and the call is empty for every other handover.
         #[cfg(all(test, unix))]
-        routing_tests::m3_acceptance::after_ordered_handover(&seam_origin, seam_delivery);
+        routing_tests::m3_acceptance::after_ordered_handover(
+            &seam_origin,
+            seam_delivery,
+            release.incarnation(),
+            release.custody.attempt,
+            release.completion(),
+            release.reached(),
+        );
         let handed_over = match sent {
             Ok(()) => {
                 // Only the receipt obligation is kept. No replayable copy

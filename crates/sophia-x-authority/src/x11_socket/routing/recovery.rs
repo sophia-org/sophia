@@ -316,6 +316,22 @@ impl InputRecovery {
         delivery: XAuthorityInputDeliveryId,
         outcome: XAuthorityInputDeliveryOutcome,
     ) -> PrivateAdjudication {
+        let answer = self.adjudicated_for_held(completion, client, delivery, outcome);
+        // READ-ONLY ACCEPTANCE OBSERVATION OF WHAT THIS OFFER WAS TOLD. The
+        // answer is the branch that decided it; reading the ledger afterwards
+        // could not tell this offer's fate from an older one's.
+        #[cfg(all(test, unix))]
+        routing_tests::m3_acceptance::observed_adjudication(completion, delivery, answer);
+        answer
+    }
+
+    fn adjudicated_for_held(
+        &self,
+        completion: &Arc<PrivateDeliveryCompletion>,
+        client: XServerFrontendClientId,
+        delivery: XAuthorityInputDeliveryId,
+        outcome: XAuthorityInputDeliveryOutcome,
+    ) -> PrivateAdjudication {
         // An admission whose answer this handle already holds is finished,
         // whether or not its ticket still exists. Reporting a refusal here
         // stranded a writer that had done everything asked of it.
