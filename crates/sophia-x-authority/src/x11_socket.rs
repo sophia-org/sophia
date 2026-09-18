@@ -76,6 +76,7 @@ include!("x11_socket/routing/private_participant.rs");
 include!("x11_socket/routing/private_lifecycle.rs");
 include!("x11_socket/routing/private_records.rs");
 include!("x11_socket/routing/private_execution.rs");
+include!("x11_socket/routing/private_execution_pointer.rs");
 include!("x11_socket/routing/private_execution_key.rs");
 include!("x11_socket/routing/private_execution_transient.rs");
 include!("x11_socket/routing/private_execution_notes.rs");
