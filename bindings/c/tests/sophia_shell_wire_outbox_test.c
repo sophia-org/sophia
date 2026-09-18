@@ -159,9 +159,51 @@ static void errors(void)
     assert(sophia_shell_outbox_flush(&out,fd[0],2048)==SOPHIA_SHELL_IO_ERROR);
     sophia_shell_outbox_dispose(&out); assert(frees==f+2); close(fd[0]);
 }
+static void reservations(void)
+{
+    struct sophia_shell_outbox out;
+    assert(sophia_shell_outbox_init(&out,2048,4,512,2)==SOPHIA_SHELL_OK);
+    size_t lengths[2]={pair[0].length,pair[1].length};
+    struct sophia_shell_outbox_reservation ticket={NULL,99};
+    for (unsigned fail=1; fail<=2; ++fail) {
+        allocation_call=0; allocation_fail=fail;
+        unsigned a=allocations,f=frees;
+        assert(sophia_shell_outbox_reserve(&out,lengths,2,&ticket)==SOPHIA_SHELL_BUSY);
+        assert(!out.count && !out.bytes && !ticket.owner && ticket.serial==99);
+        assert(allocations-a==frees-f);
+    }
+    allocation_fail=0;
+    assert(sophia_shell_outbox_reserve(&out,lengths,2,&ticket)==SOPHIA_SHELL_OK);
+    struct sophia_shell_outbox_reservation copy=ticket;
+    assert(sophia_shell_outbox_reserve(&out,lengths,2,&copy)==SOPHIA_SHELL_BUSY);
+    assert(copy.owner==ticket.owner && copy.serial==ticket.serial);
+    assert(sophia_shell_outbox_push(&out,pair,1)==SOPHIA_SHELL_OK);
+    int fd[2]; assert(socketpair(AF_UNIX,SOCK_STREAM,0,fd)==0);
+    sends=0; size_t bytes=out.bytes; unsigned a=allocations,f=frees;
+    assert(sophia_shell_outbox_flush(&out,fd[0],2048)==SOPHIA_SHELL_AGAIN && sends==0);
+    struct sophia_shell_outbound_frame bad[2]={pair[0],pair[1]}; --bad[1].length;
+    assert(sophia_shell_outbox_commit(&out,ticket,bad,2)==SOPHIA_SHELL_INVALID);
+    copy.owner=NULL; assert(sophia_shell_outbox_commit(&out,copy,pair,2)==SOPHIA_SHELL_INVALID);
+    copy=ticket; ++copy.serial; assert(sophia_shell_outbox_commit(&out,copy,pair,2)==SOPHIA_SHELL_INVALID);
+    assert(out.bytes==bytes && out.count==3 && allocations==a && frees==f);
+    assert(sophia_shell_outbox_flush(&out,fd[0],2048)==SOPHIA_SHELL_AGAIN && sends==0);
+    assert(sophia_shell_outbox_commit(&out,ticket,pair,2)==SOPHIA_SHELL_OK);
+    assert(out.bytes==bytes && out.count==3 && allocations==a && frees==f);
+    assert(sophia_shell_outbox_commit(&out,ticket,pair,2)==SOPHIA_SHELL_INVALID);
+    assert(sophia_shell_outbox_flush(&out,fd[0],2048)==SOPHIA_SHELL_OK);
+    uint8_t got[768]; size_t used=0;
+    while (used<bytes) {ssize_t n=recv(fd[1],got+used,sizeof(got)-used,0); assert(n>0); used+=(size_t)n;}
+    assert(used==bytes && !memcmp(got,pair[0].bytes,pair[0].length));
+    assert(!memcmp(got+pair[0].length,pair[1].bytes,pair[1].length));
+    assert(!memcmp(got+pair[0].length+pair[1].length,pair[0].bytes,pair[0].length));
+    assert(sophia_shell_outbox_reserve(&out,lengths,2,&copy)==SOPHIA_SHELL_OK);
+    assert(copy.serial!=ticket.serial);
+    assert(sophia_shell_outbox_commit(&out,ticket,pair,2)==SOPHIA_SHELL_INVALID);
+    sophia_shell_outbox_dispose(&out); close(fd[0]); close(fd[1]);
+}
 int main(void)
 {
-    frames(); atomic_refusal(); byte_reservation(); socket_fifo(); errors();
+    frames(); atomic_refusal(); byte_reservation(); socket_fifo(); errors(); reservations();
     assert(allocations==frees);
     puts("sophia_shell_outbox atomic_pair=pass real_partial_io=pass cycles=1000 native=false");
     return 0;

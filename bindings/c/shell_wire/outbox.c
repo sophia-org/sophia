@@ -61,10 +61,67 @@ int sophia_shell_outbox_push(struct sophia_shell_outbox *out,
      * ownership enters the FIFO. An atomic pair cannot leave only its ACK. */
     for (unsigned i=0; i<count; ++i) {
         unsigned index=(out->head+out->count+i)%out->max_records;
-        out->records[index]=(struct sophia_shell_outbox_record){owned[i],frames[i].length,0,frames[i].class};
+        out->records[index]=(struct sophia_shell_outbox_record){owned[i],frames[i].length,0,frames[i].class,1};
     }
     out->count+=count; out->bytes+=bytes;
     out->bulk_records+=bulk_records; out->bulk_bytes+=bulk_bytes;
+    return SOPHIA_SHELL_OK;
+}
+int sophia_shell_outbox_reserve(struct sophia_shell_outbox *out,
+    const size_t *lengths, unsigned count, struct sophia_shell_outbox_reservation *ticket)
+{
+    if (!out || !out->max_records || !lengths || !ticket || !count || count>2)
+        return SOPHIA_SHELL_ARGUMENT;
+    if (out->terminal) return out->terminal;
+    if (out->reservation_count) return SOPHIA_SHELL_BUSY;
+    if (out->reservation_serial==UINT64_MAX) return SOPHIA_SHELL_INVALID;
+    size_t bytes=0;
+    for (unsigned i=0; i<count; ++i) {
+        if (lengths[i]<SOPHIA_SHELL_HEADER_BYTES || lengths[i]>SOPHIA_SHELL_OUTBOX_CONTROL_BYTES)
+            return SOPHIA_SHELL_INVALID;
+        bytes+=lengths[i];
+    }
+    if (count>out->max_records-out->count || bytes>out->max_bytes-out->bytes)
+        return SOPHIA_SHELL_BUSY;
+    uint8_t *owned[2]={0};
+    for (unsigned i=0; i<count; ++i) {
+        owned[i]=malloc(lengths[i]);
+        if (!owned[i]) {
+            for (unsigned j=0; j<i; ++j) free(owned[j]);
+            return SOPHIA_SHELL_BUSY;
+        }
+    }
+    unsigned first=(out->head+out->count)%out->max_records;
+    for (unsigned i=0; i<count; ++i)
+        out->records[(first+i)%out->max_records]=(struct sophia_shell_outbox_record){
+            owned[i],lengths[i],0,SOPHIA_SHELL_OUTBOUND_CONTROL,0};
+    out->count+=count; out->bytes+=bytes; ++out->reservation_serial;
+    out->reservation_index=first; out->reservation_count=count;
+    *ticket=(struct sophia_shell_outbox_reservation){out,out->reservation_serial};
+    return SOPHIA_SHELL_OK;
+}
+int sophia_shell_outbox_commit(struct sophia_shell_outbox *out,
+    struct sophia_shell_outbox_reservation ticket,
+    const struct sophia_shell_outbound_frame *frames, unsigned count)
+{
+    if (!out || !out->max_records || !frames) return SOPHIA_SHELL_ARGUMENT;
+    if (out->terminal) return out->terminal;
+    if (ticket.owner!=out || !ticket.serial || ticket.serial!=out->reservation_serial ||
+        !out->reservation_count || count!=out->reservation_count) return SOPHIA_SHELL_INVALID;
+    for (unsigned i=0; i<count; ++i) {
+        const struct sophia_shell_outbox_record *r=&out->records[(out->reservation_index+i)%out->max_records];
+        struct sophia_shell_frame f;
+        if (r->ready || frames[i].length!=r->length || frames[i].class!=SOPHIA_SHELL_OUTBOUND_CONTROL ||
+            sophia_shell_frame_decode(frames[i].bytes,frames[i].length,&f)!=SOPHIA_SHELL_OK ||
+            !control_kind(f.kind)) return SOPHIA_SHELL_INVALID;
+    }
+    /* No fallible operation after the first byte copy, and no flush/reentrancy
+     * until the complete reservation becomes ready. Accounting never changes. */
+    for (unsigned i=0; i<count; ++i) {
+        struct sophia_shell_outbox_record *r=&out->records[(out->reservation_index+i)%out->max_records];
+        memcpy(r->bytes,frames[i].bytes,r->length); r->ready=1;
+    }
+    out->reservation_count=0;
     return SOPHIA_SHELL_OK;
 }
 int sophia_shell_outbox_flush(struct sophia_shell_outbox *out, int fd, size_t budget)
@@ -73,6 +130,7 @@ int sophia_shell_outbox_flush(struct sophia_shell_outbox *out, int fd, size_t bu
     if (out->terminal) return out->terminal;
     for (unsigned calls=0; out->count && budget && calls<SOPHIA_SHELL_MAX_IO_CALLS; ++calls) {
         struct sophia_shell_outbox_record *r=&out->records[out->head];
+        if (!r->ready) return SOPHIA_SHELL_AGAIN;
         size_t amount=r->length-r->sent;
         if (amount>budget) amount=budget;
         ssize_t n=send(fd,r->bytes+r->sent,amount,MSG_DONTWAIT|MSG_NOSIGNAL);

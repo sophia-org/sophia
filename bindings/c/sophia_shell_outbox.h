@@ -21,6 +21,11 @@ struct sophia_shell_outbox_record {
     uint8_t *bytes;
     size_t length, sent;
     enum sophia_shell_outbound_class class;
+    int ready;
+};
+struct sophia_shell_outbox_reservation {
+    struct sophia_shell_outbox *owner;
+    uint64_t serial;
 };
 /* One serial connection owner; initialize zeroed/fresh storage once. Fields are
  * private state exposed for C allocation only. The fixed record table and every
@@ -31,6 +36,8 @@ struct sophia_shell_outbox {
     size_t max_bytes, reserve_bytes, bytes, bulk_bytes;
     unsigned max_records, reserve_records, head, count, bulk_records;
     int terminal;
+    uint64_t reservation_serial;
+    unsigned reservation_index, reservation_count;
 };
 /* Caller chooses bounds within negotiated limits. Reservations are a subset of
  * this one aggregate budget. At least two 256-byte control records are reserved.
@@ -43,6 +50,19 @@ int sophia_shell_outbox_init(struct sophia_shell_outbox *out, size_t max_bytes,
  * every prior record and copies neither member. OK transfers copies, not the
  * caller's buffers. No I/O or callbacks during the commit. */
 int sophia_shell_outbox_push(struct sophia_shell_outbox *out,
+    const struct sophia_shell_outbound_frame *frames, unsigned count);
+/* Reserve one or two exact-size control frames BEFORE applying a local input
+ * effect. One reservation may be open. It owns FIFO positions and the same
+ * aggregate bytes/records as encoded frames; flush stops at an uncommitted
+ * position. Failure preserves ticket and queue. The ticket cannot outlive this
+ * initialized owner; dispose invalidates it, never reuse it on reconnect. */
+int sophia_shell_outbox_reserve(struct sophia_shell_outbox *out,
+    const size_t *lengths, unsigned count, struct sophia_shell_outbox_reservation *ticket);
+/* Commit exact frame sizes/count to that reservation without allocation or I/O.
+ * Refusal retains the reservation for exact retry; no frame becomes visible.
+ * Caller must not reapply its effect after a refused commit. */
+int sophia_shell_outbox_commit(struct sophia_shell_outbox *out,
+    struct sophia_shell_outbox_reservation ticket,
     const struct sophia_shell_outbound_frame *frames, unsigned count);
 /* Sole socket writer. MSG_DONTWAIT/NOSIGNAL, bounded by bytes and 32 syscalls
  * (including EINTR). No record can overtake a partial frame. Full record/byte

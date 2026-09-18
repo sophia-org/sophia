@@ -645,3 +645,39 @@ admission, free pixels at Retire enqueue). Evidence and restored disposable sour
 invocation named a nonexistent text.c and executed no test; the corrected build
 is retained separately from that failed attempt. Focus/presentation and live
 Session integration remain on the critical path.
+
+
+## C presented interaction and response ownership
+
+The C lifecycle now retains the exact candidate, presented row/target identities,
+focus lease and pending activation independently. Prepared cannot activate a row;
+Presented must name the pending Begin transaction and follow Prepared. Old catalog,
+opening, allocation, output, candidate, presentation, interaction, revision and
+lease identities cannot authorize an edit. A late old-opening activation outcome
+cannot close a newer opening. A rejected replacement preserves the old presented
+scene. Cancel does not create an ACK or discard an already owned activation.
+
+The existing outbox now reserves one or two actual buffers and FIFO cells before
+an edit. Both potential ACK encodings are built first. Exact response transfer
+requires no allocation or I/O after the callback; a returned refusal keeps the
+response and original input identity for retry without applying the edit again.
+Unready reserved cells block subsequent FIFO flush. No unwind or reentrant-callback
+retention is claimed. Accept uses the copied presented selected slot; pointer
+activation uses its copied target and emits the ACK/activation pair atomically.
+
+Device-hidden full C gate and both focused Clang ASan/UBSan fixtures pass at
+`.artifacts/bemenu-native-lifecycle-final`. The fixture uses real private sockets,
+framing/FIFO and lifecycle with supplied Session presentation/focus facts. It
+checks all binding components, Prepared versus Presented, full-outbox refusal
+before editing, forced commit refusal/retry, local edit refusal, exact selection,
+pointer target mismatch, cancellation and late outcomes across reopening. Five
+compiled mutations fail: permitting Presented without Prepared, ignoring input
+binding, forgetting response retry, selecting the first row instead of the
+presented selection, and flushing uncommitted reserved storage. Disposable source
+was restored byte-for-byte. The initial fixture's four surplus input-padding bytes
+were corrected; its earlier failed run is not a production failure.
+
+This establishes reusable client state and response custody, not a running native
+launcher, real Session store/presentation, natural kernel saturation of the new
+reservation path, or physical acceptance. Bemenu menu/raster/controller integration
+and Session live dual-component wiring remain on the critical path.

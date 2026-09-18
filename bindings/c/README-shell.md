@@ -123,4 +123,40 @@ The native launcher role requests exactly bits 5, 7, 8 and 11 (`0x9a0`) at revis
 The C hello/welcome codec can represent this request; the current Session server
 still refuses it because live revision-7 admission is not implemented. No backend
 may treat successful payload validation as a focus lease, catalog membership or
-permission to start an application. The native C lifecycle/client remains pending.
+permission to start an application. The reusable lifecycle below does not replace
+live Session admission or the complete launcher application.
+
+
+## Native presentation and input owner
+
+`sophia_shell_native_lifecycle.h` joins the native opening, candidate, focus,
+input and activation records in the original receive FIFO. It owns copied scene
+and catalog-slot identities, not menu item pointers. Candidate Prepared never
+installs interaction targets; only an exact Presented following Prepared does.
+A focus lease must match that presented scene and current edit revision. Catalog
+replacement, focus revocation, replacement presentation and close invalidate the
+appropriate interaction without erasing an already-owned response or outcome.
+
+Use the same `sophia_shell_outbox` and transaction counter as resource uploads and
+other control traffic. Before calling the serialized UI edit callback, the owner
+reserves actual ACK storage and FIFO position. It preencodes both possible ACK
+outcomes, calls the edit at most once, then commits the chosen response without
+allocation. Accept does not call the edit callback: it reserves and emits an
+ordered ACK/activation pair using the copied presented selection. Pointer actions
+use the exact presented target. Cancellation generates no ACK. An activation
+outcome is not local permission to execute an application.
+
+On BUSY, retain and retry the original borrowed input frame. The retained response
+matches its kind, transaction and complete payload; retry only commits that exact
+response, never repeats the UI edit. Other frame families must still dispatch in
+socket order to their owners. Uncommitted outbox reservations stop flushing at
+their FIFO position, remain aggregate byte/record charged, and cannot be reused
+after commit or owner disposal. This is a serialized returned-error contract,
+not thread safety or callback panic recovery.
+
+The caller must separately validate welcome/capabilities, install the committed
+catalog, obtain current allocation and frame permit, and retain resident upload
+resources. The lifecycle supports one pending one-surface candidate, up to 32
+placements/targets within negotiated bounds. Opening and render revisions must
+be supplied from the captured UI state. The complete Bemenu controller and live
+Session integration are still required before an attended run.
