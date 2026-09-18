@@ -33,6 +33,8 @@ run. Completed evidence directories are retained under their original names.
 | `4e66989d` | `m4-c0acc0f2-source/.artifacts/acceptance-4e66989d` | Failed compilation: the independent host and fixtures lacked the new explicit `session_generation`. No behavioral result. |
 | `e577b519` | `m4-c0acc0f2-source/.artifacts/acceptance-e577b519` | Build succeeded. Construction and authorization both failed at actual X setup. The source had created an empty namespace registry, then tried to admit into a namespace it had never registered. |
 | `47dd3c6a` | `m4-c0acc0f2-source/.artifacts/acceptance-47dd3c6a` | Aggregate failed, 2/8 passed: authorization in both byte orders and connection identity. Construction found live listener displacement. Two nested-host fixtures also failed; those failures are separate from the listener defect. |
+| `30035134` | `m4-c0acc0f2-source/.artifacts/harness-30035134` | Ten runner controls passed, including kernel namespace and delegated-descriptor checks. Acceptance remained `NOT_RUN`, 0/8. |
+| `652208c4` | `m4-c0acc0f2-source/.artifacts/acceptance-652208c4` | Six groups passed together with no failed rows: construction, authorization, connection identity, containment, no ambient fallback and evidence integrity. Commit routing and lifetime were unbound; the aggregate remained `NOT_RUN`. Source was attested inside containment and unchanged afterward. |
 
 ## Findings
 
@@ -48,6 +50,9 @@ unlinks any existing socket inode, treating its type as proof of staleness. A li
 listener therefore loses its pathname. The private path needs an exclusive bind
 that never unlinks an existing path; a connect probe would still race, and a
 sidecar lock would not establish ownership over listeners that do not use it.
+`2ce8dc4b` adds that exclusive private bind. The integrated control on `652208c4`
+requires the occupied-path failure, then connects to the original listener
+again. It passed; the legacy reclaiming entry is a separate API and unchanged.
 
 **Commit ordering and custody.** Source review found that the first Session
 bridge combined mapping facts from several batches, then used the final Engine
