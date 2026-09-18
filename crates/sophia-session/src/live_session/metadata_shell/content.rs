@@ -122,6 +122,10 @@ impl LiveContentSession {
         u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
+    pub(super) fn has_presented_content(&self) -> bool {
+        !self.presented.is_empty()
+    }
+
     pub(super) fn work_area_bands(&self) -> Vec<sophia_protocol::OutputReservation> {
         self.presented
             .values()

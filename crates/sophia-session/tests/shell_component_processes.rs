@@ -305,3 +305,95 @@ fn component_launch_refuses_unadmitted_gpu_and_unbounded_panel() {
         .is_err()
     );
 }
+
+#[cfg(feature = "native-session")]
+#[test]
+fn joined_session_retains_failed_attempt_until_reap_and_exact_cleanup() {
+    use sophia_backend_live::LiveProductionVisualRuntime;
+    use sophia_engine::HeadlessOutput;
+    use sophia_protocol::{OutputId, Size};
+    use sophia_session::shell_component_session::ShellComponentSession;
+    use std::sync::Arc;
+    let root = std::env::temp_dir().join(format!("joined-components-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let selection = sophia_config::ShellComponentConfig {
+        id: "menu".into(),
+        role: ShellComponentRole::ApplicationLauncher,
+        executable: "/nonexistent-sophia-native-launcher".into(),
+        config: None,
+        gpu: sophia_config::ShellGpuMode::Denied,
+    };
+    let mut owner = ShellComponentSession::prepare(
+        &[selection],
+        28,
+        None,
+        &root,
+        ShellContentAdmissionPolicy::Granted {
+            discrete_input: true,
+        },
+    )
+    .unwrap();
+    assert!(owner.start(0).is_err());
+    assert_eq!(
+        owner.attempt(0),
+        None,
+        "paused refusal must not reserve or spawn"
+    );
+    owner.set_presentation_available(true).unwrap();
+    assert!(owner.start(0).is_err());
+    let first = owner.attempt(0).unwrap();
+    assert!(owner.process_retained(first));
+    assert_eq!(
+        owner.phase(first).unwrap(),
+        ComponentConnectionPhase::Revoked
+    );
+    assert_eq!(owner.pending_revocations(), 1);
+    assert!(owner.start(0).is_err());
+    assert_eq!(owner.attempt(0), Some(first));
+    assert!(
+        owner
+            .with_service(first, |_, _| panic!("unnegotiated service escaped"))
+            .is_err()
+    );
+    let payload = Arc::new(vec![1u8]);
+    let held = owner
+        .finish_after_backend_drop(payload.clone())
+        .unwrap_err();
+    assert_eq!(Arc::strong_count(&payload), 2);
+    let visit = owner.poll(1024).unwrap();
+    assert!(visit.processes.iter().flatten().any(|event| matches!(event,
+        ComponentProcessEvent::ProcessRetired(key, _) if *key == first)));
+    assert!(!owner.process_retained(first));
+    assert_eq!(owner.settle_revocations(None).unwrap(), 0);
+    assert_eq!(owner.pending_revocations(), 1);
+    assert!(
+        owner.start(0).is_err(),
+        "process exit does not settle runtime claims"
+    );
+    assert_eq!(owner.attempt(0), Some(first));
+    let outputs = [HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 64,
+            height: 64,
+        },
+        scale: 1,
+    }];
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    assert_eq!(owner.settle_revocations(Some(&mut runtime)).unwrap(), 1);
+    assert_eq!(owner.settle_revocations(Some(&mut runtime)).unwrap(), 0);
+    assert!(owner.start(0).is_err()); // new attempt, still deliberately missing binary
+    let second = owner.attempt(0).unwrap();
+    assert_ne!(first.grant, second.grant);
+    assert!(owner.stop(first).is_err());
+    owner.request_shutdown().unwrap();
+    owner.set_presentation_available(true).unwrap();
+    assert!(owner.start(0).is_err(), "shutdown cannot be reopened");
+    owner.poll(1024).unwrap();
+    assert_eq!(owner.settle_revocations(Some(&mut runtime)).unwrap(), 1);
+    let (_, accounting) = owner.finish_after_backend_drop(held).unwrap();
+    assert!(accounting.quiescent());
+    assert_eq!(Arc::strong_count(&payload), 1);
+    drop(owner);
+    std::fs::remove_dir_all(root).unwrap();
+}

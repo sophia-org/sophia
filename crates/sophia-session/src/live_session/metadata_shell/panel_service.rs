@@ -134,6 +134,12 @@ impl PanelComponentService {
             .service_actions(transport, presented, &mut || take_shell_transaction(next))
     }
 
+    pub(super) fn presented_work_area_bands(&self) -> Option<Vec<OutputReservation>> {
+        self.content
+            .has_presented_content()
+            .then(|| self.content.work_area_bands())
+    }
+
     pub fn work_area_bands(&self) -> Vec<OutputReservation> {
         self.content.work_area_bands()
     }

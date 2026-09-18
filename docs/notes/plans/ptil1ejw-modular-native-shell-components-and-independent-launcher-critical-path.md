@@ -706,3 +706,39 @@ devices in denied mode, bar-only allowance, missing GPU admission refusal and
 zero-grant refusal. Ignored protected-child controls were not run or relabelled.
 No protected process, GPU device, native display, installation, canonical or
 physical readiness evidence is produced by this construction checkpoint.
+
+### Joined Session component owner, before owner-loop enablement (2026-09-18)
+
+`ShellComponentSession` now owns selected launch plans, the shared process and
+connection registry, exact negotiated role-service state, and the fixed revoked
+grant inventory. It starts paused, takes explicit operator content/input policy,
+refuses replacement while an attempt/process or cleanup is retained, and attaches
+bar/native services only from actual successful role negotiation. Every service
+borrow rechecks the exact connected attempt and presentation permission. Stop
+records the exact grant before IPC revocation/process signaling; poll continues
+reaping. Missing runtime retains claim cleanup. Shutdown is irreversible, and
+final backend transfer refuses while processes or grant cleanup remain.
+
+The joined owner preserves last presented panel bands while a successor has not
+presented; a new connection is not itself a work-area update. This is source
+integration with the existing borrowed services, not a new reservation policy.
+The actual compositor owner loop still does not construct/use this owner. Its
+catalog/input scheduling, per-component diagnostics, final error-carrier custody
+and live shutdown must be wired before the configuration refusal is removed.
+Successful supervised negotiation/role attachment and native close/reopen are
+still integration gates, not inferred from the controls below.
+
+`.artifacts/bemenu-component-session/`: device-hidden Session 471 PASS/14 ignored
+and process-owner 4 PASS/2 ignored, strict Session Clippy/layout PASS. The new
+control deliberately uses a nonexistent executable: initial pause burns no
+attempt; failed startup retains supervisor until poll; missing runtime preserves
+cleanup and attempt identity; actual runtime claim settlement permits a fresh
+attempt; old stop cannot name its successor; shutdown cannot reopen; final
+backend payload is retained on refusal and dropped once on settled transfer.
+No actual native owner/worker is supplied. The initial fixture omitted the
+Session-private endpoint parent and failed before startup; the final fixture
+creates it as required. `tests-final.log` is the final positive evidence.
+A compiled omission of only the pending-revocation start guard mints a successor
+prematurely and fails the exact-attempt assertion; source restored, logs in
+`.artifacts/bemenu-component-session-mutant/`. No protected successful child,
+hardware, native run, canonical result, publication or readiness claim.

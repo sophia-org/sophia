@@ -164,3 +164,9 @@ pub mod shell_component_launch {
         ComponentGpuLaunchEvidence, ShellComponentLaunch,
     };
 }
+
+/// Retained Session owner joining selected component processes and services.
+#[cfg(feature = "native-session")]
+pub mod shell_component_session {
+    pub use crate::live_session::metadata_shell::component_session::{ShellComponentService, ShellComponentSession};
+}

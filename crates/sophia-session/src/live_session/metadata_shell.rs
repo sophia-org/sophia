@@ -11,6 +11,7 @@ pub(crate) mod indicators;
 
 mod launch;
 pub(crate) mod component_launch;
+pub(crate) mod component_session;
 mod launcher;
 mod reference;
 mod revoked_content_grants;
