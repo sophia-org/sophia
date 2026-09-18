@@ -316,6 +316,16 @@ impl InputRecovery {
         delivery: XAuthorityInputDeliveryId,
         outcome: XAuthorityInputDeliveryOutcome,
     ) -> PrivateAdjudication {
+        // LABELLED ACCEPTANCE FAULT, TEST BUILDS ONLY, BEFORE THIS TAKES ANY
+        // LOCK OF ITS OWN. An acceptance case arms one shot against one exact
+        // completion and one offered outcome; every other adjudication finds
+        // it empty. It exists because the state this row is about -- a decided
+        // request whose admission is gone by the time its refusal is offered
+        // -- has no other deterministic arrangement: removing the admission
+        // any earlier stops the source outcome from ever being produced.
+        // Nothing about the decision below changes.
+        #[cfg(all(test, unix))]
+        routing_tests::m3_acceptance::before_adjudication(completion, delivery, outcome);
         let answer = self.adjudicated_for_held(completion, client, delivery, outcome);
         // READ-ONLY ACCEPTANCE OBSERVATION OF WHAT THIS OFFER WAS TOLD. The
         // answer is the branch that decided it; reading the ledger afterwards

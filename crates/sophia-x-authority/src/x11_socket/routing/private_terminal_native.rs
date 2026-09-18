@@ -659,11 +659,15 @@ fn dispatch_custody(
         #[cfg(all(test, unix))]
         routing_tests::m3_acceptance::after_ordered_handover(
             &seam_origin,
-            seam_delivery,
-            release.incarnation(),
-            release.custody.attempt,
-            release.completion(),
-            release.reached(),
+            &routing_tests::m3_acceptance::OrderedHandover {
+                delivery: seam_delivery,
+                incarnation: release.incarnation(),
+                attempt: release.custody.attempt,
+                completion: release.completion(),
+                endpoint: &endpoint,
+                reached: release.reached(),
+                handed_over: sent.is_ok(),
+            },
         );
         let handed_over = match sent {
             Ok(()) => {
