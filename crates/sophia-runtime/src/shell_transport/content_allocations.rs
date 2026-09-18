@@ -222,7 +222,7 @@ impl ShellComponentTransport {
         Ok(Some((transaction, record)))
     }
 
-    fn flush_content_allocation_events(
+    pub(super) fn flush_content_allocation_events(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {

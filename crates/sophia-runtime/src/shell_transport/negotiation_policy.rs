@@ -9,6 +9,13 @@ impl ShellComponentTransport {
         content_policy: ShellContentAdmissionPolicy,
         hello: ShellV1ClientHello,
     ) -> Result<(ShellV1ServerWelcome, Option<ContentLimits>), ShellTransportError> {
+        if epochs.profile(self.store_grant) == Some(crate::ContentStoreProfile::NativeLauncher) {
+            return self.select_native_launcher_negotiation(
+                connection_epoch,
+                content_policy,
+                hello,
+            );
+        }
         if hello.minimum_revision == 0
             || hello.minimum_revision > hello.maximum_revision
             || hello.minimum_revision > sophia_protocol::SOPHIA_SHELL_INDICATOR_REVISION

@@ -11,6 +11,17 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         limits: ContentLimits,
     ) -> Result<(), ShellTransportError> {
+        self.reserve_content_with_profile(epochs, limits, crate::ContentStoreProfile::Legacy)
+    }
+
+    /// The Session role selects storage before any peer is accepted. A client
+    /// request cannot change this profile or borrow another role's reservation.
+    pub fn reserve_content_with_profile(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        limits: ContentLimits,
+        profile: crate::ContentStoreProfile,
+    ) -> Result<(), ShellTransportError> {
         if self.negotiation.is_some()
             || self.stream.is_some()
             || self.content_grant.is_some()
@@ -22,7 +33,7 @@ impl ShellComponentTransport {
         if limits.grant.connection_epoch <= self.connection_epoch {
             return Err(ShellTransportError::InvalidConnectionEpoch);
         }
-        epochs.admit(limits.clone())?;
+        epochs.admit_with_profile(limits.clone(), profile)?;
         self.store_grant = limits.grant;
         self.reserved_limits = Some(limits);
         Ok(())

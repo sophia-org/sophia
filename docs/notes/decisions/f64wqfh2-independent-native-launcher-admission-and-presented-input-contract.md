@@ -17,8 +17,10 @@ keyboard events. The revision-4 descriptor launcher is a different product: Engi
 renders and edits its menu. Neither may silently be reinterpreted as the custom
 Bemenu content launcher.
 
-This is the t104 contract proposal. Live negotiation remains capped at revision 6;
-component profile parsing is now implemented with an explicit live-startup
+This is the t104 contract proposal. Legacy/live negotiation remains capped at revision 6;
+the isolated component owner can now negotiate revision 7 for an explicitly
+reserved native-launcher role, with real socket/store controls.
+Component profile parsing is now implemented with an explicit live-startup
 refusal until independent admission is connected. The [revision-7 codec checkpoint](../investigations/v7m2c9ra-native-launcher-wire-contract.md)
 now supplies concrete byte layouts and Rust/C compatibility controls; formal
 models and live lifecycle integration remain pending;

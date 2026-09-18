@@ -32,7 +32,9 @@ raster controls, Clang UBSan and three discriminating compiled negatives). The [
 and revision-1–6 C wire foundation are implemented. The
 [revision-7 wire checkpoint](../investigations/v7m2c9ra-native-launcher-wire-contract.md)
 adds explicit native allocation/candidate/focus/input/activation vocabulary with
-independent Rust/C decoders; runtime negotiation still caps at revision 6. Model
+independent Rust/C decoders. The isolated component owner now negotiates revision 7
+for explicitly reserved native launchers; legacy/live startup remains revision 6
+and still refuses the independent profile. Model
 controls and live ownership integration remain open; this is not a shipped
 native-launcher capability.
 
@@ -213,9 +215,12 @@ actually shipped. Completion does not imply dock/notification/lock support.
 The [wire/store record](../investigations/v7m2c9ra-native-launcher-wire-contract.md#native-store-ownership-over-795a3d60)
 now records actual native allocation and candidate ownership, ordered catalog-row
 binding through renderer handoff, aggregate byte/response accounting and retained
-resource isolation from the bar. This is storage preparation only: revision-7
-live admission, two supervised services, presented focus/launch authority and the
-Bemenu backend remain on the critical path. The ten store controls use supplied
+resource isolation from the bar. The component owner now selects the native
+storage profile from the configured role and negotiates revision 7 on its private
+socket. Native resource, pacing, allocation and candidate records share one
+bounded visit and the existing response FIFO. Live admission and two supervised
+services, presented focus/launch authority and the Bemenu backend remain on the
+critical path. The ten store controls use supplied
 renderer transitions and do not qualify a physical run.
 
 ## Dependencies and boundaries

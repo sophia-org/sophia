@@ -178,3 +178,56 @@ credit alongside candidate responses; production accounting was not weakened.
 Protected role negotiation, live supervision, geometry/composition publication,
 focus/input/activation and the Bemenu C backend are still required. These store
 controls do not establish readiness for `lom-test`.
+
+## Role transport over 009415a2
+
+The independently constructed Session component owner now selects the immutable
+store profile from its configured role before peer admission. A native launcher
+must negotiate revision 7 and exactly application-catalog, content-surface,
+content-discrete-input and native-launcher capabilities. It cannot request
+indicator, descriptor-launch or switcher authority. The existing operator
+content policy must also grant discrete input. Unavailable and denied remain
+distinct encoded refusals, and refused negotiation retires only its reservation.
+Legacy and live single-shell startup retain revision 6. The independent live
+profile remains refused pending full supervision/focus/client integration.
+
+Native resource, pacing, allocation and candidate intake shares one visit of at
+most the negotiated record limit (capped at 32) and 64 KiB payload processing.
+Each socket direction is additionally bounded to 64 KiB and retains partial
+framing/writes. Oversized negotiated payloads refuse before record removal.
+This is a per-connection content bound, not completed owner-loop fairness across
+input, actions, supervision or renderer work. A new allocation/resource/demand
+must have aggregate response capacity before inbox removal; candidate permits
+already own their response credits. Resource transitions and event transfers
+are shared with the legacy path, not duplicated resource ownership.
+
+The native service uses Session-supplied opening, current catalog and issued
+revision with the actual stores. Opening notifications and content outcomes use
+the existing FIFO. The borrowed Session connection exposes the same methods as
+the actual component owner. No focus, text issuance or application activation
+is inferred from successful negotiation or supplied renderer completion.
+
+Eight device-hidden socket controls cover the complete allocation/upload/pacing/
+candidate roundtrip with supplied geometry/catalog and renderer completion,
+exact source retention through disconnect, role widening, operator refusal,
+wrong grant/legacy allocation, stale catalog, mixed-record bounds and buffered
+payload continuation and EOF after a buffered request. The EOF control retains
+the actual pending allocation until explicit disconnect; EOF alone does not
+claim successful completion. Session's two-peer controls now use a real revision-6 bar
+and revision-7 launcher, retaining old resources while the bar progresses. Their
+protection evidence is supplied; no protected child, native presentation or
+actual launch runs. The buffered-byte control preloads the inbox so the socket
+read bound cannot hide a missing dispatch-byte bound. Evidence is retained in
+`.artifacts/bemenu-native-transport/`.
+
+Native text input still needs an explicit bounded response/issuance owner. Its
+132 fixed payload bytes plus up to 256 UTF-8 bytes exceed the legacy 256-byte
+control envelope. That next integration must reserve the complete frame through
+FIFO/partial writes; this slice does not send native text as unreserved bulk.
+
+Six independently compiled negative mutations in the disposable source snapshot
+fail their intended socket controls: accepting widened role capabilities,
+ignoring operator refusal, accepting a foreign grant, removing the payload bound
+doubling the negotiated record bound and suppressing EOF notification. The source snapshot is restored after
+each mutation. These are deterministic private-socket accounting/role controls,
+not evidence of natural kernel saturation or physical input dispatch.

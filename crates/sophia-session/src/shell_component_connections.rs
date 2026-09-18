@@ -6,9 +6,9 @@ use std::time::Duration;
 use sophia_config::ShellComponentRole;
 use sophia_protocol::{ContentGrant, ContentLimits, ShellV1ServerWelcome};
 use sophia_runtime::{
-    ContentEpochAccounting, ContentEpochRegistry, ContentStoreError, ProtectionDomainEvidence,
-    ShellComponentTransport, ShellContentAdmissionPolicy, ShellTransportConnection,
-    ShellTransportError,
+    ContentEpochAccounting, ContentEpochRegistry, ContentStoreError, ContentStoreProfile,
+    ProtectionDomainEvidence, ShellComponentTransport, ShellContentAdmissionPolicy,
+    ShellTransportConnection, ShellTransportError,
 };
 
 const MIB: u64 = 1024 * 1024;
@@ -161,9 +161,14 @@ impl ShellComponentConnections {
         };
         self.next_connection = next_connection;
         self.next_content = next_content;
-        connection
-            .transport
-            .reserve_content(&mut self.epochs, role_limits(connection.role, grant))?;
+        connection.transport.reserve_content_with_profile(
+            &mut self.epochs,
+            role_limits(connection.role, grant),
+            match connection.role {
+                ShellComponentRole::Bar => ContentStoreProfile::Legacy,
+                ShellComponentRole::ApplicationLauncher => ContentStoreProfile::NativeLauncher,
+            },
+        )?;
         connection.attempt = Some((grant, ComponentConnectionPhase::Reserved));
         Ok(ComponentConnectionKey { slot, grant })
     }

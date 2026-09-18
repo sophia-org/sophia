@@ -29,6 +29,7 @@ mod accounting;
 mod connection;
 pub use connection::ShellTransportConnection;
 mod legacy;
+mod native_launcher;
 mod negotiation;
 mod negotiation_policy;
 mod negotiation_service;
@@ -487,6 +488,16 @@ impl ShellComponentTransport {
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
+        self.poll_io_bounded(epochs, 256 * 1024)
+    }
+
+    /// Bound each I/O direction, preserving partial framing and FIFO custody.
+    /// Legacy service keeps its previous 256 KiB limits; native visits use 64 KiB.
+    pub(super) fn poll_io_bounded(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        byte_budget: usize,
+    ) -> Result<(), ShellTransportError> {
         if self.stream.is_none() {
             return Err(ShellTransportError::NotConnected);
         }
@@ -495,7 +506,7 @@ impl ShellComponentTransport {
             .stream
             .as_mut()
             .ok_or(ShellTransportError::NotConnected)?;
-        let mut remaining = 256 * 1024;
+        let mut remaining = byte_budget.min(256 * 1024);
         for _ in 0..64 {
             if remaining == 0 || self.output.is_empty() {
                 break;
@@ -511,6 +522,7 @@ impl ShellComponentTransport {
                 Err(e) => return Err(ShellTransportError::Io(e.to_string())),
             }
         }
+        let mut incoming = byte_budget.min(256 * 1024);
         for _ in 0..64 {
             Self::decode_buffered_input(&mut self.input, &mut self.inbox)?;
             let limit = self
@@ -521,17 +533,20 @@ impl ShellComponentTransport {
                 });
             let retained = self.input.len() + self.inbox.iter().map(Vec::len).sum::<usize>();
             let available = limit.saturating_sub(retained);
-            if available == 0 || self.inbox.len() == 64 {
+            if available == 0 || incoming == 0 || self.inbox.len() == 64 {
                 break;
             }
             let mut bytes = [0u8; 4096];
-            let available = available.min(bytes.len());
+            let available = available.min(bytes.len()).min(incoming);
             match stream.read(&mut bytes[..available]) {
                 Ok(0) => {
                     self.peer_closed = true;
                     break;
                 }
-                Ok(n) => self.input.extend_from_slice(&bytes[..n]),
+                Ok(n) => {
+                    self.input.extend_from_slice(&bytes[..n]);
+                    incoming -= n;
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(e) => return Err(ShellTransportError::Io(e.to_string())),
             }

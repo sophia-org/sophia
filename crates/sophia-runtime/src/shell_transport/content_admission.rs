@@ -4,8 +4,8 @@ use sophia_protocol::{
     SOPHIA_SHELL_CONTENT_REVISION, ShellContentRecord,
 };
 
-const PERMISSION_DENIED: u16 = 1;
-const UNAVAILABLE: u16 = 4;
+pub(super) const PERMISSION_DENIED: u16 = 1;
+pub(super) const UNAVAILABLE: u16 = 4;
 
 /// Operator and implementation decision for the revision-5 content workflow.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

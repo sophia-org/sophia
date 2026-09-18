@@ -45,7 +45,7 @@ impl Harness {
                 &evidence(),
                 Duration::from_secs(2),
                 ShellContentAdmissionPolicy::Granted {
-                    discrete_input: false,
+                    discrete_input: key.slot == 1,
                 },
             )
             .unwrap();
@@ -57,13 +57,22 @@ impl Harness {
     }
     fn connect(&mut self, key: ComponentConnectionKey) -> UnixStream {
         let mut client = self.begin(key);
-        client.write_all(&hello()).unwrap();
+        client.write_all(&hello(key.slot == 1)).unwrap();
         let events = self.owner.poll_negotiations(65536);
         let (received, welcome) = events.into_iter().flatten().next().unwrap();
         assert_eq!(received, key);
+        let welcome = welcome.unwrap();
+        assert_eq!(welcome.connection_epoch, key.grant.connection_epoch);
+        assert_eq!(welcome.selected_revision, if key.slot == 1 { 7 } else { 6 });
         assert_eq!(
-            welcome.unwrap().connection_epoch,
-            key.grant.connection_epoch
+            welcome.capabilities & SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER != 0,
+            key.slot == 1
+        );
+        assert_eq!(
+            self.owner
+                .with_connection(key, |t| t.supports_native_launcher())
+                .unwrap(),
+            key.slot == 1
         );
         read_frame(&mut client);
         read_frame(&mut client);
@@ -83,7 +92,18 @@ fn evidence() -> ProtectionDomainEvidence {
         roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
     }
 }
-fn hello() -> Vec<u8> {
+fn hello(native: bool) -> Vec<u8> {
+    if native {
+        return encode_shell_v1_client_hello_frame(ShellV1ClientHello {
+            minimum_revision: 7,
+            maximum_revision: 7,
+            required_capabilities: SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+                | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+                | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
+                | SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER,
+        })
+        .unwrap();
+    }
     encode_shell_v1_client_hello_frame(ShellV1ClientHello {
         minimum_revision: 5,
         maximum_revision: 6,
@@ -268,15 +288,15 @@ fn bounded_negotiation_visits_both_peers_and_alternates_first_owner() {
     let b = h.owner.reserve_attempt(1).unwrap();
     let mut ac = h.begin(a);
     let mut bc = h.begin(b);
-    ac.write_all(&hello()[..4]).unwrap();
-    bc.write_all(&hello()).unwrap();
+    ac.write_all(&hello(false)[..4]).unwrap();
+    bc.write_all(&hello(true)).unwrap();
     assert!(h.owner.poll_negotiations(0).iter().all(Option::is_none));
     // Both still pending, but first visit rotates even with zero byte credit.
     let events = h.owner.poll_negotiations(65536);
     assert_eq!(events[0].as_ref().unwrap().0, b);
     assert!(events[1].is_none());
     assert_eq!(h.owner.phase(a), Ok(ComponentConnectionPhase::Negotiating));
-    ac.write_all(&hello()[4..]).unwrap();
+    ac.write_all(&hello(false)[4..]).unwrap();
     let events = h.owner.poll_negotiations(65536);
     assert_eq!(events[0].as_ref().unwrap().0, a);
     assert!(events[1].is_none());

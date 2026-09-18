@@ -38,51 +38,63 @@ impl ShellComponentTransport {
             let Some((transaction, record)) = self.poll_content_resource_record(epochs)? else {
                 break;
             };
-            let resource = content_admission::resource_identity(&record)
-                .ok_or(ShellTransportError::WrongContentRecord)?;
-            let (outcome, store_reported) = {
-                let store = epochs
-                    .resources_mut(self.store_grant)
-                    .ok_or(ShellTransportError::MissingCapability)?;
-                let outcome = match &record {
-                    ShellContentRecord::ResourceBegin(value) => {
-                        store.begin(transaction, value.clone(), now_msec)
-                    }
-                    ShellContentRecord::ResourceChunk(value) => {
-                        store.chunk(transaction, value, now_msec)
-                    }
-                    ShellContentRecord::ResourceEnd(value) => {
-                        store.end(transaction, value, now_msec)
-                    }
-                    ShellContentRecord::ResourceCancel(value) => store.cancel(transaction, value),
-                    ShellContentRecord::ResourceRetire(value) => store.retire(transaction, value),
-                    _ => return Err(ShellTransportError::WrongContentRecord),
-                };
-                (outcome, store.pending_event().is_some())
-            };
+            self.apply_content_resource_record(epochs, transaction, record, now_msec)?;
             processed += 1;
-            self.flush_content_resource_events(epochs)?;
-            if let Err(error) = outcome
-                && !store_reported
-            {
-                if error == ContentStoreError::ClockRegression {
-                    return Err(error.into());
-                }
-                self.send_content_record(
-                    epochs,
-                    transaction,
-                    &ShellContentRecord::ResourceStatus(ContentResourceStatus {
-                        grant: limits.grant,
-                        resource,
-                        status: 3,
-                        reason: content_reason(error) as u16,
-                        next_ordinal: 0,
-                        admitted_bytes: 0,
-                    }),
-                )?;
-            }
         }
         Ok(processed)
+    }
+
+    /// One already credit-admitted request; both role dispatchers use this
+    /// actual resource transition and exact response owner.
+    pub(super) fn apply_content_resource_record(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        transaction: TransactionId,
+        record: ShellContentRecord,
+        now_msec: u64,
+    ) -> Result<(), ShellTransportError> {
+        let grant = self.store_grant;
+        let resource = content_admission::resource_identity(&record)
+            .ok_or(ShellTransportError::WrongContentRecord)?;
+        let (outcome, store_reported) = {
+            let store = epochs
+                .resources_mut(self.store_grant)
+                .ok_or(ShellTransportError::MissingCapability)?;
+            let outcome = match &record {
+                ShellContentRecord::ResourceBegin(value) => {
+                    store.begin(transaction, value.clone(), now_msec)
+                }
+                ShellContentRecord::ResourceChunk(value) => {
+                    store.chunk(transaction, value, now_msec)
+                }
+                ShellContentRecord::ResourceEnd(value) => store.end(transaction, value, now_msec),
+                ShellContentRecord::ResourceCancel(value) => store.cancel(transaction, value),
+                ShellContentRecord::ResourceRetire(value) => store.retire(transaction, value),
+                _ => return Err(ShellTransportError::WrongContentRecord),
+            };
+            (outcome, store.pending_event().is_some())
+        };
+        self.flush_content_resource_events(epochs)?;
+        if let Err(error) = outcome
+            && !store_reported
+        {
+            if error == ContentStoreError::ClockRegression {
+                return Err(error.into());
+            }
+            self.send_content_record(
+                epochs,
+                transaction,
+                &ShellContentRecord::ResourceStatus(ContentResourceStatus {
+                    grant,
+                    resource,
+                    status: 3,
+                    reason: content_reason(error) as u16,
+                    next_ordinal: 0,
+                    admitted_bytes: 0,
+                }),
+            )?;
+        }
+        Ok(())
     }
 
     pub fn send_content_record(
@@ -177,7 +189,7 @@ impl ShellComponentTransport {
         Ok(Some((transaction, record)))
     }
 
-    fn flush_content_resource_events(
+    pub(super) fn flush_content_resource_events(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
