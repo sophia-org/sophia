@@ -3,7 +3,6 @@
   "cases": {
     "C.capacity": "x11_socket::routing_tests::m3_acceptance::c_capacity",
     "C.interrupted_ownership": "x11_socket::routing_tests::m3_acceptance::c_interrupted_ownership",
-    "C.indeterminate_send": "x11_socket::routing_tests::m3_acceptance::c_indeterminate_send",
     "C.poison": "x11_socket::routing_tests::m3_acceptance::c_poison",
     "C.exact_origin": "x11_socket::routing_tests::m3_acceptance::c_exact_origin",
     "A.press_release_repress": "x11_socket::routing_tests::m3_acceptance::a_press_release_repress",

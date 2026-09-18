@@ -1555,8 +1555,18 @@ fn retained_dispatch(service: &LifecycleService) -> Vec<(String, bool, bool)> {
     seen
 }
 
+/// Diagnostics for `C.indeterminate_send`, on the real service.
+///
+/// NOT BOUND. Two of the four required subcases are not yet established.
+/// `unknown_send_not_replayed` needs the unreported handover to persist, and
+/// interrupting the invocation there leaves its connection worker unjoined,
+/// so the case cannot also satisfy the harness's collection rule; the seam is
+/// therefore held and released here, which shows the interval is real without
+/// establishing what survives it. `partial_send_not_replayed` needs a prefix
+/// of the same delivery on the wire, which whole frames from earlier
+/// completed deliveries cannot establish.
 #[test]
-fn c_indeterminate_send() {
+fn c_indeterminate_send_diagnostics() {
     let mut actors = Vec::new();
 
     // ENQUEUED WORK IS OBSERVED, NOT RESENT, and a refused publication stays
@@ -1712,10 +1722,11 @@ fn c_indeterminate_send() {
         XAuthorityInputDeliveryOutcome::Flushed
     );
     let release_cell_before = delivery_cell(&unknown.registry, 12081);
+    let (handover_pause, handover_release) = Pause::pair();
     arm_handover(
         &unknown.registry,
         release,
-        Box::new(|| panic!("labelled acceptance interruption between handover and its record")),
+        Box::new(move || handover_pause.wait()),
     );
     unknown_ingress
         .submit(
@@ -1723,11 +1734,13 @@ fn c_indeterminate_send() {
             button_to(unknown_surface, release, 272, false),
         )
         .expect("an actual release, whose handover this case interrupts");
+    // The service thread really is inside that interval: it reached the seam
+    // between handing the capsule over and recording what the handover
+    // returned, and stays there until this case lets it go.
+    let inside_interval = handover_release.entered();
+    handover_release.release();
+    unknown.command(XServerFrontendServiceCommand::StopAndDisconnect);
     let unknown_closed = unknown.closed();
-    assert!(
-        unknown_closed.unwound,
-        "the interruption ended the invocation it happened in"
-    );
     // The capsule had already been handed over, so the recipient does hold
     // the bytes. What no longer exists is anything that knows it.
     let release_wire = read_event(&mut unknown_peer, 3);
@@ -1735,18 +1748,6 @@ fn c_indeterminate_send() {
         .or(release_cell_before)
         .and_then(|cell| cell.answer());
     let phases = retained_dispatch(&unknown);
-    assert!(
-        phases
-            .iter()
-            .any(|(phase, _, _)| phase == "Indeterminate"),
-        "the retained release says its handover was begun and never reported: {phases:?}"
-    );
-    assert!(
-        phases
-            .iter()
-            .all(|(phase, replayable, _)| phase != "Indeterminate" || !*replayable),
-        "and keeps no replayable copy of what it handed over: {phases:?}"
-    );
     let unknown_after = retained_dispatch(&unknown);
     assert_eq!(
         unknown_after, phases,
@@ -1760,19 +1761,17 @@ fn c_indeterminate_send() {
         !phases.is_empty(),
         "the release is retained by the store that outlived the invocation"
     );
-    // The writer's own receipt may well have been published: it really did
-    // flush the bytes. What the interruption destroyed is the executor's
-    // knowledge of its own handover, and the rule is that it must not guess.
-    // So the capsule is never offered again, whatever the cell now says.
     let replayed = read_event(&mut unknown_peer, 1);
     assert_eq!(
         replayed, None,
-        "an unreported handover is not retried, so no second copy is sent"
+        "the release reached the recipient once and was not sent again"
     );
     let unknown_fact = json!({
         "press_delivery": 12080,
         "release_delivery": 12081,
         "seam": "labelled test-only, keyed by this origin and this delivery, one shot, immediately after the handover returned and before its result was recorded",
+        "interval_entered_on": format!("{inside_interval:?}"),
+        "seam_mode": "held and released, not unwound: interrupting the invocation here leaves its connection worker unjoined, which no acceptance case may do",
         "unwound": unknown_closed.unwound,
         "release_bytes_on_wire": release_wire.map(|bytes| bytes.to_vec()),
         "release_answer": release_cell.map(|answer| format!("{answer:?}")),
@@ -1884,14 +1883,10 @@ fn c_indeterminate_send() {
         "the case could bound its own end of the real connection"
     );
     assert!(
-        stalled.is_some_and(|(why, _)| why != "the recipient never stopped the writer within the bound"),
-        "a recipient that stops reading does stop the writer: {partial}"
-    );
-    assert!(
         stalling_outcome
             .as_deref()
             .is_none_or(|outcome| outcome != "Flushed"),
-        "and whatever ended it was not a flush: {partial}"
+        "whatever ended the run was not a flush: {partial}"
     );
     let blocked_after = retained_dispatch(&blocked);
     assert_eq!(
@@ -1901,17 +1896,19 @@ fn c_indeterminate_send() {
     let _ = blocked_sequence;
     actors.extend(blocked.finish(&[blocked_custody]));
 
-    emit_case(
-        "C.indeterminate_send",
-        &[
-            ("partial_send_not_replayed", partial),
-            ("unknown_send_not_replayed", unknown_fact),
-            ("enqueued_observation_only", enqueued),
-            (
-                "refused_publication_retained",
-                json!({"refused": refused, "closed": format!("{:?}", closed_first.order)}),
-            ),
-        ],
-        &actors,
+    println!(
+        "sophia_m3_indeterminate_send_diagnostics {}",
+        json!({
+            "schema": 1,
+            "case": "C.indeterminate_send",
+            "bound": false,
+            "why_unbound": "unknown_send_not_replayed needs the unreported handover to persist, and interrupting the invocation there leaves its connection worker unjoined; partial_send_not_replayed needs a prefix of the same delivery on the wire, which whole frames from earlier completed deliveries cannot establish.",
+            "partial_send_blocked_recipient": partial,
+            "unknown_send_interval": unknown_fact,
+            "enqueued_observation_only": enqueued,
+            "refused_publication_retained": refused,
+            "first_invocation_order": format!("{:?}", closed_first.order),
+            "collected_actors": actors,
+        })
     );
 }
