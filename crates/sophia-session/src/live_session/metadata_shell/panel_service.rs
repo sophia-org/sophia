@@ -47,6 +47,15 @@ impl PanelComponentService {
         })
     }
 
+    /// Operator edge policy applies at allocation, not after pixels are accepted.
+    pub fn with_reservation(
+        mut self,
+        reservation: Option<sophia_config::ShellComponentReservation>,
+    ) -> Self {
+        self.content.component_reservation = reservation;
+        self
+    }
+
     fn validate(
         &self,
         transport: &ShellTransportConnection<'_>,

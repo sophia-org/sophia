@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use sophia_config::ShellComponentRole;
+use sophia_config::{MAX_SHELL_COMPONENTS, ShellComponentRole};
 use sophia_protocol::{ContentGrant, ContentLimits, ShellV1ServerWelcome};
 use sophia_runtime::{
     ContentEpochAccounting, ContentEpochRegistry, ContentStoreError, ContentStoreProfile,
@@ -60,7 +60,7 @@ struct Connection {
     attempt: Option<(ContentGrant, ComponentConnectionPhase)>,
 }
 
-/// One registry for two independent connections, with attempt identities burned
+/// One bounded registry for independent connections, with attempt identities burned
 /// before reservation. This owner must outlive all connection service borrows
 /// and be retained with unresolved content owners on shutdown. Collection never
 /// substitutes for native/resource consumer disposition.
@@ -70,6 +70,7 @@ pub struct ShellComponentConnections {
     next_connection: u64,
     next_content: u64,
     cursor: usize,
+    connections_have_dock: bool,
 }
 
 pub type ComponentNegotiationEvent = (
@@ -80,11 +81,12 @@ pub type ComponentNegotiationEvent = (
 impl ShellComponentConnections {
     pub fn new() -> Result<Self, ComponentConnectionError> {
         Ok(Self {
-            connections: Vec::with_capacity(2),
-            epochs: ContentEpochRegistry::new(64 * MIB)?,
+            connections: Vec::with_capacity(MAX_SHELL_COMPONENTS),
+            epochs: ContentEpochRegistry::with_active_capacity(64 * MIB, MAX_SHELL_COMPONENTS)?,
             next_connection: 1,
             next_content: 1,
             cursor: 0,
+            connections_have_dock: false,
         })
     }
 
@@ -97,7 +99,8 @@ impl ShellComponentConnections {
         directory: &Path,
         uid: u32,
     ) -> Result<usize, ComponentConnectionError> {
-        if self.connections.len() == 2
+        if self.next_connection != 1
+            || self.connections.len() == MAX_SHELL_COMPONENTS
             || id.is_empty()
             || id.len() > 64
             || !id
@@ -112,6 +115,7 @@ impl ShellComponentConnections {
         }
         let transport = ShellComponentTransport::bind_for_supervised_uid(directory, uid)?;
         let slot = self.connections.len();
+        self.connections_have_dock |= role == ShellComponentRole::Dock;
         self.connections.push(Connection {
             id: id.into(),
             role,
@@ -163,9 +167,10 @@ impl ShellComponentConnections {
         self.next_content = next_content;
         connection.transport.reserve_content_with_profile(
             &mut self.epochs,
-            role_limits(connection.role, grant),
+            role_limits(connection.role, grant, self.connections_have_dock),
             match connection.role {
                 ShellComponentRole::Bar => ContentStoreProfile::Legacy,
+                ShellComponentRole::Dock => ContentStoreProfile::PersistentCatalog,
                 ShellComponentRole::ApplicationLauncher => ContentStoreProfile::NativeLauncher,
             },
         )?;
@@ -208,8 +213,8 @@ impl ShellComponentConnections {
     pub fn poll_negotiations(
         &mut self,
         byte_budget_per_connection: usize,
-    ) -> [Option<ComponentNegotiationEvent>; 2] {
-        let mut events = [None, None];
+    ) -> [Option<ComponentNegotiationEvent>; MAX_SHELL_COMPONENTS] {
+        let mut events = std::array::from_fn(|_| None);
         let count = self.connections.len();
         if count == 0 {
             return events;
@@ -329,9 +334,17 @@ impl ShellComponentConnections {
     }
 }
 
-fn role_limits(role: ShellComponentRole, grant: ContentGrant) -> ContentLimits {
+fn role_limits(role: ShellComponentRole, grant: ContentGrant, has_dock: bool) -> ContentLimits {
     let mut limits = ContentLimits::prototype(grant);
-    if role == ShellComponentRole::ApplicationLauncher {
+    if has_dock {
+        limits.max_staging_bytes = 4 * MIB;
+        limits.max_resident_bytes = if role == ShellComponentRole::Bar {
+            12 * MIB
+        } else {
+            8 * MIB
+        };
+        limits.max_retiring_bytes = 8 * MIB;
+    } else if role == ShellComponentRole::ApplicationLauncher {
         limits.max_staging_bytes = 4 * MIB;
         limits.max_resident_bytes = 12 * MIB;
         limits.max_retiring_bytes = 8 * MIB;

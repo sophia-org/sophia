@@ -43,6 +43,7 @@ pub(super) fn service_components(
                         let (role, gpu) = components.launch_evidence(key)?;
                         let role = match role {
                             sophia_config::ShellComponentRole::Bar => "bar",
+                            sophia_config::ShellComponentRole::Dock => "dock",
                             sophia_config::ShellComponentRole::ApplicationLauncher => {
                                 "application_launcher"
                             }

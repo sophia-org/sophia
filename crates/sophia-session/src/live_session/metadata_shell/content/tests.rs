@@ -483,3 +483,57 @@ fn native_resize_keeps_id_and_refuses_generation_exhaustion() {
     );
     assert_eq!(state.next_allocation_id, 1);
 }
+
+#[test]
+fn explicit_component_edge_is_enforced_in_logical_units_before_allocation() {
+    use sophia_config::{ShellComponentEdge, ShellComponentReservation};
+    let output = HeadlessOutput {
+        id: OutputId::from_raw(2),
+        size: Size {
+            width: 200,
+            height: 200,
+        },
+        scale: 2,
+    };
+    let mut request = ContentAllocationRequest {
+        grant: GRANT,
+        output: OUTPUT,
+        allocation_request_id: 1,
+        operation: 1,
+        role: 1,
+        edge: 3,
+        prior: ContentAllocationId::default(),
+        parent: ContentAllocationId::default(),
+        parent_presentation_epoch: 0,
+        anchor_parent_rect: ContentPixelRect::default(),
+        desired_width: 100,
+        desired_height: 24,
+        margins: ContentMargins::default(),
+    };
+    let mut session = LiveContentSession::new(true, false, Some(24));
+    session.component_reservation = Some(ShellComponentReservation {
+        edge: ShellComponentEdge::Bottom,
+        max_thickness: 24,
+    });
+    let initial_id = session.next_allocation_id;
+    request.edge = 1;
+    assert_eq!(
+        session.resolve_allocation(&request, &[output], &[]),
+        Err(sophia_runtime::ContentAllocationError::Malformed)
+    );
+    assert_eq!(session.next_allocation_id, initial_id);
+    request.edge = 3;
+    request.desired_height = 25;
+    assert_eq!(
+        session.resolve_allocation(&request, &[output], &[]),
+        Err(sophia_runtime::ContentAllocationError::Budget)
+    );
+    assert_eq!(session.next_allocation_id, initial_id);
+    request.desired_height = 24;
+    let admitted = session
+        .resolve_allocation(&request, &[output], &[])
+        .unwrap();
+    assert_eq!(admitted.pixel.height, 48);
+    assert_eq!(admitted.pixel.y, 152);
+    assert_eq!(admitted.allowed_reservation_extent, 48);
+}

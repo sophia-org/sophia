@@ -749,3 +749,52 @@ fn borrowed_native_content_places_real_wire_request_without_granting_early_focus
     h.owner.close(replacement).unwrap();
     assert!(h.owner.collect().quiescent());
 }
+
+#[test]
+fn three_role_inventory_is_frozen_before_the_first_budget_reservation() {
+    let mut h = Harness::new();
+    let uid = rustix::process::geteuid().as_raw();
+    let dock = h
+        .owner
+        .add(
+            "dock",
+            ShellComponentRole::Dock,
+            &h.directory.join("dock"),
+            uid,
+        )
+        .unwrap();
+    assert_eq!(dock, 2);
+    let bar = h.owner.reserve_attempt(0).unwrap();
+    assert_eq!(h.owner.accounting().reserved_bytes, 24 * 1024 * 1024);
+    let menu = h.owner.reserve_attempt(1).unwrap();
+    let dock = h.owner.reserve_attempt(2).unwrap();
+    assert_eq!(h.owner.accounting().active_epochs, 3);
+    assert_eq!(h.owner.accounting().reserved_bytes, 64 * 1024 * 1024);
+    let _bar_socket = h.connect(bar);
+    let _menu_socket = h.connect(menu);
+    // An unimplemented capability must not negotiate as a bar or transient menu.
+    let mut dock_socket = h.begin(dock);
+    dock_socket.write_all(&hello(false)).unwrap();
+    let refused = h.owner.poll_negotiations(65536);
+    assert!(
+        refused
+            .into_iter()
+            .flatten()
+            .any(|(key, result)| key == dock && result.is_err())
+    );
+    assert_eq!(h.owner.phase(bar), Ok(ComponentConnectionPhase::Connected));
+    assert_eq!(h.owner.phase(menu), Ok(ComponentConnectionPhase::Connected));
+    h.owner.close(bar).unwrap();
+    h.owner.close(menu).unwrap();
+    assert!(h.owner.collect().quiescent());
+
+    let mut late = Harness::new();
+    let key = late.owner.reserve_attempt(0).unwrap();
+    late.owner.close(key).unwrap();
+    let path = late.directory.join("late");
+    assert_eq!(
+        late.owner.add("late", ShellComponentRole::Dock, &path, uid),
+        Err(ComponentConnectionError::InvalidSelection)
+    );
+    assert!(!path.exists());
+}

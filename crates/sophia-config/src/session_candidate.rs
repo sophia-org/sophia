@@ -202,7 +202,7 @@ pub fn prepare_desktop_session_candidate(
             "shell-component" => {
                 let component = crate::shell_components::parse(&node)?;
                 let components = &mut prepared.components.shell_components;
-                if components.len() >= 2
+                if components.len() >= crate::MAX_SHELL_COMPONENTS
                     || components
                         .iter()
                         .any(|old| old.id == component.id || old.role == component.role)
@@ -238,5 +238,6 @@ pub fn prepare_desktop_session_candidate(
             "shell-component cannot be combined with legacy shell-client or shell-config",
         ));
     }
+    crate::validate_shell_component_reservations(&prepared.components.shell_components)?;
     Ok(prepared)
 }

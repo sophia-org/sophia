@@ -73,6 +73,7 @@ pub(super) struct LiveContentSession {
     requested: bool,
     input_requested: bool,
     panel_limit: Option<u16>,
+    pub(super) component_reservation: Option<sophia_config::ShellComponentReservation>,
     facts_generation: u64,
     published_facts: Vec<sophia_protocol::ContentOutputFactsEntry>,
     next_allocation_id: u64,
@@ -90,6 +91,7 @@ impl LiveContentSession {
             requested,
             input_requested,
             panel_limit,
+            component_reservation: None,
             facts_generation: 0,
             published_facts: Vec::new(),
             next_allocation_id: 1,
@@ -378,14 +380,19 @@ impl LiveContentSession {
             popout_rect(request, output, parent)?
         };
         let allowed_reservation_extent = if request.role == 1 {
+            let limit = if let Some(policy) = self.component_reservation {
+                if request.edge != policy.edge.wire() {
+                    return Err(sophia_runtime::ContentAllocationError::Malformed);
+                }
+                u32::from(policy.max_thickness).checked_mul(output.scale)
+            } else {
+                self.panel_limit.map(u32::from)
+            };
             let thickness = panel_pixel_thickness(pixel, request.edge);
-            if self
-                .panel_limit
-                .is_none_or(|limit| thickness > u32::from(limit))
-            {
+            if limit.is_none_or(|limit| thickness > limit) {
                 return Err(sophia_runtime::ContentAllocationError::Budget);
             }
-            thickness.min(u32::from(self.panel_limit.unwrap_or(0)))
+            thickness.min(limit.unwrap_or(0))
         } else {
             0
         };

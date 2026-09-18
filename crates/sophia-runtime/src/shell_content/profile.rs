@@ -5,4 +5,6 @@ pub enum ContentStoreProfile {
     #[default]
     Legacy,
     NativeLauncher,
+    /// Persistent catalog content; independently negotiated from transient menus.
+    PersistentCatalog,
 }

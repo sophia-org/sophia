@@ -135,6 +135,7 @@ fn component_catalog_scan_is_outer_owned_and_shutdown_cannot_restart_it() {
             role: sophia_config::ShellComponentRole::ApplicationLauncher,
             executable: "/absent/bemenu-sophia".into(),
             config: None,
+            reservation: None,
             gpu: sophia_config::ShellGpuMode::Denied,
         });
     config.session_profile = PreparedSessionProfile::new(candidate).unwrap();

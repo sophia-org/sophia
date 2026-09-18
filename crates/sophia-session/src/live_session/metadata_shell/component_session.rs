@@ -9,7 +9,7 @@ use crate::shell_component_processes::{
     ComponentProcessEvent, ComponentProcessVisit, ShellComponentProcesses,
 };
 use sophia_backend_live::{LiveProductionVisualRuntime, LiveRenderDeviceIdentitySnapshot};
-use sophia_config::{ShellComponentConfig, ShellComponentRole, ShellGpuMode};
+use sophia_config::{MAX_SHELL_COMPONENTS, ShellComponentConfig, ShellComponentRole, ShellGpuMode};
 use sophia_runtime::{
     ContentEpochAccounting, ShellContentAdmissionPolicy, ShellTransportConnection,
 };
@@ -37,15 +37,19 @@ struct Ready {
 pub struct ShellComponentSession {
     processes: ShellComponentProcesses,
     plans: Vec<ShellComponentLaunch>,
-    launch_evidence: [Option<(ComponentConnectionKey, Option<ComponentGpuLaunchEvidence>)>; 2],
-    ready: [Option<Ready>; 2],
+    launch_evidence: [Option<(ComponentConnectionKey, Option<ComponentGpuLaunchEvidence>)>;
+        MAX_SHELL_COMPONENTS],
+    ready: [Option<Ready>; MAX_SHELL_COMPONENTS],
     revoked: RevokedContentGrantLedger,
     panel_limit: u16,
     policy: ShellContentAdmissionPolicy,
     available: bool,
     stopping: bool,
-    retained_panel_bands: Vec<sophia_protocol::OutputReservation>,
-    retry_at: [Option<std::time::Instant>; 2],
+    retained_panel_bands: [Option<(
+        ComponentConnectionKey,
+        Vec<sophia_protocol::OutputReservation>,
+    )>; MAX_SHELL_COMPONENTS],
+    retry_at: [Option<std::time::Instant>; MAX_SHELL_COMPONENTS],
     start_cursor: usize,
     last_schedule: Option<std::time::Instant>,
 }
@@ -59,8 +63,15 @@ impl ShellComponentSession {
         directory: &Path,
         policy: ShellContentAdmissionPolicy,
     ) -> Result<Self> {
-        if selections.is_empty() || selections.len() > 2 {
-            return Err("component session requires one or two selected roles".into());
+        if selections.is_empty() || selections.len() > MAX_SHELL_COMPONENTS {
+            return Err("component session requires one through three selected roles".into());
+        }
+        sophia_config::validate_shell_component_reservations(selections)?;
+        if selections
+            .iter()
+            .any(|selection| selection.role == ShellComponentRole::Dock)
+        {
+            return Err("persistent catalog component service is not implemented".into());
         }
         // Validate all policies before creating any endpoint. Denied roles
         // never inherit the bar's optional render device.
@@ -89,15 +100,15 @@ impl ShellComponentSession {
         Ok(Self {
             processes,
             plans,
-            launch_evidence: [None, None],
-            ready: [None, None],
+            launch_evidence: std::array::from_fn(|_| None),
+            ready: std::array::from_fn(|_| None),
             revoked: Default::default(),
             panel_limit,
             policy,
             available: false,
             stopping: false,
-            retained_panel_bands: Vec::new(),
-            retry_at: [None, None],
+            retained_panel_bands: std::array::from_fn(|_| None),
+            retry_at: std::array::from_fn(|_| None),
             start_cursor: 0,
             last_schedule: None,
         })
@@ -241,7 +252,8 @@ impl ShellComponentSession {
                 continue;
             }
             let role = self.plans[key.slot].selection().role;
-            let limit = self.panel_limit;
+            let reservation = self.plans[key.slot].selection().reservation;
+            let limit = reservation.map_or(self.panel_limit, |p| p.max_thickness);
             let input = matches!(
                 self.policy,
                 ShellContentAdmissionPolicy::Granted {
@@ -251,8 +263,15 @@ impl ShellComponentSession {
             let service = self
                 .processes
                 .with_connection(key, |transport| match role {
+                    ShellComponentRole::Dock => {
+                        Err(sophia_runtime::ShellTransportError::MissingCapability)
+                    }
                     ShellComponentRole::Bar => PanelComponentService::new(transport, limit, input)
-                        .map(|service| ShellComponentService::Bar(Box::new(service))),
+                        .map(|service| {
+                            ShellComponentService::Bar(Box::new(
+                                service.with_reservation(reservation),
+                            ))
+                        }),
                     ShellComponentRole::ApplicationLauncher => {
                         NativeLauncherContentService::new(transport).map(|content| {
                             ShellComponentService::Launcher {
@@ -265,12 +284,12 @@ impl ShellComponentSession {
             match service {
                 Ok(service) => {
                     if let Some(Ready {
+                        key: old_key,
                         service: ShellComponentService::Bar(old),
-                        ..
                     }) = &self.ready[key.slot]
                         && let Some(bands) = old.presented_work_area_bands()
                     {
-                        self.retained_panel_bands = bands;
+                        self.retained_panel_bands[key.slot] = Some((*old_key, bands));
                     }
                     self.ready[key.slot] = Some(Ready { key, service });
                 }
@@ -322,13 +341,24 @@ impl ShellComponentSession {
     pub fn work_area_bands(&self) -> Vec<sophia_protocol::OutputReservation> {
         self.ready
             .iter()
-            .flatten()
-            .find_map(|ready| match &ready.service {
-                ShellComponentService::Bar(bar) => bar.presented_work_area_bands(),
-                _ => None,
+            .enumerate()
+            .flat_map(|(slot, ready)| {
+                ready
+                    .as_ref()
+                    .and_then(|ready| match &ready.service {
+                        ShellComponentService::Bar(bar) => bar.presented_work_area_bands(),
+                        _ => None,
+                    })
+                    .or_else(|| {
+                        self.retained_panel_bands[slot]
+                            .as_ref()
+                            .map(|(_, bands)| bands.clone())
+                    })
+                    .unwrap_or_default()
             })
-            .unwrap_or_else(|| self.retained_panel_bands.clone())
+            .collect()
     }
+
     pub fn collect(&mut self) -> ContentEpochAccounting {
         self.processes.collect()
     }

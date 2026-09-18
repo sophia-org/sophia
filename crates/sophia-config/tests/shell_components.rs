@@ -157,3 +157,44 @@ fn legacy_selection_is_preserved_without_implicit_component_permissions() {
         Some(Path::new("/home/user/legacy.kdl"))
     );
 }
+
+#[test]
+fn three_roles_require_explicit_distinct_persistent_edges() {
+    let fixture = Profile::new();
+    let bar = BAR.replace("gpu \"direct\";", "gpu \"direct\"; reservation \"top\" 24;");
+    let dock = r#"shell-component "dock" "dock" { executable "/opt/provlita"; reservation "bottom" 64; };"#;
+    let good = format!("{bar} {LAUNCHER} {dock}");
+    let path = fixture.write(&good, true);
+    let prepared = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+    let selected = &prepared.candidates.session.components.shell_components;
+    assert_eq!(selected.len(), 3);
+    assert_eq!(selected[2].role, ShellComponentRole::Dock);
+    assert_eq!(selected[2].gpu, ShellGpuMode::Denied);
+    assert_eq!(selected[0].reservation.unwrap().edge.wire(), 1);
+    assert_eq!(selected[2].reservation.unwrap().edge.wire(), 3);
+    for bad in [
+        good.replace("reservation \"top\" 24;", ""),
+        good.replace("reservation \"bottom\" 64;", ""),
+        good.replace("reservation \"bottom\" 64;", "reservation \"top\" 64;"),
+        good.replace("reservation \"bottom\" 64;", "reservation \"bottom\" 0;"),
+        good.replace("reservation \"bottom\" 64;", "reservation \"bottom\" 513;"),
+        good.replace(
+            "reservation \"bottom\" 64;",
+            "reservation \"bottom\" 64; reservation \"left\" 8;",
+        ),
+        good.replace(
+            "/opt/bemenu-sophia\";",
+            "/opt/bemenu-sophia\"; reservation \"left\" 10;",
+        ),
+        format!(
+            "{good} {}",
+            dock.replace("\"dock\" \"dock\"", "\"extra\" \"dock\"")
+        ),
+    ] {
+        let path = fixture.write(&bad, true);
+        assert!(
+            load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err(),
+            "{bad}"
+        );
+    }
+}

@@ -265,6 +265,7 @@ fn protected_bemenu(
             role: ShellComponentRole::ApplicationLauncher,
             executable: executable.into(),
             config: None,
+            reservation: None,
             gpu: sophia_config::ShellGpuMode::Denied,
         },
         None,
@@ -339,22 +340,32 @@ fn selected_component_launches_bind_only_their_socket_and_config() {
     let root = std::env::temp_dir().join(format!("component-launch-plan-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     let mut owner = ShellComponentProcesses::new().unwrap();
-    for (name, role) in [
+    let selections = [
         ("bar", ShellComponentRole::Bar),
         ("menu", ShellComponentRole::ApplicationLauncher),
-    ] {
+    ];
+    for (name, role) in selections {
+        owner
+            .add(
+                name,
+                role,
+                &root.join(name),
+                rustix::process::geteuid().as_raw(),
+            )
+            .unwrap();
+    }
+    for (slot, (name, role)) in selections.into_iter().enumerate() {
         let config = root.join(format!("{name}.kdl"));
         std::fs::write(&config, "// fixture").unwrap();
         let directory = root.join(name);
-        let slot = owner
-            .add(name, role, &directory, rustix::process::geteuid().as_raw())
-            .unwrap();
+
         let plan = ShellComponentLaunch::new(
             sophia_config::ShellComponentConfig {
                 id: name.into(),
                 role,
                 executable: "/bin/true".into(),
                 config: Some(config.clone()),
+                reservation: None,
                 gpu: sophia_config::ShellGpuMode::Denied,
             },
             Some(28),
@@ -432,6 +443,7 @@ fn component_launch_refuses_unadmitted_gpu_and_unbounded_panel() {
         role: ShellComponentRole::Bar,
         executable: "/bin/true".into(),
         config: None,
+        reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
     };
     for thickness in [None, Some(0)] {
@@ -468,6 +480,7 @@ fn joined_session_retains_failed_attempt_until_reap_and_exact_cleanup() {
         role: ShellComponentRole::ApplicationLauncher,
         executable: "/nonexistent-sophia-native-launcher".into(),
         config: None,
+        reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
     };
     let mut owner = ShellComponentSession::prepare(
@@ -561,6 +574,7 @@ fn component_scheduler_skips_unready_role_and_bounds_retries() {
         role,
         executable: "/nonexistent-sophia-component".into(),
         config: None,
+        reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
     });
     let mut owner = ShellComponentSession::prepare(
@@ -575,7 +589,7 @@ fn component_scheduler_skips_unready_role_and_bounds_retries() {
     .unwrap();
     let now = Instant::now();
     assert_eq!(owner.start_next(now, |_| true).unwrap(), None);
-    assert_eq!(owner.connected_roles(), [None, None]);
+    assert_eq!(owner.connected_roles(), [None, None, None]);
     owner.set_presentation_available(true).unwrap();
     assert!(
         owner
@@ -645,6 +659,7 @@ fn joined_bemenu_evidence_requires_exact_current_negotiation() {
         role: ShellComponentRole::ApplicationLauncher,
         executable: binary.into(),
         config: None,
+        reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
     };
     let mut owner = ShellComponentSession::prepare(

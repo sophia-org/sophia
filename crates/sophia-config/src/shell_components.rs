@@ -5,10 +5,39 @@ use kdl::KdlNode;
 
 use crate::{DesktopProfileError, ShellGpuMode};
 
+/// Maximum independently selected component owners in one Session.
+pub const MAX_SHELL_COMPONENTS: usize = 3;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShellComponentRole {
     Bar,
     ApplicationLauncher,
+    Dock,
+}
+
+/// Logical output edge reserved by an operator-selected persistent component.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShellComponentEdge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+impl ShellComponentEdge {
+    pub const fn wire(self) -> u16 {
+        match self {
+            Self::Top => 1,
+            Self::Bottom => 3,
+            Self::Left => 4,
+            Self::Right => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ShellComponentReservation {
+    pub edge: ShellComponentEdge,
+    pub max_thickness: u16,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -18,6 +47,7 @@ pub struct ShellComponentConfig {
     pub executable: PathBuf,
     pub config: Option<PathBuf>,
     pub gpu: ShellGpuMode,
+    pub reservation: Option<ShellComponentReservation>,
 }
 
 fn invalid(message: &str) -> DesktopProfileError {
@@ -50,6 +80,7 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
     let role = match node.get(1).and_then(|value| value.as_string()) {
         Some("bar") => ShellComponentRole::Bar,
         Some("application-launcher") => ShellComponentRole::ApplicationLauncher,
+        Some("dock") => ShellComponentRole::Dock,
         _ => return Err(invalid("unsupported role")),
     };
     let children = node
@@ -58,6 +89,7 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
     let mut executable = None;
     let mut config = None;
     let mut gpu = None;
+    let mut reservation = None;
     for child in children.nodes() {
         match child.name().value() {
             "executable" if executable.is_none() => {
@@ -73,6 +105,9 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
                         .remove(0)
                         .into(),
                 );
+            }
+            "reservation" if reservation.is_none() => {
+                reservation = Some(parse_reservation(child)?);
             }
             "gpu" if gpu.is_none() => {
                 if child.ty().is_some()
@@ -92,11 +127,83 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
             _ => return Err(invalid("unknown or repeated setting")),
         }
     }
+    if role == ShellComponentRole::ApplicationLauncher && reservation.is_some() {
+        return Err(invalid(
+            "transient launcher cannot reserve a persistent edge",
+        ));
+    }
     Ok(ShellComponentConfig {
         id: id.to_owned(),
         role,
         executable: executable.ok_or_else(|| invalid("executable is required"))?,
         config,
         gpu: gpu.unwrap_or_default(),
+        reservation,
     })
+}
+
+fn parse_reservation(node: &KdlNode) -> Result<ShellComponentReservation, DesktopProfileError> {
+    if node.ty().is_some()
+        || node.children().is_some()
+        || node.entries().len() != 2
+        || node
+            .entries()
+            .iter()
+            .any(|entry| entry.ty().is_some() || entry.name().is_some())
+    {
+        return Err(invalid("reservation requires an edge and a thickness"));
+    }
+    let edge = match node.get(0).and_then(|v| v.as_string()) {
+        Some("top") => ShellComponentEdge::Top,
+        Some("bottom") => ShellComponentEdge::Bottom,
+        Some("left") => ShellComponentEdge::Left,
+        Some("right") => ShellComponentEdge::Right,
+        _ => return Err(invalid("unsupported reservation edge")),
+    };
+    let max_thickness = node
+        .get(1)
+        .and_then(|v| v.as_integer())
+        .and_then(|v| u16::try_from(v).ok())
+        .filter(|v| (1..=512).contains(v))
+        .ok_or_else(|| invalid("reservation thickness must be in 1..512"))?;
+    Ok(ShellComponentReservation {
+        edge,
+        max_thickness,
+    })
+}
+
+/// Validate the complete selected inventory before endpoints or resources exist.
+pub fn validate_shell_component_reservations(
+    components: &[ShellComponentConfig],
+) -> Result<(), DesktopProfileError> {
+    let dock = components
+        .iter()
+        .any(|c| c.role == ShellComponentRole::Dock);
+    let mut occupied = [false; 4];
+    for component in components {
+        if component.role == ShellComponentRole::ApplicationLauncher {
+            if component.reservation.is_some() {
+                return Err(invalid(
+                    "transient launcher cannot reserve a persistent edge",
+                ));
+            }
+            continue;
+        }
+        if dock && component.reservation.is_none() {
+            return Err(invalid(
+                "dock coexistence requires explicit persistent edge reservations",
+            ));
+        }
+        if let Some(reservation) = component.reservation {
+            if !(1..=512).contains(&reservation.max_thickness) {
+                return Err(invalid("reservation thickness must be in 1..512"));
+            }
+            let slot = usize::from(reservation.edge.wire() - 1);
+            if occupied[slot] {
+                return Err(invalid("persistent component edges conflict"));
+            }
+            occupied[slot] = true;
+        }
+    }
+    Ok(())
 }

@@ -3,7 +3,9 @@ use super::*;
 use std::time::{Duration, Instant};
 
 impl ShellComponentSession {
-    pub fn connected_roles(&self) -> [Option<(ComponentConnectionKey, ShellComponentRole)>; 2] {
+    pub fn connected_roles(
+        &self,
+    ) -> [Option<(ComponentConnectionKey, ShellComponentRole)>; MAX_SHELL_COMPONENTS] {
         std::array::from_fn(|slot| {
             if !self.available || self.stopping {
                 return None;

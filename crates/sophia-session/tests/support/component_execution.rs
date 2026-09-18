@@ -30,6 +30,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                 role: sophia_config::ShellComponentRole::ApplicationLauncher,
                 executable: "/absent/menu".into(),
                 config: None,
+                reservation: None,
                 gpu: sophia_config::ShellGpuMode::Denied,
             });
         config.session_profile = PreparedSessionProfile::new(selected).unwrap();

@@ -1,6 +1,6 @@
 //! Process custody joined to the single Session component/content registry.
 use crate::shell_component_connections::*;
-use sophia_config::ShellComponentRole;
+use sophia_config::{MAX_SHELL_COMPONENTS, ShellComponentRole};
 use sophia_runtime::*;
 use std::path::Path;
 use std::time::Duration;
@@ -17,14 +17,14 @@ pub enum ComponentProcessEvent {
     Failed(ComponentConnectionKey, String),
 }
 pub struct ComponentProcessVisit {
-    pub processes: [Option<ComponentProcessEvent>; 2],
-    pub negotiations: [Option<ComponentNegotiationEvent>; 2],
-    pub stop_errors: [Option<(ComponentConnectionKey, String)>; 2],
+    pub processes: [Option<ComponentProcessEvent>; MAX_SHELL_COMPONENTS],
+    pub negotiations: [Option<ComponentNegotiationEvent>; MAX_SHELL_COMPONENTS],
+    pub stop_errors: [Option<(ComponentConnectionKey, String)>; MAX_SHELL_COMPONENTS],
 }
 
 pub struct ShellComponentProcesses {
     connections: ShellComponentConnections,
-    slots: [ProcessSlot; 2],
+    slots: [ProcessSlot; MAX_SHELL_COMPONENTS],
     cursor: usize,
 }
 impl ShellComponentProcesses {
@@ -114,9 +114,9 @@ impl ShellComponentProcesses {
         revoke.and(signal)
     }
     pub fn visit(&mut self, negotiation_bytes: usize) -> ComponentProcessVisit {
-        let mut events = [None, None];
+        let mut events = std::array::from_fn(|_| None);
         for (offset, event) in events.iter_mut().enumerate() {
-            let index = (self.cursor + offset) % 2;
+            let index = (self.cursor + offset) % MAX_SHELL_COMPONENTS;
             let slot = &mut self.slots[index];
             let (Some(key), Some(process)) = (slot.key, slot.process.as_mut()) else {
                 continue;
@@ -144,11 +144,11 @@ impl ShellComponentProcesses {
                 }
             }
         }
-        self.cursor = (self.cursor + 1) % 2;
+        self.cursor = (self.cursor + 1) % MAX_SHELL_COMPONENTS;
         let negotiations = self
             .connections
             .poll_negotiations(negotiation_bytes.min(64 * 1024));
-        let mut stop_errors = [None, None];
+        let mut stop_errors = std::array::from_fn(|_| None);
         for (index, (key, result)) in negotiations.iter().flatten().enumerate() {
             if result.is_err()
                 && let Err(error) = self.request_stop(*key)
