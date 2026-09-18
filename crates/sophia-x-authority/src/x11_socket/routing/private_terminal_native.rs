@@ -144,7 +144,17 @@ fn dispatch_custody(
     // Held through the handover and through writing down what came back, so a
     // close cannot land between the two and report a fence over a handover
     // that had already happened.
-    match admitted.try_send(capsule) {
+    // READ-ONLY ACCEPTANCE OBSERVATION OF THE QUEUE HANDOVER ITSELF, taken
+    // before the capsule is moved and reported with what the queue answered.
+    // A handover into the recipient's queue and an attempt to put a frame of
+    // it on the wire are different facts, and a case that counted one for the
+    // other could not tell a second handover from a second frame.
+    #[cfg(all(test, unix))]
+    let handover_subject = routing_tests::m3_acceptance::queue_handover_subject(capsule.emission());
+    let handed = admitted.try_send(capsule);
+    #[cfg(all(test, unix))]
+    routing_tests::m3_acceptance::observed_queue_handover(handover_subject, handed.is_ok());
+    match handed {
         Ok(()) => {
             custody.dispatch = PrivateDispatchPhase::Enqueued;
             true

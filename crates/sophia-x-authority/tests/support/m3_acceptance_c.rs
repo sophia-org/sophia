@@ -1633,7 +1633,67 @@ struct SendEntry {
     frame_len: usize,
 }
 
+/// One handover of a capsule into its recipient's queue, and what the queue
+/// answered. Counted apart from frame send attempts: they are different facts.
+#[derive(Clone, Debug)]
+struct QueueHandover {
+    delivery: XAuthorityInputDeliveryId,
+    accepted: bool,
+}
+
+static QUEUE_HANDOVERS: Mutex<Vec<QueueHandover>> = Mutex::new(Vec::new());
 static SEND_ENTRIES: Mutex<Vec<SendEntry>> = Mutex::new(Vec::new());
+
+/// Set when any recorder had to drop a record for want of room.
+///
+/// A RECORDER THAT SILENTLY STOPS IS WORSE THAN NO RECORDER. A missing tail
+/// reads exactly like a retry that never happened, so overflow is a fact the
+/// control has to fail on rather than a limit it can ignore.
+static OBSERVER_OVERFLOWED: AtomicBool = AtomicBool::new(false);
+
+/// Serialises the controls that own the process-wide observers.
+///
+/// The observer names one origin at a time, which is right for a case and
+/// wrong for two at once. The M3 runner takes acceptance cases one at a time,
+/// but an ordinary full-suite run does not, so the controls that arm these
+/// take this first. Nothing else in the suite waits on it, and no production
+/// lock is involved.
+static OBSERVER_OWNER: Mutex<()> = Mutex::new(());
+
+fn own_the_observer() -> std::sync::MutexGuard<'static, ()> {
+    OBSERVER_OWNER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Whether this emission belongs to the watched origin, answered before its
+/// capsule is moved into the queue.
+pub(crate) fn queue_handover_subject(
+    emission: &PrivateOrderedEmission,
+) -> Option<XAuthorityInputDeliveryId> {
+    let watched = WATCHED_ORIGIN.lock().unwrap().clone();
+    let watched = watched?;
+    if !emission.answers_for(&watched) {
+        return None;
+    }
+    emission.delivery()
+}
+
+/// Production's entry into the queue-handover recording.
+pub(crate) fn observed_queue_handover(
+    subject: Option<XAuthorityInputDeliveryId>,
+    accepted: bool,
+) {
+    let Some(delivery) = subject else {
+        return;
+    };
+    let mut seen = QUEUE_HANDOVERS.lock().unwrap();
+    if seen.len() >= 4096 {
+        OBSERVER_OVERFLOWED.store(true, Ordering::Release);
+        return;
+    }
+    seen.push(QueueHandover { delivery, accepted });
+}
 static OBSERVED_FRAMES: Mutex<Vec<ObservedFrame>> = Mutex::new(Vec::new());
 /// The one invocation whose writer is being watched.
 ///
@@ -1648,7 +1708,19 @@ static WATCHED_ORIGIN: Mutex<Option<XServerFrontendRouteRegistry>> = Mutex::new(
 fn observe_frames(registry: &XServerFrontendRouteRegistry) {
     OBSERVED_FRAMES.lock().unwrap().clear();
     SEND_ENTRIES.lock().unwrap().clear();
+    QUEUE_HANDOVERS.lock().unwrap().clear();
+    OBSERVER_OVERFLOWED.store(false, Ordering::Release);
     *WATCHED_ORIGIN.lock().unwrap() = Some(registry.clone());
+}
+
+/// The queue handovers recorded so far, read without disarming.
+fn queue_handovers_snapshot() -> Vec<QueueHandover> {
+    QUEUE_HANDOVERS.lock().unwrap().clone()
+}
+
+/// Whether any recorder ran out of room. A control must fail on this.
+fn observation_overflowed() -> bool {
+    OBSERVER_OVERFLOWED.load(Ordering::Acquire)
 }
 
 /// How many send attempts have been recorded so far.
@@ -1671,11 +1743,12 @@ fn frames_so_far() -> Vec<ObservedFrame> {
     OBSERVED_FRAMES.lock().unwrap().clone()
 }
 
-fn take_observations() -> (Vec<ObservedFrame>, Vec<SendEntry>) {
+fn take_observations() -> (Vec<ObservedFrame>, Vec<SendEntry>, Vec<QueueHandover>) {
     *WATCHED_ORIGIN.lock().unwrap() = None;
     let frames = std::mem::take(&mut *OBSERVED_FRAMES.lock().unwrap());
     let entries = std::mem::take(&mut *SEND_ENTRIES.lock().unwrap());
-    (frames, entries)
+    let handovers = std::mem::take(&mut *QUEUE_HANDOVERS.lock().unwrap());
+    (frames, entries, handovers)
 }
 
 /// Production's entry into the send-attempt recording.
@@ -1693,7 +1766,9 @@ pub(crate) fn observed_send_entry(
     }
     let (sent_before, frame_len) = progress.unwrap_or((None, 0));
     let mut seen = SEND_ENTRIES.lock().unwrap();
-    if seen.len() < 8192 {
+    if seen.len() >= 8192 {
+        OBSERVER_OVERFLOWED.store(true, Ordering::Release);
+    } else {
         seen.push(SendEntry {
             delivery: emission.delivery(),
             frames: emission.frame_count(),
@@ -1724,7 +1799,9 @@ pub(crate) fn observed_ordered_frame(
         return;
     }
     let mut seen = OBSERVED_FRAMES.lock().unwrap();
-    if seen.len() < 4096 {
+    if seen.len() >= 4096 {
+        OBSERVER_OVERFLOWED.store(true, Ordering::Release);
+    } else {
         seen.push(ObservedFrame {
             delivery: emission.delivery(),
             frames: emission.frame_count(),
@@ -1826,6 +1903,7 @@ fn blocked_recipient_attempt(
     namespace: u64,
     window: u32,
 ) -> (Value, bool, Vec<String>) {
+    let _observer = own_the_observer();
     let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
     let mut blocked =
         LifecycleService::launch_over_store(label, namespace, None, false, 1, store.clone());
@@ -1933,7 +2011,7 @@ fn blocked_recipient_attempt(
     }
     let drive = store.drive();
     let after = retained_dispatch(&blocked);
-    let (observed_frames, send_entries) = take_observations();
+    let (observed_frames, send_entries, queue_handovers) = take_observations();
 
     let wanted = stalled_delivery.map(XAuthorityInputDeliveryId::from_raw);
     // Every send attempt made after this invocation's traffic stopped: its
@@ -1988,6 +2066,18 @@ fn blocked_recipient_attempt(
     assert!(
         visit.supervision_ok,
         "{label}: under successful supervision, so the refusal is the visit's decision and not a lost guard: {visit:?}"
+    );
+    assert!(
+        !observation_overflowed(),
+        "{label}: no recorder dropped a record; a missing tail would read like a retry that never happened"
+    );
+    let queue_handovers_for_it = queue_handovers
+        .iter()
+        .filter(|handover| Some(handover.delivery) == wanted && handover.accepted)
+        .count();
+    assert_eq!(
+        queue_handovers_for_it, 1,
+        "{label}: the stalling capsule reached its recipient's queue exactly once: {queue_handovers:?}"
     );
     assert_eq!(
         first_attempt,
@@ -2095,6 +2185,7 @@ fn blocked_recipient_attempt(
         "send_attempts_before_close": attempts_after_traffic,
         "send_attempts_by_close": attempts_after_close,
         "send_attempts_total": send_entries.len(),
+        "queue_handovers_for_this_capsule": queue_handovers_for_it,
         "writer_returns_for_this_capsule": touched_this_capsule
             .iter()
             .map(|step| json!({
@@ -2115,16 +2206,16 @@ fn blocked_recipient_attempt(
     (seen, is_prefix, collected)
 }
 
-/// An interval in which one capsule is enqueued at its writer and cannot be
-/// written, driven by a recipient that has stopped taking bytes.
+/// One capsule handed to its recipient's queue and held there, by holding the
+/// connection's own ordered home.
 ///
-/// A REAL HOLD, NOT A NEW SEAM. The writer is stopped by the recipient it is
-/// writing to, which is the production reason a handover sits enqueued. While
-/// it sits there the service takes its own charged turns, and what has to be
-/// true is that they observe it and hand it over exactly once. Reading the
-/// recipient again releases it, and the completion that follows is the
-/// writer's own.
+/// A REAL HOLD ON THE THING THAT SERVES. The connection's worker takes its
+/// ordered home to perform each serving step, so while this case holds that
+/// lock the capsule can be handed to the queue and cannot be written. Nothing
+/// is saturated and no recipient is starved; the interval is made by holding
+/// the one lock the writer must have.
 fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
+    let _observer = own_the_observer();
     let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
     let mut service = LifecycleService::launch_over_store(
         "c-enqueued-observation",
@@ -2136,138 +2227,174 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
     );
     service.start();
     let (mut peer, custody) = service.connect();
-    let (surface, _sequence, _focus) = focus_window(&service, &mut peer, window, namespace);
-    let client = custody.cleanup_record().client;
-    let producers = leased_producers(&service, client, C_PRODUCERS);
-    let bounded =
-        rustix::net::sockopt::set_socket_recv_buffer_size(&peer, 2048).is_ok();
-    assert!(bounded, "the case could bound its own end of the connection");
+    let (surface, _sequence, ingress) = focus_window(&service, &mut peer, window, namespace);
     observe_frames(&service.registry);
 
-    // Fill until one capsule cannot be taken. That one is the subject: it has
-    // been handed to its writer and cannot reach the recipient.
-    let mut flushed = 0u64;
-    let mut pending = None;
-    for round in 0..4_000u64 {
-        let id = 14_000 + namespace * 1_000 + round;
-        let producer = &producers[(round as usize) % producers.len()];
-        if producer
-            .submit(
-                &service.owner.lease(),
-                axis_to(surface, XAuthorityInputDeliveryId::from_raw(id), 30 + round),
-            )
-            .is_err()
-        {
-            break;
-        }
-        match service.deliveries.recv_timeout(Duration::from_millis(400)) {
-            Ok(receipt) if receipt.outcome == XAuthorityInputDeliveryOutcome::Flushed => {
-                flushed += 1;
-            }
-            Ok(receipt) => panic!("an unexpected outcome before the interval: {receipt:?}"),
-            Err(_) => {
-                pending = Some(id);
-                break;
-            }
-        }
-    }
-    let pending = pending.expect("a capsule the recipient could not take");
-    let wanted = XAuthorityInputDeliveryId::from_raw(pending);
-    let handovers_before = send_entries_snapshot()
+    let delivery = 14_000 + namespace;
+    let wanted = XAuthorityInputDeliveryId::from_raw(delivery);
+    let home = Arc::clone(&custody.cleanup_record().ordered_home);
+    let held_home = home
+        .state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    ingress
+        .submit(
+            &service.owner.lease(),
+            axis_to(surface, wanted, 30),
+        )
+        .expect("the order accepts one real axis capsule");
+    let cell = waited_for_value(|| delivery_cell(&service.registry, delivery))
+        .expect("the capsule's own completion, minted by its own admission");
+
+    // HANDED OVER ONCE, AND STUCK THERE. The queue took it; the worker cannot
+    // reach it while this case holds the home.
+    assert!(
+        waited_for(|| queue_handovers_snapshot()
+            .iter()
+            .any(|handover| handover.delivery == wanted && handover.accepted)),
+        "the capsule reached its recipient's queue"
+    );
+    assert!(
+        cell.answer().is_none(),
+        "and nothing has answered it while it sits there"
+    );
+    let frames_while_held = send_entries_snapshot()
         .iter()
         .filter(|entry| entry.delivery == Some(wanted))
         .count();
-    assert!(
-        handovers_before >= 1,
-        "the pending capsule was actually handed to its writer"
+    assert_eq!(
+        frames_while_held, 0,
+        "no frame of it reached the wire while the home was held"
     );
 
-    // THE SERVICE'S OWN CHARGED TURNS, while it sits there. They may observe
-    // it as often as they like; what they may not do is hand it over again.
+    // THE SERVICE'S OWN CHARGED VISITS OVER IT. Each is one of its turns, and
+    // what has to happen is that more than one of them actually observes this
+    // pending transient. A turn that yields on its allowance is followed only
+    // where the allowance itself says it is retryable.
     let (report, reported) = sync_channel(1);
     arm_runner(
         &service.registry,
         Box::new(move |runner, lease| {
-            let mut turns = Vec::new();
-            for _ in 0..4 {
-                turns.push(match runner.service_turn(lease) {
-                    Ok(progress) => format!(
-                        "taken={} observed={} dispatched={} transient_observed={}",
-                        progress.taken,
-                        progress.observed,
-                        progress.dispatched,
-                        progress.transient_observed
-                    ),
-                    Err(error) => format!("{error:?}"),
-                });
+            let mut visits = Vec::new();
+            let mut observed = 0usize;
+            let deadline = std::time::Instant::now() + Duration::from_secs(6);
+            while observed < 2 && std::time::Instant::now() < deadline {
+                match runner.service_turn(lease) {
+                    Ok(progress) => {
+                        observed += progress.transient_observed;
+                        visits.push(format!(
+                            "starts={} taken={} observed={} transient_observed={} allowance={:?} watch_failed={}",
+                            progress.starts,
+                            progress.taken,
+                            progress.observed,
+                            progress.transient_observed,
+                            progress.allowance,
+                            progress.watch_failed
+                        ));
+                        if let Some(
+                            sophia_input_authority::ServiceStartRefusal::StartsExhausted {
+                                retry_after,
+                            },
+                        ) = progress.allowance
+                        {
+                            std::thread::sleep(retry_after.min(Duration::from_millis(50)));
+                        }
+                    }
+                    Err(error) => {
+                        visits.push(format!("{error:?}"));
+                        break;
+                    }
+                }
             }
-            report.send(turns).expect("the case is waiting");
+            report.send((visits, observed)).expect("the case is waiting");
         }),
     );
-    let turns = reported
-        .recv_timeout(Duration::from_secs(5))
-        .expect("the actual runner took its turns over the pending capsule");
-    let handovers_during = send_entries_snapshot()
+    let (visits, observations) = reported
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the actual runner reported its visits over the pending capsule");
+    assert!(
+        observations >= 2,
+        "the pending transient was observed by more than one charged visit: {visits:?}"
+    );
+    let handovers_during = queue_handovers_snapshot()
         .iter()
-        .filter(|entry| entry.delivery == Some(wanted))
+        .filter(|handover| handover.delivery == wanted && handover.accepted)
         .count();
     assert_eq!(
-        handovers_during, handovers_before,
-        "no turn over a pending capsule handed it over again: {turns:?}"
+        handovers_during, 1,
+        "and none of those visits handed it over again: {visits:?}"
+    );
+    assert!(
+        cell.answer().is_none(),
+        "nor answered it: observation is not settlement"
     );
 
-    // RELEASED BY READING. The recipient takes its bytes again and the
-    // writer finishes what it already had.
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    let mut drained = 0usize;
+    // RELEASED. The worker takes its home back and writes what it already had.
+    drop(held_home);
     let mut completion = None;
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
     while std::time::Instant::now() < deadline && completion.is_none() {
-        if read_event(&mut peer, 1).is_some() {
-            drained += 1;
-        }
+        let _ = read_event(&mut peer, 1);
         while let Ok(receipt) = service.deliveries.try_recv() {
             assert_eq!(
                 receipt.delivery, wanted,
-                "only the pending capsule was still owed a receipt"
+                "only this capsule was owed a receipt"
             );
             assert!(
                 completion.replace(receipt.outcome).is_none(),
-                "its receipt was published once"
+                "and it is answered once"
             );
         }
     }
-    let completion = completion.expect("the released writer published its own completion");
+    let completion = completion.expect("the released worker published its own completion");
     assert_eq!(
         completion,
         XAuthorityInputDeliveryOutcome::Flushed,
-        "and it is the writer's own flush"
+        "which is its own flush"
     );
-    let second = service.deliveries.recv_timeout(Duration::from_millis(300)).ok();
-    assert!(
-        second.is_none(),
-        "and there is no second receipt for anything: {second:?}"
-    );
-    let handovers_after = send_entries_snapshot()
-        .iter()
-        .filter(|entry| entry.delivery == Some(wanted))
-        .count();
+    let second = service
+        .deliveries
+        .recv_timeout(Duration::from_millis(300))
+        .ok();
+    assert!(second.is_none(), "with no second receipt: {second:?}");
 
     service.command(XServerFrontendServiceCommand::StopAndDisconnect);
     let closed = service.closed();
-    let (_, send_entries) = take_observations();
+    let (_, send_entries, queue_handovers) = take_observations();
+    assert!(
+        !observation_overflowed(),
+        "no recorder dropped a record; a missing tail would read like a retry that never happened"
+    );
+    let frame_sequence: Vec<usize> = send_entries
+        .iter()
+        .filter(|entry| entry.delivery == Some(wanted))
+        .map(|entry| entry.frame_index)
+        .collect();
+    assert_eq!(
+        frame_sequence,
+        vec![0, 1],
+        "the released capsule put its own two frames out, in order and once each"
+    );
+    let handovers_total = queue_handovers
+        .iter()
+        .filter(|handover| handover.delivery == wanted && handover.accepted)
+        .count();
+    assert_eq!(
+        handovers_total, 1,
+        "and was handed to the queue exactly once in the whole interval"
+    );
     let seen = json!({
-        "capsules_flushed_before_the_interval": flushed,
-        "pending_delivery": pending,
-        "handovers_before_the_interval": handovers_before,
-        "charged_turns_over_it": turns,
-        "handovers_after_those_turns": handovers_during,
-        "handovers_after_release": handovers_after,
-        "events_drained_to_release_it": drained,
+        "delivery": delivery,
+        "hold": "the connection's own ordered home, which its worker must take to serve a step",
+        "frames_while_held": frames_while_held,
+        "charged_visits": visits,
+        "transient_observations": observations,
+        "queue_handovers_accepted": handovers_total,
+        "frame_sequence_after_release": frame_sequence,
         "its_completion": format!("{completion:?}"),
-        "further_receipts": Option::<String>::None,
-        "total_send_attempts": send_entries.len(),
         "closed_error": closed.error.clone(),
-        "what_this_establishes": "a capsule that has been handed to its writer and cannot reach its recipient is observed by the service's own charged turns and handed over exactly once; releasing the recipient produces the writer's own single completion.",
+        "what_this_establishes": "a capsule held in its recipient's queue is observed by more than one of the service's own charged visits, handed over exactly once, answered by none of them, and on release puts its own frames out once each for a single flush. This is a first write after a hold, not the resumption of a blocked frame; the partial case establishes prefix preservation.",
     });
     let collected = finish_labelled("enqueued-observation invocation", service, &[custody]);
     (seen, collected)
