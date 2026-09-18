@@ -7,6 +7,7 @@ use std::time::Duration;
 pub(super) fn drain(shared: Arc<Shared>, sender: SyncSender<Packet>) {
     loop {
         let stopping = shared.stop.load(Ordering::Acquire);
+        let mut progressed = false;
         let Ok(mut launches) = shared.launches.lock() else {
             break;
         };
@@ -16,11 +17,13 @@ pub(super) fn drain(shared: Arc<Shared>, sender: SyncSender<Packet>) {
             if let Some(reader) = launch.reader.as_mut() {
                 match reader.read(&mut buffer) {
                     Ok(0) => {
+                        progressed = true;
                         launch.eof = true;
                         launch.reader = None;
                         launch.dirty = true;
                     }
                     Ok(length) => {
+                        progressed = true;
                         let offset = launch.read;
                         launch.read = launch.read.saturating_add(length as u64);
                         let keep = if launch.retain {
@@ -60,6 +63,7 @@ pub(super) fn drain(shared: Arc<Shared>, sender: SyncSender<Packet>) {
             }
             if launch.dirty && sender.try_send(metadata(launch)).is_ok() {
                 launch.dirty = false;
+                progressed = true;
             }
         }
         launches.retain(|launch| {
@@ -78,7 +82,14 @@ pub(super) fn drain(shared: Arc<Shared>, sender: SyncSender<Packet>) {
             }
             break;
         }
-        std::thread::sleep(Duration::from_millis(5));
+        if progressed {
+            // A fixed delay after a productive read would throttle every pipe
+            // to one chunk per timer tick, even when discarding a flood. Visit
+            // all peers again instead; only idle collection waits on the timer.
+            std::thread::yield_now();
+        } else {
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
 }
 

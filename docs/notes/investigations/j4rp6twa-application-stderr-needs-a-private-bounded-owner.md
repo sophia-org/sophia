@@ -65,3 +65,20 @@ subsequent canonical result belong in the completion record beside those logs;
 the scoped checks above do not substitute for that whole-repository result.
 No running desktop has been restarted or new release installed for this work.
 The requested Kitty/Brave scroller-strip investigation follows this slice.
+
+The first signed checkpoint is `0649c1ee`. Its exact contained canonical run
+stopped at `x_server_frontend_routes_selection_notify_to_the_requestor_client`:
+the SelectionNotify sequence was 2 rather than 3. No X authority source changed
+in this slice. A focused attempt on the earlier `89e69542` source did not finish
+and was stopped after 81 seconds; that is not a reproduction of the same
+assertion or a baseline pass. The retained full result is FAIL, independently of
+the passing diagnostics controls.
+
+A follow-up removes the fixed delay after productive collector visits. Sleeping
+after every 4,060-byte read would artificially throttle even discarded output.
+The collector now yields after progress and sleeps only while idle. The blocked
+storage control requires its harmless 3 MiB child to drain within two seconds;
+restoring the fixed sleep compiles and fails that assertion at about four
+seconds. This is a bounded fixture throughput check, not a guarantee against
+arbitrary host starvation. The launch-cap mutation also fails with the faster
+collector. No desktop application or graphical session was launched by these controls.

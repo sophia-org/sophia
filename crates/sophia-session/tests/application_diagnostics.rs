@@ -245,7 +245,7 @@ fn flood_is_drained_after_launch_limit_and_peer_progresses() {
     let capture = fixture.capture();
     let mut flood = capture
         .spawn(
-            &mut command("head -c 3145728 /dev/zero >&2"),
+            &mut command("i=0; while [ $i -lt 24 ]; do head -c 131072 /dev/zero >&2; i=$((i+1)); sleep 0.02; done"),
             context(LaunchSource::Startup),
         )
         .unwrap();
@@ -381,6 +381,7 @@ fn blocked_store_has_bounded_queue_and_does_not_block_child_or_logout() {
         .unwrap();
     lock.lock().unwrap();
     let capture = fixture.capture();
+    let drain_started = Instant::now();
     let mut child = capture
         .spawn(
             &mut command("head -c 3145728 /dev/zero >&2"),
@@ -388,6 +389,10 @@ fn blocked_store_has_bounded_queue_and_does_not_block_child_or_logout() {
         )
         .unwrap();
     reap(&capture, &mut child);
+    assert!(
+        drain_started.elapsed() < Duration::from_secs(2),
+        "an unavailable store must not throttle draining to one chunk per 5ms tick"
+    );
     assert!(child.wait().unwrap().success());
     let now = Instant::now();
     drop(capture);
@@ -483,7 +488,7 @@ fn rotation_bounds_total_store_and_retains_the_newest_launch() {
             .map(|_| {
                 capture
                     .spawn(
-                        &mut command("head -c 1048576 /dev/zero >&2"),
+                    &mut command("i=0; while [ $i -lt 8 ]; do head -c 131072 /dev/zero >&2; i=$((i+1)); sleep 0.02; done"),
                         context(LaunchSource::Startup),
                     )
                     .unwrap()

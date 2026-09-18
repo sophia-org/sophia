@@ -191,8 +191,9 @@ and synchronized storage are separate facts. A successful spawn is not evidence
 that an application mapped a window or finished starting.
 
 Capture permits 64 concurrent registrations. A single nonblocking collector
-visits each stream once per turn, reads at most 4,060 bytes from each, and sleeps
-five milliseconds between turns. One separate storage worker owns filesystem
+visits each stream once per turn and reads at most 4,060 bytes from each. It
+yields after productive turns and sleeps five milliseconds only when idle;
+discarding a flood is not throttled by a fixed timer. One separate storage worker owns filesystem
 writes and synchronization. The aggregate queued record storage is at most
 1 MiB; the worker additionally owns one record. Retention stops after the first
 1 MiB read from each launch, but pipes continue draining and discarded bytes are
