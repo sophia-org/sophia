@@ -326,12 +326,19 @@ fn the_never_started_branch_waits_on_a_held_gate_after_its_stop_is_decided() {
     std::thread::scope(|scope| {
         let gate_held = gate.fenced.lock().expect("an open gate");
         let dropper = scope.spawn(move || drop(registration));
-        let decided = waited_until(
-            || custody.departure_observation().is_some(),
+        // Polled for the standing this control asserts, not for a
+        // publication that precedes it: the pause between the departure's
+        // record and the destruction's can outlast any fixed sleep.
+        let published = waited_until(
+            || {
+                matches!(
+                    custody.cleanup_record().destruction_standing(),
+                    PrivateDestructionStanding::Decided(_)
+                )
+            },
             Duration::from_secs(5),
         );
-        std::thread::sleep(Duration::from_millis(100));
-        blocked_while_held = decided && !dropper.is_finished();
+        blocked_while_held = published && !dropper.is_finished();
         decided_while_blocked = custody.departure_observation();
         published_while_blocked = custody.cleanup_record().destruction_standing();
         drop(gate_held);

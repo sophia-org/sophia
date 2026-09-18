@@ -38,8 +38,10 @@ enum PrivateDestructionDeferral {
     AlreadyDeparting,
     /// The slot could not be read, so what it held is not established.
     SlotUnreadable,
-    /// An earlier registered departure is inside its decision, or was
-    /// interrupted there. This ask did not start a second.
+    /// An earlier registered departure had closed admission and not yet
+    /// recorded a decision -- before or during its cancellation, or in its
+    /// later slot wait -- or was interrupted anywhere in that span. This ask
+    /// did not start a second decision; it did assert the stop.
     Deciding,
     /// The departure boundary could not be read. The bound stop was still
     /// asserted; what the slot held is not established.
@@ -84,7 +86,9 @@ enum PrivateDestructionStanding {
     /// No registration has asked for this connection's destruction.
     NotRequested,
     /// A registration claimed the destruction and has not published what it
-    /// decided: it is inside the arbitration, or its frame was lost there.
+    /// decided: it is between the claim and entering the arbitration, inside
+    /// the arbitration (including the slot wait), or its frame was lost
+    /// anywhere in that span.
     Requested,
     /// The claimed destruction published its decision.
     Decided(PrivateDestructionDecision),
@@ -145,13 +149,15 @@ impl PrivateRegisteredCustody {
     /// and a worker it admitted may still be running.
     ///
     /// A DEPARTURE FOUND DECIDING IS NOT LEFT TO THE OTHER ASK. `Deciding`
-    /// means an earlier ask released the boundary and is between that and
-    /// its stop, or was interrupted there and will never send one. Whichever
-    /// it is, this destruction still owes the connection's stop, so it is
-    /// asserted here through the bound pair -- reachable outside the
-    /// boundary, the same authoritative stop and notice either way. The
-    /// answer stays `Deciding`: nothing is reopened, the slot is not entered
-    /// and nothing is joined.
+    /// means an earlier ask released the boundary and has not recorded its
+    /// decision: it may be before its stop, inside it, or waiting on the
+    /// slot afterwards -- or it was interrupted anywhere in that span and
+    /// will never send one. Whichever it is, this destruction still owes the
+    /// connection's stop, so it is asserted here through the bound pair --
+    /// reachable outside the boundary, the same authoritative stop and
+    /// notice either way; asserting it again over an ask that already sent
+    /// it changes nothing. The answer stays `Deciding`: nothing is reopened,
+    /// the slot is not entered and nothing is joined.
     fn depart_for_destruction(&self) -> Option<PrivateDeparted> {
         let custody = self.custody.upgrade()?;
         let departed = custody.depart_registered();

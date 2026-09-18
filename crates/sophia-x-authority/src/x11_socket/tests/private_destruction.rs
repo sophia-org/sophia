@@ -12,11 +12,64 @@
 // attaches a private worker to the production service, and nothing here
 // executes a deferred duty.
 
-/// Arm the arbitration's labelled hook for the next departure on this
-/// thread (see `STAGE_AFTER_DEPARTURE_BOUNDARY` in
-/// `private_departure_arbitration.rs`).
+thread_local! {
+    /// STAGE-ONLY SCHEDULING HOOK. What the departure arbitration runs on
+    /// this thread once, after it has released its boundary and before it
+    /// sends its stop. Lives here, in the test module; production builds
+    /// compile neither this cell nor the dispatch that reads it.
+    static STAGE_AFTER_DEPARTURE_BOUNDARY: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Fire the staged hook, if a control armed one on this thread.
+///
+/// TOLERATES A THREAD BEING TORN DOWN. A registration kept in some other
+/// thread-local is dropped while this thread's locals are being destroyed,
+/// possibly after this cell has gone; an ordinary destruction there must run
+/// exactly as one on a live thread does, so an unavailable cell is an
+/// unarmed hook and nothing else.
+pub(super) fn stage_after_departure_boundary() {
+    let hook = STAGE_AFTER_DEPARTURE_BOUNDARY
+        .try_with(|slot| slot.borrow_mut().take())
+        .ok()
+        .flatten();
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+/// Arm the hook for the next departure on this thread.
 fn stage_after_boundary(hook: impl FnOnce() + 'static) {
     STAGE_AFTER_DEPARTURE_BOUNDARY.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+/// A registration kept by a thread rather than a frame, so that its real
+/// Drop runs while that thread's locals are being destroyed.
+///
+/// THE DROP IS CAUGHT, NOT TRUSTED. A panic inside a thread-local destructor
+/// aborts the whole test process, which is not a report; this wrapper runs
+/// the registration's actual Drop under `catch_unwind` and writes whether it
+/// unwound where the control can read it after the join.
+struct KeptByTheThread {
+    registration: Option<XServerFrontendClientRouteRegistration>,
+    unwound: Arc<AtomicBool>,
+}
+
+impl Drop for KeptByTheThread {
+    fn drop(&mut self) {
+        let registration = self.registration.take();
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            drop(registration);
+        }));
+        if outcome.is_err() {
+            self.unwound.store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
+}
+
+thread_local! {
+    static KEPT_BY_THE_THREAD: std::cell::RefCell<Option<KeptByTheThread>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Everything destruction is expected to leave in one state or another,
@@ -468,4 +521,76 @@ fn a_second_destruction_request_against_a_decided_record_is_inert() {
     );
     assert_eq!(p.private.broker.registry.occupancy.state_of(client), None);
     drop((record, custody));
+}
+
+#[test]
+fn an_ordinary_destruction_during_thread_teardown_runs_like_any_other() {
+    // THE WITNESS FOR "NO INSTRUMENTATION ON THE ORDINARY PATH". Nothing is
+    // armed and nothing is staged: one registration is dropped ordinarily on
+    // a thread (which touches whatever that path touches on that thread),
+    // a second is kept by the thread itself and destroyed as the thread's
+    // locals go. Both destructions must decide, record and tear down exactly
+    // as a destruction on a live thread does.
+    let p = plain_private(4);
+    let first = XServerFrontendClientId(9208);
+    let second = XServerFrontendClientId(9209);
+    let (first_registration, _first_channels) = p
+        .private
+        .broker
+        .registry
+        .register_client_with_admission(first, Some(admitted(first)))
+        .expect("a place, a keeper, a source and a row");
+    let (second_registration, _second_channels) = p
+        .private
+        .broker
+        .registry
+        .register_client_with_admission(second, Some(admitted(second)))
+        .expect("a second place, source and row");
+    let PrivateCustodyReach::Reached(first_custody) = first_registration
+        .registered_custody(&p.keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let PrivateCustodyReach::Reached(second_custody) = second_registration
+        .registered_custody(&p.keeper.lease())
+        .expect("its own custody")
+    else {
+        panic!("its owner keeps it")
+    };
+    let unwound = Arc::new(AtomicBool::new(false));
+    let noted = Arc::clone(&unwound);
+    let thread = std::thread::spawn(move || {
+        KEPT_BY_THE_THREAD.with(|kept| {
+            *kept.borrow_mut() = Some(KeptByTheThread {
+                registration: Some(second_registration),
+                unwound: noted,
+            })
+        });
+        drop(first_registration);
+        // The thread ends here; its locals, the kept registration among
+        // them, are destroyed on the way out.
+    });
+    let joined = thread.join();
+    let registry = &p.private.broker.registry;
+    let seen_first = observe_destruction(&first_custody, registry, first, None);
+    let seen_second = observe_destruction(&second_custody, registry, second, None);
+    assert!(joined.is_ok(), "the thread itself ended normally");
+    assert!(
+        !unwound.load(std::sync::atomic::Ordering::Acquire),
+        "the destruction run during teardown did not unwind"
+    );
+    for (seen, what) in [(&seen_first, "ordinary"), (&seen_second, "during teardown")] {
+        assert_eq!(
+            seen.standing,
+            PrivateDestructionStanding::Decided(PrivateDestructionDecision::Synchronous),
+            "{what}: decided and recorded"
+        );
+        assert_eq!(seen.departure, Some(PrivateDeparture::NothingStarted), "{what}");
+        assert_eq!(seen.number, None, "{what}: the number went back");
+        assert!(!seen.row, "{what}: the row is gone");
+        assert_eq!(seen.home, PrivateHomeStanding::Retained, "{what}");
+        assert!(seen.gate_fenced, "{what}");
+    }
+    drop((first_custody, second_custody));
 }
