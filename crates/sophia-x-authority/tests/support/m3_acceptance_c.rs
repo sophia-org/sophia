@@ -4035,6 +4035,547 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
     (seen, collected)
 }
 
+/// The control source this connection's own registration published.
+fn control_source_of(custody: &Arc<PrivateEvidenceCustody>) -> Arc<PrivateControlClientSource> {
+    custody
+        .cleanup_record()
+        .connection_state
+        .get()
+        .expect("this connection's registration is applied")
+        .control_source
+        .get()
+        .expect("and published its own control source")
+        .upgrade()
+        .expect("which is still alive")
+}
+
+/// The command this row submits for one kind, with the exact values its first
+/// effect is afterwards read back by.
+fn control_command_for(
+    kind: XAuthorityControlKind,
+    surface: SurfaceId,
+) -> XAuthorityControlCommand {
+    use XAuthorityControlCommand as Command;
+    use XAuthorityControlKind as Kind;
+    let transaction = TransactionId::from_raw(99882);
+    let geometry = Rect {
+        x: 2,
+        y: 3,
+        width: 80,
+        height: 60,
+    };
+    let state = sophia_protocol::PolicyPresentationState {
+        fullscreen: true,
+        maximized: false,
+        minimized: false,
+    };
+    match kind {
+        Kind::PublishMetadataRule => Command::PublishMetadataRule {
+            transaction,
+            surface,
+            rule: sophia_protocol::MetadataDisclosureRule {
+                surface,
+                disclosure: sophia_protocol::MetadataDisclosure::None,
+                trust_level: sophia_protocol::TrustLevel::Unknown,
+                icon: None,
+                generation: 37,
+            },
+        },
+        Kind::AdmitSurface => Command::AdmitSurface {
+            transaction,
+            surface,
+            geometry,
+        },
+        Kind::ConfigureSurface => Command::ConfigureSurface {
+            transaction,
+            surface,
+            geometry,
+        },
+        Kind::SetPresentationState => Command::SetPresentationState {
+            transaction,
+            surface,
+            state,
+        },
+        Kind::RestorePresentationState => Command::RestorePresentationState {
+            transaction,
+            surface,
+            state,
+        },
+        Kind::FocusSurface => Command::FocusSurface {
+            transaction,
+            surface,
+        },
+        Kind::ClearFocus => Command::ClearFocus {
+            transaction,
+            surface,
+        },
+        Kind::WithdrawSurface => Command::WithdrawSurface {
+            transaction,
+            surface,
+        },
+        Kind::CloseSurface => Command::CloseSurface {
+            transaction,
+            surface,
+        },
+    }
+}
+
+/// What this kind actually changed at the source before the writer was
+/// interrupted, read back from the source's own tables and state.
+///
+/// ONE WITNESS PER KIND, AND THE KIND'S OWN. "A record is owed" is the same
+/// sentence for all nine; what tells them apart is the thing each one did, and
+/// a row that did not read that has not established the kind it names.
+fn first_effect_of(
+    kind: XAuthorityControlKind,
+    source: &PrivateControlClientSource,
+    surface: SurfaceId,
+    resource: XResourceId,
+) -> Value {
+    use XAuthorityControlKind as Kind;
+    match kind {
+        Kind::PublishMetadataRule => {
+            let generation = source
+                .tables
+                .rules
+                .lock()
+                .expect("a readable rule table")
+                .get(&surface)
+                .expect("the rule this control inserted")
+                .generation;
+            assert_eq!(generation, 37, "the rule inserted is the one submitted");
+            assert!(
+                !source
+                    .tables
+                    .generations
+                    .lock()
+                    .expect("a readable generation table")
+                    .contains_key(&surface),
+                "and the interruption stopped before the generation was recorded"
+            );
+            json!({"rule_generation_inserted": generation, "surface_generation_recorded": false})
+        }
+        Kind::AdmitSurface | Kind::ConfigureSurface => {
+            let runtime = source
+                .state
+                .runtime
+                .lock()
+                .expect("readable runtime state")
+                .window_geometry(source.endpoint.namespace, resource)
+                .expect("the geometry this control applied")
+                .width;
+            let selected = source
+                .endpoint
+                .registration
+                .get()
+                .expect("this connection's registration")
+                .selections
+                .lock()
+                .expect("readable selections")
+                .geometry(resource)
+                .expect("the geometry its own selection still holds")
+                .width;
+            assert_eq!(runtime, 80, "the runtime geometry is the one submitted");
+            assert_eq!(
+                selected, 8,
+                "and the recipient's own selection still holds what it had"
+            );
+            json!({"runtime_width": runtime, "selection_width": selected})
+        }
+        Kind::SetPresentationState | Kind::RestorePresentationState => {
+            let properties = source
+                .state
+                .properties
+                .lock()
+                .expect("readable properties")
+                .properties_for_window(source.endpoint.namespace, resource)
+                .len();
+            assert!(
+                properties > 0,
+                "the presentation change reached this window's properties"
+            );
+            json!({"properties_on_this_window": properties})
+        }
+        Kind::FocusSurface => {
+            let focus = source
+                .state
+                .runtime
+                .lock()
+                .expect("readable runtime state")
+                .input_focus(source.endpoint.namespace)
+                .0;
+            assert_eq!(focus, resource, "focus actually moved to this window");
+            json!({"input_focus": format!("{focus:?}")})
+        }
+        Kind::ClearFocus => {
+            let focus = source
+                .state
+                .runtime
+                .lock()
+                .expect("readable runtime state")
+                .input_focus(source.endpoint.namespace)
+                .0
+                .local
+                .raw();
+            assert_eq!(
+                focus,
+                u64::from(X_SETUP_DEFAULT_ROOT),
+                "focus actually returned to the root"
+            );
+            json!({"input_focus_local": focus})
+        }
+        Kind::WithdrawSurface => {
+            let mapped = source
+                .state
+                .runtime
+                .lock()
+                .expect("readable runtime state")
+                .window_map_state(source.endpoint.namespace, resource)
+                .expect("this window's map state");
+            assert_eq!(
+                mapped,
+                crate::XMapState::Unmapped,
+                "the window was actually unmapped"
+            );
+            json!({"map_state": format!("{mapped:?}")})
+        }
+        Kind::CloseSurface => {
+            assert!(
+                waited_for(|| source.teardown.lock().unwrap().finished),
+                "the owned shutdown actually reached this source's teardown"
+            );
+            json!({"owned_shutdown_reached_teardown": true})
+        }
+    }
+}
+
+/// One charged terminal visit, with what the store held either side of it.
+#[derive(Clone, Debug)]
+struct ControlVisit {
+    at: usize,
+    visit: String,
+    retired_here: bool,
+    state_before: ControlRecordState,
+    state_after: ControlRecordState,
+    credit_before: Option<usize>,
+    credit_after: Option<usize>,
+}
+
+/// One control kind, from its actual first source effect through the separate
+/// visits that retire its record and return its credit.
+///
+/// A CLEANUP IS NOT ONE EVENT. A charged control visit removes the record once
+/// the source's own removal is available; a LATER control visit returns the one
+/// credit that record carried. Asserting only the end state would let a single
+/// visit that did both pass for the sequence production actually performs, and
+/// would not notice a credit returned for a record still outstanding.
+fn control_cleanup_for_kind(
+    label: &'static str,
+    kind: XAuthorityControlKind,
+    namespace: u64,
+    window: u32,
+) -> (Value, Vec<String>) {
+    let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+    let mut service =
+        LifecycleService::launch_over_store(label, namespace, None, false, 1, store.clone());
+    service.start();
+    let (mut peer, custody) = service.connect();
+    let source = control_source_of(&custody);
+    if kind == XAuthorityControlKind::AdmitSurface {
+        source
+            .state
+            .set_policy_map_deferred(true)
+            .expect("the source accepts a deferred map policy");
+    }
+    let (surface, _sequence) = selecting_window(&mut peer, &service.transactions, window, 0);
+    let resource = XResourceId::new(u64::from(window), 1);
+    let lease = service.owner.lease();
+    let control = service
+        .access
+        .control_producer(&lease)
+        .expect("the service's own control producer");
+    if kind == XAuthorityControlKind::ClearFocus {
+        // A REAL NON-ROOT FOCUS FIRST, so the clear below actually changes
+        // something. Clearing a focus that was already root would establish
+        // nothing about this kind.
+        control
+            .submit(
+                &lease,
+                XAuthorityClientControlCommand {
+                    client: source.endpoint.client,
+                    command: XAuthorityControlCommand::FocusSurface {
+                        transaction: TransactionId::from_raw(99880),
+                        surface,
+                    },
+                },
+            )
+            .expect("the order accepts the preparing focus");
+        assert_eq!(
+            ack_for(&service.acks, 99880)
+                .expect("the writer published the preparing focus outcome")
+                .acknowledgement
+                .outcome,
+            XAuthorityControlOutcome::Delivered
+        );
+        assert_eq!(
+            source
+                .state
+                .runtime
+                .lock()
+                .expect("readable runtime state")
+                .input_focus(source.endpoint.namespace)
+                .0,
+            resource,
+            "the focus this clear is going to move actually moved here first"
+        );
+    }
+    // INTERRUPTED AFTER ITS FIRST SOURCE EFFECT, which is the state the row is
+    // about: something at the source changed and nothing answered for it.
+    source.fail_after_effect.store(true, Ordering::Release);
+    control
+        .submit(
+            &lease,
+            XAuthorityClientControlCommand {
+                client: source.endpoint.client,
+                command: control_command_for(kind, surface),
+            },
+        )
+        .expect("the order accepts this kind");
+    let completion = service
+        .registry
+        .control_completion()
+        .expect("this origin's own control completion registry");
+    let cleanup = waited_for_value(|| {
+        completion
+            .cleanups_owed()
+            .ok()
+            .and_then(|owed| owed.into_iter().next())
+    })
+    .expect("the actual writer was interrupted after its first source effect");
+    assert_eq!(
+        cleanup.command.command.kind(),
+        kind,
+        "the record owed is this kind's own"
+    );
+    let execution = completion
+        .execution_of(cleanup.token)
+        .expect("the execution that record belongs to");
+    assert!(
+        Arc::ptr_eq(
+            &execution.lock().expect("a readable execution").source,
+            &source
+        ),
+        "against this connection's own control source"
+    );
+    assert!(
+        !execution
+            .lock()
+            .expect("a readable execution")
+            .peer_generation_begun,
+        "with no peer generation begun for it"
+    );
+    assert!(
+        service.acks.try_recv().is_err(),
+        "and the interruption published no acknowledgement"
+    );
+    let first_effect = first_effect_of(kind, &source, surface, resource);
+
+    drop(peer);
+    assert!(
+        waited_for(|| source.teardown.lock().unwrap().finished),
+        "the recipient going away reached this source's own teardown"
+    );
+    service.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    let closed = service.closed();
+
+    // THE SOURCE'S OWN REMOVAL IS WITHHELD. Cleanup may not invent one: while
+    // the removal this teardown produced is not available, the record stays
+    // outstanding and its credit stays taken, however many charged visits run.
+    let removal = source
+        .teardown
+        .lock()
+        .expect("readable teardown")
+        .removed
+        .take()
+        .expect("the source's own removal receipt");
+    let destroyed = removal.resources.destroyed_windows.clone();
+    assert!(
+        destroyed.contains(&resource),
+        "which names this window as destroyed: {destroyed:?}"
+    );
+    let credit_with_record = store.reserved();
+    let mut withheld_visits = BoundedTrace::default();
+    let mut charged_while_withheld = 0usize;
+    for _ in 0..400 {
+        let visit = service.step();
+        if visit.charged {
+            charged_while_withheld += 1;
+        }
+        withheld_visits.push(|| format!("{visit:?}"));
+    }
+    assert_eq!(
+        completion.state_of(cleanup.token),
+        ControlRecordState::Outstanding,
+        "the record is still owed while its source removal is withheld: {withheld_visits:?}"
+    );
+    assert!(
+        store.reserved().is_some_and(|held| held > 0),
+        "and its credit is still taken"
+    );
+    assert!(
+        charged_while_withheld > 0,
+        "on visits that were actually charged: {withheld_visits:?}"
+    );
+
+    // AND WITH IT BACK, TWO SEPARATE VISITS. One retires the record; a later
+    // one returns the one credit that record carried.
+    source.teardown.lock().expect("readable teardown").removed = Some(removal);
+    let mut control_visits: Vec<ControlVisit> = Vec::new();
+    let mut retired_at: Option<ControlVisit> = None;
+    let mut reclaimed_at: Option<ControlVisit> = None;
+    for at in 0..2_000usize {
+        let state_before = completion.state_of(cleanup.token);
+        let credit_before = store.reserved();
+        let visit = service.step();
+        let state_after = completion.state_of(cleanup.token);
+        let credit_after = store.reserved();
+        let is_control = matches!(
+            visit.terminal_visit,
+            Some(PrivateTerminalVisit::Control { .. })
+        );
+        if is_control && visit.charged {
+            let seen = ControlVisit {
+                at,
+                visit: format!("{:?}", visit.terminal_visit),
+                retired_here: state_before == ControlRecordState::Outstanding
+                    && state_after == ControlRecordState::Retired,
+                state_before,
+                state_after,
+                credit_before,
+                credit_after,
+            };
+            if seen.retired_here && retired_at.is_none() {
+                retired_at = Some(seen.clone());
+            }
+            if retired_at.is_some()
+                && reclaimed_at.is_none()
+                && credit_before > credit_after
+                && credit_after == Some(0)
+            {
+                reclaimed_at = Some(seen.clone());
+            }
+            if control_visits.len() < TRACE_BOUND {
+                control_visits.push(seen);
+            }
+        }
+        if retired_at.is_some() && reclaimed_at.is_some() {
+            break;
+        }
+    }
+    let retired = retired_at.unwrap_or_else(|| {
+        panic!("{label}: a charged control visit retired this record: {control_visits:?}")
+    });
+    let reclaimed = reclaimed_at.unwrap_or_else(|| {
+        panic!("{label}: and a later charged control visit returned its credit: {control_visits:?}")
+    });
+    assert!(
+        reclaimed.at > retired.at,
+        "{label}: the credit came back on a separate, later visit: retired {retired:?} reclaimed {reclaimed:?}"
+    );
+    assert_eq!(
+        retired.credit_before, retired.credit_after,
+        "{label}: the visit that retired the record returned nothing by itself: {retired:?}"
+    );
+    assert_eq!(
+        retired.state_after,
+        ControlRecordState::Retired,
+        "{label}: and left it retired: {retired:?}"
+    );
+    assert_eq!(
+        reclaimed.state_before,
+        ControlRecordState::Retired,
+        "{label}: and the visit that returned the credit found the record already retired: {reclaimed:?}"
+    );
+    assert_eq!(
+        reclaimed.state_after,
+        ControlRecordState::Retired,
+        "{label}: and left it so: {reclaimed:?}"
+    );
+    assert_eq!(
+        completion.state_of(cleanup.token),
+        ControlRecordState::Retired,
+        "{label}: the record is retired"
+    );
+    assert_eq!(
+        store.reserved(),
+        Some(0),
+        "{label}: and exactly the credit it carried came back"
+    );
+    // AND THE SOURCE'S OWN TABLES ARE CLEAR. What cleanup undid is read from
+    // the tables it changed, not from the record going away.
+    assert!(
+        !source
+            .tables
+            .windows
+            .lock()
+            .expect("readable window table")
+            .contains_key(&surface),
+        "{label}: this surface is gone from the source's window table"
+    );
+    assert!(
+        !source
+            .tables
+            .rules
+            .lock()
+            .expect("readable rule table")
+            .contains_key(&surface),
+        "{label}: and from its rules"
+    );
+    assert!(
+        !source
+            .tables
+            .generations
+            .lock()
+            .expect("readable generation table")
+            .contains_key(&surface),
+        "{label}: and from its generations"
+    );
+    assert!(
+        service.acks.try_recv().is_err(),
+        "{label}: and cleanup never fabricated an outcome for it"
+    );
+    let seen = json!({
+        "kind": format!("{kind:?}"),
+        "window": window,
+        "first_effect_at_the_source": first_effect,
+        "record_owed_for_this_kind": format!("{:?}", cleanup.command.command.kind()),
+        "execution_is_this_connections_source": true,
+        "peer_generation_begun": false,
+        "acknowledgement_from_the_interruption": Option::<String>::None,
+        "removal_receipt_destroyed_windows": destroyed
+            .iter()
+            .map(|window| format!("{window:?}"))
+            .collect::<Vec<_>>(),
+        "charged_visits_while_removal_withheld": charged_while_withheld,
+        "state_while_removal_withheld": "Outstanding",
+        "credit_while_removal_withheld": credit_with_record,
+        "visit_that_retired_the_record": format!("{retired:?}"),
+        "what_the_retiring_visit_was": retired.visit.clone(),
+        "visit_that_returned_the_credit": format!("{reclaimed:?}"),
+        "what_the_reclaiming_visit_was": reclaimed.visit.clone(),
+        "visits_between_them": reclaimed.at - retired.at,
+        "control_visits_seen": control_visits
+            .iter()
+            .map(|seen| format!("{seen:?}"))
+            .collect::<Vec<_>>(),
+        "credit_after_cleanup": store.reserved(),
+        "closed_error": closed.error.clone(),
+        "what_this_establishes": "this kind actually changed the source, its writer was interrupted before answering, the record it owes is that kind's own against this connection's own source, no outcome was fabricated, the record and its credit stay held while the source's own removal is withheld, and with the removal back one charged control visit retires the record and a separate later one returns exactly the one credit it carried.",
+    });
+    let collected = finish_labelled(label, service, &[custody]);
+    (seen, collected)
+}
+
 /// Controls that measure rather than accept.
 ///
 /// Nothing here is an acceptance case and nothing here may be bound to a
@@ -4171,13 +4712,60 @@ pub(super) mod diagnostics {
             accepted_unexecuted >= 8,
             "the held order took the named kinds; what it refused is recorded: {unexecuted:?}"
         );
+        // EVERY KIND, EACH ON ITS OWN INVOCATION, from its actual first source
+        // effect to the separate visits that retire its record and return its
+        // credit. `CloseSurface` ends the recipient's connection, so these
+        // cannot share one.
+        let mut per_kind = Vec::new();
+        for (index, (label, kind)) in [
+            (
+                "c-cleanup-metadata-rule",
+                XAuthorityControlKind::PublishMetadataRule,
+            ),
+            ("c-cleanup-admit", XAuthorityControlKind::AdmitSurface),
+            (
+                "c-cleanup-configure",
+                XAuthorityControlKind::ConfigureSurface,
+            ),
+            (
+                "c-cleanup-set-presentation",
+                XAuthorityControlKind::SetPresentationState,
+            ),
+            (
+                "c-cleanup-restore-presentation",
+                XAuthorityControlKind::RestorePresentationState,
+            ),
+            ("c-cleanup-focus", XAuthorityControlKind::FocusSurface),
+            ("c-cleanup-clear-focus", XAuthorityControlKind::ClearFocus),
+            ("c-cleanup-withdraw", XAuthorityControlKind::WithdrawSurface),
+            ("c-cleanup-close", XAuthorityControlKind::CloseSurface),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (seen, collected) = control_cleanup_for_kind(
+                label,
+                kind,
+                12_070 + index as u64,
+                0x330101 + index as u32 * 0x100,
+            );
+            per_kind.push(seen);
+            actors.extend(collected);
+        }
+        assert_eq!(
+            per_kind.len(),
+            9,
+            "every named control kind was driven through its own cleanup"
+        );
+
         println!(
             "sophia_m3_control_cleanup_diagnostics {}",
             json!({
                 "schema": 1,
                 "case": "C.control_cleanup",
                 "bound": false,
-                "why_unbound": "actual cleanup is established for ConfigureSurface only; the other eight kinds report no steps and are retained as unproved. Recorded, not weakened.",
+                "why_unbound": "Held for the three compiled negatives this row still owes. Actual cleanup is now established for every one of the nine kinds: each changes the source, is interrupted before answering, keeps its record and credit while the source's own removal is withheld, and is then retired by one charged control visit and reclaimed by a separate later one.",
+                "cleanup_per_kind": per_kind,
                 "executed_through_real_writer": executed,
                 "executed_closed_error": executed_closed.error,
                 "accepted_and_never_executed": unexecuted,
