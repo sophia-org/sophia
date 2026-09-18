@@ -44,6 +44,7 @@ pub mod input_proof;
 #[cfg(feature = "native-session")]
 pub mod live_output_authority;
 pub mod native_output_completion;
+pub mod private_input;
 pub mod resize_transaction;
 pub mod resource_sampling;
 pub mod session_actions;
