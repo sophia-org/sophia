@@ -19,6 +19,8 @@
       "x11_socket::routing_tests::transient_axis_smooth_and_emulated_selections_are_independent_and_accumulate_once"
     ],
     "live-recipient": [
+      "x11_socket::routing_tests::live_recipient_termination_cannot_supply_the_withheld_native_half",
+      "x11_socket::routing_tests::live_state_only_disposal_requires_its_explicit_source_disposition_and_actual_termination",
       "x11_socket::routing_tests::live_endpoint_termination_settles_failed_receipt_without_rewriting_it",
       "x11_socket::routing_tests::live_termination_keeps_original_pending_capsule_until_its_authority_accepts",
       "x11_socket::routing_tests::live_termination_visits_charge_once_and_leave_other_native_classes_a_turn",

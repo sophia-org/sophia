@@ -208,3 +208,121 @@ fn live_termination_visits_charge_once_and_leave_other_native_classes_a_turn() {
         "recipient visits did not monopolize the native budget"
     );
 }
+
+#[test]
+fn live_state_only_disposal_requires_its_explicit_source_disposition_and_actual_termination() {
+    let mut fixture = state_only_fixture(9974);
+    let surface = fixture.surface;
+    state_only_execute(
+        &mut fixture,
+        None,
+        key_service_route(surface, 997410, 42, true),
+    );
+    assert_eq!(
+        fixture
+            .runner
+            .frontend
+            .as_mut()
+            .unwrap()
+            .dispatch_one_press(),
+        Some(true)
+    );
+    state_only_execute(
+        &mut fixture,
+        None,
+        state_only_key_route(surface, 997411, 42),
+    );
+    let (socket, mut peer) = UnixStream::pair().unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+    let (mut writer, _output) = serving_owner_for(&mut fixture, socket);
+    for expected in [4, 5, 2] {
+        assert!((0..8).any(|_| matches!(
+            writer.serve_one(XByteOrder::LittleEndian, 7),
+            X11OrderedServeStep::Flushed
+        )));
+        let mut frame = [0; 32];
+        peer.read_exact(&mut frame).unwrap();
+        assert_eq!(frame[0], expected);
+    }
+    let private = fixture.runner.frontend.as_mut().unwrap();
+    assert!(matches!(
+        private.settle_one_receipt(),
+        Some(PrivateReceiptStep::Settled { .. })
+    ));
+    assert_eq!(private.record_one_native(), Some(true));
+    for _ in 0..12 {
+        private.terminal.dispose_live_native_one();
+    }
+    assert_eq!(private.terminal.settling.len(), 1);
+    assert_eq!(
+        private.terminal.settling[0].binding,
+        PrivateReleaseBinding::RecipientTerminationRequired
+    );
+    assert!(private.terminal.settling[0].custody.completion.is_none());
+    writer
+        .begin_close(X11OrderedCloseCause::ConnectionEnded)
+        .unwrap();
+    assert!(matches!(
+        private.settle_one_terminated_recipient(),
+        PrivateReceiptStep::Settled { debt_settled: true }
+    ));
+    // STAGE ONLY: missing completion by itself is never a no-output receipt.
+    private.terminal.settling[0].binding = PrivateReleaseBinding::Reached;
+    for _ in 0..8 {
+        assert!(!private.terminal.dispose_live_native_one());
+    }
+    private.terminal.settling[0].binding = PrivateReleaseBinding::RecipientTerminationRequired;
+    assert!((0..8).any(|_| private.terminal.dispose_live_native_one()));
+    assert!(private.terminal.settling.is_empty());
+}
+
+#[test]
+fn live_recipient_termination_cannot_supply_the_withheld_native_half() {
+    let mut fixture = prepared_ordered_fixture(XServerFrontendClientId(9975));
+    attempt_run(&mut fixture, 99750, 272, true);
+    attempt_run(&mut fixture, 99751, 273, true);
+    attempt_run(&mut fixture, 99752, 272, false);
+    let private = fixture.runner.frontend.as_mut().unwrap();
+    for _ in 0..2 {
+        assert_eq!(private.dispatch_one_press(), Some(true));
+        flush_live_native_capsule(fixture.channels.ordered.try_recv().unwrap());
+    }
+    assert!(
+        private.terminal.settling[0]
+            .native()
+            .unwrap()
+            .proof()
+            .is_none()
+    );
+    assert_eq!(private.record_one_native(), None);
+    let (socket, _peer) = UnixStream::pair().unwrap();
+    let (mut writer, _output) = serving_owner_for(&mut fixture, socket);
+    writer
+        .begin_close(X11OrderedCloseCause::ConnectionEnded)
+        .unwrap();
+    let private = fixture.runner.frontend.as_mut().unwrap();
+    assert!(matches!(
+        private.settle_one_terminated_recipient(),
+        PrivateReceiptStep::Settled {
+            debt_settled: false
+        }
+    ));
+    let release = &private.terminal.settling[0];
+    assert!(release.custody.recipient_termination && !release.native_recorded);
+    assert!(
+        private
+            .controller
+            .under_common_as_origin(|authority, issuer| authority
+                .reconciliation_record_present(issuer, release.incarnation))
+            .unwrap()
+            .unwrap()
+    );
+    for _ in 0..8 {
+        assert!(!private.terminal.dispose_live_native_one());
+    }
+    assert_eq!(
+        private.terminal.holds.len(),
+        1,
+        "the other source hold still owns native retirement"
+    );
+}

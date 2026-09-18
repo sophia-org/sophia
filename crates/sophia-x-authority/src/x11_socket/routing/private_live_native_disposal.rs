@@ -31,12 +31,35 @@ impl PrivateDeliveryCustody {
                 .as_ref()
                 .and_then(|cell| cell.answer())
                 .is_some_and(|answer| {
-                    self.recipient_termination || matches!(
-                        answer.outcome,
-                        XAuthorityInputDeliveryOutcome::Flushed
-                            | XAuthorityInputDeliveryOutcome::ClientDisconnected
-                    )
+                    self.recipient_termination
+                        || matches!(
+                            answer.outcome,
+                            XAuthorityInputDeliveryOutcome::Flushed
+                                | XAuthorityInputDeliveryOutcome::ClientDisconnected
+                        )
                 })
+    }
+}
+
+#[cfg(unix)]
+impl PrivateSettlingRelease {
+    fn recipient_output_settled(&self) -> bool {
+        self.custody.writer_settled()
+            || (self.binding == PrivateReleaseBinding::RecipientTerminationRequired
+                && self.delivery.is_none()
+                && self.custody.completion.is_none()
+                && self.custody.pending.is_none()
+                && self.custody.attempt.is_none()
+                && self.custody.recipient_termination
+                && self
+                    .native
+                    .as_ref()
+                    .and_then(PrivateNativeHold::key)
+                    .is_some_and(|key| {
+                        key.release_xkb_applied()
+                        && key.release_disposition()
+                            == private_native::KeyReleaseDisposition::RecipientTerminationRequired
+                    }))
     }
 }
 
@@ -48,13 +71,14 @@ impl PrivateTerminalInventory {
         self.settling.iter().any(|release| {
             release.native_recorded
                 && release.custody.attempt.is_none()
-                && (release.custody.recipient_termination || matches!(
-                    release.custody.outcome_seen,
-                    Some(
-                        XAuthorityInputDeliveryOutcome::Flushed
-                            | XAuthorityInputDeliveryOutcome::ClientDisconnected
-                    )
-                ))
+                && (release.custody.recipient_termination
+                    || matches!(
+                        release.custody.outcome_seen,
+                        Some(
+                            XAuthorityInputDeliveryOutcome::Flushed
+                                | XAuthorityInputDeliveryOutcome::ClientDisconnected
+                        )
+                    ))
         })
     }
 
@@ -90,7 +114,7 @@ impl PrivateTerminalInventory {
             .is_some_and(|proof| proof.incarnation() == release.incarnation);
         if !native_proved
             || !release.native_recorded
-            || !release.custody.writer_settled()
+            || !release.recipient_output_settled()
             || !release
                 .press_custody
                 .as_ref()
