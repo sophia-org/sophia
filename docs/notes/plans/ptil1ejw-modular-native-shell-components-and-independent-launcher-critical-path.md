@@ -507,3 +507,17 @@ repair and handling of late in-flight Begin/chunk/end records remain required
 with the Session closing/removal owner. They are not silently classified as
 malicious traffic or covered by the current passing server controls. Live join,
 reopening, fresh canonical and `lom-test` readiness remain open.
+
+### Bemenu cancellation counterpart
+
+Signed Bemenu `69cc9b2` accepts exact standing/granted permit cancellation and
+retains an already-sent candidate until its own outcome. Duplicate/wrong permit
+IDs refuse. The actual upload state remains Resident before late candidate
+rejection and ReleasePending afterward; no local cancellation fabricates byte
+release. Device-hidden full `make check-sophia EXTRA_WARNINGS=-Werror` passes in
+`.artifacts/bemenu-cancelled-permit-final`; restoring the prior receiver with the
+new controls fails behaviorally on kind 177 in `bemenu-cancelled-permit-baseline`.
+This closes the client receiver mismatch recorded above, not the server's late
+record drain or live Session close/reopen orchestration. Both repositories remain
+uninstalled; this checkpoint is local and unpushed. Physical readiness is still
+pending the remaining live join, cleanup and exact canonical/harness gates.
