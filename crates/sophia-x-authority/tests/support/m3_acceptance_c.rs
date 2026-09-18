@@ -3320,10 +3320,31 @@ struct RefusedReading {
     route_delivery: Option<XAuthorityInputDeliveryId>,
     completion: Option<sophia_input_authority::RequestCompletion>,
     phase: Option<PrivateRequestPhase>,
+    /// Whether the item still held its accepted-item credit, and the store it
+    /// was drawn on.
+    credit_against: Option<std::sync::Weak<Mutex<AbandonedSettlements>>>,
     /// Starts charged on the turn that reached the adjudication, and whether
-    /// that turn kept its supervisor.
+    /// EVERY turn taken here kept its supervisor.
     starts: usize,
+    turns_taken: usize,
     supervised: bool,
+    /// An allowance refusal that is not an exhausted start budget. Waiting
+    /// cannot fix one, so the loop stops and the case fails on it rather than
+    /// continuing quietly.
+    unexpected_allowance: Option<String>,
+}
+
+/// Whether that accepted-item credit is drawn on this store.
+///
+/// The credit holds a weak handle to the store it was taken from, so this is
+/// the credit naming its own store rather than two totals agreeing.
+fn credit_is_against(
+    store: &PrivateSettlementOwner,
+    credit: &std::sync::Weak<Mutex<AbandonedSettlements>>,
+) -> bool {
+    credit
+        .upgrade()
+        .is_some_and(|held| Arc::ptr_eq(&held, &store.inner))
 }
 
 /// The retained refused request, as the runner's own frontend holds it.
@@ -3333,6 +3354,13 @@ struct RefusedItem {
     route_delivery: Option<XAuthorityInputDeliveryId>,
     completion: Option<sophia_input_authority::RequestCompletion>,
     phase: PrivateRequestPhase,
+    /// Whether the item still holds its accepted-item credit, and which store
+    /// that credit is against.
+    ///
+    /// THE CREDIT ITSELF, NOT A COUNT. A store's reserved total going from one
+    /// to one says a credit is outstanding somewhere; this says the credit is
+    /// still on this item and is drawn on this store.
+    credit_against: Option<std::sync::Weak<Mutex<AbandonedSettlements>>>,
 }
 
 /// What the runner's frontend is holding for the refused request right now.
@@ -3350,6 +3378,10 @@ fn read_refused_item(runner: &PrivatePreparedRunner) -> Option<RefusedItem> {
                 route_delivery: route.delivery,
                 completion: custody.observed_outcome.get(),
                 phase: custody.phase.get(),
+                credit_against: custody
+                    .accepted_store_credit
+                    .as_ref()
+                    .map(|credit| credit.store.clone()),
             }),
             PrivateOrderedItem::Ran { .. } | PrivateOrderedItem::Parked { .. } => None,
         })
@@ -3429,8 +3461,11 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                 route_delivery: None,
                 completion: None,
                 phase: None,
+                credit_against: None,
                 starts: 0,
-                supervised: false,
+                turns_taken: 0,
+                supervised: true,
+                unexpected_allowance: None,
             };
             let deadline = std::time::Instant::now() + Duration::from_secs(8);
             while std::time::Instant::now() < deadline {
@@ -3451,6 +3486,8 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                     progress.allowance,
                     progress.watch_failed
                 ));
+                reading.turns_taken += 1;
+                reading.supervised = reading.supervised && !progress.watch_failed;
                 // STOP ON THE THING ITSELF. A retained item appears in the
                 // vector before anything has observed its common outcome, so
                 // occupancy says nothing. What this waits for is an actual
@@ -3468,18 +3505,22 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                     reading.completion = item.completion;
                     reading.phase = Some(item.phase);
                     reading.starts = progress.starts;
-                    reading.supervised = !progress.watch_failed;
+                    reading.credit_against = item.credit_against;
                     reading.undelivered = runner.frontend().terminal.undelivered.len();
                     break;
                 }
                 // ONLY AN EXHAUSTED ALLOWANCE IS WAITED OUT, for the delay it
-                // reports. Any other refusal is the service's own answer and
-                // is not spun over.
-                if let Some(sophia_input_authority::ServiceStartRefusal::StartsExhausted {
-                    retry_after,
-                }) = progress.allowance
-                {
-                    std::thread::sleep(retry_after.min(Duration::from_millis(50)));
+                // reports. Every other refusal is answered by stopping and
+                // reporting it, never by going round again.
+                match progress.allowance {
+                    Some(sophia_input_authority::ServiceStartRefusal::StartsExhausted {
+                        retry_after,
+                    }) => std::thread::sleep(retry_after.min(Duration::from_millis(50))),
+                    None => {}
+                    Some(other) => {
+                        reading.unexpected_allowance = Some(format!("{other:?}"));
+                        break;
+                    }
                 }
             }
             if reading.undelivered == 0 {
@@ -3562,15 +3603,30 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
         "on a request that returned rather than one still inside the source: {:?}",
         reading.turns
     );
+    assert_eq!(
+        reading.unexpected_allowance, None,
+        "no turn refused for something waiting cannot fix: {:?}",
+        reading.turns
+    );
     assert!(
         reading.starts > 0,
         "the turn that reached the adjudication was charged: {:?}",
         reading.turns
     );
     assert!(
-        reading.supervised,
-        "and kept its supervisor, so the refusal is a decision and not a lost guard: {:?}",
+        reading.turns_taken > 0 && reading.supervised,
+        "and every turn taken here kept its supervisor, so the refusal is a decision and not a lost guard: {:?}",
         reading.turns
+    );
+    // THE CREDIT IS STILL ON THE ITEM, AND IT IS THIS STORE'S. A reserved
+    // total of one says a credit is outstanding somewhere; this says the item
+    // is the one holding it.
+    assert!(
+        reading
+            .credit_against
+            .as_ref()
+            .is_some_and(|credit| credit_is_against(&store, credit)),
+        "the retained item still holds its accepted-item credit, drawn on this store"
     );
     // THE PUBLICATION WAS ATTEMPTED AND REFUSED, on this exact completion,
     // because its admission was gone. A run in which nothing was attempted
@@ -3630,6 +3686,7 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                     item.route_delivery,
                     item.completion,
                     item.phase,
+                    item.credit_against,
                 )
             });
             before_report
@@ -3638,7 +3695,9 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
             second_pause.wait();
             let mut turns = Vec::new();
             let mut starts = 0;
-            let mut supervised = false;
+            let mut turns_taken = 0usize;
+            let mut supervised = true;
+            let mut unexpected: Option<String> = None;
             let deadline = std::time::Instant::now() + Duration::from_secs(8);
             while std::time::Instant::now() < deadline
                 && !runner.frontend().terminal.undelivered.is_empty()
@@ -3659,12 +3718,17 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                     progress.watch_failed
                 ));
                 starts += progress.starts;
-                supervised = !progress.watch_failed;
-                if let Some(sophia_input_authority::ServiceStartRefusal::StartsExhausted {
-                    retry_after,
-                }) = progress.allowance
-                {
-                    std::thread::sleep(retry_after.min(Duration::from_millis(50)));
+                turns_taken += 1;
+                supervised = supervised && !progress.watch_failed;
+                match progress.allowance {
+                    Some(sophia_input_authority::ServiceStartRefusal::StartsExhausted {
+                        retry_after,
+                    }) => std::thread::sleep(retry_after.min(Duration::from_millis(50))),
+                    None => {}
+                    Some(other) => {
+                        unexpected = Some(format!("{other:?}"));
+                        break;
+                    }
                 }
             }
             second_report
@@ -3672,7 +3736,9 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                     turns,
                     runner.frontend().terminal.undelivered.len(),
                     starts,
+                    turns_taken,
                     supervised,
+                    unexpected,
                 ))
                 .expect("the case is waiting");
         }),
@@ -3688,7 +3754,7 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
         retained_before_restore, 1,
         "the refused request is still the one thing undelivered when its admission goes back"
     );
-    let (carries_original, route_before, completion_before, phase_before) =
+    let (carries_original, route_before, completion_before, phase_before, credit_before) =
         before_restore.expect("and it is still the refused item this case is about");
     assert!(
         carries_original,
@@ -3710,6 +3776,12 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
         phase_before,
         PrivateRequestPhase::Settled,
         "in the same phase: {phase_before:?}"
+    );
+    assert!(
+        credit_before
+            .as_ref()
+            .is_some_and(|credit| credit_is_against(&store, credit)),
+        "the item is still the one holding its accepted-item credit against this store"
     );
     assert_eq!(store.reserved(), Some(1), "still holding its single credit");
     assert_eq!(cell.answer(), None, "and still unanswered");
@@ -3740,16 +3812,27 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
     );
     second_held.release();
 
-    let (second_turns, undelivered_after, second_starts, second_supervised) = second_reported
+    let (
+        second_turns,
+        undelivered_after,
+        second_starts,
+        second_turns_taken,
+        second_supervised,
+        second_unexpected,
+    ) = second_reported
         .recv_timeout(Duration::from_secs(14))
         .expect("the actual runner reported its retry");
+    assert_eq!(
+        second_unexpected, None,
+        "no retry turn refused for something waiting cannot fix: {second_turns:?}"
+    );
     assert!(
         waited_for(|| cell.answer().is_some()),
         "the charged retry published through the completion this request was admitted with: {second_turns:?}"
     );
     assert!(
-        second_starts > 0 && second_supervised,
-        "on charged turns that kept their supervisor: {second_turns:?}"
+        second_starts > 0 && second_turns_taken > 0 && second_supervised,
+        "on charged turns, every one of which kept its supervisor: {second_turns:?}"
     );
     let published = cell.answer().expect("its answer");
     assert_eq!(
@@ -3827,7 +3910,9 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
         "its_own_common_outcome": format!("{observed_outcome:?}"),
         "its_own_phase": format!("{:?}", reading.phase),
         "starts_on_the_adjudicating_turn": reading.starts,
-        "supervisor_on_that_turn": reading.supervised,
+        "turns_taken_while_the_admission_was_gone": reading.turns_taken,
+        "every_turn_kept_its_supervisor": reading.supervised,
+        "item_still_holds_its_credit_against_this_store": true,
         "adjudications_of_this_completion": adjudications
             .iter()
             .map(|seen| format!("{:?}", seen.answer))
@@ -3841,6 +3926,7 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
             "route_delivery": route_before.map(|id| id.raw()),
             "common_outcome": format!("{completion_before:?}"),
             "phase": format!("{phase_before:?}"),
+            "still_holds_its_credit_against_this_store": true,
         }),
         "published_by_restoring_admission": published_by_restoring.map(|answer| format!("{answer:?}")),
         "turns_after_restoring": second_turns,
