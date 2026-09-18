@@ -9,7 +9,9 @@ pub use control::{AuthorityIdentity, ControlPermit};
 mod execution;
 mod requests;
 use requests::RequestCell;
-pub use requests::{ExecutionPermit, RequestCompletion, RequestToken};
+pub use requests::{
+    ExecutionDisposition, ExecutionPermit, RequestCompletion, RequestExecution, RequestToken,
+};
 
 use crate::capacity::{Capacity, CapacityError};
 use crate::grant::{GrantGeneration, GrantId, IssuerHandle, SubmitHandle};

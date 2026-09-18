@@ -20,6 +20,24 @@ pub enum RequestCompletion {
     Cancelled,
 }
 
+/// Whether a guarded adapter operation finished or remains effect-free and
+/// ineligible. Deferral preserves the original reservation, never its credit
+/// as a newly accepted request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExecutionDisposition {
+    Complete,
+    Defer,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RequestExecution {
+    Completed(RequestCompletion),
+    /// No permit operation was attempted and no completion was published.
+    /// The caller must retain the same request custody until it is eligible
+    /// or receives a real terminal disposition.
+    Deferred,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(super) struct RequestCell {
     token: RequestToken,
@@ -34,6 +52,7 @@ pub(super) struct RequestCell {
 /// acquire only later-ranked adapter guards. No waiting is permitted here.
 pub struct ExecutionPermit<'a> {
     authority: &'a mut AuthorityInstance,
+    token: RequestToken,
     capability: DeviceCapability,
     context: ExecutionContext,
     consumed: bool,
@@ -41,6 +60,12 @@ pub struct ExecutionPermit<'a> {
 }
 
 impl ExecutionPermit<'_> {
+    /// The exact reservation that authorized this guarded operation. Naming
+    /// it does not grant execution or completion-consumption rights.
+    pub fn request_token(&self) -> RequestToken {
+        self.token
+    }
+
     /// The authority that validated this exact executing request. This read
     /// grants no mutation rights and lets an adapter reject foreign native
     /// projections before it applies a ledger or projection effect.
@@ -139,13 +164,39 @@ impl AuthorityInstance {
     where
         F: FnOnce(&mut ExecutionPermit<'_>) -> Result<(), RegistrationError>,
     {
+        match self.execute_reserved_or_defer(issuer, token, current_connection, |permit| {
+            operation(permit).map(|()| ExecutionDisposition::Complete)
+        })? {
+            RequestExecution::Completed(completion) => Ok(completion),
+            RequestExecution::Deferred => unreachable!("this callback never defers"),
+        }
+    }
+
+    /// Validate and optionally execute one retained request under the caller's
+    /// common guard. The adapter must hold its native eligibility guards from
+    /// the freeze decision through any effect; returning Defer is legal only
+    /// before consuming the permit. Resumption validates the original cell's
+    /// context again, without a replacement token or publication stamp.
+    ///
+    /// An interrupted callback remains the adapter owner's uncertain work;
+    /// an absent completion alone never authorizes retry after interruption.
+    pub fn execute_reserved_or_defer<F>(
+        &mut self,
+        issuer: &IssuerHandle,
+        token: RequestToken,
+        current_connection: ConnectionIdentity,
+        operation: F,
+    ) -> Result<RequestExecution, RegistrationError>
+    where
+        F: FnOnce(&mut ExecutionPermit<'_>) -> Result<ExecutionDisposition, RegistrationError>,
+    {
         self.check_issuer(issuer)?;
         let cell = self.request_cell(token)?;
         if current_connection != cell.capability.connection {
             return Err(RegistrationError::WrongConnection);
         }
         if let Some(completed) = cell.completion {
-            return Ok(completed); // Idempotent observation, never a second effect.
+            return Ok(RequestExecution::Completed(completed));
         }
         let submit = SubmitHandle::new(self.uid, self.binding);
         let mut applied = false;
@@ -154,6 +205,7 @@ impl AuthorityInstance {
             .and_then(|_| {
                 let mut permit = ExecutionPermit {
                     authority: self,
+                    token,
                     capability: cell.capability,
                     context: cell.context,
                     consumed: false,
@@ -161,10 +213,16 @@ impl AuthorityInstance {
                 };
                 let outcome = operation(&mut permit);
                 applied = permit.applied;
-                outcome
+                if outcome == Ok(ExecutionDisposition::Defer) && (permit.consumed || permit.applied)
+                {
+                    Err(RegistrationError::RequestConsumed)
+                } else {
+                    outcome
+                }
             });
         let completion = match result {
-            Ok(()) => RequestCompletion::Processed,
+            Ok(ExecutionDisposition::Defer) => return Ok(RequestExecution::Deferred),
+            Ok(ExecutionDisposition::Complete) => RequestCompletion::Processed,
             Err(error) if applied => RequestCompletion::FailedAfterApplication(error),
             Err(error) => RequestCompletion::Refused(error),
         };
@@ -175,7 +233,7 @@ impl AuthorityInstance {
             .as_mut()
             .expect("reserved cell")
             .completion = Some(completion);
-        Ok(completion)
+        Ok(RequestExecution::Completed(completion))
     }
 
     /// A revoked caller may still consume its own completion. Consumption does
