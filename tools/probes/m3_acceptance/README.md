@@ -58,6 +58,10 @@ sophia_m3_acceptance {"schema":1,"case":"A.press_release_repress","subcases":{"e
 This example documents the schema; it is not acceptance evidence. Actual test
 observations must support the inventory requirement. An exact namespace/name
 alone does not establish test quality; reviewers inspect the bound source.
+The separate `m3_acceptance::diagnostics::` child module is reserved for exact
+non-acceptance controls run through `m3-components`. Its tests are rejected as
+acceptance bindings, and their passing component reports leave every acceptance
+row `NOT_RUN`.
 `--show-output` keeps the marker on its own line. A real test must publish its
 collection evidence only after its service/worker actors have actually joined.
 Process exit or namespace destruction does not substitute for those joins.

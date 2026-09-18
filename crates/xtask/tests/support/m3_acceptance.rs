@@ -337,6 +337,85 @@ fn component_names_are_closed_nonempty_unique_and_not_acceptance_aliases() {
     assert!(components::options(&["--suite=a".into(), "--suite=b".into()]).is_err());
 }
 
+#[test]
+fn diagnostics_require_the_exact_separate_module_and_valid_names() {
+    use super::components;
+    for suffix in ["unknown_handover", "recipient::original_termination"] {
+        components::validate_names(&[format!("{}{suffix}", catalog::DIAGNOSTIC_PREFIX)]).unwrap();
+    }
+    for suffix in [
+        "",
+        "diagnostics",
+        "diagnostics_extra::control",
+        "diagnostics::",
+        "diagnostics::::control",
+        "diagnostics::control:",
+        "diagnostics::1control",
+        "diagnostics::control --ignored",
+        "other::diagnostics::control",
+        "c_indeterminate_send",
+    ] {
+        let name = format!("{}{suffix}", catalog::PREFIX);
+        assert!(
+            components::validate_names(std::slice::from_ref(&name)).is_err(),
+            "{name}"
+        );
+    }
+    assert!(components::validate_names(&[catalog::PREFIX.trim_end_matches("::").into()]).is_err());
+}
+
+#[test]
+fn diagnostic_names_cannot_be_bound_to_any_acceptance_case() {
+    let temporary = Temporary::new();
+    let path = temporary.0.join("bindings.json");
+    for case in catalog::CASES {
+        let value = serde_json::json!({"schema":1,"cases":{
+            (case):format!("{}complete_looking_control", catalog::DIAGNOSTIC_PREFIX)
+        }});
+        identity::json(&path, &value).unwrap();
+        let Err(error) = catalog::bindings(&path) else {
+            panic!("diagnostic was bound to {case}");
+        };
+        assert!(error.contains("diagnostic controls"), "{case}: {error}");
+    }
+}
+
+#[test]
+fn diagnostic_suites_are_explicit_closed_manifests() {
+    use super::components;
+    let temporary = Temporary::new();
+    let directory = temporary.0.join("tools/probes/m3_components");
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("suites.json");
+    let exact = format!("{}unknown_handover", catalog::DIAGNOSTIC_PREFIX);
+    let names = vec![exact.clone()];
+    identity::json(
+        &path,
+        &serde_json::json!({"schema":1,"suites":{"diagnostic":names}}),
+    )
+    .unwrap();
+    assert_eq!(
+        components::suite(&temporary.0, "diagnostic").unwrap(),
+        names
+    );
+    assert!(components::suite(&temporary.0, "unknown").is_err());
+    for names in [
+        Vec::<String>::new(),
+        vec![exact.clone(), exact.clone()],
+        vec![
+            exact.clone(),
+            format!("{}c_indeterminate_send", catalog::PREFIX),
+        ],
+    ] {
+        identity::json(
+            &path,
+            &serde_json::json!({"schema":1,"suites":{"diagnostic":names}}),
+        )
+        .unwrap();
+        assert!(components::suite(&temporary.0, "diagnostic").is_err());
+    }
+}
+
 fn component_config() -> Config {
     serde_json::from_value(serde_json::json!({
         "schema":1,"run_id":"synthetic-component-fixture","self_test":false,
@@ -350,8 +429,18 @@ fn component_config() -> Config {
 
 #[test]
 fn component_pass_cannot_become_acceptance_or_omit_a_control() {
+    assert_component_report_separation("x11_socket::routing_tests::component_control");
+}
+
+#[test]
+fn diagnostic_pass_cannot_become_acceptance_or_omit_a_control() {
+    assert_component_report_separation(&format!("{}unknown_handover", catalog::DIAGNOSTIC_PREFIX));
+}
+
+fn assert_component_report_separation(exact: &str) {
     use super::{components, worker};
-    let config = component_config();
+    let mut config = component_config();
+    config.component_tests = vec![exact.to_owned()];
     let temporary = Temporary::new();
     let path = temporary.0.join("config.json");
     identity::json(&path, &config).unwrap();
@@ -381,7 +470,15 @@ fn component_pass_cannot_become_acceptance_or_omit_a_control() {
 
 #[test]
 fn component_parser_rejects_zero_ignored_timeout_and_uncollected_tests() {
-    let exact = "x11_socket::routing_tests::component_control";
+    for exact in [
+        "x11_socket::routing_tests::component_control",
+        "x11_socket::routing_tests::m3_acceptance::diagnostics::unknown_handover",
+    ] {
+        assert_component_parser_failures(exact);
+    }
+}
+
+fn assert_component_parser_failures(exact: &str) {
     let text = output(exact, &evidence(&inventory().cases[0]));
     evidence::validate_exact_test(exact, &execution(), &text).unwrap();
     for broken in [
