@@ -120,7 +120,9 @@ fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<Strin
     let source = identity::snapshot(repo, &opts.output)?;
     let build_target_namespace = target_namespace(&source.content_sha256)?;
     let build_target = opts.target.join(&build_target_namespace);
-    if std::fs::symlink_metadata(&build_target).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+    if std::fs::symlink_metadata(&build_target)
+        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
         return Err("source target namespace must not be a symlink".into());
     }
     std::fs::create_dir_all(&build_target).map_err(|e| e.to_string())?;
@@ -245,7 +247,9 @@ fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<Strin
 /// may share a target; commit names and timestamps are not content identity.
 pub(super) fn target_namespace(content_sha256: &str) -> Result<String, String> {
     if content_sha256.len() != 64
-        || !content_sha256.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        || !content_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     {
         return Err("build target requires the attested snapshot content SHA-256".into());
     }

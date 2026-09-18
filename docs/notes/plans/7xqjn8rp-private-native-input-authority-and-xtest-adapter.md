@@ -25,24 +25,21 @@ runner, native proof and lifecycle integration, with independent review across
 the boundary. t093 remains the recording home. M4–M6 and physical task t094
 remain separate; no partial path enables discovery.
 
-As of the approved `f2fb18f4` checkpoint, M3 has reviewed components but
-**no runnable combined end-to-end acceptance gate and no M3 closure**.
-The registered keeper owns the worker source, control association, join
-evidence and exact fencing capability/result. Component controls include real
-queues, sockets and threads; that does not establish their production
-attachment, safe destruction of a registration over a live worker, or a
-complete press/release/settlement path.
+The isolated `codex/m3-finish` branch now joins registered worker attachment,
+collection, deferred namespace cleanup, the continuing runner, source-bound
+native and recipient settlement, and retained maintenance. The operator
+authorized completing this critical path with parallel agents. These changes
+remain local to M3; they have not been imported into the Session/dock tree.
 
-`bdfa8b92` carries the follow-up prose corrections and is not a separate frozen
-checkpoint. The next authorized implementation slice is **registered teardown
-custody with synchronous cleanup preserved**. It puts the cleanup state under
-the existing external keeper before changing when cleanup runs. It does not
-authorize deferred cleanup or live-worker registration destruction. The real
-application owner above launch, shutdown and error paths, worker/actor
-attachment and authorized retained driving remain absent from this reviewed
-path. The [remaining integration sequence](#m3-integration-sequence-and-acceptance-runner)
-below is the route to the existing A-D closure gates, not an expansion of the
-current implementation authorization.
+The combined Rust gate exists: `cargo xtask check m3-acceptance`. On signed
+`8b4be691`, the contained run passed 16 of 20 cases: all A, B and D cases,
+plus C.poison and C.exact_origin. C.capacity and C.interrupted_ownership failed
+assumptions about which stage one runner turn reaches; their exact ownership
+and credit requirements remain unchanged. C.indeterminate_send and
+C.control_cleanup are unbound. **The aggregate is FAIL; M3 is not complete.**
+The [checkpoint record](../milestones/nywg1vat-m3-integrated-acceptance-checkpoint-and-remaining-c-controls.md)
+preserves the exact report, separate component evidence and remaining limits.
+Earlier C-only passes do not override failures on the combined source.
 
 The following integration identities and content/GPU observations are earlier
 checkpoints, retained as history rather than current M3 acceptance evidence.
@@ -141,14 +138,16 @@ wiring, Session producer participation and Gate A remain open.
 The finish line is an executable, contained acceptance run over the actual
 M3 producer, execution, writer, recovery and lifecycle paths on one exact
 source revision. A collection of independently passing component tests is
-supporting evidence, not this run. The combined runner is **planned, not
-implemented**; no existing command or passing report is claimed here.
+supporting evidence, not this run. The implemented Rust command snapshots a
+clean commit, builds and runs inside device-hidden containment, and records
+source, binary, configuration and actor collection. Its current failed result
+is recorded above; the required aggregate remains all twenty cases passing.
 
 The remaining dependencies are:
 
 | Step | Concrete exit needed for integration | Gates it enables |
 | --- | --- | --- |
-| 1. Registered teardown custody | The exact connection's cleanup capabilities and mutable reservation/lifecycle holdings have one externally kept home. The current synchronous cleanup path and accounting remain intact. This is the currently authorized slice. | C, D |
+| 1. Registered teardown custody | The exact connection's cleanup capabilities and mutable reservation/lifecycle holdings have one externally kept home. The synchronous cleanup path and accounting remain intact. | C, D |
 | 2. Safe startup and departure arbitration | Start and destruction share an exclusion decision. Stop reaches the actual worker before blocking cleanup. A live, handed-on or unconfirmed worker is never reported as NeverStarted or joined. Unfinished cleanup remains owned, and delayed cleanup cannot affect a successor at the same client number. | C, D |
 | 3. Service ownership and actor integration | An actual outer holder survives operation, service-error and shutdown paths; the worker, joiner and supervisor use the registered source and evidence. Blocking joins, gates and retained visits stay off supervision. Existing budget/watchdog obligations are exercised through their real callers. | A, C, D |
 | 4. Authorized retained cleanup and settlement | Exact join/fence evidence and the committed maintenance obligation authorize the appropriate home borrow. Commitment alone is not permission to drive. Cleanup identity remains valid across attention retirement; native and recipient obligations keep their separate outcomes. | A, C, D |
