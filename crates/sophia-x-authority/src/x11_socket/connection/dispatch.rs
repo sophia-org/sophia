@@ -908,6 +908,21 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 }
             }
             sequence = sequence.wrapping_add(1);
+            {
+                // Dispatch can wake a peer that immediately sends an event
+                // back to this client. Publish before releasing any effect,
+                // not after the peer has already observed the request. The
+                // protocol writer stamps and writes under this same lock,
+                // so publication cannot overtake one of its older events.
+                let _output = lock_x11_non_control_output(
+                    &output_stream,
+                    &output_wire,
+                    &output_control_pending,
+                    None,
+                )?
+                .expect("an uncancellable wait yields the socket");
+                event_sequence.store(sequence, Ordering::Release);
+            }
             let transaction = state.allocate_transaction()?;
             let dispatch_context = XDispatchContext {
                 byte_order: setup.byte_order,
@@ -2651,11 +2666,6 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         )));
                     }
                 }
-                // Publish the request sequence while holding the same lock
-                // used by every asynchronous event writer. Otherwise a
-                // writer can snapshot the old value, wait behind this reply,
-                // and emit a backwards sequence after it.
-                event_sequence.store(sequence, Ordering::Release);
             }
             for delivery in peer_msc_deliveries {
                 protocol_routing
