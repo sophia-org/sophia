@@ -102,6 +102,7 @@ pub struct ProcessSupervisor {
     process: SupervisedProcessKind,
     spec: ProcessLaunchSpec,
     child: Option<ManagedChild>,
+    termination_deadline: Option<Instant>,
 }
 
 #[derive(Debug)]
@@ -117,6 +118,7 @@ impl ProcessSupervisor {
             process,
             spec,
             child: None,
+            termination_deadline: None,
         }
     }
 
@@ -178,6 +180,11 @@ impl ProcessSupervisor {
     }
 
     pub fn poll(&mut self) -> Result<Option<SupervisorEvent>, ProcessSupervisorError> {
+        if self.termination_deadline.is_some() {
+            return self
+                .poll_termination()
+                .map(|done| done.then_some(SupervisorEvent::ProcessExited));
+        }
         let Some(child) = self.child.as_mut() else {
             return Ok(None);
         };
@@ -195,58 +202,93 @@ impl ProcessSupervisor {
         }
     }
 
-    pub fn terminate(&mut self) -> Result<(), ProcessSupervisorError> {
-        let Some(mut managed) = self.child.take() else {
+    /// Signal once without sleeping or transferring the child out of custody.
+    pub fn request_termination(&mut self) -> Result<(), ProcessSupervisorError> {
+        if self.termination_deadline.is_some() || self.child.is_none() {
             return Ok(());
-        };
-        let child = &mut managed.child;
-
-        let running = child
+        }
+        self.termination_deadline = Some(Instant::now() + Duration::from_secs(2));
+        let managed = self.child.as_mut().expect("checked child");
+        if managed
+            .child
             .try_wait()
             .map_err(|error| ProcessSupervisorError::WaitFailed {
                 process: self.process,
                 message: error.to_string(),
             })?
-            .is_none();
-        if running && self.spec.process_group {
-            let pid = rustix::process::Pid::from_raw(child.id() as i32).ok_or_else(|| {
-                ProcessSupervisorError::WaitFailed {
-                    process: self.process,
-                    message: "supervised process PID is invalid".to_owned(),
-                }
-            })?;
-            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::TERM);
-            let deadline = Instant::now() + Duration::from_secs(2);
-            while Instant::now() < deadline {
-                if child
-                    .try_wait()
-                    .map_err(|error| ProcessSupervisorError::WaitFailed {
+            .is_some()
+        {
+            return Ok(());
+        }
+        if self.spec.process_group {
+            let pid =
+                rustix::process::Pid::from_raw(managed.child.id() as i32).ok_or_else(|| {
+                    ProcessSupervisorError::WaitFailed {
                         process: self.process,
-                        message: error.to_string(),
-                    })?
-                    .is_some()
-                {
-                    let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
-                    return Ok(());
-                }
-                std::thread::sleep(Duration::from_millis(25));
-            }
-            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
-        } else if running {
-            child
+                        message: "supervised process PID is invalid".into(),
+                    }
+                })?;
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::TERM);
+        } else {
+            managed
+                .child
                 .kill()
                 .map_err(|error| ProcessSupervisorError::WaitFailed {
                     process: self.process,
                     message: error.to_string(),
                 })?;
         }
+        Ok(())
+    }
 
-        child
-            .wait()
+    /// One nonblocking reap visit. A pending or failed visit retains the child
+    /// and prevents launch-spec replacement. This does not prove GPU cleanup.
+    pub fn poll_termination(&mut self) -> Result<bool, ProcessSupervisorError> {
+        let Some(managed) = self.child.as_mut() else {
+            self.termination_deadline = None;
+            return Ok(true);
+        };
+        let Some(deadline) = self.termination_deadline else {
+            return Ok(false);
+        };
+        let exited = managed
+            .child
+            .try_wait()
             .map_err(|error| ProcessSupervisorError::WaitFailed {
                 process: self.process,
                 message: error.to_string(),
-            })?;
+            })?
+            .is_some();
+        if self.spec.process_group && (exited || Instant::now() >= deadline) {
+            let pid =
+                rustix::process::Pid::from_raw(managed.child.id() as i32).ok_or_else(|| {
+                    ProcessSupervisorError::WaitFailed {
+                        process: self.process,
+                        message: "supervised process PID is invalid".into(),
+                    }
+                })?;
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+        } else if !exited && Instant::now() >= deadline {
+            managed
+                .child
+                .kill()
+                .map_err(|error| ProcessSupervisorError::WaitFailed {
+                    process: self.process,
+                    message: error.to_string(),
+                })?;
+        }
+        if exited {
+            self.child = None;
+            self.termination_deadline = None;
+        }
+        Ok(exited)
+    }
+
+    pub fn terminate(&mut self) -> Result<(), ProcessSupervisorError> {
+        self.request_termination()?;
+        while !self.poll_termination()? {
+            std::thread::sleep(Duration::from_millis(25));
+        }
         Ok(())
     }
 

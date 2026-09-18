@@ -47,6 +47,7 @@ pub mod session_keyboard;
 pub mod session_shutdown;
 pub mod session_startup;
 pub mod shell_component_connections;
+pub mod shell_component_processes;
 
 #[cfg(feature = "native-session")]
 pub mod shell_native_launcher {

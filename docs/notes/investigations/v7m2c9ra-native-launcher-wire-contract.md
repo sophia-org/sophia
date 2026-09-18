@@ -435,3 +435,61 @@ worker panic is still reported by join. Final focused service evidence is two
 test functions (the execution test contains six schedules), not a full Session
 or graphical run. Initial strict-lint failures and their corrected run are
 retained separately in the service artifact directory.
+
+## Nonblocking component process retirement
+
+The shared `ProcessSupervisor` now exposes request/poll termination. Signalling
+and each reap visit retain the actual child across pending and returned-error
+paths; replacement stays refused until reap. The existing blocking `terminate`
+wraps these same transitions, preserving legacy callers. New component owners
+can visit the nonblocking path without sleeping through another role's service.
+This is process retirement, not disposition of content/GPU consumers.
+
+Thirty supervisor controls pass device-hidden, including a real TERM-ignoring
+process group while another child progresses. The original child remains owned
+until the KILL deadline/reap, then replacement is permitted. Strict runtime
+Clippy and layout pass. A compiled early-discard mutation fails the ownership
+control. Evidence: `.artifacts/bemenu-component-supervision`. This does not yet
+exercise dual Session protected-role scheduling, injected wait errors, or
+panic/unwind retention. The actual child remains stored on returned wait errors;
+that last statement is source behavior, not an injected-kernel-failure test.
+
+## Two protected process owners over one registry
+
+`ShellComponentProcesses` joins two actual supervisors to the existing single
+connection/content registry. It reserves an exact attempt before launch-policy
+preparation, retains the supervisor before spawn, revokes before nonblocking
+stop, rotates process visits and caps each handshake visit. Preparation/spawn
+failure closes only that attempt. Stop errors remain reported and actual process
+owners prevent replacement and final backend settlement until reaped. Role
+service receives the existing borrowed connection rather than another ledger.
+
+A device-hidden control covers failed preparation, an unprotected spec refused
+before spawn, a missing executable with retained failed supervisor, stale stop,
+and independent neighboring epochs. A separately invoked ignored fixture starts
+two real bubblewrap-protected sleep processes, stops/replaces one while retaining
+the other, and then retires both. This is protected-process custody with both
+connections still negotiating; the children do not implement shell IPC and this
+is not a dual-peer hello or live compositor test. The first protected run failed
+because the outer fixture omitted `/etc/ld.so.cache`; its log is retained. The
+corrected private fixture generates the cache from its own allowlisted libraries
+using the existing offline-harness recipe, without exposing host `/etc` or devices.
+
+The protected fixture now launches real protocol peers rather than sleep-only
+children. They independently negotiate revision 6 for the bar and revision 7
+for the launcher using actual protected-process evidence/peer credentials, decode
+their welcome/limits and upload pixels through the shared registry. The parent
+retains actual resource consumers across launcher disconnect. Because the bar
+and launcher reservations fill the aggregate budget, reconnect is correctly
+refused while an old launcher consumer remains; releasing it permits a fresh
+grant. No budget was enlarged to make the fixture pass. The original overly
+optimistic reconnect expectation and its Budget refusal are retained separately.
+
+The final control keeps the bar connected, replaces the launcher, verifies that
+an old stop key cannot retire its successor, then drops the real resource
+consumers and requires fully quiescent accounting. Explicit protected handshake
+run passes; the ordinary target separately passes its preparation control with
+two deliberate ignored entry points. This supersedes the earlier negotiating-
+only fixture scope, but still uses test peers, no renderer, no Bemenu UI and no
+live Session owner loop. It does not establish the client's receipt of every
+resource response before the parent stops it.

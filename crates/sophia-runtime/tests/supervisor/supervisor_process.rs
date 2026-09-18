@@ -359,3 +359,63 @@ fn bubblewrap_mounts_owned_filesystems_read_only_without_host_tree_disclosure() 
     );
     std::fs::remove_dir_all(evidence).unwrap();
 }
+
+#[test]
+fn nonblocking_termination_retains_child_while_neighbor_progresses() {
+    let ready = std::env::temp_dir().join(format!("supervisor-stop-ready-{}", std::process::id()));
+    let _ = std::fs::remove_file(&ready);
+    let mut owner = ProcessSupervisor::new(
+        SupervisedProcessKind::Shell,
+        ProcessLaunchSpec::new("/bin/sh")
+            .arg("-c")
+            .arg("trap '' TERM; echo ready > \"$1\"; while :; do sleep 1; done")
+            .arg("fixture")
+            .arg(&ready)
+            .process_group(),
+    );
+    owner
+        .apply(SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::Shell,
+            delay: Duration::ZERO,
+        })
+        .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(4);
+    while !ready.exists() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let pid = owner.child_id();
+    owner.request_termination().unwrap();
+    owner.request_termination().unwrap();
+    assert_eq!(owner.child_id(), pid);
+    assert!(!owner.poll_termination().unwrap());
+    assert!(matches!(
+        owner.replace_launch_spec(ProcessLaunchSpec::new("/bin/true")),
+        Err(ProcessSupervisorError::AlreadyRunning { .. })
+    ));
+    let mut neighbor = ProcessSupervisor::new(
+        SupervisedProcessKind::Shell,
+        ProcessLaunchSpec::new("/bin/true"),
+    );
+    neighbor
+        .apply(SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::Shell,
+            delay: Duration::ZERO,
+        })
+        .unwrap();
+    while neighbor.poll().unwrap().is_none() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(owner.child_id(), pid);
+    while !owner.poll_termination().unwrap() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(owner.child_id().is_none());
+    assert!(owner.poll_termination().unwrap());
+    owner
+        .replace_launch_spec(ProcessLaunchSpec::new("/bin/true"))
+        .unwrap();
+    std::fs::remove_file(ready).unwrap();
+}
