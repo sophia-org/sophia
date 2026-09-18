@@ -742,3 +742,38 @@ A compiled omission of only the pending-revocation start guard mints a successor
 prematurely and fails the exact-attempt assertion; source restored, logs in
 `.artifacts/bemenu-component-session-mutant/`. No protected successful child,
 hardware, native run, canonical result, publication or readiness claim.
+
+### Actual Session lifetime wiring before scheduling enablement (2026-09-18)
+
+The production Session now prepares an optional selected component owner outside
+`run_session_loop`, lends it through `SessionLoopResources`, and retains it and
+its private endpoint parent in the actual `RetirementFailure` carrier. The
+existing configuration refusal remains, so this does not enable component
+startup. The common presentation-pause macro disarms components and settles
+exact revoked claims; the real completion path requests shutdown before native
+draining. The outer cleanup independently covers early loop errors, polls the
+existing process supervisors within a terminal three-second deadline, and keeps
+owners on timeout/error. This wait is terminal cleanup, never seat acknowledgement.
+
+`component_lifecycle::finish` refuses disposal without native disposition. On
+successful native/CPU/handoff disposal it collects actual component accounting;
+an earlier loop error still retains the owner in the error carrier. Clean
+success drops endpoints before removing their private parent. Terminal carrier
+field order puts backend/CPU/handoff/error consumers before protocol accounting.
+Per-role live scheduling, GPU/connection diagnostics, catalog and input routing
+still precede removing the config refusal and the physical harness gate.
+
+`.artifacts/bemenu-live-owner-lifetime/`: final device-hidden Session 473 PASS/14
+ignored plus process-owner 4 PASS/2 ignored; strict Session Clippy, layout and
+workspace formatting PASS. Shared outer-helper controls use an actual component
+owner with failed nonexistent-binary startup and a headless runtime, plus supplied
+native-disposition flags. They retain endpoint/owner on unresolved disposition
+or prior error, and remove them on clean success. A second control passes the
+actual endpoint owner through the real terminal error carrier. Neither induces
+an owner-loop seat failure or supplies actual KMS/worker custody. Call-site and
+drop-order claims are source integration, not physical evidence. The compiled
+native-disposition guard omission fails owner retention; restored artifact is
+`.artifacts/bemenu-live-owner-lifetime-mutant/` (before the final tuple-order-only
+change; helper/control bytes unchanged). Formatting also normalizes the small
+module/export ordering drift from earlier local component checkpoints.
+No canonical/native run, installation, publication, or lom-test readiness claim.

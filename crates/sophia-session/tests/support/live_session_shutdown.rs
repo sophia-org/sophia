@@ -306,3 +306,105 @@ fn recovery_cannot_extend_the_deadline_or_bypass_an_existing_drain() {
     assert!(!native_recovery_allowed(None, now, false, true));
     assert!(native_recovery_allowed(None, now, false, false));
 }
+
+#[cfg(feature = "native-session")]
+#[test]
+fn component_outer_cleanup_retains_owner_until_native_disposition_and_prior_error_resolve() {
+    use super::super::component_lifecycle;
+    use super::super::metadata_shell::component_session::ShellComponentSession;
+    use sophia_config::{ShellComponentConfig, ShellComponentRole, ShellGpuMode};
+    use sophia_runtime::ShellContentAdmissionPolicy;
+    let root = std::env::temp_dir().join(format!("outer-component-cleanup-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let mut owner = Some(
+        ShellComponentSession::prepare(
+            &[ShellComponentConfig {
+                id: "menu".into(),
+                role: ShellComponentRole::ApplicationLauncher,
+                executable: "/nonexistent-sophia-native-launcher".into(),
+                config: None,
+                gpu: ShellGpuMode::Denied,
+            }],
+            28,
+            None,
+            &root,
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: true,
+            },
+        )
+        .unwrap(),
+    );
+    let components = owner.as_mut().unwrap();
+    components.set_presentation_available(true).unwrap();
+    assert!(components.start(0).is_err());
+    let key = components.attempt(0).unwrap();
+    let outputs = [sophia_engine::HeadlessOutput {
+        id: sophia_protocol::OutputId::from_raw(1),
+        size: sophia_protocol::Size {
+            width: 64,
+            height: 64,
+        },
+        scale: 1,
+    }];
+    let mut runtime = super::super::LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let mut failures = Vec::new();
+    component_lifecycle::stop(owner.as_mut(), Some(&mut runtime), &mut failures);
+    assert!(failures.is_empty());
+    assert!(!owner.as_ref().unwrap().process_retained(key));
+    assert_eq!(owner.as_ref().unwrap().pending_revocations(), 0);
+    let mut directory = Some(root.clone());
+    component_lifecycle::finish(&mut owner, &mut directory, false, true, &mut failures);
+    assert!(owner.is_some());
+    assert!(root.join("menu").is_dir());
+    assert_eq!(directory, Some(root.clone()));
+    assert_eq!(failures.len(), 1);
+    failures.clear();
+    component_lifecycle::finish(&mut owner, &mut directory, true, false, &mut failures);
+    assert!(
+        owner.is_some(),
+        "earlier loop error retains final owner in error carrier"
+    );
+    assert!(root.join("menu").is_dir());
+    // Supplied native completion flags are fixture inputs, not hardware evidence.
+    component_lifecycle::finish(&mut owner, &mut directory, true, true, &mut failures);
+    assert!(failures.is_empty());
+    assert!(owner.is_none());
+    assert!(directory.is_none());
+    assert!(!root.exists());
+}
+
+#[cfg(feature = "native-session")]
+#[test]
+fn component_endpoint_survives_inside_actual_terminal_error_carrier() {
+    use super::super::metadata_shell::component_session::ShellComponentSession;
+    use super::super::native_owner_retirement::{NativeRetirement, RetirementFailure};
+    let root = std::env::temp_dir().join(format!("component-error-carrier-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let owner = ShellComponentSession::prepare(
+        &[sophia_config::ShellComponentConfig {
+            id: "menu".into(),
+            role: sophia_config::ShellComponentRole::ApplicationLauncher,
+            executable: "/bin/true".into(),
+            config: None,
+            gpu: sophia_config::ShellGpuMode::Denied,
+        }],
+        28,
+        None,
+        &root,
+        sophia_runtime::ShellContentAdmissionPolicy::Denied,
+    )
+    .unwrap();
+    let retirement: NativeRetirement = NativeRetirement::default();
+    let error = RetirementFailure::new(
+        "earlier loop error".into(),
+        retirement,
+        (Some(owner), root.clone()),
+    );
+    assert!(root.join("menu").is_dir());
+    let returned: Box<dyn std::error::Error> = Box::new(error);
+    assert_eq!(returned.to_string(), "earlier loop error");
+    assert!(root.join("menu").is_dir());
+    drop(returned);
+    assert!(!root.join("menu").exists());
+    std::fs::remove_dir(root).unwrap();
+}

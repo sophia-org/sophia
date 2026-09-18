@@ -47,6 +47,14 @@
         }
         settle_revoked_shell_content_claims!(shell, "session_shutdown");
     }
+    if let Some(components) = shell_components.as_mut() {
+        if let Err(error) = components.request_shutdown() {
+            cleanup_failures.push(format!("component admission shutdown failed: {error}"));
+        }
+        if let Err(error) = components.settle_revocations(runtime.as_mut()) {
+            cleanup_failures.push(format!("component claim cleanup retained: {error}"));
+        }
+    }
     let mut fatal_cleanup = SessionFatalCleanupEvidence {
         frontend_intake_stopped: terminal_client_intake_stopped,
         native_cleanup_required: native_scanout.is_some(),

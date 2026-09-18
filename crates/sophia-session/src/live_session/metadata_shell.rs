@@ -9,9 +9,9 @@ mod gpu;
 pub(crate) mod gpu_content_proof;
 pub(crate) mod indicators;
 
-mod launch;
 pub(crate) mod component_launch;
 pub(crate) mod component_session;
+mod launch;
 mod launcher;
 mod reference;
 mod revoked_content_grants;

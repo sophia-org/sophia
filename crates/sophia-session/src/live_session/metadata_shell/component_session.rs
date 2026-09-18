@@ -93,6 +93,15 @@ impl ShellComponentSession {
     pub fn attempt(&self, slot: usize) -> Option<ComponentConnectionKey> {
         self.processes.attempt(slot)
     }
+    pub fn retained_processes(&self) -> usize {
+        (0..self.plans.len())
+            .filter(|slot| {
+                self.processes
+                    .attempt(*slot)
+                    .is_some_and(|key| self.processes.process_retained(key))
+            })
+            .count()
+    }
     pub fn process_retained(&self, key: ComponentConnectionKey) -> bool {
         self.processes.process_retained(key)
     }

@@ -86,6 +86,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 mod authority_file;
+mod component_lifecycle;
 mod cpu_visual_progress;
 pub(crate) mod direct_cursor_proof;
 pub(crate) mod direct_overlay_proof;
@@ -710,6 +711,8 @@ pub(crate) fn run_persistent_xterm_session(
         .is_some()
         .then(LiveMetadataBroker::start)
         .transpose()?;
+    let (mut shell_components, mut component_directory) =
+        component_lifecycle::prepare(&config, client_render_devices.as_ref())?;
     let mut metadata_shell = config
         .shell_process
         .as_deref()
@@ -1092,6 +1095,7 @@ pub(crate) fn run_persistent_xterm_session(
             scripting: &mut scripting,
             metadata_broker: &mut metadata_broker,
             metadata_shell: &mut metadata_shell,
+            shell_components: &mut shell_components,
             mirror_grouping: &mirror_grouping,
             initial_head_mapping,
         },
@@ -1171,6 +1175,11 @@ pub(crate) fn run_persistent_xterm_session(
     {
         outer_cleanup_failures.push(format!("shell admission shutdown failed: {error}"));
     }
+    component_lifecycle::stop(
+        shell_components.as_mut(),
+        render_owners.runtime.as_mut(),
+        &mut outer_cleanup_failures,
+    );
     let native_finish = native_owner_retirement::finish_render_owners(
         &mut render_owners.runtime,
         &mut render_owners.scene,
@@ -1193,6 +1202,13 @@ pub(crate) fn run_persistent_xterm_session(
             outer_cleanup_failures.push(format!("shell content final cleanup failed: {error}"));
         }
     }
+    component_lifecycle::finish(
+        &mut shell_components,
+        &mut component_directory,
+        native_error.is_none(),
+        session_error.is_none(),
+        &mut outer_cleanup_failures,
+    );
     if outer_cleanup_failures.is_empty() {
         crate::session_println!(
             "sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed"
@@ -1215,12 +1231,16 @@ pub(crate) fn run_persistent_xterm_session(
             message,
             native_retirement,
             (
+                // Tuple drop order keeps protocol accounting after its real
+                // backend/CPU/handoff consumers, including on error disposal.
                 native_scanout,
-                metadata_shell,
                 suspended_renderer_images,
                 render_owners,
                 session_error,
                 native_error,
+                metadata_shell,
+                shell_components,
+                component_directory,
             ),
         )));
     }

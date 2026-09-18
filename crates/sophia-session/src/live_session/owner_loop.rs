@@ -26,6 +26,7 @@ struct SessionLoopResources<'a> {
     scripting: &'a mut LiveControlState,
     metadata_broker: &'a mut Option<LiveMetadataBroker>,
     metadata_shell: &'a mut Option<LiveMetadataShell>,
+    shell_components: &'a mut Option<metadata_shell::component_session::ShellComponentSession>,
     /// Which connectors share one logical output, from the profile loaded at
     /// startup. Fixed for the session's life: a rescan that regrouped differently
     /// would change the desktop's identity behind policy's back.
@@ -304,6 +305,7 @@ fn run_session_loop_inner(
         scripting,
         metadata_broker,
         metadata_shell,
+        shell_components,
         mirror_grouping,
         initial_head_mapping,
     } = resources;
@@ -766,6 +768,10 @@ fn run_session_loop_inner(
 
     macro_rules! pause_metadata_shell_presentation {
         ($reason:literal) => {{
+            if let Some(components) = shell_components.as_mut() {
+                components.set_presentation_available(false)?;
+                components.settle_revocations(runtime.as_mut())?;
+            }
             if let Some(shell) = metadata_shell.as_mut() {
                 let _ = shell.set_presentation_available(false, $reason)?;
                 settle_revoked_shell_content_claims!(shell, $reason);

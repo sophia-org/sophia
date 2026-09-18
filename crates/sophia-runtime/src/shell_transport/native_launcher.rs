@@ -5,10 +5,10 @@ use sophia_protocol::*;
 
 mod closed_content;
 mod closed_input;
-mod settlement;
-mod reopening;
 mod content;
 pub(crate) mod control;
+mod reopening;
+mod settlement;
 
 const CAPABILITIES: u64 = SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
     | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
