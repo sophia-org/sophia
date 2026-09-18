@@ -44,8 +44,28 @@ impl ComponentCatalog {
                 // No fallible effect before the real child and exact origin
                 // enter the existing supervisor. Capacity was reserved above.
                 let transaction = child.launch.transaction;
+                let grant = child.launch.cause.grant();
+                let (cause, output, event_id) = match &child.launch.cause {
+                    crate::session_actions::CatalogLaunchCause::Transient(value) => (
+                        "transient",
+                        value.event.binding.output.id,
+                        value.event.event_id,
+                    ),
+                    crate::session_actions::CatalogLaunchCause::Persistent(value) => {
+                        ("persistent", value.action.output.id, value.action.event_id)
+                    }
+                };
                 children.push(ManagedSessionChild::from(child));
                 *admission_started = Some(Instant::now());
+                crate::session_println!(
+                    "sophia_catalog_launch schema=1 status=process_started transaction={} cause={} connection_epoch={} content_grant_epoch={} output={} event_id={}",
+                    transaction.raw(),
+                    cause,
+                    grant.connection_epoch,
+                    grant.content_grant_epoch,
+                    output,
+                    event_id
+                );
                 crate::session_println!(
                     "sophia_native_launcher schema=1 status=process_started transaction={}",
                     transaction.raw()

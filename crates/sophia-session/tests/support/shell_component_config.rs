@@ -170,6 +170,16 @@ fn component_catalog_scan_is_outer_owned_and_shutdown_cannot_restart_it() {
 #[test]
 #[ignore = "explicit device-hidden generated harness profile required"]
 fn generated_component_probe_prepares_without_starting_processes() {
+    generated_probe(false);
+}
+
+#[test]
+#[ignore = "explicit device-hidden generated dock harness profile required"]
+fn generated_dock_probe_prepares_without_starting_processes() {
+    generated_probe(true);
+}
+
+fn generated_probe(dock: bool) {
     let profile = std::env::var("SOPHIA_TEST_COMPONENT_PROFILE").unwrap();
     let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tools/fixtures/native_launcher_core.kdl");
@@ -192,7 +202,7 @@ fn generated_component_probe_prepares_without_starting_processes() {
         .candidate()
         .components
         .shell_components;
-    assert_eq!(components.len(), 2);
+    assert_eq!(components.len(), if dock { 3 } else { 2 });
     assert_eq!(components[0].role, sophia_config::ShellComponentRole::Bar);
     assert_eq!(components[0].gpu, sophia_config::ShellGpuMode::Direct);
     assert_eq!(
@@ -200,6 +210,15 @@ fn generated_component_probe_prepares_without_starting_processes() {
         sophia_config::ShellComponentRole::ApplicationLauncher
     );
     assert_eq!(components[1].gpu, sophia_config::ShellGpuMode::Denied);
+    if dock {
+        assert_eq!(components[2].role, sophia_config::ShellComponentRole::Dock);
+        assert_eq!(components[2].gpu, sophia_config::ShellGpuMode::Direct);
+        assert_eq!(components[2].reservation.unwrap().max_thickness, 64);
+        assert_ne!(
+            components[0].reservation.unwrap().edge,
+            components[2].reservation.unwrap().edge
+        );
+    }
     let catalog = config.application_catalog.as_ref().unwrap();
     assert_eq!(catalog.name, "native-launcher-gate");
     assert_eq!(catalog.applications, ["terminal"]);

@@ -343,6 +343,7 @@ fn selected_component_launches_bind_only_their_socket_and_config() {
     let selections = [
         ("bar", ShellComponentRole::Bar),
         ("menu", ShellComponentRole::ApplicationLauncher),
+        ("dock", ShellComponentRole::Dock),
     ];
     for (name, role) in selections {
         owner
@@ -365,7 +366,12 @@ fn selected_component_launches_bind_only_their_socket_and_config() {
                 role,
                 executable: "/bin/true".into(),
                 config: Some(config.clone()),
-                reservation: None,
+                reservation: (role == ShellComponentRole::Dock).then_some(
+                    sophia_config::ShellComponentReservation {
+                        edge: sophia_config::ShellComponentEdge::Bottom,
+                        max_thickness: 64,
+                    },
+                ),
                 gpu: sophia_config::ShellGpuMode::Denied,
             },
             Some(28),
@@ -396,8 +402,15 @@ fn selected_component_launches_bind_only_their_socket_and_config() {
                         spec.environment
                             .iter()
                             .any(|(k, _)| k == "SOPHIA_SHELL_BAR_THICKNESS"),
-                        role == ShellComponentRole::Bar
+                        role != ShellComponentRole::ApplicationLauncher
                     );
+                    if role == ShellComponentRole::Dock {
+                        assert!(
+                            spec.environment
+                                .iter()
+                                .any(|(k, v)| k == "SOPHIA_SHELL_BAR_THICKNESS" && v == "64")
+                        );
+                    }
                     assert!(!spec.environment.iter().any(|(k, _)| k == "DISPLAY"
                         || k == "XAUTHORITY"
                         || k == "WAYLAND_DISPLAY"));

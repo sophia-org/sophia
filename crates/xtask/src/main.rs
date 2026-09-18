@@ -34,6 +34,27 @@ fn run(arguments: &[String]) -> Result<(), String> {
     match arguments.first().map(String::as_str) {
         Some("check") => check::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("panel") => panel::run(&workspace_root()?, &arguments[1..]),
+        Some("dock") => match &arguments[1..] {
+            [command, paths @ ..] if command == "profile" => {
+                print!("{}", sophia_conformance::dock::profile(paths)?);
+                Ok(())
+            }
+            [command, path] if command == "verify" => {
+                use std::io::Read;
+                let mut text = String::new();
+                std::fs::File::open(path)
+                    .map_err(|e| e.to_string())?
+                    .take(64 * 1024 * 1024 + 1)
+                    .read_to_string(&mut text)
+                    .map_err(|e| e.to_string())?;
+                println!("{}", sophia_conformance::dock::verify(&text)?);
+                Ok(())
+            }
+            _ => Err(
+                "usage: xtask dock profile LOM CONFIG BEMENU PROVLITA CONFIG | dock verify LOG"
+                    .into(),
+            ),
+        },
         Some("profile") => run_profile(&arguments[1..]),
         Some("conformance") => run_conformance(&arguments[1..]),
         // Compatibility aliases for callers introduced before grouping.
@@ -483,5 +504,8 @@ usage: cargo xtask <command>
       Prepare, inspect, replay, verify, and reduce the diagnostic native desktop matrix.
 
 compatibility aliases: session-args, check-profiles, verify direct-scanout
+  dock profile LOM LOM_CONFIG BEMENU PROVLITA DOCK_CONFIG
+  dock verify HOST_LOG
+      Generate WM-preserving three-component overrides or check a dock smoke transcript.
 profiles: hagia native standalone kitty
 ";

@@ -971,6 +971,7 @@ dependencies = [
  "niri-ipc",
  "rustix",
  "sha2",
+ "sophia-config",
  "sophia-engine",
  "x11rb",
 ]

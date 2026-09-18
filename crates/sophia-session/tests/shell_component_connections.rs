@@ -816,8 +816,8 @@ fn three_roles_negotiate_independent_profiles_and_catalog_service_borrows_only_i
     let bar = h.owner.reserve_attempt(0).unwrap();
     let menu = h.owner.reserve_attempt(1).unwrap();
     let dock = h.owner.reserve_attempt(2).unwrap();
-    let _bar = h.connect(bar);
-    let _menu = h.connect(menu);
+    let mut bar_peer = h.connect(bar);
+    let mut menu_peer = h.connect(menu);
     h.owner
         .begin_negotiation(
             dock,
@@ -895,10 +895,28 @@ fn three_roles_negotiate_independent_profiles_and_catalog_service_borrows_only_i
         .unwrap();
     assert_eq!(service.grant(), dock.grant);
     assert_eq!(h.owner.accounting(), accounting);
+    // The real aggregate stores retain a closed dock's consumer independently
+    // while both other grants can still accept resources. No native device or
+    // compositor completion is supplied by this connection-owner control.
+    let dock_pixels = upload(&mut h, dock, &mut client, 1);
     h.owner.close(dock).unwrap();
+    assert_eq!(h.owner.collect().retired_epochs, 1);
+    let bar_pixels = upload(&mut h, bar, &mut bar_peer, 1);
+    let menu_pixels = upload(&mut h, menu, &mut menu_peer, 1);
+    assert_eq!(dock_pixels.bytes(), &[1, 2, 3, 255]);
+    assert_eq!(bar_pixels.description().grant, bar.grant);
+    assert_eq!(menu_pixels.description().grant, menu.grant);
     assert_eq!(h.owner.phase(bar), Ok(ComponentConnectionPhase::Connected));
     assert_eq!(h.owner.phase(menu), Ok(ComponentConnectionPhase::Connected));
+    drop(dock_pixels);
+    assert_eq!(h.owner.collect().retired_epochs, 0);
+    let fresh = h.owner.reserve_attempt(2).unwrap();
+    assert_ne!(fresh.grant, dock.grant);
+    assert!(h.owner.with_connection(dock, |_| ()).is_err());
+    h.owner.close(fresh).unwrap();
     h.owner.close(bar).unwrap();
     h.owner.close(menu).unwrap();
+    assert!(!h.owner.collect().quiescent());
+    drop((bar_pixels, menu_pixels));
     assert!(h.owner.collect().quiescent());
 }

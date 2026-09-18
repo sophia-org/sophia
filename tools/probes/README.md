@@ -244,6 +244,10 @@ window. That test uses a render node and does not acquire DRM master.
 
 ### Independent native launcher
 
+The [three-component dock smoke](dock/README.md) adds `lom-test dock` for independent
+Lom, Bemenu and Provlita processes. Its profile generator and host transcript
+reader are Rust `xtask dock` commands; visual/native acceptance remains attended.
+
 The [native launcher smoke](native_launcher/README.md) adds `lom-test launcher`
 without changing plain `lom-test`. It retains separate component identities,
 per-role GPU policy and host presentation/accounting evidence. Its offline

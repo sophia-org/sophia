@@ -5,17 +5,20 @@ set -euo pipefail
 # independently of the operator's inherited (possibly group-writable) umask.
 umask 077
 GATE_MODE=panel
-if [[ "${1:-}" == launcher ]]; then GATE_MODE=launcher; shift; fi
-[[ $# -eq 0 ]] || { echo "usage: lom-test [launcher]" >&2; exit 2; }
+if [[ "${1:-}" == launcher || "${1:-}" == dock ]]; then GATE_MODE="$1"; shift; fi
+[[ $# -eq 0 ]] || { echo "usage: lom-test [launcher|dock]" >&2; exit 2; }
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOM_SOURCE="${SOPHIA_LOM_SOURCE:-/home/niltempus/dev/lom}"
 LOM_TARGET="${SOPHIA_LOM_TARGET_DIR:-$HOME/.cache/lom-target}"
 LOM_CONFIG="${SOPHIA_LOM_CONFIG:-$LOM_SOURCE/examples/minimal/live-shell.kdl}"
 BEMENU_SOURCE="${SOPHIA_BEMENU_SOURCE:-$HOME/src/bemenu}"
+PROVLITA_SOURCE="${SOPHIA_PROVLITA_SOURCE:-$ROOT_DIR/../provlita}"
+PROVLITA_TARGET="${SOPHIA_PROVLITA_TARGET_DIR:-$HOME/.cache/provlita-target}"
+PROVLITA_CONFIG="${SOPHIA_PROVLITA_CONFIG:-$PROVLITA_SOURCE/examples/minimal/config.kdl}"
 HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 core_fixture=lom_panel_core.kdl
-[[ "$GATE_MODE" != launcher ]] || core_fixture=native_launcher_core.kdl
+[[ "$GATE_MODE" == panel ]] || core_fixture=native_launcher_core.kdl
 LOM_CORE_CONFIG="${SOPHIA_LOM_CORE_CONFIG:-$ROOT_DIR/tools/fixtures/$core_fixture}"
 WORKLOAD_BUDGETS="$ROOT_DIR/tools/fixtures/lom_workload_budgets.json"
 EVIDENCE_DIR="${SOPHIA_LOM_NATIVE_EVIDENCE_DIR:-$ROOT_DIR/.artifacts/lom-panel-native/$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -28,17 +31,35 @@ EVIDENCE_DIR="${SOPHIA_LOM_NATIVE_EVIDENCE_DIR:-$ROOT_DIR/.artifacts/lom-panel-n
 git -C "$HAGIA_ROOT" verify-commit HEAD >/dev/null
 git -C "$ROOT_DIR" verify-commit HEAD >/dev/null
 git -C "$LOM_SOURCE" verify-commit HEAD >/dev/null
-if [[ "$GATE_MODE" == launcher ]]; then
+if [[ "$GATE_MODE" != panel ]]; then
     [[ -z "$(git -C "$BEMENU_SOURCE" status --short)" ]] || { echo "Bemenu source must be clean" >&2; exit 2; }
     BEMENU_COMMIT="$(git -C "$BEMENU_SOURCE" rev-parse HEAD)"
     git -C "$BEMENU_SOURCE" verify-commit "$BEMENU_COMMIT" >/dev/null
 fi
+if [[ "$GATE_MODE" == dock ]]; then
+    [[ -z "$(git -C "$PROVLITA_SOURCE" status --short)" ]] || { echo "Provlita source must be clean" >&2; exit 2; }
+    PROVLITA_COMMIT="$(git -C "$PROVLITA_SOURCE" rev-parse HEAD)"
+    git -C "$PROVLITA_SOURCE" verify-commit "$PROVLITA_COMMIT" >/dev/null
+    # The development path dependencies are exact sibling checkouts. Refuse an
+    # override that silently compiles another Sophia or shared GPU source.
+    [[ "$(realpath "$PROVLITA_SOURCE/../sophia-stack")" == "$(realpath "$ROOT_DIR")" && \
+       "$(realpath "$PROVLITA_SOURCE/../lom")" == "$(realpath "$LOM_SOURCE")" ]] || {
+        echo "Dock sibling dependencies do not match selected sources" >&2; exit 2;
+    }
+fi
+SOPHIA_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+LOM_COMMIT="$(git -C "$LOM_SOURCE" rev-parse HEAD)"
+HAGIA_COMMIT="$(git -C "$HAGIA_ROOT" rev-parse HEAD)"
 [[ ! -e "$EVIDENCE_DIR" ]] || { echo "Evidence directory already exists; refusing to overwrite it" >&2; exit 2; }
 mkdir -p "$(dirname "$EVIDENCE_DIR")" "$LOM_TARGET"
 mkdir -m 700 "$EVIDENCE_DIR"
 cp "$WORKLOAD_BUDGETS" "$EVIDENCE_DIR/workload-budgets.json"
 cp "$LOM_CONFIG" "$EVIDENCE_DIR/lom-config.kdl"
 cp "$LOM_CORE_CONFIG" "$EVIDENCE_DIR/core.kdl"
+if [[ "$GATE_MODE" == dock ]]; then
+    cp "$PROVLITA_CONFIG" "$EVIDENCE_DIR/provlita-config.kdl"
+    PROVLITA_CONFIG="$EVIDENCE_DIR/provlita-config.kdl"
+fi
 cp "$ROOT_DIR/tools/fixtures/lom_panel_desktop.kdl" "$EVIDENCE_DIR/probe-overrides.kdl"
 LOM_CONFIG="$EVIDENCE_DIR/lom-config.kdl"
 LOM_CORE_CONFIG="$EVIDENCE_DIR/core.kdl"
@@ -49,21 +70,32 @@ from verify import budgets, unique_json_object
 with open(sys.argv[2], encoding="utf-8") as source:
     budgets(json.load(source, object_pairs_hook=unique_json_object))
 PY
-CARGO_TARGET_DIR="$ROOT_DIR/target" cargo build --offline --release -p sophia-cli --features native-session --manifest-path "$ROOT_DIR/Cargo.toml"
-CARGO_TARGET_DIR="$LOM_TARGET" cargo build --offline --release --manifest-path "$LOM_SOURCE/Cargo.toml"
+CARGO_TARGET_DIR="$ROOT_DIR/target" cargo build --locked --offline --release -p sophia-cli --features native-session --manifest-path "$ROOT_DIR/Cargo.toml"
+CARGO_TARGET_DIR="$LOM_TARGET" cargo build --locked --offline --release --manifest-path "$LOM_SOURCE/Cargo.toml"
 LOM_BIN="$LOM_TARGET/release/lom"
 SOPHIA_BIN="$ROOT_DIR/target/release/sophia"
 HAGIA_BIN="$EVIDENCE_DIR/hagia"
 BEMENU_BIN="$EVIDENCE_DIR/bemenu-sophia"
-if [[ "$GATE_MODE" == launcher ]]; then
+if [[ "$GATE_MODE" != panel ]]; then
     mkdir -m 700 "$EVIDENCE_DIR/bemenu-source"
     git -C "$BEMENU_SOURCE" archive "$BEMENU_COMMIT" | tar -x -C "$EVIDENCE_DIR/bemenu-source"
     make -C "$EVIDENCE_DIR/bemenu-source" bemenu-sophia EXTRA_WARNINGS=-Werror \
         GIT_SHA1="$BEMENU_COMMIT" GIT_TAG="$BEMENU_COMMIT"
     cp "$EVIDENCE_DIR/bemenu-source/bemenu-sophia" "$BEMENU_BIN"
     chmod 700 "$BEMENU_BIN"
-    python3 "$ROOT_DIR/tools/probes/native_launcher/profile.py" \
-        --lom "$LOM_BIN" --config "$LOM_CONFIG" --bemenu "$BEMENU_BIN" \
+    if [[ "$GATE_MODE" == launcher ]]; then
+        python3 "$ROOT_DIR/tools/probes/native_launcher/profile.py" \
+            --lom "$LOM_BIN" --config "$LOM_CONFIG" --bemenu "$BEMENU_BIN" \
+            > "$EVIDENCE_DIR/probe-overrides.kdl"
+    fi
+fi
+if [[ "$GATE_MODE" == dock ]]; then
+    CARGO_TARGET_DIR="$PROVLITA_TARGET" cargo build --locked --offline --release --manifest-path "$PROVLITA_SOURCE/Cargo.toml"
+    PROVLITA_BIN="$EVIDENCE_DIR/provlita"
+    cp "$PROVLITA_TARGET/release/provlita" "$PROVLITA_BIN"
+    chmod 700 "$PROVLITA_BIN"
+    CARGO_TARGET_DIR="$ROOT_DIR/target" cargo build --locked --offline --release -p xtask --manifest-path "$ROOT_DIR/Cargo.toml"
+    "$ROOT_DIR/target/release/xtask" dock profile "$LOM_BIN" "$LOM_CONFIG" "$BEMENU_BIN" "$PROVLITA_BIN" "$PROVLITA_CONFIG" \
         > "$EVIDENCE_DIR/probe-overrides.kdl"
 fi
 (cd "$HAGIA_ROOT" && nim c -d:release --hints:off --path:src     --nimcache:"$HOME/.cache/hagia-lom-gate" -o:"$HAGIA_BIN" src/hagia.nim)
@@ -89,23 +121,29 @@ fi
 CARGO_TARGET_DIR="$ROOT_DIR/target" cargo build --offline --release -p sophia-config --example desktop_profile_probe \
     --manifest-path "$ROOT_DIR/Cargo.toml"
 probe_args=()
-[[ "$GATE_MODE" != launcher ]] || probe_args+=(--require-launcher-binding)
+[[ "$GATE_MODE" == panel ]] || probe_args+=(--require-launcher-binding)
 "$ROOT_DIR/target/release/examples/desktop_profile_probe" \
     "$EVIDENCE_DIR/wm-profile.kdl" "$EVIDENCE_DIR/probe-overrides.kdl" "${probe_args[@]}" \
     > "$EVIDENCE_DIR/desktop.kdl"
 "$SOPHIA_BIN" config check --desktop-profile="$EVIDENCE_DIR/desktop.kdl"
 {
     printf 'gate_mode=%s\n' "$GATE_MODE"
-    if [[ "$GATE_MODE" == launcher ]]; then
+    if [[ "$GATE_MODE" != panel ]]; then
         printf 'bemenu_commit=%s\n' "$BEMENU_COMMIT"
         printf 'bemenu_binary_sha256=%s\n' "$(sha256sum "$BEMENU_BIN" | cut -d' ' -f1)"
     fi
-    printf 'sophia_commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD)"
+    if [[ "$GATE_MODE" == dock ]]; then
+        printf 'provlita_commit=%s\n' "$PROVLITA_COMMIT"
+        printf 'provlita_binary_sha256=%s\n' "$(sha256sum "$PROVLITA_BIN" | cut -d' ' -f1)"
+        printf 'provlita_config_sha256=%s\n' "$(sha256sum "$PROVLITA_CONFIG" | cut -d' ' -f1)"
+        printf 'scope=three-component-smoke\nlatency_acceptance=NOT_RUN\nrestart_acceptance=NOT_RUN\n'
+    fi
+    printf 'sophia_commit=%s\n' "$SOPHIA_COMMIT"
     printf 'sophia_binary_sha256=%s\n' "$(sha256sum "$SOPHIA_BIN" | cut -d' ' -f1)"
-    printf 'lom_commit=%s\n' "$(git -C "$LOM_SOURCE" rev-parse HEAD)"
+    printf 'lom_commit=%s\n' "$LOM_COMMIT"
     printf 'lom_binary_sha256=%s\n' "$(sha256sum "$LOM_BIN" | cut -d' ' -f1)"
     printf 'lom_config_sha256=%s\n' "$(sha256sum "$LOM_CONFIG" | cut -d' ' -f1)"
-    printf 'hagia_commit=%s\n' "$(git -C "$HAGIA_ROOT" rev-parse HEAD)"
+    printf 'hagia_commit=%s\n' "$HAGIA_COMMIT"
     printf 'hagia_binary_sha256=%s\n' "$(sha256sum "$HAGIA_BIN" | cut -d' ' -f1)"
     printf 'workload_budgets_sha256=%s\n' "$(sha256sum "$EVIDENCE_DIR/workload-budgets.json" | cut -d' ' -f1)"
     printf 'core_config_sha256=%s\n' "$(sha256sum "$LOM_CORE_CONFIG" | cut -d' ' -f1)"
@@ -117,11 +155,16 @@ probe_args=()
 sha256sum "$SOPHIA_BIN" "$LOM_BIN" "$HAGIA_BIN" "$LOM_CONFIG" "$LOM_CORE_CONFIG" \
     "$EVIDENCE_DIR/desktop.kdl" "$EVIDENCE_DIR/wm-profile.kdl" \
     "$EVIDENCE_DIR/probe-overrides.kdl" "$EVIDENCE_DIR/workload-budgets.json" > "$EVIDENCE_DIR/inputs.sha256"
-if [[ "$GATE_MODE" == launcher ]]; then sha256sum "$BEMENU_BIN" >> "$EVIDENCE_DIR/inputs.sha256"; fi
+if [[ "$GATE_MODE" != panel ]]; then sha256sum "$BEMENU_BIN" >> "$EVIDENCE_DIR/inputs.sha256"; fi
+if [[ "$GATE_MODE" == dock ]]; then sha256sum "$PROVLITA_BIN" "$PROVLITA_CONFIG" "$ROOT_DIR/target/release/xtask" >> "$EVIDENCE_DIR/inputs.sha256"; fi
 verify_candidate_inputs() {
-    if [[ "$GATE_MODE" == launcher ]]; then
+    if [[ "$GATE_MODE" != panel ]]; then
         [[ -z "$(git -C "$BEMENU_SOURCE" status --short)" ]]
         [[ "bemenu_commit=$(git -C "$BEMENU_SOURCE" rev-parse HEAD)" == "$(sed -n '/^bemenu_commit=/p' "$EVIDENCE_DIR/identity.manifest")" ]]
+    fi
+    if [[ "$GATE_MODE" == dock ]]; then
+        [[ -z "$(git -C "$PROVLITA_SOURCE" status --short)" ]]
+        [[ "$(git -C "$PROVLITA_SOURCE" rev-parse HEAD)" == "$PROVLITA_COMMIT" ]]
     fi
     sha256sum --check --status "$EVIDENCE_DIR/inputs.sha256"
     [[ "sophia_commit=$(git -C "$ROOT_DIR" rev-parse HEAD)" == "$(sed -n '/^sophia_commit=/p' "$EVIDENCE_DIR/identity.manifest")" ]]
@@ -131,6 +174,7 @@ verify_candidate_inputs() {
 }
 
 echo "Evidence: $EVIDENCE_DIR"
+verify_candidate_inputs
 echo "Checking Lom's protected GPU and content path before graphics takeover."
 SOPHIA_LOM_GPU_PROOF_ARM=1 \
 SOPHIA_LOM_GPU_EVIDENCE_DIR="$EVIDENCE_DIR/gpu-content" \
@@ -151,7 +195,7 @@ Do not click during warmup or after the 40 clicks; let the clocks run until auto
 ACK limits: p95 50ms / maximum 100ms. Native limits: p95 150ms / maximum 300ms.
 Missing actions, stale/no-op clicks, restarts, timeouts and retained shutdown credits fail.
 INSTRUCTIONS
-else
+elif [[ "$GATE_MODE" == launcher ]]; then
 cat <<'INSTRUCTIONS'
 Launcher smoke: the session ends after 90 seconds; the watchdog is failure recovery only.
 Confirm Lom bars and clocks on both monitors. Use your WM application-launcher binding
@@ -162,6 +206,19 @@ for terminal, select the entry named terminal, and press Enter once to launch it
 and wait for automatic exit. Record placement, focus restoration, mouse dismissal,
 query/reset and both-monitor observations separately. This is not the 40-action
 panel latency workload or complete native acceptance.
+INSTRUCTIONS
+else
+cat <<'INSTRUCTIONS'
+Three-component smoke: automatic exit after 90 seconds; watchdog at 110 seconds.
+On BOTH monitors confirm Lom above and Provlita below, without overlap. The Terminal
+tile is enabled; Browser/Files are deliberately unavailable unless in your catalog.
+Click Terminal once on EACH dock; close each terminal before the next launch.
+On EACH monitor open Bemenu using your WM binding (Super+Space in the selected profile),
+type terminal, launch that entry once, then close it. Also reopen and dismiss with Escape.
+Check clocks and workspace switching continue on both bars, and dock clicks do not
+take keyboard focus. Four terminal launches total. Let the session exit automatically.
+This smoke does not measure latency or test component restarts. Record placement,
+focus and visual observations separately; transcript success cannot establish them.
 INSTRUCTIONS
 fi
 shell_args=()
@@ -198,6 +255,12 @@ grep -q '^sophia_tty_recovery schema=3 .*termios_restored=true ' \
     exit 1
 }
 
+if [[ "$GATE_MODE" == dock ]]; then
+    "$ROOT_DIR/target/release/xtask" dock verify "$EVIDENCE_DIR/session/events.0.log" \
+        | tee "$EVIDENCE_DIR/dock-verification.log"
+    echo "Dock smoke transcript passed; visual acceptance remains operator evidence: $EVIDENCE_DIR"
+    exit 0
+fi
 if [[ "$GATE_MODE" == launcher ]]; then
     python3 "$ROOT_DIR/tools/probes/native_launcher/verify.py" "$EVIDENCE_DIR/session/events.0.log" \
         | tee "$EVIDENCE_DIR/launcher-verification.json"

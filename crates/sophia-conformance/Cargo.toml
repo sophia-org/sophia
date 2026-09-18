@@ -17,3 +17,6 @@ x11rb = "0.13.1"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+sophia-config = { path = "../sophia-config" }

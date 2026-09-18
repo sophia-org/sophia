@@ -38,10 +38,22 @@ impl ShellComponentLaunch {
             .map(|p| p.canonicalize())
             .transpose()?;
         let gpu = ShellGpuLaunchPolicy::new(selection.gpu, device)?;
+        let panel_thickness = match selection.role {
+            ShellComponentRole::Bar => Some(selection.reservation.map_or(
+                panel_thickness.ok_or("bar allowance absent")?,
+                |reservation| reservation.max_thickness,
+            )),
+            ShellComponentRole::Dock => Some(
+                selection
+                    .reservation
+                    .filter(|r| r.max_thickness > 0)
+                    .ok_or("dock requires an explicit positive reservation")?
+                    .max_thickness,
+            ),
+            ShellComponentRole::ApplicationLauncher => None,
+        };
         Ok(Self {
-            panel_thickness: (selection.role == ShellComponentRole::Bar)
-                .then_some(panel_thickness)
-                .flatten(),
+            panel_thickness,
             selection,
             gpu,
         })

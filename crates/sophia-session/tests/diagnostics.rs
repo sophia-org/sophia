@@ -737,6 +737,9 @@ fn independent_component_evidence_is_bounded_and_payload_free() {
         "sophia_shell_component_catalog schema=1 status=built generation=1 entries=12",
         "sophia_native_launcher schema=1 status=process_started transaction=123",
         "sophia_native_launcher schema=1 status=spawn_failed",
+        "sophia_shell_component schema=1 status=negotiated slot=2 role=dock connection_epoch=3 content_grant_epoch=3 revision=8 gpu_mode=direct gpu_grant_epoch=3 device_major=226 device_minor=128",
+        "sophia_shell_component schema=1 status=dock_failed slot=2",
+        "sophia_catalog_launch schema=1 status=process_started transaction=42 cause=persistent connection_epoch=3 content_grant_epoch=3 output=2 event_id=1",
     ] {
         assert_eq!(
             reduced_record(&format!(
@@ -747,7 +750,7 @@ fn independent_component_evidence_is_bounded_and_payload_free() {
     }
     for fields in [
         "status=private",
-        "slot=2",
+        "slot=3",
         "slot=-1",
         "revision=65536",
         "role=other",

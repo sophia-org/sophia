@@ -5,6 +5,7 @@ pub(super) fn record(name: &str) -> bool {
         "sophia_shell_component"
             | "sophia_shell_component_catalog"
             | "sophia_native_launcher"
+            | "sophia_catalog_launch"
             | "sophia_shell_components_shutdown"
     )
 }
@@ -29,14 +30,19 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
                 | "poll_failed"
                 | "start_failed"
                 | "catalog_failed"
+                | "dock_failed"
                 | "service_failed"
                 | "input_failed"
                 | "input_rejected"
         ),
-        ("sophia_shell_component", "role") => matches!(value, "bar" | "application_launcher"),
+        ("sophia_shell_component", "role") => {
+            matches!(value, "bar" | "application_launcher" | "dock")
+        }
         ("sophia_shell_component", "gpu_mode") => matches!(value, "direct" | "denied"),
         ("sophia_shell_component", "endpoint_released") => matches!(value, "true" | "false"),
-        ("sophia_shell_component", "slot") => number(1),
+        ("sophia_shell_component", "slot") => {
+            number((sophia_config::MAX_SHELL_COMPONENTS - 1) as u64)
+        }
         ("sophia_shell_component", "revision") => number(u16::MAX.into()),
         ("sophia_shell_component", "device_major" | "device_minor") => number(u32::MAX.into()),
         (
@@ -55,6 +61,12 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
         ),
         ("sophia_native_launcher", "slot") => number(1),
         ("sophia_native_launcher", "transaction") => number(u64::MAX),
+        ("sophia_catalog_launch", "status") => value == "process_started",
+        ("sophia_catalog_launch", "cause") => matches!(value, "persistent" | "transient"),
+        (
+            "sophia_catalog_launch",
+            "transaction" | "connection_epoch" | "content_grant_epoch" | "output" | "event_id",
+        ) => number(u64::MAX),
         _ => false,
     }
 }
