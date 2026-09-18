@@ -10,7 +10,80 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::admission::PrivateInputIssueRefusal;
+use super::control::{
+    PrivateInputCommitted, PrivateInputControl, PrivateInputControlAccepted,
+    PrivateInputControlError,
+};
 use super::submission::{PrivateInputConnection, PrivateInputSubmission};
+
+/// A boundary or a record that could not be read.
+///
+/// ITS OWN ANSWER, NEVER AN EMPTY ONE. A participant whose lock is poisoned
+/// and a boundary holding nothing are opposite facts, and a reader given an
+/// empty list for both would conclude the second from the first.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PrivateInputUnavailable;
+
+impl core::fmt::Display for PrivateInputUnavailable {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str("the private input boundary could not be read")
+    }
+}
+
+impl std::error::Error for PrivateInputUnavailable {}
+
+/// A bounded wait that ran out.
+///
+/// CARRIES WHAT IT LAST SAW. An expired wait is not a state of the service; it
+/// is a fact about the waiting. The readiness observed at expiry travels with
+/// it so a caller can tell a service still binding from one that had already
+/// stopped, without a second call that would race the answer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PrivateInputWaitExpired {
+    pub observed: PrivateInputReadiness,
+}
+
+impl core::fmt::Display for PrivateInputWaitExpired {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            formatter,
+            "the readiness wait expired while the service was {:?}",
+            self.observed
+        )
+    }
+}
+
+impl std::error::Error for PrivateInputWaitExpired {}
+
+/// What became of the thread that served.
+///
+/// SEPARATE FROM WORKER COLLECTION. Per-connection workers are collected by
+/// the service; this is the service's own thread. A run that collected every
+/// worker and then lost its service thread has not finished, and one number
+/// covering both would hide exactly that.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum PrivateInputThreadJoin {
+    Joined,
+    Panicked(String),
+    /// The default, because an outcome built before a thread ran has not
+    /// joined one. Reading absence as success is the mistake this avoids.
+    #[default]
+    NeverStarted,
+}
+
+/// What the durable owner still holds.
+///
+/// A COUNT ALONE PROVES NOTHING. An unreadable store reports no credits, which
+/// is indistinguishable from an empty one unless readability is its own fact.
+/// Owed and indeterminate work are kept apart from reserved credits for the
+/// same reason: settled, owed and unproved are three answers.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PrivateInputSettlement {
+    pub readable: bool,
+    pub reserved_credits: Option<usize>,
+    pub owed: Option<usize>,
+    pub indeterminate: Option<usize>,
+}
 
 /// Why the service could not be stood up.
 #[derive(Debug)]
@@ -63,10 +136,12 @@ pub struct PrivateInputOutcome {
     /// cleared: an interruption that is later tidied up was still an
     /// interruption, and the budget it closed stays closed.
     pub interrupted: bool,
-    /// Settlement the durable owner still holds after collection. Distinct
-    /// from `workers`, because collecting every actor says nothing about
-    /// whether anything is still owed.
-    pub retained_settlement: usize,
+    /// What became of the serving thread itself, apart from its workers.
+    pub service_thread: PrivateInputThreadJoin,
+    /// What the durable owner still holds after collection. Not a bare count:
+    /// collecting every actor says nothing about whether anything is owed, and
+    /// a store that could not be read says less still.
+    pub settlement: PrivateInputSettlement,
 }
 
 /// What the service is holding right now.
@@ -75,9 +150,10 @@ pub struct PrivateInputStatus {
     pub readiness_is_ready: bool,
     pub admitted: usize,
     pub grants_issued: usize,
-    /// Credits the durable store is holding. Separate from `admitted`, for the
-    /// same reason collection is separate from settlement.
-    pub retained_settlement: usize,
+    /// What the store is holding right now. These are counts for diagnosis and
+    /// establish no settlement on their own; `stop` reports what was actually
+    /// collected and retained.
+    pub settlement: PrivateInputSettlement,
     pub interrupted: bool,
 }
 
@@ -121,7 +197,10 @@ impl PrivateInputHandle {
     /// a slow readiness cannot be extended indefinitely by repeated partial
     /// progress. Returns what it reached rather than a bare success, so a
     /// caller can tell readiness from a refusal that arrived first.
-    pub fn await_ready(&self, _within: Duration) -> PrivateInputReadiness {
+    pub fn await_ready(
+        &self,
+        _within: Duration,
+    ) -> Result<PrivateInputReadiness, PrivateInputWaitExpired> {
         unimplemented!("service thread lands with the keeper work")
     }
 
@@ -139,7 +218,7 @@ impl PrivateInputHandle {
     /// FACTS FROM THE BOUNDARY, not Session's idea of them. Each row carries
     /// the exact admission id and connection generation, so a caller names one
     /// connection rather than a client number a successor may have taken.
-    pub fn admitted(&self) -> Vec<PrivateAdmittedConnection> {
+    pub fn admitted(&self) -> Result<Vec<PrivateAdmittedConnection>, PrivateInputUnavailable> {
         unimplemented!("service thread lands with the keeper work")
     }
 
@@ -148,7 +227,36 @@ impl PrivateInputHandle {
     pub fn admission_record(
         &self,
         _admission: sophia_protocol::ClientAdmissionId,
-    ) -> Option<super::PrivateInputAdmissionRecord> {
+    ) -> Result<Option<super::PrivateInputAdmissionRecord>, PrivateInputUnavailable> {
+        unimplemented!("service thread lands with the keeper work")
+    }
+
+    /// Submit one Engine-committed control for a named connection.
+    ///
+    /// SESSION MINTS THE TRANSACTION. The returned value carries it, so the
+    /// real acknowledgement that later arrives on the drain is matched against
+    /// this exact control rather than against a number the caller guessed.
+    /// Nothing here reaches the control producer, the broker or the registry.
+    pub fn submit_control(
+        &self,
+        _connection: PrivateInputConnection,
+        _control: PrivateInputControl,
+    ) -> Result<PrivateInputControlAccepted, PrivateInputControlError> {
+        unimplemented!("service thread lands with the keeper work")
+    }
+
+    /// Take the transactions the frontend has observed, commit them through
+    /// the headless coordinator, and submit the controls that commit calls for.
+    ///
+    /// ONE STEP, REPORTED AS THREE NUMBERS. Observed, committed and applied
+    /// only agree when nothing was refused, and a step that committed state it
+    /// could not then apply is exactly what this reports rather than hides.
+    /// The coordinator belongs to the Session owner, not to a caller: there is
+    /// no way from here to seed applied state without a real transaction.
+    pub fn apply_committed(
+        &self,
+        _within: Duration,
+    ) -> Result<PrivateInputCommitted, PrivateInputUnavailable> {
         unimplemented!("service thread lands with the keeper work")
     }
 
