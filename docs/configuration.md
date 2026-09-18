@@ -118,6 +118,12 @@ paths. Core reload serializes with this preparation. Startup commands are never
 replayed. Input, Shell, Broker and non-launch Session settings retain their
 existing deferred behavior; Output changes use the topology transaction.
 
+Launch reload validates shell-dependent shortcuts against the provider capability
+resolved at startup, including independent components. It does not infer shell
+availability from a single process field or from newly requested providers that
+will only start at the next login. Changing the terminal executable in the
+desktop profile therefore needs no shell restart.
+
 A registered session application may set `placement-class=N`, where `N` is a
 nonzero opaque `u64`. For an action-launched application, the session attaches
 that class only to the first newly observed surface. It never derives or sends a

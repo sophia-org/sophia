@@ -145,7 +145,9 @@ impl PreparedDesktopLaunch {
         )?;
         applications.validate_shortcuts(
             &candidates.shortcut,
-            config.shell_process.is_some(),
+            // Provider changes require restart; validate against the same
+            // resolved capability as startup, not the requested new profile.
+            config.shell_shortcuts_enabled,
             false,
         )?;
         let commands = SessionCommandRegistry::prepare(generation, &applications)?;

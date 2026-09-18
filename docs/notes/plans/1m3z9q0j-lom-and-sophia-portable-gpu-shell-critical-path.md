@@ -746,6 +746,12 @@ Frozen review and a new exact-source canonical run are pending for this successo
 
 ### t101
 
+The daily component login exposed a
+[launch-reload provider capability regression](../investigations/c9di7qpg-independent-shell-providers-were-omitted-from-desktop-launch-reload-validation.md).
+Its deterministic repair preserves provider ownership during terminal changes;
+installed acceptance must observe successful reload and the new terminal without
+restarting the shell components. This does not close the broader t101 gate.
+
 Support one combined content/descriptor shell in the shared client boundary,
 including bounded message demultiplexing and terminal outcomes for every
 negotiated workflow. Lom currently consumes content and indicators; receipt of

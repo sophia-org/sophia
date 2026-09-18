@@ -10,6 +10,9 @@ mod policy_active_focus;
 #[path = "../../../sophia-config/examples/desktop_profile_probe.rs"]
 mod desktop_probe;
 
+#[path = "component_launch_reload.rs"]
+mod component_launch_reload;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,
