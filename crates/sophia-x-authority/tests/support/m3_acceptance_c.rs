@@ -526,10 +526,6 @@ fn c_capacity() {
             );
             assert_eq!(after_step, Some(C_RESERVATION_BOUND));
 
-            assert!(
-                taken + 1 >= 1,
-                "the actual turn then ran, bounded by the service budget"
-            );
             assert_eq!(
                 queued_after,
                 queued_after_step - taken,
