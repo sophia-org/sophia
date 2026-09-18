@@ -162,7 +162,7 @@ fn identical_shell_pixels_require_a_distinct_queue_and_exact_presentation() {
             )
             .unwrap();
         assert_eq!(
-            runtime.shell_content_presentation_epoch(outputs[0].id, candidate),
+            runtime.shell_content_presentation_epoch(outputs[0].id, grant(), candidate),
             None
         );
         frames.push(target.queue.get(outputs[0].id).unwrap().frame);
@@ -178,7 +178,7 @@ fn identical_shell_pixels_require_a_distinct_queue_and_exact_presentation() {
         runtime.publish_presented_input_layers(&target);
         assert!(
             runtime
-                .shell_content_presentation_epoch(outputs[0].id, candidate)
+                .shell_content_presentation_epoch(outputs[0].id, grant(), candidate)
                 .is_some()
         );
     }
@@ -284,13 +284,13 @@ fn exercise_thousand<T: IntegrationTarget>(mut target: T) {
                 )
                 .unwrap();
             assert_eq!(
-                runtime.shell_content_presentation_epoch(output.id, candidate),
+                runtime.shell_content_presentation_epoch(output.id, grant, candidate),
                 None
             );
             target.drain();
             runtime.publish_presented_input_layers(&target);
             let epoch = runtime
-                .shell_content_presentation_epoch(output.id, candidate)
+                .shell_content_presentation_epoch(output.id, grant, candidate)
                 .unwrap();
             let binding = runtime
                 .input_projections
@@ -434,11 +434,11 @@ fn ordinary_projection_preserves_staged_retirement_while_other_output_advances()
     runtime.publish_presented_input_layers(&target);
     assert!(
         runtime
-            .shell_content_presentation_epoch(outputs[1].id, 2)
+            .shell_content_presentation_epoch(outputs[1].id, grant(), 2)
             .is_some()
     );
     assert_eq!(
-        runtime.shell_content_presentation_epoch(outputs[0].id, 1),
+        runtime.shell_content_presentation_epoch(outputs[0].id, grant(), 1),
         None
     );
     assert_eq!(target.queue.get(outputs[0].id).unwrap().frame, original);
@@ -446,7 +446,7 @@ fn ordinary_projection_preserves_staged_retirement_while_other_output_advances()
     runtime.publish_presented_input_layers(&target);
     assert!(
         runtime
-            .shell_content_presentation_epoch(outputs[0].id, 1)
+            .shell_content_presentation_epoch(outputs[0].id, grant(), 1)
             .is_some()
     );
     runtime
@@ -491,12 +491,12 @@ fn delayed_worker_and_wrong_flip_keep_exact_candidate_unpublished() {
     target.complete(outputs[1].id);
     runtime.publish_presented_input_layers(&target);
     assert_eq!(
-        runtime.shell_content_presentation_epoch(outputs[0].id, 1),
+        runtime.shell_content_presentation_epoch(outputs[0].id, grant(), 1),
         None
     );
     assert!(
         runtime
-            .shell_content_presentation_epoch(outputs[1].id, 2)
+            .shell_content_presentation_epoch(outputs[1].id, grant(), 2)
             .is_some()
     );
     target.finish_render(outputs[0].id);
@@ -509,14 +509,14 @@ fn delayed_worker_and_wrong_flip_keep_exact_candidate_unpublished() {
     assert!(!target.flip(outputs[0].id, Some(wrong)));
     runtime.publish_presented_input_layers(&target);
     assert_eq!(
-        runtime.shell_content_presentation_epoch(outputs[0].id, 1),
+        runtime.shell_content_presentation_epoch(outputs[0].id, grant(), 1),
         None
     );
     assert!(target.flip(outputs[0].id, None));
     runtime.publish_presented_input_layers(&target);
     assert!(
         runtime
-            .shell_content_presentation_epoch(outputs[0].id, 1)
+            .shell_content_presentation_epoch(outputs[0].id, grant(), 1)
             .is_some()
     );
 }
@@ -548,7 +548,7 @@ fn one_outputs_new_candidate_does_not_submit_the_unchanged_other_output() {
         target.drain();
     }
     runtime.publish_presented_input_layers(&target);
-    let other_epoch = runtime.shell_content_presentation_epoch(outputs[1].id, 2);
+    let other_epoch = runtime.shell_content_presentation_epoch(outputs[1].id, grant(), 2);
     assert!(other_epoch.is_some());
     let before = target.next;
     assert!(
@@ -572,7 +572,7 @@ fn one_outputs_new_candidate_does_not_submit_the_unchanged_other_output() {
         target.complete(outputs[0].id);
         runtime.publish_presented_input_layers(&target);
         assert_eq!(
-            runtime.shell_content_presentation_epoch(outputs[1].id, 2),
+            runtime.shell_content_presentation_epoch(outputs[1].id, grant(), 2),
             other_epoch
         );
     }
@@ -615,7 +615,7 @@ fn successor_publishes_while_old_backing_cleanup_remains_owned() {
     runtime.publish_presented_input_layers(&target);
     assert!(
         runtime
-            .shell_content_presentation_epoch(outputs[0].id, 2)
+            .shell_content_presentation_epoch(outputs[0].id, grant(), 2)
             .is_some()
     );
     assert_eq!(target.retry_cleanup(outputs[0].id), Some(false));
@@ -641,7 +641,7 @@ fn successor_publishes_while_old_backing_cleanup_remains_owned() {
     runtime.publish_presented_input_layers(&target);
     assert!(
         runtime
-            .shell_content_presentation_epoch(outputs[1].id, 3)
+            .shell_content_presentation_epoch(outputs[1].id, grant(), 3)
             .is_some()
     );
     assert_eq!(
@@ -673,7 +673,7 @@ fn successor_publishes_while_old_backing_cleanup_remains_owned() {
     runtime.publish_presented_input_layers(&target);
     assert!(
         runtime
-            .shell_content_presentation_epoch(outputs[0].id, 4)
+            .shell_content_presentation_epoch(outputs[0].id, grant(), 4)
             .is_some()
     );
     assert!(runtime.retained_projection_retirements.is_empty());
@@ -701,7 +701,7 @@ fn reconnect_reusing_candidate_numbers_cannot_publish_old_pixels_as_new_grant() 
     runtime.publish_presented_input_layers(&target);
     assert!(
         runtime
-            .shell_content_presentation_epoch(outputs[0].id, 1)
+            .shell_content_presentation_epoch(outputs[0].id, grant(), 1)
             .is_some()
     );
     let next_grant = ContentGrant {
@@ -735,7 +735,7 @@ fn reconnect_reusing_candidate_numbers_cannot_publish_old_pixels_as_new_grant() 
         ContentPointerDisposition::Consumed
     );
     assert_eq!(
-        runtime.shell_content_presentation_epoch(outputs[0].id, 1),
+        runtime.shell_content_presentation_epoch(outputs[0].id, next_grant, 1),
         None
     );
     runtime.input_projections[0].content = None;
@@ -777,7 +777,7 @@ fn reconnect_reusing_candidate_numbers_cannot_publish_old_pixels_as_new_grant() 
     runtime.publish_presented_input_layers(&target);
     assert!(
         runtime
-            .shell_content_presentation_epoch(outputs[0].id, 1)
+            .shell_content_presentation_epoch(outputs[0].id, next_grant, 1)
             .is_some()
     );
     assert_eq!(

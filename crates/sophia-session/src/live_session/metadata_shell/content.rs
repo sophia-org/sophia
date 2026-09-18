@@ -265,6 +265,7 @@ impl LiveContentSession {
                 runtime
                     .shell_content_presentation_epoch(
                         OutputId::from_raw(pending.output.id),
+                        pending.grant,
                         pending.candidate_generation,
                     )
                     .map(|epoch| (index, epoch))

@@ -139,11 +139,12 @@ impl LiveProductionVisualRuntime {
     pub fn shell_content_presentation_epoch(
         &self,
         output: OutputId,
+        grant: sophia_protocol::ContentGrant,
         candidate_generation: u64,
     ) -> Option<u64> {
         let frame = self.shell_content.get(&output)?;
         let frame = &frame.frame;
-        if frame.candidate_generation != candidate_generation {
+        if frame.grant != grant || frame.candidate_generation != candidate_generation {
             return None;
         }
         let projection = self

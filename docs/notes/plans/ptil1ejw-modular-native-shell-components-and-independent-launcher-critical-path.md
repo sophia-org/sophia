@@ -256,3 +256,25 @@ not preallocated as part of this first two-component implementation.
 - [Current Lom critical path](1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md).
 - [Native WM and shell product](queue-14-native-wm-and-shell-product.md).
 - [Current desktop composition](../../desktop-composition.md) and [launcher](../../application-launcher.md).
+
+### Presentation lookup must name the component grant
+
+The backend presentation query now requires the exact ContentGrant as well as
+output and candidate generation, and Session passes the pending obligation's
+grant. Equal candidate numbers from different connection/content epochs cannot
+borrow another component's presentation result. The actual intake/lowerer/owned
+queue fixture checks each changed epoch independently after simulated completion.
+All 34 device-hidden lifecycle controls pass at
+`.artifacts/bemenu-presentation-grant-final`; the Session native-feature compile
+check passes. The first adapted reconnect fixture incorrectly queried the old
+grant after presenting its successor; its retained failure led to correcting the
+query to the successor identity, without weakening the expectation.
+
+This is a prerequisite, not multi-component composition completion. Runtime still
+stores one shell frame and one presented input binding per output. Those owners
+must support simultaneous grant-keyed panel and native-launcher content with
+explicit ordering, independent retirement and capture, before the live Session
+join can be enabled. Protected component supervision exists separately; the
+legacy live owner still owns its own compatibility registry. Do not bypass that
+join by starting a second independent global budget. No hardware, native display,
+profile installation, M3 import or physical-run readiness is established here.
