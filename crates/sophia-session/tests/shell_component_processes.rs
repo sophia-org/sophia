@@ -630,3 +630,82 @@ fn component_scheduler_skips_unready_role_and_bounds_retries() {
     drop(owner);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[cfg(feature = "native-session")]
+#[test]
+#[ignore = "requires explicit device-hidden protected Bemenu binary"]
+fn joined_bemenu_evidence_requires_exact_current_negotiation() {
+    use sophia_session::shell_component_session::ShellComponentSession;
+    use std::time::{Duration, Instant};
+    let binary = std::env::var_os("SOPHIA_TEST_BEMENU").expect("explicit candidate required");
+    let root = std::env::temp_dir().join(format!("joined-bemenu-evidence-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let selection = sophia_config::ShellComponentConfig {
+        id: "menu".into(),
+        role: ShellComponentRole::ApplicationLauncher,
+        executable: binary.into(),
+        config: None,
+        gpu: sophia_config::ShellGpuMode::Denied,
+    };
+    let mut owner = ShellComponentSession::prepare(
+        &[selection],
+        0,
+        None,
+        &root,
+        ShellContentAdmissionPolicy::Granted {
+            discrete_input: true,
+        },
+    )
+    .unwrap();
+    let outputs = [sophia_engine::HeadlessOutput {
+        id: sophia_protocol::OutputId::from_raw(1),
+        size: sophia_protocol::Size {
+            width: 64,
+            height: 64,
+        },
+        scale: 1,
+    }];
+    let mut runtime =
+        sophia_backend_live::LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    owner.set_presentation_available(true).unwrap();
+    let mut previous = None;
+    for _ in 0..2 {
+        let key = owner.start(0).unwrap();
+        assert!(
+            owner.launch_evidence(key).is_err(),
+            "spawn is not negotiation"
+        );
+        if let Some(old) = previous {
+            assert!(owner.launch_evidence(old).is_err());
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while owner.phase(key).unwrap() != ComponentConnectionPhase::Connected {
+            let visit = owner.poll(64 * 1024).unwrap();
+            for (_, result) in visit.negotiations.into_iter().flatten() {
+                result.unwrap();
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let (role, gpu) = owner.launch_evidence(key).unwrap();
+        assert_eq!(role, ShellComponentRole::ApplicationLauncher);
+        assert!(gpu.is_none(), "launcher cannot inherit a GPU grant");
+        let mut wrong = key;
+        wrong.grant.content_grant_epoch += 1;
+        assert!(owner.launch_evidence(wrong).is_err());
+        owner.stop(key).unwrap();
+        assert!(owner.launch_evidence(key).is_err());
+        while owner.process_retained(key) {
+            owner.poll(64 * 1024).unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(owner.settle_revocations(Some(&mut runtime)).unwrap(), 1);
+        previous = Some(key);
+    }
+    owner.request_shutdown().unwrap();
+    owner.settle_revocations(Some(&mut runtime)).unwrap();
+    assert!(owner.finish_after_backend_drop(()).unwrap().1.quiescent());
+    drop(owner);
+    std::fs::remove_dir_all(root).unwrap();
+}

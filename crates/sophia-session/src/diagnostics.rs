@@ -4,6 +4,7 @@ mod commands;
 mod failure;
 mod recovery;
 mod shell_action;
+mod shell_component;
 pub use recovery::SessionCompletionFailure;
 mod session_failure;
 mod storage;

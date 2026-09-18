@@ -722,3 +722,45 @@ fn allocation_shutdown_capture_preserves_bounded_disposition_and_reason() {
         reduced_record("sophia_live_session_quiescence schema=3 reason=private-user-text").unwrap();
     assert!(!reduced.contains("reason="));
 }
+
+#[test]
+fn independent_component_evidence_is_bounded_and_payload_free() {
+    for record in [
+        "sophia_shell_component schema=1 status=negotiated slot=0 role=bar connection_epoch=1 content_grant_epoch=1 revision=6 gpu_mode=direct gpu_grant_epoch=1 device_major=226 device_minor=129",
+        "sophia_shell_component schema=1 status=negotiated slot=1 role=application_launcher connection_epoch=2 content_grant_epoch=2 revision=7 gpu_mode=denied gpu_grant_epoch=0 device_major=0 device_minor=0",
+        "sophia_shell_component schema=1 status=service_failed slot=1",
+        "sophia_shell_component schema=1 status=process_retired slot=1 connection_epoch=2 content_grant_epoch=2 endpoint_released=true",
+        "sophia_shell_component schema=1 status=process_failed slot=1 connection_epoch=2 content_grant_epoch=2",
+        "sophia_shell_component_catalog schema=1 status=built generation=1 entries=12",
+        "sophia_native_launcher schema=1 status=process_started transaction=123",
+        "sophia_native_launcher schema=1 status=spawn_failed",
+    ] {
+        assert_eq!(
+            reduced_record(&format!(
+                "{record} text=secret reason=private event=private path=/secret"
+            )),
+            Some(record.into())
+        );
+    }
+    for fields in [
+        "status=private",
+        "slot=2",
+        "slot=-1",
+        "revision=65536",
+        "role=other",
+        "gpu_mode=auto",
+        "connection_epoch=18446744073709551616",
+        "device_minor=4294967296",
+        "device_major=0xE2",
+        "entries=32",
+    ] {
+        assert_eq!(
+            reduced_record(&format!("sophia_shell_component {fields}")),
+            Some("sophia_shell_component".into())
+        );
+    }
+    assert_eq!(
+        reduced_record("sophia_other gpu_mode=direct role=bar slot=0"),
+        Some("sophia_other".into())
+    );
+}

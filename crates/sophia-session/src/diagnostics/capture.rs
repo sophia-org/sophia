@@ -328,6 +328,13 @@ pub fn reduced_record(line: &str) -> Option<String> {
             }
             continue;
         }
+        if super::shell_component::record(name) {
+            if super::shell_component::field(name, key, value) {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
         if super::shell_action::record(name) {
             if super::shell_action::field(name, key, value) {
                 result.push(' ');

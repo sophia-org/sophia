@@ -1303,3 +1303,36 @@ GPU, display or native acceptance is inferred from configuration tests. This
 replaces the public guard only; the `lom-test` wrapper still selects the legacy
 single-shell profile and needs a separate explicit component profile/harness
 join before a physical run. No canonical successor or physical readiness claim.
+
+### Independent component launch evidence, 2026-09-18
+
+The component owner now retains the GPU preparation result beside its exact
+attempt key instead of discarding it. The read requires that same currently
+Connected attempt; preparation/spawn alone, revoked attempts and altered grant
+identities refuse. Successful negotiation reports role, slot, connection/content
+epochs, negotiated revision, GPU policy and exact admitted device numbers. A
+negotiation already revoked by a concurrent presentation pause is not reported
+as current admission. Direct policy evidence is the existing validated launch
+result, not proof of adapter selection or native rendering.
+
+Process events distinguish failed supervision from a retired process whose
+endpoint cleanup succeeded/failed. Endpoint release is not claimed as a normal
+child exit or native cleanup. The structured recorder has a bounded, explicit
+component/catalog/launcher vocabulary; it excludes query text, catalog strings,
+paths, raw event Debug values and free-form errors. Launcher denial is an
+intentional per-role GPU policy, not a failure of the bar grant.
+
+Evidence: `.artifacts/bemenu-component-evidence/final/result.json` and
+`final-execution.log`. A real protected Bemenu control negotiates, revokes/reaps,
+settles and relaunches through ShellComponentSession, proving fresh exact evidence
+and refusal before negotiation/after revoke/for altered and old grants. It is
+GPU-denied and receives no opening or presentation; the direct-device positive
+is source integration, not a hardware test. The first control failed because it
+omitted final settlement after request_shutdown recorded its obligation; that
+failed log remains separate. Final device-hidden runs: 476 Session library,
+25 diagnostics, five ordinary component process controls and four explicitly
+selected protected parent controls pass (510 total). Five ignored entries in the
+ordinary process run include four selected parents and the child entry exercised
+only through its parent; 14 library tests remain ignored. Strict affected Clippy,
+layout and formatting pass. No new canonical, installation, push or physical
+readiness claim. The component-aware harness/profile and exact final gate remain.

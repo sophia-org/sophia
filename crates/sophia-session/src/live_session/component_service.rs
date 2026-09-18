@@ -29,22 +29,62 @@ pub(super) fn service_components(
         Ok(visit) => {
             for (key, result) in visit.negotiations.into_iter().flatten() {
                 match result {
-                    Ok(welcome) => crate::session_println!(
-                        "sophia_shell_component schema=1 status=negotiated slot={} connection_epoch={} revision={}",
+                    Ok(welcome) => {
+                        // A negotiation completed during a pause may already
+                        // have been revoked by poll; do not report it admitted.
+                        if !components
+                            .connected_roles()
+                            .into_iter()
+                            .flatten()
+                            .any(|(current, _)| current == key)
+                        {
+                            continue;
+                        }
+                        let (role, gpu) = components.launch_evidence(key)?;
+                        let role = match role {
+                            sophia_config::ShellComponentRole::Bar => "bar",
+                            sophia_config::ShellComponentRole::ApplicationLauncher => {
+                                "application_launcher"
+                            }
+                        };
+                        crate::session_println!(
+                            "sophia_shell_component schema=1 status=negotiated slot={} role={} connection_epoch={} content_grant_epoch={} revision={} gpu_mode={} gpu_grant_epoch={} device_major={} device_minor={}",
+                            key.slot,
+                            role,
+                            key.grant.connection_epoch,
+                            key.grant.content_grant_epoch,
+                            welcome.selected_revision,
+                            if gpu.is_some() { "direct" } else { "denied" },
+                            gpu.map_or(0, |g| g.epoch),
+                            gpu.map_or(0, |g| g.major),
+                            gpu.map_or(0, |g| g.minor),
+                        );
+                    }
+                    Err(error) => crate::session_eprintln!(
+                        "sophia_shell_component schema=1 status=negotiation_failed slot={} connection_epoch={} content_grant_epoch={} reason={error}",
                         key.slot,
                         key.grant.connection_epoch,
-                        welcome.selected_revision,
-                    ),
-                    Err(error) => crate::session_eprintln!(
-                        "sophia_shell_component schema=1 status=negotiation_failed slot={} reason={error}",
-                        key.slot,
+                        key.grant.content_grant_epoch,
                     ),
                 }
             }
             for event in visit.processes.into_iter().flatten() {
-                crate::session_println!(
-                    "sophia_shell_component schema=1 status=process_event event={event:?}"
-                );
+                use crate::shell_component_processes::ComponentProcessEvent;
+                match event {
+                    ComponentProcessEvent::ProcessRetired(key, result) => crate::session_println!(
+                        "sophia_shell_component schema=1 status=process_retired slot={} connection_epoch={} content_grant_epoch={} endpoint_released={}",
+                        key.slot,
+                        key.grant.connection_epoch,
+                        key.grant.content_grant_epoch,
+                        result.is_ok(),
+                    ),
+                    ComponentProcessEvent::Failed(key, error) => crate::session_eprintln!(
+                        "sophia_shell_component schema=1 status=process_failed slot={} connection_epoch={} content_grant_epoch={} reason={error}",
+                        key.slot,
+                        key.grant.connection_epoch,
+                        key.grant.content_grant_epoch,
+                    ),
+                }
             }
             for (key, error) in visit.stop_errors.into_iter().flatten() {
                 crate::session_eprintln!(
@@ -59,7 +99,7 @@ pub(super) fn service_components(
     }
     components.settle_revocations(Some(runtime))?;
     // Native startup may negotiate once its source snapshot is ready. Opening
-    // and input remain separately gated; the public config guard is still held.
+    // and input remain separately gated by current native presentation authority.
     if let Err(error) = components.start_next(Instant::now(), |role| {
         role == sophia_config::ShellComponentRole::Bar || catalog.ready()
     }) {

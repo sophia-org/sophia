@@ -1,6 +1,9 @@
 //! Session join for selected process attempts and their exact borrowed services.
 use super::{NativeLauncherActionService, NativeLauncherContentService, PanelComponentService};
-use super::{RevokedContentGrantLedger, component_launch::ShellComponentLaunch};
+use super::{
+    RevokedContentGrantLedger,
+    component_launch::{ComponentGpuLaunchEvidence, ShellComponentLaunch},
+};
 use crate::shell_component_connections::{ComponentConnectionKey, ComponentConnectionPhase};
 use crate::shell_component_processes::{
     ComponentProcessEvent, ComponentProcessVisit, ShellComponentProcesses,
@@ -34,6 +37,7 @@ struct Ready {
 pub struct ShellComponentSession {
     processes: ShellComponentProcesses,
     plans: Vec<ShellComponentLaunch>,
+    launch_evidence: [Option<(ComponentConnectionKey, Option<ComponentGpuLaunchEvidence>)>; 2],
     ready: [Option<Ready>; 2],
     revoked: RevokedContentGrantLedger,
     panel_limit: u16,
@@ -85,6 +89,7 @@ impl ShellComponentSession {
         Ok(Self {
             processes,
             plans,
+            launch_evidence: [None, None],
             ready: [None, None],
             revoked: Default::default(),
             panel_limit,
@@ -96,6 +101,26 @@ impl ShellComponentSession {
             start_cursor: 0,
             last_schedule: None,
         })
+    }
+
+    /// Evidence belongs to this successfully negotiated attempt, never a later
+    /// occupant of the same role slot. Preparation alone is not admission.
+    pub fn launch_evidence(
+        &self,
+        key: ComponentConnectionKey,
+    ) -> Result<(ShellComponentRole, Option<&ComponentGpuLaunchEvidence>)> {
+        if self.processes.phase(key)? != ComponentConnectionPhase::Connected {
+            return Err("component launch evidence requires a connected attempt".into());
+        }
+        let (observed, gpu) = self
+            .launch_evidence
+            .get(key.slot)
+            .and_then(Option::as_ref)
+            .ok_or("component launch evidence missing")?;
+        if *observed != key {
+            return Err("stale component launch evidence".into());
+        }
+        Ok((self.plans[key.slot].selection().role, gpu.as_ref()))
     }
 
     pub fn attempt(&self, slot: usize) -> Option<ComponentConnectionKey> {
@@ -166,9 +191,9 @@ impl ShellComponentSession {
         let result = self.processes.start(
             slot,
             |key, socket| {
-                plan.prepare(key, socket)
-                    .map(|(spec, _)| spec)
-                    .map_err(|e| e.to_string())
+                let (spec, evidence) = plan.prepare(key, socket).map_err(|e| e.to_string())?;
+                self.launch_evidence[slot] = Some((key, evidence));
+                Ok(spec)
             },
             self.policy,
         );
