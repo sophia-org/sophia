@@ -513,3 +513,254 @@ fn c_capacity() {
         &actors,
     );
 }
+
+/// What one interrupted invocation left behind, read through the store the
+/// service ran over and the custody its owner kept.
+#[derive(Debug)]
+struct Interrupted {
+    owed: usize,
+    outstanding: Option<usize>,
+    indeterminate: Option<usize>,
+    terminal_inventories: usize,
+    origin_retained: bool,
+    charged: Option<usize>,
+    /// What the retained inventory of this service's own origin still carries.
+    holds: usize,
+    settling: usize,
+    current: bool,
+    turn: usize,
+    delivering: usize,
+    undelivered: usize,
+    pending_custody: bool,
+}
+
+/// Read the durable store's retained inventory without taking anything.
+fn interrupted_custody(service: &LifecycleService) -> Interrupted {
+    let held = service
+        .owner
+        .store
+        .inner
+        .lock()
+        .expect("a readable store after the invocation ended");
+    let mine = held
+        .terminal
+        .iter()
+        .find(|inventory| Arc::ptr_eq(&inventory.origin.clients, &service.registry.clients));
+    let mut interrupted = Interrupted {
+        owed: held.held.len(),
+        outstanding: None,
+        indeterminate: None,
+        terminal_inventories: held.terminal.len(),
+        origin_retained: mine.is_some(),
+        charged: None,
+        holds: mine.map_or(0, |inventory| inventory.holds.len()),
+        settling: mine.map_or(0, |inventory| inventory.settling.len()),
+        current: mine.is_some_and(|inventory| inventory.current.is_some()),
+        turn: mine.map_or(0, |inventory| inventory.turn.len()),
+        delivering: mine.map_or(0, |inventory| inventory.delivering.len()),
+        undelivered: mine.map_or(0, |inventory| inventory.undelivered.len()),
+        pending_custody: mine.is_some_and(|inventory| inventory.pending_custody.is_some()),
+    };
+    drop(held);
+    interrupted.outstanding = service.owner.store.outstanding();
+    interrupted.indeterminate = service.owner.store.indeterminate();
+    interrupted.charged = service.owner.store.reserved();
+    interrupted
+}
+
+#[test]
+fn c_interrupted_ownership() {
+    let mut actors = Vec::new();
+    let mut facts = Vec::new();
+    for (index, kind) in ["return", "error", "unwind"].into_iter().enumerate() {
+        let store = PrivateSettlementOwner::with_capacity(C_RESERVATION_BOUND);
+        let mut service = LifecycleService::launch_over_store(
+            kind,
+            12010 + index as u64,
+            None,
+            kind == "unwind",
+            1,
+            store.clone(),
+        );
+        service.start();
+        let (mut peer, custody) = service.connect();
+        let window = 0x320301 + index as u32 * 0x100;
+        let (surface, sequence, ingress) = focus_window(&service, &mut peer, window, 12010);
+        let client = custody.cleanup_record().client;
+
+        // THE KEY SOURCE'S POINTER OBSERVATION comes only from a real pointer
+        // press and release through this same producer. Nothing here writes a
+        // query scope or substitutes a history for it.
+        let pointer_pair = press_and_release(
+            &service,
+            &ingress,
+            &mut peer,
+            surface,
+            sequence,
+            window,
+            12050 + index as u64 * 10,
+        );
+
+        // ONE REAL KEYBOARD HISTORY, established through the actual source and
+        // written to the recipient's socket, so what outlives the runner is a
+        // history this invocation actually made.
+        let key = 12100 + index as u64 * 10;
+        ingress
+            .submit(&service.owner.lease(), key_service_route(surface, key, 42, true))
+            .expect("an actual held key press");
+        let key_bytes = expected_key_service_event(sequence, window, 50, true, 0);
+        assert_eq!(read_event(&mut peer, 3), Some(key_bytes));
+        assert_eq!(
+            receipt_for(&service.deliveries, key),
+            XAuthorityInputDeliveryOutcome::Flushed
+        );
+        assert!(waited_for(|| store.reserved() == Some(0)));
+
+        // The unwind is armed from the recipient's own drawn surface before
+        // the runner is held: the service must reach its raster wait itself.
+        let drawn = (kind == "unwind").then(|| {
+            let drawn = draw_and_learn_surface(&mut peer, &service.transactions);
+            assert!(waited_for(|| saw_kind(
+                &service.telemetry,
+                XAuthorityBackpressureTelemetryKind::Wait,
+                true
+            )));
+            drawn
+        });
+
+        let identity = custody_identity(&custody);
+        let producers = leased_producers(&service, client, C_PRODUCERS);
+        let held = hold_runner(&service);
+        let entered = held.entered();
+        let first = 12200 + index as u64 * 100;
+        let (accepted, refusal) = fill_until_refused(
+            &service,
+            &producers,
+            surface,
+            first,
+            C_RESERVATION_BOUND + 4,
+        );
+        assert_eq!(accepted, C_RESERVATION_BOUND);
+        assert_eq!(refusal, Some("Saturated"));
+        // THE EXACT CELLS THIS INVOCATION MINTED, held by the case so that
+        // what is compared afterwards is the completion the accepted request
+        // was given and not a lookup that could answer with a successor.
+        let cells: Vec<Arc<PrivateDeliveryCompletion>> = (0..accepted as u64)
+            .map(|offset| {
+                delivery_cell(&service.registry, first + offset)
+                    .expect("the accepted request's own completion")
+            })
+            .collect();
+        assert!(
+            cells.iter().all(|cell| cell.answer().is_none()),
+            "nothing accepted has been answered while the runner is held"
+        );
+        let charged_before_exit = store.reserved();
+        assert_eq!(charged_before_exit, Some(C_RESERVATION_BOUND));
+
+        match kind {
+            "return" => service.command(XServerFrontendServiceCommand::StopAndDisconnect),
+            "error" => {
+                let (acknowledgement, acknowledged) = sync_channel(1);
+                drop(acknowledged);
+                service.command(XServerFrontendServiceCommand::UpdateOutputTopology {
+                    snapshot: sophia_protocol::OutputTopologySnapshot {
+                        generation: 1,
+                        primary: sophia_protocol::OutputId::from_raw(1),
+                        outputs: Vec::new(),
+                    },
+                    acknowledgement,
+                });
+            }
+            "unwind" => {
+                service
+                    .raster
+                    .try_route(raster_requirement_for(drawn.expect("a drawn surface")))
+                    .expect("the raster requirement reached the service");
+            }
+            _ => unreachable!(),
+        }
+        held.release();
+        let closed = service.closed();
+        assert_eq!(closed.unwound, kind == "unwind");
+        assert_eq!(closed.error.is_some(), kind == "error");
+
+        // THE ORIGINAL KEYBOARD HISTORY OUTLIVED THE RUNNER that was using it.
+        assert_eq!(
+            closed.modifiers,
+            Some(1),
+            "{kind}: the held Shift is the same history, not a neutral rebuild"
+        );
+        // THE EXACT CUSTODY, unchanged by the interruption.
+        assert_eq!(custody_identity(&custody), identity, "{kind}");
+        let retained = interrupted_custody(&service);
+        assert!(
+            retained.origin_retained,
+            "{kind}: the retained inventory names the registry that accepted the work"
+        );
+        // THE UNFINISHED WORK ITSELF IS STILL HERE. The held key was never
+        // released, so its native obligation and the delivery custody that
+        // carries it are retained rather than settled by the interruption.
+        assert!(
+            retained.holds >= 1,
+            "{kind}: the original held key is retained, unresolved: {retained:?}"
+        );
+        assert!(
+            retained.charged.is_some(),
+            "{kind}: the store says what it holds rather than answering zero for unreadable"
+        );
+        // Whatever the exit could not finish stays owned, and every credit the
+        // store still reports is one this invocation actually took.
+        let carried = retained.owed
+            + retained.outstanding.unwrap_or_default()
+            + retained.indeterminate.unwrap_or_default()
+            + retained.turn
+            + retained.delivering
+            + retained.undelivered
+            + usize::from(retained.current);
+        assert!(
+            retained.charged.unwrap_or_default() >= carried,
+            "{kind}: nothing owed had its credit released on a guess: {retained:?}"
+        );
+        let answered = cells.iter().filter(|cell| cell.answer().is_some()).count();
+        assert!(
+            answered < accepted,
+            "{kind}: work the interrupted invocation never ran is not answered by the interruption"
+        );
+        facts.push(json!({
+            "exit": kind,
+            "accepted_before_exit": accepted,
+            "charged_before_exit": charged_before_exit,
+            "held_on": format!("{entered:?}"),
+            "pointer_observation": pointer_pair,
+            "original_key_bytes": key_bytes.to_vec(),
+            "original_modifiers_after_exit": closed.modifiers,
+            "custody_identity": format!("{identity:?}"),
+            "retained": format!("{retained:?}"),
+            "original_cells_answered": answered,
+            "original_cells_held": cells.len(),
+            "closed_error": closed.error.clone(),
+            "order": format!("{:?}", closed.order),
+        }));
+        drop(cells);
+        actors.extend(service.finish(&[custody]));
+    }
+
+    emit_case(
+        "C.interrupted_ownership",
+        &[
+            ("return", facts[0].clone()),
+            ("error", facts[1].clone()),
+            ("unwind", facts[2].clone()),
+            (
+                "original_completion_and_origin",
+                json!({"all_exits": facts}),
+            ),
+            (
+                "runner_loss_keyboard_custody",
+                json!({"all_exits": facts}),
+            ),
+        ],
+        &actors,
+    );
+}
