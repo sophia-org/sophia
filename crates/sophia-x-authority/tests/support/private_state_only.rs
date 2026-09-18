@@ -50,7 +50,10 @@ fn state_only_execute(
         panic!("the original accepted key request completes through common");
     };
     assert!(custody.observe().unwrap().is_some());
-    assert!(custody.observe().unwrap().is_none());
+    assert!(
+        custody.observe().is_err(),
+        "a consumed original completion cannot be taken twice"
+    );
     assert!(custody.finish_item());
     run
 }
