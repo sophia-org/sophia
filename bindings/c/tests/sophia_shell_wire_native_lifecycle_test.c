@@ -279,7 +279,7 @@ static unsigned nibble(char c)
 int main(int argc,char **argv)
 {
     assert(argc==2); FILE *file=fopen(argv[1],"r"); assert(file);
-    char line[4096]; int found=0;
+    static char line[4096]; int found=0;
     while (fgets(line,sizeof(line),file)) {
         if (strncmp(line,"content-161 ",12)) continue;
         char *hex=line+12; size_t n=strcspn(hex,"\r\n"); assert(n==sizeof(limits_bytes)*2);
