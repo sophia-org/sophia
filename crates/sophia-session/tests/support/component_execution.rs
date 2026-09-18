@@ -12,7 +12,7 @@ use fixture::*;
 
 #[test]
 fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
-    for mode in 0..3 {
+    for mode in 0..4 {
         let revoked = mode == 1;
         let profile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../tools/fixtures/mixed_output_probe.kdl");
@@ -61,6 +61,9 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
         };
         let mut h = Harness::with_command(command);
         let mut catalog = component_catalog::ComponentCatalog::default();
+        catalog
+            .reconcile_connections(&[GRANT], &mut h.queue)
+            .unwrap();
         let deadline = Instant::now() + Duration::from_secs(3);
         while !catalog
             .visit_scan(&config, &mut h.queue, authority)
@@ -69,6 +72,81 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
             assert!(Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(1));
         }
+        let other_grant = ContentGrant {
+            connection_epoch: 3,
+            content_grant_epoch: 3,
+        };
+        let mut neighbor = if mode == 3 {
+            let mut other_limits = limits();
+            other_limits.grant = other_grant;
+            let mut peer = Peer::with_limits(
+                &mut h.epochs,
+                sophia_runtime::ContentStoreProfile::NativeLauncher,
+                other_limits,
+            );
+            peer.transport
+                .begin_negotiation(
+                    &h.epochs,
+                    other_grant.connection_epoch,
+                    Duration::from_secs(2),
+                    granted(),
+                )
+                .unwrap();
+            use std::io::Write;
+            peer.client
+                .write_all(&encode_shell_v1_client_hello_frame(hello()).unwrap())
+                .unwrap();
+            let mut negotiated = false;
+            for _ in 0..2048 {
+                if let Some(welcome) = peer.transport.poll_negotiation(&mut h.epochs, 7).unwrap() {
+                    assert_eq!(welcome.connection_epoch, other_grant.connection_epoch);
+                    negotiated = true;
+                    break;
+                }
+            }
+            assert!(negotiated);
+            peer.read(); // Welcome.
+            peer.read(); // Exact independently reserved limits.
+            catalog
+                .reconcile_connections(&[GRANT, other_grant], &mut h.queue)
+                .unwrap();
+            assert!(
+                catalog
+                    .publish(&mut h.peer.transport.connection(&mut h.epochs))
+                    .unwrap()
+            );
+            assert!(
+                catalog
+                    .publish(&mut peer.transport.connection(&mut h.epochs))
+                    .unwrap()
+            );
+            let first = catalog
+                .publication(GRANT)
+                .unwrap()
+                .published()
+                .unwrap()
+                .wire()
+                .clone();
+            let second = catalog
+                .publication(other_grant)
+                .unwrap()
+                .published()
+                .unwrap()
+                .wire()
+                .clone();
+            assert_eq!(first.entries, second.entries);
+            assert_eq!(first.generation, second.generation);
+            assert_ne!(first.connection_epoch, second.connection_epoch);
+            h.peer.transport.poll_io(&mut h.epochs).unwrap();
+            peer.transport.poll_io(&mut h.epochs).unwrap();
+            for _ in 0..4 {
+                h.peer.read();
+                peer.read();
+            }
+            Some(peer)
+        } else {
+            None
+        };
         let mut content =
             NativeLauncherContentService::new(&h.peer.transport.connection(&mut h.epochs)).unwrap();
         let activation = h.accept();
@@ -85,6 +163,21 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                 .unwrap()
         );
         assert_eq!(h.activate(activation, 0).status, 1);
+        if mode == 3 {
+            // Inventory order is scheduling order, not revocation. Invalid
+            // inventory must also leave both publication and launch owners intact.
+            catalog
+                .reconcile_connections(&[other_grant, GRANT], &mut h.queue)
+                .unwrap();
+            assert!(
+                catalog
+                    .reconcile_connections(&[GRANT, GRANT], &mut h.queue)
+                    .is_err()
+            );
+            assert_eq!(h.queue.pending_len(), 1);
+            assert!(catalog.publication(other_grant).is_some());
+            assert!(catalog.publication(GRANT).is_some());
+        }
         assert!(
             content
                 .close_admitted(&mut h.peer.transport.connection(&mut h.epochs), tx(90))
@@ -119,7 +212,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
         if mode == 2 {
             catalog
                 .service_execution(
-                    Some(&h.peer.transport.connection(&mut h.epochs)),
+                    None,
                     &config,
                     authority,
                     &mut h.queue,
@@ -128,6 +221,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                 )
                 .unwrap();
             assert_eq!(h.queue.pending_len(), 1);
+            catalog.reconcile_connections(&[], &mut h.queue).unwrap();
             catalog
                 .service_execution(
                     None,
@@ -151,6 +245,30 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
         }
         let intent = h.queue.begin_next(true).unwrap();
         assert!(h.queue.dispatch_catalog(intent.transaction));
+        assert_eq!(catalog.execution_owner(&h.queue), Some(GRANT));
+        if let Some(peer) = &mut neighbor {
+            assert!(
+                catalog
+                    .service_execution(
+                        Some(&peer.transport.connection(&mut h.epochs)),
+                        &config,
+                        authority,
+                        &mut h.queue,
+                        &mut children,
+                        &mut started,
+                    )
+                    .is_err()
+            );
+            assert_eq!(catalog.execution_owner(&h.queue), Some(GRANT));
+            assert!(children.is_empty());
+            // Removing the unrelated peer must not cancel the selected owner.
+            catalog
+                .reconcile_connections(&[GRANT], &mut h.queue)
+                .unwrap();
+            assert!(catalog.publication(other_grant).is_none());
+            assert!(catalog.publication(GRANT).is_some());
+            assert_eq!(catalog.execution_owner(&h.queue), Some(GRANT));
+        }
         catalog
             .service_execution(
                 Some(&h.peer.transport.connection(&mut h.epochs)),
@@ -161,7 +279,39 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                 &mut started,
             )
             .unwrap();
+        assert_eq!(catalog.execution_owner(&h.queue), Some(GRANT));
+        if let Some(peer) = &mut neighbor {
+            // The same guard protects a submitted worker result, not only the
+            // still-queued dispatch. A wrong/absent borrow must not poll it.
+            assert!(
+                catalog
+                    .service_execution(
+                        Some(&peer.transport.connection(&mut h.epochs)),
+                        &config,
+                        authority,
+                        &mut h.queue,
+                        &mut children,
+                        &mut started,
+                    )
+                    .is_err()
+            );
+            assert!(
+                catalog
+                    .service_execution(
+                        None,
+                        &config,
+                        authority,
+                        &mut h.queue,
+                        &mut children,
+                        &mut started,
+                    )
+                    .is_err()
+            );
+            assert_eq!(catalog.execution_owner(&h.queue), Some(GRANT));
+            assert!(children.is_empty());
+        }
         if revoked {
+            catalog.reconcile_connections(&[], &mut h.queue).unwrap();
             catalog
                 .service_execution(
                     None,
@@ -199,6 +349,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
             );
             assert_eq!(children[0].launch_transaction, Some(intent.transaction));
             // A later disconnect cannot erase the already executed child's origin.
+            catalog.reconcile_connections(&[], &mut h.queue).unwrap();
             catalog
                 .service_execution(
                     None,

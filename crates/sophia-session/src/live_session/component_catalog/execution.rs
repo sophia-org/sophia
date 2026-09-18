@@ -13,12 +13,11 @@ impl ComponentCatalog {
         children: &mut Vec<ManagedSessionChild>,
         admission_started: &mut Option<Instant>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let grant = connection.and_then(|c| c.content_grant());
-        if self.execution_grant != grant {
-            if let Some(old) = self.execution_grant {
-                launches.revoke_native_catalog_grant(old);
-            }
-            self.execution_grant = grant;
+        let expected = self.execution_owner(launches);
+        if connection.and_then(|c| c.content_grant())
+            != expected.filter(|g| self.connected_grants.contains(&Some(*g)))
+        {
+            return Err("catalog worker visit borrowed the wrong connected owner".into());
         }
         // Scan owns worker results until its immutable snapshot is ready.
         if !self.ready() {

@@ -1,6 +1,6 @@
 //! Catalog worker custody outside the owner loop and independent peer epochs.
 use super::*;
-use sophia_protocol::OutputId;
+use sophia_protocol::{ContentGrant, OutputId};
 mod actions;
 mod execution;
 mod opening;
@@ -17,11 +17,11 @@ pub(super) struct ComponentCatalog {
     refresh_pending: bool,
     stopped: bool,
     started: Option<Instant>,
-    publication: Option<NativeCatalogPublication>,
+    publications: [Option<NativeCatalogPublication>; sophia_config::MAX_SHELL_COMPONENTS],
     next_transaction: u64,
     queued_open: Option<(OutputId, Instant)>,
     next_opening: u64,
-    execution_grant: Option<sophia_protocol::ContentGrant>,
+    connected_grants: [Option<ContentGrant>; sophia_config::MAX_SHELL_COMPONENTS],
 }
 impl ComponentCatalog {
     pub(super) fn mint_transaction(&mut self) -> Result<TransactionId, Box<dyn std::error::Error>> {
@@ -47,7 +47,13 @@ impl ComponentCatalog {
                 .components
                 .shell_components
                 .iter()
-                .any(|entry| entry.role == sophia_config::ShellComponentRole::ApplicationLauncher)
+                .any(|entry| {
+                    matches!(
+                        entry.role,
+                        sophia_config::ShellComponentRole::ApplicationLauncher
+                            | sophia_config::ShellComponentRole::Dock
+                    )
+                })
         {
             return Ok(false);
         }
@@ -145,14 +151,16 @@ impl ComponentCatalog {
         let grant = transport
             .content_grant()
             .ok_or("native catalog has no connected grant")?;
-        if self
-            .publication
-            .as_ref()
-            .is_some_and(|p| p.grant() != grant)
-        {
-            self.queued_open = None;
+        if !self.connected_grants.contains(&Some(grant)) {
+            return Err("catalog peer is not in the current connected inventory".into());
         }
-        if self.publication.as_ref().is_none_or(|p| p.grant() != grant) {
+        let index = self
+            .publications
+            .iter()
+            .position(|p| p.as_ref().is_some_and(|p| p.grant() == grant))
+            .or_else(|| self.publications.iter().position(Option::is_none))
+            .ok_or("catalog publication inventory exhausted")?;
+        if self.publications[index].is_none() {
             let (generation, source) = self.snapshot.as_ref().ok_or("native catalog absent")?;
             let catalog = PublishedApplicationCatalog::new(
                 grant.connection_epoch,
@@ -167,13 +175,62 @@ impl ComponentCatalog {
             let publication =
                 NativeCatalogPublication::new(transport, TransactionId::from_raw(next), catalog)?;
             self.next_transaction = next;
-            self.publication = Some(publication);
+            self.publications[index] = Some(publication);
         }
-        Ok(self
-            .publication
+        Ok(self.publications[index]
             .as_mut()
             .ok_or("catalog publication absent")?
             .service(transport)?)
+    }
+
+    pub(super) fn publication(&self, grant: ContentGrant) -> Option<&NativeCatalogPublication> {
+        self.publications
+            .iter()
+            .flatten()
+            .find(|p| p.grant() == grant)
+    }
+
+    /// Reconcile once from the complete connected inventory, not from whichever
+    /// peer happens to receive this service turn. Validate before revoking any.
+    pub(super) fn reconcile_connections(
+        &mut self,
+        current: &[ContentGrant],
+        launches: &mut SessionLaunchQueue,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if current.len() > self.connected_grants.len()
+            || current.iter().enumerate().any(|(i, grant)| {
+                grant.connection_epoch == 0
+                    || grant.content_grant_epoch == 0
+                    || current[..i].contains(grant)
+            })
+        {
+            return Err("invalid connected catalog inventory".into());
+        }
+        for old in self.connected_grants.iter().flatten() {
+            if !current.contains(old) {
+                launches.revoke_native_catalog_grant(*old);
+            }
+        }
+        for publication in &mut self.publications {
+            if publication
+                .as_ref()
+                .is_some_and(|p| !current.contains(&p.grant()))
+            {
+                if publication.as_ref().is_some_and(|p| !p.is_persistent()) {
+                    self.queued_open = None;
+                }
+                *publication = None;
+            }
+        }
+        self.connected_grants = std::array::from_fn(|i| current.get(i).copied());
+        Ok(())
+    }
+
+    pub(super) fn execution_owner(&self, launches: &SessionLaunchQueue) -> Option<ContentGrant> {
+        self.service
+            .as_ref()
+            .and_then(NativeCatalogService::pending_grant)
+            .or_else(|| launches.native_catalog_dispatch_grant())
     }
 
     /// Terminal cleanup, never a seat acknowledgement. On timeout or failure

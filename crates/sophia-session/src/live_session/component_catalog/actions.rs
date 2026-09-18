@@ -24,10 +24,9 @@ impl ComponentCatalog {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let transaction = self.mint_transaction()?;
         let now_msec = self.action_now_msec()?;
-        let Some(publication) = self
-            .publication
-            .as_ref()
-            .filter(|p| Some(p.grant()) == transport.content_grant())
+        let Some(publication) = transport
+            .content_grant()
+            .and_then(|grant| self.publication(grant))
             .and_then(|p| p.published())
         else {
             return Ok(());

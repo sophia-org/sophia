@@ -108,12 +108,8 @@ pub(super) fn service_components(
             "sophia_shell_component schema=1 status=start_failed reason={error}"
         );
     }
-    if !components
-        .connected_roles()
-        .into_iter()
-        .flatten()
-        .any(|(_, role)| role == sophia_config::ShellComponentRole::ApplicationLauncher)
-    {
+    reconcile_catalog_connections(components, catalog, launches)?;
+    if !available {
         catalog.service_execution(
             None,
             config,
@@ -122,8 +118,6 @@ pub(super) fn service_components(
             children,
             admission_started,
         )?;
-    }
-    if !available {
         return Ok(());
     }
     let bounds = wm_output_bounds(outputs);
@@ -147,14 +141,6 @@ pub(super) fn service_components(
                         children.len(),
                     )?;
                     content.close_admitted(transport, catalog.mint_transaction()?)?;
-                    catalog.service_execution(
-                        Some(transport),
-                        config,
-                        xauthority,
-                        launches,
-                        children,
-                        admission_started,
-                    )?;
                     catalog.service_open_content(
                         content,
                         transport,
@@ -175,14 +161,7 @@ pub(super) fn service_components(
                 );
                 launches.revoke_native_catalog_grant(key.grant);
                 components.stop(key)?;
-                catalog.service_execution(
-                    None,
-                    config,
-                    xauthority,
-                    launches,
-                    children,
-                    admission_started,
-                )?;
+                catalog.cancel_open_request();
             }
             continue;
         }
@@ -235,8 +214,63 @@ pub(super) fn service_components(
             }
         }
     }
+    reconcile_catalog_connections(components, catalog, launches)?;
+    // The single verification worker is visited once, with its exact current
+    // connection. An unrelated peer cannot revoke or consume its pending result.
+    let owner = catalog.execution_owner(launches);
+    let key = components
+        .connected_roles()
+        .into_iter()
+        .flatten()
+        .find(|(key, _)| Some(key.grant) == owner)
+        .map(|(key, _)| key);
+    if let Some(key) = key {
+        components.with_service(key, |_, transport| {
+            catalog.service_execution(
+                Some(transport),
+                config,
+                xauthority,
+                launches,
+                children,
+                admission_started,
+            )
+        })??;
+    } else {
+        catalog.service_execution(
+            None,
+            config,
+            xauthority,
+            launches,
+            children,
+            admission_started,
+        )?;
+    }
     components.settle_revocations(Some(runtime))?;
     Ok(())
+}
+
+fn reconcile_catalog_connections(
+    components: &ShellComponentSession,
+    catalog: &mut component_catalog::ComponentCatalog,
+    launches: &mut SessionLaunchQueue,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let connected = components.connected_roles();
+    let mut grants = [sophia_protocol::ContentGrant {
+        connection_epoch: 0,
+        content_grant_epoch: 0,
+    }; sophia_config::MAX_SHELL_COMPONENTS];
+    let mut count = 0;
+    for (key, role) in connected.into_iter().flatten() {
+        if matches!(
+            role,
+            sophia_config::ShellComponentRole::ApplicationLauncher
+                | sophia_config::ShellComponentRole::Dock
+        ) {
+            grants[count] = key.grant;
+            count += 1;
+        }
+    }
+    catalog.reconcile_connections(&grants[..count], launches)
 }
 
 pub(super) fn issue_component_activation(

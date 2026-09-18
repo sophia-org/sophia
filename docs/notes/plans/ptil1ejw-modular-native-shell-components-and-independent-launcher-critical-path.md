@@ -1449,3 +1449,28 @@ archive compiles and fails the new renderer-failure control with eight bytes
 still retained instead of zero. Evidence: `.artifacts/legacy-disconnect-collection`.
 This is returned-call resource ownership and accounting evidence, not GPU/KMS
 execution. No new native run was performed for this repair.
+
+### Persistent catalog connection ownership (2026-09-18)
+
+The component catalog now retains bounded publications per exact connected grant.
+Reconciliation consumes the complete connected inventory before revoking removed
+owners; alternating service visits no longer imply replacement. The one existing
+verification worker is visited with the exact pending or dispatch grant. A wrong
+or absent connection is refused before polling its result. Transient publication
+keeps its existing wire encoding; persistent publication selects revision-8
+identity records and retains that mode through FIFO retries. Dock negotiation and
+construction remain refused pending the candidate/action integration.
+
+Device-hidden evidence in `.artifacts/dock-catalog-owners-v3` checks two real
+private-socket publications, inventory reordering, duplicate-inventory refusal,
+unrelated-peer removal, exact worker routing and real `/bin/true` child adoption.
+The catalog and presentation used for activation remain supplied fixture facts;
+this is not a revision-8 end-to-end launch or native dock proof. The final Session
+library gate passes 477 tests with 15 ignored; strict library/test Clippy passes.
+Earlier `dock-catalog-owners` and `dock-catalog-owners-final` runs accidentally
+tested the baseline because their archive overlay was skipped. Their logs are
+explicitly baseline-only. The corrected snapshot initialized its own repository
+and compared every changed file to the candidate before execution.
+Removing the exact connected-owner guard in a separate archive compiles and
+fails the wrong-peer assertion. The positive source is retained separately and
+was never mutated. Layout passes; no canonical or hardware acceptance is claimed.

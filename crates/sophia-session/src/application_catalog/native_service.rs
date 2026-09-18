@@ -31,6 +31,13 @@ pub struct NativeCatalogService {
     last_visit: u64,
 }
 impl NativeCatalogService {
+    /// Exact worker owner to borrow on the next visit. Visiting an unrelated
+    /// connected peer must not revoke this verification or consume its result.
+    pub fn pending_grant(&self) -> Option<sophia_protocol::ContentGrant> {
+        self.pending
+            .as_ref()
+            .map(|pending| pending.launch.cause.grant())
+    }
     pub fn start(
         config: sophia_config::ApplicationCatalogConfig,
         registered: Vec<RegisteredCatalogApplication>,

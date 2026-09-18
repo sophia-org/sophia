@@ -9,6 +9,7 @@ const BYTES_PER_VISIT: usize = 64 * 1024;
 
 pub struct NativeCatalogPublication {
     grant: ContentGrant,
+    persistent: bool,
     catalog: PublishedApplicationCatalog,
     remaining: VecDeque<Vec<u8>>,
 }
@@ -18,7 +19,7 @@ impl NativeCatalogPublication {
         transaction: TransactionId,
         catalog: PublishedApplicationCatalog,
     ) -> Result<Self, ShellTransportError> {
-        if !transport.supports_native_launcher() {
+        if !transport.supports_native_launcher() && !transport.supports_persistent_catalog() {
             return Err(ShellTransportError::MissingCapability);
         }
         let grant = transport
@@ -27,18 +28,28 @@ impl NativeCatalogPublication {
         if catalog.wire().connection_epoch != grant.connection_epoch {
             return Err(ShellTransportError::WrongContentGrant);
         }
-        let frames = catalog.frames(transaction)?;
+        let persistent = transport.supports_persistent_catalog();
+        let frames = if persistent {
+            catalog.persistent_frames(transaction)?
+        } else {
+            catalog.frames(transaction)?
+        };
         if frames.iter().any(|frame| frame.len() > BYTES_PER_VISIT) {
             return Err(ShellTransportError::ActivationQueueSaturated);
         }
         Ok(Self {
             grant,
+            persistent,
             catalog,
             remaining: frames.into(),
         })
     }
     pub const fn grant(&self) -> ContentGrant {
         self.grant
+    }
+
+    pub(crate) const fn is_persistent(&self) -> bool {
+        self.persistent
     }
 
     /// Available after every catalog record is FIFO-owned, not peer receipt.
@@ -54,7 +65,13 @@ impl NativeCatalogPublication {
         &mut self,
         transport: &mut ShellTransportConnection<'_>,
     ) -> Result<bool, ShellTransportError> {
-        if transport.content_grant() != Some(self.grant) || !transport.supports_native_launcher() {
+        if transport.content_grant() != Some(self.grant)
+            || if self.persistent {
+                !transport.supports_persistent_catalog()
+            } else {
+                !transport.supports_native_launcher()
+            }
+        {
             return Err(ShellTransportError::WrongContentGrant);
         }
         let mut bytes = 0;

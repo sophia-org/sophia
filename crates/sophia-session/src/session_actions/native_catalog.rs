@@ -210,16 +210,24 @@ impl SessionLaunchQueue {
         true
     }
 
-    pub fn take_native_catalog_dispatch(&mut self) -> Option<Arc<NativeCatalogLaunch>> {
-        let dispatch = self.catalog_dispatch.clone()?;
-        let activation = dispatch.native?;
+    /// Observe the exact ready owner without transferring the dispatch. The
+    /// component scheduler uses it to borrow the matching live connection.
+    pub fn native_catalog_dispatch_grant(&self) -> Option<ContentGrant> {
+        let dispatch = self.catalog_dispatch.as_ref()?;
+        let activation = dispatch.native.as_ref()?;
         let current = self.admitted_native.as_ref()?;
         if current.transaction != dispatch.transaction
-            || current.cause != activation
+            || &current.cause != activation
             || !self.native_catalog_admission(current)
         {
             return None;
         }
+        Some(current.cause.grant())
+    }
+
+    pub fn take_native_catalog_dispatch(&mut self) -> Option<Arc<NativeCatalogLaunch>> {
+        self.native_catalog_dispatch_grant()?;
+        let current = self.admitted_native.as_ref()?;
         let result = Arc::clone(current);
         self.catalog_dispatch = None;
         self.native_dispatch_taken = true;

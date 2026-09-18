@@ -28,9 +28,10 @@ impl ComponentCatalog {
         root: Rect,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(publication) = self
-            .publication
-            .as_ref()
-            .filter(|p| p.grant() == content.grant())
+            .publications
+            .iter()
+            .flatten()
+            .find(|p| p.grant() == content.grant())
         else {
             return Ok(());
         };
