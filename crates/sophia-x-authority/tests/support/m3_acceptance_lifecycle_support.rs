@@ -228,9 +228,27 @@ where
             context.start(spawn)
         }
     };
-    if let Some(handle) = custody.worker_slot().lock().unwrap().handle.as_ref() {
-        let origin = Arc::as_ptr(&custody.cleanup_record().clients) as usize;
-        if TRACKED_ORIGINS.lock().unwrap().contains(&origin) {
+    // THE ORIGIN IS ANSWERED FIRST, AND AN UNTRACKED ONE IS NOT TOUCHED.
+    //
+    // Another fixture deliberately poisons this slot to establish that an
+    // unreadable one is collected rather than skipped. Locking the slot here
+    // before asking whose it was panicked inside that fixture's own start and
+    // changed the outcome it was measuring: an observer that alters what it
+    // observes is not one. Nothing below runs for an origin no acceptance case
+    // is watching.
+    let origin = Arc::as_ptr(&custody.cleanup_record().clients) as usize;
+    if TRACKED_ORIGINS.lock().unwrap().contains(&origin) {
+        // THE ACTUAL HANDLE, and nothing in its place. A poisoned slot still
+        // holds the handle the start retained -- poisoning says a holder
+        // unwound, not that the contents are gone -- so this reads it rather
+        // than either panicking or recording a thread nobody looked at. A
+        // permit refused after the spawn still owns one, which is why this
+        // does not ask what the outcome was.
+        let slot = custody
+            .worker_slot()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(handle) = slot.handle.as_ref() {
             ACTORS.lock().unwrap().push(Actor {
                 origin,
                 thread: handle.thread().id(),
