@@ -21,6 +21,13 @@ pub struct XAuthorityInputDeliveryTicket {
 struct PrivateCompletionUnreadable;
 
 #[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateCompletionMismatch {
+    Missing,
+    Replaced,
+}
+
+#[cfg(unix)]
 struct TrackedInputDelivery {
     ticket: XAuthorityInputDeliveryTicket,
     terminal: Option<XAuthorityClientInputDelivery>,
@@ -376,29 +383,58 @@ impl InputRecovery {
     /// Whoever claims must resolve, however the execution ends, or the
     /// delivery can never be cancelled again.
     fn claim_execution(&self, id: Option<XAuthorityInputDeliveryId>) -> ExecutionClaim {
+        self.claim_execution_matching(id, None)
+            .unwrap_or(ExecutionClaim::Unavailable)
+    }
+
+    /// Deferred private work owns the original completion, not permission to
+    /// execute whatever admission currently occupies the same numeric id.
+    #[cfg_attr(not(test), expect(dead_code, reason = "The frozen private request owner will claim its original completion."))]
+    fn claim_execution_for_held(
+        &self,
+        id: XAuthorityInputDeliveryId,
+        completion: &Arc<PrivateDeliveryCompletion>,
+    ) -> Result<ExecutionClaim, PrivateCompletionMismatch> {
+        match self.claim_execution_matching(Some(id), Some(completion)) {
+            Err(_) if completion.answer().is_some() => Ok(ExecutionClaim::Ended),
+            result => result,
+        }
+    }
+
+    fn claim_execution_matching(
+        &self,
+        id: Option<XAuthorityInputDeliveryId>,
+        completion: Option<&Arc<PrivateDeliveryCompletion>>,
+    ) -> Result<ExecutionClaim, PrivateCompletionMismatch> {
         let Some(id) = id else {
-            return ExecutionClaim::Claimed;
+            return Ok(ExecutionClaim::Claimed);
         };
         let Ok(mut state) = self.state.lock() else {
-            return ExecutionClaim::Unavailable;
+            return Ok(ExecutionClaim::Unavailable);
         };
         let Some(entry) = state.tickets.get_mut(&id) else {
+            if completion.is_some() {
+                return Err(PrivateCompletionMismatch::Missing);
+            }
             // Untracked, so there is nothing to arbitrate over and nothing to
             // resolve. Resolving an absent claim is a no-op.
-            return ExecutionClaim::Claimed;
+            return Ok(ExecutionClaim::Claimed);
         };
-        if entry.terminal.is_some() {
+        if completion.is_some_and(|held| !Arc::ptr_eq(held, &entry.completion)) {
+            return Err(PrivateCompletionMismatch::Replaced);
+        }
+        if entry.terminal.is_some() || completion.is_some_and(|held| held.answer().is_some()) {
             entry.routing_finished = true;
             if entry.observed {
                 state.tickets.remove(&id);
             }
-            return ExecutionClaim::Ended;
+            return Ok(ExecutionClaim::Ended);
         }
         if entry.claimed {
-            return ExecutionClaim::Contended;
+            return Ok(ExecutionClaim::Contended);
         }
         entry.claimed = true;
-        ExecutionClaim::Claimed
+        Ok(ExecutionClaim::Claimed)
     }
 
     /// Give up a claim, saying whether an effect may have happened under it.
@@ -413,6 +449,25 @@ impl InputRecovery {
     /// an effect that did happen is the failure this exists to prevent; a
     /// delivery left owed an outcome is answered by the deadline.
     fn resolve_claim(&self, id: Option<XAuthorityInputDeliveryId>, may_have_applied: bool) {
+        self.resolve_claim_matching(id, None, may_have_applied);
+    }
+
+    #[cfg_attr(not(test), expect(dead_code, reason = "The frozen private request owner will release its original completion claim."))]
+    fn resolve_claim_for_held(
+        &self,
+        id: XAuthorityInputDeliveryId,
+        completion: &Arc<PrivateDeliveryCompletion>,
+        may_have_applied: bool,
+    ) {
+        self.resolve_claim_matching(Some(id), Some(completion), may_have_applied);
+    }
+
+    fn resolve_claim_matching(
+        &self,
+        id: Option<XAuthorityInputDeliveryId>,
+        completion: Option<&Arc<PrivateDeliveryCompletion>>,
+        may_have_applied: bool,
+    ) {
         let Some(id) = id else { return };
         // Reached through poison. This gives back something only this caller
         // holds, and declining leaves a delivery permanently claimed: nothing
@@ -427,6 +482,9 @@ impl InputRecovery {
         let Some(entry) = state.tickets.get_mut(&id) else {
             return;
         };
+        if completion.is_some_and(|held| !Arc::ptr_eq(held, &entry.completion)) {
+            return;
+        }
         entry.claimed = false;
         // Accumulated, not assigned. What this execution did is added to what
         // the delivery has been through.

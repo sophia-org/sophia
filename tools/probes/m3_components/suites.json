@@ -10,6 +10,18 @@
       "x11_socket::routing_tests::retained_deferred_request_requires_actual_cancellation_before_disposal",
       "x11_socket::routing_tests::retained_failed_application_keeps_item_credit_after_completion_and_revocation"
     ],
+    "frozen-requests": [
+      "x11_socket::routing_tests::exact_input_claim_preserves_original_cancellation_across_no_effect_deferral",
+      "x11_socket::routing_tests::missing_or_replaced_unanswered_input_completion_cannot_be_claimed_or_released",
+      "x11_socket::routing_tests::private_guarded_deferral_keeps_original_request_and_executes_once",
+      "x11_socket::routing_tests::dropping_a_deferred_private_request_does_not_dispose_its_accepted_cell",
+      "x11_socket::routing_tests::an_entered_private_request_cannot_be_relabelled_as_effect_free_deferral",
+      "x11_socket::routing_tests::deferred_private_request_rechecks_its_exact_admission_before_the_source",
+      "x11_socket::routing_tests::service_state_only_key_is_explicitly_refused_before_native_application",
+      "x11_socket::routing_tests::service_repeat_key_is_explicitly_refused_before_native_application",
+      "x11_socket::routing_tests::service_shift_a_chord_uses_one_history_and_settles_exact_native_and_writer_obligations",
+      "x11_socket::routing_tests::service_key_join_survivor_and_focus_move_keep_the_original_history_and_endpoint"
+    ],
     "transient-service": [
       "x11_socket::routing_tests::service_motion_and_axis_use_the_original_request_and_reclaim_exact_writer_receipts",
       "x11_socket::routing_tests::transient_full_queue_preserves_exact_pair_token_and_accumulator_without_reselection",
