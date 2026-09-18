@@ -39,6 +39,10 @@ impl NativeLauncherContentService {
             }
         } else {
             self.focus_pending = false;
+            // Explicit close cancels only untransferred semantic input. The
+            // transport retains already-issued event/ACK/activation obligations.
+            self.inputs.clear();
+            self.input_bytes = 0;
             self.opening = Some(opening);
             self.closing = Some(Closing {
                 opening,
@@ -52,6 +56,26 @@ impl NativeLauncherContentService {
             transport.close_native_launcher(opening, transaction, reason)?;
         }
         Ok(())
+    }
+
+    /// The connected scheduler uses this before any new opening or input.
+    /// None means no close; false retains a live removal/resource obligation.
+    pub fn service_close_if_requested(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
+        scene: &sophia_backend_live::LiveProductionCpuScene,
+        native: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
+        transaction: &mut dyn FnMut() -> ServiceResult<TransactionId>,
+    ) -> ServiceResult<Option<bool>> {
+        if self.closing.is_none() {
+            return Ok(None);
+        }
+        if !self.service_close_pixels(transport, runtime, scene, native)? {
+            return Ok(Some(false));
+        }
+        self.settle_close_resources(transport, transaction)
+            .map(Some)
     }
 
     /// True establishes only replacement presentation (or no submitted pixels).

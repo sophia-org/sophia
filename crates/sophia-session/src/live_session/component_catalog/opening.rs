@@ -22,7 +22,7 @@ impl ComponentCatalog {
         transport: &mut ShellTransportConnection<'_>,
         runtime: &mut LiveProductionVisualRuntime,
         scene: &LiveProductionCpuScene,
-        native: Option<&mut LiveProductionNativeScanout>,
+        mut native: Option<&mut LiveProductionNativeScanout>,
         outputs: &[sophia_engine::HeadlessOutput],
         bounds: &[(OutputId, Rect)],
         root: Rect,
@@ -53,6 +53,16 @@ impl ComponentCatalog {
             *next = next.checked_add(1).ok_or("native transaction exhausted")?;
             Ok(TransactionId::from_raw(*next))
         };
+        if content.service_close_if_requested(
+            transport,
+            runtime,
+            scene,
+            native.as_deref_mut(),
+            &mut transaction,
+        )? == Some(false)
+        {
+            return Ok(());
+        }
         if let Err(error) = content.publish_outputs(transport, outputs, &mut transaction) {
             if matches!(
                 error.downcast_ref::<sophia_runtime::ShellTransportError>(),
@@ -66,6 +76,12 @@ impl ComponentCatalog {
         if transport.native_launcher_state().is_none() {
             return Ok(());
         }
+        let clock = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+        let now_usec = u64::try_from(clock.tv_sec)?
+            .checked_mul(1_000_000)
+            .and_then(|seconds| seconds.checked_add(u64::try_from(clock.tv_nsec).ok()? / 1_000))
+            .ok_or("native input monotonic clock overflow")?;
+        content.service_inputs(transport, now_usec)?;
         content.service_open(
             transport,
             publication

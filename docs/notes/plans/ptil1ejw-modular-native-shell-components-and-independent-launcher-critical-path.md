@@ -990,3 +990,32 @@ retained in the log; the activated device-hidden test processes completed.
 `.artifacts/bemenu-native-input-owner-mutant/` compiles a drop-on-refusal mutation;
 the saturation assertion fails, and source restoration is recorded. No broader
 canonical, hardware, publication, installation or physical readiness claim.
+
+## Connected input service and exact close join
+
+The connected catalog/content visit now runs the real input ACK/transfer owner
+before content service, using CLOCK_MONOTONIC with checked conversion. The same
+visit services an existing close before admitting a successor Opening: actual
+pixel replacement precedes exact resource settlement. An unresolved close
+returns for another visit without rebuilding or discarding its owner. This is
+the existing close machinery exposed through one production-called transition,
+not a new retirement state machine.
+
+Beginning the first exact close cancels untransferred local semantic inputs only.
+The transport keeps already-issued receipts and FIFO frames. A wrong opening
+refuses before cancellation. The new real socket control issues sixteen records,
+retains sixteen, refuses a wrong close without losing them, then cancels the
+local remainder and receives all issued records before FocusRevoked and Closed.
+The existing borrowed native content fixture now uses the same combined close
+transition for settlement/retry, preserving its no-submitted-native-frame scope.
+
+`.artifacts/bemenu-native-input-close/`: device-hidden Session 475 PASS/14 ignored,
+input-owner 3 PASS and component connection 7 PASS; strict Session Clippy, layout
+and formatting pass. `.artifacts/bemenu-native-input-close-mutant/` compiles an
+omitted-local-cancellation mutant, fails the intended one-test assertion and
+restores source. Supplied focus/presentation/protection remain explicit. The
+optional loader-cache diagnostic remains in the activation log; actual hidden
+executions complete. No real seat event, protected Bemenu process, native
+replacement presentation, canonical gate or physical readiness is established.
+Capture synchronization/dispatch and actual execution remain unjoined; the
+configuration guard stays closed. No push, installation or hardware action.

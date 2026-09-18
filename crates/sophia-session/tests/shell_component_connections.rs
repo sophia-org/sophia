@@ -679,11 +679,12 @@ fn borrowed_native_content_places_real_wire_request_without_granting_early_focus
             for _ in 0..2 {
                 assert!(
                     service
-                        .settle_close_resources(t, &mut || {
+                        .service_close_if_requested(t, &mut runtime, &scene, None, &mut || {
                             invalidations += 1;
                             Ok(TransactionId::from_raw(920))
                         })
                         .unwrap()
+                        == Some(true)
                 );
                 assert!(t.content_allocation_snapshots().is_empty());
             }
