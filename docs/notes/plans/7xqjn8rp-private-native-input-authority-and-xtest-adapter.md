@@ -19,27 +19,31 @@ Neither UID matching nor knowledge of a socket pathname authorizes injection.
 
 ## Current integration state
 
-**M3 is complete on the local `codex/m3-finish` branch.** The reviewed signed
-chain through `30ac8940` was integrated by fast-forward on 2026-09-18. Its code
-is unchanged from tested source `4fcc9f02`; the subsequent commits update only
-the plan and milestone record. t093 stays open for M4–M6. Physical task t094
-remains separate, and discovery remains disabled.
+**M3 is integrated into local master.** On 2026-09-18, master fast-forwarded
+from the desktop diagnostic checkpoint `8276fa04` to signed `a4626b1b`.
+The merge preserves both histories and the current Session/dock implementation.
+It joins registered worker attachment, collection, deferred namespace cleanup,
+the continuing runner, source-bound native and recipient settlement, and
+retained maintenance. The later Brave admission repair `02548ed9` remains a
+separate branch and is outside this evidence.
 
-The isolated `codex/m3-finish` branch now joins registered worker attachment,
-collection, deferred namespace cleanup, the continuing runner, source-bound
-native and recipient settlement, and retained maintenance. The operator
-authorized completing this critical path with parallel agents. These changes
-remain local to M3; they have not been imported into the Session/dock tree.
+On `a4626b1b`, `cargo xtask check m3-acceptance` passes all twenty cases in
+containment. Five further runs attest the same source and binary. Each run
+passes 84 subcases and collects all 336 actors, with none pending. The full
+contained workspace run passes 4,828 tests, with zero failures and 39 ignored.
+Strict default and all-feature Clippy, formatting and layout checks pass too.
+Reports are under `.artifacts/m3-master-integration-20260918/`.
 
-The combined Rust gate exists: `cargo xtask check m3-acceptance`. On signed
-`4fcc9f02`, all twenty cases pass together in containment, on one source and
-one binary, with 336 actors started and 336 collected and none pending. Five
-further contained runs on that same source repeat it, each attesting the same
-commit, source content digest and binary digest. The full contained workspace
-regression passes on the same source, and so do the strict all-target,
-all-feature Clippy, formatting and layout checks. **The integrated acceptance
-aggregate is PASS.** Review and local finish-branch integration are complete.
-No physical or hardware acceptance is claimed.
+The merge also repairs request-sequence publication before peer-visible
+effects. A paused real-socket regression fails with sequence 2 instead of 3
+under the old ordering, after connection collection, and passes on the merged
+source. The [checkpoint record](../milestones/nywg1vat-m3-integrated-acceptance-checkpoint-and-remaining-c-controls.md)
+keeps the exact identities and the failed intermediate attempt.
+
+t093 stays open for M4–M6: the private Session host and XTEST adapter still
+need their own implementation and acceptance. Physical task t094 remains
+separate, and discovery remains disabled. Local master integration includes
+neither publication nor hardware acceptance.
 
 An earlier contained run on signed `a2bc967c` passed 18 of 20 with no failures,
 with C.indeterminate_send and C.control_cleanup then unbound and that aggregate

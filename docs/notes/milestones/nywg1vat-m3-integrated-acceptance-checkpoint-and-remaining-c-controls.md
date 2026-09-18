@@ -15,7 +15,60 @@ together on one signed source and one binary, in containment, with every actor
 collected, and the full contained workspace regression passes on that same
 source. Those two results are stated below with their identities.
 
-Review and local integration are complete. On 2026-09-18, `codex/m3-finish`
+## Local master integration
+
+On 2026-09-18, local master fast-forwarded from `8276fa04` to signed
+`a4626b1bf5810c171b606aa798e5087d843a7754`. This preserves the M3 history and
+the current desktop implementation, including P5's Present diagnostics. The
+separate Brave admission repair `02548ed9` was deliberately left for a later
+merge. Nothing was pushed or installed.
+
+The final code source has tree `982a358d97584a695ed32c21e535743eadfc08c6`.
+Its archive SHA-256 is
+`fcf789c15b02552bd6fa9d5561cfba02b4c29a13e04ba1c82c2bade331a99982`;
+source content SHA-256 is
+`a6a29bd9b9068c69b3fffd3218fbff2c59a4674cd83284f9430f16571a7b21cb`.
+Under `.artifacts/m3-master-integration-20260918/`, the six reports
+`acceptance-a4626b1b-01` through `-06` each pass 20/20 cases and 84 subcases,
+with 336 actors started and collected and none pending. Each attests that
+source and binary SHA-256
+`065688b76d07afd164ccb0bf43070083275031f600e873171ef99a8b8c1a48cb`.
+The runner used an optimized xtask executable; the product test binary retained
+its ordinary debug test profile, with assertions and overflow checks enabled.
+
+`offline-check-a4626b1b/report.json` records the full contained workspace run:
+317 Rust result groups, 4,828 passes, zero failures, 39 ignored and zero compiler
+warnings. Strict default and all-feature Clippy, fmt, whitespace and layout
+checks pass. The last code change adds `native-session` gating to the catalog
+mode helper, matching its only caller. The earlier `0798c4db` results remain
+under their own identity; they are not substituted for the final-source runs.
+Subsequent tracking edits change documentation only.
+
+The merge exposed a sequence race in ordinary X11 dispatch: a peer could answer
+a routed request before the originating connection published its sequence.
+`0798c4db` publishes before any peer-visible effect, under the wire lock, and
+releases that lock before dispatch. Publication emits no bytes and does not
+wait for queued control priority. The first repair, `16f5dee7`, did wait for
+that priority and blocked an existing core-focus supersession control; its
+failed run is preserved. Both the unchanged supersession control and P5's
+three-window Present control pass on the final source.
+
+The negative source `59a05041` adds the paused socket fixture without the
+publication repair. `selection-before-rerun` fails only the intended wire test,
+at its post-collection assertion: sequence 2 instead of 3. The final fixture
+also makes the pause one-shot; this is a fixture refinement, not a production
+change hidden in the negative. The earlier `selection-before` run stopped at
+an unrelated cleanup watchdog deadline and does not qualify the sequence
+discriminator. All these reports remain in the same artifact directory.
+
+M3 is complete on local master. M4–M6, public XTEST discovery, the private
+Session host and physical acceptance remain open under t093/t094. Current
+Brave presentation and input reports are separate findings; these checks do
+not establish a fix for them.
+
+## Earlier finish-branch integration
+
+Review and local finish-branch integration completed first. On 2026-09-18, `codex/m3-finish`
 fast-forwarded from `563d5a1a` to the reviewed signed handoff `30ac8940`.
 The code is unchanged from tested source `4fcc9f02`; later changes update only
 these records. M3 is complete locally, while t093 remains open.
