@@ -85,6 +85,14 @@ macro_rules! transport_facade {
                 self.state.poll_io(&mut self.content_epochs)
             }
 
+            pub fn poll_io_bounded(&mut self, bytes: usize) -> Result<(), ShellTransportError> {
+                self.state.poll_io_bounded(&mut self.content_epochs, bytes)
+            }
+
+            pub fn enqueue_async(&mut self, frame: Vec<u8>) -> Result<(), ShellTransportError> {
+                self.state.enqueue_async(&self.content_epochs, frame)
+            }
+
             pub fn send_async(&mut self, frame: Vec<u8>) -> Result<(), ShellTransportError> {
                 self.state.send_async(&mut self.content_epochs, frame)
             }

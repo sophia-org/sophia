@@ -1285,7 +1285,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             shell_work_area_bands = Some(shell.work_area_bands());
         }
         if let (Some(components), Some(runtime)) = (shell_components.as_mut(), runtime.as_mut()) {
-            component_service::service_panels(components, runtime, scene, native_scanout.as_mut(),
+            component_service::service_components(components, component_catalog, runtime, scene, native_scanout.as_mut(),
                 &outputs, wm_session, shell_presentation_available)?;
             shell_work_area_bands = Some(components.work_area_bands());
         }

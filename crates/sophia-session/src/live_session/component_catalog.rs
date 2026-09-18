@@ -2,8 +2,8 @@
 use super::*;
 use crate::application_catalog::{
     ApplicationCatalog, ApplicationCatalogEnvironment, ApplicationLaunchCommand,
-    CatalogProcessEnvironment, NativeCatalogService, NativeCatalogServiceEvent,
-    RegisteredCatalogApplication,
+    CatalogProcessEnvironment, NativeCatalogPublication, NativeCatalogService,
+    NativeCatalogServiceEvent, PublishedApplicationCatalog, RegisteredCatalogApplication,
 };
 
 #[derive(Default)]
@@ -13,6 +13,8 @@ pub(super) struct ComponentCatalog {
     refresh_pending: bool,
     stopped: bool,
     started: Option<Instant>,
+    publication: Option<NativeCatalogPublication>,
+    next_transaction: u64,
 }
 impl ComponentCatalog {
     /// Initial scan only. Native peer publication and execution are joined by
@@ -111,6 +113,45 @@ impl ComponentCatalog {
             return Err("initial native catalog scan timed out".into());
         }
         Ok(self.snapshot.is_some())
+    }
+
+    pub(super) fn ready(&self) -> bool {
+        !self.stopped && self.snapshot.is_some()
+    }
+
+    /// Called only through the exact connected native component borrow.
+    pub(super) fn publish(
+        &mut self,
+        transport: &mut sophia_runtime::ShellTransportConnection<'_>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if !self.ready() {
+            return Ok(false);
+        }
+        let grant = transport
+            .content_grant()
+            .ok_or("native catalog has no connected grant")?;
+        if self.publication.as_ref().is_none_or(|p| p.grant() != grant) {
+            let (generation, source) = self.snapshot.as_ref().ok_or("native catalog absent")?;
+            let catalog = PublishedApplicationCatalog::new(
+                grant.connection_epoch,
+                *generation,
+                source.clone(),
+            )
+            .map_err(|error| format!("native catalog encoding: {error:?}"))?;
+            let next = self
+                .next_transaction
+                .checked_add(1)
+                .ok_or("catalog transaction exhausted")?;
+            let publication =
+                NativeCatalogPublication::new(transport, TransactionId::from_raw(next), catalog)?;
+            self.next_transaction = next;
+            self.publication = Some(publication);
+        }
+        Ok(self
+            .publication
+            .as_mut()
+            .ok_or("catalog publication absent")?
+            .service(transport)?)
     }
 
     /// Terminal cleanup, never a seat acknowledgement. On timeout or failure

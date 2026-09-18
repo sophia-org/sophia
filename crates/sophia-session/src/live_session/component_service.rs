@@ -4,8 +4,9 @@ use metadata_shell::component_session::{ShellComponentService, ShellComponentSes
 use metadata_shell::indicators::IndicatorServiceError;
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn service_panels(
+pub(super) fn service_components(
     components: &mut ShellComponentSession,
+    catalog: &mut component_catalog::ComponentCatalog,
     runtime: &mut LiveProductionVisualRuntime,
     scene: &LiveProductionCpuScene,
     mut native: Option<&mut LiveProductionNativeScanout>,
@@ -47,10 +48,10 @@ pub(super) fn service_panels(
         ),
     }
     components.settle_revocations(Some(runtime))?;
-    // Launcher startup is withheld until its catalog/execution owner is joined.
-    // The configuration guard remains until that owner and input are wired.
+    // Native startup may negotiate once its source snapshot is ready. Opening
+    // and input remain separately gated; the public config guard is still held.
     if let Err(error) = components.start_next(Instant::now(), |role| {
-        role == sophia_config::ShellComponentRole::Bar
+        role == sophia_config::ShellComponentRole::Bar || catalog.ready()
     }) {
         crate::session_eprintln!(
             "sophia_shell_component schema=1 status=start_failed reason={error}"
@@ -64,7 +65,19 @@ pub(super) fn service_panels(
     let publication = wm.as_ref().and_then(LiveWmSession::indicator_publication);
     let active_output = wm.as_ref().and_then(LiveWmSession::active_output);
     for (key, role) in components.connected_roles().into_iter().flatten() {
-        if role != sophia_config::ShellComponentRole::Bar {
+        if role == sophia_config::ShellComponentRole::ApplicationLauncher {
+            let result = components.with_service(key, |_, transport| {
+                let complete = catalog.publish(transport)?;
+                transport.poll_io_bounded(64 * 1024)?;
+                Ok::<_, Box<dyn std::error::Error>>(complete)
+            })?;
+            if let Err(error) = result {
+                crate::session_eprintln!(
+                    "sophia_shell_component schema=1 status=catalog_failed slot={} reason={error}",
+                    key.slot
+                );
+                components.stop(key)?;
+            }
             continue;
         }
         let result = components.with_service(key, |service, transport| {

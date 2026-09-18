@@ -841,3 +841,44 @@ the final gates. Outer error-path placement is source integration, not an induce
 native failure. Catalog FIFO publication, open/focus/input, connected execution,
 close/reopen and the full physical harness remain unfinished. No hardware,
 native run, canonical gate, installation or publication claim.
+
+### Connected native catalog publication (2026-09-18)
+
+The independent role scheduler can now attempt the native process once the
+outer-owned source catalog is ready. Its actual connected borrow constructs an
+exact-grant publication from that source and services it before any Opening.
+The public configuration guard remains closed: native open/focus/input/execution
+and close/reopen orchestration still precede physical enablement.
+
+`NativeCatalogPublication` retains the validated bounded source plus exact
+encoded remainder and transfers at most 32 records / 64 KiB per visit. Its
+published accessor becomes available only after every record is FIFO-owned,
+not after peer receipt. Connection epoch and content-grant epoch must both match.
+A replacement connection creates a fresh publication; stale source provenance
+never becomes an execution permission. The connected scan/publication phase
+still has no native activation or process-execution effect.
+
+The runtime now exposes queue-only `enqueue_async`, using the same aggregate
+bulk record/byte budget as existing sends. Returned refusal precedes transfer;
+there is no I/O after queue ownership. The producer retains its front through
+refusal and removes that prevalidated front immediately after success, without
+allocation or callbacks. Existing `send_async` delegates to enqueue then I/O,
+preserving legacy behavior. This avoids retrying a catalog record whose old send
+helper could have transferred ownership before returning an I/O error. Native
+idle publication uses a separate bounded 64 KiB I/O visit. This is returned-error
+custody, not a panic/unwind guarantee or a second output queue budget.
+
+`.artifacts/bemenu-native-catalog-publication/`: final device-hidden Session 474
+PASS/14 ignored, publication socket controls 2 PASS, existing native execution
+controls 4 PASS, runtime library 14 PASS; strict affected Clippy, layout and
+workspace formatting PASS. The 70-entry control saturates the actual FIFO,
+retains the catalog front, then observes 32/32/8 exact records followed by Opening;
+it asserts queue-only service performs no socket write and completion never
+replays a record. A separate control refuses changed content-grant epoch with
+unchanged connection epoch, wrong catalog epoch and disconnected authority.
+These use actual private sockets and supplied protection; no supervised native
+client or GUI is run. The compiled clear-front-on-refusal mutation fails the
+exact wire-prefix assertion; restored evidence is in
+`.artifacts/bemenu-native-catalog-publication-mutant/`. Saturation is deliberately
+filled FIFO capacity, not observed kernel backpressure. No hardware, native
+presentation, canonical gate, push, installation or lom-test readiness claim.

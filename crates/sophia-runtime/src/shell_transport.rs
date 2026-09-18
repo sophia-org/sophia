@@ -597,6 +597,18 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         frame: Vec<u8>,
     ) -> Result<(), ShellTransportError> {
+        self.enqueue_async(epochs, frame)?;
+        self.poll_io(epochs)
+    }
+
+    /// Transfer one bulk record into the shared bounded FIFO, with no I/O after
+    /// transfer. Returned refusal always precedes ownership transfer. Producers
+    /// may then remove their prevalidated exact front without an I/O ambiguity.
+    pub fn enqueue_async(
+        &mut self,
+        epochs: &crate::ContentEpochRegistry,
+        frame: Vec<u8>,
+    ) -> Result<(), ShellTransportError> {
         if self.stream.is_none() {
             return Err(ShellTransportError::NotConnected);
         }
@@ -604,7 +616,7 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::ActivationQueueSaturated);
         }
         self.output.push(frame, false);
-        self.poll_io(epochs)
+        Ok(())
     }
 
     pub fn poll_kind(

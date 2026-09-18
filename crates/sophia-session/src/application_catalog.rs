@@ -4,6 +4,8 @@ mod native_service;
 pub use execution::*;
 pub use native_service::*;
 mod publication;
+mod transfer;
+pub use transfer::NativeCatalogPublication;
 mod types;
 mod worker;
 pub use desktop_entry::desktop_exec_arguments;
