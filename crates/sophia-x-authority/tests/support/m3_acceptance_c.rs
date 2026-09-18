@@ -1641,16 +1641,21 @@ struct QueueHandover {
     accepted: bool,
 }
 
-/// One actual visit to a pending transient, recorded after its own cell was
-/// read. Identified by that cell, which the case holds, not by a count.
-#[derive(Clone, Debug)]
+/// One actual visit to the watched pending transient, recorded after its own
+/// cell was read.
+///
+/// ONE CELL, EXPLICITLY ARMED. Recording every cell whenever any origin is
+/// watched would let unrelated traffic in a parallel suite fill the bound and
+/// crowd out the very visits a case is counting.
+#[derive(Clone, Copy, Debug)]
 struct TransientVisit {
-    completion: usize,
-    dispatch: String,
+    dispatch: PrivateDispatchPhase,
     answer_seen: bool,
 }
 
 static TRANSIENT_VISITS: Mutex<Vec<TransientVisit>> = Mutex::new(Vec::new());
+/// The one completion whose visits are recorded, held as the original Arc.
+static WATCHED_COMPLETION: Mutex<Option<Arc<PrivateDeliveryCompletion>>> = Mutex::new(None);
 static QUEUE_HANDOVERS: Mutex<Vec<QueueHandover>> = Mutex::new(Vec::new());
 static SEND_ENTRIES: Mutex<Vec<SendEntry>> = Mutex::new(Vec::new());
 
@@ -1695,22 +1700,32 @@ pub(crate) fn observed_transient_visit(
     dispatch: PrivateDispatchPhase,
     answer_seen: bool,
 ) {
-    if WATCHED_ORIGIN.lock().unwrap().is_none() {
-        return;
-    }
-    let Some(completion) = completion else {
+    let watched = WATCHED_COMPLETION.lock().unwrap().clone();
+    let (Some(watched), Some(completion)) = (watched, completion) else {
         return;
     };
+    if !Arc::ptr_eq(&watched, completion) {
+        return;
+    }
     let mut seen = TRANSIENT_VISITS.lock().unwrap();
     if seen.len() >= 4096 {
         OBSERVER_OVERFLOWED.store(true, Ordering::Release);
         return;
     }
     seen.push(TransientVisit {
-        completion: Arc::as_ptr(completion) as usize,
-        dispatch: format!("{dispatch:?}"),
+        dispatch,
         answer_seen,
     });
+}
+
+/// Record visits to this exact completion and no other.
+fn watch_completion(cell: &Arc<PrivateDeliveryCompletion>) {
+    TRANSIENT_VISITS.lock().unwrap().clear();
+    *WATCHED_COMPLETION.lock().unwrap() = Some(Arc::clone(cell));
+}
+
+fn stop_watching_completion() {
+    *WATCHED_COMPLETION.lock().unwrap() = None;
 }
 
 /// Production's entry into the queue-handover recording.
@@ -1744,6 +1759,7 @@ fn observe_frames(registry: &XServerFrontendRouteRegistry) {
     SEND_ENTRIES.lock().unwrap().clear();
     QUEUE_HANDOVERS.lock().unwrap().clear();
     TRANSIENT_VISITS.lock().unwrap().clear();
+    *WATCHED_COMPLETION.lock().unwrap() = None;
     OBSERVER_OVERFLOWED.store(false, Ordering::Release);
     *WATCHED_ORIGIN.lock().unwrap() = Some(registry.clone());
 }
@@ -2285,6 +2301,18 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
     let (surface, sequence, ingress) = focus_window(&service, &mut peer, window, namespace);
     observe_frames(&service.registry);
 
+    // ORDERED ATTACHMENT FIRST. The focus notification is a legacy writer's
+    // work and says nothing about this connection's ordered worker being
+    // live. Taking the home before attachment finished would hold it through
+    // promotion rather than through the serving step this case is about.
+    let attachment =
+        waited_for_value(|| custody.attachment()).expect("the ordered attachment settled");
+    assert_eq!(
+        attachment,
+        PrivateAttachment::Started,
+        "the connection's own ordered worker is live before its home is held"
+    );
+
     let delivery = 14_000 + namespace;
     let wanted = XAuthorityInputDeliveryId::from_raw(delivery);
     let home = Arc::clone(&custody.cleanup_record().ordered_home);
@@ -2294,16 +2322,12 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
     ingress
-        .submit(
-            &service.owner.lease(),
-            axis_to(surface, wanted, 30),
-        )
+        .submit(&service.owner.lease(), axis_to(surface, wanted, 30))
         .expect("the order accepts one real axis capsule");
     let cell = waited_for_value(|| delivery_cell(&service.registry, delivery))
         .expect("the capsule's own completion, minted by its own admission");
+    watch_completion(&cell);
 
-    // HANDED OVER ONCE, AND STUCK THERE. The queue took it; the worker cannot
-    // reach it while this case holds the home.
     assert!(
         waited_for(|| queue_handovers_snapshot()
             .iter()
@@ -2323,24 +2347,17 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
         "no frame of it reached the wire while the home was held"
     );
 
-    // THE SERVICE'S OWN CHARGED VISITS OVER IT. Each is one of its turns, and
-    // what has to happen is that more than one of them actually observes this
-    // pending transient. A turn that yields on its allowance is followed only
-    // where the allowance itself says it is retryable.
+    // THE SERVICE'S OWN CHARGED VISITS OVER IT. A turn may perform many
+    // observation steps and only then report that its starts ran out, so what
+    // is counted is steps, not turns, and the final allowance is kept apart
+    // from them rather than deciding whether they happened.
     let (report, reported) = sync_channel(1);
     let inspected = Arc::clone(&cell);
     arm_runner(
         &service.registry,
         Box::new(move |runner, lease| {
-            let mut visits = Vec::new();
-            let mut charged = 0usize;
-            let mut observed = 0usize;
-            let mut record_states = Vec::new();
-            let deadline = std::time::Instant::now() + Duration::from_secs(8);
-            while observed < 2 && std::time::Instant::now() < deadline {
-                // THE EXACT PENDING RECORD, found by the completion this case
-                // holds rather than by position, read either side of a visit.
-                let state = runner
+            let state_of = |runner: &PrivatePreparedRunner| {
+                runner
                     .frontend()
                     .terminal
                     .transients
@@ -2354,33 +2371,43 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
                             .is_some_and(|held| Arc::ptr_eq(held, &inspected))
                     })
                     .map(|record| {
-                        format!(
-                            "dispatch={:?} pending={} outcome_seen={:?}",
+                        (
                             record.custody.dispatch,
                             record.custody.pending.is_some(),
-                            record.custody.outcome_seen
+                            record.custody.outcome_seen,
                         )
-                    });
-                record_states.push(state);
+                    })
+            };
+            let mut visits = Vec::new();
+            let mut states = Vec::new();
+            let mut charged_steps = 0usize;
+            let mut final_allowance = None;
+            let deadline = std::time::Instant::now() + Duration::from_secs(8);
+            while charged_steps < 2 && std::time::Instant::now() < deadline {
+                let before = state_of(runner);
                 match runner.service_turn(lease) {
                     Ok(progress) => {
-                        let supervised = !progress.watch_failed;
-                        let took_a_start = progress.starts > 0;
-                        visits.push(format!(
-                            "starts={} charged={took_a_start} supervised={supervised} taken={} observed={} transient_observed={} allowance={:?}",
-                            progress.starts,
-                            progress.taken,
-                            progress.observed,
-                            progress.transient_observed,
-                            progress.allowance
-                        ));
+                        let after = state_of(runner);
+                        let steps = progress.transient_observed;
                         assert!(
-                            supervised,
-                            "a visit over the pending capsule kept its supervisor: {visits:?}"
+                            !progress.watch_failed,
+                            "a visit over the pending capsule kept its supervisor"
                         );
+                        if steps > 0 {
+                            assert!(
+                                progress.starts >= steps,
+                                "each observation step was charged a start: starts={} steps={steps}",
+                                progress.starts
+                            );
+                            charged_steps += steps;
+                        }
+                        visits.push(format!(
+                            "starts={} observation_steps={steps} taken={} observed={} allowance={:?}",
+                            progress.starts, progress.taken, progress.observed, progress.allowance
+                        ));
+                        states.push((before, after));
+                        final_allowance = progress.allowance.map(|refusal| format!("{refusal:?}"));
                         match progress.allowance {
-                            // The one refusal waiting can fix, for the delay it
-                            // reports and no longer.
                             Some(
                                 sophia_input_authority::ServiceStartRefusal::StartsExhausted {
                                     retry_after,
@@ -2389,15 +2416,8 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
                             Some(other) => panic!(
                                 "a visit refused for something waiting cannot fix: {other:?} in {visits:?}"
                             ),
-                            None => {
-                                assert!(
-                                    took_a_start,
-                                    "a visit that was not refused took a start and was charged: {visits:?}"
-                                );
-                                charged += 1;
-                            }
+                            None => {}
                         }
-                        observed += progress.transient_observed;
                     }
                     Err(error) => {
                         visits.push(format!("{error:?}"));
@@ -2406,48 +2426,41 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
                 }
             }
             report
-                .send((visits, charged, observed, record_states))
+                .send((visits, charged_steps, states, final_allowance))
                 .expect("the case is waiting");
         }),
     );
-    let (visits, charged_visits, observations, record_states) = reported
+    let (visits, charged_steps, states, final_allowance) = reported
         .recv_timeout(Duration::from_secs(12))
         .expect("the actual runner reported its visits over the pending capsule");
     assert!(
-        observations >= 2,
-        "the pending transient was observed by more than one charged visit: {visits:?}"
+        charged_steps >= 2,
+        "the pending transient was observed by at least two charged steps: {visits:?}"
     );
+    // EVERY LOOKUP HAS TO FIND IT. A record that could not be found says
+    // nothing about its state, and a run of misses would otherwise pass.
     assert!(
-        charged_visits >= 1,
-        "and at least one of them was charged rather than refused: {visits:?}"
+        !states.is_empty() && states.iter().all(|(before, after)| {
+            matches!(
+                (before, after),
+                (
+                    Some((PrivateDispatchPhase::Enqueued, false, None)),
+                    Some((PrivateDispatchPhase::Enqueued, false, None))
+                )
+            )
+        }),
+        "the record stayed enqueued, with no capsule copy and no outcome, either side of every visit: {states:?}"
     );
-    // THE CELL WAS ACTUALLY READ, not merely counted. A visit that reported
-    // progress without looking at this completion leaves nothing here.
-    let visits_of_this_cell = transient_visits_snapshot()
-        .into_iter()
-        .filter(|visit| visit.completion == Arc::as_ptr(&cell) as usize)
-        .collect::<Vec<_>>();
-    // THE REQUIREMENT IS OBSERVATIONS OF THIS CELL, not turns. One charged
-    // turn carries as many observations as its budget allows, so the count
-    // that matters is how often this exact completion was actually read.
+    let visits_of_this_cell = transient_visits_snapshot();
     assert!(
         visits_of_this_cell.len() >= 2,
-        "this exact completion was read by more than one charged observation: {visits_of_this_cell:?}"
+        "this exact completion was read by at least two charged observations: {visits_of_this_cell:?}"
     );
     assert!(
         visits_of_this_cell
             .iter()
-            .all(|visit| visit.dispatch == "Enqueued" && !visit.answer_seen),
+            .all(|visit| visit.dispatch == PrivateDispatchPhase::Enqueued && !visit.answer_seen),
         "each found it enqueued and unanswered: {visits_of_this_cell:?}"
-    );
-    assert!(
-        record_states
-            .iter()
-            .flatten()
-            .all(|state| state.contains("dispatch=Enqueued")
-                && state.contains("pending=false")
-                && state.contains("outcome_seen=None")),
-        "and the record itself stayed enqueued, with no capsule copy and no outcome: {record_states:?}"
     );
     let handovers_during = queue_handovers_snapshot()
         .iter()
@@ -2462,12 +2475,17 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
         "nor answered it: observation is not settlement"
     );
 
-    // RELEASED. The worker takes its home back and writes what it already had.
+    // RELEASED. The worker takes its home back and writes what it already
+    // had. The recipient's reads and the writer's receipt are scheduled
+    // independently, so both are waited for rather than either standing in
+    // for the other.
     drop(held_home);
     let mut completion = None;
     let mut released_frames = Vec::new();
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    while std::time::Instant::now() < deadline && completion.is_none() {
+    while std::time::Instant::now() < deadline
+        && !(released_frames.len() >= 2 && completion.is_some())
+    {
         if let Some(event) = read_event(&mut peer, 1) {
             released_frames.push(event);
         }
@@ -2488,11 +2506,6 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
         XAuthorityInputDeliveryOutcome::Flushed,
         "which is its own flush"
     );
-    let second = service
-        .deliveries
-        .recv_timeout(Duration::from_millis(300))
-        .ok();
-    assert!(second.is_none(), "with no second receipt: {second:?}");
     // THE TWO EXACT WHEEL FRAMES, hand-encoded from the X protocol and the
     // request this case submitted: an emulated wheel button down with nothing
     // held, then up with that button in the prior state.
@@ -2504,14 +2517,16 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
         ],
         "the released capsule put out its own two frames and no others"
     );
-    assert_eq!(
-        read_event(&mut peer, 1),
-        None,
-        "and nothing followed them"
-    );
+    assert_eq!(read_event(&mut peer, 1), None, "and nothing followed them");
+    let second = service
+        .deliveries
+        .recv_timeout(Duration::from_millis(300))
+        .ok();
+    assert!(second.is_none(), "with no second receipt: {second:?}");
 
     service.command(XServerFrontendServiceCommand::StopAndDisconnect);
     let closed = service.closed();
+    stop_watching_completion();
     let (_, send_entries, queue_handovers) = take_observations();
     assert!(
         !observation_overflowed(),
@@ -2537,19 +2552,20 @@ fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
     );
     let seen = json!({
         "delivery": delivery,
-        "hold": "the connection's own ordered home, which its worker must take to serve a step",
+        "hold": "the connection's own ordered home, taken only after its ordered attachment reported Started",
+        "attachment_before_hold": format!("{attachment:?}"),
         "frames_while_held": frames_while_held,
         "charged_visits": visits,
-        "charged_visit_count": charged_visits,
-        "record_state_at_each_visit": record_states,
-        "visits_that_read_this_exact_cell": visits_of_this_cell.len(),
-        "released_frames": released_frames.iter().map(|frame| frame.to_vec()).collect::<Vec<_>>(),
-        "transient_observations": observations,
+        "charged_observation_steps": charged_steps,
+        "final_allowance": final_allowance,
+        "record_state_before_and_after_each_visit": format!("{states:?}"),
+        "observations_of_this_exact_cell": visits_of_this_cell.len(),
         "queue_handovers_accepted": handovers_total,
         "frame_sequence_after_release": frame_sequence,
+        "released_frames": released_frames.iter().map(|frame| frame.to_vec()).collect::<Vec<_>>(),
         "its_completion": format!("{completion:?}"),
         "closed_error": closed.error.clone(),
-        "what_this_establishes": "a capsule held in its recipient's queue is observed by more than one of the service's own charged visits, handed over exactly once, answered by none of them, and on release puts its own frames out once each for a single flush. This is a first write after a hold, not the resumption of a blocked frame; the partial case establishes prefix preservation.",
+        "what_this_establishes": "a capsule held in its recipient's queue is observed by at least two of the service's own charged steps, each of which read its exact completion and found it enqueued and unanswered, is handed over exactly once, and on release puts its own two frames out once each for a single flush. This is a first write after a hold, not the resumption of a blocked frame; the partial case establishes prefix preservation.",
     });
     let collected = finish_labelled("enqueued-observation invocation", service, &[custody]);
     (seen, collected)
