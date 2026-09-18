@@ -147,10 +147,17 @@ fn press_and_release(
     let lease = service.owner.lease();
     let press = XAuthorityInputDeliveryId::from_raw(first_delivery);
     let release = XAuthorityInputDeliveryId::from_raw(first_delivery + 1);
-    // What this grant's store held before either of these, so the wait below
-    // is for the press's own credit and not for a level that happens to look
-    // right.
-    let held_before = service.owner.store.reserved();
+    // THE PRECONDITION IS STATED, NOT ASSUMED. This helper's waits below read
+    // the store's total, which only answers for the request in hand when that
+    // request is the only one outstanding. A neighbour's credit retiring while
+    // this press still owns its grant would return the total to whatever it
+    // was and say nothing, and two unreadable readings would compare equal.
+    // So the store is required empty here, and required empty again after each
+    // half.
+    assert!(
+        waited_for(|| service.owner.store.reserved() == Some(0)),
+        "nothing else is outstanding when this pair starts, so the store's total answers for it"
+    );
     ingress
         .submit(&lease, button_to(surface, press, 272, true))
         .expect("an actual press through the leased producer");
@@ -173,7 +180,7 @@ fn press_and_release(
     // behalf and establish nothing about when the service does it -- and it
     // does not retry the submit until one happens to be accepted.
     assert!(
-        waited_for(|| service.owner.store.reserved() == held_before),
+        waited_for(|| service.owner.store.reserved() == Some(0)),
         "the press's own item was disposed and its credit returned, which is what frees its grant"
     );
     ingress
@@ -187,6 +194,13 @@ fn press_and_release(
     );
     let release_receipt = receipt_for(&service.deliveries, first_delivery + 1);
     assert_eq!(release_receipt, XAuthorityInputDeliveryOutcome::Flushed);
+    // AND THE GRANT IS FREE WHEN THIS RETURNS. Callers submit their next work
+    // on it straight away, so what this helper promises is a reusable grant
+    // rather than bytes that were received.
+    assert!(
+        waited_for(|| service.owner.store.reserved() == Some(0)),
+        "the release's own item was disposed too, so this grant is free for whatever comes next"
+    );
     json!({
         "press_delivery": first_delivery,
         "press_bytes": pressed_bytes.to_vec(),
