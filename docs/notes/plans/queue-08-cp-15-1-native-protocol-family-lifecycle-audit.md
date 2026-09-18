@@ -21,6 +21,13 @@ Historical candidate identities in the details require revalidation before use.
 Audit `sophia_wm_v1`, `sophia_shell_v1`, and `sophia_output_v1` against
 `docs/sophia-policy-ipc.md`.
 
+The [2026-09-18 native desktop audit](../investigations/vle7mt47-native-desktop-capability-audit-separates-contracts-from-client-ui.md)
+adds a source-backed developer capability matrix, evidence classification and
+deduplicated follow-ups. It does not close this family-level audit. Remaining
+work must reconcile every role's lifecycle, extract the missing declarative
+output schema and test its codec equivalence, and document each intentional
+transport difference. No new desktop UI or toolkit port is needed.
+
 
 Required exit:
 

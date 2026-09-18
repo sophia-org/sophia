@@ -131,19 +131,21 @@ Quickshell supplies an X11 panel; Narthex supplies native features such as the
 switcher and shortcut helper. Keep `shell { enabled #true; }` for the native
 shell and list the panel in `session.startup`.
 
-Sophia currently admits one native shell client. Dividing native responsibilities
-among several clients will require explicit role assignment and protocol work.
-There is no first-client-wins selection, and an X11 panel does not become the
-native shell by appearing in the startup list.
+Sophia supports the legacy single-shell mode and explicit independent bar,
+application-launcher and dock selections, bounded to three components. There
+is no first-client-wins selection, and an X11 panel does not become a native
+component by appearing in the startup list. Additional component roles are not
+currently admitted by this configuration.
 
 The [native component proposal](notes/concepts/k2d9l42p-native-shell-components-compose-through-explicit-scoped-grants.md)
 and [candidate sequence t104–t108](notes/plans/ptil1ejw-modular-native-shell-components-and-independent-launcher-critical-path.md)
-record the path to an integrated or independently replaceable bar/launcher setup.
-They do not change the current single-client admission contract.
+record the design history and remaining integration/acceptance criteria. The
+[capability map](native-desktop-capabilities.md) records current source support
+separately from those historical proposals and physical acceptance.
 
 ## Choose a shell and its permissions
 
-Today, the native shell uses descriptors. Narthex chooses among the features
+The descriptor shell remains supported. Narthex chooses among the features
 Sophia knows how to draw: a switcher, tabs, shortcut help, and the application
 launcher. Its own configuration controls the choices and appearance settings
 those features support. Changing shells does not change the application's
@@ -152,8 +154,8 @@ execution policy or give the WM access to shell metadata.
 The content model lets an admitted shell submit its own widgets, typography,
 and artwork while Sophia controls placement, composition, physical input, and
 presentation. Such a shell can provide a custom panel while using the existing
-descriptor launcher. These are capabilities of the one admitted native shell,
-not two native shell processes.
+descriptor launcher in an integrated client. Explicit modular selections can
+instead assign supported responsibilities to independent native processes.
 
 Choosing that shell, permitting custom content, granting direct GPU execution,
 and admitting discrete content actions are separate operator decisions. The

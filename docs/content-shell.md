@@ -2,14 +2,15 @@
 
 **Role:** behavioral contract for a content capability within
 `sophia_shell_v1`.
-**Status:** the CPU-byte wire and lifecycle now have an
-[implementation](lom-content-implementation.md); production launch admission,
-discrete content input and native acceptance remain incomplete. The
-[content ADR](notes/decisions/6ndjwffd-content-capability-design-for-sophia_shell_v1.md)
-owns the wire and numeric budgets. The
+**Status (2026-09-18):** CPU-byte content, production launch admission and
+discrete input have implemented paths. Remaining lifecycle and native
+acceptance are tracked separately in the [capability map](native-desktop-capabilities.md).
+The [content ADR](notes/decisions/6ndjwffd-content-capability-design-for-sophia_shell_v1.md)
+owns the wire and numeric budgets; the [implementation note](lom-content-implementation.md)
+records the implementation history. The
 [execution ADR](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
-owns the accepted GPU permission model. Its launch gate is implemented and
-remains unaccepted on hardware.
+owns the accepted GPU permission model. Its launch gate is implemented and has
+attended rendering evidence, not complete daily-driver/recovery acceptance.
 
 The [architecture](architecture.md), [native protocol family](sophia-policy-ipc.md),
 [compositor graphics](compositor-graphics.md), and

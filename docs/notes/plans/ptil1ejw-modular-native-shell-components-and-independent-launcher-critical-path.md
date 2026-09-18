@@ -6,6 +6,24 @@ tags: [plan, shell, architecture, native-components]
 ---
 # Modular native shell components and independent launcher critical path
 
+## Current scope reconciliation, 2026-09-18
+
+The [source audit](../investigations/vle7mt47-native-desktop-capability-audit-separates-contracts-from-client-ui.md)
+finds implemented r7/r8 admission and connected bar/launcher/dock paths at
+4049fea8. Earlier checkpoint prose below describing revision 6 or refused
+independent admission retains its historical scope. It must not override the
+[current capability map](../../native-desktop-capabilities.md).
+
+t104 retains final contract/compatibility reconciliation; t105 retains complete
+supervision/revocation evidence. t106 retains remaining production lifecycle
+joins; t107 uses the existing independent clients for conformance/fairness and
+reclamation; t108 covers the three-component exact-release physical acceptance.
+The clean session exit in capture 20260918T170952Z does not close the latter:
+open terminal children exited unsuccessfully during teardown. No task is
+completed or promoted by this reconciliation. Additional providers belong to
+t109, not a silent expansion of the three-role implementation. Future probes
+prove generic contracts; no full desktop UI suite is required.
+
 ## Scope and exit
 
 Support both an integrated shell and independently admitted native components,

@@ -37,6 +37,12 @@ Settle remaining display-list vocabulary from a driving client: generic
 target regions, desktop background, and only measured additions beyond
 client-rasterized textures.
 
+Background work means an authorized placement/lifetime contract, not a wallpaper
+application or a new drawing primitive for images clients can rasterize. Reuse
+t109 admission and existing content resource owners. Exit: below-application
+placement, output/topology replacement, denied/foreign grants, input exclusion,
+bounded ownership and disconnect/retirement tests with a minimal producer.
+
 
 ## t050
 

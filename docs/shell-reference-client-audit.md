@@ -6,6 +6,11 @@ and role schema remain authoritative.
 **Status:** source audit and downstream build baseline; no native content
 capability or Quickshell Sophia backend is implemented.
 
+**Historical scope:** the status and “current” matrix below describe the
+original Quickshell/revision-1–4 feasibility tranche. They are preserved as
+baseline evidence. They do not describe today's content or modular admission;
+use the [2026-09-18 capability map](native-desktop-capabilities.md) for that.
+
 The [content-shell proposal](content-shell.md) now collects the behavioral
 requirements for the panel/popout workflow. This audit owns its source evidence
 and feasibility questions; the proposal specifies the intended lifecycle and

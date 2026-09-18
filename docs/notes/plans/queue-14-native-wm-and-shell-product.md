@@ -125,16 +125,18 @@ this reconciliation retires the obsolete implementation proposal only.
 
 ## t043
 
-Define a bounded redacted workspace/layout/focus status feed. The native
-launcher action is implemented above; add lock, screenshot, wallpaper and
-audio through their owning shell/session capabilities. The wire is not what blocks these:
-`SnapshotSessionOperation` (record kind 4, max 256) already advertises
-every operation with its slot each snapshot, and a policy client resolves
-slot to operation and sends `SessionOperationRequest`, so no revision is
-needed. What is closed is this repository's own vocabulary — the
-variants of `DesktopSessionShortcut` in `crates/sophia-config/src/
-shortcut_candidate.rs` and `WmActionBehavior` in `.../types.rs` — plus each
-behavior's implementation, lock's being a security transition rather than a
-launch. A policy client's side is one profile-whitelist string and one
-appended action per capability, so each operation defined here unblocks
-Hagia in a few lines.
+Specify the remaining bounded redacted window/layout/focus feed and authorized
+actions for native consumers. Workspace indicators already exist in shell r6;
+their WM-owned tokens are not broker window metadata. The persistent app catalog
+does not identify running windows. Reuse descriptor/tab issuer/recipient scope
+instead of exposing raw XIDs, namespace/PID data or unrestricted inspection.
+
+Exit: publication/disclosure policy, generation/revocation and action semantics
+documented; independent minimal consumer; denied/redacted/stale/foreign action,
+restart and bounded-update tests. No dock/window-switcher UI is required.
+
+An advertised Session operation slot can carry an implemented action without
+reopening the frozen WM layout, but does not itself implement a service or
+authorize its disclosure. Lock remains t034, capture/prompts t046, background
+t049, and external-service access t113. Their owning contracts must be settled
+before advertising an operation; adding an enum/string alone is insufficient.

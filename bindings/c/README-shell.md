@@ -1,17 +1,20 @@
 # C shell wire foundation
 
 `sophia_shell_wire.h` and `shell_wire/{frame,io,negotiation}.c` implement the
-published revision 1–6 envelope and negotiation without linking Rust. Compile
+published revision 1–8 envelope and negotiation without linking Rust. Compile
 those three C99 sources into the client. `sh tools/check_shell_c_wire.sh` runs
 the strict C gate; the canonical and shell-protocol gates call it too.
 
 An optional typed catalog assembler is now available as
 `sophia_shell_catalog.h` plus `shell_wire/catalog.c`, described below.
 
-This is **not yet the complete shell lifecycle SDK**. It does not authenticate or
-connect a peer, decode content payloads, track Presented/Released, reserve paired
-ACK/activation obligations, authorize a launcher or launch an application.
-Selecting the Bemenu Sophia backend therefore still refuses admission.
+The framing layer is **not the complete shell lifecycle SDK**. It does not
+authenticate/connect a peer or authorize effects. Separate typed content,
+upload, outbox and native lifecycle helpers now handle their respective
+records and ownership. Bemenu uses these with explicit Session admission;
+neither linking this library nor selecting a backend grants that admission.
+See the [capability map](../../docs/native-desktop-capabilities.md) for the
+current experimental role limits and independent-client evidence scope.
 
 ## Ownership and service
 
@@ -51,16 +54,17 @@ envelope for accepting an operation.
 
 ## Negotiation
 
-The typed hello encoder checks a coherent revision 1–6 range, known required
+The typed hello encoder checks a coherent revision 1–8 range, known required
 capabilities and their dependencies. Existing revision 1–6 requires descriptor
 bit 0. Welcome validation requires exactly 28 payload bytes, nonzero connection
 epoch, requested revision/capability agreement, capability dependencies and bounded
 advertised limits. Caller state still must enforce one welcome per negotiation
 and retain its exact epoch; this stateless decoder does not prevent replay.
 
-No revision-7 capability is advertised or accepted. The independent-component
-contract is still being completed in t104. Do not use this foundation to imply
-that the existing single-shell Session can admit Bemenu beside Lom.
+Revision-7 native launcher and revision-8 persistent catalog negotiation are
+supported under their exact capability dependencies. Session's explicit
+component configuration admits supported roles; the wire helper cannot expand
+those roles, operator grants or resource budgets.
 
 ## Evidence boundaries
 
@@ -120,9 +124,9 @@ bounded byte mutations. Text shares the catalog's strict UTF-8/control policy.
 
 The native launcher role requests exactly bits 5, 7, 8 and 11 (`0x9a0`) at revision
 7. It does not request the descriptor launcher, work-area reservation or indicators.
-The C hello/welcome codec can represent this request; the current Session server
-still refuses it because live revision-7 admission is not implemented. No backend
-may treat successful payload validation as a focus lease, catalog membership or
+The C hello/welcome codec can represent this request and the configured Session
+native launcher path can admit it. No backend may treat successful payload
+validation as a focus lease, catalog membership or
 permission to start an application. The reusable lifecycle below does not replace
 live Session admission or the complete launcher application.
 

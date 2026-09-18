@@ -1,11 +1,12 @@
 # Sophia Shell Interface Direction
 
 **Role:** direction and experimental-contract note for `sophia_shell_v1`.
-**Status:** revision 6 carries indicators and the revision-5 CPU content
-vocabulary alongside older descriptor capabilities. The
-[content implementation](lom-content-implementation.md) reaches production
-composition/retirement boundaries, but production launch admission, discrete
-input and native acceptance remain open. The interface is not stable.
+**Status (2026-09-18):** experimental revision 8 includes r5 content, r6
+indicators, r7 native launcher and r8 persistent catalog. Production admission,
+input and three-component service exist; lifecycle and native acceptance are
+not complete. The [capability map](native-desktop-capabilities.md) separates
+current paths from gaps. The surveys below are historical requirements,
+not an up-to-date unsupported-feature list. The interface is not stable.
 
 The accepted [presentation/execution decision](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
 keeps renderer-neutral images on the shell wire and explicit direct GPU access

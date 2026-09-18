@@ -31,3 +31,10 @@ Required exit:
   normative prose and checked-in schemas; and
 - shell stabilization specifically retains the independent C proof and Narthex's
   independent Nim proof without linking Sophia crates or generated bindings.
+
+Use the [capability audit](../investigations/vle7mt47-native-desktop-capability-audit-separates-contracts-from-client-ui.md)
+to distinguish byte agreement from connected service/lifecycle coverage.
+Include negotiated denial, foreign/stale grants, revocation, partial writes,
+bounded queues, topology replacement and exact release for each admitted role.
+Record supplied presentation/policy/device facts explicitly; a corpus reader
+or simulated completion is not full native acceptance.

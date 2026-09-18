@@ -7,6 +7,13 @@ tags: [concept, shell, architecture, security]
 ---
 # Native shell components compose through explicit scoped grants
 
+**2026-09-18 status pointer:** the proposal below preserves its original scope.
+Explicit bar/launcher/dock admission is now implemented; the
+[capability map](../../native-desktop-capabilities.md) records its limits and
+remaining acceptance. The original single-client description is historical,
+not the current configuration contract. This note does not authorize additional
+roles or automatically accept all of the proposed design.
+
 ## Intent and current boundary
 
 Let users combine a bar, launcher, dock and other desktop components from

@@ -163,7 +163,10 @@ The current public role schemas are:
 
 - `protocol/sophia-wm-v1.kdl` for stable `sophia_wm_v1` revision 3; and
 - `protocol/sophia-shell-v1.kdl` for experimental `sophia_shell_v1`
-revision 6, retaining revisions 1–5 under their capability gates.
+revision 8, retaining revisions 1–7 under their capability gates. Revision 7
+adds the native launcher and revision 8 the persistent catalog; neither grants
+arbitrary component roles or general service access. See the
+[capability map](native-desktop-capabilities.md) for source-backed scope.
 
 The separate scripting service uses `protocol/sophia-control-v1.kdl` for
 experimental control major 1 revision 1. It shares this family's envelope but

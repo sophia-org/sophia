@@ -11,6 +11,10 @@ wins when prose disagrees.
 
 ## Orientation
 
+- [Native desktop capabilities](native-desktop-capabilities.md) maps current
+  developer operations, authority boundaries, evidence and protocol gaps;
+  reference clients are not a commitment to implement a complete desktop UI.
+
 - [Choose what starts with your desktop](desktop-composition.md) explains where
   users select their WM, shell, and login applications, how component settings
   stay private, and how existing Hagia profiles migrate.

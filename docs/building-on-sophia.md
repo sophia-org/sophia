@@ -12,15 +12,25 @@ workspace bar or reserve a fixed strip merely because a WM publishes indicators.
 Engine validates and commits descriptors, composites pixels, and enforces input
 and reservation ownership; the shell chooses its UI and placement.
 
+Start with the [native desktop capability map](native-desktop-capabilities.md)
+for the source-audited implementation status and remaining protocol gaps.
+Sophia enables downstream desktop development; its roadmap does not require
+shipping a complete desktop UI. Integrated and independent clients use the
+same authority boundaries. Current modular admission covers three explicit
+roles, not arbitrary additional providers.
+
 Native shell reference sheets use revision 3's read-only shortcut catalog and
 bounded presentation candidates. See [reference sheets](shell-reference-sheets.md)
 for the generic wire, private shell configuration, and shared JetBrains Mono
 presentation default. WM clients do not render this UI or receive its contents.
 
-Native application launchers use revision 4's catalog and presented activation
-exchange. The session owns source policy and execution, the shell owns search and
-ordering, and Engine owns text input, GPU drawing and hit testing. The WM receives
-only the operation that opens the menu. See [application launchers](application-launcher.md).
+Descriptor application launchers use revision 4's catalog and presented
+activation exchange; revision 7 adds a separately admitted client-rendered
+launcher and revision 8 a persistent catalog consumer. Session owns source
+policy and execution. The client owns search, ordering and its own raster;
+Engine owns presentation and input authority (and descriptor drawing). The WM
+receives the operation opening the menu, not catalog contents. See
+[application launchers](application-launcher.md) and the capability map.
 
 ## The One Rule
 
@@ -89,10 +99,11 @@ toolkits and languages must be able to build the same behavior from the
 published protocol. Narthex remains the independent descriptor reference;
 Quickshell and Noctalia remain sources of workflow and feasibility evidence.
 
-The [reference-client audit](shell-reference-client-audit.md) starts with one
-panel and one interactive popout. The [CPU content implementation](lom-content-implementation.md)
-now exists; production GPU admission, content input and native acceptance remain
-open. An ordinary X11 Quickshell panel
+The historical [reference-client audit](shell-reference-client-audit.md) starts
+with one panel and one interactive popout. CPU content, direct GPU launch
+admission and discrete input now have production paths; the capability map
+distinguishes their tested scope from remaining lifecycle/native acceptance.
+An ordinary X11 Quickshell panel
 exercises the application frontend and does not acquire the native shell role.
 
 ### Rendering Your Own Shell
@@ -112,9 +123,9 @@ and reads its result back into the existing CPU-byte transport. The accepted
 targets stock Linux without a custom kernel, hard aggregate VRAM guarantee,
 mandatory GPU bridge or Vello dependency in Sophia. Direct GPU access accepts
 driver/resource-availability risk and grants no foreign pixels, application
-display, general input or KMS authority. Its launch path is still to be
-implemented; [configuration](configuration.md) distinguishes current parser
-behavior from target syntax.
+display, general input or KMS authority. Its launch path is implemented;
+[configuration](configuration.md) describes the explicit operator selections.
+That does not establish complete resource/recovery or daily-driver acceptance.
 
 Measure the first image path before introducing another transport or GPU
 execution service. A display-dependent toolkit may need a downstream adapter;

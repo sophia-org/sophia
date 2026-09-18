@@ -40,3 +40,10 @@ default and define fail-closed behavior on hosts without `bwrap`.
 
 Bind lock and future security-authority takeover to the existing input epoch
 barrier.
+
+This owns the secure contract, not a lock-screen UI project. Required exit:
+explicit privileged admission and trusted unlock authority, complete output
+coverage across topology changes, revoked old input/focus, and fail-closed
+provider loss/replacement. Controls must prove ordinary content cannot claim
+locked state or receive unlock input, and stale completion cannot unlock a new
+epoch. Worker exit or a full-screen shell image is not proof of a secure lock.
