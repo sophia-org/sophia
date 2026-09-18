@@ -12,6 +12,8 @@ use sophia_runtime::{
 };
 use std::path::Path;
 
+mod scheduling;
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub enum ShellComponentService {
@@ -39,6 +41,9 @@ pub struct ShellComponentSession {
     available: bool,
     stopping: bool,
     retained_panel_bands: Vec<sophia_protocol::OutputReservation>,
+    retry_at: [Option<std::time::Instant>; 2],
+    start_cursor: usize,
+    last_schedule: Option<std::time::Instant>,
 }
 impl ShellComponentSession {
     /// `directory` is the already-created Session-private endpoint parent.
@@ -87,6 +92,9 @@ impl ShellComponentSession {
             available: false,
             stopping: false,
             retained_panel_bands: Vec::new(),
+            retry_at: [None, None],
+            start_cursor: 0,
+            last_schedule: None,
         })
     }
 
@@ -189,6 +197,22 @@ impl ShellComponentSession {
         for (key, result) in visit.negotiations.iter().flatten() {
             if result.is_err() || !self.available || self.stopping {
                 self.stop(*key)?;
+            }
+        }
+        if !self.available || self.stopping {
+            return Ok(visit);
+        }
+        // Reconcile actual connected owners, not only this visit's events. An
+        // earlier role failure must not lose a neighbor's successful negotiation.
+        for slot in 0..self.plans.len() {
+            let Some(key) = self.processes.attempt(slot) else {
+                continue;
+            };
+            if self.processes.phase(key)? != ComponentConnectionPhase::Connected
+                || self.ready[slot]
+                    .as_ref()
+                    .is_some_and(|ready| ready.key == key)
+            {
                 continue;
             }
             let role = self.plans[key.slot].selection().role;
@@ -201,7 +225,7 @@ impl ShellComponentSession {
             );
             let service = self
                 .processes
-                .with_connection(*key, |transport| match role {
+                .with_connection(key, |transport| match role {
                     ShellComponentRole::Bar => PanelComponentService::new(transport, limit, input)
                         .map(ShellComponentService::Bar),
                     ShellComponentRole::ApplicationLauncher => {
@@ -223,10 +247,10 @@ impl ShellComponentSession {
                     {
                         self.retained_panel_bands = bands;
                     }
-                    self.ready[key.slot] = Some(Ready { key: *key, service });
+                    self.ready[key.slot] = Some(Ready { key, service });
                 }
                 Err(error) => {
-                    self.stop(*key)?;
+                    self.stop(key)?;
                     return Err(error.into());
                 }
             }

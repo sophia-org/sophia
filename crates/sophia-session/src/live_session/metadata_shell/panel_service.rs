@@ -134,6 +134,20 @@ impl PanelComponentService {
             .service_actions(transport, presented, &mut || take_shell_transaction(next))
     }
 
+    pub(in crate::live_session) fn service_indicator_activation(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        admit: impl FnOnce(
+            sophia_protocol::WmActionId,
+            OutputId,
+        ) -> ServiceResult<crate::live_session::LiveIndicatorAdmissionResult>,
+    ) -> Result<bool, super::indicators::IndicatorServiceError> {
+        self.validate(transport)
+            .map_err(|error| super::indicators::IndicatorServiceError::Poll(error.into()))?;
+        self.content
+            .service_indicator_request(transport, &mut self.indicators, admit)
+    }
+
     pub(super) fn presented_work_area_bands(&self) -> Option<Vec<OutputReservation>> {
         self.content
             .has_presented_content()

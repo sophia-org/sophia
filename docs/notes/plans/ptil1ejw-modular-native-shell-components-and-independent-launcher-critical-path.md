@@ -777,3 +777,30 @@ native-disposition guard omission fails owner retention; restored artifact is
 change; helper/control bytes unchanged). Formatting also normalizes the small
 module/export ordering drift from earlier local component checkpoints.
 No canonical/native run, installation, publication, or lom-test readiness claim.
+
+### Bounded live component scheduling and bar service (2026-09-18)
+
+The physical owner phase now services negotiated independent bars through their
+borrowed production content, indicator, ACK and WM admission helpers, incorporates
+presented work-area reservations, and issues pointer actions only to the exact
+connected grant. WM completion errors retain their fatal/non-replay distinction;
+ordinary peer service errors stop that exact attempt. Negotiation reconciliation
+scans actual connected slots so an earlier role failure cannot lose a neighbor's
+one-time successful negotiation event.
+
+Launch selection attempts at most one ready role per visit, alternates selection,
+and reserves a per-slot one-second retry delay before attempting startup. Paused,
+shutdown, retained cleanup and process custody still block admission. The native
+launcher role deliberately remains unready until catalog/execution and native
+input are joined; the configuration refusal remains. This is live bar call-site
+wiring, not a successful dual-component session or physical readiness claim.
+
+`.artifacts/bemenu-live-component-scheduling/`: device-hidden Session 473 PASS/14
+ignored, process controls 5 PASS/2 ignored, connection controls 7 PASS; strict
+Session Clippy, layout and workspace formatting PASS. The scheduler control uses
+actual failed executable attempts, reaping and exact runtime-claim settlement;
+it proves role skipping, delayed retries and irreversible shutdown, not protected
+successful startup. A compiled removal of only the retry-deadline exclusion
+fails the same-instant retry assertion; restored disposable source and results
+are in `.artifacts/bemenu-live-component-scheduling-mutant/`. No GPU/device,
+native run, canonical gate, publication or installation was performed.

@@ -498,6 +498,13 @@ macro_rules! drain_physical_input {
                     }
                 }
             }
+            if let (Some(components), Some(runtime)) = (shell_components.as_mut(), runtime.as_ref()) {
+                for target in report.content_activations.iter().cloned() {
+                    if component_service::issue_panel_activation(components, target, runtime)?.is_none() {
+                        crate::session_eprintln!("sophia_shell_component schema=1 status=input_rejected reason=inactive_or_capacity");
+                    }
+                }
+            }
             for (action, activation) in report.descriptor_activations.iter().copied() {
                 let shell=metadata_shell.as_mut().ok_or("descriptor activation has no shell")?;
                 let result=if shell.is_tab_action(action){shell.queue_tab_action(action,activation)}else{shell.dispatch_activation(action,activation)};
@@ -1273,6 +1280,11 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             shell_work_area_bands = Some(shell.work_area_bands());
+        }
+        if let (Some(components), Some(runtime)) = (shell_components.as_mut(), runtime.as_mut()) {
+            component_service::service_panels(components, runtime, scene, native_scanout.as_mut(),
+                &outputs, wm_session, shell_presentation_available)?;
+            shell_work_area_bands = Some(components.work_area_bands());
         }
         if let Some(wm) = wm_session.as_mut() {
             // The shell's committed claim reaches the reduction here. Only a

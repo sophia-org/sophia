@@ -87,6 +87,7 @@ use std::time::{Duration, Instant};
 
 mod authority_file;
 mod component_lifecycle;
+mod component_service;
 mod cpu_visual_progress;
 pub(crate) mod direct_cursor_proof;
 pub(crate) mod direct_overlay_proof;

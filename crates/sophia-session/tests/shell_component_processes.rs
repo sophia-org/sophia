@@ -397,3 +397,89 @@ fn joined_session_retains_failed_attempt_until_reap_and_exact_cleanup() {
     drop(owner);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[cfg(feature = "native-session")]
+#[test]
+fn component_scheduler_skips_unready_role_and_bounds_retries() {
+    use sophia_session::shell_component_session::ShellComponentSession;
+    use std::time::{Duration, Instant};
+    let root = std::env::temp_dir().join(format!("component-schedule-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let selections = [
+        ("menu", ShellComponentRole::ApplicationLauncher),
+        ("bar", ShellComponentRole::Bar),
+    ]
+    .map(|(id, role)| sophia_config::ShellComponentConfig {
+        id: id.into(),
+        role,
+        executable: "/nonexistent-sophia-component".into(),
+        config: None,
+        gpu: sophia_config::ShellGpuMode::Denied,
+    });
+    let mut owner = ShellComponentSession::prepare(
+        &selections,
+        28,
+        None,
+        &root,
+        ShellContentAdmissionPolicy::Granted {
+            discrete_input: true,
+        },
+    )
+    .unwrap();
+    let now = Instant::now();
+    assert_eq!(owner.start_next(now, |_| true).unwrap(), None);
+    assert_eq!(owner.connected_roles(), [None, None]);
+    owner.set_presentation_available(true).unwrap();
+    assert!(
+        owner
+            .start_next(now, |role| role == ShellComponentRole::Bar)
+            .is_err()
+    );
+    assert_eq!(owner.attempt(0), None);
+    let bar = owner.attempt(1).unwrap();
+    assert_eq!(owner.start_next(now, |_| true).unwrap(), None);
+    owner.poll(1024).unwrap();
+    let outputs = [sophia_engine::HeadlessOutput {
+        id: sophia_protocol::OutputId::from_raw(1),
+        size: sophia_protocol::Size {
+            width: 64,
+            height: 64,
+        },
+        scale: 1,
+    }];
+    let mut runtime =
+        sophia_backend_live::LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    owner.settle_revocations(Some(&mut runtime)).unwrap();
+    assert!(owner.start_next(now, |_| true).is_err());
+    let menu = owner.attempt(0).unwrap();
+    assert_eq!(owner.attempt(1), Some(bar));
+    owner.poll(1024).unwrap();
+    owner.settle_revocations(Some(&mut runtime)).unwrap();
+    assert_eq!(owner.start_next(now, |_| true).unwrap(), None);
+    assert_eq!(owner.attempt(0), Some(menu));
+    assert!(
+        owner
+            .start_next(now - Duration::from_millis(1), |_| true)
+            .is_err()
+    );
+    assert_eq!(owner.attempt(1), Some(bar));
+    assert!(
+        owner
+            .start_next(now + Duration::from_secs(2), |_| true)
+            .is_err()
+    );
+    assert_ne!(owner.attempt(1), Some(bar));
+    assert_eq!(owner.attempt(0), Some(menu));
+    owner.request_shutdown().unwrap();
+    owner.poll(1024).unwrap();
+    owner.settle_revocations(Some(&mut runtime)).unwrap();
+    assert_eq!(
+        owner
+            .start_next(now + Duration::from_secs(4), |_| true)
+            .unwrap(),
+        None
+    );
+    assert!(owner.finish_after_backend_drop(()).unwrap().1.quiescent());
+    drop(owner);
+    std::fs::remove_dir_all(root).unwrap();
+}
