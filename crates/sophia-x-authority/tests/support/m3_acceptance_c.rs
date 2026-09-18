@@ -1661,6 +1661,11 @@ fn send_entries_so_far() -> usize {
     SEND_ENTRIES.lock().unwrap().len()
 }
 
+/// The send attempts recorded so far, read without disarming.
+fn send_entries_snapshot() -> Vec<SendEntry> {
+    SEND_ENTRIES.lock().unwrap().clone()
+}
+
 /// The writer returns recorded so far, read without disarming.
 fn frames_so_far() -> Vec<ObservedFrame> {
     OBSERVED_FRAMES.lock().unwrap().clone()
@@ -2110,6 +2115,164 @@ fn blocked_recipient_attempt(
     (seen, is_prefix, collected)
 }
 
+/// An interval in which one capsule is enqueued at its writer and cannot be
+/// written, driven by a recipient that has stopped taking bytes.
+///
+/// A REAL HOLD, NOT A NEW SEAM. The writer is stopped by the recipient it is
+/// writing to, which is the production reason a handover sits enqueued. While
+/// it sits there the service takes its own charged turns, and what has to be
+/// true is that they observe it and hand it over exactly once. Reading the
+/// recipient again releases it, and the completion that follows is the
+/// writer's own.
+fn enqueued_observation(namespace: u64, window: u32) -> (Value, Vec<String>) {
+    let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+    let mut service = LifecycleService::launch_over_store(
+        "c-enqueued-observation",
+        namespace,
+        None,
+        false,
+        1,
+        store.clone(),
+    );
+    service.start();
+    let (mut peer, custody) = service.connect();
+    let (surface, _sequence, _focus) = focus_window(&service, &mut peer, window, namespace);
+    let client = custody.cleanup_record().client;
+    let producers = leased_producers(&service, client, C_PRODUCERS);
+    let bounded =
+        rustix::net::sockopt::set_socket_recv_buffer_size(&peer, 2048).is_ok();
+    assert!(bounded, "the case could bound its own end of the connection");
+    observe_frames(&service.registry);
+
+    // Fill until one capsule cannot be taken. That one is the subject: it has
+    // been handed to its writer and cannot reach the recipient.
+    let mut flushed = 0u64;
+    let mut pending = None;
+    for round in 0..4_000u64 {
+        let id = 14_000 + namespace * 1_000 + round;
+        let producer = &producers[(round as usize) % producers.len()];
+        if producer
+            .submit(
+                &service.owner.lease(),
+                axis_to(surface, XAuthorityInputDeliveryId::from_raw(id), 30 + round),
+            )
+            .is_err()
+        {
+            break;
+        }
+        match service.deliveries.recv_timeout(Duration::from_millis(400)) {
+            Ok(receipt) if receipt.outcome == XAuthorityInputDeliveryOutcome::Flushed => {
+                flushed += 1;
+            }
+            Ok(receipt) => panic!("an unexpected outcome before the interval: {receipt:?}"),
+            Err(_) => {
+                pending = Some(id);
+                break;
+            }
+        }
+    }
+    let pending = pending.expect("a capsule the recipient could not take");
+    let wanted = XAuthorityInputDeliveryId::from_raw(pending);
+    let handovers_before = send_entries_snapshot()
+        .iter()
+        .filter(|entry| entry.delivery == Some(wanted))
+        .count();
+    assert!(
+        handovers_before >= 1,
+        "the pending capsule was actually handed to its writer"
+    );
+
+    // THE SERVICE'S OWN CHARGED TURNS, while it sits there. They may observe
+    // it as often as they like; what they may not do is hand it over again.
+    let (report, reported) = sync_channel(1);
+    arm_runner(
+        &service.registry,
+        Box::new(move |runner, lease| {
+            let mut turns = Vec::new();
+            for _ in 0..4 {
+                turns.push(match runner.service_turn(lease) {
+                    Ok(progress) => format!(
+                        "taken={} observed={} dispatched={} transient_observed={}",
+                        progress.taken,
+                        progress.observed,
+                        progress.dispatched,
+                        progress.transient_observed
+                    ),
+                    Err(error) => format!("{error:?}"),
+                });
+            }
+            report.send(turns).expect("the case is waiting");
+        }),
+    );
+    let turns = reported
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the actual runner took its turns over the pending capsule");
+    let handovers_during = send_entries_snapshot()
+        .iter()
+        .filter(|entry| entry.delivery == Some(wanted))
+        .count();
+    assert_eq!(
+        handovers_during, handovers_before,
+        "no turn over a pending capsule handed it over again: {turns:?}"
+    );
+
+    // RELEASED BY READING. The recipient takes its bytes again and the
+    // writer finishes what it already had.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut drained = 0usize;
+    let mut completion = None;
+    while std::time::Instant::now() < deadline && completion.is_none() {
+        if read_event(&mut peer, 1).is_some() {
+            drained += 1;
+        }
+        while let Ok(receipt) = service.deliveries.try_recv() {
+            assert_eq!(
+                receipt.delivery, wanted,
+                "only the pending capsule was still owed a receipt"
+            );
+            assert!(
+                completion.replace(receipt.outcome).is_none(),
+                "its receipt was published once"
+            );
+        }
+    }
+    let completion = completion.expect("the released writer published its own completion");
+    assert_eq!(
+        completion,
+        XAuthorityInputDeliveryOutcome::Flushed,
+        "and it is the writer's own flush"
+    );
+    let second = service.deliveries.recv_timeout(Duration::from_millis(300)).ok();
+    assert!(
+        second.is_none(),
+        "and there is no second receipt for anything: {second:?}"
+    );
+    let handovers_after = send_entries_snapshot()
+        .iter()
+        .filter(|entry| entry.delivery == Some(wanted))
+        .count();
+
+    service.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    let closed = service.closed();
+    let (_, send_entries) = take_observations();
+    let seen = json!({
+        "capsules_flushed_before_the_interval": flushed,
+        "pending_delivery": pending,
+        "handovers_before_the_interval": handovers_before,
+        "charged_turns_over_it": turns,
+        "handovers_after_those_turns": handovers_during,
+        "handovers_after_release": handovers_after,
+        "events_drained_to_release_it": drained,
+        "its_completion": format!("{completion:?}"),
+        "further_receipts": Option::<String>::None,
+        "total_send_attempts": send_entries.len(),
+        "closed_error": closed.error.clone(),
+        "what_this_establishes": "a capsule that has been handed to its writer and cannot reach its recipient is observed by the service's own charged turns and handed over exactly once; releasing the recipient produces the writer's own single completion.",
+    });
+    let collected = finish_labelled("enqueued-observation invocation", service, &[custody]);
+    (seen, collected)
+}
+
 /// Controls that measure rather than accept.
 ///
 /// Nothing here is an acceptance case and nothing here may be bound to a
@@ -2289,9 +2452,8 @@ pub(super) mod diagnostics {
     fn c_indeterminate_send_diagnostics() {
         let mut actors = Vec::new();
 
-        // ENQUEUED WORK IS OBSERVED, NOT RESENT, and a refused publication stays
-        // owned. Both on one invocation, because both are about what an executor
-        // does with work it has already handed on or already decided.
+        // A REFUSED PUBLICATION STAYS OWNED. Its own invocation, because what
+        // it needs is an executor that has decided and cannot publish.
         let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
         let mut service = LifecycleService::launch_over_store(
             "c-indeterminate",
@@ -2303,41 +2465,16 @@ pub(super) mod diagnostics {
         );
         service.start();
         let (mut peer, custody) = service.connect();
-        let (surface, sequence, ingress) = focus_window(&service, &mut peer, 0x320701, 12050);
+        let (surface, _sequence, _ingress) = focus_window(&service, &mut peer, 0x320701, 12050);
         let client = custody.cleanup_record().client;
         let producers = leased_producers(&service, client, C_PRODUCERS);
 
-        observe_turns(&service.registry);
-        let delivered = press_and_release(
-            &service,
-            &ingress,
-            &mut peer,
-            surface,
-            sequence,
-            0x320701,
-            12060,
-        );
-        assert!(waited_for(|| store.reserved() == Some(0)));
-        let extra_wire = read_event(&mut peer, 1);
-        let extra_receipt = service.deliveries.recv_timeout(Duration::from_millis(200));
-        assert_eq!(extra_wire, None, "an enqueued capsule is not sent again");
-        assert!(
-            extra_receipt.is_err(),
-            "and its receipt was published once: {extra_receipt:?}"
-        );
-        let turns = take_turns(&service.registry);
-        let dispatched: usize = turns.iter().map(|turn| turn.dispatched).sum();
-        assert_eq!(
-            dispatched, 2,
-            "exactly the press and the release reached a recipient queue"
-        );
-        let enqueued = json!({
-            "delivered": delivered,
-            "dispatched_over_all_turns": dispatched,
-            "further_wire_copies": 0,
-            "further_receipts": 0,
-            "turns_taken": turns.len(),
-        });
+        // ENQUEUED WORK IS OBSERVED, NOT RESENT, on an invocation of its own:
+        // a capsule handed to its writer that the recipient cannot take, the
+        // service's own charged turns over it, and one completion when the
+        // recipient reads again.
+        let (enqueued, enqueued_actors) = enqueued_observation(12053, 0x320c01);
+        actors.extend(enqueued_actors);
 
         let held = hold_runner(&service);
         let entered = held.entered();
