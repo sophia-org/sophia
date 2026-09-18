@@ -171,6 +171,10 @@ pub enum PrivateRoutingPoint {
 /// than an item; a caller told only "no item" could not tell them apart.
 #[cfg(unix)]
 enum PrivateOrderedStep {
+    /// Original custody moved to the frozen owner without a completion.
+    Deferred { sequence: crate::ReadySequence, watched: bool },
+    /// A bounded visit of an already accepted request, never a new dequeue.
+    Resumed { sequence: crate::ReadySequence, deferred: bool, watched: bool },
     /// The order had nothing waiting.
     Idle,
     /// The order is blocked behind an earlier operation whose disposition is
@@ -332,6 +336,9 @@ impl PrivateXServerFrontend {
         if let Some(sequence) = self.parked_barrier {
             return Ok(PrivateOrderedStep::Blocked(sequence));
         }
+        if self.terminal.prefer_frozen && !self.terminal.frozen.is_empty() {
+            return self.resume_frozen(keyboards, start, watch);
+        }
         let next = match self.admission.take_next() {
             Ok(next) => next,
             Err(()) => return Err(XServerFrontendRouteError::RegistryPoisoned),
@@ -341,8 +348,9 @@ impl PrivateXServerFrontend {
         // that from whatever the mark is accounting for.
         let taken_at = std::time::Instant::now();
         let Some((sequence, _class, operation)) = next else {
-            return Ok(PrivateOrderedStep::Idle);
+            return self.resume_frozen(keyboards, start, watch);
         };
+        self.terminal.prefer_frozen = true;
         // Stored before anything else may run. Until this, the work is only in
         // a local: anything that unwinds between the queue and here takes the
         // accepted custody and its payload with the frame, and nothing would
@@ -449,57 +457,7 @@ impl PrivateXServerFrontend {
                 Err(_) => PrivateOrderedStep::RoutedUnwatched(sequence),
             });
         }
-        // In this instance's hands, and common not yet taken. The instant is
-        // the one read at the dequeue, so what the supervisor measures starts
-        // where the work left the order rather than where this call reached.
-        let Ok(mut watched) = watch.begin_dequeued(taken_at) else {
-            // Not run. The work stays owned and un-attempted, which is the
-            // same honest state an interrupted step leaves, and the order is
-            // blocked on it until something answers for it.
-            return Ok(PrivateOrderedStep::Unwatched(sequence));
-        };
-        let outcome = self.run_current(keyboards, &mut watched);
-        let Some(PrivateOrderedItem::Refused {
-            sequence,
-            custody,
-            route,
-            ..
-        }) = self.terminal.current.take()
-        else {
-            // Execution reads the current item and never replaces it, so what
-            // comes back is what was placed. Anything else means the slot was
-            // written by something that does not own it, and continuing would
-            // decide an outcome for work this step cannot name.
-            return Err(XServerFrontendRouteError::OrderedItemUnresolved);
-        };
-        // Into the turn here rather than handed back. The decided item carries
-        // the custody still owed an observation, and a caller that had to hold
-        // it while it charged a budget or finished a watchdog would be the
-        // only holder of it across a call that can fail.
-        self.terminal.turn.push(match outcome {
-            Ok(run) => PrivateOrderedItem::Ran {
-                sequence,
-                run,
-                custody,
-                route,
-            },
-            Err(refusal) => PrivateOrderedItem::Refused {
-                sequence,
-                refusal,
-                custody,
-                route,
-            },
-        });
-        // Finished after the item is stored, never between taking it out and
-        // putting it back: a caller whose accounting failed in that gap would
-        // be the only holder of work the order had already given up.
-        match watched.finish() {
-            Ok(()) => Ok(PrivateOrderedStep::Decided(sequence)),
-            // The work ran and is recorded. What is not established is that
-            // anything was still watching when it returned, so the step says
-            // so rather than reporting an ordinary decision.
-            Err(_) => Ok(PrivateOrderedStep::DecidedUnwatched(sequence)),
-        }
+        self.execute_current_step(keyboards, watch, sequence, taken_at)
     }
 
     /// Step until the service budget is spent or the order stops offering work.
@@ -517,7 +475,7 @@ impl PrivateXServerFrontend {
         watch: &private_watchdog::PrivateWatchdogOwner,
     ) -> Result<Vec<PrivateOrderedItem>, XServerFrontendRouteError> {
         let budget = self.service_budget;
-        while self.terminal.turn.len() < budget {
+        for _ in 0..budget {
             match self.step_once(keyboards, &mut |_, _| Ok(()), watch)? {
                 PrivateOrderedStep::Idle => break,
                 PrivateOrderedStep::Blocked(sequence) | PrivateOrderedStep::Parked(sequence) => {
@@ -534,6 +492,10 @@ impl PrivateXServerFrontend {
                 | PrivateOrderedStep::DecidedUnwatched(_)
                 | PrivateOrderedStep::Routed(_)
                 | PrivateOrderedStep::RoutedUnwatched(_) => {}
+                PrivateOrderedStep::Deferred { watched, .. }
+                | PrivateOrderedStep::Resumed { watched, .. } => {
+                    if !watched { break; }
+                }
             }
         }
         Ok(std::mem::take(&mut self.terminal.turn))

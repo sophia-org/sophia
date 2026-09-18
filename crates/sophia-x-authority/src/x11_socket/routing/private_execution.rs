@@ -39,7 +39,7 @@ impl PrivateXServerFrontend {
         &mut self,
         keyboards: &mut PrivateKeyboards,
         watched: &mut private_watchdog::PrivateWatchedExecution,
-    ) -> Result<PrivateOrderedRun, PrivateExecutionRefusal> {
+    ) -> Result<PrivateExecutionAttempt, PrivateExecutionRefusal> {
         let Self {
             terminal,
             participant,
@@ -57,8 +57,10 @@ impl PrivateXServerFrontend {
             return Err(PrivateExecutionRefusal::NativeUnprepared);
         };
         terminal.shared_activation.invalidate();
+        let blocked_by_frozen = !terminal.current_is_frozen && !terminal.frozen.is_empty();
         let PrivateTerminalInventory {
             current,
+            current_freeze,
             holds,
             settling,
             native_pending,
@@ -85,6 +87,8 @@ impl PrivateXServerFrontend {
             keyboards,
             route,
             custody,
+            Some(current_freeze),
+            blocked_by_frozen,
         )
     }
 
@@ -160,6 +164,8 @@ impl PrivateXServerFrontend {
             keyboards,
             route,
             custody,
+            None,
+            false,
         );
         // Finished on every normal way out, refusals included. What the
         // execution decided wins over a supervisor that would not take the
@@ -167,7 +173,8 @@ impl PrivateXServerFrontend {
         // would replace what happened with what was not recorded about it.
         match (outcome, watched.finish()) {
             (Err(refusal), _) => Err(refusal),
-            (Ok(run), Ok(())) => Ok(run),
+            (Ok(PrivateExecutionAttempt::Completed(run)), Ok(())) => Ok(run),
+            (Ok(PrivateExecutionAttempt::Deferred), _) => Err(PrivateExecutionRefusal::NotAttempted),
             (Ok(_), Err(_)) => Err(PrivateExecutionRefusal::Unwatched),
         }
     }
@@ -841,7 +848,9 @@ fn execute_owned(
     keyboards: &mut PrivateKeyboards,
     route: &XAuthorityRoutedInput,
     custody: &PrivateOutstandingRequest,
-) -> Result<PrivateOrderedRun, PrivateExecutionRefusal> {
+    freeze: Option<&mut Option<private_native::Freeze>>,
+    blocked_by_frozen: bool,
+) -> Result<PrivateExecutionAttempt, PrivateExecutionRefusal> {
         let identity = controller
             .identity()
             .map_err(PrivateExecutionRefusal::Authority)?;
@@ -917,9 +926,13 @@ fn execute_owned(
 
         let client = custody.client();
         let mut notes = PrivateTransactionNotes::new(&applied, watched);
+        notes.freeze = freeze;
         let completion = participant
-            .execute_current(custody, client, |permit, bindings| {
-                resolve_and_apply(
+            .execute_current_or_defer(custody, client, |permit, bindings| {
+                if blocked_by_frozen {
+                    return Ok(sophia_input_authority::ExecutionDisposition::Defer);
+                }
+                let outcome = resolve_and_apply(
                     permit,
                     bindings,
                     &broker.registry,
@@ -935,7 +948,12 @@ fn execute_owned(
                     transients,
                     keyboards,
                     &mut notes,
-                )
+                );
+                outcome.map(|()| if notes.deferred {
+                    sophia_input_authority::ExecutionDisposition::Defer
+                } else {
+                    sophia_input_authority::ExecutionDisposition::Complete
+                })
             })
             // Typed through, not collapsed. An unreadable boundary is not a
             // client nobody admitted, and saying so here would reinstate the
@@ -947,6 +965,9 @@ fn execute_owned(
                 other => PrivateExecutionRefusal::Admission(other),
             })?
             .map_err(PrivateExecutionRefusal::Authority)?;
+        let sophia_input_authority::RequestExecution::Completed(completion) = completion else {
+            return Ok(PrivateExecutionAttempt::Deferred);
+        };
 
         // Before the rest: these say the work should not have been applied at
         // all, rather than that applying it went wrong.
@@ -987,7 +1008,7 @@ fn execute_owned(
             // in the completion rather than being renamed here.
             return Err(PrivateExecutionRefusal::NotDecided(completion));
         };
-        Ok(PrivateOrderedRun {
+        Ok(PrivateExecutionAttempt::Completed(PrivateOrderedRun {
             owes_event: decided.owes_event,
             reached: decided.reached,
             first_press: decided.first_press,
@@ -995,5 +1016,5 @@ fn execute_owned(
             release: decided.release,
             completion,
             event: decided.event,
-        })
+        }))
     }

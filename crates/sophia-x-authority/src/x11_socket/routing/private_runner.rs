@@ -511,6 +511,9 @@ impl PrivatePreparedRunner {
             .transpose()
             .map_err(|_| XServerFrontendRouteError::OrderedItemUnresolved)?;
         if let Some(cause) = refused {
+            if frontend.as_ref().expect("live runner").terminal.current_is_frozen {
+                taken = None;
+            }
             return Ok(PrivateAccountedStep::Yield { cause, taken });
         }
         Ok(PrivateAccountedStep::Step {
@@ -815,10 +818,30 @@ impl PrivatePreparedRunner {
                 }
                 PrivateAccountedStep::Step { step, charge } => (step, charge),
             };
-            progress.taken += usize::from(charge.is_some());
+            progress.taken += usize::from(charge.is_some() && !matches!(step, PrivateOrderedStep::Resumed { .. }));
             let overran = progress.record_charge(charge);
             self.prefer_cleanup = true;
             match step {
+                PrivateOrderedStep::Deferred { sequence, watched }
+                | PrivateOrderedStep::Resumed { sequence, watched, deferred: true } => {
+                    if !watched {
+                        progress.unwatched = Some(sequence);
+                        break;
+                    }
+                }
+                PrivateOrderedStep::Resumed { sequence, watched, deferred: false } => {
+                    let frontend = self.frontend.as_ref().expect("live runner");
+                    if let Some(PrivateOrderedItem::Refused { sequence: stored, refusal, .. }) = frontend.terminal.turn.last()
+                        && *stored == sequence
+                    {
+                        progress.refused += 1;
+                        progress.last_refusal = Some(*refusal);
+                    }
+                    if !watched {
+                        progress.unwatched = Some(sequence);
+                        break;
+                    }
+                }
                 PrivateOrderedStep::Idle => {
                     if cleanup_idle {
                         break;

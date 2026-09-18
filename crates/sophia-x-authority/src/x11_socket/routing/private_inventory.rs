@@ -169,6 +169,12 @@ struct PrivateTerminalInventory {
     /// Owned before the execution that could fail, so an interruption leaves
     /// the obligation here rather than in a frame that is going.
     current: Option<PrivateOrderedItem>,
+    /// No native or common input effect has been consumed for these rows.
+    /// Their original accepted-item credit bounds this storage across grants.
+    frozen: std::collections::VecDeque<PrivateFrozenInput>,
+    current_freeze: Option<private_native::Freeze>,
+    current_is_frozen: bool,
+    prefer_frozen: bool,
     /// The items of the turn in progress.
     turn: Vec<PrivateOrderedItem>,
     /// Decided work being handed on right now.
@@ -205,9 +211,12 @@ impl PrivateTerminalInventory {
         let holds = Vec::with_capacity(PRIVATE_HOLD_RECORDS);
         let settling = Vec::with_capacity(PRIVATE_HOLD_RECORDS);
         let transients = PrivateTransientInventory::with_capacity(capacity);
+        let frozen = std::collections::VecDeque::with_capacity(item_capacity);
         let native_bytes = Self::native_storage_bytes(holds.capacity(), settling.capacity())
             .and_then(|bytes| bytes.checked_add(transients.records.capacity()
                 .checked_mul(std::mem::size_of::<PrivateTransientRecord>())?))
+            .and_then(|bytes| bytes.checked_add(frozen.capacity()
+                .checked_mul(std::mem::size_of::<PrivateFrozenInput>())?))
             .expect("the complete native custody storage has a representable byte size");
         assert!(
             native_bytes <= isize::MAX as usize,
@@ -235,6 +244,10 @@ impl PrivateTerminalInventory {
             shared_activation: PrivateSharedActivationScan::default(),
             shared_activation_turn: true,
             current: None,
+            frozen,
+            current_freeze: None,
+            current_is_frozen: false,
+            prefer_frozen: true,
             turn: Vec::with_capacity(item_capacity),
             delivering: Vec::with_capacity(item_capacity),
             undelivered: Vec::with_capacity(item_capacity),
@@ -266,6 +279,8 @@ impl PrivateTerminalInventory {
             && self.pending_custody.is_none()
             && self.settling.is_empty()
             && self.current.is_none()
+            && self.frozen.is_empty()
+            && self.current_freeze.is_none()
             && self.turn.is_empty()
             && self.delivering.is_empty()
             && self.undelivered.is_empty()
@@ -286,6 +301,7 @@ impl PrivateTerminalInventory {
             .saturating_add(usize::from(self.attempt_custody.is_some()))
             .saturating_add(self.settling.len())
             .saturating_add(usize::from(self.current.is_some()))
+            .saturating_add(self.frozen.len())
             .saturating_add(self.turn.len())
             .saturating_add(self.delivering.len())
             .saturating_add(self.undelivered.len())
@@ -304,7 +320,7 @@ impl PrivateTerminalInventory {
     fn hand_over(&mut self) -> Self {
         debug_assert!(
             self.turn.len() + self.delivering.len() + self.undelivered.len()
-                + usize::from(self.current.is_some()) <= self.item_capacity,
+                + self.frozen.len() + usize::from(self.current.is_some()) <= self.item_capacity,
             "accepted item custody cannot exceed its pre-exposure storage bound"
         );
         std::mem::replace(
@@ -331,6 +347,10 @@ impl PrivateTerminalInventory {
                 shared_activation: PrivateSharedActivationScan::default(),
                 shared_activation_turn: true,
                 current: None,
+                frozen: std::collections::VecDeque::new(),
+                current_freeze: None,
+                current_is_frozen: false,
+                prefer_frozen: true,
                 turn: Vec::new(),
                 delivering: Vec::new(),
                 undelivered: Vec::new(),

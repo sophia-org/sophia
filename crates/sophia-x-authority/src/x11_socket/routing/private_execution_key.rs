@@ -68,6 +68,9 @@ fn resolve_and_apply_key(
     };
     let key = PrivateKeyboards::x_keycode(keycode).ok_or(Error::StaleExecution)?;
     let input = Input::key(key).map_err(|_| Error::StaleExecution)?;
+    // Freeze contributors are resolved from these held admission/client rows;
+    // the same native guard is retained from eligibility through the effect.
+    let clients = registry.clients.lock().map_err(|_| Error::RoutingUnavailable)?;
     let index = holds.iter().position(|record| {
         record
             .native
@@ -82,6 +85,13 @@ fn resolve_and_apply_key(
             return Err(Error::Capacity(CapacityError::NoCompletionCell));
         }
         let Some(index) = index else {
+            let guards = native.lock_base().map_err(|cause| {
+                notes.native_refusal = Some(cause);
+                Error::RoutingUnavailable
+            })?;
+            if notes.defer_freeze(guards.freeze(bindings, &clients, notes.freeze_witness(), true))? {
+                return Ok(());
+            }
             notes
                 .watched
                 .applying()
@@ -106,13 +116,6 @@ fn resolve_and_apply_key(
             });
             return Ok(());
         };
-        prepare_key_custody(
-            registry,
-            route.delivery,
-            pending_custody,
-            next_event_order,
-            notes,
-        )?;
         let connection = holds[index]
             .native
             .as_ref()
@@ -122,6 +125,10 @@ fn resolve_and_apply_key(
             notes.native_refusal = Some(cause);
             Error::RoutingUnavailable
         })?;
+        if notes.defer_freeze(guards.freeze(bindings, &clients, notes.freeze_witness(), true))? {
+            return Ok(());
+        }
+        prepare_key_custody(registry, route.delivery, pending_custody, next_event_order, notes)?;
         notes
             .watched
             .applying()
@@ -212,6 +219,14 @@ fn resolve_and_apply_key(
             .as_ref()
             .and_then(PrivateNativeHold::key)
             .expect("a key obligation");
+        let connection = hold.connection();
+        let mut guards = native.lock_for_release(&connection).map_err(|cause| {
+            notes.native_refusal = Some(cause);
+            Error::RoutingUnavailable
+        })?;
+        if notes.defer_freeze(guards.freeze(bindings, &clients, notes.freeze_witness(), true))? {
+            return Ok(());
+        }
         match registry.input_recovery.bind(route.delivery, hold.client()) {
             Ok(true) => {}
             Ok(false) => {
@@ -223,11 +238,6 @@ fn resolve_and_apply_key(
                 return Err(Error::StaleRequest);
             }
         }
-        let connection = hold.connection();
-        let mut guards = native.lock_for_release(&connection).map_err(|cause| {
-            notes.native_refusal = Some(cause);
-            Error::RoutingUnavailable
-        })?;
         notes
             .watched
             .applying()
@@ -260,10 +270,6 @@ fn resolve_and_apply_key(
     // Keep the rank common -> bindings -> clients -> surfaces -> native
     // base -> exact selections -> publication. The source selects the window
     // once and captures its surface from this held map before applying.
-    let clients = registry
-        .clients
-        .lock()
-        .map_err(|_| Error::RoutingUnavailable)?;
     let surfaces = registry
         .surfaces
         .lock()
@@ -272,6 +278,9 @@ fn resolve_and_apply_key(
         notes.native_refusal = Some(cause);
         Error::RoutingUnavailable
     })?;
+    if notes.defer_freeze(guards.freeze(bindings, &clients, notes.freeze_witness(), true))? {
+        return Ok(());
+    }
     prepare_key_custody(
         registry,
         route.delivery,

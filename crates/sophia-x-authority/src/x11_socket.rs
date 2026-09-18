@@ -122,6 +122,7 @@ include!("x11_socket/routing/private_terminal_native.rs");
 include!("x11_socket/routing/private_shared_activation.rs");
 include!("x11_socket/routing/private_transient_inventory.rs");
 include!("x11_socket/routing/private_inventory.rs");
+include!("x11_socket/routing/private_frozen.rs");
 include!("x11_socket/routing/private_settlement.rs");
 include!("x11_socket/routing/private_settlement_failed.rs");
 include!("x11_socket/routing/private_ordered_home.rs");

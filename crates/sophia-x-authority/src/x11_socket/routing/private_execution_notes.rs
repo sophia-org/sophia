@@ -14,6 +14,9 @@
 /// another fact does not mean threading another argument.
 #[cfg(unix)]
 struct PrivateTransactionNotes<'a> {
+    /// The terminal owner installs a source witness before common defers.
+    freeze: Option<&'a mut Option<private_native::Freeze>>,
+    deferred: bool,
     /// What was decided, if anything was.
     decided: Option<PrivateOrderedDecision>,
     /// A hold ended and the record of where its press went is gone.
@@ -60,6 +63,8 @@ impl<'a> PrivateTransactionNotes<'a> {
         watched: &'a mut private_watchdog::PrivateWatchedExecution,
     ) -> Self {
         Self {
+            freeze: None,
+            deferred: false,
             watched,
             decided: None,
             plan_missing: false,
@@ -73,6 +78,40 @@ impl<'a> PrivateTransactionNotes<'a> {
             may_have_applied,
         }
     }
+
+    fn freeze_witness(&self) -> Option<&private_native::Freeze> {
+        self.freeze.as_ref().and_then(|slot| slot.as_ref())
+    }
+
+    fn defer_freeze(
+        &mut self,
+        checked: Result<private_native::FreezeCheck, private_native::Refusal>,
+    ) -> Result<bool, sophia_input_authority::RegistrationError> {
+        match checked {
+            Ok(private_native::FreezeCheck::Ready) => Ok(false),
+            Ok(private_native::FreezeCheck::Frozen(witness)) => {
+                if let Some(slot) = self.freeze.as_mut() {
+                    **slot = Some(witness);
+                    self.deferred = true;
+                    Ok(true)
+                } else {
+                    self.native_refusal = Some(private_native::Refusal::KeyboardFrozen);
+                    Err(sophia_input_authority::RegistrationError::RoutingUnavailable)
+                }
+            }
+            Err(cause) => {
+                self.native_refusal = Some(cause);
+                Err(sophia_input_authority::RegistrationError::RoutingUnavailable)
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+#[expect(clippy::large_enum_variant, reason = "The completed decision moves directly into reserved terminal storage without a per-attempt allocation.")]
+enum PrivateExecutionAttempt {
+    Completed(PrivateOrderedRun),
+    Deferred,
 }
 
 /// An execution's hold on a delivery, given back however the execution ends.
