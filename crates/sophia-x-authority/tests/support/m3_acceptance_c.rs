@@ -81,6 +81,29 @@ fn leased_producers(
         .collect()
 }
 
+/// One axis notch, as the source actually emits it.
+///
+/// MORE THAN ONE FRAME ON PURPOSE. An axis reaches a core recipient as an
+/// emulated wheel button going down and coming up, so the capsule owes two
+/// frames. A capsule that owes one frame can never show a prefix of itself,
+/// which is why the button traffic this file uses elsewhere cannot establish
+/// a partial send however long it is driven.
+fn axis_to(
+    surface: SurfaceId,
+    delivery: XAuthorityInputDeliveryId,
+    at: u64,
+) -> XAuthorityRoutedInput {
+    let mut route = motion_to(surface, delivery);
+    route.request.global_position = Point { x: 2.0, y: 3.0 };
+    route.request.local_position = route.request.global_position;
+    route.request.time_msec = at;
+    route.request.kind = InputEventKind::PointerAxis {
+        horizontal_v120: 0,
+        vertical_v120: 120,
+    };
+    route
+}
+
 /// The receipt the actual writer published for one delivery.
 fn receipt_for(
     deliveries: &Receiver<XAuthorityClientInputDelivery>,
@@ -2095,37 +2118,38 @@ pub(super) mod diagnostics {
                 stalled = Some(("the recipient never stopped the writer within the bound", 0));
                 break 'blocking;
             }
-            for pressed in [true, false] {
-                let id = 12600 + round * 2 + u64::from(!pressed);
-                if blocked_ingress
-                    .submit(
-                        &blocked.owner.lease(),
-                        button_to(
-                            blocked_surface,
-                            XAuthorityInputDeliveryId::from_raw(id),
-                            272,
-                            pressed,
-                        ),
-                    )
-                    .is_err()
-                {
-                    stalled = Some(("submission refused while the recipient is full", id));
-                    break 'blocking;
-                }
-                match blocked.deliveries.recv_timeout(Duration::from_secs(12)) {
-                    Ok(receipt) => {
-                        let name = format!("{:?}", receipt.outcome);
-                        if receipt.outcome != XAuthorityInputDeliveryOutcome::Flushed {
-                            outcomes.push(name.clone());
-                            stalled = Some(("an outcome that establishes nothing", id));
-                            break 'blocking;
-                        }
-                        outcomes.push(name);
-                    }
-                    Err(_) => {
-                        stalled = Some(("no receipt within the bound", id));
+            // ONE MULTI-FRAME CAPSULE AT A TIME, its receipt awaited before
+            // the next is submitted. A stall then belongs to a known delivery
+            // rather than to whichever of several was in flight, and the
+            // writer's own steps say how much of that one had gone.
+            let id = 12600 + round;
+            if blocked_ingress
+                .submit(
+                    &blocked.owner.lease(),
+                    axis_to(
+                        blocked_surface,
+                        XAuthorityInputDeliveryId::from_raw(id),
+                        30 + round,
+                    ),
+                )
+                .is_err()
+            {
+                stalled = Some(("submission refused while the recipient is full", id));
+                break 'blocking;
+            }
+            match blocked.deliveries.recv_timeout(Duration::from_secs(9)) {
+                Ok(receipt) => {
+                    let name = format!("{:?}", receipt.outcome);
+                    if receipt.outcome != XAuthorityInputDeliveryOutcome::Flushed {
+                        outcomes.push(name.clone());
+                        stalled = Some(("an outcome that establishes nothing", id));
                         break 'blocking;
                     }
+                    outcomes.push(name);
+                }
+                Err(_) => {
+                    stalled = Some(("no receipt within the bound", id));
+                    break 'blocking;
                 }
             }
             pairs += 1;
@@ -2179,7 +2203,7 @@ pub(super) mod diagnostics {
             "writer_failures": writer_failures,
             "recipient_buffer_bounded": bounded_buffer,
             "recipient_buffer_bytes": buffer_size,
-            "pairs_delivered_before_stall": pairs,
+            "axis_capsules_delivered_before_stall": pairs,
             "flushed_before_stall": flushed_before_stall,
             "stalled": stalled.map(|(why, id)| json!({"why": why, "delivery": id})),
             "stalling_outcome": stalling_outcome,
