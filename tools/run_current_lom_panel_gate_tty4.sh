@@ -49,7 +49,7 @@ from verify import budgets, unique_json_object
 with open(sys.argv[2], encoding="utf-8") as source:
     budgets(json.load(source, object_pairs_hook=unique_json_object))
 PY
-cargo build --offline --release -p sophia-cli --features native-session --manifest-path "$ROOT_DIR/Cargo.toml"
+CARGO_TARGET_DIR="$ROOT_DIR/target" cargo build --offline --release -p sophia-cli --features native-session --manifest-path "$ROOT_DIR/Cargo.toml"
 CARGO_TARGET_DIR="$LOM_TARGET" cargo build --offline --release --manifest-path "$LOM_SOURCE/Cargo.toml"
 LOM_BIN="$LOM_TARGET/release/lom"
 SOPHIA_BIN="$ROOT_DIR/target/release/sophia"
@@ -86,7 +86,7 @@ fi
 # and application declarations. Only the recorded probe overrides differ.
 "$SOPHIA_BIN" config print-effective --desktop-profile="$wm_profile" \
     > "$EVIDENCE_DIR/wm-profile.kdl"
-cargo build --offline --release -p sophia-config --example desktop_profile_probe \
+CARGO_TARGET_DIR="$ROOT_DIR/target" cargo build --offline --release -p sophia-config --example desktop_profile_probe \
     --manifest-path "$ROOT_DIR/Cargo.toml"
 probe_args=()
 [[ "$GATE_MODE" != launcher ]] || probe_args+=(--require-launcher-binding)

@@ -554,6 +554,9 @@ fn lom_panel_gate_commits_hagias_complete_catalog_and_rejects_a_missing_slot() {
     "#, &arguments);
     let overrides = wm.directory.join("probe.kdl");
     std::fs::write(&overrides, include_str!("../../../../tools/fixtures/lom_panel_desktop.kdl")).unwrap();
+    // This bar-only WM deliberately has no launcher key. The native launcher
+    // probe would refuse it; ordinary panel composition must still work.
+    assert!(desktop_probe::require_launcher_binding(&wm.directory.join("desktop.kdl")).is_err());
     let desktop = desktop_probe::compose(&wm.directory.join("desktop.kdl"), &overrides).unwrap();
     let make_fixture = || {
         ReloadFixture::from_config_with_actions(ConfigFixture::from_documents(

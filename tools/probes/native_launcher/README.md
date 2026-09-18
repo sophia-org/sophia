@@ -48,5 +48,6 @@ Offline controls run the real generator/verifier with supplied command effects;
 real Session parsing and WM-binding preparation have separate Rust controls.
 They open no real display/VT/device. `tools/check_lom_gpu_content_proof_verifiers.sh`
 includes this test suite, and must itself execute inside the device-hidden
-canonical wrapper on this host. The new mode still needs its final frozen
-canonical gate before physical readiness is declared.
+canonical wrapper on this host. Physical readiness requires a final frozen canonical gate and exact candidate
+build evidence, recorded separately from these fixture results. A harness commit
+by itself is not a physical acceptance result.

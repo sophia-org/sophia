@@ -1373,3 +1373,29 @@ identity, absent private loader cache and an outdated mocked signature command)
 remain separate logs. No false pass is substituted for them. A frozen canonical
 successor, candidate compatibility/build checks and physical readiness audit
 remain before asking the operator to use the new command.
+
+### Harness follow-up and frozen validation, 2026-09-18
+
+Contained canonical `20bb3353` reports PASS (288 Rust groups, 3,519 passes,
+zero failures, 36 ignored), but emitted the same new unused-helper warning during
+test/Clippy builds. It is not the final warning-free readiness result. An existing
+Session fixture also imports the composer example; it now calls the native-key
+validator and asserts that its bar-only WM profile would refuse a native launcher
+probe, while its ordinary panel composition remains accepted. No warning allowance
+or gate relaxation was added. Scoped strict Session Clippy and the actual fixture
+pass. The script now fixes Sophia/config-example output directories explicitly so
+an inherited CARGO_TARGET_DIR cannot select an old binary at the expected path.
+Numeric smoke-verifier input is length-bounded before integer conversion, with
+an oversized-field negative.
+
+`final5-execution.log` under `.artifacts/bemenu-launcher-harness` retains the
+updated device-hidden positives and the prior fixtures' final successful scope.
+The independent unchanged Lom `a317370` project gate passes in
+`.artifacts/lom-native-launcher-readiness-rerun/result.json` (55 Rust controls,
+16 tooling controls; strict Clippy/fmt/layout/dependencies). Its archived tracked
+source hashes remain exact. That run reused this owner's disk-backed target cache
+and is not a clean-build claim. The initial wrapper import-path failure occurred
+before tests and remains under the unsuffixed artifact directory. Neither run
+executed a real display, GPU, VT or installed launcher. Final canonical/build and
+readiness manifests must identify their exact successor; no current-source
+canonical claim is borrowed from 20bb3353 or a prior checkpoint.

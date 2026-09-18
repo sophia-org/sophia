@@ -52,6 +52,8 @@ class EvidenceTests(unittest.TestCase):
                 verify('\n'.join(variant))
         with self.assertRaises(Invalid):
             verify('\n'.join(lines).replace('slot=0', 'slot=0 slot=0'))
+        with self.assertRaises(Invalid):
+            verify('\n'.join(lines).replace('device_major=226', 'device_major=' + '1' * 5000))
 
     def test_restart_alias_or_launcher_gpu_refuses(self):
         lines = transcript()

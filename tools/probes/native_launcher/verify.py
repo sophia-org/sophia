@@ -13,7 +13,7 @@ class Invalid(ValueError):
 
 def number(fields, key, low=1, high=U64):
     value = fields.get(key, '')
-    if not value or not value.isascii() or not value.isdecimal():
+    if not value or len(value) > 20 or not value.isascii() or not value.isdecimal():
         raise Invalid(f'missing/invalid {key}')
     result = int(value)
     if not low <= result <= high:
