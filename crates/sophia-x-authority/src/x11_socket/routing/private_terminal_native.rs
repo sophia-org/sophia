@@ -615,7 +615,13 @@ fn dispatch_custody(
         if let Some(custody) = self.terminal.attempt_custody.as_mut() {
             custody.phase = PrivateAttemptPhase::Dispatching;
         }
+        // Taken before the record is borrowed, and only for the acceptance
+        // seam below: cloning the origin here ends its borrow immediately.
+        #[cfg(all(test, unix))]
+        let seam_origin = self.broker.registry.clone();
         let release = &mut self.terminal.settling[index];
+        #[cfg(all(test, unix))]
+        let seam_delivery = release.delivery();
         release.custody.attempt = Some(claim.token);
         release.custody.dispatch = PrivateDispatchPhase::Indeterminate;
         // The handle this release has carried since it was recorded is the one
@@ -633,7 +639,16 @@ fn dispatch_custody(
         // what came back, so a close cannot land between them. The give-back
         // is deliberately not in here: it takes common, and taking common
         // beneath this gate would put every producer behind the ledger.
-        let handed_over = match admitted.try_send(capsule) {
+        let sent = admitted.try_send(capsule);
+        // THE ONE INTERVAL NOBODY CAN DESCRIBE, made reachable to an
+        // acceptance case and to nothing else. Between the handover returning
+        // and the record of what it returned, an interruption leaves a
+        // delivery whose fate is unknown; production cannot be asked to
+        // produce that state on demand, so a case arms this exact origin and
+        // delivery once and the call is empty for every other handover.
+        #[cfg(all(test, unix))]
+        routing_tests::m3_acceptance::after_ordered_handover(&seam_origin, seam_delivery);
+        let handed_over = match sent {
             Ok(()) => {
                 // Only the receipt obligation is kept. No replayable copy
                 // stays here: the event is on the queue, and a second copy
