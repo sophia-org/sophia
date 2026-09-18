@@ -3,6 +3,23 @@
 // read the live owner. The recipient fault pauses that exact worker at entry;
 // native withholding is the real shared-activation dependency between buttons.
 
+static A_PRESS_INTERRUPTS: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+
+pub(crate) fn native_press_entered(registry: &XServerFrontendRouteRegistry) {
+    let interrupted = {
+        let mut faults = A_PRESS_INTERRUPTS.lock().unwrap();
+        faults
+            .iter()
+            .position(|key| *key == Arc::as_ptr(&registry.clients) as usize)
+            .map(|index| faults.remove(index))
+            .is_some()
+    };
+    assert!(
+        !interrupted,
+        "labelled source interruption after pointer press write-ahead"
+    );
+}
+
 #[derive(Debug)]
 struct AReleaseReading {
     delivery: Option<XAuthorityInputDeliveryId>,
@@ -249,13 +266,16 @@ fn a_repress_after_settlement(
 }
 
 fn a_recipient_withheld() -> (Value, Vec<String>) {
-    let (pause, release_worker) = Pause::pair();
+    let (pause, release) = Pause::pair();
     let mut service = LifecycleService::launch(
         "a-recipient-proof",
         11300,
         Some(AttachFault::Body { pause, panic: None }),
         false,
     );
+    // This guard drops before the service on assertion failure, releasing the
+    // real worker before the service's bounded collection fallback waits.
+    let release_worker = release;
     service.start();
     let (mut peer, custody) = service.connect();
     let worker = release_worker.entered();
@@ -399,6 +419,68 @@ fn a_native_withheld_by_overlap() -> (Value, Vec<String>) {
     (observed, service.finish(&[custody]))
 }
 
+fn a_interrupted_press_entry() -> (Value, Vec<String>) {
+    let mut service = LifecycleService::launch("a-press-entry-unwind", 11320, None, false);
+    service.start();
+    let (mut peer, custody) = service.connect();
+    let (surface, _, ingress) = focus_window(&service, &mut peer, 0x313201, 11320);
+    A_PRESS_INTERRUPTS
+        .lock()
+        .unwrap()
+        .push(Arc::as_ptr(&service.registry.clients) as usize);
+    let (position, cell) = a_submit_button(&service, &ingress, surface, 11321, 272, true);
+    let closed = service.closed();
+    assert!(closed.unwound);
+    assert_eq!(custody.join().phase(), PrivateReapingPhase::Joined);
+    let held = service.owner.store.inner.lock().unwrap();
+    let inventory = held
+        .terminal
+        .iter()
+        .find(|inventory| {
+            inventory
+                .execution
+                .as_ref()
+                .is_some_and(|witness| witness.instance == closed.instance)
+        })
+        .unwrap();
+    let pending = inventory
+        .native_pending
+        .pointer()
+        .expect("interrupted context is retained");
+    assert_eq!(pending.status(), private_native::Status::PressEntered);
+    assert_eq!(pending.incarnation(), None);
+    assert!(pending.proof().is_none());
+    let pending_cell = inventory
+        .pending_custody
+        .as_ref()
+        .unwrap()
+        .completion
+        .as_ref()
+        .unwrap();
+    assert!(Arc::ptr_eq(pending_cell, &cell));
+    let current = inventory
+        .current
+        .as_ref()
+        .expect("original current request remains owned");
+    let PrivateOrderedItem::Refused {
+        sequence,
+        custody: request,
+        ..
+    } = current
+    else {
+        panic!("interrupted current has no returned decision");
+    };
+    assert_eq!(*sequence, position);
+    assert_eq!(request.phase.get(), PrivateRequestPhase::Entered);
+    assert!(Arc::ptr_eq(
+        &request.input_completion().unwrap().cell,
+        &cell
+    ));
+    let observation = json!({"fault_seam":"one-shot exact-registry panic after original pointer context and effect write-ahead, before common press returns","sequence":format!("{position:?}"),"original_cell":format!("{:p}",Arc::as_ptr(&cell)),"pending_status":format!("{:?}",pending.status()),"request_phase":format!("{:?}",request.phase.get()),"native_proof":false,"closed":format!("{closed:?}"),"residual":"original current, pending source and completion retained; no settlement inferred from collection"});
+    drop(held);
+    (observation, service.finish(&[custody]))
+}
+
 #[test]
 fn a_press_release_repress() {
     let (recipient, mut actors) = a_recipient_withheld();
@@ -421,10 +503,15 @@ fn a_partial_proof() {
     let (recipient, mut actors) = a_recipient_withheld();
     let (native, more) = a_native_withheld_by_overlap();
     actors.extend(more);
+    let (interrupted, more) = a_interrupted_press_entry();
+    actors.extend(more);
     emit_case(
         "A.partial_proof",
         &[
-            ("native_proof_withheld", native.clone()),
+            (
+                "native_proof_withheld",
+                json!({"overlap":native.clone(),"interrupted_source_control":interrupted}),
+            ),
             ("recipient_proof_withheld", recipient),
             ("completion_alone_keeps_barrier", native),
         ],
