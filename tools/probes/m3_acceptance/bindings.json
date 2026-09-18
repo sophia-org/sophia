@@ -4,6 +4,8 @@
     "D.ready_before_exposure": "x11_socket::routing_tests::m3_acceptance::d_ready_before_exposure",
     "D.start_failures": "x11_socket::routing_tests::m3_acceptance::d_start_failures",
     "D.worker_exit": "x11_socket::routing_tests::m3_acceptance::d_worker_exit",
-    "D.registration_destruction": "x11_socket::routing_tests::m3_acceptance::d_registration_destruction"
+    "D.registration_destruction": "x11_socket::routing_tests::m3_acceptance::d_registration_destruction",
+    "D.service_exit": "x11_socket::routing_tests::m3_acceptance::d_service_exit",
+    "D.namespace_reuse": "x11_socket::routing_tests::m3_acceptance::d_namespace_reuse"
   }
 }

@@ -368,3 +368,302 @@ fn d_registration_destruction() {
         &actors,
     );
 }
+
+#[test]
+fn d_service_exit() {
+    let mut actors = Vec::new();
+    let mut facts = Vec::new();
+    for kind in ["shutdown", "command_channel_loss", "error", "unwind"] {
+        let mut service = LifecycleService::launch(kind, 11005, None, kind == "unwind");
+        service.start();
+        let (mut peer, custody) = service.connect();
+        let (surface, sequence, ingress) = focus_window(&service, &mut peer, 0x310501, 11050);
+        ingress
+            .submit(
+                &service.owner.lease(),
+                key_service_route(surface, 11051, 42, true),
+            )
+            .unwrap();
+        let expected = expected_key_service_event(sequence, 0x310501, 50, true, 0);
+        assert_eq!(read_event(&mut peer, 3), Some(expected));
+        let delivered = service
+            .deliveries
+            .recv_timeout(Duration::from_secs(3))
+            .unwrap();
+        assert_eq!(
+            delivered.delivery,
+            XAuthorityInputDeliveryId::from_raw(11051)
+        );
+        assert_eq!(delivered.outcome, XAuthorityInputDeliveryOutcome::Flushed);
+        let identity = custody_identity(&custody);
+        let admission = pause_after_admission_closed(&service.registry);
+        let frame =
+            pause_after_registration_drop(&service.registry, custody.cleanup_record().client);
+        match kind {
+            "shutdown" => service.command(XServerFrontendServiceCommand::StopAndDisconnect),
+            "command_channel_loss" => drop(service.commands.take()),
+            "error" => {
+                let (acknowledgement, acknowledged) = sync_channel(1);
+                drop(acknowledged);
+                service.command(XServerFrontendServiceCommand::UpdateOutputTopology {
+                    snapshot: sophia_protocol::OutputTopologySnapshot {
+                        generation: 1,
+                        primary: sophia_protocol::OutputId::from_raw(1),
+                        outputs: Vec::new(),
+                    },
+                    acknowledgement,
+                });
+            }
+            "unwind" => {
+                let drawn = draw_and_learn_surface(&mut peer, &service.transactions);
+                assert!(waited_for(|| saw_kind(
+                    &service.telemetry,
+                    XAuthorityBackpressureTelemetryKind::Wait,
+                    true
+                )));
+                service
+                    .raster
+                    .try_route(raster_requirement_for(drawn))
+                    .unwrap();
+            }
+            _ => unreachable!(),
+        }
+        assert!(waited_for(|| !admission_pause_pending(&service.registry)));
+        assert_eq!(service.access.standing(), PrivatePortStanding::Ended);
+        assert!(matches!(
+            service.access.control_producer(&service.owner.lease()),
+            Err(PrivateProducerRefusal::Ended)
+        ));
+        assert!(matches!(
+            ingress.submit(
+                &service.owner.lease(),
+                key_service_route(surface, 11052, 42, false)
+            ),
+            Err(PrivateSendError::Disconnected(_))
+        ));
+        assert_eq!(custody.join().phase(), PrivateReapingPhase::NotBegun);
+        admission.send(()).unwrap();
+        assert!(waited_for(|| !pause_pending(
+            &service.registry,
+            custody.cleanup_record().client
+        )));
+        assert_eq!(
+            custody.join().phase(),
+            PrivateReapingPhase::NotBegun,
+            "the actual connection frame is still owned, so no collected token authorizes joining"
+        );
+        frame.send(()).unwrap();
+        let closed = service.closed();
+        assert_eq!(closed.unwound, kind == "unwind");
+        assert_eq!(
+            closed.succeeded,
+            matches!(kind, "shutdown" | "command_channel_loss")
+        );
+        assert_eq!(closed.error.is_some(), kind == "error");
+        assert_eq!(
+            closed.modifiers,
+            Some(1),
+            "original XKB Shift history outlives exiting runner"
+        );
+        assert_eq!(custody_identity(&custody), identity);
+        assert_eq!(custody.join().phase(), PrivateReapingPhase::Joined);
+        assert!(eof_within(&mut peer, 3));
+        let held = service.owner.store.inner.lock().unwrap();
+        let exact_inventory = held
+            .terminal
+            .iter()
+            .find(|inventory| {
+                inventory
+                    .execution
+                    .as_ref()
+                    .is_some_and(|witness| witness.instance == closed.instance)
+            })
+            .unwrap();
+        assert!(
+            !exact_inventory.holds.is_empty(),
+            "held key remains terminal debt, not settled by namespace removal"
+        );
+        let witness = Arc::clone(exact_inventory.execution.as_ref().unwrap());
+        let retained_holds = exact_inventory.holds.len();
+        drop(held);
+        let egress = service.owner.store.unresolved_egress().unwrap();
+        if kind == "unwind" {
+            assert_eq!(egress, 1);
+        }
+        let step = service.step();
+        assert_eq!(step.instance, closed.instance);
+        assert_eq!(step.phase, PrivateMaintenancePhase::Output);
+        assert_eq!(step.modifiers, Some(1));
+        assert!(step.charged);
+        facts.push(json!({"exit":kind,"original_key_bytes":expected.to_vec(),"closed":format!("{closed:?}"),"identity":format!("{identity:?}"),"held_records":retained_holds,"egress_residual":egress,"bounded_visit":step.detail,"residual_disposition":"original history retained until explicit test owner ends; held debt is not claimed settled"}));
+        actors.extend(service.finish(&[custody]));
+        assert_eq!(
+            witness.reading().availability,
+            PrivateExecutionAvailability::Abandoned,
+            "ending original executor records loss while residual debt remains owed"
+        );
+    }
+    emit_case(
+        "D.service_exit",
+        &[
+            ("shutdown", facts[0].clone()),
+            ("command_channel_loss", facts[1].clone()),
+            ("error", facts[2].clone()),
+            ("unwind", facts[3].clone()),
+            (
+                "admission_closed_before_wait",
+                json!({"all_exit_paths":facts}),
+            ),
+            (
+                "outer_custody_and_original_keyboard_history",
+                json!({"all_exit_paths":facts}),
+            ),
+        ],
+        &actors,
+    );
+}
+
+#[test]
+fn d_namespace_reuse() {
+    let (pause, release) = Pause::pair();
+    let mut old = LifecycleService::launch(
+        "old-number-custody",
+        11006,
+        Some(AttachFault::Body { pause, panic: None }),
+        false,
+    );
+    old.start();
+    let (peer, custody) = old.connect();
+    let worker = release.entered();
+    let client = custody.cleanup_record().client;
+    assert!(Arc::ptr_eq(&old.custody(), &custody));
+    let captured = old.registry.client_senders(client).unwrap();
+    let before = custody_identity(&custody);
+    let frame = pause_after_registration_drop(&old.registry, client);
+    peer.shutdown(std::net::Shutdown::Both).unwrap();
+    assert!(waited_for(|| !pause_pending(&old.registry, client)));
+    assert_eq!(
+        old.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Held)
+    );
+    assert!(
+        old.registry
+            .occupancy
+            .claim(client, &captured.connection_state)
+            .is_err(),
+        "the held number itself excludes a successor"
+    );
+    let without_collection = custody.visit_deferred_cleanup(None);
+    assert_eq!(
+        without_collection.result,
+        Err(PrivateDeferredCleanupRefusal::ConnectionsUncollected)
+    );
+    assert_eq!(
+        old.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Held)
+    );
+    let mut denied = connect_private_client(&old.path);
+    assert!(
+        eof_within(&mut denied, 1),
+        "actual service refuses another connection while the old frame owns capacity"
+    );
+    release.release();
+    frame.send(()).unwrap();
+    old.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    let closed = old.closed();
+    assert_eq!(old.registry.occupancy.state_of(client), None);
+    assert!(matches!(
+        custody.deferred_cleanup_standing(),
+        PrivateDeferredCleanupStanding::Done(_)
+    ));
+
+    // This is a new real service invocation with a colliding number. It does
+    // not claim that a closed old invocation reopened admission in-place.
+    let mut successor = LifecycleService::launch("successor-number-custody", 11006, None, false);
+    successor.start();
+    let (mut next_peer, next) = successor.connect();
+    wait_attached(&successor.registry);
+    assert_eq!(next.cleanup_record().client, client);
+    assert!(!Arc::ptr_eq(
+        &successor.registry.clients,
+        &old.registry.clients
+    ));
+    let next_identity = custody_identity(&next);
+    let state = successor
+        .registry
+        .client_senders(client)
+        .unwrap()
+        .connection_state;
+    assert!(!Arc::ptr_eq(&state, &captured.connection_state));
+    let repeat = custody.visit_deferred_cleanup(None);
+    assert!(
+        repeat.result.is_ok(),
+        "the old completed cleanup answers only from its own record"
+    );
+    let maintenance = old.step();
+    assert_eq!(maintenance.instance, closed.instance);
+    assert_eq!(custody_identity(&next), next_identity);
+    assert_eq!(
+        successor.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Held)
+    );
+    let failure = successor.registry.route_to_client(
+        client,
+        &captured.connection_state,
+        captured.protocol,
+        crate::XClientEvent::XfixesSelectionNotify {
+            sequence: 0,
+            subtype: 0,
+            window: XResourceId::new(0x310601, 1),
+            owner: crate::XResourceId::NONE,
+            selection: 1,
+            time: 0,
+            selection_time: 0,
+        },
+    );
+    assert!(
+        matches!(failure,Err(XServerFrontendRouteError::ClientQueueDisconnected {client: failed}) if failed==client)
+    );
+    assert!(Arc::ptr_eq(
+        &successor
+            .registry
+            .client_senders(client)
+            .unwrap()
+            .connection_state,
+        &state
+    ));
+    assert_eq!(
+        successor.registry.occupancy.state_of(client),
+        Some(PrivateNumberStanding::Held)
+    );
+    let (surface, sequence, ingress) = focus_window(&successor, &mut next_peer, 0x310601, 11060);
+    ingress
+        .submit(
+            &successor.owner.lease(),
+            button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(11061),
+                272,
+                true,
+            ),
+        )
+        .unwrap();
+    assert_eq!(
+        read_event(&mut next_peer, 3),
+        Some(expected_button_event(true, sequence, 0x310601, 1))
+    );
+    successor.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    successor.closed();
+    let fact = json!({"scope":"successive actual invocations; unfinished old frame excludes reuse within its invocation","worker":format!("{worker:?}"),"old":format!("{before:?}"),"successor":format!("{next_identity:?}"),"refused_cleanup":format!("{without_collection:?}"),"repeated_cleanup":format!("{repeat:?}"),"actual_stale_sender_failure":format!("{failure:?}"),"original_maintenance":format!("{maintenance:?}"),"successor_wire":"exact focused button press delivered after stale effects"});
+    let mut actors = old.finish(&[custody]);
+    actors.extend(successor.finish(&[next]));
+    emit_case(
+        "D.namespace_reuse",
+        &[
+            ("old_cleanup_cannot_touch_successor", fact.clone()),
+            ("captured_failure_cannot_touch_successor", fact.clone()),
+            ("unfinished_excludes_reuse", fact),
+        ],
+        &actors,
+    );
+}
