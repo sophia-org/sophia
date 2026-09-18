@@ -171,10 +171,6 @@
       "x11_socket::routing_tests::stopped_service_held_modifier_waits_for_exact_termination_then_disposes",
       "x11_socket::routing_tests::stopped_service_held_pointer_reconciles_and_disposes_exact_native_record",
       "x11_socket::routing_tests::private_native_tests::stopped_donor_scan_retains_exact_dependents_and_progresses_past_foreign_residuals"
-    ],
-    "c-diagnostics": [
-      "x11_socket::routing_tests::m3_acceptance::diagnostics::c_indeterminate_send_diagnostics",
-      "x11_socket::routing_tests::m3_acceptance::diagnostics::c_control_cleanup_diagnostics"
     ]
   }
 }

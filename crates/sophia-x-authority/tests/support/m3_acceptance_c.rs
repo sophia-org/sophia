@@ -1413,92 +1413,6 @@ fn c_exact_origin() {
     );
 }
 
-/// The nine named control kinds, each as the command a producer actually
-/// submits. Ordered so the two that can end the recipient's connection come
-/// last, and the ones that change nothing about it come first.
-fn every_control_kind(
-    client: XServerFrontendClientId,
-    surface: SurfaceId,
-    first_transaction: u64,
-) -> Vec<(XAuthorityControlKind, XAuthorityClientControlCommand)> {
-    let geometry = Rect {
-        x: 0,
-        y: 0,
-        width: 8,
-        height: 8,
-    };
-    let state = sophia_protocol::PolicyPresentationState {
-        fullscreen: false,
-        maximized: true,
-        minimized: false,
-    };
-    let commands = [
-        XAuthorityControlCommand::PublishMetadataRule {
-            transaction: TransactionId::from_raw(first_transaction),
-            surface,
-            rule: sophia_protocol::MetadataDisclosureRule {
-                surface,
-                disclosure: sophia_protocol::MetadataDisclosure::ClassOnly,
-                trust_level: sophia_protocol::TrustLevel::Trusted,
-                icon: None,
-                generation: 1,
-            },
-        },
-        XAuthorityControlCommand::AdmitSurface {
-            transaction: TransactionId::from_raw(first_transaction + 1),
-            surface,
-            geometry,
-        },
-        XAuthorityControlCommand::ConfigureSurface {
-            transaction: TransactionId::from_raw(first_transaction + 2),
-            surface,
-            geometry: Rect {
-                width: 16,
-                height: 16,
-                ..geometry
-            },
-        },
-        XAuthorityControlCommand::SetPresentationState {
-            transaction: TransactionId::from_raw(first_transaction + 3),
-            surface,
-            state,
-        },
-        XAuthorityControlCommand::RestorePresentationState {
-            transaction: TransactionId::from_raw(first_transaction + 4),
-            surface,
-            state: sophia_protocol::PolicyPresentationState {
-                maximized: false,
-                ..state
-            },
-        },
-        XAuthorityControlCommand::FocusSurface {
-            transaction: TransactionId::from_raw(first_transaction + 5),
-            surface,
-        },
-        XAuthorityControlCommand::ClearFocus {
-            transaction: TransactionId::from_raw(first_transaction + 6),
-            surface,
-        },
-        XAuthorityControlCommand::WithdrawSurface {
-            transaction: TransactionId::from_raw(first_transaction + 7),
-            surface,
-        },
-        XAuthorityControlCommand::CloseSurface {
-            transaction: TransactionId::from_raw(first_transaction + 8),
-            surface,
-        },
-    ];
-    commands
-        .into_iter()
-        .map(|command| {
-            (
-                command.kind(),
-                XAuthorityClientControlCommand { client, command },
-            )
-        })
-        .collect()
-}
-
 /// One armed interruption of an ordered handover, keyed by the exact origin
 /// and delivery it belongs to.
 ///
@@ -4778,554 +4692,421 @@ fn control_cleanup_for_kind(
     (seen, collected)
 }
 
-/// Controls that measure rather than accept.
+/// Actual cleanup of every control kind, on the production service.
 ///
-/// Nothing here is an acceptance case and nothing here may be bound to a
-/// row: each one exists because its row is not established yet, and keeps
-/// the measurement that says why. They live under their own name so the
-/// component runner can tell them from the cases beside them, and the
-/// helpers they share with those cases stay where the cases can reach them.
-pub(super) mod diagnostics {
-    use super::*;
-
-    /// Per-kind diagnostics for `C.control_cleanup`, on the real service.
-    ///
-    /// NOT BOUND as that case. The row asks for actual cleanup of all nine kinds,
-    /// and on this source only `ConfigureSurface` reports the steps that let an
-    /// abandoned record be discharged; the other eight report nothing and are
-    /// retained as unproved, which is the honest outcome of the rule but not
-    /// evidence that each kind's cleanup was performed. The production repair for
-    /// that is owned elsewhere; what is kept here is the measurement, so the
-    /// difference between a discharge and a retention is recorded per kind rather
-    /// than argued about.
-    #[test]
-    fn c_control_cleanup_diagnostics() {
-        // EXECUTED, on its own invocation. `CloseSurface` can end the recipient's
-        // connection, so the kinds that are meant to run and the kinds that are
-        // meant never to run cannot share one.
-        let executed_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-        let mut executed_service = LifecycleService::launch_over_store(
-            "c-control-executed",
-            12060,
-            None,
-            false,
-            1,
-            executed_store.clone(),
-        );
-        executed_service.start();
-        let (mut executed_peer, executed_custody) = executed_service.connect();
-        let (executed_surface, _seq, _ingress) =
-            focus_window(&executed_service, &mut executed_peer, 0x320801, 12060);
-        let executed_client = executed_custody.cleanup_record().client;
-        let executed_lease = executed_service.owner.lease();
-        let executed_control = executed_service
-            .access
-            .control_producer(&executed_lease)
-            .expect("the service's own control producer");
-        let mut executed = Vec::new();
-        for (kind, command) in every_control_kind(executed_client, executed_surface, 12400) {
-            let transaction = command.command.transaction().raw();
-            let accepted = executed_control
-                .submit(&executed_lease, command)
-                .map(|_| ())
-                .map_err(|(refusal, _)| format!("{refusal:?}"));
-            let outcome = accepted.is_ok().then(|| {
-                ack_for(&executed_service.acks, transaction)
-                    .map(|ack| format!("{:?}", ack.acknowledgement.outcome))
-            });
-            executed.push(json!({
-                "kind": format!("{kind:?}"),
-                "transaction": transaction,
-                "accepted": format!("{accepted:?}"),
-                "outcome": outcome,
-            }));
-        }
-        executed_service.command(XServerFrontendServiceCommand::StopAndDisconnect);
-        let executed_closed = executed_service.closed();
-        let mut actors = executed_service.finish(&[executed_custody]);
-
-        // ACCEPTED AND NEVER EXECUTED, on a second invocation whose runner is
-        // held, so each kind is taken into the order and no executor claims it.
-        let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-        let mut service = LifecycleService::launch_over_store(
-            "c-control-unexecuted",
-            12061,
-            None,
-            false,
-            1,
-            store.clone(),
-        );
-        service.start();
-        let (mut peer, custody) = service.connect();
-        let (surface, _sequence, _ingress) = focus_window(&service, &mut peer, 0x320901, 12061);
-        let client = custody.cleanup_record().client;
-        let lease = service.owner.lease();
-        let control = service
-            .access
-            .control_producer(&lease)
-            .expect("the second service's own control producer");
-        let held = hold_runner(&service);
-        let entered = held.entered();
-        let mut unexecuted = Vec::new();
-        for (kind, command) in every_control_kind(client, surface, 12500) {
-            let transaction = command.command.transaction().raw();
-            let accepted = control
-                .submit(&lease, command)
-                .map(|_| ())
-                .map_err(|(refusal, _)| format!("{refusal:?}"));
-            unexecuted.push(json!({
-                "kind": format!("{kind:?}"),
-                "transaction": transaction,
-                "accepted": format!("{accepted:?}"),
-            }));
-        }
-        let charged_with_nine_accepted = store.reserved();
-        let completion = service.registry.control_completion();
-        let reconciled_while_live = completion
-            .as_ref()
-            .map(|registry| format!("{:?}", registry.reconcile_client(client)));
-        let cleanups_owed_while_live = completion
-            .as_ref()
-            .map(|registry| format!("{:?}", registry.cleanups_owed().map(|owed| owed.len())));
-
-        service.command(XServerFrontendServiceCommand::StopAndDisconnect);
-        held.release();
-        let closed = service.closed();
-
-        // The production reconciliation, reached where production reaches it.
-        let drive = store.drive();
-        let reconciled_after_exit = completion
-            .as_ref()
-            .map(|registry| format!("{:?}", registry.reconcile_unstarted()));
-        let cleanups_owed_after_exit = completion
-            .as_ref()
-            .map(|registry| format!("{:?}", registry.cleanups_owed().map(|owed| owed.len())));
-        let retained = interrupted_custody(&service);
-        actors.extend(service.finish(&[custody]));
-
-        assert!(drive.readable, "the store could be looked at");
-        assert_eq!(executed.len(), 9, "every named kind was actually executed");
-        assert_eq!(unexecuted.len(), 9, "and every one accepted without one");
-        let accepted_unexecuted = unexecuted
-            .iter()
-            .filter(|row| row["accepted"].as_str() == Some("Ok(())"))
-            .count();
-        assert!(
-            accepted_unexecuted >= 8,
-            "the held order took the named kinds; what it refused is recorded: {unexecuted:?}"
-        );
-        // EVERY KIND, EACH ON ITS OWN INVOCATION, from its actual first source
-        // effect to the separate visits that retire its record and return its
-        // credit. `CloseSurface` ends the recipient's connection, so these
-        // cannot share one.
-        let mut per_kind = Vec::new();
-        for (index, (label, kind)) in [
-            (
-                "c-cleanup-metadata-rule",
-                XAuthorityControlKind::PublishMetadataRule,
-            ),
-            ("c-cleanup-admit", XAuthorityControlKind::AdmitSurface),
-            (
-                "c-cleanup-configure",
-                XAuthorityControlKind::ConfigureSurface,
-            ),
-            (
-                "c-cleanup-set-presentation",
-                XAuthorityControlKind::SetPresentationState,
-            ),
-            (
-                "c-cleanup-restore-presentation",
-                XAuthorityControlKind::RestorePresentationState,
-            ),
-            ("c-cleanup-focus", XAuthorityControlKind::FocusSurface),
-            ("c-cleanup-clear-focus", XAuthorityControlKind::ClearFocus),
-            ("c-cleanup-withdraw", XAuthorityControlKind::WithdrawSurface),
-            ("c-cleanup-close", XAuthorityControlKind::CloseSurface),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let (seen, collected) = control_cleanup_for_kind(
-                label,
-                kind,
-                12_070 + index as u64,
-                0x330101 + index as u32 * 0x100,
-            );
-            per_kind.push(seen);
-            actors.extend(collected);
-        }
-        assert_eq!(
-            per_kind.len(),
-            9,
-            "every named control kind was driven through its own cleanup"
-        );
-
-        println!(
-            "sophia_m3_control_cleanup_diagnostics {}",
-            json!({
-                "schema": 1,
-                "case": "C.control_cleanup",
-                "bound": false,
-                "why_unbound": "Held for the three compiled negatives this row still owes. Actual cleanup is now established for every one of the nine kinds: each changes the source, is interrupted before answering, keeps its record and credit while the source's own removal is withheld, and is then retired by one charged control visit and reclaimed by a separate later one.",
-                "cleanup_per_kind": per_kind,
-                "executed_through_real_writer": executed,
-                "executed_closed_error": executed_closed.error,
-                "accepted_and_never_executed": unexecuted,
-                "accepted_unexecuted_count": accepted_unexecuted,
-                "charged_with_nine_accepted": charged_with_nine_accepted,
-                "reconcile_client_while_live": reconciled_while_live,
-                "cleanups_owed_while_live": cleanups_owed_while_live,
-                "reconcile_unstarted_after_exit": reconciled_after_exit,
-                "cleanups_owed_after_exit": cleanups_owed_after_exit,
-                "drive": format!("{drive:?}"),
-                "retained": format!("{retained:?}"),
-                "closed_error": closed.error,
-                "held_on": format!("{entered:?}"),
-                "collected_actors": actors,
-            })
-        );
-    }
-
-    /// Diagnostics for `C.indeterminate_send`, on the real service.
-    ///
-    /// NOT BOUND, because one of the four required subcases is still not
-    /// established. `partial_send_not_replayed` needs a prefix of the same
-    /// delivery: one capsule that owed more than one frame, of which some but
-    /// not all went out. Whole frames belonging to earlier completed
-    /// deliveries say nothing about the one that then stalled.
-    ///
-    /// `unknown_send_not_replayed` IS exercised here, by an actual
-    /// interruption between the handover and the record of its result. An
-    /// earlier version of this control claimed that interrupting there leaves
-    /// the invocation's connection worker unjoined. That was wrong: it was a
-    /// fixture-ordering error in this file, a third service finished without
-    /// being stopped first, and the claim is withdrawn.
-    #[test]
-    fn c_indeterminate_send_diagnostics() {
-        let mut actors = Vec::new();
-
-        // A REFUSED PUBLICATION STAYS OWNED, through two deterministic holds
-        // of the original runner: one while its admission is taken away, and
-        // one while it is given back, so neither observation races the
-        // service's own legitimate retry.
-        let (refused, refused_actors) = refused_publication(12050, 0x320701);
-        actors.extend(refused_actors);
-
-        // ENQUEUED WORK IS OBSERVED, NOT RESENT, on an invocation of its own.
-        let (enqueued, enqueued_actors) = enqueued_observation(12053, 0x320c01);
-        actors.extend(enqueued_actors);
-
-        // A HANDOVER BEGUN AND NEVER REPORTED. The capsule left, and the record
-        // of what the handover returned never happened, so nothing can say
-        // whether the recipient has it. It is not offered again.
-        let unknown_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-        let mut unknown = LifecycleService::launch_over_store(
-            "c-unknown-send",
-            12051,
-            None,
-            false,
-            1,
-            unknown_store.clone(),
-        );
-        unknown.start();
-        let (mut unknown_peer, unknown_custody) = unknown.connect();
-        let (unknown_surface, unknown_sequence, unknown_ingress) =
-            focus_window(&unknown, &mut unknown_peer, 0x320a01, 12051);
-        let unknown_client = unknown_custody.cleanup_record().client;
-        let press = XAuthorityInputDeliveryId::from_raw(12080);
-        let release = XAuthorityInputDeliveryId::from_raw(12081);
-        unknown_ingress
-            .submit(
-                &unknown.owner.lease(),
-                button_to(unknown_surface, press, 272, true),
-            )
-            .expect("an actual press");
-        assert_eq!(
-            read_event(&mut unknown_peer, 3),
-            Some(expected_button_event(true, unknown_sequence, 0x320a01, 1))
-        );
-        assert_eq!(
-            receipt_for(&unknown.deliveries, 12080),
-            XAuthorityInputDeliveryOutcome::Flushed
-        );
-        // THE RUNNER IS HELD BEFORE THE RELEASE IS SUBMITTED, so its admission
-        // completion can be taken while nothing is able to consume it. Reading
-        // it after an unheld submit raced the very handover this case is
-        // about.
-        let (pause, held_runner) = Pause::pair();
-        arm_runner(&unknown.registry, Box::new(move |_, _| pause.wait()));
-        let held_on = held_runner.entered();
-        unknown_ingress
-            .submit(
-                &unknown.owner.lease(),
-                button_to(unknown_surface, release, 272, false),
-            )
-            .expect("an actual release, whose handover this case interrupts");
-        let original_release_cell = waited_for_value(|| delivery_cell(&unknown.registry, 12081))
-            .expect("the release's own completion, minted by its own admission");
-        arm_handover(
-            &unknown.registry,
-            release,
-            Box::new(|| panic!("labelled acceptance interruption between handover and its record")),
-        );
-        held_runner.release();
-
-        let unknown_closed = unknown.closed();
-        assert!(
-            unknown_closed.unwound,
-            "the interruption ended the invocation it happened in"
-        );
-        // WHAT THE RECIPIENT GOT IS READ, NOT ASSUMED. The capsule had been
-        // handed to the writer, but the invocation unwound underneath it, so
-        // the bytes may have reached the recipient or the connection may have
-        // ended first. Both are honest outcomes of an interruption and
-        // neither authorises rebuilding the event; what this case establishes
-        // is about the record, not about which of the two happened.
-        let release_wire = read_event(&mut unknown_peer, 3);
-        let release_cell = delivery_cell(&unknown.registry, 12081).and_then(|cell| cell.answer());
-        let phases = retained_dispatch(&unknown);
-        // THE RECORD SAYS WHAT HAPPENED TO IT, which is that nobody knows. The
-        // handover was begun and its result never written down, and that is the
-        // one state this subcase is about.
-        assert!(
-            phases
-                .iter()
-                .any(|seen| seen.dispatch == PrivateDispatchPhase::Indeterminate),
-            "the retained release says its handover was begun and never reported: {phases:?}"
-        );
-        // AND IT KEEPS NOTHING TO SEND AGAIN. The capsule left; no replayable
-        // copy stayed behind, so nothing could re-offer it even if something
-        // decided to.
-        assert!(
-            phases
-                .iter()
-                .all(|seen| seen.dispatch != PrivateDispatchPhase::Indeterminate
-                    || !seen.pending_capsule),
-            "and keeps no replayable copy of what it handed over: {phases:?}"
-        );
-        // THE EXACT RELEASE, BY IDENTITY. Not one release in an indeterminate
-        // phase: this connection's own, carrying the completion its own
-        // admission minted, with no copy of the capsule left to send again.
-        let retained_release = phases
-            .iter()
-            .find(|seen| seen.delivery == Some(XAuthorityInputDeliveryId::from_raw(12081)))
-            .unwrap_or_else(|| panic!("the release this case submitted is retained: {phases:?}"));
-        assert_eq!(
-            retained_release.dispatch,
-            PrivateDispatchPhase::Indeterminate,
-            "its handover was begun and never reported: {retained_release:?}"
-        );
-        assert!(
-            retained_release.carries(&original_release_cell),
-            "and it still carries the very completion its own admission minted: {retained_release:?}"
-        );
-        assert!(
-            !retained_release.pending_capsule,
-            "with nothing kept to send again: {retained_release:?}"
-        );
-        assert_eq!(
-            (
-                retained_release.reached_client,
-                retained_release.reached_window.local.raw()
-            ),
-            (unknown_client, u64::from(0x320a01u32)),
-            "reaching this connection's own window: {retained_release:?}"
-        );
-        // AND IT IS THE RELEASE THAT WAS HANDED OVER. The witness is taken at
-        // the seam, before the interruption, so this compares the retained
-        // record against what the release actually was at that moment rather
-        // than against a second reading of the same aftermath.
-        let witness = handover_witness()
-            .expect("the handover recorded what the release was before it was interrupted");
-        assert_eq!(
-            retained_release.delivery, witness.delivery,
-            "the retained record is the delivery that was handed over: {retained_release:?}"
-        );
-        assert_eq!(
-            retained_release.incarnation, witness.incarnation,
-            "with the incarnation it was handed over under"
-        );
-        assert_eq!(
-            retained_release.attempt, witness.attempt,
-            "and the attempt token it was dispatched with"
-        );
-        assert!(
-            retained_release.attempt.is_some(),
-            "which it actually had: {retained_release:?}"
-        );
-        assert!(
-            witness
-                .completion
-                .as_ref()
-                .is_some_and(|cell| retained_release.carries(cell)),
-            "carrying the completion the handover saw it carry"
-        );
-        assert!(
-            witness
-                .completion
-                .as_ref()
-                .is_some_and(|cell| Arc::ptr_eq(cell, &original_release_cell)),
-            "which is the one this case took from its own admission"
-        );
-        assert_eq!(
-            (witness.reached_client, witness.reached_window),
-            (
-                retained_release.reached_client,
-                retained_release.reached_window
-            ),
-            "and reaching the recipient it named then"
-        );
-        // THE CAPSULE'S RECIPIENT AND THE RELEASE'S ARE THE SAME ONE, and both
-        // are this connection's own registration. The witness side is taken
-        // from the capsule that was handed over and the retained side from the
-        // source obligation the release still answers for; reading both from
-        // the release would compare a reading with itself and could not catch
-        // a capsule owed to a different endpoint.
-        let handed_endpoint = witness
-            .endpoint
-            .as_ref()
-            .expect("the handover recorded the recipient its capsule named");
-        assert!(
-            retained_release.names_endpoint(handed_endpoint),
-            "the retained release answers for the recipient the capsule was minted for: {retained_release:?}"
-        );
-        assert!(
-            retained_release
-                .serves_registration(&unknown_custody.cleanup_record().connection_state),
-            "which is this connection's own registration: {retained_release:?}"
-        );
-        assert!(
-            handed_endpoint.is_registration(&unknown_custody.cleanup_record().connection_state),
-            "and so is the capsule's"
-        );
-        // AND THE HANDOVER SUCCEEDED. The seam is after either answer, so the
-        // arrangement has to say which one it caught: the capsule was admitted
-        // and only the record of that was lost. A full or disconnected queue
-        // is a different state, and one the record can describe.
-        assert!(
-            witness.handed_over,
-            "the capsule was admitted by its recipient's queue before the interruption"
-        );
-
-        // The debt is the retained release itself, not an accepted-item credit:
-        // that credit is returned when the item is disposed of and its event
-        // moves into separately reserved storage, which had already happened.
-        // What the interruption must not do is settle the release or discard it.
-        assert!(
-            !phases.is_empty(),
-            "the release is retained by the store that outlived the invocation"
-        );
-        // A REAL VISIT IS DRIVEN, AND WHAT IT REACHED IS NOT OVERSTATED. The
-        // interruption closed this invocation's own cleanup budget, and that
-        // budget stays closed: nothing here resets or rebuilds it, and no
-        // recovery policy is invented to reach further. So this visit yields
-        // before the retained source decision and the durable drive does not
-        // visit terminal dispatch. Both are recorded as they came.
-        let visit = unknown.step();
-        let unknown_drive = unknown_store.drive();
-        // TYPED, NOT FORMATTED. The interruption closed this invocation's own
-        // budget permanently, so its retained visit refuses before authorizing
-        // custody or entering the home. That refusal is the guarantee this
-        // half rests on, and it is asserted as the value it is.
-        assert_eq!(
-            visit.phase,
-            PrivateMaintenancePhase::Output,
-            "the visit after the interruption is the retained output visit: {visit:?}"
-        );
-        assert_eq!(
-            visit.status,
-            PrivateMaintenanceStatus::Yielded,
-            "which yields rather than running: {visit:?}"
-        );
-        assert_eq!(
-            visit.allowance_refusal,
-            Some(sophia_input_authority::ServiceStartRefusal::Interrupted),
-            "because the original budget was interrupted and never reopens: {visit:?}"
-        );
-        assert!(!visit.charged, "so nothing was charged for it: {visit:?}");
-        let unknown_after = retained_dispatch(&unknown);
-        assert!(
-            unknown_after.len() == phases.len()
-                && unknown_after
-                    .iter()
-                    .zip(phases.iter())
-                    .all(|(after, before)| after.same_as(before)),
-            "the retained record is the same release across the visit, by its own completion: {visit:?}"
-        );
-        // AT MOST ONE COPY, whichever way the interruption fell. If the bytes
-        // went, they went once; if they did not, nothing produced them
-        // afterwards. Neither outcome is treated as licence to rebuild.
-        let replayed = read_event(&mut unknown_peer, 1);
-        assert_eq!(
-            replayed, None,
-            "no further copy of the release was produced after the interruption"
-        );
-        let unknown_fact = json!({
-            "press_delivery": 12080,
-            "release_delivery": 12081,
-            "seam": "labelled test-only, keyed by this origin and this delivery, one shot, immediately after the handover returned and before its result was recorded",
-            "seam_mode": "one shot, an actual interruption: the result of the handover is never recorded, which is the state the subcase is about",
-            "unwound": unknown_closed.unwound,
-            "release_bytes_on_wire": release_wire.map(|bytes| bytes.to_vec()),
-        "release_wire_note": "null here means the connection ended before the bytes reached the recipient; a value means they did. Both are honest outcomes of interrupting the invocation, and this case asserts neither.",
-            "release_answer": release_cell.map(|answer| format!("{answer:?}")),
-            "retained_phases": format!("{phases:?}"),
-            "retained_release": format!("{retained_release:?}"),
-        "original_release_completion": Arc::as_ptr(&original_release_cell) as usize,
-        "runner_held_before_submit_on": format!("{held_on:?}"),
-        "handover_returned_success": witness.handed_over,
-        "capsule_recipient_matches_retained_release": true,
-        "capsule_recipient_is_this_registration": true,
-        "handover_witness": format!(
-            "delivery={:?} incarnation={:?} attempt={:?} client={:?} window={:?}",
-            witness.delivery,
-            witness.incarnation,
-            witness.attempt,
-            witness.reached_client,
-            witness.reached_window
+/// EACH KIND ON ITS OWN INVOCATION, from the thing it actually changed at
+/// the source to the separate visits that retire its record and return its
+/// credit. A close ends the recipient's connection, so the kinds that must
+/// run cannot share one with it.
+#[test]
+fn c_control_cleanup() {
+    let mut actors = Vec::new();
+    let mut per_kind: Vec<(&'static str, Value)> = Vec::new();
+    // ONE INVOCATION PER KIND. `CloseSurface` ends the recipient's connection,
+    // so the kinds that must run cannot share one with it.
+    //
+    // WHAT THIS ESTABLISHES AND WHAT IT DOES NOT. Each kind here is
+    // interrupted after its first source effect, before any peer generation
+    // has begun, so nothing below is evidence about healthy-peer reuse, a
+    // failed peer, or a replacement recipient. Those are separate questions
+    // and separate controls answer them.
+    for (index, (label, subcase, kind)) in [
+        (
+            "c-cleanup-metadata-rule",
+            "PublishMetadataRule",
+            XAuthorityControlKind::PublishMetadataRule,
         ),
-        "retained_phases_after_actual_maintenance_visit": format!("{unknown_after:?}"),
-            "maintenance_visit": format!("{visit:?}"),
-            "durable_drive": format!("{unknown_drive:?}"),
-            "what_the_visit_reached": "not the retained source decision. The unwind interrupted this invocation's cleanup budget and it stays closed, so the visit yields before that decision and the durable drive does not visit terminal dispatch. This is therefore NOT evidence that a retry path looked at the handover and declined to resend it. What is established here is the actual interruption, the record that says the handover was begun and never reported, and that no replayable payload was kept.",
-            "second_copy_on_wire": replayed.map(|bytes| bytes.to_vec()),
-            "writer_receipt_is_the_writers_own": "the recipient half may be answered by the writer that flushed; the executor still cannot join it, and does not resend",
-            "charged": unknown_store.reserved(),
-        });
-        actors.extend(finish_labelled(
-            "unknown-handover invocation",
-            unknown,
-            &[unknown_custody],
-        ));
-
-        // A RECIPIENT THAT STOPS TAKING ITS BYTES. The arrangement is the one
-        // already proved to stall the writer between the two frames of one
-        // capsule: the focus notification is left unread, so whole frame
-        // writes are already outstanding when the axis stream starts. It is
-        // driven once and asserted exactly; there is no matrix and no weaker
-        // reading to fall back to.
-        let (partial, partial_actors) = blocked_recipient_attempt(
-            "focus-notification-left-unread",
-            true,
-            2048,
-            12052,
-            0x320b01,
+        (
+            "c-cleanup-admit",
+            "AdmitSurface",
+            XAuthorityControlKind::AdmitSurface,
+        ),
+        (
+            "c-cleanup-configure",
+            "ConfigureSurface",
+            XAuthorityControlKind::ConfigureSurface,
+        ),
+        (
+            "c-cleanup-set-presentation",
+            "SetPresentationState",
+            XAuthorityControlKind::SetPresentationState,
+        ),
+        (
+            "c-cleanup-restore-presentation",
+            "RestorePresentationState",
+            XAuthorityControlKind::RestorePresentationState,
+        ),
+        (
+            "c-cleanup-focus",
+            "FocusSurface",
+            XAuthorityControlKind::FocusSurface,
+        ),
+        (
+            "c-cleanup-clear-focus",
+            "ClearFocus",
+            XAuthorityControlKind::ClearFocus,
+        ),
+        (
+            "c-cleanup-withdraw",
+            "WithdrawSurface",
+            XAuthorityControlKind::WithdrawSurface,
+        ),
+        (
+            "c-cleanup-close",
+            "CloseSurface",
+            XAuthorityControlKind::CloseSurface,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (seen, collected) = control_cleanup_for_kind(
+            label,
+            kind,
+            12_070 + index as u64,
+            0x330101 + index as u32 * 0x100,
         );
-        actors.extend(partial_actors);
-
-        println!(
-            "sophia_m3_indeterminate_send_diagnostics {}",
-            json!({
-                "schema": 1,
-                "case": "C.indeterminate_send",
-                "bound": false,
-                "why_unbound": "Held for the compiled negatives. All four subjects are now built and asserted exactly: partial_send_not_replayed on the single proved unread-focus arrangement, hard-asserting two frames owed, one committed whole, the writer failing on the second, and the frames walked in order; unknown_send_not_replayed on an actual post-handover interruption of an admitted handover; enqueued work observed rather than resent; and a refused publication retained through two deterministic holds of its runner. Two earlier claims of mine are withdrawn: that interrupting the handover leaves a connection worker unjoined, which was a fixture-ordering error here, and that the writer's blocked limit is unreachable in production, which this control disproves.",
-                "partial_send_blocked_recipient": partial,
-                "unknown_send_interval": unknown_fact,
-                "enqueued_observation_only": enqueued,
-                "refused_publication_retained": refused,
-                "collected_actors": actors,
-            })
-        );
+        per_kind.push((subcase, seen));
+        actors.extend(collected);
     }
+    assert_eq!(
+        per_kind.len(),
+        9,
+        "every named control kind was driven through its own cleanup"
+    );
+    emit_case("C.control_cleanup", &per_kind, &actors);
+}
+
+/// Transmission whose outcome is uncertain is never sent again, on the
+/// production service.
+///
+/// FOUR STATES, EACH MADE RATHER THAN DESCRIBED. A capsule stopped between
+/// its own two frames; a handover admitted and never recorded; work sitting
+/// on its recipient's queue; and a decided request whose refusal cannot be
+/// published. An earlier version of this control claimed that interrupting
+/// the handover leaves the invocation's connection worker unjoined. That was
+/// wrong: it was a fixture-ordering error in this file, a third service
+/// finished without being stopped first, and the claim is withdrawn.
+#[test]
+fn c_indeterminate_send() {
+    let mut actors = Vec::new();
+
+    // A REFUSED PUBLICATION STAYS OWNED, through two deterministic holds
+    // of the original runner: one while its admission is taken away, and
+    // one while it is given back, so neither observation races the
+    // service's own legitimate retry.
+    let (refused, refused_actors) = refused_publication(12050, 0x320701);
+    actors.extend(refused_actors);
+
+    // ENQUEUED WORK IS OBSERVED, NOT RESENT, on an invocation of its own.
+    let (enqueued, enqueued_actors) = enqueued_observation(12053, 0x320c01);
+    actors.extend(enqueued_actors);
+
+    // A HANDOVER BEGUN AND NEVER REPORTED. The capsule left, and the record
+    // of what the handover returned never happened, so nothing can say
+    // whether the recipient has it. It is not offered again.
+    let unknown_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+    let mut unknown = LifecycleService::launch_over_store(
+        "c-unknown-send",
+        12051,
+        None,
+        false,
+        1,
+        unknown_store.clone(),
+    );
+    unknown.start();
+    let (mut unknown_peer, unknown_custody) = unknown.connect();
+    let (unknown_surface, unknown_sequence, unknown_ingress) =
+        focus_window(&unknown, &mut unknown_peer, 0x320a01, 12051);
+    let unknown_client = unknown_custody.cleanup_record().client;
+    let press = XAuthorityInputDeliveryId::from_raw(12080);
+    let release = XAuthorityInputDeliveryId::from_raw(12081);
+    unknown_ingress
+        .submit(
+            &unknown.owner.lease(),
+            button_to(unknown_surface, press, 272, true),
+        )
+        .expect("an actual press");
+    assert_eq!(
+        read_event(&mut unknown_peer, 3),
+        Some(expected_button_event(true, unknown_sequence, 0x320a01, 1))
+    );
+    assert_eq!(
+        receipt_for(&unknown.deliveries, 12080),
+        XAuthorityInputDeliveryOutcome::Flushed
+    );
+    // THE RUNNER IS HELD BEFORE THE RELEASE IS SUBMITTED, so its admission
+    // completion can be taken while nothing is able to consume it. Reading
+    // it after an unheld submit raced the very handover this case is
+    // about.
+    let (pause, held_runner) = Pause::pair();
+    arm_runner(&unknown.registry, Box::new(move |_, _| pause.wait()));
+    let held_on = held_runner.entered();
+    unknown_ingress
+        .submit(
+            &unknown.owner.lease(),
+            button_to(unknown_surface, release, 272, false),
+        )
+        .expect("an actual release, whose handover this case interrupts");
+    let original_release_cell = waited_for_value(|| delivery_cell(&unknown.registry, 12081))
+        .expect("the release's own completion, minted by its own admission");
+    arm_handover(
+        &unknown.registry,
+        release,
+        Box::new(|| panic!("labelled acceptance interruption between handover and its record")),
+    );
+    held_runner.release();
+
+    let unknown_closed = unknown.closed();
+    assert!(
+        unknown_closed.unwound,
+        "the interruption ended the invocation it happened in"
+    );
+    // WHAT THE RECIPIENT GOT IS READ, NOT ASSUMED. The capsule had been
+    // handed to the writer, but the invocation unwound underneath it, so
+    // the bytes may have reached the recipient or the connection may have
+    // ended first. Both are honest outcomes of an interruption and
+    // neither authorises rebuilding the event; what this case establishes
+    // is about the record, not about which of the two happened.
+    let release_wire = read_event(&mut unknown_peer, 3);
+    let release_cell = delivery_cell(&unknown.registry, 12081).and_then(|cell| cell.answer());
+    let phases = retained_dispatch(&unknown);
+    // THE RECORD SAYS WHAT HAPPENED TO IT, which is that nobody knows. The
+    // handover was begun and its result never written down, and that is the
+    // one state this subcase is about.
+    assert!(
+        phases
+            .iter()
+            .any(|seen| seen.dispatch == PrivateDispatchPhase::Indeterminate),
+        "the retained release says its handover was begun and never reported: {phases:?}"
+    );
+    // AND IT KEEPS NOTHING TO SEND AGAIN. The capsule left; no replayable
+    // copy stayed behind, so nothing could re-offer it even if something
+    // decided to.
+    assert!(
+        phases
+            .iter()
+            .all(|seen| seen.dispatch != PrivateDispatchPhase::Indeterminate
+                || !seen.pending_capsule),
+        "and keeps no replayable copy of what it handed over: {phases:?}"
+    );
+    // THE EXACT RELEASE, BY IDENTITY. Not one release in an indeterminate
+    // phase: this connection's own, carrying the completion its own
+    // admission minted, with no copy of the capsule left to send again.
+    let retained_release = phases
+        .iter()
+        .find(|seen| seen.delivery == Some(XAuthorityInputDeliveryId::from_raw(12081)))
+        .unwrap_or_else(|| panic!("the release this case submitted is retained: {phases:?}"));
+    assert_eq!(
+        retained_release.dispatch,
+        PrivateDispatchPhase::Indeterminate,
+        "its handover was begun and never reported: {retained_release:?}"
+    );
+    assert!(
+        retained_release.carries(&original_release_cell),
+        "and it still carries the very completion its own admission minted: {retained_release:?}"
+    );
+    assert!(
+        !retained_release.pending_capsule,
+        "with nothing kept to send again: {retained_release:?}"
+    );
+    assert_eq!(
+        (
+            retained_release.reached_client,
+            retained_release.reached_window.local.raw()
+        ),
+        (unknown_client, u64::from(0x320a01u32)),
+        "reaching this connection's own window: {retained_release:?}"
+    );
+    // AND IT IS THE RELEASE THAT WAS HANDED OVER. The witness is taken at
+    // the seam, before the interruption, so this compares the retained
+    // record against what the release actually was at that moment rather
+    // than against a second reading of the same aftermath.
+    let witness = handover_witness()
+        .expect("the handover recorded what the release was before it was interrupted");
+    assert_eq!(
+        retained_release.delivery, witness.delivery,
+        "the retained record is the delivery that was handed over: {retained_release:?}"
+    );
+    assert_eq!(
+        retained_release.incarnation, witness.incarnation,
+        "with the incarnation it was handed over under"
+    );
+    assert_eq!(
+        retained_release.attempt, witness.attempt,
+        "and the attempt token it was dispatched with"
+    );
+    assert!(
+        retained_release.attempt.is_some(),
+        "which it actually had: {retained_release:?}"
+    );
+    assert!(
+        witness
+            .completion
+            .as_ref()
+            .is_some_and(|cell| retained_release.carries(cell)),
+        "carrying the completion the handover saw it carry"
+    );
+    assert!(
+        witness
+            .completion
+            .as_ref()
+            .is_some_and(|cell| Arc::ptr_eq(cell, &original_release_cell)),
+        "which is the one this case took from its own admission"
+    );
+    assert_eq!(
+        (witness.reached_client, witness.reached_window),
+        (
+            retained_release.reached_client,
+            retained_release.reached_window
+        ),
+        "and reaching the recipient it named then"
+    );
+    // THE CAPSULE'S RECIPIENT AND THE RELEASE'S ARE THE SAME ONE, and both
+    // are this connection's own registration. The witness side is taken
+    // from the capsule that was handed over and the retained side from the
+    // source obligation the release still answers for; reading both from
+    // the release would compare a reading with itself and could not catch
+    // a capsule owed to a different endpoint.
+    let handed_endpoint = witness
+        .endpoint
+        .as_ref()
+        .expect("the handover recorded the recipient its capsule named");
+    assert!(
+        retained_release.names_endpoint(handed_endpoint),
+        "the retained release answers for the recipient the capsule was minted for: {retained_release:?}"
+    );
+    assert!(
+        retained_release.serves_registration(&unknown_custody.cleanup_record().connection_state),
+        "which is this connection's own registration: {retained_release:?}"
+    );
+    assert!(
+        handed_endpoint.is_registration(&unknown_custody.cleanup_record().connection_state),
+        "and so is the capsule's"
+    );
+    // AND THE HANDOVER SUCCEEDED. The seam is after either answer, so the
+    // arrangement has to say which one it caught: the capsule was admitted
+    // and only the record of that was lost. A full or disconnected queue
+    // is a different state, and one the record can describe.
+    assert!(
+        witness.handed_over,
+        "the capsule was admitted by its recipient's queue before the interruption"
+    );
+
+    // The debt is the retained release itself, not an accepted-item credit:
+    // that credit is returned when the item is disposed of and its event
+    // moves into separately reserved storage, which had already happened.
+    // What the interruption must not do is settle the release or discard it.
+    assert!(
+        !phases.is_empty(),
+        "the release is retained by the store that outlived the invocation"
+    );
+    // A REAL VISIT IS DRIVEN, AND WHAT IT REACHED IS NOT OVERSTATED. The
+    // interruption closed this invocation's own cleanup budget, and that
+    // budget stays closed: nothing here resets or rebuilds it, and no
+    // recovery policy is invented to reach further. So this visit yields
+    // before the retained source decision and the durable drive does not
+    // visit terminal dispatch. Both are recorded as they came.
+    let visit = unknown.step();
+    let unknown_drive = unknown_store.drive();
+    // TYPED, NOT FORMATTED. The interruption closed this invocation's own
+    // budget permanently, so its retained visit refuses before authorizing
+    // custody or entering the home. That refusal is the guarantee this
+    // half rests on, and it is asserted as the value it is.
+    assert_eq!(
+        visit.phase,
+        PrivateMaintenancePhase::Output,
+        "the visit after the interruption is the retained output visit: {visit:?}"
+    );
+    assert_eq!(
+        visit.status,
+        PrivateMaintenanceStatus::Yielded,
+        "which yields rather than running: {visit:?}"
+    );
+    assert_eq!(
+        visit.allowance_refusal,
+        Some(sophia_input_authority::ServiceStartRefusal::Interrupted),
+        "because the original budget was interrupted and never reopens: {visit:?}"
+    );
+    assert!(!visit.charged, "so nothing was charged for it: {visit:?}");
+    let unknown_after = retained_dispatch(&unknown);
+    assert!(
+        unknown_after.len() == phases.len()
+            && unknown_after
+                .iter()
+                .zip(phases.iter())
+                .all(|(after, before)| after.same_as(before)),
+        "the retained record is the same release across the visit, by its own completion: {visit:?}"
+    );
+    // AT MOST ONE COPY, whichever way the interruption fell. If the bytes
+    // went, they went once; if they did not, nothing produced them
+    // afterwards. Neither outcome is treated as licence to rebuild.
+    let replayed = read_event(&mut unknown_peer, 1);
+    assert_eq!(
+        replayed, None,
+        "no further copy of the release was produced after the interruption"
+    );
+    let unknown_fact = json!({
+        "press_delivery": 12080,
+        "release_delivery": 12081,
+        "seam": "labelled test-only, keyed by this origin and this delivery, one shot, immediately after the handover returned and before its result was recorded",
+        "seam_mode": "one shot, an actual interruption: the result of the handover is never recorded, which is the state the subcase is about",
+        "unwound": unknown_closed.unwound,
+        "release_bytes_on_wire": release_wire.map(|bytes| bytes.to_vec()),
+    "release_wire_note": "null here means the connection ended before the bytes reached the recipient; a value means they did. Both are honest outcomes of interrupting the invocation, and this case asserts neither.",
+        "release_answer": release_cell.map(|answer| format!("{answer:?}")),
+        "retained_phases": format!("{phases:?}"),
+        "retained_release": format!("{retained_release:?}"),
+    "original_release_completion": Arc::as_ptr(&original_release_cell) as usize,
+    "runner_held_before_submit_on": format!("{held_on:?}"),
+    "handover_returned_success": witness.handed_over,
+    "capsule_recipient_matches_retained_release": true,
+    "capsule_recipient_is_this_registration": true,
+    "handover_witness": format!(
+        "delivery={:?} incarnation={:?} attempt={:?} client={:?} window={:?}",
+        witness.delivery,
+        witness.incarnation,
+        witness.attempt,
+        witness.reached_client,
+        witness.reached_window
+    ),
+    "retained_phases_after_actual_maintenance_visit": format!("{unknown_after:?}"),
+        "maintenance_visit": format!("{visit:?}"),
+        "durable_drive": format!("{unknown_drive:?}"),
+        "what_the_visit_reached": "not the retained source decision. The unwind interrupted this invocation's cleanup budget and it stays closed, so the visit yields before that decision and the durable drive does not visit terminal dispatch. This is therefore NOT evidence that a retry path looked at the handover and declined to resend it. What is established here is the actual interruption, the record that says the handover was begun and never reported, and that no replayable payload was kept.",
+        "second_copy_on_wire": replayed.map(|bytes| bytes.to_vec()),
+        "writer_receipt_is_the_writers_own": "the recipient half may be answered by the writer that flushed; the executor still cannot join it, and does not resend",
+        "charged": unknown_store.reserved(),
+    });
+    actors.extend(finish_labelled(
+        "unknown-handover invocation",
+        unknown,
+        &[unknown_custody],
+    ));
+
+    // A RECIPIENT THAT STOPS TAKING ITS BYTES. The arrangement is the one
+    // already proved to stall the writer between the two frames of one
+    // capsule: the focus notification is left unread, so whole frame
+    // writes are already outstanding when the axis stream starts. It is
+    // driven once and asserted exactly; there is no matrix and no weaker
+    // reading to fall back to.
+    let (partial, partial_actors) = blocked_recipient_attempt(
+        "focus-notification-left-unread",
+        true,
+        2048,
+        12052,
+        0x320b01,
+    );
+    actors.extend(partial_actors);
+
+    emit_case(
+        "C.indeterminate_send",
+        &[
+            ("partial_send_not_replayed", partial),
+            ("unknown_send_not_replayed", unknown_fact),
+            ("enqueued_observation_only", enqueued),
+            ("refused_publication_retained", refused),
+        ],
+        &actors,
+    );
 }
