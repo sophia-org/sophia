@@ -194,6 +194,18 @@ fn test_owned_actor_collection_is_independent_of_process_exit() {
 }
 
 #[test]
+fn namespace_launcher_children_must_all_be_collected() {
+    let mut run = execution();
+    run.collection.descendants_found = 1;
+    assert!(!evidence::launcher_collected(&run));
+    run.collection.descendants_reaped = 1;
+    assert!(evidence::launcher_collected(&run));
+    assert!(!run.clean(), "a case still cannot leak descendants");
+    run.collection.error = Some("collection failed".into());
+    assert!(!evidence::launcher_collected(&run));
+}
+
+#[test]
 fn case_filters_and_external_binary_options_are_refused() {
     for option in [
         "--case=A.press_release_repress",

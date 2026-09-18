@@ -65,6 +65,9 @@ Process exit or namespace destruction does not substitute for those joins.
 The Rust child owner separately waits for the test process and acts as a Linux
 subreaper. It kills timed-out groups and collects adopted descendants. A test
 that leaves descendants fails even when the harness successfully collects them.
+The outer launcher separately collects adopted namespace-launch children; its
+report requires every discovered child to be reaped, with none remaining. This
+does not relax the stricter zero-descendant rule for individual case processes.
 The outer namespace deadline is a final containment limit, not a product latency
 or preemption claim.
 

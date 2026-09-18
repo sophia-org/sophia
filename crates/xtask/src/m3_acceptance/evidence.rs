@@ -72,3 +72,11 @@ impl Execution {
             && self.collection.error.is_none()
     }
 }
+
+pub(super) fn launcher_collected(run: &Execution) -> bool {
+    !run.timed_out
+        && run.collection.root_waited
+        && run.collection.descendants_found == run.collection.descendants_reaped
+        && run.collection.remaining.is_empty()
+        && run.collection.error.is_none()
+}

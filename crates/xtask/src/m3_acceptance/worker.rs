@@ -90,12 +90,8 @@ pub(super) fn validate_report(report: &Report, config: &Config, path: &Path) -> 
         .launcher
         .as_ref()
         .ok_or("launcher was not collected")?;
-    if launcher.timed_out
-        || !launcher.collection.root_waited
-        || launcher.collection.descendants_found != 0
-        || !launcher.collection.remaining.is_empty()
-        || launcher.collection.error.is_some()
-        || (report.overall == Verdict::Pass && !launcher.clean())
+    if !evidence::launcher_collected(launcher)
+        || (report.overall == Verdict::Pass && launcher.returncode != Some(0))
     {
         return Err("launcher timed out or left uncollected processes".into());
     }
