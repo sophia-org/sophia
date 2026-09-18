@@ -1961,7 +1961,7 @@ fn blocked_recipient_attempt(
     // is shown to have caught this exact capsule's own frames going out; it
     // did, in the order the capsule owed them.
     let first_attempt = attempted_frame_sequence.first().copied();
-    let reached_second_frame = attempted_frame_sequence.iter().any(|frame| *frame == 1);
+    let reached_second_frame = attempted_frame_sequence.contains(&1);
     let returned_to_committed = attempted_frame_sequence
         .iter()
         .skip_while(|frame| **frame == 0)
@@ -2657,7 +2657,7 @@ pub(super) mod diagnostics {
                 retained_release.reached_client,
                 retained_release.reached_window
             ),
-            (u64::from(unknown_client.0), u64::from(0x320a01u32)),
+            (unknown_client.0, u64::from(0x320a01u32)),
             "reaching this connection's own window: {retained_release:?}"
         );
         assert!(
