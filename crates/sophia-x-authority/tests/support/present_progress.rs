@@ -27,6 +27,7 @@ fn three_windows_reuse_buffers_while_one_exact_present_remains_held() {
         let writer = spawn_x11_protocol_event_writer(
             Arc::new(Mutex::new(stream)),
             Arc::new(AtomicUsize::new(0)),
+            Arc::new(X11WirePermission::open()),
             order,
             Arc::new(AtomicU16::new(17)),
             gpu,

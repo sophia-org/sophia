@@ -182,6 +182,44 @@ fn compile_keymap(config: &XkbRmlvoConfig) -> Result<xkb::Keymap, XkbKeyboardErr
 
 pub struct XkbKeyboardState {
     state: xkb::State,
+    // Keys submitted to this state, not effective modifiers or hardware
+    // observations: an ordinary key has no modifier bit, and a released lock
+    // key may leave one set. Native integration must send first/final edges only.
+    down: [u64; 4],
+    // Written before the C state changes. An interrupted update permanently
+    // leaves private cleanup without evidence; a later key cannot repair it.
+    physical_known: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XkbPhysicalKeyState {
+    Released,
+    Held,
+    Unavailable,
+    InvalidKey,
+}
+
+/// Components read from one actual XKB state, before or after an ordered edge.
+/// Kept separate from the effective modifier mask: a lock is not a held key.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct XkbOrderedState {
+    components: [u32; 13],
+}
+
+impl XkbOrderedState {
+    pub(crate) fn components(self) -> [u32; 13] {
+        self.components
+    }
+
+    pub(crate) fn changed_from(self, before: Self) -> u16 {
+        self.components
+            .iter()
+            .zip(before.components)
+            .enumerate()
+            .fold(0, |mask, (index, (after, before))| {
+                mask | (u16::from(*after != before) << index)
+            })
+    }
 }
 
 impl core::fmt::Debug for XkbKeyboardState {
@@ -197,6 +235,8 @@ impl XkbKeyboardState {
         let keymap = compile_keymap(config)?;
         Ok(Self {
             state: xkb::State::new(&keymap),
+            down: [0; 4],
+            physical_known: true,
         })
     }
 
@@ -205,6 +245,14 @@ impl XkbKeyboardState {
             .checked_add(8)
             .and_then(|keycode| u8::try_from(keycode).ok().filter(|keycode| *keycode >= 8))?;
         let state = self.modifier_mask();
+        let index = usize::from(x_keycode) / 64;
+        let bit = 1u64 << (x_keycode % 64);
+        let was_down = self.down[index] & bit != 0;
+        // xkb_state_update_key requires balanced down/up calls. Preserve
+        // ordinary behavior on duplicates, but never certify cleanup from
+        // a bitmap after violating that requirement (modifiers may stick).
+        let was_known = self.physical_known && was_down != pressed;
+        self.physical_known = false;
         self.state.update_key(
             xkb::Keycode::new(u32::from(x_keycode)),
             if pressed {
@@ -213,11 +261,63 @@ impl XkbKeyboardState {
                 xkb::KeyDirection::Up
             },
         );
+        let slot = &mut self.down[index];
+        if pressed {
+            *slot |= bit;
+        } else {
+            *slot &= !bit;
+        }
+        self.physical_known = was_known;
         Some((x_keycode, state))
+    }
+
+    /// Source state for cleanup under the native owner's retained runner.
+    /// This does not identify that owner or prove common/recipient settlement.
+    #[allow(dead_code)] // The native keyboard integration will consume this.
+    pub(crate) fn physical_key_state(&self, key: u8) -> XkbPhysicalKeyState {
+        if key < 8 {
+            XkbPhysicalKeyState::InvalidKey
+        } else if !self.physical_known {
+            XkbPhysicalKeyState::Unavailable
+        } else if self.down[usize::from(key) / 64] & (1u64 << (key % 64)) != 0 {
+            XkbPhysicalKeyState::Held
+        } else {
+            XkbPhysicalKeyState::Released
+        }
     }
 
     pub fn modifier_mask(&self) -> u16 {
         u16::try_from(self.state.serialize_mods(xkb::STATE_MODS_EFFECTIVE) & 0xff).unwrap_or(0)
+    }
+
+    /// No mutation or allocation. An interrupted physical history does not
+    /// acquire a fresh claim of currentness merely by serializing modifiers.
+    pub(crate) fn ordered_state(&self) -> Option<XkbOrderedState> {
+        self.physical_known.then(|| {
+            // The X11 modifier domain is the eight real modifier bits.
+            // Sophia's wire contract has an empty group compatibility map
+            // and zero InternalMods/IgnoreLockMods (and no setters for them).
+            // Under that contract all five derived modifier states equal
+            // effective modifiers. They still have distinct change bits.
+            let effective = self.state.serialize_mods(xkb::STATE_MODS_EFFECTIVE) & 0xff;
+            XkbOrderedState {
+                components: [
+                    effective,
+                    self.state.serialize_mods(xkb::STATE_MODS_DEPRESSED) & 0xff,
+                    self.state.serialize_mods(xkb::STATE_MODS_LATCHED) & 0xff,
+                    self.state.serialize_mods(xkb::STATE_MODS_LOCKED) & 0xff,
+                    self.state.serialize_layout(xkb::STATE_LAYOUT_EFFECTIVE),
+                    self.state.serialize_layout(xkb::STATE_LAYOUT_DEPRESSED),
+                    self.state.serialize_layout(xkb::STATE_LAYOUT_LATCHED),
+                    self.state.serialize_layout(xkb::STATE_LAYOUT_LOCKED),
+                    effective,
+                    effective,
+                    effective,
+                    effective,
+                    effective,
+                ],
+            }
+        })
     }
 }
 
@@ -288,3 +388,6 @@ fn update_modifier_bit(bits: &mut u8, bit: u8, pressed: bool) {
         *bits &= !bit;
     }
 }
+
+#[path = "keyboard/tests/physical_state.rs"]
+mod physical_state_tests;

@@ -49,6 +49,33 @@ session {{
     std::fs::remove_file(profile).unwrap();
 }
 
+// Parsing fixtures must not inherit the operator's applications or shortcuts:
+// discovered applications implicitly select normal mode, and desktop bindings
+// may require capabilities unrelated to the behavior under test. Keep explicit
+// source-selection and --no-config cases intact.
+pub(super) fn isolated_session_config(
+    args: &[String],
+) -> Result<PersistentXtermSessionConfig, Box<dyn std::error::Error>> {
+    let mut arguments = args.to_vec();
+    if !arguments.iter().any(|argument| argument == "--no-config") {
+        if !arguments
+            .iter()
+            .any(|argument| argument.starts_with("--config="))
+        {
+            let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/config/sophia/core.kdl");
+            arguments.push(format!("--config={}", core.display()));
+        }
+        if !arguments
+            .iter()
+            .any(|argument| argument.starts_with("--desktop-profile="))
+        {
+            arguments.push(isolated_desktop_profile_argument());
+        }
+    }
+    PersistentXtermSessionConfig::from_args(&arguments)
+}
+
 fn isolated_desktop_profile_argument() -> String {
     let profile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -207,18 +234,16 @@ fn firefox_physical_slices_are_mutually_exclusive() {
 
 #[test]
 fn live_x_session_profiles_are_explicit_and_fail_closed() {
-    let classic = PersistentXtermSessionConfig::from_args(&[]).unwrap();
+    let classic = isolated_session_config(&[]).unwrap();
     assert_eq!(classic.namespace_profile, NamespaceProfile::ClassicShared);
     assert_eq!(classic.namespace_capabilities, NamespaceCapabilities::NONE);
 
-    let confined =
-        PersistentXtermSessionConfig::from_args(&["--namespace-profile=confined".to_owned()])
-            .unwrap();
+    let confined = isolated_session_config(&["--namespace-profile=confined".to_owned()]).unwrap();
     assert_eq!(confined.namespace_profile, NamespaceProfile::Confined);
     assert_eq!(confined.namespace_capabilities, NamespaceCapabilities::NONE);
 
     assert!(
-        PersistentXtermSessionConfig::from_args(&["--namespace-profile=unknown".to_owned()])
+        isolated_session_config(&["--namespace-profile=unknown".to_owned()])
             .unwrap_err()
             .to_string()
             .contains("expected classic or confined")
@@ -227,14 +252,14 @@ fn live_x_session_profiles_are_explicit_and_fail_closed() {
 
 #[test]
 fn public_policy_profile_activation_is_mandatory() {
-    PersistentXtermSessionConfig::from_args(&[
+    isolated_session_config(&[
         "--wm-process=/usr/bin/true".to_owned(),
         "--wm-interface=sophia_wm_v1".to_owned(),
     ])
     .unwrap();
     // Retain the old proof switch as a harmless compatibility argument. It no
     // longer controls whether the activation barrier runs.
-    PersistentXtermSessionConfig::from_args(&[
+    isolated_session_config(&[
         "--wm-process=/usr/bin/true".to_owned(),
         "--wm-interface=sophia_wm_v1".to_owned(),
         "--wm-profile-activation".to_owned(),
@@ -244,7 +269,7 @@ fn public_policy_profile_activation_is_mandatory() {
 
 #[test]
 fn public_policy_child_executable_grant_is_explicit_and_read_only() {
-    let config = PersistentXtermSessionConfig::from_args(&[
+    let config = isolated_session_config(&[
         "--wm-process=/usr/bin/true".to_owned(),
         "--wm-interface=sophia_wm_v1".to_owned(),
         "--wm-process-executable-grant=/usr/bin/true".to_owned(),
@@ -272,7 +297,7 @@ fn public_policy_child_executable_grant_is_explicit_and_read_only() {
     );
 
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
+        isolated_session_config(&[
             "--wm-process-executable-grant=/opt/sophia/native-wm".to_owned(),
         ])
         .unwrap_err()
@@ -280,7 +305,7 @@ fn public_policy_child_executable_grant_is_explicit_and_read_only() {
         .contains("requires --wm-process")
     );
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
+        isolated_session_config(&[
             "--wm-process=/usr/bin/true".to_owned(),
             "--wm-process-executable-grant=relative/native-wm".to_owned(),
         ])
@@ -420,8 +445,7 @@ fn desktop_profile_is_validated_and_partitioned_during_session_configuration() {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
 
     let config =
-        PersistentXtermSessionConfig::from_args(&[format!("--desktop-profile={}", path.display())])
-            .unwrap();
+        isolated_session_config(&[format!("--desktop-profile={}", path.display())]).unwrap();
     let policy = config
         .desktop_profile
         .candidates
@@ -431,23 +455,22 @@ fn desktop_profile_is_validated_and_partitioned_during_session_configuration() {
 
     std::fs::write(&path, "schema 1\npolicy { view-count 99; }\n").unwrap();
     // Session configuration admits the envelope; the WM owns view-count.
-    PersistentXtermSessionConfig::from_args(&[format!("--desktop-profile={}", path.display())])
-        .unwrap();
+    isolated_session_config(&[format!("--desktop-profile={}", path.display())]).unwrap();
     std::fs::write(&path, "schema 1\npolicy { max-surfaces 99; }\n").unwrap();
     assert!(
-        PersistentXtermSessionConfig::from_args(&[format!("--desktop-profile={}", path.display())])
+        isolated_session_config(&[format!("--desktop-profile={}", path.display())])
             .unwrap_err()
             .to_string()
             .contains("reserved control")
     );
     assert!(
-        PersistentXtermSessionConfig::from_args(&["--desktop-profile=relative.kdl".to_owned()])
+        isolated_session_config(&["--desktop-profile=relative.kdl".to_owned()])
             .unwrap_err()
             .to_string()
             .contains("absolute")
     );
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
+        isolated_session_config(&[
             "--no-config".to_owned(),
             format!("--desktop-profile={}", path.display()),
         ])
@@ -455,7 +478,7 @@ fn desktop_profile_is_validated_and_partitioned_during_session_configuration() {
         .to_string()
         .contains("mutually exclusive")
     );
-    let compiled = PersistentXtermSessionConfig::from_args(&["--no-config".to_owned()]).unwrap();
+    let compiled = isolated_session_config(&["--no-config".to_owned()]).unwrap();
     assert_eq!(
         compiled.desktop_profile.sources,
         vec![std::path::PathBuf::from("<compiled>")]
@@ -567,7 +590,7 @@ input {
     .unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
 
-    let config = PersistentXtermSessionConfig::from_args(&[
+    let config = isolated_session_config(&[
         format!("--desktop-profile={}", path.display()),
         "--xkb-layout=us".to_owned(),
     ])
@@ -594,7 +617,7 @@ input {
 
 #[test]
 fn public_policy_launch_receives_only_the_staged_policy_candidate() {
-    let config = PersistentXtermSessionConfig::from_args(&[]).unwrap();
+    let config = isolated_session_config(&[]).unwrap();
     let spec = public_policy_launch_spec(
         &config,
         "/usr/bin/hagia",
@@ -690,7 +713,7 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
 
 #[test]
 fn public_policy_session_operation_tokens_are_fresh_and_slot_stable() {
-    let config = PersistentXtermSessionConfig::from_args(&[]).unwrap();
+    let config = isolated_session_config(&[]).unwrap();
     let (first, _) = public_session_operations(&config);
     let (second, _) = public_session_operations(&config);
 
@@ -844,7 +867,7 @@ fn public_policy_owner_fault_points_are_bounded_proof_controls() {
             PublicPolicyFaultPoint::TerminalOutcomeQueued,
         ),
     ] {
-        let config = PersistentXtermSessionConfig::from_args(&[
+        let config = isolated_session_config(&[
             "--wm-process=/usr/bin/true".to_owned(),
             "--wm-interface=sophia_wm_v1".to_owned(),
             "--max-runtime-ms=1000".to_owned(),
@@ -855,7 +878,7 @@ fn public_policy_owner_fault_points_are_bounded_proof_controls() {
     }
 
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
+        isolated_session_config(&[
             "--wm-proof-fault-after=frontend_pending".to_owned(),
             "--max-runtime-ms=1000".to_owned(),
         ])
@@ -864,7 +887,7 @@ fn public_policy_owner_fault_points_are_bounded_proof_controls() {
         .contains("requires a configured sophia_wm_v1 --wm-process")
     );
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
+        isolated_session_config(&[
             "--wm-process=/usr/bin/true".to_owned(),
             "--wm-interface=sophia_wm_v1".to_owned(),
             "--max-runtime-ms=1000".to_owned(),
@@ -875,7 +898,7 @@ fn public_policy_owner_fault_points_are_bounded_proof_controls() {
         .contains("expects proposal_staged")
     );
 
-    let restart = PersistentXtermSessionConfig::from_args(&[
+    let restart = isolated_session_config(&[
         "--wm-process=/usr/bin/true".to_owned(),
         "--wm-interface=sophia_wm_v1".to_owned(),
         "--max-runtime-ms=1000".to_owned(),
@@ -902,7 +925,7 @@ fn public_policy_owner_fault_points_are_bounded_proof_controls() {
             "--wm-proof-restart-after-action=66".to_owned(),
         ],
     ] {
-        assert!(PersistentXtermSessionConfig::from_args(&arguments).is_err());
+        assert!(isolated_session_config(&arguments).is_err());
     }
 }
 
@@ -926,7 +949,7 @@ fn checkpoint_restart_waits_for_an_atomic_replacement() {
 
 #[test]
 fn normal_session_application_registry_is_bounded_and_explicit() {
-    let config = PersistentXtermSessionConfig::from_args(&[
+    let config = isolated_session_config(&[
         "--session-mode=normal".to_owned(),
         "--session-app=terminal=/usr/bin/xterm".to_owned(),
         "--session-app-arg=terminal=-cm".to_owned(),
@@ -947,7 +970,7 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
         ["-cm"]
     );
 
-    let blank = PersistentXtermSessionConfig::from_args(&[
+    let blank = isolated_session_config(&[
         "--session-mode=normal".to_owned(),
         "--session-app=terminal=/usr/bin/kitty".to_owned(),
         "--session-action-app=terminal=terminal".to_owned(),
@@ -963,7 +986,7 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
             .is_some()
     );
 
-    let dual_terminal = PersistentXtermSessionConfig::from_args(&[
+    let dual_terminal = isolated_session_config(&[
         "--session-mode=normal".to_owned(),
         "--session-app=terminal=/usr/bin/kitty".to_owned(),
         "--session-app=terminal-secondary=/usr/bin/kitty".to_owned(),
@@ -1001,7 +1024,7 @@ fn normal_session_application_registry_is_bounded_and_explicit() {
             "--session-start=terminal".to_owned(),
         ],
     ] {
-        assert!(PersistentXtermSessionConfig::from_args(&args).is_err());
+        assert!(isolated_session_config(&args).is_err());
     }
 }
 
@@ -1159,7 +1182,7 @@ fn normal_session_rejects_proof_only_options() {
 
 #[test]
 fn kitty_only_session_can_exit_with_its_single_startup_app() {
-    let config = PersistentXtermSessionConfig::from_args(&[
+    let config = isolated_session_config(&[
         "--session-mode=normal".to_owned(),
         "--session-app=terminal=/usr/bin/kitty".to_owned(),
         "--session-start=terminal".to_owned(),
@@ -1178,13 +1201,13 @@ fn kitty_only_session_can_exit_with_its_single_startup_app() {
             "--exit-when-startup-exits".to_owned(),
         ],
     ] {
-        assert!(PersistentXtermSessionConfig::from_args(&args).is_err());
+        assert!(isolated_session_config(&args).is_err());
     }
 }
 
 #[test]
 fn startup_readiness_timeout_is_bounded_and_requires_a_startup_app() {
-    let config = PersistentXtermSessionConfig::from_args(&[
+    let config = isolated_session_config(&[
         "--session-mode=normal".to_owned(),
         "--session-app=terminal=/usr/bin/kitty".to_owned(),
         "--session-start=terminal".to_owned(),
@@ -1212,7 +1235,7 @@ fn startup_readiness_timeout_is_bounded_and_requires_a_startup_app() {
             "--startup-ready-timeout-ms=99".to_owned(),
         ],
     ] {
-        assert!(PersistentXtermSessionConfig::from_args(&args).is_err());
+        assert!(isolated_session_config(&args).is_err());
     }
 }
 
@@ -1229,29 +1252,25 @@ fn policy_deadlines_follow_response_and_admission_order() {
 
 #[test]
 fn production_input_seat_and_explicit_paths_are_distinct_modes() {
-    let seat = PersistentXtermSessionConfig::from_args(&[
-        "--input-seat=seat0".to_owned(),
-        "--max-ticks=1".to_owned(),
-    ])
-    .unwrap();
+    let seat =
+        isolated_session_config(&["--input-seat=seat0".to_owned(), "--max-ticks=1".to_owned()])
+            .unwrap();
     assert_eq!(seat.input_seat.as_deref(), Some("seat0"));
     assert!(seat.input_devices.is_empty());
 
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
+        isolated_session_config(&[
             "--input-seat=seat0".to_owned(),
             "--input-devices=/dev/input/event0".to_owned(),
         ])
         .is_err()
     );
-    assert!(
-        PersistentXtermSessionConfig::from_args(&["--input-seat=../../seat0".to_owned()]).is_err()
-    );
+    assert!(isolated_session_config(&["--input-seat=../../seat0".to_owned()]).is_err());
 }
 
 #[test]
 fn live_x_output_injection_is_bounded_and_explicit() {
-    let config = PersistentXtermSessionConfig::from_args(&[
+    let config = isolated_session_config(&[
         "--inject-output-size=1600x900".to_owned(),
         "--inject-surface-resize=960x640".to_owned(),
     ])
@@ -1271,7 +1290,7 @@ fn live_x_output_injection_is_bounded_and_explicit() {
         })
     );
     assert!(config.inject_surface_resize_sequence.is_empty());
-    let sequence = PersistentXtermSessionConfig::from_args(&[
+    let sequence = isolated_session_config(&[
         "--inject-surface-resize-sequence=960x640,800x600,1024x700".to_owned(),
     ])
     .unwrap();
@@ -1298,37 +1317,26 @@ fn live_x_output_injection_is_bounded_and_explicit() {
         sequence.inject_surface_resize_sequence
     );
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
+        isolated_session_config(&[
             "--inject-surface-resize=960x640".to_owned(),
             "--inject-surface-resize-sequence=800x600,960x640".to_owned(),
         ])
         .is_err()
     );
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
-            "--inject-surface-resize-sequence=800x600".to_owned(),
-        ])
-        .is_err()
+        isolated_session_config(&["--inject-surface-resize-sequence=800x600".to_owned(),]).is_err()
     );
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
-            "--inject-surface-resize-sequence=800x600,800x600".to_owned(),
-        ])
-        .is_err()
-    );
-    assert!(
-        PersistentXtermSessionConfig::from_args(&["--inject-output-size=0x900".to_owned(),])
+        isolated_session_config(&["--inject-surface-resize-sequence=800x600,800x600".to_owned(),])
             .is_err()
     );
-    assert!(
-        PersistentXtermSessionConfig::from_args(&["--inject-output-size=wide".to_owned(),])
-            .is_err()
-    );
+    assert!(isolated_session_config(&["--inject-output-size=0x900".to_owned(),]).is_err());
+    assert!(isolated_session_config(&["--inject-output-size=wide".to_owned(),]).is_err());
 }
 
 #[test]
 fn live_x_application_client_contract_is_bounded_and_exclusive() {
-    let config = PersistentXtermSessionConfig::from_args(&[
+    let config = isolated_session_config(&[
         "--client=zenity".to_owned(),
         "--client-arg=--entry".to_owned(),
         "--expect-client-stdout=sophia\n".to_owned(),
@@ -1347,17 +1355,12 @@ fn live_x_application_client_contract_is_bounded_and_exclusive() {
     assert_eq!(config.physical_sequence_timeout_msec, 600_000);
 
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
-            "--client=zenity".to_owned(),
-            "--terminal=xterm".to_owned(),
-        ])
-        .is_err()
+        isolated_session_config(&["--client=zenity".to_owned(), "--terminal=xterm".to_owned(),])
+            .is_err()
     );
+    assert!(isolated_session_config(&["--client-arg=--entry".to_owned(),]).is_err());
     assert!(
-        PersistentXtermSessionConfig::from_args(&["--client-arg=--entry".to_owned(),]).is_err()
-    );
-    assert!(
-        PersistentXtermSessionConfig::from_args(&[
+        isolated_session_config(&[
             "--physical-sequence-timeout-ms=600000".to_owned(),
             "--max-runtime-ms=660000".to_owned(),
         ])
@@ -1366,7 +1369,7 @@ fn live_x_application_client_contract_is_bounded_and_exclusive() {
         .contains("requires --expect-physical-text")
     );
     assert!(
-        PersistentXtermSessionConfig::from_args(&[
+        isolated_session_config(&[
             "--expect-physical-text=sophia".to_owned(),
             "--input-seat=seat0".to_owned(),
             "--physical-sequence-timeout-ms=600001".to_owned(),

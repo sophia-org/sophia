@@ -3,6 +3,25 @@
 struct XServerFrontendRouteRegistry {
     input_recovery: InputRecovery,
     runtime: Arc<std::sync::OnceLock<std::sync::Weak<Mutex<XAuthorityRuntime>>>>,
+    private_applied: Arc<std::sync::OnceLock<PrivateAppliedRegistryOwner>>,
+    /// Where a connection's ordered continuation will go if it ever needs one.
+    ///
+    /// Set for a private instance, so registering can take a connection's place
+    /// BEFORE it publishes that connection's sender. Unset elsewhere, where
+    /// there is no ordered output to hand over.
+    continuation_owner: Arc<std::sync::OnceLock<PrivateSettlementRef>>,
+    /// Who keeps this instance's connections' evidence custodies.
+    ///
+    /// Set for a private instance built over a service owner, so registering
+    /// can reserve a connection's external keeper BEFORE its row is
+    /// published. Held weakly, like the store above and for the same reason.
+    custody_keeper: Arc<std::sync::OnceLock<PrivateCustodyKeeper>>,
+    /// Who holds which client number in this registry's namespace.
+    ///
+    /// A NUMBER IS AN INDEX, NOT AN IDENTITY. This is what keeps one
+    /// connection's ending from acting by number on the connection that took
+    /// the number next.
+    occupancy: PrivateNumberOccupancy,
     clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
     surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
     focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
@@ -30,6 +49,13 @@ struct XServerFrontendRouteRegistry {
     frozen_input: Arc<Mutex<VecDeque<XDeferredRoutedInput>>>,
     xkb_config: crate::XkbRmlvoConfig,
     xkb_worker: XkbKeyboardWorker,
+    /// The completion registry of the private instance that owns this
+    /// registry, installed once at construction.
+    ///
+    /// Absent on the public path, which has no private instance to answer to.
+    /// A client writer reads it here because this is what both routing sites
+    /// and every client registration already reach.
+    control_completion: Arc<std::sync::OnceLock<ControlCompletionRegistry>>,
     acknowledgement_sender: SyncSender<XAuthorityClientControlAck>,
     input_delivery_sender: Option<Sender<XAuthorityClientInputDelivery>>,
     metadata_candidate_sender: SyncSender<XAuthorityClientMetadataCandidate>,
@@ -86,54 +112,109 @@ struct XPendingPresentRegistry {
 struct XDeferredRoutedInput {
     client: XServerFrontendClientId,
     control_epoch: u64,
+    /// Kept alongside the epoch so a thaw validates the stamp the work was
+    /// given, rather than half of it. Zero where no coordinator is present.
+    publication: u64,
     route: XAuthorityRoutedInput,
 }
 
 #[cfg(unix)]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct XAuthorityEpochRoutedInput {
     control_epoch: u64,
+    /// Zero when no coordinator is present, where publication plays no part.
+    publication: u64,
     route: XAuthorityRoutedInput,
+    /// The request reserved for this work, when it was reserved before being
+    /// published.
+    ///
+    /// Owned rather than named. Travelling as a value is what makes the two
+    /// ends of the window the only reachable ones: the work is accepted and
+    /// the reservation goes on with it, or it is refused and dropping what
+    /// comes back disposes the cell. `None` on the ordinary path, which
+    /// reserves nothing.
+    ///
+    /// Not `Clone` for the same reason -- two copies of custody would let one
+    /// request be executed twice, or disposed while the other still expects to
+    /// publish for it.
+    reservation: Option<PrivateReservation>,
 }
 
 
 #[cfg(unix)]
 #[derive(Clone)]
 struct XServerFrontendClientRouteSenders {
+    connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
     input: SyncSender<XAuthorityClientInputEvent>,
     control: SyncSender<X11RoutedControl>,
-    protocol: SyncSender<XClientEvent>,
+    protocol: X11ProtocolSender,
     admission: Option<ClientAdmissionContext>,
+    /// Where ordered deliveries go, kept apart from the ordinary input queue.
+    ///
+    /// A separate queue because the two carry different things: an ordinary
+    /// route is resolved by the writer as it writes, and an ordered delivery
+    /// is resolved once and written as it stands. Sharing one queue would put
+    /// them behind each other and give the writer two shapes to tell apart on
+    /// a path where it must not be deciding anything.
+    ///
+    /// Bounded by the same per-client input capacity, as an explicit queue
+    /// policy for this client. That bound is about this queue's length and
+    /// says nothing about retained output or holds across turns, which are
+    /// reserved before acceptance and not by anything the queue does.
+    #[allow(dead_code)]
+    ordered: PrivateGatedOrderedSender,
+    /// Set when this client's control writer stops, however it stopped.
+    ///
+    /// Lives with the route senders rather than in a ledger of its own, so it
+    /// is bounded by the clients that exist and goes when the registration
+    /// goes. A separate ledger grew with every client an instance ever served
+    /// and had to evict, and an evicted entry silently stopped protecting a
+    /// client whose writer was gone.
+    control_writer_gone: Arc<AtomicBool>,
 }
 
 #[cfg(unix)]
 struct XServerFrontendClientRouteChannels {
     input: Receiver<XAuthorityClientInputEvent>,
     control: Receiver<X11RoutedControl>,
-    protocol: Receiver<XClientEvent>,
+    protocol: X11ProtocolReceiver,
+    #[allow(dead_code)]
+    ordered: XAuthorityOrderedReceiver,
 }
 
 #[cfg(unix)]
 struct XServerFrontendClientRouteRegistration {
-    input_recovery: InputRecovery,
-    client: XServerFrontendClientId,
-    clients: Arc<Mutex<BTreeMap<XServerFrontendClientId, XServerFrontendClientRouteSenders>>>,
-    surfaces: Arc<Mutex<BTreeMap<SurfaceId, XServerFrontendSurfaceRoute>>>,
-    focused_surface: Arc<Mutex<Option<XServerFrontendSurfaceRoute>>>,
-    window_parents:
-        Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XResourceId>>>,
-    core_event_subscriptions:
-        Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), u32>>>,
-    randr_subscriptions: Arc<Mutex<BTreeMap<XServerFrontendClientId, (XResourceId, u16)>>>,
-    /// Selections a client watches, keyed by the window it named when it
-    /// subscribed. One client may watch several selections, and the same
-    /// selection through different windows, so the window is part of the key
-    /// rather than a value that the next subscription overwrites.
-    xfixes_selection_subscriptions: XFixesSelectionSubscriptions,
-    present_subscriptions:
-        Arc<Mutex<BTreeMap<(XServerFrontendClientId, XResourceId), XPresentSubscription>>>,
-    pending_presentations: Arc<XPendingPresentRegistry>,
-    frozen_input: Arc<Mutex<VecDeque<XDeferredRoutedInput>>>,
+    /// This connection's way back to the evidence custody reserved for it.
+    ///
+    /// RESERVED BEFORE THIS ROW WAS PUBLISHED and kept by the service owner,
+    /// not here: this is a capability that names one custody, and asking it
+    /// twice names the same home. `None` where no service owner was installed,
+    /// which is not a claim that evidence is kept somewhere else.
+    ///
+    /// NOT RELEASED BY THIS REGISTRATION GOING. A connection ending is not its
+    /// evidence being disposed of, and an entry that vanished with the
+    /// registration would make a service exit look like a settlement.
+    ordered_custody: Option<PrivateRegisteredCustody>,
+    /// What this connection's destruction is responsible for.
+    ///
+    /// SHARED WITH ITS KEEPER, and reached by everything that used to read
+    /// these as fields of this handle. The responsibility outlives the handle;
+    /// what still triggers it is this handle's own `Drop`, unchanged.
+    cleanup: Arc<PrivateCleanupRecord>,
+}
+
+/// A registration reads as the connection it is a handle to.
+///
+/// ITS STATE MOVED, NOT ITS MEANING. Everything that asked this handle for its
+/// home, its gate, its client or its routing tables is asking the connection,
+/// and that is where those now live.
+#[cfg(unix)]
+impl std::ops::Deref for XServerFrontendClientRouteRegistration {
+    type Target = PrivateCleanupRecord;
+
+    fn deref(&self) -> &Self::Target {
+        &self.cleanup
+    }
 }
 
 #[cfg(unix)]
@@ -263,6 +344,64 @@ impl XServerFrontendRouteRegistry {
         self.register_client_with_admission(client, None)
     }
 
+    /// Give this registry the store its connections take their places from,
+    /// against the declared client limit.
+    ///
+    /// BEFORE ANY ROW CAN BE PUBLISHED. A registry that admitted connections
+    /// first and was given a store afterwards would have exposed queues whose
+    /// accepted work has nowhere to go, and no later installation can go back
+    /// and reserve for them. Once installed it does not change: the places
+    /// held under it belong to it.
+    ///
+    /// The bound is declared, not imposed -- a durable store that already
+    /// carries places from an earlier instance keeps the bound those were
+    /// taken against. Reports the bound in force, or nothing if the store
+    /// cannot be read or an owner is already installed.
+    pub(crate) fn install_continuation_owner(
+        &self,
+        owner: &PrivateSettlementOwner,
+        connections: NonZeroUsize,
+    ) -> Option<usize> {
+        let bound = owner.declare_connection_bound(connections)?;
+        // Held weakly. The store retains inventories that hold this registry,
+        // so owning it back would close a ring neither end could leave.
+        self.continuation_owner.set(owner.settlement_ref()).ok()?;
+        Some(bound)
+    }
+
+    /// Give this registry the owner that keeps its connections' evidence.
+    ///
+    /// BEFORE ANY ROW CAN BE PUBLISHED, for the same reason as the store: a
+    /// connection exposed first would be one whose external keeper was decided
+    /// after it was already admitted.
+    ///
+    /// ONCE, AND NOT AGAIN. A registry that could be given a second keeper
+    /// could put one connection's evidence in one owner's inventory and the
+    /// next connection's in another, and nothing afterwards could say which
+    /// owner was responsible for what.
+    pub(crate) fn install_custody_keeper(&self, keeper: PrivateCustodyKeeper) -> bool {
+        self.custody_keeper.set(keeper).is_ok()
+    }
+
+    /// Whether this registry's connections' evidence is kept by that owner.
+    ///
+    /// BY INVENTORY IDENTITY, not by store or by bound. Two owners over one
+    /// store are two separate inventories, and a service told they were
+    /// interchangeable would reserve into one and look in the other.
+    /// Whether this lease is on the owner that keeps this registry's
+    /// connections' evidence.
+    pub(crate) fn leased_by(&self, service: &PrivateServiceLease<'_>) -> bool {
+        self.custody_keeper
+            .get()
+            .is_some_and(|keeper| service.keeps_for(keeper))
+    }
+
+    pub(crate) fn custody_keeper_is(&self, owner: &PrivateServiceOwner) -> bool {
+        self.custody_keeper
+            .get()
+            .is_some_and(|keeper| keeper.kept_by(owner))
+    }
+
     fn register_client_with_admission(
         &self,
         client: XServerFrontendClientId,
@@ -278,6 +417,189 @@ impl XServerFrontendRouteRegistry {
         let (control_sender, control) = sync_channel(self.per_client_control_capacity.get());
         let (protocol_sender, protocol) =
             sync_channel(self.per_client_protocol_capacity.get());
+        let (ordered_sender, ordered) = sync_channel(self.per_client_input_capacity.get());
+        // MINTED WITH THE QUEUE, so there is no moment at which this
+        // registration's queue is reachable through a sender that no close can
+        // serialize with. Bound to this registration: a replacement for the
+        // same client mints its own, and closing this endpoint cannot reach it.
+        let gate = Arc::new(PrivateHandoverGate::open());
+        // Minted with the queue as well, and for the same reason: there is no
+        // moment at which this connection has a sender that nothing counts.
+        let wake = Arc::new(PrivateOrderedWake::for_first_sender());
+        let ordered_sender = PrivateGatedOrderedSender {
+            sender: Some(ordered_sender),
+            gate: gate.clone(),
+            wake: wake.clone(),
+        };
+        // THE PLACE IS TAKEN BEFORE THE ROW IS PUBLISHED, and before the
+        // client table is held. The senders above already exist; what
+        // publication does is make one reachable, and from that moment a
+        // capsule can be accepted into that queue -- so a connection whose
+        // accepted work would have nowhere to go must not be exposed at all.
+        // Taking the settlement
+        // store beneath the client table would reverse the order the retained
+        // drive already uses -- it holds settlement and then takes clients to
+        // release a lease. Two orders, one deadlock.
+        let mut continuation = match self.continuation_owner.get() {
+            // A store that has gone is not a store with room. This registry
+            // does not own it, so the connection is refused rather than
+            // exposed with nowhere to hand over to.
+            Some(store) => {
+                let owner = store
+                    .owner()
+                    .ok_or(XServerFrontendRouteError::ContinuationUnavailable { client })?;
+                Some(
+                    owner
+                        .reserve_ordered_continuation()
+                        .map_err(|_| XServerFrontendRouteError::ContinuationUnavailable {
+                            client,
+                        })?,
+                )
+            }
+            None => None,
+        };
+        // Both halves are minted from the one cell, which is what makes the
+        // question "did this registration make this receiver" answerable.
+        let connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>> =
+            Arc::new(std::sync::OnceLock::new());
+        let senders = XServerFrontendClientRouteSenders {
+            connection_state: connection_state.clone(),
+            input: input_sender,
+            control: control_sender,
+            protocol: X11ProtocolSender(protocol_sender),
+            admission,
+            ordered: ordered_sender,
+            control_writer_gone: Arc::new(AtomicBool::new(false)),
+        };
+        // THE HOME THE RESERVATION MADE, when there is one. A reservation
+        // allocates the home along with the place, so the registration and the
+        // place hold the same one and nothing has to be moved between them
+        // later. Without a store there is no place, so this connection gets a
+        // home of its own that goes when it does.
+        let home = match continuation.as_ref().and_then(PrivateOrderedContinuationSlot::home) {
+            Some(home) => home,
+            None => Arc::new(PrivateOrderedHome::empty()),
+        };
+        home.origin.set(Arc::downgrade(&self.clients))
+            .map_err(|_| XServerFrontendRouteError::ContinuationUnavailable { client })?;
+        // AND THIS CONNECTION'S EXTERNAL KEEPER, on the same reservation and
+        // before the same boundary. The place and the maintenance destination
+        // above are storage inside the store; this is the custody outside it
+        // that will hold whatever this connection's worker leaves. All three
+        // are set aside before the row goes in, because after that this
+        // connection has work that can be accepted and nowhere honest to put
+        // the evidence of how it ended.
+        //
+        // NO KEEPER INSTALLED MEANS NO CUSTODY, which is the public frontend's
+        // shape: there is no private service owner, so there is nothing to
+        // reserve from and nothing is claimed about one.
+        // THIS CONNECTION'S TEARDOWN RESPONSIBILITY, prepared before its row
+        // is published and before any accepted work can depend on it. The
+        // place moves into it here: one home for the reservation, so a later
+        // conversion or a late lifecycle attachment reaches the same state
+        // this connection's destruction will act on.
+        let mut cleanup = Some(Arc::new(PrivateCleanupRecord::prepared_for(
+            self,
+            client,
+            continuation.take(),
+            home,
+            Arc::clone(&gate),
+            connection_state.clone(),
+        )));
+        let mut custody = match (self.custody_keeper.get(), cleanup.as_ref()) {
+            (Some(keeper), Some(record)) if record.holds_a_place() => {
+                // THE GATE THIS CONNECTION'S QUEUE WAS MINTED WITH, handed to
+                // its custody here -- before the row goes in, on the same
+                // reservation. The sender above already has it, and this is
+                // what makes the source's gate the same gate rather than one
+                // that merely matches.
+                match keeper.reserve_for(
+                    &record.maintenance_identity().expect("it holds a place"),
+                    Arc::clone(&gate),
+                    Arc::clone(record),
+                ) {
+                    PrivateCustodyReserved::Reserved(registered) => Some(registered),
+                    // REFUSED BEFORE EXPOSURE, and the place above goes back
+                    // with it: this connection is not admitted at all rather
+                    // than admitted without a keeper. A saturated inventory is
+                    // a limitation to report, and nothing here retires another
+                    // connection's evidence to make room.
+                    PrivateCustodyReserved::AlreadyKept
+                    | PrivateCustodyReserved::Saturated
+                    | PrivateCustodyReserved::Foreign
+                    | PrivateCustodyReserved::Unreadable => {
+                        // THIS ATTEMPT'S OWN RESERVATIONS, AND ONLY THOSE. The
+                        // record was never published, so nothing outside this
+                        // call has it and disposing of the place is all it
+                        // owes.
+                        if let Some(unexposed) = cleanup.take() {
+                            unexposed.relinquish_unexposed();
+                        }
+                        return Err(XServerFrontendRouteError::EvidenceCustodyUnavailable {
+                            client,
+                        });
+                    }
+                }
+            }
+            _ => None,
+        };
+        let published = self.publish_registered_client(
+            client,
+            senders,
+            &mut cleanup,
+            &mut custody,
+        );
+        // The client table is released here, before the place is disposed of.
+        //
+        // A RESERVATION THAT PUBLISHED NOTHING IS NOT RETAINED WORK. Every
+        // refusal above happened with no row and no reachable queue, so no
+        // capsule could have been accepted for this connection and the place
+        // owes nothing. Publication is what takes it: on success the
+        // registration holds it, and this is None.
+        if let Some(unexposed) = cleanup.take() {
+            unexposed.relinquish_unexposed();
+        }
+        // THE SAME FOR THE KEEPER'S ENTRY, and only for an attempt that was
+        // never exposed. Publication takes it exactly as it takes the place,
+        // so this is None on success. A refusal here -- a duplicate client
+        // arriving after preparation, say -- gives back the entry THIS attempt
+        // reserved and nothing else: the live sibling this attempt collided
+        // with keeps its own custody, its own home and its own accounting.
+        if let Some(unexposed) = custody.take() {
+            unexposed.release_unexposed();
+        }
+        let registration = published?;
+        Ok((
+            registration,
+            XServerFrontendClientRouteChannels {
+                input,
+                control,
+                protocol: X11ProtocolReceiver::Tracked { receiver: protocol, registration: connection_state.clone() },
+                ordered: XAuthorityOrderedReceiver {
+                    receiver: ordered,
+                    registration: connection_state,
+                    capacity: self.per_client_input_capacity.get(),
+                    wake,
+                },
+            },
+        ))
+    }
+
+    /// Insert the row and mint the registration that owns it.
+    ///
+    /// Separated so the client table is held for exactly this, and released
+    /// before the caller disposes of anything held elsewhere.
+    ///
+    /// The place is taken out of `continuation` only once the row is in. A
+    /// caller that gets an error back still owns it, and one that gets a
+    /// registration back does not: taken means published.
+    fn publish_registered_client(
+        &self,
+        client: XServerFrontendClientId,
+        senders: XServerFrontendClientRouteSenders,
+        cleanup: &mut Option<Arc<PrivateCleanupRecord>>,
+        custody: &mut Option<PrivateRegisteredCustody>,
+    ) -> Result<XServerFrontendClientRouteRegistration, XServerFrontendRouteError> {
         let mut clients = self
             .clients
             .lock()
@@ -285,56 +607,102 @@ impl XServerFrontendRouteRegistry {
         if clients.contains_key(&client) {
             return Err(XServerFrontendRouteError::DuplicateClient { client });
         }
-        self.input_recovery.register(client)?;
-        clients.insert(
-            client,
-            XServerFrontendClientRouteSenders {
-                input: input_sender,
-                control: control_sender,
-                protocol: protocol_sender,
-                admission,
-            },
-        );
-        Ok((
-            XServerFrontendClientRouteRegistration {
-                input_recovery: self.input_recovery.clone(),
-                client,
-                clients: self.clients.clone(),
-                surfaces: self.surfaces.clone(),
-                focused_surface: self.focused_surface.clone(),
-                window_parents: self.window_parents.clone(),
-                core_event_subscriptions: self.core_event_subscriptions.clone(),
-                randr_subscriptions: self.randr_subscriptions.clone(),
-                xfixes_selection_subscriptions: self.xfixes_selection_subscriptions.clone(),
-                present_subscriptions: self.present_subscriptions.clone(),
-                pending_presentations: self.pending_presentations.clone(),
-                frozen_input: self.frozen_input.clone(),
-            },
-            XServerFrontendClientRouteChannels {
-                input,
-                control,
-                protocol,
-            },
-        ))
+        // THE NUMBER ITSELF, TAKEN BEFORE ANYTHING IS ESTABLISHED UNDER IT.
+        // The recovery ledger below and the expected writer after it are both
+        // keyed by this number, so a claim placed only before the row would
+        // let a predecessor's unfinished ending reach state a successor had
+        // already reset.
+        //
+        // NO ROW IS NOT NO OCCUPANT. A row is removed when a send finds its
+        // endpoint gone and when a client stops draining its queue, so the
+        // check above says nothing about whether the connection that had this
+        // number has finished with it.
+        //
+        // LOCK ORDER: the client table, then this. Nothing takes the client
+        // table while holding the occupancy record.
+        let record = cleanup.as_ref().expect("a publication has its record");
+        let number = match self.occupancy.claim(client, &record.connection_state) {
+            Ok(right) => right,
+            Err(PrivateNumberRefusal::Excluded) => {
+                return Err(XServerFrontendRouteError::ClientNumberExcluded { client });
+            }
+            // NOT THE SAME REFUSAL. Excluded says an incumbent owns this
+            // number; an unreadable record has established no such thing, and
+            // saying it had would be reporting a fact nobody checked. Startup
+            // is refused either way.
+            Err(PrivateNumberRefusal::Unreadable) => {
+                return Err(XServerFrontendRouteError::RegistryPoisoned);
+            }
+        };
+        if let Err(refusal) = self
+            .input_recovery
+            .register(client, Some(&record.connection_state))
+        {
+            // Nothing was established under it, so it goes straight back.
+            number.relinquish_unpublished();
+            return Err(refusal);
+        }
+        // KEPT WITH THE RESPONSIBILITY, which is what ends it. A right held by
+        // the frame that published would be one a lost row or an ended view
+        // could hand to somebody else.
+        record
+            .number
+            .set(number)
+            .unwrap_or_else(|_| panic!("a record is published once"));
+        // A writer for this client exists or is about to: registration comes
+        // before the spawn, and control accepted in that window is not control
+        // with nowhere to go. The writer stopping is what clears it.
+        if let Some(completion) = self.control_completion.get() {
+            completion.expect_writer(client);
+        }
+        clients.insert(client, senders);
+        Ok(XServerFrontendClientRouteRegistration {
+            // TAKEN WITH THE ROW, like the place. What this registration gets
+            // is a capability naming the one custody reserved for it -- not a
+            // licence to make a publication home later, and not a handle that
+            // keeps one alive. Asking twice names the same home.
+            ordered_custody: custody.take(),
+            // AND THE RESPONSIBILITY THIS HANDLE CARRIES, which its keeper
+            // also reaches. Taken with the row for the same reason as the
+            // place: from publication onwards this connection's destruction
+            // owes what is in here.
+            cleanup: cleanup.take().expect("a published row has its record"),
+        })
     }
 
     fn route_input(
         &self,
         route: XAuthorityClientInputEvent,
     ) -> Result<(), XServerFrontendRouteError> {
-        let sender = self.client_senders(route.client)?.input;
+        let senders = self.client_senders(route.client)?;
+        let incarnation = senders.connection_state.clone();
         if !self.input_recovery.bind(route.delivery, route.client)? {
             return Ok(());
         }
-        match self.route_to_client(route.client, sender, route) {
+        match self.route_to_client(route.client, &incarnation, senders.input, route) {
             Err(error @ XServerFrontendRouteError::ClientQueueFull { client }) => {
                 // A client that stops draining its private input queue has
                 // failed as an endpoint. Remove every sender for that client
                 // so later routes cannot repeatedly pressure the shared
                 // broker and its worker observes channel disconnection.
-                self.input_recovery.disconnect_rejecting(client, XAuthorityInputDeliveryOutcome::ClientDisconnected, route.delivery)?;
-                self.clients.lock()
-                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?.remove(&client);
+                // BOTH BY IDENTITY. The recovery disconnect is as keyed by
+                // the number as the removal is, so a successor would be
+                // disconnected as readily as it would be removed. Neither
+                // happens unless the row under this number is still the
+                // connection whose sender failed.
+                if self.remove_row_of(client, &incarnation)? {
+                    // AND THE DISCONNECT COMPARES AGAIN, under its own
+                    // acquisition. The row check above released the client
+                    // table before this line; a successor can publish in
+                    // between, and its recovery entry would then be the one
+                    // under this number. The identity travels to the act.
+                    self.input_recovery.disconnect_exact(
+                        client,
+                        &incarnation,
+                        XAuthorityInputDeliveryOutcome::ClientDisconnected,
+                        route.delivery,
+                    )?;
+                }
                 Err(error)
             }
             result => result,
@@ -500,343 +868,6 @@ impl XServerFrontendRouteRegistry {
         Ok(())
     }
 
-    fn select_present_input(
-        &self,
-        client: XServerFrontendClientId,
-        event_id: XResourceId,
-        window: XResourceId,
-        mask: u32,
-    ) -> Result<(), XServerFrontendRouteError> {
-        let mut subscriptions = self
-            .present_subscriptions
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-        let key = (client, event_id);
-        if mask == 0 {
-            subscriptions.remove(&key);
-        } else {
-            subscriptions.insert(
-                key,
-                XPresentSubscription {
-                    event_id,
-                    window,
-                    mask,
-                },
-            );
-        }
-        Ok(())
-    }
-
-    fn present_configure_subscribers(
-        &self,
-        window: XResourceId,
-    ) -> Result<Vec<(XServerFrontendClientId, XResourceId)>, XServerFrontendRouteError> {
-        Ok(self
-            .present_subscriptions
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .iter()
-            .filter_map(|((subscription_client, _), subscription)| {
-                (subscription.window == window && subscription.mask & 1 != 0)
-                    .then_some((*subscription_client, subscription.event_id))
-            })
-            .collect())
-    }
-
-    fn queue_present(
-        &self,
-        transaction: TransactionId,
-        client: XServerFrontendClientId,
-        window: XResourceId,
-        pixmap: XResourceId,
-        serial: u32,
-        idle_fence: Option<XResourceId>,
-        suboptimal: bool,
-    ) -> Result<(), XServerFrontendRouteError> {
-        // The window decides which surface a present reaches; the presenting
-        // client does not have to be the one that created it. A browser's GPU
-        // process presents to a window its browser process owns, which X
-        // permits -- requiring creator == presenter here silently locked out
-        // every client that splits the two across connections.
-        self.surfaces
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .iter()
-            .find_map(|(surface, route)| (route.window == window).then_some(*surface))
-            .ok_or(XServerFrontendRouteError::UnknownPresentWindow { window })?;
-        let deadline = Instant::now() + Duration::from_secs(2);
-        let mut pending = self
-            .pending_presentations
-            .entries
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-        if pending.contains_key(&transaction) {
-            return Err(XServerFrontendRouteError::DuplicatePresentation { transaction });
-        }
-        while pending
-            .values()
-            .filter(|presentation| presentation.client == client)
-            .count()
-            >= self.per_client_presentation_capacity.get()
-        {
-            let now = Instant::now();
-            if now >= deadline {
-                return Err(XServerFrontendRouteError::ClientQueueFull { client });
-            }
-            let (next, wait) = self
-                .pending_presentations
-                .capacity_changed
-                .wait_timeout(pending, deadline.saturating_duration_since(now))
-                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-            pending = next;
-            if wait.timed_out()
-                && pending
-                    .values()
-                    .filter(|presentation| presentation.client == client)
-                    .count()
-                    >= self.per_client_presentation_capacity.get()
-            {
-                return Err(XServerFrontendRouteError::ClientQueueFull { client });
-            }
-        }
-        pending.insert(
-            transaction,
-            XPendingPresent {
-                client,
-                window,
-                pixmap,
-                serial,
-                idle_fence,
-                suboptimal,
-                phases: crate::XPresentFeedbackPhases::default(),
-                allocation_subject: None,
-            },
-        );
-        crate::evidence::present_accepted(
-            client,
-            transaction,
-            window,
-            pixmap,
-            serial,
-            pending.len(),
-        );
-        Ok(())
-    }
-
-    fn route_present_complete(
-        &self,
-        transaction: TransactionId,
-        ust: u64,
-        msc: u64,
-        mode: XPresentCompletionMode,
-    ) -> Result<bool, XServerFrontendRouteError> {
-        self.route_present_complete_with_layout(transaction, ust, msc, mode, None)
-            .map(|outcome| outcome.routed)
-    }
-
-    fn route_present_complete_with_layout(
-        &self,
-        transaction: TransactionId,
-        ust: u64,
-        msc: u64,
-        mode: XPresentCompletionMode,
-        comparison: Option<crate::XPresentLayoutComparison>,
-    ) -> Result<crate::XPresentCompleteRouteOutcome, XServerFrontendRouteError> {
-        // Reallocation advice is decided here from the current transaction and
-        // preference state. A caller-supplied mode cannot replace that decision.
-        let mode = match mode {
-            XPresentCompletionMode::SuboptimalCopy => XPresentCompletionMode::Copy,
-            mode => mode,
-        };
-        let (presentation, layout_comparison, mode) = {
-            let authority = comparison
-                .and_then(|_| self.runtime.get())
-                .and_then(std::sync::Weak::upgrade);
-            let mut runtime = authority.as_ref().and_then(|authority| authority.try_lock().ok());
-            let mut pending = self
-                .pending_presentations
-                .entries
-                .lock()
-                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-            let Some(presentation) = pending.get_mut(&transaction) else {
-                return Ok(crate::XPresentCompleteRouteOutcome {
-                    routed: false,
-                    mode,
-                    layout_comparison: None,
-                });
-            };
-            let layout_comparison = comparison.map(|comparison| {
-                let matched = mode == XPresentCompletionMode::Copy
-                    && runtime.as_ref().is_some_and(|runtime| {
-                        presentation.allocation_subject.is_some_and(|subject| {
-                            runtime.compare_present_layout(subject, comparison)
-                        })
-                    });
-                if matched {
-                    crate::XPresentLayoutComparisonResult::Matched
-                } else {
-                    crate::XPresentLayoutComparisonResult::Rejected
-                }
-            });
-            if !presentation.phases.observe_complete() {
-                return Ok(crate::XPresentCompleteRouteOutcome {
-                    routed: false,
-                    mode,
-                    layout_comparison: None,
-                });
-            }
-            let advise = presentation.suboptimal
-                && layout_comparison == Some(crate::XPresentLayoutComparisonResult::Matched)
-                && comparison.zip(presentation.allocation_subject).is_some_and(
-                    |(comparison, subject)| {
-                        runtime.as_mut().is_some_and(|runtime| {
-                            runtime.claim_present_reallocation(subject, comparison)
-                        })
-                    },
-                );
-            let mode = if advise {
-                XPresentCompletionMode::SuboptimalCopy
-            } else {
-                mode
-            };
-            let presentation = *presentation;
-            if presentation.phases.finished() {
-                pending.remove(&transaction);
-                self.pending_presentations.capacity_changed.notify_all();
-            }
-            (presentation, layout_comparison, mode)
-        };
-        // Every completion advances the presentation clock, and the clock is
-        // what answers a NotifyMSC. Ripened deferrals flush here because this
-        // is the only place the clock moves.
-        *self
-            .present_clock
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)? = Some((ust, msc));
-        let ripe = {
-            let mut pending = self
-                .pending_msc_notifies
-                .lock()
-                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-            let (ripe, waiting) = pending
-                .drain(..)
-                .partition::<Vec<_>, _>(|(_, _, target)| *target <= msc);
-            *pending = waiting;
-            ripe
-        };
-        for (window, serial, _) in ripe {
-            self.route_present_msc_notify(window, serial, ust, msc)?;
-        }
-        let subscriptions = self
-            .present_subscriptions
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .iter()
-            .filter_map(|((client, _), subscription)| {
-                (subscription.window == presentation.window
-                    && subscription.mask & (1 << 1) != 0)
-                    .then_some((*client, *subscription))
-            })
-            .collect::<Vec<_>>();
-        if subscriptions.is_empty() {
-            return Ok(crate::XPresentCompleteRouteOutcome {
-                routed: false,
-                mode,
-                layout_comparison,
-            });
-        }
-        // A Present subscription belongs to whoever took it, not to
-        // whoever presents. A browser subscribes from its GPU process for a
-        // window its browser process created, which X permits and Mesa
-        // relies on: it blocks in xcb_wait_for_special_event until an idle
-        // notify arrives, so an event withheld here is not an error the
-        // client can see -- it is a client that never draws again.
-        for (target, subscription) in subscriptions {
-            let event = XClientEvent::PresentCompleteNotify {
-                sequence: 0,
-                event_id: subscription.event_id,
-                window: presentation.window,
-                serial: presentation.serial,
-                ust,
-                msc,
-                kind: 0,
-                mode: mode as u8,
-            };
-            crate::evidence::present_event(target, Some(transaction), "ready", event);
-            self.route_protocol(target, event)?;
-        }
-        Ok(crate::XPresentCompleteRouteOutcome {
-            routed: true,
-            mode,
-            layout_comparison,
-        })
-    }
-
-    fn cancel_present(&self, transaction: TransactionId) -> Result<(), XServerFrontendRouteError> {
-        self.pending_presentations
-            .entries
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .remove(&transaction);
-        self.pending_presentations.capacity_changed.notify_all();
-        Ok(())
-    }
-
-    fn route_present_idle(
-        &self,
-        transaction: TransactionId,
-    ) -> Result<bool, XServerFrontendRouteError> {
-        let presentation = {
-            let mut pending = self
-                .pending_presentations
-                .entries
-                .lock()
-                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-            let Some(presentation) = pending.get_mut(&transaction) else {
-                return Ok(false);
-            };
-            if !presentation.phases.observe_idle() {
-                return Ok(false);
-            }
-            let presentation = *presentation;
-            // Copy may release its source before display completion, while
-            // Flip completes before its retained source becomes idle. Keep
-            // the route until both independently owned phases arrive.
-            if presentation.phases.finished() {
-                pending.remove(&transaction);
-                self.pending_presentations.capacity_changed.notify_all();
-            }
-            presentation
-        };
-        let subscriptions = self
-            .present_subscriptions
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .iter()
-            .filter_map(|((client, _), subscription)| {
-                (subscription.window == presentation.window
-                    && subscription.mask & (1 << 2) != 0)
-                    .then_some((*client, *subscription))
-            })
-            .collect::<Vec<_>>();
-        if subscriptions.is_empty() {
-            return Ok(false);
-        }
-        for (target, subscription) in subscriptions {
-            let event = XClientEvent::PresentIdleNotify {
-                sequence: 0,
-                event_id: subscription.event_id,
-                window: presentation.window,
-                serial: presentation.serial,
-                pixmap: presentation.pixmap,
-                idle_fence: presentation.idle_fence,
-            };
-            crate::evidence::present_event(target, Some(transaction), "ready", event);
-            self.route_protocol(target, event)?;
-        }
-        Ok(true)
-    }
-
     fn broadcast_randr_update(
         &self,
         snapshot: &sophia_protocol::OutputTopologySnapshot,
@@ -938,6 +969,8 @@ impl XServerFrontendRouteRegistry {
     }
 
 }
+include!("registry/present.rs");
+include!("registry/ordered.rs");
 include!("registry/delivery.rs");
 include!("registry/present_msc.rs");
 

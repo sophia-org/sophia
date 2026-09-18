@@ -90,7 +90,10 @@ fn dispatch_core_grab_request(
                                     owner_events,
                                     pointer_mode,
                                     keyboard_mode,
-                                    event_mask: 0,
+                                    // Core keyboard grabs select both key
+                                    // transitions; the protocol has no mask
+                                    // parameter for the caller to supply.
+                                    event_mask: 3,
                                     xi_event_mask: [0; 8],
                                     xi_event_mask_words: 0,
                                     route_lease: None,
@@ -225,7 +228,7 @@ fn dispatch_core_grab_request(
                                     owner_events,
                                     pointer_mode,
                                     keyboard_mode,
-                                    event_mask: 0,
+                                    event_mask: 3,
                                 },
                             )
                             .err()

@@ -1,0 +1,198 @@
+// One retained original request per charged maintenance visit. This only
+// disposes accepted item storage; native, recipient and wire debts stay in
+// their independently reserved custody.
+
+#[cfg(unix)]
+impl PrivateOrderedItem {
+    fn retire_request(&mut self) -> Result<bool, PrivateAuthorityRefusal> {
+        let (ran, custody) = match self {
+            Self::Ran { custody, .. } => (true, custody),
+            Self::Refused { custody, .. } => (false, custody),
+            Self::Parked { .. } => return Ok(false),
+        };
+        custody.retire_completed_item(ran)
+    }
+}
+
+#[cfg(unix)]
+impl PrivateOutstandingRequest {
+    fn retire_completed_item(&mut self, ran: bool) -> Result<bool, PrivateAuthorityRefusal> {
+        use sophia_input_authority::RequestCompletion as Completion;
+        let custody = self;
+        // Revocation can publish Cancelled after an interrupted source call.
+        // That is not evidence about effects which the lost call may have
+        // begun. Keep both its item and its original charge.
+        if custody.phase.get() == PrivateRequestPhase::Entered {
+            return Ok(false);
+        }
+        let completion = match custody.observed_outcome.get() {
+            Some(completion) => Some(completion),
+            None => custody.observe()?,
+        };
+        let disposable = match completion {
+            Some(Completion::Cancelled | Completion::Refused(_)) => {
+                // Common's refusal establishes no source effect, but the
+                // original accepted delivery still owes its typed outcome.
+                // Publish against the carried cell; an id reused by another
+                // admission must not receive this answer.
+                custody.input_completion().is_none_or(|held| {
+                    matches!(
+                        held.recovery.adjudicate_for_held(
+                            &held.cell,
+                            custody.client(),
+                            held.delivery,
+                            XAuthorityInputDeliveryOutcome::RouteRejected,
+                        ),
+                        PrivateAdjudication::Answered | PrivateAdjudication::AlreadyAnswered
+                    )
+                })
+            }
+            // Ran recorded the transfer into pre-reserved native/output
+            // custody. A refused adapter result does not establish that.
+            Some(Completion::Processed) => {
+                ran && custody.phase.get() == PrivateRequestPhase::Settled
+            }
+            Some(Completion::FailedAfterApplication(_)) | None => false,
+        };
+        Ok(disposable && custody.finish_item())
+    }
+}
+
+#[cfg(unix)]
+impl PrivateXServerFrontend {
+    /// A previously refused publication gets one charged retry. Rotation
+    /// keeps an unreadable or indeterminate item from hiding later outcomes.
+    fn revisit_undelivered_request(
+        &mut self,
+        start: &mut dyn FnMut(
+            Option<crate::ReadySequence>,
+            std::time::Instant,
+        ) -> Result<(), XServerFrontendRouteError>,
+    ) -> Result<PrivateDeliveryStep, XServerFrontendRouteError> {
+        let Some(front) = self.terminal.undelivered.first() else {
+            return Ok(PrivateDeliveryStep::Idle);
+        };
+        let sequence = front.item.sequence();
+        start(Some(sequence), std::time::Instant::now())?;
+        let disposed = self.terminal.undelivered[0].item.retire_request();
+        if matches!(disposed, Ok(true)) {
+            let item = self.terminal.undelivered.remove(0).item;
+            self.terminal.discard_item_unapplied_pending(&item);
+        } else {
+            self.terminal.undelivered.rotate_left(1);
+        }
+        Ok(PrivateDeliveryStep::Advanced {
+            sequence,
+            report: None,
+        })
+    }
+}
+
+#[cfg(unix)]
+impl PrivateTerminalInventory {
+    /// Actual no-effect completion retires only this request's unused
+    /// reservation. Native obligations and uncertain handovers stay owned.
+    fn discard_unapplied_pending(&mut self, custody: &PrivateOutstandingRequest) {
+        if custody.phase.get() == PrivateRequestPhase::Entered
+            || !matches!(
+                custody.observed_outcome.get(),
+                Some(
+                    sophia_input_authority::RequestCompletion::Refused(_)
+                        | sophia_input_authority::RequestCompletion::Cancelled
+                )
+            )
+            || !self.native_pending.is_none()
+            || self.transients.pending.is_some()
+        {
+            return;
+        }
+        let Some(held) = custody.input_completion() else {
+            return;
+        };
+        if self.pending_custody.as_ref().is_some_and(|pending| {
+            pending.dispatch == PrivateDispatchPhase::Untaken
+                && pending.pending.is_none()
+                && pending.attempt.is_none()
+                && pending
+                    .completion
+                    .as_ref()
+                    .is_some_and(|cell| Arc::ptr_eq(cell, &held.cell))
+        }) {
+            self.pending_custody = None;
+        }
+    }
+
+    fn discard_item_unapplied_pending(&mut self, item: &PrivateOrderedItem) {
+        match item {
+            PrivateOrderedItem::Ran { custody, .. }
+            | PrivateOrderedItem::Refused { custody, .. } => {
+                self.discard_unapplied_pending(custody);
+            }
+            PrivateOrderedItem::Parked { .. } => {}
+        }
+    }
+
+    fn retire_request_one(
+        &mut self,
+        cursor: &mut usize,
+    ) -> Result<PrivateTerminalVisit, PrivateTerminalDriveRefusal> {
+        let current = usize::from(self.current.is_some());
+        let count = current + self.turn.len() + self.delivering.len() + self.undelivered.len() + self.frozen.len();
+        if count == 0 {
+            return Ok(PrivateTerminalVisit::Request { disposed: false });
+        }
+        let index = *cursor % count;
+        *cursor = (index + 1) % count;
+        let disposed = if index < current {
+            let disposed = self
+                .current
+                .as_mut()
+                .expect("counted above")
+                .retire_request();
+            if matches!(disposed, Ok(true)) {
+                let item = self.current.take().expect("counted above");
+                self.discard_item_unapplied_pending(&item);
+                self.current_freeze = None;
+                self.current_is_frozen = false;
+            }
+            disposed
+        } else if index < current + self.turn.len() {
+            let index = index - current;
+            let disposed = self.turn[index].retire_request();
+            if matches!(disposed, Ok(true)) {
+                let item = self.turn.remove(index);
+                self.discard_item_unapplied_pending(&item);
+            }
+            disposed
+        } else if index < current + self.turn.len() + self.delivering.len() {
+            let index = index - current - self.turn.len();
+            let disposed = self.delivering[index].retire_request();
+            if matches!(disposed, Ok(true)) {
+                let item = self.delivering.remove(index);
+                self.discard_item_unapplied_pending(&item);
+            }
+            disposed
+        } else if index < current + self.turn.len() + self.delivering.len() + self.undelivered.len() {
+            let index = index - current - self.turn.len() - self.delivering.len();
+            let disposed = self.undelivered[index].item.retire_request();
+            if matches!(disposed, Ok(true)) {
+                let item = self.undelivered.remove(index).item;
+                self.discard_item_unapplied_pending(&item);
+            }
+            disposed
+        } else {
+            let index = index - current - self.turn.len() - self.delivering.len() - self.undelivered.len();
+            let disposed = self.frozen[index].custody.retire_completed_item(false);
+            if matches!(disposed, Ok(true)) {
+                // This driver requires stopped, collected execution. No row
+                // can resume input, so constant-time disposal need not retain
+                // the live before-effect scheduling order.
+                let row = self.frozen.swap_remove_back(index).expect("counted above");
+                self.discard_unapplied_pending(&row.custody);
+            }
+            disposed
+        }
+        .map_err(PrivateTerminalDriveRefusal::Common)?;
+        Ok(PrivateTerminalVisit::Request { disposed })
+    }
+}

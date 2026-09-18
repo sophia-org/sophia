@@ -471,7 +471,8 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
     use std::io::{Read, Write};
     use std::net::Shutdown;
     use std::num::NonZeroUsize;
-    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex, mpsc};
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -489,10 +490,30 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
     let config = XServerFrontendConfig::new(&socket_path, NamespaceId::from_raw(817))
         .unwrap()
         .with_max_concurrent_clients(NonZeroUsize::new(2).unwrap());
+    let (paused_sender, paused_receiver) = mpsc::sync_channel(1);
+    let (resume_sender, resume_receiver) = mpsc::sync_channel(1);
+    let resume_receiver = Mutex::new(resume_receiver);
+    let pause_armed = AtomicBool::new(true);
     let server = thread::spawn(move || {
         let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(4).unwrap());
         let mut frontend = XServerFrontend::bind(config).unwrap();
-        let observer: Arc<X11CoreTraceObserver> = Arc::new(|_| Ok(None));
+        let observer: Arc<X11CoreTraceObserver> = Arc::new(move |observation| {
+            // Hold the originating dispatch after it exposes SelectionRequest.
+            // Peer responses must see the sequence published before that
+            // effect, even while the originating thread remains here.
+            if observation.major_opcode == 24
+                && observation.sequence == 3
+                && pause_armed.swap(false, Ordering::AcqRel)
+            {
+                paused_sender.send(()).unwrap();
+                resume_receiver
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(X_RECORD_READ_TIMEOUT)
+                    .expect("the selection reader must release the dispatch");
+            }
+            Ok(None)
+        });
         frontend
             .serve_next_concurrently_routed_traced(&broker, observer.clone())
             .unwrap();
@@ -562,6 +583,9 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         ))
         .unwrap();
     let request = read_x_record(&mut owner);
+    paused_receiver
+        .recv_timeout(X_RECORD_READ_TIMEOUT)
+        .expect("ConvertSelection must reach the dispatch observer");
     assert_eq!(request[0], 30);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &request[2..4]), 2);
     assert_eq!(
@@ -595,6 +619,7 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         ))
         .unwrap();
     let new_value = read_x_record(&mut requestor);
+    let property_sequence = read_u16(XByteOrder::LittleEndian, &new_value[2..4]);
     assert_eq!(new_value[0], 28);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &new_value[4..8]),
@@ -616,8 +641,9 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
         ))
         .unwrap();
     let event = read_x_record(&mut requestor);
+    let notify_sequence = read_u16(XByteOrder::LittleEndian, &event[2..4]);
+    resume_sender.send(()).unwrap();
     assert_eq!(event[0], 31 | 0x80);
-    assert_eq!(read_u16(XByteOrder::LittleEndian, &event[2..4]), 3);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &event[8..12]),
         requestor_window
@@ -790,4 +816,6 @@ fn x_server_frontend_routes_selection_notify_to_the_requestor_client() {
     requestor.shutdown(Shutdown::Both).unwrap();
     server.join().unwrap();
     std::fs::remove_file(&socket_path).unwrap();
+    assert_eq!(property_sequence, 3);
+    assert_eq!(notify_sequence, 3);
 }

@@ -1,0 +1,250 @@
+{
+  "schema": 1,
+  "plan_source_commit": "02a290db8bf3890df68b628971f4e40d64dbc663",
+  "cases": [
+    {
+      "case": "A.press_release_repress",
+      "gate": "A",
+      "required": true,
+      "requirement": "Leased ingress -> exact immutable envelope -> guarded native/applied execution -> real worker/wire -> real receipt; final release keeps native and recipient proof separate; same-grant re-press is barred until settlement and succeeds after it.",
+      "subcases": [
+        "exact_press_release_bytes",
+        "native_and_recipient_proofs",
+        "repress_barrier_then_success",
+        "overlapping_button_releases"
+      ]
+    },
+    {
+      "case": "A.recipient_disconnect",
+      "gate": "A",
+      "required": true,
+      "requirement": "The submitting connection remains live; established termination of the exact recipient supplies only the recipient half. Missing route, failed send and unreadability do not substitute.",
+      "subcases": [
+        "submitter_remains_live",
+        "exact_recipient_termination",
+        "missing_route_is_not_proof",
+        "failed_send_is_not_proof"
+      ]
+    },
+    {
+      "case": "A.partial_proof",
+      "gate": "A",
+      "required": true,
+      "requirement": "Withhold each required proof in turn; neither bytes alone nor completion observation clears the other obligation or permits re-press.",
+      "subcases": [
+        "native_proof_withheld",
+        "recipient_proof_withheld",
+        "completion_alone_keeps_barrier"
+      ]
+    },
+    {
+      "case": "B.applied_focus",
+      "gate": "B",
+      "required": true,
+      "requirement": "Pending focus refuses, applied focus permits; foreign/replacement histories refuse at the actual participating producer.",
+      "subcases": [
+        "pending_focus_refuses",
+        "applied_focus_permits",
+        "foreign_history_refuses",
+        "replacement_history_refuses"
+      ]
+    },
+    {
+      "case": "B.keyboard_history",
+      "gate": "B",
+      "required": true,
+      "requirement": "One runner retains the exact key/XKB history across turns; no re-created or foreign history can qualify.",
+      "subcases": [
+        "modifier_continuity_across_turns",
+        "exact_key_and_state_notify_bytes",
+        "recreated_history_refuses",
+        "foreign_history_refuses"
+      ]
+    },
+    {
+      "case": "B.ordered_input",
+      "gate": "B",
+      "required": true,
+      "requirement": "Motion/axis, StateOnly and thaw preserve the decided order; deferred work cannot reselect or restamp at delivery.",
+      "subcases": [
+        "motion",
+        "axis",
+        "state_only",
+        "thaw",
+        "immutable_recipient_and_order"
+      ]
+    },
+    {
+      "case": "B.shared_hold",
+      "gate": "B",
+      "required": true,
+      "requirement": "Duplicate/join and survivor release do not repeat effects; the last-holder release targets the original recipient.",
+      "subcases": [
+        "duplicate_join_no_repeat",
+        "survivor_release_no_repeat",
+        "final_release_original_recipient"
+      ]
+    },
+    {
+      "case": "C.capacity",
+      "gate": "C",
+      "required": true,
+      "requirement": "Full queues and exact reservation bounds refuse before acceptance while current and remainder retain their own credits.",
+      "subcases": [
+        "full_queue_refuses_before_acceptance",
+        "exact_reservation_bound",
+        "current_and_remainder_credits",
+        "repeated_bounded_reuse"
+      ]
+    },
+    {
+      "case": "C.interrupted_ownership",
+      "gate": "C",
+      "required": true,
+      "requirement": "Return/error/unwind preserves current item, remainder, completion and origin in durable custody.",
+      "subcases": [
+        "return",
+        "error",
+        "unwind",
+        "original_completion_and_origin",
+        "runner_loss_keyboard_custody"
+      ]
+    },
+    {
+      "case": "C.indeterminate_send",
+      "gate": "C",
+      "required": true,
+      "requirement": "Partial/unknown transmission is not replayed; enqueued work retries observation only; refused publication remains owed.",
+      "subcases": [
+        "partial_send_not_replayed",
+        "unknown_send_not_replayed",
+        "enqueued_observation_only",
+        "refused_publication_retained"
+      ]
+    },
+    {
+      "case": "C.poison",
+      "gate": "C",
+      "required": true,
+      "requirement": "Unreadable state remains legible and excluded where necessary; it does not become empty or settled.",
+      "subcases": [
+        "unreadable_remains_legible",
+        "unreadable_keeps_capacity",
+        "unreadable_is_not_settled"
+      ]
+    },
+    {
+      "case": "C.control_cleanup",
+      "gate": "C",
+      "required": true,
+      "requirement": "Exercise actual cleanup for PublishMetadataRule, AdmitSurface, ConfigureSurface, SetPresentationState, RestorePresentationState, FocusSurface, ClearFocus, CloseSurface and WithdrawSurface.",
+      "subcases": [
+        "PublishMetadataRule",
+        "AdmitSurface",
+        "ConfigureSurface",
+        "SetPresentationState",
+        "RestorePresentationState",
+        "FocusSurface",
+        "ClearFocus",
+        "CloseSurface",
+        "WithdrawSurface"
+      ]
+    },
+    {
+      "case": "C.exact_origin",
+      "gate": "C",
+      "required": true,
+      "requirement": "Foreign/colliding origins refuse; repeated recovery keeps credit and outcome identity; include native sibling-grab continuations.",
+      "subcases": [
+        "foreign_origin",
+        "colliding_origin",
+        "repeated_recovery_identity_and_credit",
+        "native_sibling_grab_continuation"
+      ]
+    },
+    {
+      "case": "D.ready_before_exposure",
+      "gate": "D",
+      "required": true,
+      "requirement": "Real producers become reachable after readiness; admission/revocation participates in execution.",
+      "subcases": [
+        "not_ready_refuses",
+        "ready_exposes_real_producers",
+        "execution_checks_admission_and_revocation"
+      ]
+    },
+    {
+      "case": "D.start_failures",
+      "gate": "D",
+      "required": true,
+      "requirement": "Refused spawn, failure after spawn, and departure inside startup preserve the exact handle and distinguish attempted from unattempted work.",
+      "subcases": [
+        "spawn_refused",
+        "failure_after_spawn",
+        "departure_during_startup",
+        "exact_handle_and_attempt_phase"
+      ]
+    },
+    {
+      "case": "D.worker_exit",
+      "gate": "D",
+      "required": true,
+      "requirement": "Ordinary departure and unwind have distinct diagnostics; only join establishes quiescence and its actual panic outcome.",
+      "subcases": [
+        "ordinary_return",
+        "worker_unwind",
+        "published_join_and_exact_panic"
+      ]
+    },
+    {
+      "case": "D.registration_destruction",
+      "gate": "D",
+      "required": true,
+      "requirement": "Destroy a registration over a controlled live worker only after the safe destruction boundary is implemented; stop remains reachable and custody persists through collection.",
+      "subcases": [
+        "controlled_live_worker",
+        "stop_remains_reachable",
+        "custody_through_collection"
+      ]
+    },
+    {
+      "case": "D.service_exit",
+      "gate": "D",
+      "required": true,
+      "requirement": "Explicit shutdown, service error and unwind close real ingress/transports while unresolved work, evidence and capabilities remain owned outside the exiting frame.",
+      "subcases": [
+        "shutdown",
+        "command_channel_loss",
+        "error",
+        "unwind",
+        "admission_closed_before_wait",
+        "outer_custody_and_original_keyboard_history"
+      ]
+    },
+    {
+      "case": "D.namespace_reuse",
+      "gate": "D",
+      "required": true,
+      "requirement": "Old cleanup/captured failures cannot affect a successor, and unfinished cleanup cannot release the number.",
+      "subcases": [
+        "old_cleanup_cannot_touch_successor",
+        "captured_failure_cannot_touch_successor",
+        "unfinished_excludes_reuse"
+      ]
+    },
+    {
+      "case": "D.scheduler",
+      "gate": "D",
+      "required": true,
+      "requirement": "Every dequeue is charged, idle/blocked polls spend no starts, cleanup reserve/donation rules hold, and the independent watchdog covers execution-guard acquisition without joining a stuck worker on supervision.",
+      "subcases": [
+        "every_dequeue_charged",
+        "idle_and_blocked_no_start",
+        "cleanup_reserve_and_donation",
+        "guard_acquisition_watched",
+        "supervisor_does_not_join_stuck_worker",
+        "finite_retained_maintenance"
+      ]
+    }
+  ]
+}

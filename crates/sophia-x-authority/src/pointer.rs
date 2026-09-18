@@ -28,6 +28,9 @@ pub const X_POINTER_VERTICAL_SCROLL_VALUATOR: u16 = 3;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct XCorePointerMapper {
     button_state: u16,
+    // Core event state cannot represent side buttons 8 and 9. Native grab
+    // retirement needs the complete supported button set as well.
+    held_buttons: u16,
     horizontal_scroll_v120: i32,
     vertical_scroll_v120: i32,
 }
@@ -52,12 +55,41 @@ impl XCorePointerMapper {
         self.button_state
     }
 
+    /// All supported physical buttons, including those absent from core state.
+    #[cfg_attr(not(test), allow(dead_code))] // Ordered native release integration uses the full set.
+    pub(crate) const fn all_buttons_released(self) -> bool {
+        self.held_buttons == 0
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) const fn button_is_pressed(self, button: u8) -> bool {
+        button > 0
+            && button <= X_POINTER_BUTTON_COUNT
+            && self.held_buttons & (1u16 << (button - 1)) != 0
+    }
+
     pub const fn horizontal_scroll_position_v120(self) -> i32 {
         self.horizontal_scroll_v120
     }
 
     pub const fn vertical_scroll_position_v120(self) -> i32 {
         self.vertical_scroll_v120
+    }
+
+    /// The core button an evdev code names, without moving anything.
+    ///
+    /// Separated from mapping because an ordered execution has to name the
+    /// input it is validating before any effect, and mapping moves the button
+    /// state. Additive: the ordinary path still maps and moves in one step.
+    pub const fn peek_evdev_button(evdev_button: u32) -> Option<u8> {
+        match evdev_button {
+            272 => Some(1),
+            274 => Some(2),
+            273 => Some(3),
+            275 => Some(8),
+            276 => Some(9),
+            _ => None,
+        }
     }
 
     pub fn map_evdev_button(&mut self, evdev_button: u32, pressed: bool) -> Option<(u8, u16)> {
@@ -72,8 +104,10 @@ impl XCorePointerMapper {
         let state = self.button_state;
         if pressed {
             self.button_state |= mask;
+            self.held_buttons |= 1u16 << (button - 1);
         } else {
             self.button_state &= !mask;
+            self.held_buttons &= !(1u16 << (button - 1));
         }
         Some((button, state))
     }

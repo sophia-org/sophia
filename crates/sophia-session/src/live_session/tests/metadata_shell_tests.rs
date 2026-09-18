@@ -372,7 +372,7 @@ mod indicator_activation {
 }
 
 mod indicator_projection {
-    use crate::live_session::metadata_shell::indicators::indicator_snapshot;
+    use crate::shell_indicator_projection::indicator_snapshot;
     use sophia_protocol::{OutputId, PolicyProjectionIndicator, PolicyProjectionOutputStatus};
 
     fn publication(

@@ -1,0 +1,408 @@
+// What an abandoning instance hands over, and how it discharges it.
+//
+// Split from the durable owner by subject: the owner is where obligations
+// live once nothing holds them, and this is the handle that still does.
+
+/// What a shutdown could not settle, and the means to settle it later.
+///
+/// Counting an unsettled obligation and logging it is a diagnostic, not a
+/// transfer. Nor is handing back the work alone: a report holding only
+/// operations would have thrown away the registry that could answer them, so
+/// a caller would be left holding obligations and nothing to discharge them
+/// with. This retains the originating capability along with the work.
+///
+/// The obligations themselves stay private. They carry the stamped envelope
+/// shape, and exporting that so an out-of-crate owner could read a report
+/// would be publishing the wire format to deliver a status. What a caller
+/// needs is not to inspect them but to retry them, which it can.
+#[cfg(unix)]
+#[must_use = "unsettled work is owed an answer; retry or record the failure"]
+pub struct PrivateSettlement {
+    /// Kept even when the terminal inventory has already become empty.
+    execution: Option<Arc<PrivateExecutionWitness>>,
+    /// The capability that can answer the work, retained from the instance
+    /// that accepted it. Not supplied by a caller: an external authority
+    /// argument would let one instance's obligations be settled against
+    /// another's registry.
+    origin: XServerFrontendRouteRegistry,
+    /// Where anything still owed goes if this handle is abandoned.
+    durable: PrivateSettlementOwner,
+    /// The queue this came from, retained so a failed instance hands over its
+    /// queue rather than a note that one existed. The queue alone, not the
+    /// admission that holds the owner: that would be a cycle.
+    queue: Arc<Mutex<SharedQueue>>,
+    pending: Vec<PrivateOperation>,
+    /// Work that was routed and has not reached a terminal outcome.
+    ///
+    /// Carried from the instance rather than left to die with it. These hold
+    /// credits, and some of them -- input with a tracked delivery -- can still
+    /// finish, so destroying the identities would strand the credits and lose
+    /// the only means of noticing.
+    outstanding: Vec<PrivateIdentity>,
+    queue_unreadable: bool,
+    /// What the instance still owed when it closed.
+    ///
+    /// Carried here so an owner that retries can finish answering, and handed
+    /// to the durable owner if this handle is abandoned. Never unpacked into
+    /// pending work: what is in it has applied, or may already be queued.
+    terminal: Option<PrivateTerminalInventory>,
+    /// Which pending obligation an attempt is under way for.
+    ///
+    /// Written before the attempt can emit, so an unwind inside leaves it set
+    /// and the next caller can tell that one obligation's outcome is unknown
+    /// rather than retrying it. An index rather than a flag because this
+    /// handle settles in place and leaves what it could not answer where it
+    /// was, so position is what identifies the one being attempted.
+    settling: Option<usize>,
+    /// Places whose registered worker was not collected when this was made.
+    ///
+    /// NON-EMPTY MEANS THIS IS A RETENTION, NOT A SETTLEMENT: nothing was
+    /// answered or reclaimed, and dropping it retains the instance's queue
+    /// and origin as a failed instance with the slot held.
+    uncollected: Vec<usize>,
+}
+
+#[cfg(unix)]
+impl PrivateSettlement {
+    /// Places whose registered worker was not collected; non-empty means
+    /// this handle retains the instance rather than settling it.
+    pub fn uncollected(&self) -> &[usize] {
+        &self.uncollected
+    }
+
+    /// Whether nothing is owed at all.
+    ///
+    /// Includes what the instance still owed for work it accepted. A hold
+    /// waiting for its release, or a decision waiting to be handed on, is an
+    /// obligation as much as an unanswered command is -- and reporting settled
+    /// while one is retained tells an owner it may stop.
+    pub fn is_settled(&self) -> bool {
+        self.pending.is_empty()
+            && self.outstanding.is_empty()
+            && !self.queue_unreadable
+            && self.uncollected.is_empty()
+            && self.terminal_outstanding() == Some(0)
+    }
+
+    /// Whether this handle retains its instance over an uncollected actor.
+    ///
+    /// WHILE THIS STANDS, NOTHING HERE DRIVES, RECLAIMS OR SETTLES: `retry`,
+    /// `reclaim_outstanding` and `republish_owed_acknowledgements` answer
+    /// zero and change nothing, and `is_settled` is false. Collecting the
+    /// actor is not this handle's to do.
+    pub fn retains_uncollected(&self) -> bool {
+        !self.uncollected.is_empty()
+    }
+
+    /// How many commands are waiting to be answered.
+    ///
+    /// Commands only. A retained hold is an obligation too, and it is not
+    /// here: `terminal_outstanding` reports those, and `is_settled` is the
+    /// question that covers both. A caller reading this alone sees an
+    /// instance with nothing left when it still owes a release.
+    pub fn owed(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// How many routed operations have not reached a terminal outcome.
+    ///
+    /// Routed operations only, for the same reason as `owed`: what the
+    /// instance owed for work it already finished is not counted here.
+    pub fn outstanding(&self) -> usize {
+        self.outstanding.len()
+    }
+
+    /// How many control records the instance's registry still holds.
+    ///
+    /// Operations caught mid-application are the ones that stay: they are
+    /// retained rather than reported as unexecuted, and they are reachable
+    /// rather than counted and forgotten, because the registry holding them
+    /// came with the origin this settlement kept.
+    ///
+    /// `None` where there is no registry to ask, or one that cannot be read.
+    /// An instance with nothing outstanding and one nobody can look at are
+    /// different answers.
+    pub fn outstanding_control(&self) -> Option<usize> {
+        self.origin
+            .control_completion()
+            .map(|owner| owner.outstanding())?
+    }
+
+    /// Republish acknowledgements a client writer could not deliver.
+    ///
+    /// Republishing only: the effects already happened, so nothing here is
+    /// re-run. Returns how many reached the receiver.
+    pub fn republish_owed_acknowledgements(&self) -> usize {
+        if self.retains_uncollected() {
+            return 0;
+        }
+        let Some(owner) = self.origin.control_completion() else {
+            return 0;
+        };
+        let sender = &self.origin.acknowledgement_sender;
+        owner.publish_owed_with(|acknowledgement| match sender.try_send(*acknowledgement) {
+            Ok(()) => ControlPublication::Delivered,
+            Err(TrySendError::Disconnected(_)) => ControlPublication::ReceiverGone,
+            Err(TrySendError::Full(_)) => ControlPublication::Retained,
+        })
+    }
+
+    /// Release credits for carried work that has since finished.
+    ///
+    /// The same rule as on a live instance: ended releases, live and
+    /// unreadable do not.
+    pub fn reclaim_outstanding(&mut self) -> usize {
+        if self.retains_uncollected() {
+            return 0;
+        }
+        // Applied here too, not only while the instance was live. A frontend
+        // is consumed by shutting down, and a proof that only it could apply
+        // would stop being applied exactly when the work outlives it.
+        if let Some(owner) = self.origin.control_completion() {
+            let _settled = owner.reconcile_unstarted();
+        }
+        let recovery = &self.origin.input_recovery;
+        let recovery_origin = &self.origin;
+        let before = self.outstanding.len();
+        self.outstanding.retain(|identity| match identity {
+            PrivateIdentity::Delivery(Some(delivery)) => {
+                !matches!(recovery.delivery_state(*delivery), DeliveryState::Ended)
+            }
+            PrivateIdentity::Control {
+                completion: Some(token),
+                ..
+            } => !matches!(
+                recovery_origin
+                    .control_completion()
+                    .map(|owner| owner.state_of(*token)),
+                Some(ControlRecordState::Retired)
+            ),
+            PrivateIdentity::Delivery(None)
+            | PrivateIdentity::Control { completion: None, .. }
+            | PrivateIdentity::Lease(_) => true,
+        });
+        let reclaimed = before.saturating_sub(self.outstanding.len());
+        for _ in 0..reclaimed {
+            self.durable.release();
+        }
+        reclaimed
+    }
+
+    /// Whether the queue could not be read, so its contents were unrecoverable.
+    pub fn queue_unreadable(&self) -> bool {
+        self.queue_unreadable
+    }
+
+    /// Try again to discharge what remains, against the origin that accepted
+    /// it.
+    ///
+    /// Returns how many were discharged this time. Work that still cannot be
+    /// answered stays pending rather than being counted off, so retrying twice
+    /// does not answer anything twice.
+    /// What this instance still owed when it closed, if anything.
+    pub fn terminal_outstanding(&self) -> Option<usize> {
+        self.terminal
+            .as_ref()
+            .map_or(Some(0), PrivateTerminalInventory::outstanding)
+    }
+
+    pub fn retry(&mut self) -> usize {
+        if self.retains_uncollected() {
+            return 0;
+        }
+        if let Some(terminal) = &self.terminal { let _ = terminal.lifecycle.drive(NonZeroUsize::new(1).unwrap()); }
+        self.park_interrupted();
+        self.settle_pending()
+    }
+
+    /// Hand an interrupted attempt to the durable owner as unproved.
+    ///
+    /// Runs before anything else touches `pending`, so an attempt that never
+    /// returned cannot be retried by the next caller. Whether its
+    /// acknowledgement went out is exactly what the unwind destroyed, and this
+    /// handle cannot find out: it is moved somewhere that keeps it and its
+    /// credit without ever driving it again.
+    fn park_interrupted(&mut self) {
+        let Some(index) = self.settling.take() else {
+            return;
+        };
+        if index >= self.pending.len() {
+            return;
+        }
+        let unproved = self.pending.remove(index);
+        self.durable.take_indeterminate(&self.origin, unproved);
+    }
+
+    /// One attempt at each pending obligation, in place.
+    ///
+    /// Nothing is moved out of `pending` to be settled. An obligation is
+    /// removed once its attempt has returned and said what happened, so a
+    /// fault before the attempt leaves it here and retryable, and a fault
+    /// during the attempt leaves it here and marked. This handle can outlive
+    /// either -- `retry` is called on a live one -- so losing the list to a
+    /// stack frame would strand work whose owner is still in use.
+    fn settle_pending(&mut self) -> usize {
+        attempt_each(
+            &self.origin,
+            &self.durable,
+            &mut self.pending,
+            &mut self.settling,
+        )
+    }
+}
+
+/// One attempt at each obligation in a list, in place.
+///
+/// Nothing is moved out to be settled. An obligation is removed once its
+/// attempt has returned and said what happened, so a fault before the attempt
+/// leaves it in the list and retryable, and a fault during the attempt leaves
+/// it in the list and marked.
+///
+/// Shared by the live handle and the dying one so the two cannot drift. What
+/// differs is not the attempt but who owns the list afterwards, which is the
+/// caller's problem and is exactly where the two differ.
+#[cfg(unix)]
+fn attempt_each(
+    origin: &XServerFrontendRouteRegistry,
+    durable: &PrivateSettlementOwner,
+    pending: &mut Vec<PrivateOperation>,
+    settling: &mut Option<usize>,
+) -> usize {
+    let mut answered = 0usize;
+    let mut index = pending.len();
+    while index > 0 {
+        index -= 1;
+        match ownership_of(origin, &pending[index]) {
+            SettlementOwnership::Elsewhere => {
+                // Answered by whoever holds the record. Carried on as an
+                // identity so its credit is released when that happens, never
+                // as a command that could be sent again.
+                let operation = pending.remove(index);
+                durable.take_one_outstanding(origin, PrivateIdentity::of(&operation));
+                continue;
+            }
+            // Kept, with its credit. Nothing here can show it is owed one
+            // outcome rather than two.
+            SettlementOwnership::Unprovable => continue,
+            SettlementOwnership::Ours => {}
+        }
+        *settling = Some(index);
+        let settled = settle_one(origin, &pending[index]);
+        *settling = None;
+        if settled {
+            pending.remove(index);
+            durable.release();
+            answered = answered.saturating_add(1);
+        }
+    }
+    answered
+}
+
+/// Owes a dying handle's obligations a home, and pays on the way out.
+///
+/// Borrowing keeps work alive for an owner that survives the call. A
+/// destructor has no survivor: an attempt that unwinds inside `drop` is
+/// followed by field destruction, which takes the list and the marker with it,
+/// so nothing that examines the handle afterwards can help -- there is no
+/// afterwards. The transfer therefore has to be owed by something whose own
+/// drop performs it, with the attempt made inside that.
+///
+/// Unwinding runs this drop, so the obligations reach the durable owner on the
+/// path where they would otherwise be destroyed.
+#[cfg(unix)]
+struct SettlementTransfer<'a> {
+    execution: Option<&'a Arc<PrivateExecutionWitness>>,
+    origin: &'a XServerFrontendRouteRegistry,
+    durable: &'a PrivateSettlementOwner,
+    pending: &'a mut Vec<PrivateOperation>,
+    settling: &'a mut Option<usize>,
+}
+
+#[cfg(unix)]
+impl SettlementTransfer<'_> {
+    /// One attempt, not a loop: a teardown that retried until it succeeded
+    /// would block on a congested channel.
+    fn attempt(&mut self) {
+        let _answered = attempt_each(self.origin, self.durable, self.pending, self.settling);
+    }
+}
+
+#[cfg(unix)]
+impl Drop for SettlementTransfer<'_> {
+    fn drop(&mut self) {
+        // An attempt that did not return may already have emitted. Parked
+        // rather than transferred as work: transferring it as work is the
+        // replay this exists to prevent.
+        if let Some(index) = self.settling.take().filter(|index| *index < self.pending.len()) {
+            let unproved = self.pending.remove(index);
+            self.durable.take_indeterminate(self.origin, unproved);
+        }
+        // The rest were never attempted, or were attempted and refused by a
+        // full channel, which is a known outcome rather than an unknown one.
+        // Those are still owed an answer and can still be driven.
+        while let Some(operation) = self.pending.pop() {
+            self.durable.take_one(self.origin, operation);
+        }
+        if let Some(execution) = self.execution {
+            execution.handed_off.store(true, Ordering::Release);
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for PrivateSettlement {
+    fn drop(&mut self) {
+        self.park_interrupted();
+        // Handed on rather than dropped. An inventory is what an instance
+        // could no longer answer for, so a handle that is going must give it
+        // to something that outlives it.
+        if let Some(inventory) = self.terminal.take()
+            && !inventory.is_empty()
+        {
+            self.durable.take_terminal(inventory);
+        }
+        // Transferred whether or not anything else is owed. Returning early on
+        // an empty pending list destroyed these, which is the abandonment loss
+        // this handle exists to prevent, recreated in the state that was added
+        // to prevent it.
+        //
+        // Handed over one at a time from the list this handle still owns. A
+        // take into an argument empties the handle first, so a handover that
+        // does not return leaves them in neither place.
+        while let Some(identity) = self.outstanding.pop() {
+            self.durable.take_one_outstanding(&self.origin, identity);
+        }
+        if self.queue_unreadable || !self.uncollected.is_empty() {
+            // Owned by something that outlives this rather than surviving as a
+            // boolean on a handle that is going away.
+            self.durable.take_failed_instance(
+                &self.origin,
+                &self.queue,
+                std::mem::take(&mut self.uncollected),
+            );
+        }
+        if self.pending.is_empty() {
+            if let Some(execution) = &self.execution {
+                execution.handed_off.store(true, Ordering::Release);
+            }
+            return;
+        }
+        // What the attempt cannot answer moves to the durable owner rather
+        // than being destroyed here -- a full channel with a live receiver is
+        // congestion, and removing the last owner is not evidence the
+        // obligation ended.
+        //
+        // The attempt is made inside the guard that owes that transfer, so it
+        // happens whether the attempt returns or unwinds. Doing it after the
+        // attempt instead put the transfer on the one path that never runs
+        // when it is needed.
+        let mut transfer = SettlementTransfer {
+            execution: self.execution.as_ref(),
+            origin: &self.origin,
+            durable: &self.durable,
+            pending: &mut self.pending,
+            settling: &mut self.settling,
+        };
+        transfer.attempt();
+    }
+}

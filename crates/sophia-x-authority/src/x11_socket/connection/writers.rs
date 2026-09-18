@@ -14,6 +14,197 @@ struct X11ProtocolEventWriter {
     thread: std::thread::JoinHandle<Result<(), X11SetupSocketError>>,
 }
 
+/// Every writer one client connection started, owned together.
+///
+/// Stopping is separated from joining. A writer waiting on something another
+/// writer still holds cannot be waited on first, and joining one at a time
+/// meant the first failure returned before the rest were even told to stop:
+/// they kept running against a closing stream, and the control writer kept
+/// the registrations its client's work is answered through.
+///
+/// Owning them together also means a setup failure after any spawn owns their
+/// shutdown, because dropping this is shutting them down.
+#[cfg(unix)]
+struct X11ClientWriters {
+    input: Option<X11InputEventWriter>,
+    control: Option<X11ControlWriter>,
+    protocol: Option<X11ProtocolEventWriter>,
+    /// An independent handle on the same socket the writers share.
+    ///
+    /// A writer blocked in a write observes no flag, and whoever joins it then
+    /// waits on a peer that may never read again. Shutting the socket down is
+    /// what ends that wait, and it is done through a handle of this shutdown's
+    /// own: the blocked writer is holding the output mutex, so anything that
+    /// had to take that mutex first could not reach it.
+    ///
+    /// Required, not optional. Taking this handle needs a descriptor, and the
+    /// moment one cannot be had is exactly the moment a connection is most
+    /// likely to stall -- so a cohort that started workers without it would
+    /// lose the guarantee silently, precisely when it is needed. It is
+    /// acquired before any worker exists, and failing to acquire it refuses
+    /// the connection instead.
+    transport: UnixStream,
+}
+
+#[cfg(unix)]
+impl X11ClientWriters {
+    /// Take the shutdown's own handle on the output socket.
+    ///
+    /// Separate from owning the writers so that it can happen before this
+    /// client is registered as anything, while the cohort itself is declared
+    /// after those registrations and so gives its workers up before them.
+    fn take_transport(stream: &Arc<Mutex<UnixStream>>) -> Result<UnixStream, X11SetupSocketError> {
+        let transport = stream
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?
+            .try_clone()
+            .map_err(|error| {
+                X11SetupSocketError::new(format!(
+                    "failed to clone X11 output socket for writer shutdown: {error}"
+                ))
+            })?;
+        Ok(transport)
+    }
+
+    /// Own the writers a connection starts, with the handle that can end a
+    /// write no flag reaches.
+    fn owning(transport: UnixStream) -> Self {
+        Self {
+            input: None,
+            control: None,
+            protocol: None,
+            transport,
+        }
+    }
+}
+
+#[cfg(unix)]
+impl X11ClientWriters {
+    /// Stop every writer, join every writer, and report the first failure.
+    ///
+    /// Every one is stopped before any is joined, and every one is joined even
+    /// when an earlier join failed. A failure is reported, not acted on by
+    /// abandoning what is left: a writer nobody joins is a thread still
+    /// holding a stream and a queue.
+    ///
+    /// Reports how many it actually waited for as well as what went wrong,
+    /// because "one of them failed" and "the rest were left running" are
+    /// different facts and only the count tells them apart.
+    ///
+    /// Idempotent, so the ordinary path can call it and the drop that follows
+    /// finds nothing left to do.
+    fn shut_down(&mut self) -> X11WriterShutdown {
+        self.stop_all();
+        // Almost always already true by now: a writer between events notices
+        // its flag immediately, and this returns without waiting. It is a
+        // deadline rather than a delay.
+        if !self.settled_within(X11_WRITER_STOP_GRACE) {
+            // Something is inside a write that no flag reaches. The connection
+            // is ending either way, so the socket goes and the write fails.
+            let _ = self.transport.shutdown(Shutdown::Both);
+        }
+        self.join_all()
+    }
+
+    fn stop_all(&self) {
+        for stop in [
+            self.input.as_ref().map(|writer| &writer.stop),
+            self.control.as_ref().map(|writer| &writer.stop),
+            self.protocol.as_ref().map(|writer| &writer.stop),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            stop.store(true, Ordering::Release);
+        }
+    }
+
+    /// Whether every writer has finished within the deadline.
+    fn settled_within(&self, deadline: Duration) -> bool {
+        let limit = std::time::Instant::now() + deadline;
+        loop {
+            let running = [
+                self.input.as_ref().map(|writer| &writer.thread),
+                self.control.as_ref().map(|writer| &writer.thread),
+                self.protocol.as_ref().map(|writer| &writer.thread),
+            ]
+            .into_iter()
+            .flatten()
+            .any(|thread| !thread.is_finished());
+            if !running {
+                return true;
+            }
+            if std::time::Instant::now() >= limit {
+                return false;
+            }
+            std::thread::yield_now();
+        }
+    }
+
+    fn join_all(&mut self) -> X11WriterShutdown {
+        let joins = [
+            self.input.take().map(|writer| (writer.thread, "input event")),
+            self.control.take().map(|writer| (writer.thread, "control")),
+            self.protocol
+                .take()
+                .map(|writer| (writer.thread, "protocol event")),
+        ];
+        let mut shutdown = X11WriterShutdown {
+            joined: 0,
+            outcome: Ok(()),
+        };
+        for (thread, what) in joins.into_iter().flatten() {
+            #[cfg(all(test, unix))]
+            let identity = thread.thread().id();
+            let joined = match thread.join() {
+                Ok(result) => result,
+                Err(_) => Err(X11SetupSocketError::new(format!(
+                    "X11 {what} writer thread panicked"
+                ))),
+            };
+            #[cfg(all(test, unix))]
+            routing_tests::m3_acceptance::actor_joined(identity);
+            shutdown.joined = shutdown.joined.saturating_add(1);
+            if shutdown.outcome.is_ok() {
+                shutdown.outcome = joined;
+            }
+        }
+        shutdown
+    }
+}
+
+/// How long a writer is given to notice its stop flag before the socket it may
+/// be blocked on is taken away.
+///
+/// Long enough that an ordinary teardown never reaches it, short enough that a
+/// blocked one does not hold a connection's teardown open.
+///
+/// A grace before the socket goes, and nothing more. It does not bound the
+/// join that follows, and it does not bound a writer waiting on the runtime
+/// lock or any other condition a closed socket does not touch. Those are
+/// separate waits and this says nothing about them.
+#[cfg(unix)]
+const X11_WRITER_STOP_GRACE: Duration = Duration::from_millis(250);
+
+/// What shutting a client's writers down achieved.
+#[cfg(unix)]
+struct X11WriterShutdown {
+    /// How many writers were waited for. Every one that was running, or the
+    /// ones after a failure were left detached.
+    joined: usize,
+    /// The first failure any of them reported.
+    outcome: Result<(), X11SetupSocketError>,
+}
+
+#[cfg(unix)]
+impl Drop for X11ClientWriters {
+    fn drop(&mut self) {
+        // The fallback for every path that leaves without shutting them down
+        // itself, including a setup failure between two spawns.
+        let _ = self.shut_down();
+    }
+}
+
 #[cfg(unix)]
 struct X11ControlOutputPriority {
     pending: Arc<AtomicUsize>,
@@ -35,29 +226,111 @@ impl Drop for X11ControlOutputPriority {
     }
 }
 
+/// Whether this connection's wire may still be written at all.
+///
+/// ONE PER CONNECTION, SHARED BY EVERY POST-EXPOSURE WRITER. A wire that holds
+/// the beginning of an event nobody can finish must not receive anything more:
+/// what follows would be read as the rest of that event, and X11 has no way to
+/// describe or recover from it. Whoever discovers that bars the wire here, and
+/// every writer of this socket sees it -- because a latch private to one
+/// writer fences only that writer, which is no fence at all.
+///
+/// Read under the output mutex, so the answer cannot change between being
+/// asked and the write it authorises.
 #[cfg(unix)]
-fn wait_for_x11_control_output(control_pending: &AtomicUsize) {
-    while control_pending.load(Ordering::Acquire) != 0 {
-        std::thread::yield_now();
-    }
+struct X11WirePermission {
+    barred: AtomicBool,
 }
 
 #[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))]
+impl X11WirePermission {
+    fn open() -> Self {
+        Self {
+            barred: AtomicBool::new(false),
+        }
+    }
+
+    /// Bar this wire for good. Nothing unbars it: the bytes on it stay there.
+    fn bar(&self) {
+        self.barred.store(true, Ordering::Release);
+    }
+
+    fn barred(&self) -> bool {
+        self.barred.load(Ordering::Acquire)
+    }
+}
+
+/// Take this connection's output for a write.
+///
+/// THE ONE BOUNDARY. Every post-exposure writer of this socket comes through
+/// here -- the input, protocol and reply writers by way of the non-control
+/// helper, and control writes directly -- so the permission is asked in the
+/// same place the serialization is taken, while holding it. Asking anywhere
+/// else would leave a window between the answer and the write.
+#[cfg(unix)]
+fn enter_x11_wire<'a>(
+    stream: &'a Arc<Mutex<UnixStream>>,
+    wire: &X11WirePermission,
+) -> Result<std::sync::MutexGuard<'a, UnixStream>, X11SetupSocketError> {
+    let guard = stream
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
+    if wire.barred() {
+        return Err(X11SetupSocketError::client_failure(
+            "X11 output wire holds an unfinished event and was barred",
+        ));
+    }
+    Ok(guard)
+}
+
+#[cfg(unix)]
+/// Wait for control output to finish, or for this writer to be told to stop.
+///
+/// Cancellable, because the alternative is a writer that has been told to stop
+/// and cannot act on it. Whoever joins it then waits for a condition only
+/// another thread can clear, and a stop flag nothing observes makes a join
+/// unbounded however carefully the flags were set first.
+///
+/// Returns false when the wait was cancelled.
+#[cfg(unix)]
+fn wait_for_x11_control_output(control_pending: &AtomicUsize, stop: Option<&AtomicBool>) -> bool {
+    while control_pending.load(Ordering::Acquire) != 0 {
+        if stop.is_some_and(|stop| stop.load(Ordering::Acquire)) {
+            return false;
+        }
+        std::thread::yield_now();
+    }
+    true
+}
+
+#[cfg(unix)]
+/// Take the output socket for a non-control write, or give up because this
+/// writer was told to stop.
+///
+/// `Ok(None)` is the second of those. It is not a failure: nothing was written
+/// and nothing is owed, and the caller's business is to leave.
+#[cfg(unix)]
 fn lock_x11_non_control_output<'a>(
     stream: &'a Arc<Mutex<UnixStream>>,
+    wire: &X11WirePermission,
     control_pending: &AtomicUsize,
-) -> Result<std::sync::MutexGuard<'a, UnixStream>, X11SetupSocketError> {
+    stop: Option<&AtomicBool>,
+) -> Result<Option<std::sync::MutexGuard<'a, UnixStream>>, X11SetupSocketError> {
     loop {
-        wait_for_x11_control_output(control_pending);
-        let stream = stream
-            .lock()
-            .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
+        if !wait_for_x11_control_output(control_pending, stop) {
+            return Ok(None);
+        }
+        let stream = enter_x11_wire(stream, wire)?;
         // Recheck after acquisition: a control may have registered while this
         // writer was waiting on a request, input, or protocol-event write.
         if control_pending.load(Ordering::Acquire) == 0 {
-            return Ok(stream);
+            return Ok(Some(stream));
         }
         drop(stream);
+        // Back to the wait, which is where stop is observed. A second check
+        // here would save one spin and would be one more thing a reader has to
+        // reason about to see that this terminates.
         std::thread::yield_now();
     }
 }
@@ -66,24 +339,39 @@ fn lock_x11_non_control_output<'a>(
 fn spawn_x11_protocol_event_writer(
     stream: Arc<Mutex<UnixStream>>,
     output_control_pending: Arc<AtomicUsize>,
+    output_wire: Arc<X11WirePermission>,
     byte_order: XByteOrder,
     sequence: Arc<AtomicU16>,
     client: XServerFrontendClientId,
-    receiver: Receiver<XClientEvent>,
+    receiver: impl Into<X11ProtocolReceiver>,
 ) -> Result<X11ProtocolEventWriter, X11SetupSocketError> {
+    let receiver = receiver.into();
     let stop = Arc::new(AtomicBool::new(false));
     let writer_stop = stop.clone();
     let thread = std::thread::spawn(move || {
         while !writer_stop.load(Ordering::Acquire) {
-            let mut event = match receiver.recv_timeout(Duration::from_millis(10)) {
+            let envelope = match receiver.receive(Duration::from_millis(10)) {
                 Ok(event) => event,
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
             };
-            let mut stream =
-                lock_x11_non_control_output(&stream, &output_control_pending)?;
+            receiver.validate(&envelope)?;
+            let mut event = envelope.event;
+            let Some(mut stream) =
+                lock_x11_non_control_output(
+                    &stream,
+                    &output_wire,
+                    &output_control_pending,
+                    Some(&writer_stop),
+                )?
+            else {
+                // The writer stopped before emission. A governed envelope's
+                // original journal retains its unresolved payload and receipt.
+                return Ok(());
+            };
             set_x11_protocol_event_sequence(&mut event, sequence.load(Ordering::Acquire));
             let record = encode_x_client_event(byte_order, event);
+            receiver.retain_wire_record(&envelope, &record)?;
             crate::evidence::present_event(client, None, "write_started", event);
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
                 tracing::trace!(
@@ -103,6 +391,12 @@ fn spawn_x11_protocol_event_writer(
                 x11_peer_write_error("failed to flush X11 protocol event", error)
             })?;
             crate::evidence::present_event(client, None, "written", event);
+            receiver.record_flushed(&envelope)?;
+            // Giving up the dependency may enter the completion registry.
+            // Release wire first: source retirement takes completion before
+            // operation, while an originating control holds operation/wire.
+            drop(stream);
+            drop(envelope);
             trace_written_selection_event(client, event);
         }
         Ok(())
@@ -197,692 +491,3 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
         _ => unreachable!("protocol routing received a non-routable event"),
     }
 }
-
-
-#[cfg(unix)]
-#[allow(clippy::too_many_arguments)]
-fn spawn_x11_control_writer(
-    stream: Arc<Mutex<UnixStream>>,
-    output_control_pending: Arc<AtomicUsize>,
-    byte_order: XByteOrder,
-    sequence: Arc<AtomicU16>,
-    focused_surface_window: Arc<AtomicU64>,
-    surface_windows: Arc<Mutex<BTreeMap<SurfaceId, XResourceId>>>,
-    metadata_rules: Arc<Mutex<BTreeMap<SurfaceId, MetadataDisclosureRule>>>,
-    metadata_generations: Arc<Mutex<BTreeMap<SurfaceId, u64>>>,
-    core_event_selections: Arc<Mutex<XCoreEventSelectionState>>,
-    xkb_modifiers: Arc<AtomicU16>,
-    atoms: Arc<Mutex<XAtomTable>>,
-    properties: Arc<Mutex<XPropertyTable>>,
-    runtime: Arc<Mutex<XAuthorityRuntime>>,
-    control_runtime_pending: Arc<AtomicUsize>,
-    resource_id_range: crate::XWireClientResourceRange,
-    namespace: NamespaceId,
-    client: XServerFrontendClientId,
-    protocol_routing: Option<XServerFrontendRouteRegistry>,
-    channels: X11ControlChannels,
-) -> Result<X11ControlWriter, X11SetupSocketError> {
-    let stop = Arc::new(AtomicBool::new(false));
-    let writer_stop = stop.clone();
-    macro_rules! terminate_client {
-        ($kind:expr, $transaction:expr, $surface:expr) => {{
-            let stream = stream
-                .lock()
-                .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
-            stream.shutdown(Shutdown::Both).map_err(|error| {
-                X11SetupSocketError::new(format!(
-                    "failed to terminate non-cooperating X11 client: {error}"
-                ))
-            })?;
-            drop(stream);
-            channels.send_ack(
-                client,
-                XAuthorityControlAck {
-                    kind: $kind,
-                    transaction: $transaction,
-                    surface: $surface,
-                    outcome: XAuthorityControlOutcome::Delivered,
-                },
-            )?;
-            return Ok(());
-        }};
-    }
-    let thread = std::thread::spawn(move || {
-        while !writer_stop.load(Ordering::Acquire) {
-            let routed = match channels.recv_timeout(client) {
-                Ok(routed) => routed,
-                Err(RecvTimeoutError::Timeout) => continue,
-                Err(RecvTimeoutError::Disconnected) => return Ok(()),
-            };
-            // Once a control leaves its route queue, no ordinary reply or
-            // event may repeatedly overtake the write that makes it visible.
-            let _output_priority =
-                X11ControlOutputPriority::new(output_control_pending.clone());
-            let (command, focus_transition) = match routed {
-                X11RoutedControl::Authority { command, focus } => (command, focus),
-                X11RoutedControl::FocusOut { window, time_msec } => {
-                    focused_surface_window.store(
-                        u64::from(X_SETUP_DEFAULT_ROOT),
-                        Ordering::Release,
-                    );
-                    let records = x11_focus_records(
-                        byte_order,
-                        sequence.load(Ordering::Acquire),
-                        namespace,
-                        client,
-                        &core_event_selections,
-                        protocol_routing
-                            .as_ref()
-                            .map(|routing| &routing.input_authority),
-                        xkb_modifiers.load(Ordering::Acquire),
-                        X11FocusRecordRequest::Event {
-                            window,
-                            focused: false,
-                            time_msec,
-                        },
-                    )?;
-                    write_x11_control_records(
-                        &stream,
-                        byte_order,
-                        &sequence,
-                        records,
-                    )?;
-                    continue;
-                }
-            };
-            let transaction = command.transaction();
-            let surface = command.surface();
-            let kind = command.kind();
-            let window = surface_windows
-                .lock()
-                .map_err(|_| X11SetupSocketError::new("X11 surface/window map lock poisoned"))?
-                .get(&surface)
-                .copied();
-            let Some(window) = window else {
-                channels.send_ack(
-                    client,
-                    XAuthorityControlAck {
-                        kind,
-                        transaction,
-                        surface,
-                        outcome: XAuthorityControlOutcome::UnknownSurface,
-                    },
-                )?;
-                continue;
-            };
-
-            let event_sequence = sequence.load(Ordering::Acquire);
-            let records = match command {
-                XAuthorityControlCommand::PublishMetadataRule { rule, .. } => {
-                    if rule.surface != surface {
-                        channels.send_ack(
-                            client,
-                            XAuthorityControlAck {
-                                kind,
-                                transaction,
-                                surface,
-                                outcome: XAuthorityControlOutcome::AuthorityRejected,
-                            },
-                        )?;
-                        continue;
-                    }
-                    let atoms = atoms
-                        .lock()
-                        .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?;
-                    let properties = properties.lock().map_err(|_| {
-                        X11SetupSocketError::new("X11 property table lock poisoned")
-                    })?;
-                    metadata_rules
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 metadata rule lock poisoned")
-                        })?
-                        .insert(surface, rule);
-                    let generation = next_x11_metadata_generation(
-                        &metadata_generations,
-                        surface,
-                    )?;
-                    let mut candidate = crate::reduce_window_metadata(
-                        &properties,
-                        &atoms,
-                        namespace,
-                        window,
-                        surface,
-                        Some(rule),
-                    )
-                    .unwrap_or(sophia_protocol::ReducedMetadataCandidate {
-                        surface,
-                        label: None,
-                        disclosure: rule.disclosure,
-                        generation,
-                    });
-                    candidate.generation = generation;
-                    drop(properties);
-                    drop(atoms);
-                    if let Some(routing) = protocol_routing.as_ref() {
-                        routing.emit_metadata_candidate(candidate).map_err(|error| {
-                            X11SetupSocketError::client_failure(format!(
-                                "failed to publish reduced X11 metadata: {error:?}"
-                            ))
-                        })?;
-                    }
-                    Vec::new()
-                }
-                XAuthorityControlCommand::AdmitSurface { geometry, .. } => {
-                    let geometry = match lock_x11_control_runtime(
-                        &runtime,
-                        &control_runtime_pending,
-                    )?
-                        .admit_window_from_engine(namespace, window, geometry)
-                    {
-                        Ok(geometry) => geometry,
-                        Err(_) => {
-                            channels.send_ack(
-                                client,
-                                XAuthorityControlAck {
-                                    kind,
-                                    transaction,
-                                    surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
-                                },
-                            )?;
-                            continue;
-                        }
-                    };
-                    let mut selections = core_event_selections
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 core event selection lock poisoned")
-                        })?;
-                    selections.update_geometry(window, geometry);
-                    let map_transition = selections.observe_mapped(window);
-                    if std::env::var_os("SOPHIA_LIVE_SESSION_DIAGNOSTIC").is_some() {
-                        tracing::debug!(
-                            "sophia_x11_viewability schema=1 status=admitted viewable={} promoted_descendants={}",
-                            map_transition.viewable,
-                            map_transition.promoted_descendants.len(),
-                        );
-                    }
-                    x11_surface_geometry_records(
-                        byte_order,
-                        event_sequence,
-                        client,
-                        window,
-                        geometry,
-                        true,
-                        Some(&map_transition),
-                        true,
-                        &selections,
-                        protocol_routing.as_ref(),
-                    )?
-                }
-                XAuthorityControlCommand::ConfigureSurface { geometry, .. } => {
-                    if geometry.is_empty()
-                        || geometry.width > i32::from(u16::MAX)
-                        || geometry.height > i32::from(u16::MAX)
-                        || geometry.x < i32::from(i16::MIN)
-                        || geometry.x > i32::from(i16::MAX)
-                        || geometry.y < i32::from(i16::MIN)
-                        || geometry.y > i32::from(i16::MAX)
-                    {
-                        channels.send_ack(
-                            client,
-                            XAuthorityControlAck {
-                                kind,
-                                transaction,
-                                surface,
-                                outcome: XAuthorityControlOutcome::InvalidSize,
-                            },
-                        )?;
-                        continue;
-                    }
-                    let mut runtime =
-                        lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
-                    let previous_geometry = runtime.window_geometry(namespace, window).ok();
-                    let geometry = match runtime.configure_window_from_engine(
-                        namespace,
-                        window,
-                        geometry,
-                    ) {
-                        Ok(geometry) => geometry,
-                        Err(_) => {
-                            channels.send_ack(
-                                client,
-                                XAuthorityControlAck {
-                                    kind,
-                                    transaction,
-                                    surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
-                                },
-                            )?;
-                            continue;
-                        }
-                    };
-                    drop(runtime);
-                    let mut selections = core_event_selections
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 core event selection lock poisoned")
-                        })?;
-                    selections.update_geometry(window, geometry);
-                    if previous_geometry == Some(geometry) {
-                        Vec::new()
-                    } else {
-                        // XLibre's Present hook runs before core event
-                        // delivery for every real geometry change, including
-                        // a pure move. Clients may merge both streams.
-                        x11_surface_geometry_records(
-                            byte_order,
-                            event_sequence,
-                            client,
-                            window,
-                            geometry,
-                            false,
-                            None,
-                            true,
-                            &selections,
-                            protocol_routing.as_ref(),
-                        )?
-                    }
-                }
-                XAuthorityControlCommand::SetPresentationState { state, .. }
-                | XAuthorityControlCommand::RestorePresentationState { state, .. } => {
-                    let mut atoms = atoms
-                        .lock()
-                        .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?;
-                    let mut properties = properties.lock().map_err(|_| {
-                        X11SetupSocketError::new("X11 property table lock poisoned")
-                    })?;
-                    let changed = match apply_engine_presentation_state(
-                        &mut properties,
-                        &mut atoms,
-                        namespace,
-                        window,
-                        byte_order,
-                        state,
-                    ) {
-                        Ok(changed) => changed,
-                        Err(_) => {
-                            channels.send_ack(
-                                client,
-                                XAuthorityControlAck {
-                                    kind,
-                                    transaction,
-                                    surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
-                                },
-                            )?;
-                            continue;
-                        }
-                    };
-                    drop(properties);
-                    drop(atoms);
-                    let selections = core_event_selections.lock().map_err(|_| {
-                        X11SetupSocketError::new("X11 core event selection lock poisoned")
-                    })?;
-                    x11_presentation_property_records(
-                        byte_order,
-                        event_sequence,
-                        client,
-                        window,
-                        &changed,
-                        &selections,
-                        protocol_routing.as_ref(),
-                    )?
-                }
-                XAuthorityControlCommand::CloseSurface { .. } => {
-                    let atoms = atoms
-                        .lock()
-                        .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?;
-                    let Some(protocols) = atoms.atom(X_ATOM_NAME_WM_PROTOCOLS) else {
-                        terminate_client!(kind, transaction, surface);
-                    };
-                    let Some(delete) = atoms.atom(X_ATOM_NAME_WM_DELETE_WINDOW) else {
-                        terminate_client!(kind, transaction, surface);
-                    };
-                    drop(atoms);
-                    let properties = properties.lock().map_err(|_| {
-                        X11SetupSocketError::new("X11 property table lock poisoned")
-                    })?;
-                    let protocol_windows = properties.windows_with_property(namespace, protocols);
-                    let advertises_delete = |candidate: &XResourceId| {
-                        u32::try_from(candidate.local.raw())
-                            .is_ok_and(|raw| resource_id_range.owns_new_resource(raw))
-                            && properties
-                                .get(namespace, *candidate, protocols)
-                                .is_some_and(|record| {
-                                    record.format == 32
-                                        && record
-                                            .bytes
-                                            .chunks_exact(4)
-                                            .any(|bytes| byte_order.u32(bytes) == delete)
-                                })
-                    };
-                    let candidates: Vec<_> = protocol_windows
-                        .iter()
-                        .map(|candidate| (*candidate, advertises_delete(candidate)))
-                        .collect();
-                    let ancestors = core_event_selections
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 core event selection lock poisoned")
-                        })?
-                        .ancestors(window);
-                    let decision = crate::select_x_close_target(window, &ancestors, &candidates);
-                    if decision.protocol_window_count == 0 {
-                        drop(properties);
-                        terminate_client!(kind, transaction, surface);
-                    }
-                    tracing::debug!(
-                        "sophia_x11_close_target schema=1 surface_map_hit=true exact_delete={} fallback_used={} protocol_windows={}",
-                        decision.exact_advertises_delete,
-                        decision.fallback_used,
-                        decision.protocol_window_count,
-                    );
-                    let window = decision.window;
-                    let mut bytes = [0_u8; 32];
-                    // ICCCM WM_DELETE_WINDOW is delivered via SendEvent, so
-                    // the synthetic-event bit must be set on ClientMessage.
-                    bytes[0] = 33 | 0x80;
-                    bytes[1] = 32;
-                    write_control_u32(byte_order, &mut bytes[4..8], window.local.raw() as u32);
-                    write_control_u32(byte_order, &mut bytes[8..12], protocols);
-                    write_control_u32(byte_order, &mut bytes[12..16], delete);
-                    vec![encode_x_client_event(
-                        byte_order,
-                        XClientEvent::ClientMessage {
-                            sequence: event_sequence,
-                            bytes,
-                        },
-                    )]
-                }
-                XAuthorityControlCommand::FocusSurface { .. } => {
-                    let previous = {
-                        let mut runtime =
-                            lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
-                        let (previous, _) = runtime.input_focus(namespace);
-                        if runtime.set_input_focus(namespace, window, 1).is_err() {
-                            channels.send_ack(
-                                client,
-                                XAuthorityControlAck {
-                                    kind,
-                                    transaction,
-                                    surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
-                                },
-                            )?;
-                            continue;
-                        }
-                        previous
-                    };
-                    let previous_routed = XResourceId::new(
-                        focused_surface_window.swap(window.local.raw(), Ordering::AcqRel),
-                        1,
-                    );
-                    x11_focus_records(
-                        byte_order,
-                        event_sequence,
-                        namespace,
-                        client,
-                        &core_event_selections,
-                        protocol_routing
-                            .as_ref()
-                            .map(|routing| &routing.input_authority),
-                        xkb_modifiers.load(Ordering::Acquire),
-                        X11FocusRecordRequest::Surface {
-                            window,
-                            previous_authority: previous,
-                            previous_routed,
-                            transition: focus_transition,
-                        },
-                    )?
-                }
-                XAuthorityControlCommand::ClearFocus { .. } => {
-                    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-                    {
-                        let mut runtime =
-                            lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
-                        if runtime.set_input_focus(namespace, root, 1).is_err() {
-                            channels.send_ack(
-                                client,
-                                XAuthorityControlAck {
-                                    kind,
-                                    transaction,
-                                    surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
-                                },
-                            )?;
-                            continue;
-                        }
-                    }
-                    let previous_routed = XResourceId::new(
-                        focused_surface_window.swap(root.local.raw(), Ordering::AcqRel),
-                        1,
-                    );
-                    x11_focus_records(
-                        byte_order,
-                        event_sequence,
-                        namespace,
-                        client,
-                        &core_event_selections,
-                        protocol_routing
-                            .as_ref()
-                            .map(|routing| &routing.input_authority),
-                        xkb_modifiers.load(Ordering::Acquire),
-                        X11FocusRecordRequest::Clear {
-                            root,
-                            previous_routed,
-                            transition: focus_transition,
-                        },
-                    )?
-                }
-                XAuthorityControlCommand::WithdrawSurface { .. } => {
-                    let was_active = match lock_x11_control_runtime(
-                        &runtime,
-                        &control_runtime_pending,
-                    )?
-                        .unmap_window(namespace, window)
-                    {
-                        Ok(surface) => surface.is_some(),
-                        Err(_) => {
-                            channels.send_ack(
-                                client,
-                                XAuthorityControlAck {
-                                    kind,
-                                    transaction,
-                                    surface,
-                                    outcome: XAuthorityControlOutcome::AuthorityRejected,
-                                },
-                            )?;
-                            continue;
-                        }
-                    };
-                    core_event_selections
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 core event selection lock poisoned")
-                        })?
-                        .observe_unmapped(window);
-                    if was_active {
-                        vec![encode_x_client_event(
-                            byte_order,
-                            XClientEvent::UnmapNotify {
-                                sequence: event_sequence,
-                                event: window,
-                                window,
-                                from_configure: false,
-                            },
-                        )]
-                    } else {
-                        Vec::new()
-                    }
-                }
-            };
-
-            write_x11_control_records(&stream, byte_order, &sequence, records)?;
-            channels.send_ack(
-                client,
-                XAuthorityControlAck {
-                    kind,
-                    transaction,
-                    surface,
-                    outcome: XAuthorityControlOutcome::Delivered,
-                },
-            )?;
-        }
-        Ok(())
-    });
-    Ok(X11ControlWriter { stop, thread })
-}
-
-#[cfg(unix)]
-fn next_x11_metadata_generation(
-    generations: &Mutex<BTreeMap<SurfaceId, u64>>,
-    surface: SurfaceId,
-) -> Result<u64, X11SetupSocketError> {
-    let mut generations = generations
-        .lock()
-        .map_err(|_| X11SetupSocketError::new("X11 metadata generation lock poisoned"))?;
-    let next = generations
-        .get(&surface)
-        .copied()
-        .unwrap_or(0)
-        .checked_add(1)
-        .ok_or_else(|| X11SetupSocketError::new("X11 metadata generation exhausted"))?;
-    generations.insert(surface, next);
-    Ok(next)
-}
-
-#[cfg(unix)]
-fn wait_for_x11_control_runtime(control_runtime_pending: &AtomicUsize) {
-    while control_runtime_pending.load(Ordering::Acquire) != 0 {
-        std::thread::yield_now();
-    }
-}
-
-#[cfg(unix)]
-fn lock_x11_request_runtime<'a>(
-    runtime: &'a Mutex<XAuthorityRuntime>,
-    control_runtime_pending: &AtomicUsize,
-) -> Result<std::sync::MutexGuard<'a, XAuthorityRuntime>, X11SetupSocketError> {
-    loop {
-        wait_for_x11_control_runtime(control_runtime_pending);
-        let runtime = runtime
-            .lock()
-            .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
-        // A control can become pending between the pre-lock check and mutex
-        // acquisition. Recheck while holding the lock so that request work
-        // cannot overtake an already-waiting focus or configure command.
-        if control_runtime_pending.load(Ordering::Acquire) == 0 {
-            return Ok(runtime);
-        }
-        drop(runtime);
-        std::thread::yield_now();
-    }
-}
-
-#[cfg(unix)]
-fn lock_x11_control_runtime<'a>(
-    runtime: &'a Mutex<XAuthorityRuntime>,
-    control_runtime_pending: &AtomicUsize,
-) -> Result<std::sync::MutexGuard<'a, XAuthorityRuntime>, X11SetupSocketError> {
-    control_runtime_pending.fetch_add(1, Ordering::AcqRel);
-    let result = runtime.lock();
-    control_runtime_pending.fetch_sub(1, Ordering::AcqRel);
-    result.map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))
-}
-
-#[cfg(unix)]
-fn write_control_u32(byte_order: XByteOrder, out: &mut [u8], value: u32) {
-    let bytes = match byte_order {
-        XByteOrder::LittleEndian => value.to_le_bytes(),
-        XByteOrder::BigEndian => value.to_be_bytes(),
-    };
-    out.copy_from_slice(&bytes);
-}
-
-#[cfg(unix)]
-fn clamp_engine_i16(value: i32) -> i16 {
-    value.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16
-}
-
-#[cfg(unix)]
-fn x11_selected_xi_event_window(
-    authority: &crate::XInputAuthorityState,
-    namespace: NamespaceId,
-    owner: u64,
-    ancestry: &[XResourceId],
-    device: u16,
-    event_type: u16,
-) -> Option<XResourceId> {
-    ancestry
-        .iter()
-        .find(|window| {
-            authority.xi_event_selected(namespace, owner, **window, device, event_type)
-        })
-        .copied()
-}
-
-#[cfg(unix)]
-#[derive(Clone, Copy, Debug)]
-struct X11XiPointerDelivery {
-    window: XResourceId,
-    child: XResourceId,
-    event_x: i16,
-    event_y: i16,
-    ancestry_depth: usize,
-}
-
-#[cfg(unix)]
-fn x11_xi_pointer_delivery(
-    selections: &XCoreEventSelectionState,
-    surface_window: XResourceId,
-    event_ancestry: &[XResourceId],
-    selected_window: Option<XResourceId>,
-    event_x: i16,
-    event_y: i16,
-) -> Option<X11XiPointerDelivery> {
-    let window = selected_window?;
-    let selected_index = event_ancestry
-        .iter()
-        .position(|candidate| *candidate == window)?;
-    let child = selected_index
-        .checked_sub(1)
-        .and_then(|index| event_ancestry.get(index).copied())
-        .unwrap_or(XResourceId::NONE);
-    let (event_x, event_y) = selections.pointer_event_coordinates(
-        surface_window,
-        window,
-        event_x,
-        event_y,
-    );
-    Some(X11XiPointerDelivery {
-        window,
-        child,
-        event_x,
-        event_y,
-        ancestry_depth: selected_index,
-    })
-}
-
-#[cfg(unix)]
-fn x11_pointer_surface_window(
-    target_window: Option<XResourceId>,
-    surface: SurfaceId,
-    surface_windows: &Mutex<BTreeMap<SurfaceId, XResourceId>>,
-) -> Result<Option<XResourceId>, X11SetupSocketError> {
-    if target_window.is_some() {
-        return Ok(target_window);
-    }
-    Ok(surface_windows
-        .lock()
-        .map_err(|_| X11SetupSocketError::new("X11 surface/window map lock poisoned"))?
-        .get(&surface)
-        .copied())
-}
-
-#[cfg(unix)]
-include!("writers/records.rs");
-include!("writers/input.rs");
-
-include!("writers/xi_source.rs");

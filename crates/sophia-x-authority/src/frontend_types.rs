@@ -1,5 +1,6 @@
 use std::os::fd::OwnedFd;
 
+use sophia_input_authority::InstanceId;
 use sophia_protocol::{
     BufferHandle, ClientAdmissionContext, ClientAuthenticationMethod, DmaBufDescriptor, Rect, Size,
 };
@@ -23,6 +24,14 @@ pub enum XServerFrontendSetupAuthorization {
     #[default]
     UnauthenticatedLocal,
     MitMagicCookie([u8; 16]),
+    /// Private-instance mixed mode. Empty/empty setup remains ordinary local
+    /// access. Any supplied authorization must match this instance's cookie
+    /// under SOPHIA-PRIVATE-INPUT-1; a wrong or partial credential is refused.
+    /// Verification supplies admission evidence, not an input grant.
+    PrivateInputCookie {
+        instance: InstanceId,
+        cookie: [u8; 32],
+    },
 }
 
 impl core::fmt::Debug for XServerFrontendSetupAuthorization {
@@ -30,26 +39,62 @@ impl core::fmt::Debug for XServerFrontendSetupAuthorization {
         match self {
             Self::UnauthenticatedLocal => formatter.write_str("UnauthenticatedLocal"),
             Self::MitMagicCookie(_) => formatter.write_str("MitMagicCookie([redacted])"),
+            Self::PrivateInputCookie { instance, .. } => formatter
+                .debug_struct("PrivateInputCookie")
+                .field("instance", instance)
+                .field("cookie", &"[redacted]")
+                .finish(),
         }
     }
 }
 
 impl XServerFrontendSetupAuthorization {
     pub(crate) fn permits(&self, request: &crate::XSetupRequest) -> bool {
-        match self {
-            Self::UnauthenticatedLocal => true,
-            Self::MitMagicCookie(expected) => {
-                request.authorization_protocol_name == b"MIT-MAGIC-COOKIE-1"
-                    && authorization_data_eq(&request.authorization_data, expected)
-            }
-        }
+        self.verified_authentication(request).is_some()
     }
 
-    pub(crate) const fn authentication_method(&self) -> ClientAuthenticationMethod {
+    pub(crate) fn verified_authentication(
+        &self,
+        request: &crate::XSetupRequest,
+    ) -> Option<(
+        ClientAuthenticationMethod,
+        Option<XServerFrontendVerifiedPrivateInputAuthorization>,
+    )> {
+        let name = &request.authorization_protocol_name;
+        let data = &request.authorization_data;
         match self {
-            Self::UnauthenticatedLocal => ClientAuthenticationMethod::TrustedLocal,
-            Self::MitMagicCookie(_) => ClientAuthenticationMethod::MitMagicCookie1,
+            Self::UnauthenticatedLocal => Some((ClientAuthenticationMethod::TrustedLocal, None)),
+            Self::MitMagicCookie(expected) => (name == b"MIT-MAGIC-COOKIE-1"
+                && authorization_data_eq(data, expected))
+            .then_some((ClientAuthenticationMethod::MitMagicCookie1, None)),
+            Self::PrivateInputCookie { .. } if name.is_empty() && data.is_empty() => {
+                Some((ClientAuthenticationMethod::TrustedLocal, None))
+            }
+            Self::PrivateInputCookie { instance, cookie } => (name == b"SOPHIA-PRIVATE-INPUT-1"
+                && authorization_data_eq(data, cookie))
+            .then_some((
+                ClientAuthenticationMethod::TrustedLocal,
+                Some(XServerFrontendVerifiedPrivateInputAuthorization {
+                    instance: *instance,
+                }),
+            )),
         }
+    }
+}
+
+/// Sanitized evidence produced only after this frontend verified the named
+/// private cookie. Contains no credential or caller-supplied instance identity.
+/// InstanceId alone is a name, not authority. The admission policy must bind
+/// any later grant to this currently admitted connection and its own instance;
+/// copying this observation does not delegate authorization to another peer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XServerFrontendVerifiedPrivateInputAuthorization {
+    instance: InstanceId,
+}
+
+impl XServerFrontendVerifiedPrivateInputAuthorization {
+    pub const fn instance(self) -> InstanceId {
+        self.instance
     }
 }
 
@@ -65,7 +110,10 @@ pub struct XServerFrontendPeerCredentials {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct XServerFrontendAdmissionRequest {
     pub peer_credentials: Option<XServerFrontendPeerCredentials>,
+    /// Existing transport provenance. TrustedLocal in mixed private mode is
+    /// not an input grant; only verified_private_input carries named evidence.
     pub setup_authentication: ClientAuthenticationMethod,
+    pub verified_private_input: Option<XServerFrontendVerifiedPrivateInputAuthorization>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

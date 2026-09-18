@@ -1,0 +1,17 @@
+[package]
+name = "sophia-input-authority"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# Deliberately protocol and std only. This crate is the one place synthetic and
+# physical sources meet, so it must be reachable from every adapter without any
+# adapter's types leaking into it. A dependency on an adapter crate here would
+# invert the guard order the design depends on.
+[dependencies]
+sophia-protocol = { path = "../sophia-protocol" }
+
+[lints]
+workspace = true

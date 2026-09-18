@@ -1,0 +1,1186 @@
+{
+  "schema": 1,
+  "scope": "Private native authority; fixtures with physical origin are headless models, not physical acceptance.",
+  "obligations": [
+    {
+      "id": "native_identity",
+      "description": "Opaque source ownership, origin, instance and seat validation",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "a_handle_from_another_authority_is_refused_despite_an_identical_binding"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "a_physical_source_is_distinguishable_from_a_synthetic_one"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "authority_safety"
+          },
+          "test": "foreign_source_id_cannot_release_a_local_hold"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "foreign_physical_source_must_be_registered_locally"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "retention"
+          },
+          "test": "a_replaced_physical_source_does_not_inherit_origin_or_release_authority"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_authority"
+          },
+          "test": "identical_public_bindings_have_distinct_control_identities"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_authority"
+          },
+          "test": "a_foreign_issuer_cannot_obtain_control_or_its_identity"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_authority"
+          },
+          "test": "control_survives_revocation_and_unavailable_publication"
+        }
+      ],
+      "evidence_scope": "Common authority state-machine tests; no Session, writer, hardware or physical-path integration claim."
+    },
+    {
+      "id": "native_first_press",
+      "description": "First press and last release reconcile authority and recorded recipient",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_overlap",
+      "description": "Two synthetic holders preserve the surviving contribution",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "retention"
+          },
+          "test": "retiring_one_injector_preserves_the_other_and_both_references_settle"
+        }
+      ],
+      "evidence_scope": "Common ledger survivor and reference-retention model; no production routing or physical-path integration claim."
+    },
+    {
+      "id": "native_physical_overlap",
+      "description": "Registered fixture physical source survives synthetic retirement (headless model)",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "a_physical_hold_survives_the_synthetic_source_that_shared_it_retiring"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "authority_safety"
+          },
+          "test": "source_32_retirement_preserves_physical_source_0"
+        }
+      ],
+      "evidence_scope": "Common authority state-machine tests; no Session, writer, hardware or physical-path integration claim."
+    },
+    {
+      "id": "native_duplicate",
+      "description": "Duplicate press and stale release do not mutate another hold",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "duplicate_and_barrier_refusal_do_not_invoke_delivery"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "retention"
+          },
+          "test": "a_replaced_physical_source_does_not_inherit_origin_or_release_authority"
+        }
+      ],
+      "evidence_scope": "Common ledger duplicate-effect marker and stale physical-source incarnation refusal; no writer-path stale-release claim."
+    },
+    {
+      "id": "native_revoke_pending",
+      "description": "Revocation before final guard discards pending work without effects",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_revoke_applied",
+      "description": "Revocation after authority application preserves debt before writer completion",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_publication",
+      "description": "Publication transition refuses old focus/seat snapshot during the gap",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_thaw",
+      "description": "Thawed work revalidates generation, epoch and publication",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_reconnect",
+      "description": "New connection or grant generation inherits no queued work or holds",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_retirement",
+      "description": "Retirement and tombstones persist until native and recipient obligations settle",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_stale_release",
+      "description": "Delayed old writer release cannot clear a newer recipient hold",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_recipient_removal",
+      "description": "Route removal while recipient lives retains targeted debt",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_debt_capacity",
+      "description": "More than64 simultaneous debts remain represented without retirement allocation",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_completion",
+      "description": "Reserved completion survives wake coalescing and grant-slot retirement",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_capacity",
+      "description": "Seventeenth grant and full domain refuse before any side effect",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "full_synthetic_pool_refuses_before_mutation_and_preserves_physical_reserve"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "ordinary_release_debt_keeps_revoked_grant_slot_occupied"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "authority_safety"
+          },
+          "test": "a_grant_cannot_allocate_more_than_two_devices"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "a_capacity_whose_sources_outrun_the_holder_set_is_refused"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "a_button_domain_that_does_not_match_the_preallocation_is_refused"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "retention"
+          },
+          "test": "capacity_overflow_and_a_different_key_domain_are_refused"
+        }
+      ],
+      "evidence_scope": "Common authority state-machine tests; no Session, writer, hardware or physical-path integration claim."
+    },
+    {
+      "id": "native_protected_action",
+      "description": "Synthetic cannot supply protected chord and cannot taint sufficient fixture physical chord",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_ingress_admission",
+      "description": "Private producer admission distinguishes authorization denial, duplicate delivery identity, capacity, sequence exhaustion and unavailable/disconnected authority; every refusal returns owned work, rolls back only its own reserved credit, and preserves accepted work. Exhaustion never resets identities or silently retries forever. Consumer closure rejects later submissions and settles previously accepted work; queue poison is unavailable, not empty.",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_executor_order",
+      "description": "Actual key, pointer, repeat, control, connection-mutation, thaw and cleanup producers share one runnable-admission order; controlled concurrency preserves completed-send precedence and exact identities at consumption, not only in returned ordinals, and saturation retains payloads and genuine completions",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_executor_liveness",
+      "description": "Stuck before guard, inside execution and after commit fail owned instance without replay",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_internal_wait",
+      "description": "Delay, frozen work, scheduler and control waits never accrue recipient nonresponse",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_transport_wait",
+      "description": "Only actual EAGAIN/POLLOUT blockage accumulates toward six-second recovery",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_stalled_reader",
+      "description": "Real private stalled socket reader is contained while healthy peer continues",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_lock_order",
+      "description": "Guarded APIs and contending writers preserve selected lock order",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "native_no_fallback",
+      "description": "Unavailable or revoked instance authority refuses without ambient backend acquisition",
+      "mandatory": true,
+      "implementation": null
+    },
+    {
+      "id": "m2_input_domain",
+      "description": "Common ledger: X key/button domains are disjoint, invalid lower keycodes/out-of-domain buttons refuse, and input identities do not alias.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "keys_and_buttons_never_share_a_record"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "authority_safety"
+          },
+          "test": "key_255_and_button_7_are_independent_inputs"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "a_keycode_below_the_minimum_is_not_a_key"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "input_kind"
+          },
+          "test": "checked_inputs_report_their_own_class_across_both_domains"
+        }
+      ]
+    },
+    {
+      "id": "m2_generation_retirement",
+      "description": "Common registry: revoked device/grant generations cannot execute or allocate; an old revocation cannot retire a reused slot. No queued-work/reconnect integration claim.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "a_retired_grant_cannot_press_again"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "revoked_generation_cannot_allocate_and_execute_again"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "stale_revocation_cannot_kill_reused_slot_generation"
+        }
+      ]
+    },
+    {
+      "id": "m2_publication_counters",
+      "description": "Common ledger: declared transition gaps, matching publication revisions and bound epochs gate ordinary press/release. Does not prove production focus/seat snapshot publication or lock ordering.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "execution_refuses_while_a_transition_has_not_published"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "old_publication_cannot_reenable_a_transition"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "adapter_release_cannot_execute_during_publication_gap"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "old_epoch_capability_cannot_release_after_epoch_advance"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "publication_observation"
+          },
+          "test": "a_pending_transition_never_exposes_the_previous_published_revision"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "publication_observation"
+          },
+          "test": "an_identically_bound_foreign_issuer_cannot_read_coordinator_state"
+        }
+      ]
+    },
+    {
+      "id": "m2_duplicate_transition",
+      "description": "Common ledger: duplicate press reports no first-press effect and keeps the existing recipient/incarnation; refusal behind a clearing barrier leaves no new hold. No writer-delivery claim.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "duplicate_and_barrier_refusal_do_not_invoke_delivery"
+        }
+      ]
+    },
+    {
+      "id": "m2_clearing_barrier",
+      "description": "Common ledger: retained same-recipient debt refuses a new synthetic or fixture-physical hold until settlement; a different recipient may proceed after native reconciliation is asserted by the fixture.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "authority_safety"
+          },
+          "test": "uncleared_release_blocks_a_new_same_recipient_hold"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "physical_same_recipient_press_needs_clearing_order_not_bypass"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "pending_clearing_for_a_does_not_block_synthetic_recipient_b"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "pending_synthetic_clearing_does_not_block_physical_recipient_b"
+        }
+      ]
+    },
+    {
+      "id": "m2_settlement_identity",
+      "description": "Common ledger: fixture-supplied native/recipient settlement bits are independent; a stale incarnation cannot clear new debt. Does not prove receipt production or suppress stale releases on the wire.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "transport_settlement_alone_does_not_discharge_native_reconciliation"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "stale_identity_and_one_settlement_layer_do_not_clear_current_debt"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "reused_callback_identity_cannot_let_an_old_completion_clear_new_debt"
+        }
+      ]
+    },
+    {
+      "id": "m2_recipient_debt",
+      "description": "Common ledger: one or multiple grants retain separate recipient debts without overwriting another clearing barrier.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "one_grant_cannot_overwrite_a_with_b_recipient_debt"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "another_grants_pending_b_does_not_hide_as_clearing_barrier"
+        }
+      ]
+    },
+    {
+      "id": "m2_grant_retention",
+      "description": "Common registry: an ordinarily released hold keeps a revoked grant slot reserved until fixture settlement; empty settled slots remain reusable.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "ordinary_release_debt_keeps_revoked_grant_slot_occupied"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "sixteen_short_lived_clients_do_not_exhaust_the_instance"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "retention"
+          },
+          "test": "retiring_one_injector_preserves_the_other_and_both_references_settle"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "retention"
+          },
+          "test": "two_devices_of_one_grant_release_one_aggregate_and_reclaim_the_slot"
+        }
+      ]
+    },
+    {
+      "id": "m2_full_pool",
+      "description": "Common ledger: all 4112 synthetic retained incarnations remain separately settleable, overflow refuses without adding a hold, and the fixture-physical reserve remains usable. Does not instrument allocation during bulk revocation.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "pool_safety"
+          },
+          "test": "full_synthetic_pool_refuses_before_mutation_and_preserves_physical_reserve"
+        }
+      ]
+    },
+    {
+      "id": "m3_completion_cells",
+      "description": "Common-state retained completion, cancellation and exact token reuse; no notifier or executor integration claim",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "duplicate_execution_observes_completion_without_replaying_effect"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "one_cell_per_grant_covers_both_devices_until_completion_consumed"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "revoke_before_execution_cancels_without_callback_or_debt"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "committed_completion_and_debt_survive_revocation_without_a_wakeup"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "callback_error_after_application_preserves_effect_and_completion"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "permit_refuses_a_second_transition_without_mutating_it"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "old_token_cannot_take_or_abandon_a_reused_slots_new_request"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "sixteen_retired_cells_pin_slots_until_each_exact_completion_is_consumed"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "abandonment_invalidates_pending_token_but_keeps_applied_debt"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "publication_transition_cancels_original_context_without_restamping"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "changed_epoch_cannot_be_laundered_by_fresh_context_on_old_capability"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "failed_release_and_refused_press_cannot_discharge_existing_debt"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "foreign_control_handles_cannot_observe_or_execute_retained_cells"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "an_external_effect_failure_is_not_reported_as_an_effect_free_refusal"
+        }
+      ]
+    },
+    {
+      "id": "m3_attempt_pool",
+      "description": "Common-state64 transport-attempt bound after native reconciliation, retained in-flight barriers and fair retry; no real writer outcome claim",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempts"
+          },
+          "test": "a_separate_settlement_does_not_let_a_pending_writer_overtake_a_new_press"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempts"
+          },
+          "test": "sixty_four_attempts_do_not_drop_the_sixty_fifth_debt_or_retry_inflight_work"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempts"
+          },
+          "test": "attempt_receipts_are_authority_bound_even_with_identical_public_seats"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempts"
+          },
+          "test": "native_reconciliation_must_finish_before_a_transport_attempt_is_eligible"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempt_retention"
+          },
+          "test": "epoch_revocation_keeps_completion_and_attempt_pins_in_either_consumption_order"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempt_retention"
+          },
+          "test": "old_finished_attempt_cannot_settle_new_hold_after_record_and_attempt_slot_reuse"
+        }
+      ]
+    },
+    {
+      "id": "m3_connection_binding",
+      "description": "Common-state caller and connection-generation binding at reservation, execution and completion; Session currency proof remains separate",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "wrong_current_connection_never_runs_callback_or_consumes_pending_cell"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "wrong_current_connection_cannot_observe_or_consume_completed_cell"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "mismatched_context_cannot_reserve_a_cell_or_apply_a_press"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "mismatched_release_preserves_the_original_connections_hold"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "independent_reconnect_grant_does_not_inherit_old_request_or_source"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "issuing_connection_is_not_confused_with_the_delivery_recipient"
+        }
+      ]
+    },
+    {
+      "id": "m3_coordinator_state",
+      "description": "Coordinator state-machine sequencing, transition identity and derived publication; no production population-clearing claim",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "the_applied_epoch_takes_the_exact_requested_value_however_far_it_jumped"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "work_is_refused_while_a_transition_has_not_published"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_transition_that_cleared_only_some_populations_has_not_applied"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "routing_does_not_reopen_before_the_transition_applied"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "routing_reopens_only_on_the_publication_the_transition_was_requested_under"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_stamp_from_before_a_transition_is_not_admitted_after_it"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_stamp_naming_another_publication_is_not_admitted"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_requested_epoch_that_does_not_move_forward_is_refused"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "the_stamp_survives_the_round_trip_it_is_meant_to_survive"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "an_ordinary_focus_publication_keeps_the_epoch_and_does_not_revoke_grabs"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_publication_only_transition_cannot_reopen_before_it_installed"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "the_initial_epoch_does_not_let_a_transition_reopen_without_installing"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_security_transition_must_advance_the_epoch"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_publication_only_transition_must_not_move_the_epoch"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_publication_transition_is_not_satisfied_by_security_clearing_alone"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "applying_without_a_requested_transition_is_refused"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_granted_capability_survives_an_ordinary_focus_publication"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_security_transition_does_revoke_the_granted_capability"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_second_transition_cannot_supersede_one_in_flight"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "an_installation_report_cannot_be_filed_against_a_later_transition"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "transition_identities_are_refused_rather_than_reused_when_exhausted"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_token_from_another_coordinator_is_not_this_ones_installation_identity"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_coordinator_cannot_be_derived_while_a_transition_is_pending"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "control_epoch"
+          },
+          "test": "a_coordinator_derives_the_advanced_state_rather_than_resetting_to_zero"
+        }
+      ],
+      "evidence_scope": "Common/coordinator state-machine calls only. Installation booleans are writer declarations. The production transition, lock order, actual snapshot/population clearing, queue/thaw and executor race obligations remain separate and unimplemented."
+    },
+    {
+      "id": "m4_setup_authentication",
+      "description": "Private setup verifies configured cookie/instance, rejects wrong or partial credentials before policy, and preserves anonymous ordinary access",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "private_setup_anonymous_remains_ordinary_in_both_orders"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "private_setup_cookie_verifies_configured_instance_in_both_orders"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "private_setup_supplied_wrong_or_partial_credentials_never_reach_policy"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "private_setup_instance_binding_comes_from_configuration"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "strict_mit_cookie_does_not_gain_anonymous_fallback"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "ordinary_setup_does_not_convert_claimed_private_name_into_verified_authorization"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_setup_authorization"
+          },
+          "test": "private_setup_debug_redacts_cookie"
+        }
+      ],
+      "evidence_scope": "Real private setup sockets in both byte orders; verified admission evidence only. Does not establish grant issuance, executor, XTEST effects or live admission."
+    },
+    {
+      "id": "m3_ready_stream_primitive",
+      "description": "Bounded ready-queue FIFO, publication and refusal ownership across operation classes.",
+      "mandatory": true,
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "every_class_shares_one_order_rather_than_one_queue_each"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "a_sequence_a_caller_is_told_is_one_the_consumer_can_already_see"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "positions_rise_and_are_never_reused"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "cleanup_keeps_capacity_that_ordinary_work_cannot_take"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "delayed_work_takes_its_position_when_it_becomes_runnable"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "one_producers_order_survives_other_producers_interleaving"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "positions_are_refused_rather_than_reused_when_exhausted"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "a_refused_payload_comes_back_and_can_be_admitted_once_afterwards"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "an_oversized_reserve_is_refused_rather_than_quietly_changing_the_policy"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "a_refusal_destroys_nothing_it_was_handed"
+        }
+      ],
+      "evidence_scope": "Single-thread queue primitive with class-tagged payloads; no real producer, concurrent admission, executor, timer, thaw, cleanup liveness or authorization claim. The in-tree exhaustion test covers arithmetic only."
+    }
+  ]
+}

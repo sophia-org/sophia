@@ -97,6 +97,7 @@ pub(crate) fn image_client_error(
                 | XAuthorityRuntimeError::MissingSourceNamespace
                 | XAuthorityRuntimeError::SameNamespace
                 | XAuthorityRuntimeError::PortalRejected => XErrorCode::BadAccess,
+                XAuthorityRuntimeError::FocusAuthorityUnavailable => XErrorCode::BadImplementation,
             }
         }
         XImageReadbackError::Drawable(crate::runtime::XDrawableImageError::BadMatch) => {

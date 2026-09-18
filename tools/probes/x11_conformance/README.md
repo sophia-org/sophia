@@ -118,8 +118,11 @@ python3 -B tools/probes/x11_conformance/xts.py \
 The adapter requires the separate checkout's `check.sh`, built `xts5` directory,
 executable TET `tcc`, bubblewrap, the exact selected-purpose manifest and the
 selected scenario. It copies the external tree privately, excludes old results
-and `tetexec.cfg`, then runs with a private `/tmp/.X11-unix/X99`, network namespace
-and `/dev`. An old wrapper hardcoding a host display cannot reach that display.
+and `tetexec.cfg`, then runs with a tmpfs root and explicit runtime/data mounts,
+a private `/tmp/.X11-unix/X99`, network namespace and `/dev`. Host `/run` and
+home directories are not mounted; a read-only host root is not sufficient to
+hide pathname sockets. An old wrapper hardcoding a host display cannot reach
+that display.
 The original XTS tree is not modified. The host/harness are copied inside the
 private filesystem so an isolated worktree under `/tmp` remains usable.
 
@@ -135,6 +138,60 @@ and concrete missing paths/tools, and exits 2. This host currently has no XTS
 checkout at `~/src/xts`, no built suite there and no TET `tcc` on PATH. No actual
 XTS5 scenario has been run. Synthetic TET fixtures test adapter isolation and
 reporting only; they are not XTS evidence.
+
+## Private native input and XTEST profiles
+
+The implementation contract is
+[7xqjn8rp](../../../docs/notes/plans/7xqjn8rp-private-native-input-authority-and-xtest-adapter.md).
+`core` remains the default-off 100-execution profile. Both wire profiles launch
+their clients only through the supervised containment entry; the old internal
+`--child SOCKET` path is refused. `native-input` runs exact
+named Rust obligations. `xtest` runs independent XTEST 2.1 clients in both byte
+orders against the Session example. `all` requires all three profiles plus the
+real containment regressions. An incomplete implementation fails; these
+commands do not grant implementation or deployment acceptance by themselves.
+
+```sh
+python3 -B tools/probes/x11_conformance/check.py \
+  --profile all \
+  --target-dir .artifacts/native-input-target \
+  --output /tmp/sophia-native-input-all
+```
+
+Each output directory must be new. Keep large targets on disk instead of a
+memory-backed `/tmp`. All offline commands clear inherited Sophia, Hagia,
+DBUS, XDG and display settings. The private profile builds
+`sophia-session --example native_input_conformance_host` without native-session.
+It never selects an operator display, DRM device or VT.
+
+For each XTEST case, the supervisor creates a contained instance and delegates
+a fresh 32-byte setup credential to the host and authorized test clients.
+Ordinary empty-auth clients remain ungranted. Wrong supplied credentials must
+fail setup. Socket placement hides discovery; it is not the grant. The
+example's enabled/disabled construction modes have no live-session equivalent.
+
+`isolation.py` exposes only explicit runtime/artifact mounts and descriptor
+delegation. It starts a new session with no terminal, discards ambient settings,
+closes unrelated descriptors and validates kernel namespace descriptors before
+the inner entry creates any sockets. `--inside` alone fails. Validation is a
+runner contract, not attestation against an actor constructing its own genuine
+namespaces. There is no ambient authorization callback or fallback backend.
+
+```sh
+python3 -B tools/probes/x11_conformance/test_isolation.py
+```
+
+This command must exit zero. Missing kernel isolation is BLOCKED, not a skip
+that can satisfy acceptance. Fabricated endpoint reachability controls and
+mount, descriptor, environment and namespace mutations establish that the
+negative assertions can fail. No operator endpoint is probed.
+
+`native_manifest.json` binds every native obligation to an exact Cargo package,
+test target and test name. An unmapped obligation fails. The runner requires
+the named execution and a summary with one pass and no ignored tests; exit
+zero with no matching test is NORESULT. Native fixture tests labelled physical
+are headless source models, never physical input acceptance. The native
+authority profile remains distinct from what an X11 observer can establish.
 
 ## Gate regressions and references
 

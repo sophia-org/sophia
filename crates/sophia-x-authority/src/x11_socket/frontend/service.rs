@@ -391,6 +391,8 @@ impl XServerFrontend {
         let admission_policy = self.config.admission_policy();
         let completion_sender = self.worker_completion_sender.clone();
         let admission_event_sender = self.worker_admission_event_sender.clone();
+        #[cfg(all(test, unix))]
+        let acceptance_origin = routing.clone();
         let shutdown = stream.try_clone().map_err(|error| {
             X11SetupSocketError::new(format!(
                 "failed to clone X11 client socket for supervision: {error}"
@@ -427,6 +429,10 @@ impl XServerFrontend {
             .map_err(|error| {
                 X11SetupSocketError::new(format!("failed to start X11 client worker: {error}"))
             })?;
+        #[cfg(all(test, unix))]
+        if let Some(registry) = acceptance_origin.as_ref() {
+            routing_tests::m3_acceptance::actor_started(registry, worker.thread().id(), "connection");
+        }
         self.workers.insert(
             worker_id,
             X11CoreClientWorker {
@@ -462,7 +468,12 @@ impl XServerFrontend {
         })?;
         self.worker_admissions
             .retain(|_, worker_id| *worker_id != completion.worker_id);
-        worker.thread.join().map_err(|_| {
+        #[cfg(all(test, unix))]
+        let thread = worker.thread.thread().id();
+        let joined = worker.thread.join();
+        #[cfg(all(test, unix))]
+        routing_tests::m3_acceptance::actor_joined(thread);
+        joined.map_err(|_| {
             X11SetupSocketError::new("Sophia X Server Frontend client worker panicked")
         })?;
         match completion.result {

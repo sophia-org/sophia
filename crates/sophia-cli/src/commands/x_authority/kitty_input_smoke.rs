@@ -26,7 +26,11 @@ fn run_x_authority_kitty_input_smoke()
         control_ack_sender,
         input_delivery_sender,
     );
-    let input_sender = broker.input_sender();
+    // Raw ingress is refusable, and these smokes drive an ungated broker, so
+    // a refusal here means the harness is not the shape this test assumes.
+    let input_sender = broker
+        .input_sender()
+        .map_err(|refusal| format!("raw X11 ingress refused: {refusal:?}"))?;
     let control_sender = broker.control_sender();
     let protocol_router = broker.protocol_router();
     let (service_sender, service_receiver) = sync_channel(1);

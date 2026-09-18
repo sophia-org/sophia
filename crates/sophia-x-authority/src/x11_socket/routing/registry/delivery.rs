@@ -1,3 +1,32 @@
+/// The exact connection a protocol delivery could not be queued for.
+///
+/// MINTED ONLY BY THE ROUTE THAT FAILED, from the identity it captured with
+/// the endpoint it used. A caller holding one can end THAT connection; it
+/// cannot end whoever holds the number by the time it acts. It carries no
+/// other capability and settles nothing.
+#[cfg(unix)]
+pub(crate) struct XServerFrontendStalledRecipient {
+    client: XServerFrontendClientId,
+    occupant: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+}
+
+#[cfg(unix)]
+impl XServerFrontendStalledRecipient {
+    pub(crate) fn client(&self) -> XServerFrontendClientId {
+        self.client
+    }
+}
+
+/// Why a delivery to a watcher did not happen.
+#[cfg(unix)]
+pub(crate) enum XServerFrontendWatcherRefusal {
+    /// It stopped draining. Ending it goes through this value, not the
+    /// number.
+    Stalled(XServerFrontendStalledRecipient),
+    /// Anything else the route reported.
+    Route(XServerFrontendRouteError),
+}
+
 impl XServerFrontendRouteRegistry {
     fn advance_input_control_epoch(&self) -> Result<usize, XServerFrontendRouteError> {
         self.input_authority
@@ -13,6 +42,66 @@ impl XServerFrontendRouteRegistry {
                 .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
             std::mem::take(&mut *frozen)
         };
+        let count = drained.len();
+        for deferred in drained {
+            self.send_input_delivery(
+                deferred.client,
+                deferred.route.delivery,
+                XAuthorityInputDeliveryOutcome::EpochRevoked,
+            )?;
+        }
+        Ok(count)
+    }
+
+    /// Clear everything an X security epoch revokes, in ranked order.
+    ///
+    /// This is the privileged control path, not input execution. A transition
+    /// cancels reservations and revokes grants, so running it through the
+    /// execution transaction would demand the very authority the transition is
+    /// in the middle of withdrawing, and the cleanup that has to outlive a
+    /// grant would deadlock against its own revocation. The caller holds the
+    /// common guard; this takes the later-ranked X guards beneath it.
+    ///
+    /// The order is pointer state, then frozen input, then the input
+    /// authority. That is not arbitrary: client teardown already co-holds
+    /// pointer state and then the input authority, so taking them the other
+    /// way round here would be a reverse nesting against a live caller.
+    ///
+    /// The three are held together rather than taken and dropped one at a
+    /// time, so no observer sees grabs cleared while pointer state still
+    /// describes the revision being replaced.
+    ///
+    /// Nothing is delivered from in here. The frozen queue is handed back so
+    /// its receipts can be sent once every guard is released, because a
+    /// transition must not wait on anything while it holds them.
+    fn clear_revoked_x_populations(
+        &self,
+    ) -> Result<VecDeque<XDeferredRoutedInput>, XServerFrontendRouteError> {
+        let mut pointer_state = self
+            .pointer_state
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let mut frozen_input = self
+            .frozen_input
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let mut input_authority = self
+            .input_authority
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+
+        pointer_state.clear();
+        let drained = std::mem::take(&mut *frozen_input);
+        input_authority.advance_security_epoch();
+
+        Ok(drained)
+    }
+
+    /// Send the receipts a cleared transition owes, after its guards are gone.
+    fn report_revoked_input(
+        &self,
+        drained: VecDeque<XDeferredRoutedInput>,
+    ) -> Result<usize, XServerFrontendRouteError> {
         let count = drained.len();
         for deferred in drained {
             self.send_input_delivery(
@@ -62,16 +151,22 @@ impl XServerFrontendRouteRegistry {
         Ok(())
     }
 
-    fn route_engine_input(
+    /// Route an event whose admission has already been decided.
+    ///
+    /// The decision is a parameter because comparing two epochs is only how it
+    /// is reached without a coordinator. With one, admission also depends on
+    /// the publication and on whether a transition is in flight, none of which
+    /// a single equality can express.
+    fn route_engine_input_admitted(
         &self,
         route: XAuthorityRoutedInput,
-        route_control_epoch: u64,
-        current_control_epoch: u64,
+        stamp: crate::ControlStamp,
+        admitted: bool,
     ) -> Result<(), XServerFrontendRouteError> {
         if !self.input_recovery.begin_routing(route.delivery) { return Ok(()); }
         // An event stamped with a closed epoch is one the session revoked
         // between routing and delivery, not one that failed to route.
-        if route_control_epoch != current_control_epoch {
+        if !admitted {
             // Preserve the known target owner in the receipt without binding
             // it as the receiving client: grab routing never happened.
             let client = self.surfaces.lock()
@@ -130,8 +225,9 @@ impl XServerFrontendRouteRegistry {
                 });
             }
             frozen.push_back(XDeferredRoutedInput {
+                publication: stamp.publication,
                 client: surface_route.client,
-                control_epoch: route_control_epoch,
+                control_epoch: stamp.control_epoch,
                 route,
             });
             return Ok(());
@@ -402,19 +498,141 @@ impl XServerFrontendRouteRegistry {
         &self,
         route: XAuthorityClientControlCommand,
     ) -> Result<(), XServerFrontendRouteError> {
+        self.route_control_with_completion(route, None)
+    }
+
+    /// Install the completion registry a private instance owns.
+    ///
+    /// Once only. A second install would leave client writers registered
+    /// before it reporting outcomes to a registry nobody reads.
+    fn install_control_completion(&self, completion: ControlCompletionRegistry) -> bool {
+        self.control_completion.set(completion).is_ok()
+    }
+
+    /// The completion registry a client writer should report outcomes to.
+    fn control_completion(&self) -> Option<ControlCompletionRegistry> {
+        self.control_completion.get().cloned()
+    }
+
+    /// Record that this client's control writer has stopped.
+    ///
+    /// However it stopped: a stop flag, a disconnected queue, a failure
+    /// partway, a full acknowledgement channel, or an unwind. A registration
+    /// can outlive its writer -- returning on a full channel is exactly that
+    /// -- so this is a fact about the writer, not about the registration.
+    fn mark_control_writer_gone(&self, client: XServerFrontendClientId) {
+        if let Ok(clients) = self.clients.lock()
+            && let Some(senders) = clients.get(&client)
+        {
+            senders.control_writer_gone.store(true, Ordering::Release);
+        }
+    }
+
+    /// Whether this client has a control writer that could still execute work.
+    ///
+    /// Positive: the client is registered here and its writer has not stopped.
+    /// An unreadable registry answers no, because accepting work on a
+    /// question nobody could answer is how work is accepted for a writer that
+    /// has gone.
+    fn control_writer_present(&self, client: XServerFrontendClientId) -> bool {
+        self.clients
+            .lock()
+            .ok()
+            .and_then(|clients| {
+                clients
+                    .get(&client)
+                    .map(|senders| !senders.control_writer_gone.load(Ordering::Acquire))
+            })
+            .unwrap_or(false)
+    }
+
+    /// Enter a routing call as an executor for this client.
+    ///
+    /// A control with no registration is ungoverned and routes as it always
+    /// did. One with a registration needs something already executing for its
+    /// client, or there is nothing to route it to.
+    fn enter_routing_execution(
+        &self,
+        client: XServerFrontendClientId,
+        completion: Option<ControlCompletionToken>,
+    ) -> Option<ControlExecutorLease> {
+        match (self.control_completion.get(), completion) {
+            (Some(registry), Some(_)) => registry.enter_routing(client),
+            (_, None) => Some(ControlExecutorLease::ungoverned()),
+            (None, Some(_)) => None,
+        }
+    }
+
+    /// Claim execution of a control before anything authoritative happens.
+    ///
+    /// A command with no registration is ungoverned and routes as it always
+    /// did. A registration with no registry to answer to is refused: nothing
+    /// here could establish who owns the outcome.
+    fn claim_control_execution(
+        &self,
+        completion: Option<ControlCompletionToken>,
+    ) -> ControlExecutionClaim {
+        match (self.control_completion.get(), completion) {
+            (Some(registry), Some(token)) => registry.claim_execution(token),
+            (_, None) => ControlExecutionClaim::Ungoverned,
+            (None, Some(_)) => {
+                ControlExecutionClaim::Refused(ControlClaimRefusal::Unavailable)
+            }
+        }
+    }
+
+    /// Route a control, carrying a completion registration when the private
+    /// path made one.
+    ///
+    /// Both producer routes take the token. `route_focus_control` returns
+    /// early below for focus commands, so attaching it only at the
+    /// construction further down would cover ordinary control and silently
+    /// miss focus.
+    fn route_control_with_completion(
+        &self,
+        route: XAuthorityClientControlCommand,
+        completion: Option<ControlCompletionToken>,
+    ) -> Result<(), XServerFrontendRouteError> {
         if !self.input_recovery.active(None, route.client) {
             return Err(XServerFrontendRouteError::UnknownClient { client: route.client });
         }
-        if let Some(result) = self.route_focus_control(route) {
+        // Taken before the first authoritative effect and held across all of
+        // them, because routing is one of them: focus routing sends FocusOut
+        // and moves the focused surface before any writer runs. Holding it is
+        // what stops a writer's exit abandoning an operation this call is
+        // still inside.
+        //
+        // Taking it is also the liveness check, so there is no gap between
+        // deciding this client has an executor and being one. A separate
+        // precheck could be true and then false before the claim.
+        let Some(_executing) = self.enter_routing_execution(route.client, completion) else {
+            return Err(XServerFrontendRouteError::UnknownClient { client: route.client });
+        };
+        // Before the first authoritative effect, which is not the writer.
+        // Focus routing sends FocusOut to the previously focused client and
+        // moves the focused surface before any writer runs, so a claim taken
+        // at the writer would leave those effects behind a record still
+        // reporting the operation unexecuted.
+        if !self.claim_control_execution(completion).permits_effects() {
+            return Err(XServerFrontendRouteError::ControlNotClaimable {
+                client: route.client,
+            });
+        }
+        self.retain_control_route_source(route, completion)?;
+        if let Some(result) = self.route_focus_control(route, completion) {
             return result;
         }
-        let sender = self.client_senders(route.client)?.control;
+        let senders = self.client_senders(route.client)?;
+        let incarnation = senders.connection_state.clone();
         self.route_to_client(
             route.client,
-            sender,
+            &incarnation,
+            senders.control,
             X11RoutedControl::Authority {
                 command: route.command,
                 focus: None,
+                claim: None,
+                completion,
             },
         )
     }
@@ -448,15 +666,39 @@ impl XServerFrontendRouteRegistry {
         client: XServerFrontendClientId,
         event: XClientEvent,
     ) -> Result<(), XServerFrontendRouteError> {
-        let sender = match self.client_senders(client) {
-            Ok(senders) => senders.protocol,
+        self.route_protocol_to_watcher(client, event)
+            .map_err(|refusal| match refusal {
+                XServerFrontendWatcherRefusal::Stalled(stalled) => {
+                    XServerFrontendRouteError::ClientQueueFull {
+                        client: stalled.client,
+                    }
+                }
+                XServerFrontendWatcherRefusal::Route(error) => error,
+            })
+    }
+
+    /// As `route_protocol`, but a recipient that has stopped draining is named
+    /// exactly.
+    ///
+    /// THE NUMBER IN A `ClientQueueFull` IS NOT ENOUGH TO ACT ON. The caller
+    /// that ends a stalled watcher does so after this returns, and by then the
+    /// number can belong to a successor. What comes back here is the identity
+    /// this route captured with the sender it used, so the ending reaches the
+    /// connection that stalled and not whoever holds its number next.
+    fn route_protocol_to_watcher(
+        &self,
+        client: XServerFrontendClientId,
+        event: XClientEvent,
+    ) -> Result<(), XServerFrontendWatcherRefusal> {
+        let (incarnation, sender) = match self.client_senders(client) {
+            Ok(senders) => (senders.connection_state.clone(), senders.protocol),
             Err(XServerFrontendRouteError::UnknownClient { .. }) => {
                 crate::evidence::present_event(client, None, "peer_gone", event);
                 return Ok(());
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(XServerFrontendWatcherRefusal::Route(error)),
         };
-        let result = self.route_to_client(client, sender, event);
+        let result = self.route_to_client(client, &incarnation, sender.0, X11ProtocolEvent::untracked(event));
         let status = match &result {
             Ok(()) => "queued",
             Err(
@@ -467,11 +709,20 @@ impl XServerFrontendRouteRegistry {
         };
         crate::evidence::present_event(client, None, status, event);
         match result {
+            Ok(()) => Ok(()),
             Err(
                 XServerFrontendRouteError::UnknownClient { .. }
                 | XServerFrontendRouteError::ClientQueueDisconnected { .. },
             ) => Ok(()),
-            result => result,
+            Err(XServerFrontendRouteError::ClientQueueFull { .. }) => {
+                Err(XServerFrontendWatcherRefusal::Stalled(
+                    XServerFrontendStalledRecipient {
+                        client,
+                        occupant: incarnation,
+                    },
+                ))
+            }
+            Err(error) => Err(XServerFrontendWatcherRefusal::Route(error)),
         }
     }
 
@@ -487,25 +738,49 @@ impl XServerFrontendRouteRegistry {
             .ok_or(XServerFrontendRouteError::UnknownClient { client })
     }
 
+    /// THE REMOVAL IS THE SENDER'S CONNECTION'S, NOT THE NUMBER'S. A send can
+    /// fail long after the connection that handed out this sender has gone,
+    /// and by then the number may be somebody else's. Removing by number then
+    /// would revoke a connection nothing was wrong with.
     fn route_to_client<T>(
         &self,
         client: XServerFrontendClientId,
-        sender: SyncSender<T>,
+        incarnation: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+        sender: impl X11RouteSender<T>,
         value: T,
     ) -> Result<(), XServerFrontendRouteError> {
-        match sender.try_send(value) {
+        match sender.try_route_send(value) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => {
                 Err(XServerFrontendRouteError::ClientQueueFull { client })
             }
             Err(TrySendError::Disconnected(_)) => {
-                self.clients
-                    .lock()
-                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                    .remove(&client);
+                self.remove_row_of(client, incarnation)?;
                 Err(XServerFrontendRouteError::ClientQueueDisconnected { client })
             }
         }
+    }
+
+    /// Remove this number's row only while it is still this connection's.
+    ///
+    /// ASKED AND ACTED ON UNDER THE ONE ACQUISITION, so a successor published
+    /// between a check and a removal is not the one removed.
+    fn remove_row_of(
+        &self,
+        client: XServerFrontendClientId,
+        incarnation: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+    ) -> Result<bool, XServerFrontendRouteError> {
+        let mut clients = self
+            .clients
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        let ours = clients
+            .get(&client)
+            .is_some_and(|row| Arc::ptr_eq(&row.connection_state, incarnation));
+        if ours {
+            clients.remove(&client);
+        }
+        Ok(ours)
     }
 
     fn registered_client_count(&self) -> usize {
@@ -546,51 +821,25 @@ impl XServerFrontendRouteRegistry {
 
 #[cfg(unix)]
 impl Drop for XServerFrontendClientRouteRegistration {
+    /// STILL THE ONLY PRODUCTION TRIGGER, at the same point. What it runs is
+    /// now decided rather than assumed.
+    ///
+    /// A REGISTRATION WITH NO PRIVATE SOURCE RUNS WHAT IT ALWAYS RAN: the
+    /// public path, and a private connection that holds no place, have no
+    /// registered start to close and nothing that could have been started,
+    /// so the synchronous body runs here in the same order as before.
+    ///
+    /// A REGISTRATION WITH ONE DECIDES FIRST. Its startup admission is closed
+    /// and an admitted start is told to stop before anything is waited for;
+    /// the synchronous body runs only if that decision establishes that
+    /// nothing was ever started. Otherwise the duty and the number stay with
+    /// the custody's keeper, recorded as deferred, and this frame returns
+    /// without touching the home, the gate, the place or the tables. Nothing
+    /// here joins.
     fn drop(&mut self) {
-        let _ = self.input_recovery.disconnect(self.client, XAuthorityInputDeliveryOutcome::ClientDisconnected);
-        if let Ok(mut clients) = self.clients.lock() {
-            clients.remove(&self.client);
-        }
-        if let Ok(mut surfaces) = self.surfaces.lock() {
-            surfaces.retain(|_, route| route.client != self.client);
-        }
-        if let Ok(mut focused) = self.focused_surface.lock()
-            && focused.is_some_and(|route| route.client == self.client)
-        {
-            *focused = None;
-        }
-        if let Ok(mut parents) = self.window_parents.lock() {
-            parents.retain(|(client, _), _| *client != self.client);
-        }
-        if let Ok(mut subscriptions) = self.core_event_subscriptions.lock() {
-            subscriptions.retain(|(client, _), _| *client != self.client);
-        }
-        if let Ok(mut subscriptions) = self.randr_subscriptions.lock() {
-            subscriptions.remove(&self.client);
-        }
-        // Retired here as well as on an orderly close, because a client whose
-        // connection failed before that point never reaches it. A client id
-        // may be reissued, and an inherited subscription would deliver one
-        // client's selections to whoever takes the id next.
-        if let Ok(mut subscriptions) = self.xfixes_selection_subscriptions.lock() {
-            subscriptions.retain(|(client, _, _), _| *client != self.client);
-        }
-        if let Ok(mut subscriptions) = self.present_subscriptions.lock() {
-            subscriptions.retain(|(client, _), _| *client != self.client);
-        }
-        if let Ok(mut pending) = self.pending_presentations.entries.lock() {
-            pending.retain(|_, presentation| presentation.client != self.client);
-            self.pending_presentations.capacity_changed.notify_all();
-        }
-        let abandoned = if let Ok(mut frozen) = self.frozen_input.lock() {
-            let (abandoned, retained): (Vec<_>, Vec<_>) = frozen.drain(..)
-                .partition(|route| route.client == self.client);
-            *frozen = retained.into();
-            abandoned
-        } else { Vec::new() };
-        for route in abandoned {
-            let _ = self.input_recovery.finish(self.client, route.route.delivery,
-                XAuthorityInputDeliveryOutcome::ClientDisconnected);
+        match self.ordered_custody.as_ref() {
+            None => self.cleanup.run_synchronous_cleanup(),
+            Some(registered) => self.destroy_registered(registered),
         }
     }
 }
