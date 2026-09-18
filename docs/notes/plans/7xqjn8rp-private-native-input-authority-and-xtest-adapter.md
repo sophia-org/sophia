@@ -32,14 +32,16 @@ authorized completing this critical path with parallel agents. These changes
 remain local to M3; they have not been imported into the Session/dock tree.
 
 The combined Rust gate exists: `cargo xtask check m3-acceptance`. On signed
-`8b4be691`, the contained run passed 16 of 20 cases: all A, B and D cases,
-plus C.poison and C.exact_origin. C.capacity and C.interrupted_ownership failed
-assumptions about which stage one runner turn reaches; their exact ownership
-and credit requirements remain unchanged. C.indeterminate_send and
-C.control_cleanup are unbound. **The aggregate is FAIL; M3 is not complete.**
+`a2bc967c`, one contained run passed 18 of 20 cases with no failures: all A,
+B and D cases, plus C.capacity, C.interrupted_ownership, C.poison and
+C.exact_origin. The two C fixture assumptions exposed by the earlier combined
+run are corrected: a single production step establishes the current item and
+remainder; interruption checks the retained hold's identity and exact credit.
+C.indeterminate_send and C.control_cleanup remain unbound. **The aggregate is
+NOT_RUN; M3 is not complete.**
 The [checkpoint record](../milestones/nywg1vat-m3-integrated-acceptance-checkpoint-and-remaining-c-controls.md)
 preserves the exact report, separate component evidence and remaining limits.
-Earlier C-only passes do not override failures on the combined source.
+The earlier failed combined run remains in the evidence record.
 
 The following integration identities and content/GPU observations are earlier
 checkpoints, retained as history rather than current M3 acceptance evidence.
