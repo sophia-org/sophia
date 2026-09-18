@@ -1149,7 +1149,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 let presented_content = runtime
                     .input_projections()
                     .iter()
-                    .filter_map(|projection| projection.content.clone())
+                    .flat_map(|projection| projection.content.iter().cloned())
                     .collect::<Vec<_>>();
                 if let Err(error) = shell.service_content_actions(&presented_content) {
                     crate::session_eprintln!(

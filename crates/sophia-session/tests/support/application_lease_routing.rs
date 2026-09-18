@@ -114,7 +114,7 @@ fn projection(layers: Vec<LayerSnapshot>) -> sophia_backend_live::LivePresentedI
         chrome_occlusion: None,
         descriptor_targets: Vec::new(),
         descriptor_occlusion: None,
-        content: None,
+        content: Vec::new(),
         descriptor_projection: None,
         tab_occlusions: Vec::new(),
     }

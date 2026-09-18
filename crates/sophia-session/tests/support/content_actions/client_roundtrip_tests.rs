@@ -239,6 +239,7 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
         // Presented geometry is supplied by this fixture, as before. Drive the
         // actual global-to-output capture before entering the socket/WM chain.
         let mut binding = sophia_engine::PresentedContentBinding {
+            grant: h.target.grant,
             output: h.target.output,
             candidate_generation: h.target.candidate_generation,
             presentation_epoch: h.target.presentation_epoch,

@@ -20,6 +20,24 @@ impl LiveProductionVisualRuntime {
         scene: &LiveProductionCpuScene,
         native_scanout: Option<&mut T>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        self.set_shell_component_content_on_target(
+            frame,
+            LiveShellContentLayer::Shell,
+            scene,
+            native_scanout,
+        )
+    }
+
+    pub(in crate::production_visual_runtime) fn set_shell_component_content_on_target<
+        T: NativeCompositionTarget,
+    >(
+        &mut self,
+        frame: LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        scene: &LiveProductionCpuScene,
+        native_scanout: Option<&mut T>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let key = (frame.output, layer);
         if !frame.output.is_valid()
             || frame.candidate_generation == 0
             || frame.images.is_empty()
@@ -40,10 +58,14 @@ impl LiveProductionVisualRuntime {
         }
         if self
             .shell_content
-            .get(&frame.output)
-            .map(|owned| &owned.frame)
-            == Some(&frame)
+            .iter()
+            .any(|((output, other_layer), owned)| {
+                *output == frame.output && *other_layer != layer && owned.frame.grant == frame.grant
+            })
         {
+            return Err("one content grant cannot occupy multiple component layers".into());
+        }
+        if self.shell_content.get(&key).map(|owned| &owned.frame) == Some(&frame) {
             return Ok(false);
         }
         let native_scanout = native_scanout
@@ -58,7 +80,7 @@ impl LiveProductionVisualRuntime {
         let grant = frame.grant;
         if self
             .retained_projection_retirements
-            .get(&output)
+            .get(&key)
             .is_some_and(|owner| *owner != grant)
         {
             return Err(
@@ -75,24 +97,23 @@ impl LiveProductionVisualRuntime {
         };
         let previous = self
             .shell_content
-            .insert(output, AdmittedShellContent { frame, transform });
-        let previous_retirement = self.retained_projection_retirements.insert(output, grant);
+            .insert(key, AdmittedShellContent { frame, transform });
+        let previous_retirement = self.retained_projection_retirements.insert(key, grant);
         if let Err(error) = self.queue_retained_projection(scene, native_scanout) {
             match previous_retirement {
                 Some(previous) => {
-                    self.retained_projection_retirements
-                        .insert(output, previous);
+                    self.retained_projection_retirements.insert(key, previous);
                 }
                 None => {
-                    self.retained_projection_retirements.remove(&output);
+                    self.retained_projection_retirements.remove(&key);
                 }
             }
             match previous {
                 Some(previous) => {
-                    self.shell_content.insert(output, previous);
+                    self.shell_content.insert(key, previous);
                 }
                 None => {
-                    self.shell_content.remove(&output);
+                    self.shell_content.remove(&key);
                 }
             }
             return Err(error);
@@ -124,7 +145,7 @@ impl LiveProductionVisualRuntime {
         if self
             .retained_projection_retirements
             .keys()
-            .any(|output| !outputs.contains(output))
+            .any(|(output, _)| !outputs.contains(output))
         {
             return Err(
                 "native topology replacement would orphan a shell content retirement claim".into(),
@@ -132,7 +153,7 @@ impl LiveProductionVisualRuntime {
         }
         let before = self.shell_content.len();
         self.shell_content
-            .retain(|output, _| outputs.contains(output));
+            .retain(|(output, _), _| outputs.contains(output));
         Ok(before.saturating_sub(self.shell_content.len()))
     }
 
@@ -142,7 +163,11 @@ impl LiveProductionVisualRuntime {
         grant: sophia_protocol::ContentGrant,
         candidate_generation: u64,
     ) -> Option<u64> {
-        let frame = self.shell_content.get(&output)?;
+        let frame = self
+            .shell_content
+            .iter()
+            .find(|((id, _), owned)| *id == output && owned.frame.grant == grant)?
+            .1;
         let frame = &frame.frame;
         if frame.grant != grant || frame.candidate_generation != candidate_generation {
             return None;
@@ -157,6 +182,17 @@ impl LiveProductionVisualRuntime {
                 frame,
             )
         });
-        presented.then_some(projection.epoch.max(1))
+        presented
+            .then(|| {
+                projection
+                    .content
+                    .iter()
+                    .find(|binding| {
+                        binding.grant == grant
+                            && binding.candidate_generation == candidate_generation
+                    })
+                    .map(|binding| binding.presentation_epoch)
+            })
+            .flatten()
     }
 }

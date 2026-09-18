@@ -281,7 +281,7 @@ fn an_unpresented_second_output_never_borrows_primary_input_authority() {
         chrome_occlusion: None,
         descriptor_targets: vec![],
         descriptor_occlusion: None,
-        content: None,
+        content: Vec::new(),
         descriptor_projection: None,
         tab_occlusions: vec![],
     };

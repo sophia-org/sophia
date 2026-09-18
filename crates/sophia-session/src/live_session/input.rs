@@ -192,7 +192,7 @@ type PointerInputProjection<'a> = (
     Option<sophia_protocol::Rect>,
     &'a [sophia_engine::PresentedChromeTarget],
     Option<sophia_protocol::Rect>,
-    Option<&'a sophia_engine::PresentedContentBinding>,
+    &'a [sophia_engine::PresentedContentBinding],
     Option<sophia_protocol::OutputId>,
     u64,
 );
@@ -211,7 +211,7 @@ fn input_projection_for_pointer<'a>(
     if let (Some(projections), Some(output)) = (projections,
         output_index.and_then(|i| pointer_outputs.and_then(|outputs| outputs.get(i))))
         && !projections.iter().any(|p| p.output == output.id) {
-        return (&[], &[], None, &[], None, None, Some(output.id), 0);
+        return (&[], &[], None, &[], None, &[], Some(output.id), 0);
     }
     output_index
         .and_then(|index| pointer_outputs.and_then(|outputs| outputs.get(index)))
@@ -229,7 +229,7 @@ fn input_projection_for_pointer<'a>(
                 None,
                 &[],
                 None,
-                None,
+                &[],
                 fallback_output,
                 fallback_epoch,
             ),
@@ -240,7 +240,7 @@ fn input_projection_for_pointer<'a>(
                     projection.chrome_occlusion,
                     projection.descriptor_targets.as_slice(),
                     projection.descriptor_occlusion,
-                    projection.content.as_ref(),
+                    projection.content.as_slice(),
                     Some(projection.output),
                     projection.epoch,
                 )
@@ -1383,7 +1383,7 @@ fn route_input_events_with_launcher(
                 if pointer_routing_enabled
                     && let Some(state) = content_captures.as_deref_mut()
                 {
-                    let disposition = sophia_engine::resolve_content_pointer_event(
+                    let disposition = sophia_engine::resolve_content_pointer_stack(
                         state,
                         event.seat,
                         event.device,
@@ -1392,7 +1392,7 @@ fn route_input_events_with_launcher(
                         content_binding,
                         application_owned,
                     );
-                    if let (sophia_protocol::InputEventKind::PointerButton { pressed, .. }, Some(binding)) = (kind, content_binding)
+                    if let (sophia_protocol::InputEventKind::PointerButton { pressed, .. }, Some(binding)) = (kind, sophia_engine::content_binding_at_point(content_binding, event.global_position))
                         && !matches!(disposition, sophia_engine::ContentPointerDisposition::Pass)
                     {
                         let status = match &disposition {

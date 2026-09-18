@@ -278,3 +278,50 @@ join can be enabled. Protected component supervision exists separately; the
 legacy live owner still owns its own compatibility registry. Do not bypass that
 join by starting a second independent global budget. No hardware, native display,
 profile installation, M3 import or physical-run readiness is established here.
+
+### Component composition and presented input over 78596093
+
+The runtime now retains separate output/layer owners for the panel and native
+launcher. Session chooses the layer; client epoch or target numbers do not select
+stacking order. A grant cannot occupy both layers on one output. Queue refusal
+restores only the attempted layer and its exact retirement claim, preserving the
+other component's actual pixel source. Presentation lookup remains grant-specific.
+
+Presented input is now a back-to-front list built from the actual presented image
+identities. A prepared launcher is absent from that list. Each binding names its
+grant even when it has no actionable targets; old displayed pixels retain their
+old transform with authority revoked if the current owner no longer matches.
+Unknown/stale pixels consume input conservatively rather than exposing a target
+behind them. Adding another component preserves an unchanged binding's
+presentation epoch and target continuity. Session routes once through the shared
+Engine stack reducer, which selects the visible topmost binding and retains the
+original capture identity through release/cancellation. Reused target and
+allocation IDs from another grant cannot inherit it.
+
+Device-hidden evidence: 152 backend library tests pass, including actual two-role
+intake, Engine lowering and queued ownership with simulated native completion.
+The expanded coexistence control checks both presented grants, unchanged panel
+continuity, no prepared launcher input, topmost launcher activation and independent
+rollback. Eleven existing Engine capture controls and seven new stack controls
+pass. Reversing stack traversal in an isolated compiled mutant fails the exact
+expected-grant assertion; original source is restored. Evidence is retained in
+`.artifacts/bemenu-component-coexistence-final`,
+`.artifacts/bemenu-component-input-stack-final` and
+`.artifacts/bemenu-component-stack-mutation`.
+
+This is shared composition/input plumbing, not live launcher readiness. The live
+Session still needs the common component connection/registry owner wired into
+panel service, native opening/catalog/focus/activation service, exact component
+close/removal and process cleanup. The dedicated Bemenu executable and its private
+protocol tests do not substitute for that join. The `lom-test` profile/harness and
+fresh exact-source contained canonical gate remain required before an attended
+run. No installation, hardware/display access or M3 import was performed.
+
+The affected Session library also passes 468 controls with 14 ignored in the
+private namespace (`.artifacts/bemenu-component-session-exact`); strict affected
+Engine/backend/Session lib-and-tests Clippy and the layout-only gate pass. The
+first Session runner omitted its compile-time fixture path and produced nine
+missing-file failures. The corrected runner provides a private symlink to the
+captured source, not a host source mount. Nested protection still reports an
+absent private loader cache in these logs; no successful protected child launch
+or native process admission is inferred from this library result.

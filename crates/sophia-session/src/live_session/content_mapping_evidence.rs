@@ -39,8 +39,7 @@ impl ContentMappingEvidence {
             let Some(binding) = projections
                 .iter()
                 .find(|p| p.output == physical.output)
-                .and_then(|p| p.content.as_ref())
-                .filter(|b| b.authority_current)
+                .and_then(|p| p.content.iter().find(|b| b.authority_current))
             else {
                 continue;
             };

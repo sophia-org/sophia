@@ -335,7 +335,7 @@ impl LiveProductionVisualRuntime {
                 descriptor_occlusion: None,
                 descriptor_projection: None,
                 tab_occlusions: Vec::new(),
-                content: None,
+                content: Vec::new(),
             })
             .collect();
         Ok(LiveProductionNativeSuspendReport {
@@ -517,7 +517,7 @@ impl LiveProductionVisualRuntime {
                 descriptor_occlusion: None,
                 descriptor_projection: None,
                 tab_occlusions: Vec::new(),
-                content: None,
+                content: Vec::new(),
             })
             .collect();
         let retained_outputs = outputs.iter().map(|output| output.id).collect();

@@ -11,7 +11,14 @@ pub(in crate::production_visual_runtime) fn presented_content_list_matches(
     display_list: &CompositorDamageList,
     frame: &LiveShellContentFrame,
 ) -> bool {
-    let images = display_list.content_images().collect::<Vec<_>>();
+    let images = display_list
+        .content_images()
+        .filter(|image| {
+            matches!(image.node,
+        CompositorNodeId::ShellContent { grant, output, .. }
+        if grant == frame.grant && output == frame.output)
+        })
+        .collect::<Vec<_>>();
     !images.is_empty()
         && images.len() == frame.images.len()
         && images
@@ -27,6 +34,7 @@ pub(super) fn content_binding_from_frame(
 ) -> sophia_engine::PresentedContentBinding {
     let frame = &owned.frame;
     sophia_engine::PresentedContentBinding {
+        grant: frame.grant,
         output: frame.content_output,
         candidate_generation: frame.candidate_generation,
         presentation_epoch: 0,
@@ -48,7 +56,8 @@ pub(super) fn same_content_binding(
     match (previous, next) {
         (None, None) => true,
         (Some(previous), Some(next)) => {
-            previous.output == next.output
+            previous.grant == next.grant
+                && previous.output == next.output
                 && previous.transform == next.transform
                 && previous.authority_current == next.authority_current
                 && previous.candidate_generation == next.candidate_generation
@@ -73,39 +82,74 @@ pub(super) fn same_content_binding(
     }
 }
 
-/// Keep the old transform while its pixels remain displayed. Revocation or a
-/// topology change removes authority, not the fact that shell pixels occlude
-/// applications. A reconnected grant cannot inherit the old targets.
-pub(super) fn retain_presented_content_binding(
+/// Follow actual display order, including revoked owners whose pixels remain
+/// visible. Current admission order cannot promote a prepared replacement.
+pub(super) fn presented_content_bindings(
     presented: &OutputFrameDamageSnapshot,
-    current: &AdmittedShellContent,
-    previous: Option<&sophia_engine::PresentedContentBinding>,
+    admitted: &BTreeMap<ShellContentKey, AdmittedShellContent>,
+    previous: &[sophia_engine::PresentedContentBinding],
+    output: OutputId,
     viewport: Rect,
     layout_generation: u64,
-) -> Option<sophia_engine::PresentedContentBinding> {
-    let mut images = presented
-        .compositor_display_list
-        .content_images()
-        .peekable();
-    images.peek()?;
-    let Some(previous) = previous else {
-        // There are known displayed shell pixels but no retained interaction
-        // snapshot. This is occlusion only: never lend them the new targets.
-        let mut blocked = content_binding_from_frame(current, viewport, layout_generation);
-        blocked.authority_current = false;
-        blocked.targets.clear();
-        blocked.allocations.clear();
-        return Some(blocked);
-    };
-    let matches = images.all(|image| {
-        image.resource.grant == current.frame.grant
-            && matches!(image.node, CompositorNodeId::ShellContent { grant, output, candidate, .. }
-                if grant == current.frame.grant && output == current.frame.output && candidate == previous.candidate_generation)
-    });
-    let mut retained = previous.clone();
-    retained.authority_current &= matches
-        && previous.output == current.frame.content_output
-        && previous.transform.viewport == viewport
-        && previous.transform.layout_generation == layout_generation;
-    Some(retained)
+) -> Vec<sophia_engine::PresentedContentBinding> {
+    let mut bindings = Vec::new();
+    for image in presented.compositor_display_list.content_images() {
+        let CompositorNodeId::ShellContent {
+            grant,
+            output: image_output,
+            candidate,
+            ..
+        } = image.node
+        else {
+            continue;
+        };
+        if image_output != output
+            || bindings
+                .iter()
+                .any(|b: &sophia_engine::PresentedContentBinding| b.grant == grant)
+        {
+            continue;
+        }
+        let current = admitted.iter().find_map(|((id, _), owned)| {
+            (*id == output && owned.frame.grant == grant).then_some(owned)
+        });
+        let old = previous.iter().find(|binding| binding.grant == grant);
+        let binding = if let Some(current) =
+            current.filter(|owned| presented_content_matches(presented, &owned.frame))
+        {
+            content_binding_from_frame(current, viewport, layout_generation)
+        } else if let Some(old) = old {
+            let mut retained = old.clone();
+            retained.authority_current &= current.is_some_and(|owned| owned.frame.content_output == old.output)
+                && old.transform.viewport == viewport
+                && old.transform.layout_generation == layout_generation
+                && presented.compositor_display_list.content_images()
+                    .filter(|image| matches!(image.node, CompositorNodeId::ShellContent { grant: g, output: o, .. } if g == grant && o == output))
+                    .all(|image| matches!(image.node, CompositorNodeId::ShellContent { candidate, .. } if candidate == old.candidate_generation));
+            retained
+        } else {
+            // The actual pixels identify this grant, but no presentation input
+            // metadata survived. Zero generations explicitly carry no authority;
+            // do not borrow another grant's targets or current allocation.
+            sophia_engine::PresentedContentBinding {
+                grant,
+                output: sophia_protocol::ContentOutputId {
+                    id: output.raw(),
+                    generation: 0,
+                },
+                candidate_generation: candidate,
+                presentation_epoch: 0,
+                interaction_generation: 0,
+                transform: sophia_engine::PresentedContentTransform {
+                    viewport,
+                    layout_generation,
+                },
+                authority_current: false,
+                targets: Vec::new(),
+                allocations: Vec::new(),
+            }
+        };
+        bindings.push(binding);
+    }
+    bindings
 }

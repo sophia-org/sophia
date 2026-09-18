@@ -3,10 +3,7 @@ use super::*;
 mod content;
 mod retirement;
 pub(super) use content::presented_content_list_matches;
-use content::{
-    content_binding_from_frame, presented_content_matches, retain_presented_content_binding,
-    same_content_binding,
-};
+use content::{content_binding_from_frame, presented_content_bindings, same_content_binding};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct LiveSurfaceProjectionMetadata {
@@ -103,13 +100,17 @@ impl LiveProductionVisualRuntime {
                 None,
                 descriptor_targets,
                 descriptor_occlusion,
-                self.shell_content.get(&output).map(|frame| {
-                    content_binding_from_frame(
-                        frame,
-                        self.outputs.logical_viewport(output).unwrap_or_default(),
-                        self.content_layout_generation,
-                    )
-                }),
+                self.shell_content
+                    .iter()
+                    .filter(|((id, _), _)| *id == output)
+                    .map(|(_, frame)| {
+                        content_binding_from_frame(
+                            frame,
+                            self.outputs.logical_viewport(output).unwrap_or_default(),
+                            self.content_layout_generation,
+                        )
+                    })
+                    .collect(),
             );
         }
         tracing::trace!(
@@ -145,7 +146,17 @@ impl LiveProductionVisualRuntime {
                 content,
                 presented_scene_surfaces,
             ) = native_scanout.presented_frame(output).map_or_else(
-                || (Vec::new(), Vec::new(), None, Vec::new(), None, None, 0),
+                || {
+                    (
+                        Vec::new(),
+                        Vec::new(),
+                        None,
+                        Vec::new(),
+                        None,
+                        Vec::new(),
+                        0,
+                    )
+                },
                 |presented| {
                     let logical_viewport =
                         self.outputs.logical_viewport(output).unwrap_or_default();
@@ -168,23 +179,14 @@ impl LiveProductionVisualRuntime {
                         chrome_occlusion,
                         descriptor_targets,
                         descriptor_occlusion,
-                        self.shell_content.get(&output).and_then(|frame| {
-                            if presented_content_matches(presented, &frame.frame) {
-                                Some(content_binding_from_frame(
-                                    frame,
-                                    logical_viewport,
-                                    self.content_layout_generation,
-                                ))
-                            } else {
-                                retain_presented_content_binding(
-                                    presented,
-                                    frame,
-                                    self.input_projections[index].content.as_ref(),
-                                    logical_viewport,
-                                    self.content_layout_generation,
-                                )
-                            }
-                        }),
+                        presented_content_bindings(
+                            presented,
+                            &self.shell_content,
+                            &self.input_projections[index].content,
+                            output,
+                            logical_viewport,
+                            self.content_layout_generation,
+                        ),
                         presented.surfaces.len(),
                     )
                 },
@@ -215,7 +217,7 @@ impl LiveProductionVisualRuntime {
         chrome_occlusion: Option<Rect>,
         descriptor_targets: Vec<sophia_engine::PresentedChromeTarget>,
         descriptor_occlusion: Option<Rect>,
-        mut content: Option<sophia_engine::PresentedContentBinding>,
+        mut content: Vec<sophia_engine::PresentedContentBinding>,
     ) {
         let Some(output) = self.input_projections.get(index).map(|p| p.output) else {
             return;
@@ -270,7 +272,12 @@ impl LiveProductionVisualRuntime {
             || projection.descriptor_occlusion != descriptor_occlusion
             || projection.descriptor_projection != descriptor_projection
             || projection.tab_occlusions != tab_occlusions
-            || !same_content_binding(projection.content.as_ref(), content.as_ref())
+            || (projection.content.len() != content.len()
+                || !projection
+                    .content
+                    .iter()
+                    .zip(&content)
+                    .all(|(old, new)| same_content_binding(Some(old), Some(new))))
         {
             projection.epoch = projection
                 .epoch
@@ -284,9 +291,16 @@ impl LiveProductionVisualRuntime {
         projection.descriptor_occlusion = descriptor_occlusion;
         projection.descriptor_projection = descriptor_projection;
         projection.tab_occlusions = tab_occlusions;
-        if let Some(binding) = &mut content {
-            sophia_engine::reconcile_content_continuity(projection.content.as_ref(), binding);
-            binding.presentation_epoch = projection.epoch.max(1);
+        for binding in &mut content {
+            let previous = projection
+                .content
+                .iter()
+                .find(|old| old.grant == binding.grant);
+            sophia_engine::reconcile_content_continuity(previous, binding);
+            // Another component changing does not reissue this presentation.
+            binding.presentation_epoch = previous
+                .filter(|old| same_content_binding(Some(old), Some(binding)))
+                .map_or(projection.epoch.max(1), |old| old.presentation_epoch);
             for target in &mut binding.targets {
                 target.presentation_epoch = binding.presentation_epoch;
             }

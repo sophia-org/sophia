@@ -26,7 +26,7 @@ fn topology_replacement_cannot_orphan_a_shell_retirement_claim() {
     };
     runtime
         .retained_projection_retirements
-        .insert(second.id, old_grant);
+        .insert((second.id, LiveShellContentLayer::Shell), old_grant);
     let retained = BTreeSet::from([first.id]);
 
     assert_eq!(

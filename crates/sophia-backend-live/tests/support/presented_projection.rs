@@ -230,7 +230,7 @@ fn output_local_interaction_epochs_retire_independently() {
         None,
         Vec::new(),
         None,
-        None,
+        Vec::new(),
     );
     assert_eq!(runtime.input_projections()[0].epoch, 1);
     assert_eq!(runtime.input_projections()[1].epoch, 0);
@@ -242,7 +242,7 @@ fn output_local_interaction_epochs_retire_independently() {
         None,
         Vec::new(),
         None,
-        None,
+        Vec::new(),
     );
     assert_eq!(runtime.input_projections()[0].epoch, 1);
     assert_eq!(runtime.input_projections()[1].epoch, 1);
@@ -255,7 +255,7 @@ fn output_local_interaction_epochs_retire_independently() {
         None,
         Vec::new(),
         None,
-        None,
+        Vec::new(),
     );
     assert_eq!(runtime.input_projections()[0].epoch, 1);
     assert_eq!(runtime.input_projections()[1].epoch, 1);
@@ -267,7 +267,7 @@ fn output_local_interaction_epochs_retire_independently() {
         None,
         Vec::new(),
         None,
-        None,
+        Vec::new(),
     );
     assert_eq!(runtime.input_projections()[0].epoch, 2);
     assert_eq!(runtime.input_projections()[1].epoch, 1);
@@ -311,7 +311,7 @@ fn descriptor_interaction_revokes_without_withdrawing_presented_occlusion() {
         None,
         vec![target],
         Some(geometry),
-        None,
+        Vec::new(),
     );
     assert_eq!(runtime.input_projections()[0].epoch, 1);
 

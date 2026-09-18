@@ -9,7 +9,7 @@ pub(super) struct OutputComposition<'a> {
     pub floating_outline: Option<LiveFloatingOutline>,
     pub indicator_publication: Option<&'a sophia_engine::PolicyIndicatorPublication>,
     pub tab_bars: &'a [sophia_engine::TabBarProjection],
-    pub shell_content: &'a BTreeMap<OutputId, AdmittedShellContent>,
+    pub shell_content: &'a BTreeMap<ShellContentKey, AdmittedShellContent>,
     pub descriptor_overlay: Option<&'a sophia_engine::DescriptorOverlayProjection>,
 }
 
@@ -52,7 +52,11 @@ impl OutputComposition<'_> {
                 .commands
                 .push(CompositorDisplayCommand::Border(border));
         }
-        if let Some(content) = self.shell_content.get(&output) {
+        for (_, content) in self
+            .shell_content
+            .iter()
+            .filter(|((id, _), _)| *id == output)
+        {
             let content = &content.frame;
             if display_list
                 .commands
@@ -101,7 +105,7 @@ pub(super) struct OutputCompositionSnapshot {
     floating_outline: Option<LiveFloatingOutline>,
     indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     tab_bars: Vec<sophia_engine::TabBarProjection>,
-    shell_content: BTreeMap<OutputId, AdmittedShellContent>,
+    shell_content: BTreeMap<ShellContentKey, AdmittedShellContent>,
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
 }
 

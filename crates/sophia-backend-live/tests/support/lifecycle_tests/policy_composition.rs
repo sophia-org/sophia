@@ -35,7 +35,10 @@ fn policy_cycles_preserve_both_shell_sources_without_client_redraw() {
         let mut frames = Vec::new();
         for output in outputs {
             let list = captured.display_list(output.id, &[]).unwrap();
-            let expected = runtime.shell_content[&output.id].frame.images[0].clone();
+            let expected = runtime.shell_content[&(output.id, LiveShellContentLayer::Shell)]
+                .frame
+                .images[0]
+                .clone();
             let images: Vec<_> = list
                 .commands
                 .iter()
@@ -274,7 +277,11 @@ fn thousand_presented_refreshes_keep_capture_on_both_outputs() {
     let mut capture = ContentCaptureState::default();
     for cycle in 0..1000 {
         let index = cycle % 2;
-        let original = runtime.input_projections[index].content.clone().unwrap();
+        let original = runtime.input_projections[index]
+            .content
+            .first()
+            .unwrap()
+            .clone();
         let target = &original.targets[0];
         let point = Point {
             x: f64::from(original.transform.viewport.x + target.allocation_logical.x) + 1.0,
@@ -306,7 +313,7 @@ fn thousand_presented_refreshes_keep_capture_on_both_outputs() {
             .unwrap();
         native.drain();
         runtime.publish_presented_input_layers(&native);
-        let current = runtime.input_projections[index].content.as_ref().unwrap();
+        let current = runtime.input_projections[index].content.first().unwrap();
         assert_eq!(
             current.targets[0].continuity,
             original.targets[0].continuity
@@ -331,7 +338,7 @@ fn thousand_presented_refreshes_keep_capture_on_both_outputs() {
         let repeated = current.clone();
         runtime.publish_presented_input_layers(&native);
         assert_eq!(
-            runtime.input_projections[index].content.as_ref(),
+            runtime.input_projections[index].content.first(),
             Some(&repeated),
             "observing the same displayed frame must not mint another presentation or token"
         );
@@ -342,7 +349,7 @@ fn thousand_presented_refreshes_keep_capture_on_both_outputs() {
             runtime
                 .input_projections
                 .iter()
-                .all(|p| p.content.as_ref().unwrap().targets.len() == 1)
+                .all(|p| p.content.first().unwrap().targets.len() == 1)
         );
     }
 }

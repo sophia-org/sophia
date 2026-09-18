@@ -221,8 +221,18 @@ pub struct LivePresentedInputProjection {
     pub descriptor_occlusion: Option<Rect>,
     pub descriptor_projection: Option<u64>,
     pub tab_occlusions: Vec<Rect>,
-    pub content: Option<sophia_engine::PresentedContentBinding>,
+    /// Presented components in back-to-front order, with separate grant authority.
+    pub content: Vec<sophia_engine::PresentedContentBinding>,
 }
+
+/// Session-assigned stacking role, never derived from a client epoch or XID.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum LiveShellContentLayer {
+    Shell,
+    Launcher,
+}
+
+type ShellContentKey = (OutputId, LiveShellContentLayer);
 
 /// Geometry is captured with admission, never reconstructed from a later layout.
 /// The pair moves and rolls back as one owner when native queueing refuses.
@@ -312,7 +322,7 @@ pub struct LiveProductionVisualRuntime {
     /// Output-local shell candidates and the exact grant that owns each
     /// physical retirement. Pixel equality or a replacement connection cannot
     /// settle that protocol obligation.
-    retained_projection_retirements: BTreeMap<OutputId, sophia_protocol::ContentGrant>,
+    retained_projection_retirements: BTreeMap<ShellContentKey, sophia_protocol::ContentGrant>,
     translations: TranslationTimeline,
     translation_origin: Instant,
     translation_deadlines: BTreeMap<OutputId, Instant>,
@@ -323,7 +333,7 @@ pub struct LiveProductionVisualRuntime {
     indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
     descriptor_overlay_interactive: bool,
-    shell_content: BTreeMap<OutputId, AdmittedShellContent>,
+    shell_content: BTreeMap<ShellContentKey, AdmittedShellContent>,
     tab_bars: Vec<sophia_engine::TabBarProjection>,
     tab_frames: BTreeMap<OutputId, sophia_engine::CompositorDamageList>,
     pending_focus_ring_observation: Option<LiveFocusRingObservation>,
@@ -412,7 +422,7 @@ impl LiveProductionVisualRuntime {
                 descriptor_occlusion: None,
                 descriptor_projection: None,
                 tab_occlusions: Vec::new(),
-                content: None,
+                content: Vec::new(),
             })
             .collect();
         Ok(Self {

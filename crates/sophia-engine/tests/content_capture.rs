@@ -52,6 +52,7 @@ fn target(candidate: u64, presentation: u64) -> PresentedContentTarget {
 
 fn binding(target: PresentedContentTarget) -> PresentedContentBinding {
     PresentedContentBinding {
+        grant: target.grant,
         output: target.output,
         candidate_generation: target.candidate_generation,
         presentation_epoch: target.presentation_epoch,

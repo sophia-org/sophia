@@ -48,7 +48,7 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
         None,
         Vec::new(),
         Some(geometry),
-        None,
+        Vec::new(),
     );
     assert_eq!(
         runtime.descriptor_overlay_presentation_epoch(output.id, 9, true),
@@ -69,7 +69,7 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
         None,
         Vec::new(),
         Some(geometry),
-        None,
+        Vec::new(),
     );
     assert!(
         runtime
@@ -90,7 +90,7 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
         None,
         Vec::new(),
         None,
-        None,
+        Vec::new(),
     );
     assert!(
         runtime

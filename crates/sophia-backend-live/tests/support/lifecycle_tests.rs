@@ -114,10 +114,14 @@ fn actual_intake_refusal_rolls_back_candidate_without_partial_native_batch() {
         "invalid batch cannot mint any native identity"
     );
     assert_eq!(target.queue.get(outputs[0].id).unwrap().frame, first);
-    assert!(!runtime.shell_content.contains_key(&outputs[1].id));
+    assert!(
+        !runtime
+            .shell_content
+            .contains_key(&(outputs[1].id, LiveShellContentLayer::Shell))
+    );
     assert!(runtime.retained_projection_retirements.is_empty());
     assert_eq!(
-        runtime.shell_content[&outputs[0].id]
+        runtime.shell_content[&(outputs[0].id, LiveShellContentLayer::Shell)]
             .frame
             .candidate_generation,
         1
@@ -298,7 +302,7 @@ fn exercise_thousand<T: IntegrationTarget>(mut target: T) {
                 .find(|projection| projection.output == output.id)
                 .unwrap()
                 .content
-                .as_ref()
+                .first()
                 .unwrap();
             assert_eq!(binding.targets[0].action_id, candidate);
             assert_eq!(binding.targets[0].presentation_epoch, epoch);
@@ -332,7 +336,7 @@ fn exercise_thousand<T: IntegrationTarget>(mut target: T) {
             // Keep the actual CPU last-frame, damage and secondary-output caches alive.
             let display = CompositorDisplayList {
                 output: output.id,
-                commands: runtime.shell_content[&output.id]
+                commands: runtime.shell_content[&(output.id, LiveShellContentLayer::Shell)]
                     .frame
                     .images
                     .iter()
@@ -630,7 +634,7 @@ fn successor_publishes_while_old_backing_cleanup_remains_owned() {
     assert!(
         runtime
             .retained_projection_retirements
-            .contains_key(&outputs[0].id)
+            .contains_key(&(outputs[0].id, LiveShellContentLayer::Shell))
     );
     // New pixels are already presented. Failed destruction of their
     // predecessor neither retracts them nor prevents the other output.
@@ -651,7 +655,7 @@ fn successor_publishes_while_old_backing_cleanup_remains_owned() {
             .find(|p| p.output == outputs[0].id)
             .unwrap()
             .content
-            .as_ref()
+            .first()
             .unwrap()
             .candidate_generation,
         2,
@@ -715,7 +719,7 @@ fn reconnect_reusing_candidate_numbers_cannot_publish_old_pixels_as_new_grant() 
         .set_shell_content_on_target(shell_frame(outputs[0], 1, new), &scene, Some(&mut target))
         .unwrap();
     runtime.publish_presented_input_layers(&target);
-    let stale = runtime.input_projections[0].content.as_ref().unwrap();
+    let stale = runtime.input_projections[0].content.first().unwrap();
     assert!(!stale.authority_current);
     assert_eq!(stale.targets[0].grant, grant());
     let mut capture = ContentCaptureState::default();
@@ -738,9 +742,9 @@ fn reconnect_reusing_candidate_numbers_cannot_publish_old_pixels_as_new_grant() 
         runtime.shell_content_presentation_epoch(outputs[0].id, next_grant, 1),
         None
     );
-    runtime.input_projections[0].content = None;
+    runtime.input_projections[0].content.clear();
     runtime.publish_presented_input_layers(&target);
-    let unknown = runtime.input_projections[0].content.as_ref().unwrap();
+    let unknown = runtime.input_projections[0].content.first().unwrap();
     assert!(!unknown.authority_current);
     assert!(unknown.targets.is_empty());
     assert_eq!(
@@ -783,7 +787,7 @@ fn reconnect_reusing_candidate_numbers_cannot_publish_old_pixels_as_new_grant() 
     assert_eq!(
         runtime.input_projections[0]
             .content
-            .as_ref()
+            .first()
             .unwrap()
             .targets[0]
             .grant,
@@ -813,7 +817,11 @@ fn topology_change_cannot_reinterpret_old_presented_pixels_with_a_new_origin() {
         .unwrap();
     target.drain();
     runtime.publish_presented_input_layers(&target);
-    let old = runtime.input_projections[0].content.clone().unwrap();
+    let old = runtime.input_projections[0]
+        .content
+        .first()
+        .unwrap()
+        .clone();
     // Supply a committed topology transition without constructing a DRM owner.
     // Publication/intake below are the real production methods, completion fake.
     let mut viewports = runtime.outputs.logical_viewports().collect::<Vec<_>>();
@@ -830,10 +838,10 @@ fn topology_change_cannot_reinterpret_old_presented_pixels_with_a_new_origin() {
     runtime.content_layout_generation += 1;
     for retained_metadata in [true, false] {
         if !retained_metadata {
-            runtime.input_projections[0].content = None;
+            runtime.input_projections[0].content.clear();
         }
         runtime.publish_presented_input_layers(&target);
-        let stale = runtime.input_projections[0].content.as_ref().unwrap();
+        let stale = runtime.input_projections[0].content.first().unwrap();
         assert_eq!(stale.transform, old.transform);
         assert!(!stale.authority_current);
         let mut capture = ContentCaptureState::default();
@@ -868,13 +876,13 @@ fn topology_change_cannot_reinterpret_old_presented_pixels_with_a_new_origin() {
     assert!(
         !runtime.input_projections[0]
             .content
-            .as_ref()
+            .first()
             .unwrap()
             .authority_current
     );
     target.drain();
     runtime.publish_presented_input_layers(&target);
-    let current = runtime.input_projections[0].content.as_ref().unwrap();
+    let current = runtime.input_projections[0].content.first().unwrap();
     assert!(current.authority_current);
     assert_eq!(current.transform.viewport.x, -1920);
     assert_eq!(
@@ -942,7 +950,7 @@ fn revoked_suspend_keeps_displayed_custody_for_owned_retirement() {
         runtime
             .input_projections
             .iter()
-            .all(|projection| projection.content.is_none() && projection.layers.is_empty())
+            .all(|projection| projection.content.is_empty() && projection.layers.is_empty())
     );
     // No native owner, worker, or device is constructed here. This reaches
     // the production logical-runtime transition before any worker join or

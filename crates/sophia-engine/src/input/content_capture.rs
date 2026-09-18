@@ -55,6 +55,7 @@ impl PresentedContentTransform {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresentedContentBinding {
+    pub grant: ContentGrant,
     pub output: ContentOutputId,
     pub candidate_generation: u64,
     pub presentation_epoch: u64,
@@ -254,6 +255,61 @@ fn global_button(global: &mut GlobalQuarantine, button: u32, pressed: bool) {
     }
 }
 
+/// Select from the trusted back-to-front presented stack. Geometry is already
+/// output-local; only the captured committed transform translates the pointer.
+/// Stale pixels conservatively occlude the selected output: their retained
+/// transform may no longer describe its current location. An empty target list is not permission to click through.
+pub fn content_binding_at_point(
+    bindings: &[PresentedContentBinding],
+    position: Option<Point>,
+) -> Option<&PresentedContentBinding> {
+    let position = position?;
+    bindings.iter().rev().find(|binding| {
+        !binding.authority_current
+            || binding.transform.local(position).is_some_and(|local| {
+                binding
+                    .allocations
+                    .iter()
+                    .any(|(_, rect, _)| logical_contains(*rect, local))
+                    || binding
+                        .targets
+                        .iter()
+                        .any(|target| target_contains(target, local))
+            })
+    })
+}
+
+/// Resolve once, against the topmost visible component. Never run the capture
+/// reducer once per layer: doing so can consume a release before its owner is
+/// inspected. Outside all components, retain the original capture for a later
+/// return, but another occluding component invalidates it without click-through.
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_content_pointer_stack(
+    state: &mut ContentCaptureState,
+    seat: SeatId,
+    device: DeviceId,
+    kind: InputEventKind,
+    position: Option<Point>,
+    bindings: &[PresentedContentBinding],
+    application_owned: bool,
+) -> ContentPointerDisposition {
+    let binding = content_binding_at_point(bindings, position).or_else(|| {
+        let capture = state.captures.get(&seat)?;
+        bindings.iter().find(|binding| {
+            binding.grant == capture.target.grant && binding.output == capture.target.output
+        })
+    });
+    resolve_content_pointer_event(
+        state,
+        seat,
+        device,
+        kind,
+        position,
+        binding,
+        application_owned,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn resolve_content_pointer_event(
     state: &mut ContentCaptureState,
@@ -270,7 +326,12 @@ pub fn resolve_content_pointer_event(
     }
     if let Some(mut capture) = state.captures.remove(&seat) {
         let current = binding
-            .filter(|binding| binding.authority_current && binding.transform == capture.transform)
+            .filter(|binding| {
+                binding.authority_current
+                    && binding.grant == capture.target.grant
+                    && binding.output == capture.target.output
+                    && binding.transform == capture.transform
+            })
             .and_then(|binding| {
                 binding
                     .targets
@@ -324,10 +385,11 @@ pub fn resolve_content_pointer_event(
     let Some(position) = position.and_then(|point| binding.transform.local(point)) else {
         return ContentPointerDisposition::Pass;
     };
-    let target = binding
-        .targets
-        .iter()
-        .find(|target| target_contains(target, position));
+    let target = binding.targets.iter().find(|target| {
+        target.grant == binding.grant
+            && target.output == binding.output
+            && target_contains(target, position)
+    });
     let occluded = binding
         .allocations
         .iter()

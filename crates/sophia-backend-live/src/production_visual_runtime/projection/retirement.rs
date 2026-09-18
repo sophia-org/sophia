@@ -18,7 +18,7 @@ impl LiveProductionVisualRuntime {
         let required_outputs = self
             .retained_projection_retirements
             .keys()
-            .copied()
+            .map(|(output, _)| *output)
             .collect::<BTreeSet<_>>();
         if required_outputs
             .iter()
@@ -45,36 +45,39 @@ impl LiveProductionVisualRuntime {
             if !ready.contains(output) {
                 continue;
             }
-            let Some(content) = self.shell_content.get(output) else {
-                continue;
-            };
-            let content = &content.frame;
-            let targets = native.head_targets(*output);
-            for target in &targets {
-                let identity = native.frame_owner().frame(
-                    *output,
-                    target.head,
-                    target.target_generation,
-                    native_frame.raw(),
-                );
-                tracing::info!(
-                    target: "sophia_scanout_evidence",
-                    "sophia_shell_native_binding schema=1 connection_epoch={} content_grant_epoch={} output={} candidate_generation={} native_owner={} native_frame={} head={} target_generation={} heads={} mode_refresh_millihz={}",
-                    content.grant.connection_epoch,
-                    content.grant.content_grant_epoch,
-                    output.raw(),
-                    content.candidate_generation,
-                    identity.owner(),
-                    identity.frame(),
-                    target.head.raw(),
-                    target.target_generation,
-                    targets.len(),
-                    target.refresh_millihz,
-                );
+            for (_, content) in self
+                .shell_content
+                .iter()
+                .filter(|((id, _), _)| id == output)
+            {
+                let content = &content.frame;
+                let targets = native.head_targets(*output);
+                for target in &targets {
+                    let identity = native.frame_owner().frame(
+                        *output,
+                        target.head,
+                        target.target_generation,
+                        native_frame.raw(),
+                    );
+                    tracing::info!(
+                        target: "sophia_scanout_evidence",
+                        "sophia_shell_native_binding schema=1 connection_epoch={} content_grant_epoch={} output={} candidate_generation={} native_owner={} native_frame={} head={} target_generation={} heads={} mode_refresh_millihz={}",
+                        content.grant.connection_epoch,
+                        content.grant.content_grant_epoch,
+                        output.raw(),
+                        content.candidate_generation,
+                        identity.owner(),
+                        identity.frame(),
+                        target.head.raw(),
+                        target.target_generation,
+                        targets.len(),
+                        target.refresh_millihz,
+                    );
+                }
             }
         }
         self.retained_projection_retirements
-            .retain(|output, _| !queued.contains_key(output));
+            .retain(|(output, _), _| !queued.contains_key(output));
         if !self.retained_projection_retirements.is_empty() {
             return Ok(!queued.is_empty());
         }

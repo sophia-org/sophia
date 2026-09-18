@@ -56,6 +56,7 @@ pub fn reconcile_content_continuity(
     let previous = previous.filter(|p| {
         p.authority_current
             && next.authority_current
+            && p.grant == next.grant
             && p.output == next.output
             && p.transform == next.transform
     });
