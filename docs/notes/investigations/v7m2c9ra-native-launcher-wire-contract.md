@@ -544,3 +544,24 @@ particular a rejected Retire can leave a resident resource live, while an aborte
 incomplete transfer has different disposition; neither a generic status nor an
 unmatched Released may grant slot reuse. The future shared client owner must
 retain the exact request/generation and aggregate credits through those paths.
+
+## C negotiated content limits
+
+`sophia_shell_content_limits.h` decodes AdmissionRefused and ContentLimits without
+allocating or changing connection state. The latter retains every named bound,
+checks the prototype ceilings and cross-field coherence before assigning the
+result, and accepts coherent tighter profiles. In particular, session retiring
+capacity must cover the declared staging, resident and retiring overlap. Zero
+optional facilities remain legal; zero grant identity, mandatory capacity or
+timeout does not. These checks port the Rust limits contract; callers still must
+match the negotiated welcome, role and current grant before reserving work.
+
+Golden records, every payload truncation, trailing bytes, transaction/direction,
+every cap exceeded, mandatory zero fields and cross-field contradictions pass in
+the device-hidden C gate. The optimized GCC fixture stays under its 12,500-byte
+stack warning limit. Focused Clang ASan/UBSan passes. Two compiled mutants fail:
+removing aggregate overlap validation and reading target capacity from the
+placement field. Disposable sources were restored; evidence is retained at
+`.artifacts/bemenu-content-limits`. The initial runner invocation used an invalid
+Python keyword and executed no checks; only the corrected recorded run counts.
+This is wire validation, not client resource accounting or native acceptance.
