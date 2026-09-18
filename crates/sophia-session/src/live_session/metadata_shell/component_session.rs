@@ -1,5 +1,8 @@
 //! Session join for selected process attempts and their exact borrowed services.
-use super::{NativeLauncherActionService, NativeLauncherContentService, PanelComponentService};
+use super::{
+    CatalogComponentService, NativeLauncherActionService, NativeLauncherContentService,
+    PanelComponentService,
+};
 use super::{
     RevokedContentGrantLedger,
     component_launch::{ComponentGpuLaunchEvidence, ShellComponentLaunch},
@@ -21,6 +24,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub enum ShellComponentService {
     Bar(Box<PanelComponentService>),
+    Dock(Box<CatalogComponentService>),
     Launcher {
         content: Box<NativeLauncherContentService>,
         actions: NativeLauncherActionService,
@@ -67,12 +71,6 @@ impl ShellComponentSession {
             return Err("component session requires one through three selected roles".into());
         }
         sophia_config::validate_shell_component_reservations(selections)?;
-        if selections
-            .iter()
-            .any(|selection| selection.role == ShellComponentRole::Dock)
-        {
-            return Err("persistent catalog component service is not implemented".into());
-        }
         // Validate all policies before creating any endpoint. Denied roles
         // never inherit the bar's optional render device.
         let plans = selections
@@ -264,7 +262,8 @@ impl ShellComponentSession {
                 .processes
                 .with_connection(key, |transport| match role {
                     ShellComponentRole::Dock => {
-                        Err(sophia_runtime::ShellTransportError::MissingCapability)
+                        CatalogComponentService::new(transport, limit, reservation)
+                            .map(|service| ShellComponentService::Dock(Box::new(service)))
                     }
                     ShellComponentRole::Bar => PanelComponentService::new(transport, limit, input)
                         .map(|service| {
@@ -283,13 +282,19 @@ impl ShellComponentSession {
                 })?;
             match service {
                 Ok(service) => {
-                    if let Some(Ready {
-                        key: old_key,
-                        service: ShellComponentService::Bar(old),
-                    }) = &self.ready[key.slot]
-                        && let Some(bands) = old.presented_work_area_bands()
-                    {
-                        self.retained_panel_bands[key.slot] = Some((*old_key, bands));
+                    if let Some(old) = &self.ready[key.slot] {
+                        let bands = match &old.service {
+                            ShellComponentService::Bar(service) => {
+                                service.presented_work_area_bands()
+                            }
+                            ShellComponentService::Dock(service) => {
+                                service.presented_work_area_bands()
+                            }
+                            _ => None,
+                        };
+                        if let Some(bands) = bands {
+                            self.retained_panel_bands[key.slot] = Some((old.key, bands));
+                        }
                     }
                     self.ready[key.slot] = Some(Ready { key, service });
                 }
@@ -347,6 +352,7 @@ impl ShellComponentSession {
                     .as_ref()
                     .and_then(|ready| match &ready.service {
                         ShellComponentService::Bar(bar) => bar.presented_work_area_bands(),
+                        ShellComponentService::Dock(dock) => dock.presented_work_area_bands(),
                         _ => None,
                     })
                     .or_else(|| {

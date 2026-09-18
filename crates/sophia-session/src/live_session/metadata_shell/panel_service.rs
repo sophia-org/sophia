@@ -32,6 +32,7 @@ impl PanelComponentService {
         if panel_limit == 0
             || !transport.supports_content()
             || transport.supports_native_launcher()
+            || transport.supports_persistent_catalog()
             || (discrete_input && !transport.supports_content_discrete_input())
         {
             return Err(ShellTransportError::MissingCapability);
@@ -60,7 +61,10 @@ impl PanelComponentService {
         &self,
         transport: &ShellTransportConnection<'_>,
     ) -> Result<(), ShellTransportError> {
-        if transport.content_grant() != Some(self.grant) || transport.supports_native_launcher() {
+        if transport.content_grant() != Some(self.grant)
+            || transport.supports_native_launcher()
+            || transport.supports_persistent_catalog()
+        {
             return Err(ShellTransportError::WrongContentGrant);
         }
         Ok(())

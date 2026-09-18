@@ -3,6 +3,8 @@ mod content;
 mod panel_service;
 pub use content::{NativeLauncherActionService, NativeLauncherContentService};
 pub use panel_service::PanelComponentService;
+mod catalog_service;
+pub use catalog_service::CatalogComponentService;
 mod content_accounting;
 mod content_shutdown;
 mod gpu;

@@ -53,6 +53,7 @@ impl ContentServiceStage {
 
 #[derive(Clone)]
 struct PendingPresentation {
+    catalog: Option<sophia_runtime::PersistentCatalogCandidateBinding>,
     grant: sophia_protocol::ContentGrant,
     output: ContentOutputId,
     candidate_generation: u64,
@@ -62,6 +63,7 @@ struct PendingPresentation {
 
 #[derive(Clone, Debug, Default)]
 struct PresentedOutputContent {
+    catalog: Option<sophia_runtime::PersistentCatalogCandidateBinding>,
     grant: sophia_protocol::ContentGrant,
     candidate_generation: u64,
     presentation_epoch: u64,
@@ -158,6 +160,38 @@ impl LiveContentSession {
             Box<dyn std::error::Error>,
         >,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.service_with_catalog(
+            transport,
+            runtime,
+            scene,
+            native_scanout,
+            outputs,
+            output_bounds,
+            root,
+            transaction,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn service_with_catalog(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        runtime: &mut sophia_backend_live::LiveProductionVisualRuntime,
+        scene: &sophia_backend_live::LiveProductionCpuScene,
+        native_scanout: Option<&mut sophia_backend_live::LiveProductionNativeScanout>,
+        outputs: &[HeadlessOutput],
+        output_bounds: &[(OutputId, Rect)],
+        root: Rect,
+        transaction: &mut dyn FnMut() -> Result<
+            sophia_protocol::TransactionId,
+            Box<dyn std::error::Error>,
+        >,
+        catalog: Option<&sophia_protocol::ShellApplicationCatalog>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if catalog.is_some() != transport.supports_persistent_catalog() {
+            return Err(ShellTransportError::MissingCapability.into());
+        }
         if transport.content_grant().is_none() {
             return Ok(());
         }
@@ -215,13 +249,26 @@ impl LiveContentSession {
             })
             .collect::<Vec<_>>();
         self.stage = ContentServiceStage::Candidates;
-        transport.service_content_candidates(&contexts, now)?;
+        if let Some(catalog) = catalog {
+            transport.service_catalog_candidates(&contexts, catalog, now)?;
+        } else {
+            transport.service_content_candidates(&contexts, now)?;
+        }
         let mut native_scanout = native_scanout;
         while let Some((output, generation)) = transport.next_content_submission_for(|output| {
             !self.pending.iter().any(|pending| pending.output == output)
         }) {
             self.stage = ContentServiceStage::Submission;
-            let bundle = transport.begin_content_submission(output, generation, now)?;
+            let bundle = if let Some(catalog) = catalog {
+                let context = contexts
+                    .iter()
+                    .find(|context| context.output == output)
+                    .copied()
+                    .ok_or("catalog submission output disappeared")?;
+                transport.begin_catalog_submission(generation, context, catalog, now)?
+            } else {
+                transport.begin_content_submission(output, generation, now)?
+            };
             self.submit_bundle(
                 transport,
                 runtime,
@@ -231,7 +278,11 @@ impl LiveContentSession {
                 output_bounds,
                 root,
                 bundle,
-                sophia_backend_live::LiveShellContentLayer::Shell,
+                if catalog.is_some() {
+                    sophia_backend_live::LiveShellContentLayer::Dock
+                } else {
+                    sophia_backend_live::LiveShellContentLayer::Shell
+                },
                 now,
             )?;
         }
@@ -290,6 +341,7 @@ impl LiveContentSession {
         self.presented.insert(
             pending.output,
             PresentedOutputContent {
+                catalog: pending.catalog,
                 grant: pending.grant,
                 candidate_generation: pending.candidate_generation,
                 presentation_epoch: epoch,

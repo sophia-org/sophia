@@ -772,7 +772,7 @@ fn three_role_inventory_is_frozen_before_the_first_budget_reservation() {
     assert_eq!(h.owner.accounting().reserved_bytes, 64 * 1024 * 1024);
     let _bar_socket = h.connect(bar);
     let _menu_socket = h.connect(menu);
-    // An unimplemented capability must not negotiate as a bar or transient menu.
+    // The persistent role cannot negotiate as a bar or transient menu.
     let mut dock_socket = h.begin(dock);
     dock_socket.write_all(&hello(false)).unwrap();
     let refused = h.owner.poll_negotiations(65536);
@@ -797,4 +797,108 @@ fn three_role_inventory_is_frozen_before_the_first_budget_reservation() {
         Err(ComponentConnectionError::InvalidSelection)
     );
     assert!(!path.exists());
+}
+
+#[cfg(feature = "native-session")]
+#[test]
+fn three_roles_negotiate_independent_profiles_and_catalog_service_borrows_only_its_grant() {
+    use sophia_session::shell_catalog_service::CatalogComponentService;
+    use sophia_session::shell_panel_service::PanelComponentService;
+    let mut h = Harness::new();
+    h.owner
+        .add(
+            "dock",
+            ShellComponentRole::Dock,
+            &h.directory.join("dock"),
+            rustix::process::geteuid().as_raw(),
+        )
+        .unwrap();
+    let bar = h.owner.reserve_attempt(0).unwrap();
+    let menu = h.owner.reserve_attempt(1).unwrap();
+    let dock = h.owner.reserve_attempt(2).unwrap();
+    let _bar = h.connect(bar);
+    let _menu = h.connect(menu);
+    h.owner
+        .begin_negotiation(
+            dock,
+            &evidence(),
+            Duration::from_secs(2),
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: true,
+            },
+        )
+        .unwrap();
+    let mut client = UnixStream::connect(h.owner.socket_path(2).unwrap()).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let capabilities = SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
+        | SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+        | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
+        | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+        | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT;
+    client
+        .write_all(
+            &encode_shell_v1_client_hello_frame(ShellV1ClientHello {
+                minimum_revision: 8,
+                maximum_revision: 8,
+                required_capabilities: capabilities,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+    let events = h.owner.poll_negotiations(65536);
+    let (key, welcome) = events.into_iter().flatten().next().unwrap();
+    assert_eq!(key, dock);
+    let welcome = welcome.unwrap();
+    assert_eq!(welcome.selected_revision, 8);
+    assert_eq!(welcome.capabilities, capabilities);
+    assert_eq!(
+        decode_shell_v1_server_welcome_frame(&read_frame(&mut client)).unwrap(),
+        welcome
+    );
+    let (_, ShellContentRecord::Limits(limits)) =
+        decode_shell_content_frame(&read_frame(&mut client)).unwrap()
+    else {
+        panic!("limits")
+    };
+    assert_eq!(limits.grant, dock.grant);
+    let accounting = h.owner.accounting();
+    let mut service = h
+        .owner
+        .with_connection(dock, |transport| {
+            assert!(PanelComponentService::new(transport, 64, true).is_err());
+            CatalogComponentService::new(transport, 64, None).unwrap()
+        })
+        .unwrap();
+    let outputs = [sophia_engine::HeadlessOutput {
+        id: OutputId::from_raw(1),
+        size: Size {
+            width: 800,
+            height: 600,
+        },
+        scale: 1,
+    }];
+    let runtime = sophia_backend_live::LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    for wrong in [bar, menu] {
+        h.owner
+            .with_connection(wrong, |transport| {
+                assert!(CatalogComponentService::new(transport, 64, None).is_err());
+                assert!(service.observe_presentation(transport, &runtime).is_err());
+            })
+            .unwrap();
+    }
+    h.owner
+        .with_connection(dock, |transport| {
+            assert!(!service.observe_presentation(transport, &runtime).unwrap())
+        })
+        .unwrap();
+    assert_eq!(service.grant(), dock.grant);
+    assert_eq!(h.owner.accounting(), accounting);
+    h.owner.close(dock).unwrap();
+    assert_eq!(h.owner.phase(bar), Ok(ComponentConnectionPhase::Connected));
+    assert_eq!(h.owner.phase(menu), Ok(ComponentConnectionPhase::Connected));
+    h.owner.close(bar).unwrap();
+    h.owner.close(menu).unwrap();
+    assert!(h.owner.collect().quiescent());
 }

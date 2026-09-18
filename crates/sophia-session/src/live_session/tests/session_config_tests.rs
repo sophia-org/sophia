@@ -1,5 +1,54 @@
 use super::*;
 
+#[test]
+fn dock_only_profile_requires_catalog_and_input_before_endpoint_construction() {
+    use std::os::unix::fs::PermissionsExt;
+    let profile =
+        std::env::temp_dir().join(format!("sophia-dock-profile-{}.kdl", std::process::id()));
+    let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/fixtures/lom_panel_core.kdl");
+    for (input, catalog) in [(false, false), (true, false), (false, true), (true, true)] {
+        let source = format!(
+            r#"schema 1
+shell {{ enabled #true; content #true; content-input #{input}; }}
+shortcut {{ profile "dock-test"; }}
+session {{
+    shell-component "dock" "dock" {{ executable "/absent/provlita"; reservation "bottom" 64; gpu "denied"; }}
+    {}
+    startup
+}}
+"#,
+            if catalog {
+                "application-catalog \"lom-panel-gate\""
+            } else {
+                ""
+            }
+        );
+        std::fs::write(&profile, source).unwrap();
+        std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let result = PersistentXtermSessionConfig::from_args(&[
+            "--session-mode=normal".into(),
+            "--wm-process=/absent/hagia".into(),
+            format!("--config={}", core.display()),
+            format!("--desktop-profile={}", profile.display()),
+        ]);
+        if input && catalog {
+            let config = result.unwrap();
+            assert!(config.shell_content_input_enabled);
+            assert!(config.application_catalog.is_some());
+        } else {
+            let error = result.expect_err("incomplete dock policy must refuse");
+            assert!(
+                error
+                    .to_string()
+                    .contains("catalog shell components require"),
+                "{error}"
+            );
+        }
+    }
+    std::fs::remove_file(profile).unwrap();
+}
+
 fn isolated_desktop_profile_argument() -> String {
     let profile = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")

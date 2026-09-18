@@ -1564,3 +1564,34 @@ a compiled mutation aliasing Dock to Shell fails the new control. Evidence:
 `.artifacts/dock-three-layers`. This is actual queue/projection ownership with
 simulated completion, not worker/GPU/KMS or three supervised clients. Dock
 negotiation remains disabled until the Session catalog-action join is complete.
+
+### Persistent Session service and revision-8 admission (2026-09-18)
+
+The persistent catalog profile now negotiates revision 8 with its exact capability
+mask and explicit input grant. Session constructs a separate borrowed catalog
+service for Dock, uses the shared resource/allocation/candidate owners, carries
+the catalog binding through actual presentation, and submits to the Dock layer.
+Catalog and input configuration are required before endpoint construction.
+
+Issued actions retain typed indicator, transient or catalog provenance. Catalog
+authorization checks the complete issued action, current presented target
+continuity, publication generation and deadline before inserting an immutable
+catalog origin into the existing launch queue. Admission consumes the exact
+event independently of ACK; the transport owns response retry without replaying
+the launch. Repainting an unchanged target does not invalidate an issued action,
+but catalog replacement, cancellation and authority changes do.
+
+Device-hidden validation in `.artifacts/dock-action-service/frozen-check.log`
+passes 483 Session library tests, nine connection-owner tests and five process
+tests, with 20 ignored across those suites. Strict Session library/test Clippy
+passes. `runtime-check.log` passes 88 runtime/transport controls; layout passes.
+Separate compiled exact-echo and replay mutations fail their intended controls.
+Earlier failed fixture setup and Clippy runs remain retained, not passing evidence.
+
+The three-peer test performs real bar/menu/dock negotiation and exact borrowed
+service construction without a supervisor. Action tests use real sockets, typed
+FIFO and the production launch queue, but supply protection and presented facts;
+they do not execute queued applications or establish native presentation. No
+full canonical gate, GPU/display run, installation or publication is claimed.
+Provlita's retained GPU protocol client, the three-client physical wrapper and
+their integrated gates remain before attended acceptance. Tasks remain open.

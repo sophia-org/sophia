@@ -38,6 +38,63 @@ impl CandidateRecord {
 }
 
 impl ShellComponentTransport {
+    pub(super) fn select_catalog_negotiation(
+        &self,
+        connection_epoch: u64,
+        policy: super::ShellContentAdmissionPolicy,
+        hello: ShellV1ClientHello,
+    ) -> Result<(ShellV1ServerWelcome, Option<ContentLimits>), ShellTransportError> {
+        const CAPS: u64 = SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
+            | SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+            | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
+            | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+            | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT;
+        if hello.minimum_revision == 0
+            || hello.minimum_revision > 8
+            || hello.maximum_revision < 8
+            || hello.minimum_revision > hello.maximum_revision
+        {
+            return Err(ShellTransportError::UnsupportedRevision);
+        }
+        if hello.required_capabilities != CAPS {
+            return Err(ShellTransportError::MissingCapability);
+        }
+        let reason = match policy {
+            super::ShellContentAdmissionPolicy::Unavailable => {
+                Some(super::content_admission::UNAVAILABLE)
+            }
+            super::ShellContentAdmissionPolicy::Granted {
+                discrete_input: true,
+            } => None,
+            _ => Some(super::content_admission::PERMISSION_DENIED),
+        };
+        if let Some(reason) = reason {
+            return Err(ShellTransportError::ContentAdmissionRefused(
+                ContentAdmissionRefused {
+                    reason,
+                    denied_capabilities: CAPS,
+                },
+            ));
+        }
+        let limits = self
+            .reserved_limits
+            .as_ref()
+            .ok_or(ShellTransportError::MissingCapability)?;
+        if limits.grant.connection_epoch != connection_epoch {
+            return Err(ShellTransportError::WrongContentGrant);
+        }
+        Ok((
+            ShellV1ServerWelcome {
+                selected_revision: 8,
+                connection_epoch,
+                capabilities: CAPS,
+                max_descriptors: SOPHIA_SHELL_MAX_DESCRIPTORS as u16,
+                max_label_bytes: MAX_CHROME_LABEL_LEN as u16,
+                max_pending_activations: SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS as u16,
+            },
+            Some(limits.clone()),
+        ))
+    }
     /// Service already buffered assembly records under one bounded visit. This
     /// does not admit a dock, allocate surfaces, grant permits or authorize input.
     pub fn service_catalog_candidates(

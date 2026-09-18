@@ -67,7 +67,7 @@ fn ledger(ack: AckState) -> ContentActionLedger {
         next_event_id: 15,
         issued_high_water: 14,
         live: [PendingAction {
-            native_binding: None,
+            authority: ActionAuthority::Indicator,
             action,
             target,
             deadline_msec: 100,

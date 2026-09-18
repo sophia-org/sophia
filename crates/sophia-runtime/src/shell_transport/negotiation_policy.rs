@@ -10,7 +10,7 @@ impl ShellComponentTransport {
         hello: ShellV1ClientHello,
     ) -> Result<(ShellV1ServerWelcome, Option<ContentLimits>), ShellTransportError> {
         if epochs.profile(self.store_grant) == Some(crate::ContentStoreProfile::PersistentCatalog) {
-            return Err(ShellTransportError::MissingCapability);
+            return self.select_catalog_negotiation(connection_epoch, content_policy, hello);
         }
         if epochs.profile(self.store_grant) == Some(crate::ContentStoreProfile::NativeLauncher) {
             return self.select_native_launcher_negotiation(

@@ -1,5 +1,7 @@
 //! Ledger -> real transport FIFO -> private peer. No WM/native acceptance.
 use super::*;
+#[path = "catalog_tests.rs"]
+mod catalog_tests;
 use sophia_protocol::*;
 use sophia_runtime::ShellSessionTransport;
 use std::io::{Read, Write};

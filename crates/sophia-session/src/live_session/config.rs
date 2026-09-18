@@ -748,8 +748,8 @@ impl PersistentXtermSessionConfig {
         let independent_shell = !components.shell_components.is_empty();
         let component_bar = components.shell_components.iter()
             .any(|entry| entry.role == sophia_config::ShellComponentRole::Bar);
-        let component_launcher = components.shell_components.iter()
-            .any(|entry| entry.role == sophia_config::ShellComponentRole::ApplicationLauncher);
+        let component_catalog = components.shell_components.iter()
+            .any(|entry| matches!(entry.role, sophia_config::ShellComponentRole::ApplicationLauncher | sophia_config::ShellComponentRole::Dock));
         let explicit_shell_process = arg_value(args, "--shell-process");
         if independent_shell && explicit_shell_process.is_some() {
             return Err("independent shell components conflict with --shell-process".into());
@@ -859,8 +859,8 @@ impl PersistentXtermSessionConfig {
             if !shell_content_enabled {
                 return Err("independent shell components require shell content".into());
             }
-            if component_launcher && (!shell_content_input_enabled || application_catalog.is_none()) {
-                return Err("native launcher requires content-input and an application catalog".into());
+            if component_catalog && (!shell_content_input_enabled || application_catalog.is_none()) {
+                return Err("catalog shell components require content-input and an application catalog".into());
             }
             if shell_gpu_mode == sophia_config::ShellGpuMode::Direct {
                 return Err("independent shell GPU grants must be declared per component".into());

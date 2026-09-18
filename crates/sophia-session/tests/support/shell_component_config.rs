@@ -48,9 +48,12 @@ fn component_selection_validates_roles_without_legacy_fallback_or_execution() {
     for (text, expected) in [
         (
             source(launcher, "", "", catalog),
-            "native launcher requires",
+            "catalog shell components require",
         ),
-        (source(launcher, "", input, ""), "native launcher requires"),
+        (
+            source(launcher, "", input, ""),
+            "catalog shell components require",
+        ),
         (source(bar, "", "", ""), "positive shell"),
         (
             valid.replace("content #true;", "content #false;"),

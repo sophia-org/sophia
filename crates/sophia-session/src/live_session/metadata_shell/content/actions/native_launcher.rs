@@ -48,7 +48,7 @@ impl NativeLauncherActionService {
             &limits,
             transaction,
             transport,
-            Some(binding),
+            ActionAuthority::Native(binding),
         )
     }
     pub fn service_acks(
@@ -160,7 +160,7 @@ impl ContentActionLedger {
             let a = &pending.action;
             let b = activation.event.binding;
             pending.activation == ActivationState::Awaiting
-                && pending.native_binding == Some(b)
+                && pending.authority == ActionAuthority::Native(b)
                 && now_msec <= pending.deadline_msec
                 && !pending.cancel_sent
                 && a.kind == ACTION_ACTIVATE

@@ -4,6 +4,52 @@ use crate::live_session::metadata_shell::NativeLauncherActionService;
 use sophia_runtime::ShellTransportConnection;
 
 impl ComponentCatalog {
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::live_session) fn service_dock(
+        &mut self,
+        service: &mut crate::live_session::metadata_shell::CatalogComponentService,
+        transport: &mut ShellTransportConnection<'_>,
+        runtime: &mut LiveProductionVisualRuntime,
+        scene: &LiveProductionCpuScene,
+        native: Option<&mut LiveProductionNativeScanout>,
+        outputs: &[sophia_engine::HeadlessOutput],
+        bounds: &[(OutputId, Rect)],
+        root: Rect,
+        launches: &mut SessionLaunchQueue,
+        active_children: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(publication) = self
+            .publication(service.grant())
+            .and_then(|p| p.published())
+        else {
+            return Ok(());
+        };
+        let presented = runtime
+            .input_projections()
+            .iter()
+            .flat_map(|projection| projection.content.iter().cloned())
+            .collect::<Vec<_>>();
+        service.service_actions(
+            transport,
+            publication,
+            &presented,
+            launches,
+            LAUNCHER_APPLICATION_ID,
+            active_children,
+        )?;
+        service.service_content(
+            transport,
+            publication,
+            runtime,
+            scene,
+            native,
+            outputs,
+            bounds,
+            root,
+        )?;
+        service.observe_presentation(transport, runtime)?;
+        Ok(())
+    }
     pub(in crate::live_session) fn action_now_msec(
         &self,
     ) -> Result<u64, Box<dyn std::error::Error>> {

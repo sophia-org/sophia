@@ -125,6 +125,37 @@ pub(super) fn service_components(
     let publication = wm.as_ref().and_then(LiveWmSession::indicator_publication);
     let active_output = wm.as_ref().and_then(LiveWmSession::active_output);
     for (key, role) in components.connected_roles().into_iter().flatten() {
+        if role == sophia_config::ShellComponentRole::Dock {
+            let result = components.with_service(key, |service, transport| {
+                let ShellComponentService::Dock(dock) = service else {
+                    return Err("catalog component role mismatch".into());
+                };
+                if catalog.publish(transport)? {
+                    catalog.service_dock(
+                        dock,
+                        transport,
+                        runtime,
+                        scene,
+                        native.as_deref_mut(),
+                        outputs,
+                        &bounds,
+                        root,
+                        launches,
+                        children.len(),
+                    )?;
+                }
+                Ok::<_, Box<dyn std::error::Error>>(())
+            })?;
+            if let Err(error) = result {
+                crate::session_eprintln!(
+                    "sophia_shell_component schema=1 status=dock_failed slot={} reason={error}",
+                    key.slot
+                );
+                launches.revoke_native_catalog_grant(key.grant);
+                components.stop(key)?;
+            }
+            continue;
+        }
         if role == sophia_config::ShellComponentRole::ApplicationLauncher {
             let result = components.with_service(key, |service, transport| {
                 let ShellComponentService::Launcher { content, actions } = service else {
@@ -289,6 +320,7 @@ pub(super) fn issue_component_activation(
     };
     let result = components.with_service(key, |service, transport| match service {
         ShellComponentService::Bar(bar) => bar.issue_activation(transport, target, runtime),
+        ShellComponentService::Dock(dock) => dock.issue_activation(transport, target, runtime),
         ShellComponentService::Launcher { actions, .. } => {
             let transaction = catalog.mint_transaction()?;
             let now = catalog.action_now_msec()?;

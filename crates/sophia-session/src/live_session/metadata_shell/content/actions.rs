@@ -1,3 +1,5 @@
+#[path = "actions/catalog.rs"]
+mod catalog;
 #[path = "actions/native_launcher.rs"]
 mod native_launcher;
 pub use native_launcher::NativeLauncherActionService;
@@ -30,11 +32,18 @@ enum ActivationState {
 struct PendingAction {
     action: ContentAction,
     target: PresentedContentTarget,
-    native_binding: Option<sophia_protocol::NativeLauncherBinding>,
+    authority: ActionAuthority,
     deadline_msec: u64,
     ack: AckState,
     activation: ActivationState,
     cancel_sent: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ActionAuthority {
+    Indicator,
+    Native(sophia_protocol::NativeLauncherBinding),
+    Catalog(u64),
 }
 
 #[derive(Debug)]
@@ -91,7 +100,14 @@ impl ContentActionLedger {
         transaction: TransactionId,
         transport: &mut ShellTransportConnection<'_>,
     ) -> Result<Option<u64>, ShellTransportError> {
-        self.issue_bound(target, now_msec, limits, transaction, transport, None)
+        self.issue_bound(
+            target,
+            now_msec,
+            limits,
+            transaction,
+            transport,
+            ActionAuthority::Indicator,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -102,7 +118,7 @@ impl ContentActionLedger {
         limits: &sophia_protocol::ContentLimits,
         transaction: TransactionId,
         transport: &mut ShellTransportConnection<'_>,
-        native_binding: Option<sophia_protocol::NativeLauncherBinding>,
+        authority: ActionAuthority,
     ) -> Result<Option<u64>, ShellTransportError> {
         if self.live.len() >= limits.max_pending_actions as usize
             || self.live.len() >= self.live.capacity()
@@ -125,7 +141,7 @@ impl ContentActionLedger {
         self.live.push(PendingAction {
             action,
             target,
-            native_binding,
+            authority,
             deadline_msec,
             ack: AckState::Awaiting,
             activation: ActivationState::Awaiting,
@@ -214,7 +230,8 @@ impl ContentActionLedger {
         else {
             return LinkedIndicatorAdmission::Stale;
         };
-        if now_msec > pending.deadline_msec
+        if pending.authority != ActionAuthority::Indicator
+            || now_msec > pending.deadline_msec
             || activation.connection_epoch != pending.action.grant.connection_epoch
             || pending.activation != ActivationState::Awaiting
             || activation.output.raw() != pending.action.output.id
@@ -508,9 +525,23 @@ impl super::LiveContentSession {
             .content_limits()
             .cloned()
             .ok_or("content limits are unavailable")?;
-        Ok(self
-            .actions
-            .issue(target, now, &limits, transaction()?, transport)?)
+        let catalog = self.presented[&target.output].catalog;
+        if catalog.is_some() != transport.supports_persistent_catalog() {
+            return Ok(None);
+        }
+        Ok(match catalog {
+            Some(binding) => self.actions.issue_bound(
+                target,
+                now,
+                &limits,
+                transaction()?,
+                transport,
+                ActionAuthority::Catalog(binding.catalog_generation),
+            )?,
+            None => self
+                .actions
+                .issue(target, now, &limits, transaction()?, transport)?,
+        })
     }
 
     pub(in crate::live_session::metadata_shell) fn service_actions(

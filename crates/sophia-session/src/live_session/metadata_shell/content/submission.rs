@@ -50,6 +50,7 @@ impl LiveContentSession {
             .into_iter()
             .collect();
         self.pending.push(PendingPresentation {
+            catalog: bundle.persistent_catalog,
             grant,
             output,
             candidate_generation: generation,
