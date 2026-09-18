@@ -962,3 +962,31 @@ synchronization, semantic input/ACK dispatch, pointer action admission, catalog
 execution, close/reopen and protected child integration remain next. The public
 configuration refusal remains closed. No canonical, hardware, native launch,
 push, installation or lom-test readiness is claimed by this checkpoint.
+
+## Native semantic input transfer ownership
+
+The native content owner now holds at most 32 pending semantic inputs and 32 KiB
+of text. Each retains the captured exact focus, transaction, kind, text and
+monotonic queue time. Invalid/stale input refuses before admission; capacity
+refusal leaves input with the caller. ACK intake and input transfer have separate
+32-record service bounds. Receipt/FIFO saturation leaves the original front
+owned for retry. Transport success transfers the event or Accept intent before
+infallible removal; issuance time is the service time, not an expired capture
+clock. Pending inputs older than five seconds or a backwards clock refuse without
+retargeting or consuming them. Focus publication waits for pending transfers.
+Close/disconnect and the live dispatcher still need to join this owner; it is
+not yet armed by the physical owner loop.
+
+`.artifacts/bemenu-native-input-owner/` records device-hidden Session 475 PASS/14
+ignored and two actual private-socket input controls PASS, strict Session Clippy,
+layout and formatting. The saturation control fills all sixteen actual transport
+receipt slots, retains another sixteen inputs, then supplies exact ACKs and
+receives the remaining original transactions/text once. The second control
+rejects stale focus, invalid text and expired/backwards service while retaining
+pending ownership. Presentation and protection are supplied by the existing
+fixture; this is not supervised Bemenu, natural kernel backpressure or native
+input acceptance. A launcher diagnostic about missing optional ld.so.cache is
+retained in the log; the activated device-hidden test processes completed.
+`.artifacts/bemenu-native-input-owner-mutant/` compiles a drop-on-refusal mutation;
+the saturation assertion fails, and source restoration is recorded. No broader
+canonical, hardware, publication, installation or physical readiness claim.

@@ -7,6 +7,8 @@ use sophia_runtime::{ContentCandidateContext, NativeLauncherCandidateContext};
 mod allocation;
 #[path = "native_service/closing.rs"]
 mod closing;
+#[path = "native_service/input.rs"]
+mod input;
 #[path = "native_service/opening.rs"]
 mod opening;
 
@@ -23,6 +25,8 @@ pub struct NativeLauncherContentService {
     closing: Option<closing::Closing>,
     open_request: Option<opening::OpenRequest>,
     focus_pending: bool,
+    inputs: std::collections::VecDeque<input::PendingInput>,
+    input_bytes: usize,
 }
 
 impl NativeLauncherContentService {
@@ -40,6 +44,8 @@ impl NativeLauncherContentService {
             closing: None,
             open_request: None,
             focus_pending: false,
+            inputs: std::collections::VecDeque::with_capacity(32),
+            input_bytes: 0,
         })
     }
 
@@ -187,7 +193,7 @@ impl NativeLauncherContentService {
         transaction: sophia_protocol::TransactionId,
     ) -> Result<bool, ShellTransportError> {
         self.validate(transport)?;
-        if !self.focus_pending || self.closing.is_some() {
+        if !self.focus_pending || self.closing.is_some() || !self.inputs.is_empty() {
             return Ok(false);
         }
         match transport.install_native_launcher_focus(transaction) {
