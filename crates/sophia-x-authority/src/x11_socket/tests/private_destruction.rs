@@ -12,14 +12,24 @@
 // attaches a private worker to the production service, and nothing here
 // executes a deferred duty.
 
+/// Arm the arbitration's labelled hook for the next departure on this
+/// thread (see `STAGE_AFTER_DEPARTURE_BOUNDARY` in
+/// `private_departure_arbitration.rs`).
+fn stage_after_boundary(hook: impl FnOnce() + 'static) {
+    STAGE_AFTER_DEPARTURE_BOUNDARY.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
 /// Everything destruction is expected to leave in one state or another,
 /// read once and compared later.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DestructionObserved {
-    stop: bool,
+    /// The connection's own bound stop, when the control holds that
+    /// credential; `None` where it does not, which is not a reading.
+    stop: Option<bool>,
     admitted: Option<bool>,
     departure: Option<PrivateDeparture>,
     decision: Option<PrivateDestructionDecision>,
+    standing: PrivateDestructionStanding,
     number: Option<PrivateNumberStanding>,
     row: bool,
     lease: bool,
@@ -33,7 +43,7 @@ fn observe_destruction(
     custody: &PrivateEvidenceCustody,
     registry: &XServerFrontendRouteRegistry,
     client: XServerFrontendClientId,
-    stop: &AtomicBool,
+    stop: Option<&AtomicBool>,
 ) -> DestructionObserved {
     let record = custody.cleanup_record();
     let (life, handle_in_slot) = match custody.worker_slot().lock() {
@@ -44,10 +54,11 @@ fn observe_destruction(
         }
     };
     DestructionObserved {
-        stop: stop.load(std::sync::atomic::Ordering::Acquire),
+        stop: stop.map(|stop| stop.load(std::sync::atomic::Ordering::Acquire)),
         admitted: custody.startup_admitted(),
         departure: custody.departure_observation(),
         decision: record.destruction_decision(),
+        standing: record.destruction_standing(),
         number: registry.occupancy.state_of(client),
         row: registry
             .clients
@@ -209,8 +220,7 @@ fn never_started_destruction_runs_the_synchronous_cleanup_and_records_it() {
     assert_eq!(custody.startup_admitted(), Some(true));
     assert_eq!(custody.cleanup_record().destruction_decision(), None);
     drop(registration);
-    let never = AtomicBool::new(false);
-    let seen = observe_destruction(&custody, &p.private.broker.registry, client, &never);
+    let seen = observe_destruction(&custody, &p.private.broker.registry, client, None);
     assert_eq!(
         seen.decision,
         Some(PrivateDestructionDecision::Synchronous),
@@ -242,11 +252,15 @@ fn a_context_obtained_before_destruction_cannot_start_afterwards_and_calls_no_sp
         !called.load(std::sync::atomic::Ordering::Acquire),
         "destruction closed admission first, so the spawner was never reached"
     );
-    let seen = observe_destruction(&custody, worker_registry(&f.fixture.runner), client, &f.stop);
+    let seen = observe_destruction(&custody, worker_registry(&f.fixture.runner), client, Some(&f.stop));
     assert_eq!(seen.decision, Some(PrivateDestructionDecision::Synchronous));
     assert_eq!(seen.departure, Some(PrivateDeparture::NothingStarted));
     assert_eq!(seen.life, PrivateWorkerLife::NeverStarted);
-    assert!(!seen.stop, "no worker was ever admitted, so no stop was published");
+    assert_eq!(
+        seen.stop,
+        Some(false),
+        "no worker was ever admitted, so no stop was published"
+    );
     assert_eq!(seen.number, None);
     drop(custody);
 }
@@ -263,7 +277,7 @@ fn an_already_established_nothing_started_is_used_by_destruction() {
         "an earlier ask established it"
     );
     drop(f.fixture.registration);
-    let seen = observe_destruction(&custody, worker_registry(&f.fixture.runner), client, &f.stop);
+    let seen = observe_destruction(&custody, worker_registry(&f.fixture.runner), client, Some(&f.stop));
     assert_eq!(
         seen.decision,
         Some(PrivateDestructionDecision::Synchronous),
@@ -291,8 +305,13 @@ fn destroying_one_registration_leaves_a_same_store_sibling_and_its_queued_work_a
         f.fixture.runner.frontend.as_ref().expect("live"),
         sibling,
     );
-    let (queued, _endpoint) = capsule_and_endpoint(92050);
+    // THE SIBLING'S EXACT WORK: a capsule with its own completion, whose
+    // frames and completion identity are kept to compare against what is
+    // still on the queue afterwards.
+    let (queued, _endpoint, _recovery, _receipts) = answerable_capsule(92050);
     let queued_delivery = queued.delivery();
+    let queued_frames = order_pass_frames(&queued);
+    let queued_cell = Arc::clone(&queued.finalizer().expect("carried").completion);
     gated_send(&sibling_sender, queued).expect("the sibling's open endpoint");
     let PrivateCustodyReach::Reached(sibling_custody) = sibling_registration
         .registered_custody(&f.fixture.keeper.lease())
@@ -312,9 +331,10 @@ fn destroying_one_registration_leaves_a_same_store_sibling_and_its_queued_work_a
     let unheld = dropped_without_waiting(f.fixture.registration, || {
         let _ = let_go.send(());
     });
-    let never = AtomicBool::new(false);
-    let ours = observe_destruction(&custody, registry, client, &f.stop);
-    let theirs = observe_destruction(&sibling_custody, registry, sibling, &never);
+    let ours = observe_destruction(&custody, registry, client, Some(&f.stop));
+    // The sibling never bound a control association, so it has no stop of
+    // its own to read; nothing is claimed about one.
+    let theirs = observe_destruction(&sibling_custody, registry, sibling, None);
     let_go.send(()).expect("the worker is held");
     let worker_saw = seen_by_worker.recv_timeout(Duration::from_secs(5)).ok();
     let reaped = PrivateReapingRecord::bound_to(&custody).reap().reaped;
@@ -324,17 +344,34 @@ fn destroying_one_registration_leaves_a_same_store_sibling_and_its_queued_work_a
     assert_deferred_untouched(&ours, PrivateDestructionDeferral::WorkerRunning, "ours");
     assert_eq!(theirs.admitted, Some(true), "the sibling still admits a start");
     assert_eq!(theirs.departure, None, "no departure was asked of it");
-    assert_eq!(theirs.decision, None, "and no destruction was recorded against it");
+    assert_eq!(
+        theirs.standing,
+        PrivateDestructionStanding::NotRequested,
+        "and no destruction was requested against it"
+    );
     assert_eq!(theirs.number, Some(PrivateNumberStanding::Held));
-    assert!(theirs.row && theirs.lease && !theirs.gate_fenced && !theirs.stop);
+    assert!(theirs.row && theirs.lease && !theirs.gate_fenced);
+    assert_eq!(theirs.home, PrivateHomeStanding::Live);
     let still_queued = sibling_channels
         .ordered
         .receiver
         .try_recv()
         .expect("the sibling's exact queued work is still there");
     assert_eq!(still_queued.delivery(), queued_delivery);
+    assert_eq!(order_pass_frames(&still_queued), queued_frames, "the same frames");
     assert!(
-        sibling_channels.ordered.receiver.try_recv().is_err(),
+        Arc::ptr_eq(
+            &queued_cell,
+            &still_queued.finalizer().expect("carried").completion
+        ),
+        "the same completion, by identity"
+    );
+    assert!(queued_cell.answer().is_none(), "and nothing answered for it");
+    assert!(
+        matches!(
+            sibling_channels.ordered.receiver.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        ),
         "and nothing else was put on its queue"
     );
     drop((sibling_custody, sibling_registration, custody));
@@ -417,18 +454,16 @@ fn a_second_destruction_request_against_a_decided_record_is_inert() {
         Some(PrivateDestructionDecision::Synchronous)
     );
     // STAGE-ONLY: a later request through the record's own entry point, as
-    // the executor a later boundary attaches would make it. It is refused,
-    // and the decision that stands is the first one.
-    assert!(
-        !record.request_destruction(PrivateDestructionDecision::Deferred(
-            PrivateDestructionDeferral::WorkerRunning
-        )),
-        "a second request is refused"
-    );
-    assert!(!record.request_destruction(PrivateDestructionDecision::Synchronous));
+    // the executor a later boundary attaches would make it. The claim is
+    // refused, a decision published over it is refused, and the decision
+    // that stands is the first one.
+    assert!(!record.claim_destruction(), "a second request is refused");
+    assert!(!record.publish_destruction(PrivateDestructionDecision::Deferred(
+        PrivateDestructionDeferral::WorkerRunning
+    )));
     assert_eq!(
-        record.destruction_decision(),
-        Some(PrivateDestructionDecision::Synchronous),
+        record.destruction_standing(),
+        PrivateDestructionStanding::Decided(PrivateDestructionDecision::Synchronous),
         "and the first decision stands"
     );
     assert_eq!(p.private.broker.registry.occupancy.state_of(client), None);

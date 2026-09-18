@@ -7,9 +7,12 @@
 // the routing state that must stop naming it.
 //
 // WHY IT IS SHARED. Deferring that destruction safely means keeping the
-// responsibility somewhere that outlives the handle. This slice moves it; it
-// does not change when it runs. Registration Drop remains the only production
-// trigger, at the same point and in the same order as before.
+// responsibility somewhere that outlives the handle. Registration Drop remains
+// the only production trigger, but it now DECIDES: a connection with a
+// private source runs the synchronous body below only when its registered
+// departure establishes that nothing was ever started, and otherwise leaves
+// the duty here, recorded as deferred, for the custody's keeper. Nothing yet
+// executes a deferred duty. See `private_destruction.rs`.
 //
 // KEEPING IT IS NOT RUNNING IT. An inert record that is never published
 // executes nothing, and a record retained after its registration has gone does
@@ -92,15 +95,17 @@ struct PrivateCleanupRecord {
     /// SET WHEN THE ROW IS PUBLISHED, and once. A record whose connection was
     /// never exposed established nothing under its number and has none.
     number: std::sync::OnceLock<PrivateNumberRight>,
-    /// What this connection's destruction decided, once it was requested.
+    /// Where this connection's destruction stands: not requested, requested
+    /// and not yet decided, or decided.
     ///
-    /// RESERVED HERE, WITH THE RECORD, AND EMPTY UNTIL THE REGISTRATION GOES.
-    /// The registration's `Drop` writes it before it runs anything, so what
-    /// it decided -- to run the synchronous body, or to leave the duty and
-    /// the number with the custodian -- is kept by whoever holds this record
-    /// after that frame has returned. One cell, set once: a second request
-    /// finds the first decision and does nothing.
-    destruction: std::sync::OnceLock<PrivateDestructionDecision>,
+    /// RESERVED HERE, WITH THE RECORD, AND UNREQUESTED UNTIL THE REGISTRATION
+    /// GOES. The registration's `Drop` claims it BEFORE it enters the
+    /// departure arbitration -- which can wait on the slot -- and publishes
+    /// what that decided afterwards, so a frame lost in between leaves a
+    /// visible request with no decision rather than nothing. Kept by whoever
+    /// holds this record after that frame has returned. One claim: a second
+    /// request finds the first and does nothing.
+    destruction: Mutex<PrivateDestructionStanding>,
 }
 
 #[cfg(unix)]
@@ -122,7 +127,7 @@ impl PrivateCleanupRecord {
     ) -> Self {
         Self {
             number: std::sync::OnceLock::new(),
-            destruction: std::sync::OnceLock::new(),
+            destruction: Mutex::new(PrivateDestructionStanding::NotRequested),
             lifecycle: Mutex::new(None),
             ordered_continuation: Mutex::new(continuation),
             ordered_home: home,
@@ -311,7 +316,9 @@ impl PrivateCleanupRecord {
 
     /// Everything one connection's destruction owes, run once, synchronously.
     ///
-    /// STILL SYNCHRONOUS, STILL TRIGGERED ONLY BY THE REGISTRATION'S `Drop`.
+    /// SYNCHRONOUS, AND TRIGGERED ONLY BY THE REGISTRATION'S `Drop` -- on the
+    /// public path unconditionally, and on the private path only once the
+    /// registered departure has established that nothing was ever started.
     /// The body lives here, beside the responsibility its keeper holds, and
     /// runs in the same order it always did: the retained continuation is
     /// fenced first, the writers are told before the query state is removed.
@@ -327,8 +334,9 @@ impl PrivateCleanupRecord {
     /// claim going back says only that the namespace may reissue the number.
     ///
     /// DEFERRED EXECUTION IS NOT AUTHORISED BY ANY OF THIS. The interval the
-    /// number claim protects is this synchronous body; when cleanup runs is a
-    /// later boundary's question, not one this record answers.
+    /// number claim protects is this synchronous body. A destruction that
+    /// deferred left the duty recorded and this body unrun; who runs it then,
+    /// and when, is a later boundary's question, not one this record answers.
     ///
     /// WHAT MAKES THE BY-NUMBER EFFECTS BELOW SAFE, AND HOW FAR. Rows,
     /// surfaces, focus, parents, subscriptions, pending presentations and

@@ -186,6 +186,12 @@ impl PrivateEvidenceCustody {
             state.published.clone()
             // The boundary is released here.
         };
+        // STAGE-ONLY SCHEDULING HOOK: the interval after this ask released
+        // the boundary and before it sends its stop. A control that needs
+        // another ask, or a destruction, to land exactly here arms it on this
+        // thread; nothing in production ever does, and an unarmed hook is a
+        // thread-local read and nothing else.
+        stage_after_departure_boundary();
         // A KNOWN BOUND WORKER IS TOLD TO STOP whatever the slot says
         // afterwards. This reaches nothing but the pair itself.
         if let Some((stop, notice)) = pair.as_ref().or(supplied.as_ref()) {
@@ -251,5 +257,24 @@ impl PrivateEvidenceCustody {
             Ok(state) => state.published.clone(),
             Err(poisoned) => poisoned.into_inner().published.clone(),
         }
+    }
+}
+
+thread_local! {
+    /// STAGE-ONLY SCHEDULING HOOK. What `depart_registered_through` runs on
+    /// this thread once, after it has released its boundary and before it
+    /// sends its stop. Armed only by controls, on the thread that will ask;
+    /// production never arms it, so in production this is an empty cell that
+    /// is read and left empty.
+    static STAGE_AFTER_DEPARTURE_BOUNDARY: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Fire the staged hook, if a control armed one on this thread.
+#[cfg(unix)]
+fn stage_after_departure_boundary() {
+    let hook = STAGE_AFTER_DEPARTURE_BOUNDARY.with(|slot| slot.borrow_mut().take());
+    if let Some(hook) = hook {
+        hook();
     }
 }

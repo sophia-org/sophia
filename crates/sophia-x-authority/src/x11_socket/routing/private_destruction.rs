@@ -54,9 +54,9 @@ enum PrivateDestructionDeferral {
 
 /// What one registration's destruction decided.
 ///
-/// ONE FACT, RECORDED ONCE. This is not a history: a registration is
-/// destroyed once, and a second request against the same record finds the
-/// first decision and does nothing.
+/// ONE FACT, PUBLISHED ONCE, AFTER THE REQUEST THAT LED TO IT. This is not a
+/// history: a registration is destroyed once, and a second request against
+/// the same record finds the first and does nothing.
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateDestructionDecision {
@@ -68,6 +68,26 @@ enum PrivateDestructionDecision {
     Synchronous,
     /// The cleanup duty and the number claim were left with the custodian.
     Deferred(PrivateDestructionDeferral),
+}
+
+/// Where a connection's destruction stands.
+///
+/// THE REQUEST IS A FACT OF ITS OWN, separate from the decision it leads to.
+/// Between the two the registration is inside the departure arbitration,
+/// which can wait on the slot behind an admitted spawn, and a frame lost
+/// there -- an unwind after the boundary is released -- leaves the request
+/// standing with no decision. That is visible uncertainty, and it is what a
+/// later executor must see rather than an empty cell.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateDestructionStanding {
+    /// No registration has asked for this connection's destruction.
+    NotRequested,
+    /// A registration claimed the destruction and has not published what it
+    /// decided: it is inside the arbitration, or its frame was lost there.
+    Requested,
+    /// The claimed destruction published its decision.
+    Decided(PrivateDestructionDecision),
 }
 
 #[cfg(unix)]
@@ -123,37 +143,91 @@ impl PrivateRegisteredCustody {
     /// `None` MEANS THE CUSTODY IS GONE, WHICH ESTABLISHES NOTHING. The
     /// keeper that held it can be dropped without joining what it admitted,
     /// and a worker it admitted may still be running.
+    ///
+    /// A DEPARTURE FOUND DECIDING IS NOT LEFT TO THE OTHER ASK. `Deciding`
+    /// means an earlier ask released the boundary and is between that and
+    /// its stop, or was interrupted there and will never send one. Whichever
+    /// it is, this destruction still owes the connection's stop, so it is
+    /// asserted here through the bound pair -- reachable outside the
+    /// boundary, the same authoritative stop and notice either way. The
+    /// answer stays `Deciding`: nothing is reopened, the slot is not entered
+    /// and nothing is joined.
     fn depart_for_destruction(&self) -> Option<PrivateDeparted> {
         let custody = self.custody.upgrade()?;
-        Some(custody.depart_registered())
+        let departed = custody.depart_registered();
+        if let (PrivateDeparted::Deciding, Some((stop, notice))) =
+            (departed, custody.bound_pair())
+        {
+            cancel_connection_worker(&stop, &notice);
+        }
+        Some(departed)
     }
 }
 
 #[cfg(unix)]
 impl PrivateCleanupRecord {
-    /// Record what this connection's destruction decided.
+    /// Claim this connection's destruction, before anything is decided.
     ///
     /// IN STORAGE RESERVED WITH THE RECORD, before the row was published, and
     /// shared with the custody's keeper: the fact survives the frame that
     /// wrote it. Closing startup admission is a separate fact kept by the
-    /// departure boundary; this is the record that destruction was requested
-    /// and what it left behind.
+    /// departure boundary; this is the record that destruction was
+    /// requested, made before the request enters that boundary.
     ///
-    /// A REPEATED REQUEST IS INERT. The first decision stands and `false`
-    /// says so; nothing runs twice on the strength of asking twice.
-    fn request_destruction(&self, decision: PrivateDestructionDecision) -> bool {
-        self.destruction.set(decision).is_ok()
+    /// A REPEATED REQUEST IS INERT. The first claim stands and `false` says
+    /// so; nothing enters the arbitration or runs a body twice on the
+    /// strength of asking twice. A poisoned cell is read through: whether a
+    /// claim was made is a fact somebody's panic does not change.
+    fn claim_destruction(&self) -> bool {
+        let mut standing = match self.destruction.lock() {
+            Ok(standing) => standing,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if *standing != PrivateDestructionStanding::NotRequested {
+            return false;
+        }
+        *standing = PrivateDestructionStanding::Requested;
+        true
     }
 
-    /// What this connection's destruction decided, if it has been requested.
+    /// Publish what the claimed destruction decided.
     ///
-    /// `None` MEANS NO REQUEST WAS RECORDED. It is not a claim that the
-    /// registration still exists, and it is not a claim that nothing ran:
-    /// a record acted on directly, outside a registration, records nothing
-    /// here.
+    /// ONLY OVER A STANDING REQUEST. A decision published over no claim, or
+    /// over one already decided, is somebody else's and is refused.
+    fn publish_destruction(&self, decision: PrivateDestructionDecision) -> bool {
+        let mut standing = match self.destruction.lock() {
+            Ok(standing) => standing,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if *standing != PrivateDestructionStanding::Requested {
+            return false;
+        }
+        *standing = PrivateDestructionStanding::Decided(decision);
+        true
+    }
+
+    /// Where this connection's destruction stands.
+    ///
+    /// `NotRequested` IS NOT A CLAIM THAT NOTHING RAN: a record acted on
+    /// directly, outside a registration, records nothing here.
+    #[cfg_attr(not(test), allow(dead_code))] // Read by the executor a later boundary attaches.
+    fn destruction_standing(&self) -> PrivateDestructionStanding {
+        match self.destruction.lock() {
+            Ok(standing) => *standing,
+            Err(poisoned) => *poisoned.into_inner(),
+        }
+    }
+
+    /// What this connection's destruction decided, if a decision was
+    /// published.
     #[cfg_attr(not(test), allow(dead_code))] // Read by the executor a later boundary attaches.
     fn destruction_decision(&self) -> Option<PrivateDestructionDecision> {
-        self.destruction.get().copied()
+        match self.destruction_standing() {
+            PrivateDestructionStanding::Decided(decision) => Some(decision),
+            PrivateDestructionStanding::NotRequested | PrivateDestructionStanding::Requested => {
+                None
+            }
+        }
     }
 }
 
@@ -166,24 +240,33 @@ impl XServerFrontendClientRouteRegistration {
     /// published, and only then takes the slot; no gate, home, store or
     /// cleanup table is touched before that stop, and nothing here joins.
     ///
-    /// THE DECISION IS RECORDED BEFORE THE SYNCHRONOUS BODY RUNS, so a body
-    /// interrupted part-way leaves a record that cleanup was requested, and a
-    /// deferred duty is recorded whether or not anything ever comes back for
-    /// it. The record is the custody's as much as this registration's, which
-    /// is what keeps it after this frame returns.
+    /// THE REQUEST IS CLAIMED BEFORE THE ARBITRATION IS ENTERED, AND THE
+    /// DECISION IS PUBLISHED BEFORE THE SYNCHRONOUS BODY RUNS. The arbitration
+    /// can wait on the slot, and a frame lost anywhere after the claim leaves
+    /// a standing request with no decision -- uncertainty, visibly. A body
+    /// interrupted part-way leaves its decision published. The record is the
+    /// custody's as much as this registration's, which is what keeps it
+    /// after this frame returns.
     ///
     /// THE DEFERRED BRANCH DOES NOTHING ELSE. No standing change, no fence, no
     /// lease transfer, no number-keyed removal, no place return: every one of
     /// those is the synchronous body's, and the synchronous body is not run.
     fn destroy_registered(&self, registered: &PrivateRegisteredCustody) {
+        if !self.cleanup.claim_destruction() {
+            // Already requested. Whatever the first request decided, or has
+            // yet to decide, stands; this one enters nothing.
+            return;
+        }
         let decision = match registered.depart_for_destruction() {
             Some(departed) => PrivateDestructionDecision::of_departure(departed),
             None => PrivateDestructionDecision::Deferred(
                 PrivateDestructionDeferral::SourceUnreachable,
             ),
         };
-        if !self.cleanup.request_destruction(decision) {
-            // Already requested. The first decision stands, whatever it was.
+        if !self.cleanup.publish_destruction(decision) {
+            // The claim above is this frame's, so this cannot be refused
+            // unless the record was decided out from under it. It is not
+            // this frame's decision then, and no body runs on it.
             return;
         }
         if decision == PrivateDestructionDecision::Synchronous {
