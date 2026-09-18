@@ -1553,21 +1553,72 @@ fn finish_labelled(
 /// so comparing that list either side of a visit compares nothing. This reads
 /// the home's own standing and the capsule its serving owner still has, with
 /// the frame bytes and the progress through them.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone)]
 struct HeldCapsule {
     standing: PrivateHomeStanding,
     serving: bool,
-    delivery: Option<u64>,
+    delivery: Option<XAuthorityInputDeliveryId>,
     frames_owed: usize,
     frame_index: usize,
     frame_bytes: Option<Vec<u8>>,
     sent: Option<usize>,
     blocked_micros: u128,
-    /// The finalizer this capsule carried from the debt that owns it, by
-    /// address, retained beside the reading so it is compared as identity.
-    finalizer: Option<usize>,
+    /// The finalizer this capsule carried from the debt that owns it, kept as
+    /// the original handle so a later reading is compared as the same one.
+    finalizer: Option<Arc<PrivateDeliveryFinalizer>>,
+    /// The recipient this capsule names, kept whole. A registration pointer
+    /// and the identity over it, not a client number that another origin can
+    /// hold at the same time.
+    endpoint: Option<PrivateEndpointIdentity>,
     answers_for_this_origin: bool,
     in_flight: bool,
+}
+
+impl std::fmt::Debug for HeldCapsule {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        out.debug_struct("HeldCapsule")
+            .field("standing", &self.standing)
+            .field("serving", &self.serving)
+            .field("delivery", &self.delivery)
+            .field("frames_owed", &self.frames_owed)
+            .field("frame_index", &self.frame_index)
+            .field("frame_len", &self.frame_bytes.as_ref().map(Vec::len))
+            .field("sent", &self.sent)
+            .field("blocked_micros", &self.blocked_micros)
+            .field("has_finalizer", &self.finalizer.is_some())
+            .field("has_endpoint", &self.endpoint.is_some())
+            .field("answers_for_this_origin", &self.answers_for_this_origin)
+            .field("in_flight", &self.in_flight)
+            .finish()
+    }
+}
+
+impl HeldCapsule {
+    /// Whether two readings are of the same capsule in the same state: the
+    /// finalizer by handle, the recipient by its whole identity, the rest by
+    /// value including the exact frame bytes still in hand.
+    fn same_as(&self, other: &Self) -> bool {
+        self.standing == other.standing
+            && self.serving == other.serving
+            && self.delivery == other.delivery
+            && self.frames_owed == other.frames_owed
+            && self.frame_index == other.frame_index
+            && self.frame_bytes == other.frame_bytes
+            && self.sent == other.sent
+            && self.blocked_micros == other.blocked_micros
+            && self.answers_for_this_origin == other.answers_for_this_origin
+            && self.in_flight == other.in_flight
+            && match (&self.finalizer, &other.finalizer) {
+                (Some(ours), Some(theirs)) => Arc::ptr_eq(ours, theirs),
+                (None, None) => true,
+                _ => false,
+            }
+            && match (&self.endpoint, &other.endpoint) {
+                (Some(ours), Some(theirs)) => ours.matches(theirs),
+                (None, None) => true,
+                _ => false,
+            }
+    }
 }
 
 /// Read this connection's home. `None` when it holds no serving owner at all.
@@ -1591,6 +1642,7 @@ fn held_capsule(
             sent: None,
             blocked_micros: 0,
             finalizer: None,
+            endpoint: None,
             answers_for_this_origin: false,
             in_flight: false,
         });
@@ -1603,7 +1655,7 @@ fn held_capsule(
     Some(HeldCapsule {
         standing,
         serving: true,
-        delivery: capsule.delivery().emission().delivery().map(|id| id.raw()),
+        delivery: capsule.delivery().emission().delivery(),
         frames_owed: capsule.delivery().emission().frame_count(),
         frame_index: capsule.frame_index(),
         frame_bytes: frame.map(|frame| frame.bytes.as_ref().to_vec()),
@@ -1612,10 +1664,8 @@ fn held_capsule(
             X11OrderedSendProgress::Unknown { .. } => None,
         }),
         blocked_micros: capsule.send.blocked.as_micros(),
-        finalizer: capsule
-            .delivery()
-            .finalizer()
-            .map(|held| Arc::as_ptr(held) as usize),
+        finalizer: capsule.delivery().finalizer().cloned(),
+        endpoint: Some(capsule.delivery().endpoint().clone()),
         answers_for_this_origin: capsule.delivery().emission().answers_for(registry),
         in_flight,
     })
@@ -2145,6 +2195,7 @@ fn blocked_recipient_attempt(
     let home = Arc::clone(&custody.cleanup_record().ordered_home);
     let capsule_before = held_capsule(&home, &blocked.registry)
         .unwrap_or_else(|| panic!("{label}: this connection's home still holds its serving owner"));
+    let credit_before_visit = store.reserved();
 
     // ARMED AGAIN, AROUND THE VISIT ALONE. Whether the store looks the same
     // afterwards settles nothing for this capsule: an axis capsule is not a
@@ -2206,6 +2257,7 @@ fn blocked_recipient_attempt(
     let after = retained_dispatch(&blocked);
     let capsule_after = held_capsule(&home, &blocked.registry)
         .unwrap_or_else(|| panic!("{label}: the home still holds it after the visit"));
+    let credit_after_visit = store.reserved();
     let (observed_frames, send_entries, queue_handovers) = take_observations();
 
     let wanted = stalled_delivery.map(XAuthorityInputDeliveryId::from_raw);
@@ -2304,7 +2356,8 @@ fn blocked_recipient_attempt(
     // full length still owed, carrying the finalizer of the debt that owns it
     // and answering for this invocation's own origin.
     assert_eq!(
-        capsule_before.delivery, stalled_delivery,
+        capsule_before.delivery,
+        stalled_delivery.map(XAuthorityInputDeliveryId::from_raw),
         "{label}: the capsule the home holds is the one that stalled: {capsule_before:?}"
     );
     assert!(
@@ -2334,9 +2387,25 @@ fn blocked_recipient_attempt(
         capsule_before.blocked_micros > 0,
         "{label}: having actually waited on its recipient: {capsule_before:?}"
     );
+    assert!(
+        capsule_after.same_as(&capsule_before),
+        "{label}: and the charged visit left every one of those unchanged, the same finalizer and the same recipient: before {capsule_before:?} after {capsule_after:?}"
+    );
+    // RETAINED, AND THIS CONNECTION'S OWN RECIPIENT. The home's standing is
+    // required as the value it is rather than inferred from the capsule
+    // answering for the origin, which is a weaker thing to know.
     assert_eq!(
-        capsule_after, capsule_before,
-        "{label}: and the charged visit left every one of those unchanged"
+        capsule_before.standing,
+        PrivateHomeStanding::Retained,
+        "{label}: the home is retained after its connection ended: {capsule_before:?}"
+    );
+    assert!(
+        capsule_before.endpoint.is_some(),
+        "{label}: and the capsule names its recipient whole: {capsule_before:?}"
+    );
+    assert_eq!(
+        credit_before_visit, credit_after_visit,
+        "{label}: and the visit released no credit"
     );
     // ANSWERED ONCE. A resend that did reach the recipient would publish a
     // second receipt for the same delivery; none arrives.
@@ -2401,6 +2470,8 @@ fn blocked_recipient_attempt(
         "retained_after_exit": format!("{before:?}"),
         "held_capsule_before_visit": format!("{capsule_before:?}"),
         "held_capsule_after_visit": format!("{capsule_after:?}"),
+        "credit_before_visit": credit_before_visit,
+        "credit_after_visit": credit_after_visit,
         "maintenance_visit": format!("{visit:?}"),
         "what_the_visit_reported": visit.detail.clone(),
         "typed_visit_refusal": format!("{:?}", visit.output_refusal),
