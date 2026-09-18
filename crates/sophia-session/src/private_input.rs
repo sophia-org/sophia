@@ -32,9 +32,10 @@ pub use control::{
     PrivateInputSubmitted,
 };
 pub use handle::{
-    PrivateInputHandle, PrivateInputOutcome, PrivateInputReadiness, PrivateInputRefusal,
-    PrivateInputService, PrivateInputSettlement, PrivateInputStatus, PrivateInputThreadJoin,
-    PrivateInputTopologyRefusal, PrivateInputUnavailable, PrivateInputWaitExpired,
+    PrivateInputHandle, PrivateInputOutcome, PrivateInputReadiness, PrivateInputReceipts,
+    PrivateInputRefusal, PrivateInputService, PrivateInputSettlement, PrivateInputStatus,
+    PrivateInputThreadJoin, PrivateInputTopologyRefusal, PrivateInputUnavailable,
+    PrivateInputWaitExpired,
 };
 #[cfg(test)]
 #[path = "../tests/support/private_input_session.rs"]

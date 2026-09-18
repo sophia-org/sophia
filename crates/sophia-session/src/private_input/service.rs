@@ -79,6 +79,20 @@ pub(super) struct PrivateInputRuntime {
     pub(super) owner: Arc<PrivateServiceOwner>,
     pub(super) store: PrivateSettlementOwner,
     pub(super) participant: PrivateAdmissionParticipant,
+    /// The one call that gives a delivery's place back.
+    ///
+    /// NARROW BY CONSTRUCTION. Session consumes receipts, so it needs to mark
+    /// them observed; it must not be handed the routed input sender that
+    /// observation happens to live on, because that would also let it inject
+    /// input.
+    pub(super) observer: sophia_x_authority::PrivateDeliveryObserver,
+    /// Receipts taken from the channel whose observation did not take.
+    ///
+    /// KEPT, NEVER DROPPED. A receipt popped off the channel and discarded
+    /// takes its ticket's place with it for good, because the ledger frees a
+    /// place only when the delivery is observed. Holding it here is what lets
+    /// a later drain try again.
+    pub(super) retained_receipts: Mutex<std::collections::VecDeque<XAuthorityClientInputDelivery>>,
     pub(super) access: PrivateProducerAccess,
     pub(super) registry: Arc<Mutex<NamespaceRegistry>>,
     pub(super) admitted: Arc<Mutex<BTreeMap<ClientAdmissionId, PrivateInputAdmissionRecord>>>,
@@ -335,7 +349,16 @@ impl PrivateInputRuntime {
                 // frontend. A clone rather than a borrow, because the frontend
                 // is about to be moved into the invocation.
                 let participant = private.admission_participant().clone();
-                if prepared_tx.send(Some(participant)).is_err() {
+                // AND THE OBSERVER WITH IT, from the same frontend and in the
+                // same breath. Taken here because the frontend is about to be
+                // moved into the invocation, and a receipt consumer that could
+                // not observe would spend this service's delivery places one
+                // at a time and never give one back.
+                let delivery_observer = private.delivery_observer();
+                if prepared_tx
+                    .send(Some((participant, delivery_observer)))
+                    .is_err()
+                {
                     return;
                 }
 
@@ -435,8 +458,8 @@ impl PrivateInputRuntime {
         // or the channel was lost, returning while the handle went out of
         // scope unjoined would leave a thread running behind a caller who
         // believes nothing started.
-        let participant = match prepared.recv() {
-            Ok(Some(participant)) => participant,
+        let (participant, observer) = match prepared.recv() {
+            Ok(Some(prepared)) => prepared,
             Ok(None) | Err(_) => {
                 let refusal = match readiness.lock().map(|held| held.clone()) {
                     Ok(PrivateInputReadiness::Refused(cause)) => {
@@ -456,6 +479,8 @@ impl PrivateInputRuntime {
             owner,
             store,
             participant,
+            observer,
+            retained_receipts: Mutex::new(std::collections::VecDeque::new()),
             access,
             registry,
             admitted,
@@ -590,10 +615,16 @@ impl PrivateInputRuntime {
         // so it appears in no settlement reading; counting it here is what
         // stops a stop from looking finished while this is still owed.
         let bridge_undelivered = self.bridge.lock().map(|held| held.outstanding()).ok();
+        // RECEIPTS TAKEN AND NEVER HANDED BACK. Each one still holds a place in
+        // the delivery ledger, so a stop that ignored them would look finished
+        // while the service it stopped had permanently spent that much of its
+        // own delivery bound. `None` is unreadable, which is not none owed.
+        let receipts_unobserved = self.retained_receipts.lock().map(|held| held.len()).ok();
         let mut outcome = PrivateInputOutcome {
             service_thread,
             settlement,
             bridge_undelivered,
+            receipts_unobserved,
             ..PrivateInputOutcome::default()
         };
         if let Some(closed) = closed {

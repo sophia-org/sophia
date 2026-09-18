@@ -361,14 +361,21 @@ fn committed_routing() {
                 u32::try_from(accepted.time_msec).unwrap(),
                 state,
             );
-            let receipts = instance.handle().drain_deliveries_within(support::WAIT);
-            assert_eq!(receipts.len(), 1);
-            assert_eq!(receipts[0].client, submission.connection().client);
-            assert_eq!(receipts[0].delivery, accepted.delivery);
-            assert_eq!(receipts[0].outcome, XAuthorityInputDeliveryOutcome::Flushed);
+            let receipts = instance
+                .handle()
+                .drain_deliveries_within(support::WAIT)
+                .unwrap();
+            // Observed, so each receipt gave its delivery's place back.
+            assert!(receipts.retained.is_empty(), "{receipts:?}");
+            let observed = &receipts.observed;
+            assert_eq!(observed.len(), 1);
+            assert_eq!(observed[0].client, submission.connection().client);
+            assert_eq!(observed[0].delivery, accepted.delivery);
+            assert_eq!(observed[0].outcome, XAuthorityInputDeliveryOutcome::Flushed);
         }
         peer.empty_tail();
-        assert!(instance.handle().drain_deliveries().is_empty());
+        let drained = instance.handle().drain_deliveries().unwrap();
+        assert!(drained.observed.is_empty() && drained.retained.is_empty());
         drop((peer, submission));
         evidence.collect(instance.finish(), false);
     }

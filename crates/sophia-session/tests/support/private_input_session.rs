@@ -195,9 +195,14 @@ impl Drop for Fixture {
     }
 }
 
-/// THE LIFETIME ROW. A real service, a real connected peer, custody read while
-/// it runs and again after it is collected, and an execution reported from
-/// after the join rather than from before it.
+/// A diagnostic control, NOT the acceptance row.
+///
+/// `lifetime` is reserved for the full five-subcase body -- stop, command
+/// loss, service error, serving-thread unwind and retained work -- and this
+/// name exists so that this control cannot be mistaken for it or bound in its
+/// place. A real service, a real connected peer, custody read while it runs and
+/// again after it is collected, and an execution reported from after the join
+/// rather than from before it.
 ///
 /// EVERY ASSERTION HERE IS ABOUT SOMETHING THAT ACTUALLY HAPPENED. The peer is
 /// a real X client over the real socket, so the worker whose custody this reads
@@ -205,7 +210,7 @@ impl Drop for Fixture {
 /// read from the outcome's own retention rather than from a service that is
 /// still running, which is the only point at which "collected" means anything.
 #[test]
-fn lifetime() {
+fn running_worker_is_collected() {
     let mut fixture = Fixture::started(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
     let mut peer = fixture.connect();
     let _window = peer.create_map_and_draw();

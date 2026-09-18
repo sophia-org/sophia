@@ -34,6 +34,8 @@ use super::control::{PrivateInputCommitted, PrivateInputControlError, PrivateInp
 use super::handle::{PrivateInputHandle, PrivateInputUnavailable};
 use super::submission::PrivateInputConnection;
 
+mod generations;
+
 /// The most the bridge will hold in minted commands before it stops committing.
 ///
 /// A BOUND ON EFFECTS, NOT ON BATCHES. One batch can decide many effects, so
@@ -102,6 +104,7 @@ pub(super) struct PrivateInputBridge {
     /// this is updated from a batch before that same batch's commits are
     /// routed, so a map arriving after an effect cannot reach back to it.
     mapped: BTreeSet<SurfaceId>,
+    generations: generations::GenerationLedger,
 }
 
 impl PrivateInputBridge {
@@ -242,7 +245,14 @@ impl PrivateInputHandle {
                 let Some(batch) = bridge.intake.pop_front() else {
                     return Ok(());
                 };
-                let decisions = commit_batch(&mut assembly, &batch, &mut bridge.mapped, report);
+                let decisions = commit_batch(
+                    &mut assembly,
+                    &batch,
+                    &mut bridge.mapped,
+                    &mut bridge.generations,
+                    live,
+                    report,
+                );
                 drop(assembly);
                 bridge.staged = Some(PrivateInputStagedBatch {
                     batch,
@@ -342,6 +352,8 @@ fn commit_batch(
     assembly: &mut sophia_engine::QueuedHeadlessCompositorBackendAssembly,
     batch: &XAuthorityObservedTransactionBatch,
     mapped: &mut BTreeSet<SurfaceId>,
+    generations: &mut generations::GenerationLedger,
+    live: &[PrivateAdmittedConnection],
     report: &mut PrivateInputCommitted,
 ) -> Vec<PrivateInputDecision> {
     // THE LEDGER IS UPDATED FROM THIS BATCH BEFORE THIS BATCH IS ROUTED, and
@@ -384,13 +396,18 @@ fn commit_batch(
         mapped.remove(surface);
     }
 
-    let intake = sophia_engine::AuthorityTransactionIntake::new(
-        batch.transaction,
-        batch.transactions.clone(),
-    )
-    .with_surface_removals(batch.removed_surfaces.clone());
-
-    let commits = assembly.commit_authority_batches(std::slice::from_ref(&intake));
+    let commits = match generations.prepare(batch, assembly.committed_surfaces(), live) {
+        Ok(intake) => {
+            let commits = assembly.commit_authority_batches(std::slice::from_ref(&intake));
+            generations.record(batch, &commits);
+            commits
+        }
+        Err(outcome) => vec![sophia_protocol::TransactionCommit {
+            transaction: batch.transaction,
+            outcome,
+            applied_surfaces: Vec::new(),
+        }],
+    };
     report.commits += commits.len();
 
     let mut decisions = Vec::new();

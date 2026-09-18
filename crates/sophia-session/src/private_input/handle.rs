@@ -22,6 +22,21 @@ use super::submission::{PrivateInputConnection, PrivateInputSubmission};
 /// call rather than being dropped.
 pub const PRIVATE_INPUT_DRAIN_BOUND: usize = 256;
 
+/// Receipts taken from the delivery channel, and what became of each.
+///
+/// TWO DIFFERENT OUTCOMES, KEPT APART. An observed receipt released its
+/// delivery's place in the ledger. A retained one did not, is still held, and
+/// will be offered again; it is owed work rather than a receipt that was dealt
+/// with, and one list holding both would make those the same answer.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct PrivateInputReceipts {
+    /// Handed back to the ledger, which pruned the ticket.
+    pub observed: Vec<XAuthorityClientInputDelivery>,
+    /// Still held. Every receipt this service owes, not only the ones this
+    /// call popped.
+    pub retained: Vec<XAuthorityClientInputDelivery>,
+}
+
 /// A boundary or a record that could not be read.
 ///
 /// ITS OWN ANSWER, NEVER AN EMPTY ONE. A participant whose lock is poisoned
@@ -261,6 +276,13 @@ pub struct PrivateInputOutcome {
     /// zero would read exactly like a bridge that owed nothing, which is the
     /// one reading that must never be produced by a failure to look.
     pub bridge_undelivered: Option<usize>,
+    /// Receipts this service took from the delivery channel and never handed
+    /// back to the ledger that issued them.
+    ///
+    /// EACH ONE IS A DELIVERY PLACE STILL SPENT. `None` means unreadable, for
+    /// the same reason it does above: a failure to look is not a finding of
+    /// nothing.
+    pub receipts_unobserved: Option<usize>,
 }
 
 impl core::fmt::Debug for PrivateInputOutcome {
@@ -279,6 +301,7 @@ impl core::fmt::Debug for PrivateInputOutcome {
             .field("interrupted", &self.interrupted)
             .field("settlement", &self.settlement)
             .field("bridge_undelivered", &self.bridge_undelivered)
+            .field("receipts_unobserved", &self.receipts_unobserved)
             .field("retains_obligations", &self.retains_obligations())
             .finish()
     }
@@ -307,7 +330,8 @@ impl PrivateInputOutcome {
             || settlement.indeterminate.is_some_and(|held| held > 0)
             // Unreadable retains, for the same reason an unreadable
             // settlement does: nothing has been shown to be finished.
-            || self.bridge_undelivered.is_none_or(|owed| owed > 0);
+            || self.bridge_undelivered.is_none_or(|owed| owed > 0)
+            || self.receipts_unobserved.is_none_or(|owed| owed > 0);
         self.retained = outstanding.then_some(runtime);
         self
     }
@@ -532,28 +556,94 @@ impl PrivateInputHandle {
     /// DRAINED, NEVER PROBED AWAY. Each call returns what is queued and leaves
     /// nothing behind; asking whether anything is there is the same act as
     /// taking it, so there is no separate question that consumes.
-    pub fn drain_deliveries(&self) -> Vec<XAuthorityClientInputDelivery> {
-        self.runtime
-            .deliveries
-            .lock()
-            .map(|held| held.try_iter().take(PRIVATE_INPUT_DRAIN_BOUND).collect())
-            .unwrap_or_default()
+    pub fn drain_deliveries(&self) -> Result<PrivateInputReceipts, PrivateInputUnavailable> {
+        self.consume_receipts(None)
     }
 
     /// Take delivery receipts, waiting up to this bound for the first one.
-    pub fn drain_deliveries_within(&self, within: Duration) -> Vec<XAuthorityClientInputDelivery> {
-        let Ok(held) = self.runtime.deliveries.lock() else {
-            return Vec::new();
-        };
-        let mut taken = Vec::new();
-        if let Ok(first) = held.recv_timeout(within) {
-            taken.push(first);
+    pub fn drain_deliveries_within(
+        &self,
+        within: Duration,
+    ) -> Result<PrivateInputReceipts, PrivateInputUnavailable> {
+        self.consume_receipts(Some(within))
+    }
+
+    /// Take receipts and hand each one back to the ledger that issued it.
+    ///
+    /// A RECEIPT IS NOT CONSUMED BY BEING READ. A delivery's ticket is pruned
+    /// only once it is both routing-finished and observed, so a receipt that is
+    /// popped off the channel and merely handed to a caller leaves its place
+    /// taken for good. Enough of those and the service stops accepting
+    /// deliveries without having grown by a byte: the bound is on tickets, not
+    /// on the channel. Observing here is what gives the place back, and it
+    /// reuses the ledger's own ticket rather than counting anything twice.
+    ///
+    /// AN UNOBSERVED RECEIPT IS KEPT. The ledger refuses an observation whose
+    /// ticket it does not hold, one already made, and one whose terminal
+    /// answer is not the receipt offered. None of those is a reason to drop the
+    /// receipt: it is retained, offered again on the next drain, and counted as
+    /// owed at stop.
+    fn consume_receipts(
+        &self,
+        within: Option<Duration>,
+    ) -> Result<PrivateInputReceipts, PrivateInputUnavailable> {
+        let mut retained = self
+            .runtime
+            .retained_receipts
+            .lock()
+            .map_err(|_| PrivateInputUnavailable)?;
+        let mut observed = Vec::new();
+
+        // WHAT WAS KEPT GOES FIRST, in the order it was kept.
+        let mut still_retained = std::collections::VecDeque::new();
+        while let Some(receipt) = retained.pop_front() {
+            if self.runtime.observer.observe(receipt) {
+                observed.push(receipt);
+            } else {
+                still_retained.push_back(receipt);
+            }
         }
-        taken.extend(
-            held.try_iter()
-                .take(PRIVATE_INPUT_DRAIN_BOUND - taken.len()),
-        );
-        taken
+        *retained = still_retained;
+
+        let room = PRIVATE_INPUT_DRAIN_BOUND.saturating_sub(retained.len());
+        if room > 0 {
+            let held = self
+                .runtime
+                .deliveries
+                .lock()
+                .map_err(|_| PrivateInputUnavailable)?;
+            let mut taken = Vec::new();
+            if let Some(within) = within
+                && let Ok(first) = held.recv_timeout(within)
+            {
+                taken.push(first);
+            }
+            taken.extend(held.try_iter().take(room - taken.len()));
+            drop(held);
+            for receipt in taken {
+                if self.runtime.observer.observe(receipt) {
+                    observed.push(receipt);
+                } else {
+                    // POPPED, SO IT IS OURS NOW. Dropping it here would take
+                    // its ticket's place with it.
+                    retained.push_back(receipt);
+                }
+            }
+        }
+
+        Ok(PrivateInputReceipts {
+            observed,
+            retained: retained.iter().copied().collect(),
+        })
+    }
+
+    /// How many receipts this service has taken and not handed back.
+    pub fn unobserved_receipts(&self) -> Result<usize, PrivateInputUnavailable> {
+        self.runtime
+            .retained_receipts
+            .lock()
+            .map(|held| held.len())
+            .map_err(|_| PrivateInputUnavailable)
     }
 
     /// Take the control acknowledgements that have arrived, without waiting.

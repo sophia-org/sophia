@@ -656,6 +656,16 @@ pub struct PrivateServiceBinding {
 
 #[cfg(unix)]
 impl PrivateXServerFrontend {
+    /// The narrow observer for this frontend's delivery receipts.
+    ///
+    /// HANDED OUT SO RECEIPTS CAN BE CONSUMED WITHOUT THE SENDER. A consumer
+    /// needs exactly one call -- mark this receipt observed -- and giving it
+    /// the routed input sender to get that call would give it the ability to
+    /// inject input as well.
+    pub fn delivery_observer(&self) -> PrivateDeliveryObserver {
+        PrivateDeliveryObserver::over(self.broker.registry.input_recovery.clone())
+    }
+
     /// Serve this frontend until it is stopped.
     ///
     /// FOR A CALLER THAT ALREADY HOLDS THE FRONTEND. The convenience entry
