@@ -118,6 +118,12 @@ pub(super) fn run(
 
 fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<String>, String> {
     let source = identity::snapshot(repo, &opts.output)?;
+    let build_target_namespace = target_namespace(&source.content_sha256)?;
+    let build_target = opts.target.join(&build_target_namespace);
+    if std::fs::symlink_metadata(&build_target).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Err("source target namespace must not be a symlink".into());
+    }
+    std::fs::create_dir_all(&build_target).map_err(|e| e.to_string())?;
     let snapshot = opts.output.join("source");
     let harness = snapshot.join("tools/probes/m3_acceptance");
     let toolchain = identity::toolchain(repo, &opts.output)?;
@@ -140,6 +146,7 @@ fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<Strin
             .unwrap_or_default(),
         build_timeout: opts.build_timeout,
         case_timeout: opts.case_timeout,
+        build_target_namespace,
         source,
         host_namespaces: identity::namespaces()?,
         inventory_sha256: identity::digest(&harness.join("inventory.json"))?,
@@ -159,7 +166,7 @@ fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<Strin
     let inventory = catalog::inventory(&harness.join("inventory.json"))?;
     let mut report = super::worker::initial(&config, &inventory, &opts.output.join("config.json"))?;
     identity::json(&opts.output.join("report.json"), &report)?;
-    let outcome = launch(opts, &snapshot, &toolchain, &executable);
+    let outcome = launch(opts, &snapshot, &toolchain, &executable, &build_target);
     match outcome {
         Ok(execution) => {
             let inner = opts.output.join("evidence/inner-report.json");
@@ -232,11 +239,25 @@ fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<Strin
     }
 }
 
+/// Cargo sees every snapshot at the same contained pathname. Archive mtimes
+/// can be older than a previous build, so its normal incremental timestamp
+/// checks cannot distinguish those sources. Only identical snapshot contents
+/// may share a target; commit names and timestamps are not content identity.
+pub(super) fn target_namespace(content_sha256: &str) -> Result<String, String> {
+    if content_sha256.len() != 64
+        || !content_sha256.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("build target requires the attested snapshot content SHA-256".into());
+    }
+    Ok(format!("source-{content_sha256}"))
+}
+
 fn launch(
     opts: &Options,
     source: &Path,
     toolchain: &Path,
     executable: &Path,
+    build_target: &Path,
 ) -> Result<Execution, String> {
     let registry = opts.registry.canonicalize().map_err(|e| e.to_string())?;
     if ["cache", "index", "src"]
@@ -249,7 +270,7 @@ fn launch(
         std::fs::create_dir(opts.output.join(name)).map_err(|e| e.to_string())?;
     }
     let mounts = [
-        (source.to_owned(), "/work/source", false), (opts.target.clone(), "/work/target", true),
+        (source.to_owned(), "/work/source", false), (build_target.to_owned(), "/work/target", true),
         (opts.output.join("cargo"), "/work/cargo", true), (opts.output.join("evidence"), "/work/evidence", true),
         (opts.output.join("config.json"), "/work/config.json", false),
         (toolchain.to_owned(), "/work/toolchain", false), (registry, "/work/registry", false),
