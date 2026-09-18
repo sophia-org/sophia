@@ -7,31 +7,7 @@ pub(super) fn validate_case(
     run: &Execution,
     text: &str,
 ) -> Result<CaseEvidence, String> {
-    if !run.clean() {
-        return Err("test failed, timed out or did not collect every process".into());
-    }
-    if text
-        .lines()
-        .filter(|line| *line == "running 1 test")
-        .count()
-        != 1
-        || text
-            .lines()
-            .filter(|line| line.starts_with("running "))
-            .count()
-            != 1
-        || !text
-            .lines()
-            .any(|line| line == format!("test {exact} ... ok"))
-        || !text.lines().any(|line| {
-            line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; ")
-        })
-    {
-        return Err(
-            "exactly one non-ignored bound test must pass; filters/empty selections cannot qualify"
-                .into(),
-        );
-    }
+    validate_exact_test(exact, run, text)?;
     let records = text
         .lines()
         .filter_map(|line| line.strip_prefix("sophia_m3_acceptance "))
@@ -60,6 +36,35 @@ pub(super) fn validate_case(
         );
     }
     Ok(record)
+}
+
+pub(super) fn validate_exact_test(exact: &str, run: &Execution, text: &str) -> Result<(), String> {
+    if !run.clean() {
+        return Err("test failed, timed out or did not collect every process".into());
+    }
+    if text
+        .lines()
+        .filter(|line| *line == "running 1 test")
+        .count()
+        != 1
+        || text
+            .lines()
+            .filter(|line| line.starts_with("running "))
+            .count()
+            != 1
+        || !text
+            .lines()
+            .any(|line| line == format!("test {exact} ... ok"))
+        || !text.lines().any(|line| {
+            line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; ")
+        })
+    {
+        return Err(
+            "exactly one non-ignored bound test must pass; filters/empty selections cannot qualify"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 impl Execution {

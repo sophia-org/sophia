@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "suites": {
+    "transient-service": [
+      "x11_socket::routing_tests::service_motion_and_axis_use_the_original_request_and_reclaim_exact_writer_receipts",
+      "x11_socket::routing_tests::transient_full_queue_preserves_exact_pair_token_and_accumulator_without_reselection"
+    ],
+    "retained-maintenance": [
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_uses_one_original_cleanup_start_and_exact_settled_disposal",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_refuses_foreign_lease_and_collection_without_touching_home",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_requires_actual_commitment_and_exact_published_join",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_requires_join_publication_then_recorded_fence_before_permission",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_refuses_an_unreadable_fence_even_when_duty_is_committed",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_refuses_live_poisoned_and_mismatched_home_evidence",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_refuses_interrupted_cleanup_even_after_commitment",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_visits_only_one_physical_place_and_advances_past_refusal",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_cannot_refresh_interrupted_budget_or_failed_watchdog",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_releases_store_and_inventory_before_waiting_for_home",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_preserves_partial_unknown_and_complete_unretired_frames_distinctly",
+      "x11_socket::routing_tests::private_retained_drive::retained_drive_adjudicates_unknown_only_after_its_exact_source_establishes_termination",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_normal_stop_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_service_error_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_unwind_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_without_resources_and_with_foreign_lease_cannot_visit"
+    ]
+  }
+}

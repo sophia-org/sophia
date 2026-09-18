@@ -17,7 +17,9 @@ pub(super) fn initial(
     Ok(Report {
         schema: 1,
         run_id: config.run_id.clone(),
-        purpose: if config.self_test {
+        purpose: if config.component_suite.is_some() {
+            "m3_components"
+        } else if config.self_test {
             "harness_self_test"
         } else {
             "m3_acceptance"
@@ -31,6 +33,7 @@ pub(super) fn initial(
         build: None,
         binary: None,
         self_tests: None,
+        components: super::components::initial(config),
         launcher: None,
         source_attested_inside: false,
         source_unchanged_after: false,
@@ -58,6 +61,7 @@ fn validate_containment(record: &Containment, config: &Config) -> Result<(), Str
 }
 
 pub(super) fn validate_report(report: &Report, config: &Config, path: &Path) -> Result<(), String> {
+    super::components::validate(report, config)?;
     if report.schema != 1
         || report.run_id != config.run_id
         || report.config_sha256 != identity::digest(path)?
@@ -91,7 +95,13 @@ pub(super) fn validate_report(report: &Report, config: &Config, path: &Path) -> 
         .as_ref()
         .ok_or("launcher was not collected")?;
     if !evidence::launcher_collected(launcher)
-        || (report.overall == Verdict::Pass && launcher.returncode != Some(0))
+        || ((report.overall == Verdict::Pass
+            || report
+                .components
+                .as_ref()
+                .is_some_and(|component| component.verdict == Verdict::Pass)
+            || (config.self_test && report.self_tests.as_ref().is_some_and(Execution::clean)))
+            && launcher.returncode != Some(0))
     {
         return Err("launcher timed out or left uncollected processes".into());
     }
@@ -101,7 +111,7 @@ pub(super) fn validate_report(report: &Report, config: &Config, path: &Path) -> 
     Ok(())
 }
 
-fn save(report: &Report) -> Result<(), String> {
+pub(super) fn save(report: &Report) -> Result<(), String> {
     identity::json(&Path::new(EVIDENCE).join("inner-report.json"), report)
 }
 
@@ -116,26 +126,51 @@ pub(super) fn run() -> Result<(), String> {
     report.containment = Some(containment);
     save(&report)?;
     if let Err(error) = execute(&config, &inventory, &mut report) {
-        report.overall = Verdict::Fail;
+        if let Some(component) = report.components.as_mut() {
+            component.verdict = Verdict::Fail;
+        } else {
+            report.overall = Verdict::Fail;
+        }
         report.harness_error = Some(error);
     }
     save(&report)?;
-    let success = if config.self_test {
-        report.self_tests.as_ref().is_some_and(Execution::clean) && report.harness_error.is_none()
-    } else {
-        report.overall == Verdict::Pass
-    };
-    if success {
+    if successful(&report, &config) {
         Ok(())
     } else {
         Err(format!(
-            "contained M3 result {:?}; no acceptance",
-            report.overall
+            "contained {:?} result {:?}; no acceptance",
+            report.purpose, report.overall
         ))
     }
 }
 
+pub(super) fn successful(report: &Report, config: &Config) -> bool {
+    if report.harness_error.is_some() {
+        return false;
+    }
+    if config.component_suite.is_some() {
+        super::components::validate(report, config).is_ok()
+            && report
+                .components
+                .as_ref()
+                .is_some_and(|report| report.verdict == Verdict::Pass)
+    } else if config.self_test {
+        report.self_tests.as_ref().is_some_and(Execution::clean) && report.harness_error.is_none()
+    } else {
+        report.overall == Verdict::Pass
+    }
+}
+
 fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Result<(), String> {
+    if let Some(suite) = &config.component_suite {
+        if config.self_test
+            || super::components::suite(Path::new(SOURCE), suite)? != config.component_tests
+        {
+            return Err("component test inventory differs from attested source".into());
+        }
+    } else if !config.component_tests.is_empty() {
+        return Err("component tests supplied to a non-component run".into());
+    }
     for (name, expected) in &config.toolchain_sha256 {
         if identity::digest(&Path::new("/work/toolchain/bin").join(name))? != *expected {
             return Err("contained compiler differs from the attested toolchain".into());
@@ -184,6 +219,8 @@ fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Resul
         .collect::<BTreeSet<_>>();
     if config.self_test {
         self_tests(config, report, &binary, &available)?;
+    } else if config.component_suite.is_some() {
+        super::components::execute(config, report, &binary, &available)?;
     } else {
         cases(config, inventory, report, &binary, &available)?;
     }

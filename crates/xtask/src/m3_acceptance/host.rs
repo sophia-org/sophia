@@ -76,8 +76,15 @@ fn artifact_path(path: &Path, artifacts: &Path) -> Result<PathBuf, String> {
     Ok(actual)
 }
 
-pub(super) fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
+pub(super) fn run(
+    repo: &Path,
+    arguments: &[String],
+    suite: Option<&str>,
+) -> Result<Vec<String>, String> {
     let mut opts = options(arguments)?;
+    if suite.is_some() && opts.self_test {
+        return Err("component suites and harness self-tests are separate runs".into());
+    }
     // The common repository path is read on the host, never mounted inside.
     let temporary = std::env::temp_dir().join(format!("m3-git-{}.log", std::process::id()));
     let common = identity::git(
@@ -106,10 +113,10 @@ pub(super) fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, Stri
         .map_err(|e| e.to_string())?;
     lock.try_lock()
         .map_err(|e| format!("target already owned by another harness: {e}"))?;
-    execute(repo, &opts)
+    execute(repo, &opts, suite)
 }
 
-fn execute(repo: &Path, opts: &Options) -> Result<Vec<String>, String> {
+fn execute(repo: &Path, opts: &Options, suite: Option<&str>) -> Result<Vec<String>, String> {
     let source = identity::snapshot(repo, &opts.output)?;
     let snapshot = opts.output.join("source");
     let harness = snapshot.join("tools/probes/m3_acceptance");
@@ -126,6 +133,11 @@ fn execute(repo: &Path, opts: &Options) -> Result<Vec<String>, String> {
                 .as_nanos()
         ),
         self_test: opts.self_test,
+        component_suite: suite.map(str::to_owned),
+        component_tests: suite
+            .map(|suite| super::components::suite(&snapshot, suite))
+            .transpose()?
+            .unwrap_or_default(),
         build_timeout: opts.build_timeout,
         case_timeout: opts.case_timeout,
         source,
@@ -157,28 +169,49 @@ fn execute(repo: &Path, opts: &Options) -> Result<Vec<String>, String> {
                     report.launcher = Some(execution);
                 }
                 Err(error) => {
-                    report.overall = Verdict::Blocked;
+                    if report.components.is_none() {
+                        report.overall = Verdict::Blocked;
+                    }
                     report.harness_error = Some(error);
                 }
             }
             if let Err(error) =
                 super::worker::validate_report(&report, &config, &opts.output.join("config.json"))
             {
-                report.overall = Verdict::Fail;
+                if report.components.is_none() {
+                    report.overall = Verdict::Fail;
+                }
                 report.harness_error = Some(error);
             }
         }
         Err(error) => {
-            report.overall = Verdict::Blocked;
+            if report.components.is_none() {
+                report.overall = Verdict::Blocked;
+            }
             report.harness_error = Some(error);
         }
     }
-    let success = if opts.self_test {
-        report.self_tests.as_ref().is_some_and(Execution::clean) && report.harness_error.is_none()
-    } else {
-        report.overall == Verdict::Pass
-    };
+    let success = super::worker::successful(&report, &config);
     identity::json(&opts.output.join("report.json"), &report)?;
+    if let Some(components) = &report.components {
+        let summary = format!(
+            "M3 components {}: {:?}; {}/{} exact controls passed; acceptance NOT_RUN; {}",
+            components.suite,
+            components.verdict,
+            components
+                .tests
+                .iter()
+                .filter(|row| row.status == Verdict::Pass)
+                .count(),
+            components.tests.len(),
+            opts.output.join("report.json").display()
+        );
+        return if success {
+            Ok(vec![summary])
+        } else {
+            Err(summary)
+        };
+    }
     let summary = format!(
         "M3 acceptance: {:?}; {}/20 cases passed; {}",
         report.overall,

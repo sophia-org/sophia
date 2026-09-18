@@ -313,3 +313,87 @@ fn bound_test_name_must_be_unique_and_exact() {
         assert!(catalog::bindings(&path).is_err());
     }
 }
+
+#[test]
+fn component_names_are_closed_nonempty_unique_and_not_acceptance_aliases() {
+    use super::components;
+    let exact = "x11_socket::routing_tests::component_control".to_owned();
+    components::validate_names(std::slice::from_ref(&exact)).unwrap();
+    for names in [
+        Vec::new(),
+        vec![exact.clone(), exact],
+        vec![format!("{}alias", catalog::PREFIX)],
+        vec!["filter".into()],
+    ] {
+        assert!(components::validate_names(&names).is_err());
+    }
+    let (_, opts) = components::options(&[
+        "--suite=retained-maintenance".into(),
+        "--filter=anything".into(),
+    ])
+    .unwrap();
+    assert!(host::options(&opts).is_err());
+    assert!(components::options(&[]).is_err());
+    assert!(components::options(&["--suite=a".into(), "--suite=b".into()]).is_err());
+}
+
+fn component_config() -> Config {
+    serde_json::from_value(serde_json::json!({
+        "schema":1,"run_id":"synthetic-component-fixture","self_test":false,
+        "component_suite":"synthetic","component_tests":["x11_socket::routing_tests::component_control"],
+        "build_timeout":1,"case_timeout":1,
+        "source":{"commit":"synthetic","tree":"synthetic","clean":true,"archive_sha256":"synthetic","content_sha256":"synthetic"},
+        "host_namespaces":{},"inventory_sha256":"synthetic","bindings_sha256":"synthetic",
+        "xtask_sha256":"synthetic","toolchain_sha256":{}
+    })).unwrap()
+}
+
+#[test]
+fn component_pass_cannot_become_acceptance_or_omit_a_control() {
+    use super::{components, worker};
+    let config = component_config();
+    let temporary = Temporary::new();
+    let path = temporary.0.join("config.json");
+    identity::json(&path, &config).unwrap();
+    let mut report = worker::initial(&config, &inventory(), &path).unwrap();
+    assert!(
+        !worker::successful(&report, &config),
+        "missing controls cannot pass"
+    );
+    let component = report.components.as_mut().unwrap();
+    component.verdict = Verdict::Pass;
+    component.tests[0].status = Verdict::Pass;
+    component.tests[0].execution = Some(execution());
+    assert!(worker::successful(&report, &config));
+    assert_eq!(report.overall, Verdict::NotRun);
+    assert!(
+        report
+            .cases
+            .iter()
+            .all(|case| case.status == Verdict::NotRun)
+    );
+    report.cases[0].status = Verdict::Pass;
+    assert!(components::validate(&report, &config).is_err());
+    report.cases[0].status = Verdict::NotRun;
+    report.components.as_mut().unwrap().tests.clear();
+    assert!(!worker::successful(&report, &config));
+}
+
+#[test]
+fn component_parser_rejects_zero_ignored_timeout_and_uncollected_tests() {
+    let exact = "x11_socket::routing_tests::component_control";
+    let text = output(exact, &evidence(&inventory().cases[0]));
+    evidence::validate_exact_test(exact, &execution(), &text).unwrap();
+    for broken in [
+        text.replace("running 1 test", "running 0 tests"),
+        text.replace("... ok", "... ignored"),
+    ] {
+        assert!(evidence::validate_exact_test(exact, &execution(), &broken).is_err());
+    }
+    let mut run = execution();
+    run.timed_out = true;
+    assert!(evidence::validate_exact_test(exact, &run, &text).is_err());
+    run.timed_out = false;
+    run.collection.error = Some("cleanup failed".into());
+    assert!(evidence::validate_exact_test(exact, &run, &text).is_err());
+}

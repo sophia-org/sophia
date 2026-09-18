@@ -98,6 +98,10 @@ pub(super) struct Config {
     pub schema: u32,
     pub run_id: String,
     pub self_test: bool,
+    #[serde(default)]
+    pub component_suite: Option<String>,
+    #[serde(default)]
+    pub component_tests: Vec<String>,
     pub build_timeout: u64,
     pub case_timeout: u64,
     pub source: SourceIdentity,
@@ -130,10 +134,27 @@ pub(super) struct Report {
     pub build: Option<Execution>,
     pub binary: Option<serde_json::Value>,
     pub self_tests: Option<Execution>,
+    #[serde(default)]
+    pub components: Option<ComponentReport>,
     pub launcher: Option<Execution>,
     pub source_attested_inside: bool,
     pub source_unchanged_after: bool,
     pub harness_error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(super) struct ComponentReport {
+    pub suite: String,
+    pub verdict: Verdict,
+    pub tests: Vec<ComponentResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(super) struct ComponentResult {
+    pub test: String,
+    pub status: Verdict,
+    pub reason: String,
+    pub execution: Option<Execution>,
 }
 
 pub(super) struct Options {
