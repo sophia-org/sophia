@@ -319,6 +319,44 @@ pub(super) fn take_turns(registry: &XServerFrontendRouteRegistry) -> Vec<Private
     turns.remove(at).1
 }
 
+type DequeueReading = (
+    crate::ReadySequence,
+    sophia_input_authority::CleanupReadiness,
+);
+static DEQUEUES: Mutex<Vec<(usize, Vec<DequeueReading>)>> = Mutex::new(Vec::new());
+
+pub(crate) fn dequeue_accounting(
+    registry: &XServerFrontendRouteRegistry,
+    sequence: crate::ReadySequence,
+    cleanup: sophia_input_authority::CleanupReadiness,
+) {
+    if let Some((_, readings)) = DEQUEUES
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|(key, _)| *key == Arc::as_ptr(&registry.clients) as usize)
+    {
+        assert!(readings.len() < 4096, "bounded dequeue evidence");
+        readings.push((sequence, cleanup));
+    }
+}
+
+pub(super) fn observe_dequeues(registry: &XServerFrontendRouteRegistry) {
+    DEQUEUES
+        .lock()
+        .unwrap()
+        .push((Arc::as_ptr(&registry.clients) as usize, Vec::new()));
+}
+
+pub(super) fn take_dequeues(registry: &XServerFrontendRouteRegistry) -> Vec<DequeueReading> {
+    let mut held = DEQUEUES.lock().unwrap();
+    let index = held
+        .iter()
+        .position(|(key, _)| *key == Arc::as_ptr(&registry.clients) as usize)
+        .unwrap();
+    held.remove(index).1
+}
+
 pub(super) enum Maintenance {
     Step,
     Finish,
@@ -651,7 +689,7 @@ pub(super) fn focus_window(
         peer,
         &service.transactions,
         window,
-        (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 21),
+        (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 6) | (1 << 21),
     );
     let custody = wait_attached(&service.registry);
     let client = custody.cleanup_record().client;

@@ -2,6 +2,8 @@
 // service preparation, producer issuance, registrations, workers, collection
 // and post-collection maintenance use the actual production owners.
 
+include!("m3_acceptance_scheduler.rs");
+
 #[test]
 fn d_ready_before_exposure() {
     let mut service = LifecycleService::launch("readiness-and-revocation", 11000, None, false);
@@ -62,18 +64,19 @@ fn d_ready_before_exposure() {
         .answer()
         .unwrap();
     assert_ne!(answer.outcome, XAuthorityInputDeliveryOutcome::Flushed);
-    assert!(matches!(
-        ingress.submit(
-            &service.owner.lease(),
-            button_to(
-                surface,
-                XAuthorityInputDeliveryId::from_raw(11002),
-                272,
-                true
+    assert!(
+        ingress
+            .submit(
+                &service.owner.lease(),
+                button_to(
+                    surface,
+                    XAuthorityInputDeliveryId::from_raw(11002),
+                    272,
+                    true
+                )
             )
-        ),
-        Err(_)
-    ));
+            .is_err()
+    );
     service.command(XServerFrontendServiceCommand::StopAndDisconnect);
     let closed = service.closed();
     let turns = take_turns(&service.registry);
@@ -378,6 +381,26 @@ fn d_service_exit() {
         service.start();
         let (mut peer, custody) = service.connect();
         let (surface, sequence, ingress) = focus_window(&service, &mut peer, 0x310501, 11050);
+        // The original key source requires pointer geometry, established by
+        // an actual leased motion and its independently checked wire event.
+        ingress
+            .submit(
+                &service.owner.lease(),
+                motion_to(surface, XAuthorityInputDeliveryId::from_raw(11049)),
+            )
+            .unwrap();
+        let mut motion = expected_button_event(true, sequence, 0x310501, 1);
+        motion[0] = 6;
+        motion[1] = 0;
+        assert_eq!(read_event(&mut peer, 3), Some(motion));
+        assert_eq!(
+            service
+                .deliveries
+                .recv_timeout(Duration::from_secs(3))
+                .unwrap()
+                .delivery,
+            XAuthorityInputDeliveryId::from_raw(11049)
+        );
         ingress
             .submit(
                 &service.owner.lease(),
@@ -563,10 +586,15 @@ fn d_namespace_reuse() {
         Some(PrivateNumberStanding::Held)
     );
     let mut denied = connect_private_client(&old.path);
+    denied
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
     assert!(
-        eof_within(&mut denied, 1),
-        "actual service refuses another connection while the old frame owns capacity"
+        matches!(denied.read(&mut [0;1]),Err(error) if matches!(error.kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::TimedOut)),
+        "the pending connection has no admitted reply while the old frame owns capacity"
     );
+    assert_eq!(kept_custodies(&old.registry).len(), 1);
+    drop(denied);
     release.release();
     frame.send(()).unwrap();
     old.command(XServerFrontendServiceCommand::StopAndDisconnect);

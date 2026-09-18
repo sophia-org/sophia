@@ -174,9 +174,16 @@ pub enum PrivateRoutingPoint {
 #[cfg(unix)]
 enum PrivateOrderedStep {
     /// Original custody moved to the frozen owner without a completion.
-    Deferred { sequence: crate::ReadySequence, watched: bool },
+    Deferred {
+        sequence: crate::ReadySequence,
+        watched: bool,
+    },
     /// A bounded visit of an already accepted request, never a new dequeue.
-    Resumed { sequence: crate::ReadySequence, deferred: bool, watched: bool },
+    Resumed {
+        sequence: crate::ReadySequence,
+        deferred: bool,
+        watched: bool,
+    },
     /// The order had nothing waiting.
     Idle,
     /// The order is blocked behind an earlier operation whose disposition is
@@ -324,6 +331,23 @@ impl PrivateXServerFrontend {
         ) -> Result<(), XServerFrontendRouteError>,
         watch: &private_watchdog::PrivateWatchdogOwner,
     ) -> Result<PrivateOrderedStep, XServerFrontendRouteError> {
+        self.step_once_accounted(
+            keyboards,
+            &mut |sequence, now, _| start(sequence, now),
+            watch,
+        )
+    }
+
+    fn step_once_accounted(
+        &mut self,
+        keyboards: &mut PrivateKeyboards,
+        start: &mut dyn FnMut(
+            crate::ReadySequence,
+            std::time::Instant,
+            sophia_input_authority::CleanupReadiness,
+        ) -> Result<(), XServerFrontendRouteError>,
+        watch: &private_watchdog::PrivateWatchdogOwner,
+    ) -> Result<PrivateOrderedStep, XServerFrontendRouteError> {
         // An item left owned by an interrupted turn blocks the order. Storing
         // it before one call protects it from that call and from nothing else:
         // a later turn that dequeued into the same slot would overwrite the
@@ -339,8 +363,19 @@ impl PrivateXServerFrontend {
             return Ok(PrivateOrderedStep::Blocked(sequence));
         }
         if self.terminal.prefer_frozen && !self.terminal.frozen.is_empty() {
-            return self.resume_frozen(keyboards, start, watch);
+            return self.resume_frozen(
+                keyboards,
+                &mut |sequence, now| {
+                    start(
+                        sequence,
+                        now,
+                        sophia_input_authority::CleanupReadiness::Eligible,
+                    )
+                },
+                watch,
+            );
         }
+        let cleanup = self.cleanup_readiness();
         let next = match self.admission.take_next() {
             Ok(next) => next,
             Err(()) => return Err(XServerFrontendRouteError::RegistryPoisoned),
@@ -350,7 +385,17 @@ impl PrivateXServerFrontend {
         // that from whatever the mark is accounting for.
         let taken_at = std::time::Instant::now();
         let Some((sequence, _class, operation)) = next else {
-            return self.resume_frozen(keyboards, start, watch);
+            return self.resume_frozen(
+                keyboards,
+                &mut |sequence, now| {
+                    start(
+                        sequence,
+                        now,
+                        sophia_input_authority::CleanupReadiness::Eligible,
+                    )
+                },
+                watch,
+            );
         };
         self.terminal.prefer_frozen = true;
         // Stored before anything else may run. Until this, the work is only in
@@ -394,7 +439,7 @@ impl PrivateXServerFrontend {
         // step's to assume. It can refuse, and a refusal here stops before the
         // execution with the work still owned -- which is why it returns a
         // result rather than being told after the fact.
-        start(sequence, taken_at)?;
+        start(sequence, taken_at, cleanup)?;
         // A parked operation is a dequeue with no execution after it, so
         // there is nothing for a supervisor to watch and nothing that could
         // fail to come back.
@@ -481,13 +526,17 @@ impl PrivateXServerFrontend {
             match self.step_once(keyboards, &mut |_, _| Ok(()), watch)? {
                 PrivateOrderedStep::Idle => break,
                 PrivateOrderedStep::Blocked(sequence) | PrivateOrderedStep::Parked(sequence) => {
-                    self.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
+                    self.terminal
+                        .turn
+                        .push(PrivateOrderedItem::Parked { sequence });
                     break;
                 }
                 // Nothing here supervises, so a step that could not be
                 // watched ends the turn rather than being retried blind.
                 PrivateOrderedStep::Unwatched(sequence) => {
-                    self.terminal.turn.push(PrivateOrderedItem::Parked { sequence });
+                    self.terminal
+                        .turn
+                        .push(PrivateOrderedItem::Parked { sequence });
                     break;
                 }
                 PrivateOrderedStep::Decided(_)
@@ -496,7 +545,9 @@ impl PrivateXServerFrontend {
                 | PrivateOrderedStep::RoutedUnwatched(_) => {}
                 PrivateOrderedStep::Deferred { watched, .. }
                 | PrivateOrderedStep::Resumed { watched, .. } => {
-                    if !watched { break; }
+                    if !watched {
+                        break;
+                    }
                 }
             }
         }
@@ -618,7 +669,8 @@ impl PrivateXServerFrontend {
         // only at the moment would give native work a turn exactly when the
         // queues fell empty -- which, for a pointer anyone is using, is never.
         let native_owed = self.owes_native_recording();
-        let nothing_to_deliver = self.terminal.delivering.is_empty() && self.terminal.turn.is_empty();
+        let nothing_to_deliver =
+            self.terminal.delivering.is_empty() && self.terminal.turn.is_empty();
         let native_turn = native_owed
             && (nothing_to_deliver
                 || self.terminal.native_turn_debt >= PRIVATE_NATIVE_TURN_INTERVAL);
@@ -650,11 +702,8 @@ impl PrivateXServerFrontend {
             // is a different thing: a stream of new proofs would then starve
             // delivery debt that is already native and waiting. The debt
             // counter gives dispatch its turn.
-            let dispatch_due =
-                self.terminal.native_class_debt >= PRIVATE_NATIVE_CLASS_INTERVAL;
-            if dispatch_due
-                && let Some(enqueued) = self.attempt_one_delivery()
-            {
+            let dispatch_due = self.terminal.native_class_debt >= PRIVATE_NATIVE_CLASS_INTERVAL;
+            if dispatch_due && let Some(enqueued) = self.attempt_one_delivery() {
                 self.terminal.native_class_debt = 0;
                 return Ok(PrivateDeliveryStep::Dispatched {
                     enqueued,
@@ -693,8 +742,7 @@ impl PrivateXServerFrontend {
             }
             if let Some(recorded) = self.record_one_native() {
                 self.terminal.shared_activation_turn = true;
-                self.terminal.native_class_debt =
-                    self.terminal.native_class_debt.saturating_add(1);
+                self.terminal.native_class_debt = self.terminal.native_class_debt.saturating_add(1);
                 return Ok(PrivateDeliveryStep::Recorded { recorded });
             }
             if let Some(step) = self.join_shared_activations() {
@@ -758,7 +806,10 @@ impl PrivateXServerFrontend {
             } else {
                 self.terminal.discard_item_unapplied_pending(&item);
             }
-            return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
+            return Ok(PrivateDeliveryStep::Advanced {
+                sequence,
+                report: None,
+            });
         };
         let sequence = *sequence;
         // NOTHING IS SENT HERE. A private event reaches its recipient through
@@ -800,7 +851,10 @@ impl PrivateXServerFrontend {
                 // what keeps the unreadable request answerable.
                 let item = self.terminal.delivering.remove(0);
                 self.terminal.undelivered.push(PrivateUndelivered { item });
-                return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
+                return Ok(PrivateDeliveryStep::Advanced {
+                    sequence,
+                    report: None,
+                });
             }
         };
         // An empty observation proves no completion. Keep the item and its
@@ -813,7 +867,10 @@ impl PrivateXServerFrontend {
         if !custody.finish_item() {
             let item = self.terminal.delivering.remove(0);
             self.terminal.undelivered.push(PrivateUndelivered { item });
-            return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
+            return Ok(PrivateDeliveryStep::Advanced {
+                sequence,
+                report: None,
+            });
         }
         // Disposed, so the entry goes.
         let _resolved = self.terminal.delivering.remove(0);
@@ -878,5 +935,4 @@ impl PrivateXServerFrontend {
         }
         delivered
     }
-
 }

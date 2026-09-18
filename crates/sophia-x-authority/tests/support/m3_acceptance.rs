@@ -38,7 +38,7 @@ mod lifecycle_support;
 use lifecycle_support::*;
 pub(crate) use lifecycle_support::{
     acceptance_start, actor_joined, actor_started, after_service_turn, before_service_turn,
-    worker_body_entry, writers_started,
+    dequeue_accounting, worker_body_entry, writers_started,
 };
 
 include!("m3_acceptance_lifecycle.rs");

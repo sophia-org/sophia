@@ -221,10 +221,21 @@ impl PrivateTerminalInventory {
         let transients = PrivateTransientInventory::with_capacity(capacity);
         let frozen = std::collections::VecDeque::with_capacity(item_capacity);
         let native_bytes = Self::native_storage_bytes(holds.capacity(), settling.capacity())
-            .and_then(|bytes| bytes.checked_add(transients.records.capacity()
-                .checked_mul(std::mem::size_of::<PrivateTransientRecord>())?))
-            .and_then(|bytes| bytes.checked_add(frozen.capacity()
-                .checked_mul(std::mem::size_of::<PrivateFrozenInput>())?))
+            .and_then(|bytes| {
+                bytes.checked_add(
+                    transients
+                        .records
+                        .capacity()
+                        .checked_mul(std::mem::size_of::<PrivateTransientRecord>())?,
+                )
+            })
+            .and_then(|bytes| {
+                bytes.checked_add(
+                    frozen
+                        .capacity()
+                        .checked_mul(std::mem::size_of::<PrivateFrozenInput>())?,
+                )
+            })
             .expect("the complete native custody storage has a representable byte size");
         assert!(
             native_bytes <= isize::MAX as usize,
@@ -268,8 +279,31 @@ impl PrivateTerminalInventory {
     /// An empty inventory is one nobody needs to carry; a non-empty one is an
     /// obligation, whoever happens to be holding it.
     fn is_empty(&self) -> bool {
-        self.lifecycle.inventory().is_ok_and(|inventory| inventory.open == 0 && inventory.closed == 0)
-            && self.holds.is_empty()
+        self.lifecycle
+            .inventory()
+            .is_ok_and(|inventory| inventory.open == 0 && inventory.closed == 0)
+            && self.local_obligations_empty()
+    }
+
+    /// Open admissions alone owe no runnable cleanup. A busy or unreadable
+    /// lifecycle scan retains the reservation without waiting on that guard.
+    /// This observation never authorizes disposal of the inventory.
+    fn cleanup_is_empty(&self) -> bool {
+        self.local_obligations_empty()
+            && self
+                .lifecycle
+                .inner
+                .records
+                .try_lock()
+                .is_ok_and(|records| {
+                    records.slots.iter().all(|slot| {
+                        slot.record.is_none() || slot.mark.load(Ordering::Acquire) & 1 == 0
+                    })
+                })
+    }
+
+    fn local_obligations_empty(&self) -> bool {
+        self.holds.is_empty()
             // An attempt this executor holds is the ledger's slot, and an
             // instance reporting itself empty while holding one is reporting
             // the absence of its own records rather than of the obligation.
@@ -302,19 +336,22 @@ impl PrivateTerminalInventory {
     #[cfg_attr(not(test), allow(dead_code))]
     fn outstanding(&self) -> Option<usize> {
         let lifecycle = self.lifecycle.inventory().ok()?;
-        Some(self.holds
-            .len()
-            .saturating_add(usize::from(self.native_pending.is_some()))
-            .saturating_add(self.transients.outstanding())
-            .saturating_add(usize::from(self.pending_custody.is_some()))
-            .saturating_add(usize::from(self.attempt_custody.is_some()))
-            .saturating_add(self.settling.len())
-            .saturating_add(usize::from(self.current.is_some()))
-            .saturating_add(self.frozen.len())
-            .saturating_add(self.turn.len())
-            .saturating_add(self.delivering.len())
-            .saturating_add(self.undelivered.len())
-            .saturating_add(lifecycle.open).saturating_add(lifecycle.closed))
+        Some(
+            self.holds
+                .len()
+                .saturating_add(usize::from(self.native_pending.is_some()))
+                .saturating_add(self.transients.outstanding())
+                .saturating_add(usize::from(self.pending_custody.is_some()))
+                .saturating_add(usize::from(self.attempt_custody.is_some()))
+                .saturating_add(self.settling.len())
+                .saturating_add(usize::from(self.current.is_some()))
+                .saturating_add(self.frozen.len())
+                .saturating_add(self.turn.len())
+                .saturating_add(self.delivering.len())
+                .saturating_add(self.undelivered.len())
+                .saturating_add(lifecycle.open)
+                .saturating_add(lifecycle.closed),
+        )
     }
 
     /// Move everything owed out, storage and capabilities together.
@@ -328,8 +365,12 @@ impl PrivateTerminalInventory {
     /// arrangement from this one.
     fn hand_over(&mut self) -> Self {
         debug_assert!(
-            self.turn.len() + self.delivering.len() + self.undelivered.len()
-                + self.frozen.len() + usize::from(self.current.is_some()) <= self.item_capacity,
+            self.turn.len()
+                + self.delivering.len()
+                + self.undelivered.len()
+                + self.frozen.len()
+                + usize::from(self.current.is_some())
+                <= self.item_capacity,
             "accepted item custody cannot exceed its pre-exposure storage bound"
         );
         std::mem::replace(

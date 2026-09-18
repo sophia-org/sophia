@@ -6,6 +6,7 @@
     "D.worker_exit": "x11_socket::routing_tests::m3_acceptance::d_worker_exit",
     "D.registration_destruction": "x11_socket::routing_tests::m3_acceptance::d_registration_destruction",
     "D.service_exit": "x11_socket::routing_tests::m3_acceptance::d_service_exit",
-    "D.namespace_reuse": "x11_socket::routing_tests::m3_acceptance::d_namespace_reuse"
+    "D.namespace_reuse": "x11_socket::routing_tests::m3_acceptance::d_namespace_reuse",
+    "D.scheduler": "x11_socket::routing_tests::m3_acceptance::d_scheduler"
   }
 }
