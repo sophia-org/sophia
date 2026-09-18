@@ -9,6 +9,7 @@ struct PrivateTerminalDriveCursor {
     recording: usize,
     recipient: usize,
     custody: usize,
+    requests: usize,
     phase: u8,
     disposal_scan: usize,
     disposal_missing: bool,
@@ -44,12 +45,17 @@ enum PrivateTerminalVisit {
     Recorded { settled: bool },
     Recipient { settled: bool },
     Disposed { records: usize },
+    Request { disposed: bool },
 }
 
 #[cfg(unix)]
 impl std::fmt::Debug for PrivateTerminalVisit {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Request { disposed } => formatter
+                .debug_struct("Request")
+                .field("disposed", disposed)
+                .finish(),
             Self::EmptyInventory => formatter.write_str("EmptyInventory"),
             Self::OtherInvocation => formatter.write_str("OtherInvocation"),
             Self::Lifecycle { completed } => formatter
@@ -247,7 +253,7 @@ impl PrivateRetainedExecutionResources {
             .as_mut()
             .expect("the unwind guard owns the inventory");
         let phase = cursor.phase;
-        cursor.phase = (phase + 1) % 5;
+        cursor.phase = (phase + 1) % 6;
         match phase {
             0 => inventory
                 .lifecycle
@@ -263,7 +269,8 @@ impl PrivateRetainedExecutionResources {
                 Ok(PrivateTerminalVisit::SharedActivation { observed, joined })
             }
             3 => inventory.record_terminal_native_one(&mut cursor.recording),
-            _ => inventory.retire_native_one(service_owner, collected, cursor),
+            4 => inventory.retire_native_one(service_owner, collected, cursor),
+            _ => inventory.retire_request_one(&mut cursor.requests),
         }
     }
 }

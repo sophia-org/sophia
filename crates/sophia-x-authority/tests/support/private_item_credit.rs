@@ -106,3 +106,87 @@ fn retained_item_buffers_use_the_accepted_store_bound_before_exposure() {
     }
     assert_eq!(inventory.transients.records.capacity(), 2 * 4 + PRIVATE_CLEANUP_RESERVE);
 }
+
+#[test]
+fn retained_request_uses_its_cached_actual_outcome_and_releases_only_its_store() {
+    let durable = PrivateSettlementOwner::with_capacity(4);
+    let sibling = PrivateSettlementOwner::with_capacity(4);
+    sibling.reserve().unwrap();
+    let mut fixture = prepared_ordered_fixture_with_store(
+        XServerFrontendClientId::from_raw(9684), durable.clone(),
+    );
+    fixture.ingress.submit(&fixture.keeper.lease(), button_to(
+        fixture.surface, XAuthorityInputDeliveryId::from_raw(99830), 272, false,
+    )).unwrap();
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut fixture.runner;
+    let private = frontend.as_mut().unwrap();
+    private.step_once(keyboards, &mut |_, _| Ok(()), watch.as_ref().unwrap()).unwrap();
+    let Some(PrivateOrderedItem::Ran { custody, .. }) = private.terminal.turn.first() else {
+        panic!("the actual request ran");
+    };
+    assert!(custody.observe().unwrap().is_some());
+    // The common cell has gone; only its exact cached outcome can finish the
+    // accepted item after this observation/disposal interval.
+    assert!(custody.observe().is_err());
+    let mut settlement = fixture.runner.shutdown();
+    let terminal = settlement.terminal.as_mut().unwrap();
+    assert_eq!(terminal.retire_request_one(&mut 0).unwrap(), PrivateTerminalVisit::Request { disposed: true });
+    assert_eq!(durable.reserved(), Some(0));
+    assert_eq!(sibling.reserved(), Some(1));
+    assert_eq!(terminal.retire_request_one(&mut 0).unwrap(), PrivateTerminalVisit::Request { disposed: false });
+    assert_eq!(sibling.reserved(), Some(1));
+}
+
+#[test]
+fn retained_deferred_request_requires_actual_cancellation_before_disposal() {
+    use sophia_input_authority::{ExecutionDisposition, RequestExecution};
+    let durable = PrivateSettlementOwner::with_capacity(4);
+    let mut fixture = prepared_ordered_fixture_with_store(
+        XServerFrontendClientId::from_raw(9685), durable.clone(),
+    );
+    fixture.ingress.submit(&fixture.keeper.lease(), motion_to(
+        fixture.surface, XAuthorityInputDeliveryId::from_raw(99831),
+    )).unwrap();
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut fixture.runner;
+    let private = frontend.as_mut().unwrap();
+    // Actual refused budget start leaves the accepted current item unrun.
+    assert!(private.step_once(keyboards, &mut |_, _| Err(XServerFrontendRouteError::OrderedItemUnresolved), watch.as_ref().unwrap()).is_err());
+    let Some(PrivateOrderedItem::Refused { custody, .. }) = private.terminal.current.as_ref() else { panic!("owned current"); };
+    assert_eq!(private.participant.execute_current_or_defer(custody, fixture.client, |_, _| Ok(ExecutionDisposition::Defer)).unwrap().unwrap(), RequestExecution::Deferred);
+    let admission = custody.admission();
+    assert_eq!(private.terminal.retire_request_one(&mut 0).unwrap(), PrivateTerminalVisit::Request { disposed: false });
+    assert_eq!(durable.reserved(), Some(1));
+    private.participant.revoke_admission(fixture.client, admission).unwrap();
+    assert_eq!(private.terminal.retire_request_one(&mut 0).unwrap(), PrivateTerminalVisit::Request { disposed: true });
+    assert!(private.terminal.current.is_none());
+    assert_eq!(durable.reserved(), Some(0));
+}
+
+#[test]
+fn retained_failed_application_keeps_item_credit_after_completion_and_revocation() {
+    use sophia_input_authority::{RegistrationError, RequestCompletion, RequestExecution};
+    let durable = PrivateSettlementOwner::with_capacity(4);
+    let mut fixture = prepared_ordered_fixture_with_store(
+        XServerFrontendClientId::from_raw(9686), durable.clone(),
+    );
+    fixture.ingress.submit(&fixture.keeper.lease(), motion_to(
+        fixture.surface, XAuthorityInputDeliveryId::from_raw(99832),
+    )).unwrap();
+    let PrivatePreparedRunner { frontend, keyboards, watch, .. } = &mut fixture.runner;
+    let private = frontend.as_mut().unwrap();
+    assert!(private.step_once(keyboards, &mut |_, _| Err(XServerFrontendRouteError::OrderedItemUnresolved), watch.as_ref().unwrap()).is_err());
+    let Some(PrivateOrderedItem::Refused { custody, .. }) = private.terminal.current.as_ref() else { panic!("owned current"); };
+    let admission = custody.admission();
+    assert_eq!(private.participant.execute_current_or_defer(custody, fixture.client, |permit, _| {
+        permit.begin_external_effect()?;
+        Err(RegistrationError::RoutingUnavailable)
+    }).unwrap().unwrap(), RequestExecution::Completed(RequestCompletion::FailedAfterApplication(RegistrationError::RoutingUnavailable)));
+    for _ in 0..2 {
+        assert_eq!(private.terminal.retire_request_one(&mut 0).unwrap(), PrivateTerminalVisit::Request { disposed: false });
+        assert_eq!(durable.reserved(), Some(1));
+    }
+    private.participant.revoke_admission(fixture.client, admission).unwrap();
+    assert_eq!(private.terminal.retire_request_one(&mut 0).unwrap(), PrivateTerminalVisit::Request { disposed: false });
+    assert_eq!(durable.reserved(), Some(1));
+    assert!(private.terminal.current.is_some());
+}

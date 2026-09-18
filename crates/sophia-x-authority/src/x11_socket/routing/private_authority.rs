@@ -430,6 +430,7 @@ impl PrivateReservation {
             grant: self.grant,
             capability: self.capability,
             observed: std::cell::Cell::new(false),
+            observed_outcome: std::cell::Cell::new(None),
             accepted_store_credit: None,
             phase: std::cell::Cell::new(PrivateRequestPhase::Unused),
         }
@@ -503,6 +504,9 @@ pub struct PrivateOutstandingRequest {
     /// Execution alone does not free the cell -- the completion has to be
     /// observed -- so custody that ends without observing owes the cell back.
     observed: std::cell::Cell<bool>,
+    /// The actual consumed outcome remains readable if item disposal is
+    /// interrupted after common has released its request cell.
+    observed_outcome: std::cell::Cell<Option<sophia_input_authority::RequestCompletion>>,
     /// How far this request got.
     ///
     /// An unexposed reservation, an interrupted attempt, a proved effect-free
@@ -603,12 +607,13 @@ impl PrivateOutstandingRequest {
                 .take_completion(&self.submit, self.token, self.connection)
                 .map_err(PrivateAuthorityRefusal::Authority)
         })?;
-        if matches!(taken, Ok(Some(_))) {
+        if let Ok(Some(outcome)) = taken {
             // Recorded only for an outcome that was actually taken. A call
             // that found nothing waiting has freed nothing, and treating it as
             // observation would leave the cell held with nothing left to
             // release it.
             self.observed.set(true);
+            self.observed_outcome.set(Some(outcome));
         }
         taken
     }
