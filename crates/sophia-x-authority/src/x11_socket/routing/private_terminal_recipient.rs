@@ -67,44 +67,6 @@ impl PrivateRecipientTermination {
 
 #[cfg(unix)]
 impl PrivateTerminalInventory {
-    /// A complete pass observes one record per visit before any donor can be
-    /// disposed. The invocation is closed and cannot acquire new dependents.
-    /// Missing or interrupted native proof keeps every possible donor owned.
-    fn native_disposal_ready(&self, cursor: &mut PrivateTerminalDriveCursor) -> bool {
-        if cursor.disposal_ready {
-            return true;
-        }
-        let count = self.holds.len() + self.settling.len() + 1;
-        let index = cursor.disposal_scan % count;
-        let ready = if index < self.holds.len() {
-            self.holds[index]
-                .native
-                .as_ref()
-                .is_some_and(|native| native.proof().is_some())
-        } else if index < count - 1 {
-            self.settling[index - self.holds.len()]
-                .native
-                .as_ref()
-                .is_some_and(|native| native.proof().is_some())
-        } else {
-            match &self.native_pending {
-                PrivateNativePending::Pointer(hold) => {
-                    hold.as_ref().is_none_or(|hold| hold.proof().is_some())
-                }
-                PrivateNativePending::Key(hold) => {
-                    hold.as_ref().is_none_or(|hold| hold.proof().is_some())
-                }
-            }
-        };
-        cursor.disposal_missing |= !ready;
-        cursor.disposal_scan = (index + 1) % count;
-        if cursor.disposal_scan == 0 {
-            cursor.disposal_ready = !cursor.disposal_missing;
-            cursor.disposal_missing = false;
-        }
-        cursor.disposal_ready
-    }
-
     fn retire_native_one(
         &mut self,
         service: &PrivateServiceLease<'_>,
@@ -158,7 +120,7 @@ impl PrivateTerminalInventory {
                         .and_then(|custody| custody.attempt),
                 ),
                 _ => {
-                    cursor.recipient = (index + 1) % count;
+                    cursor.next_recipient((index + 1) % count);
                     return Ok(PrivateTerminalVisit::Disposed { records: 0 });
                 }
             }
@@ -177,7 +139,7 @@ impl PrivateTerminalInventory {
         // Traverse the product of records and physical custody places. Two
         // independently advanced cursors could miss every matching pair.
         if cursor.custody == 0 {
-            cursor.recipient = (index + 1) % count;
+            cursor.next_recipient((index + 1) % count);
         }
         let ended = ended?;
         if !ended.endpoint.matches(endpoint) {
@@ -234,6 +196,8 @@ impl PrivateTerminalInventory {
             let _ = self.native_pending.take();
             self.pending_custody = None;
         }
+        cursor.next_recipient(index);
+        self.shared_activation.invalidate();
         Ok(PrivateTerminalVisit::Disposed { records: 1 })
     }
 }

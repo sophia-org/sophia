@@ -50,6 +50,17 @@
       "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_service_error_uses_collected_custody_and_surviving_owner",
       "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_unwind_uses_collected_custody_and_surviving_owner",
       "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_without_resources_and_with_foreign_lease_cannot_visit"
+    ],
+    "terminal-native": [
+      "x11_socket::routing_tests::private_native_tests::keys::stopped_modifier_reconciles_original_xkb_history_without_recipient_proof",
+      "x11_socket::routing_tests::private_native_tests::stopped_cleanup_receipt_rejects_foreign_authority_and_replaced_admission",
+      "x11_socket::routing_tests::private_native_tests::stopped_pointer_cleanup_preserves_replacement_query_and_sibling_activation",
+      "x11_socket::routing_tests::private_native_tests::stopped_pointer_requires_original_cleanup_receipt_and_zero_holder_permission",
+      "x11_socket::routing_tests::private_native_tests::stopped_pointer_withheld_cleanup_receipt_retains_physical_debt",
+      "x11_socket::routing_tests::private_native_tests::stopped_query_scope_clone_and_replacement_never_answer_original_scope",
+      "x11_socket::routing_tests::stopped_service_held_modifier_waits_for_exact_termination_then_disposes",
+      "x11_socket::routing_tests::stopped_service_held_pointer_reconciles_and_disposes_exact_native_record",
+      "x11_socket::routing_tests::private_native_tests::stopped_donor_scan_retains_exact_dependents_and_progresses_past_foreign_residuals"
     ]
   }
 }

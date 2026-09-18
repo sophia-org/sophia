@@ -167,3 +167,126 @@ fn stopped_cleanup_receipt_rejects_foreign_authority_and_replaced_admission() {
             .is_none()
     );
 }
+
+#[test]
+fn stopped_pointer_cleanup_preserves_replacement_query_and_sibling_activation() {
+    let fixture = Fixture::new();
+    install_stopped_lifecycle(&fixture);
+    let mut hold = None;
+    fixture.press(272, &mut hold);
+    let mut hold = hold.unwrap();
+    close_stopped_lifecycle(&fixture);
+    let registry = &fixture.private.broker.registry;
+    let replacement = crate::XActiveInputGrab {
+        owner: client().raw() + 1,
+        ..implicit()
+    };
+    {
+        let mut authority = registry.input_authority.lock().unwrap();
+        authority.register_query_client(namespace(), replacement.owner);
+        authority.grab_pointer(namespace(), replacement).unwrap();
+        authority.observe_query_input(
+            namespace(),
+            window(),
+            XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                kind: XAuthorityPointerEventKind::Motion,
+                surface: surface(),
+                root_x: 90,
+                root_y: 91,
+                event_x: 40,
+                event_y: 41,
+                state: 0x204,
+                time_msec: 200,
+            }),
+        );
+    }
+    assert!(reconcile_stopped_pointer(&fixture, &mut hold).unwrap());
+    let authority = registry.input_authority.lock().unwrap();
+    assert_eq!(authority.pointer_query_state(namespace()).mask, 0x204);
+    assert_eq!(authority.pointer_grab(namespace()), Some(replacement));
+    assert!(
+        !authority
+            .ordered_query_scope(namespace())
+            .unwrap()
+            .retired()
+    );
+}
+
+#[test]
+fn stopped_donor_scan_retains_exact_dependents_and_progresses_past_foreign_residuals() {
+    let mut fixture = Fixture::new();
+    install_stopped_lifecycle(&fixture);
+    let mut donor = None;
+    let mut dependent = None;
+    fixture.press(272, &mut donor);
+    fixture.press(273, &mut dependent);
+    let mut donor = donor.unwrap();
+    let dependent = dependent.unwrap();
+    close_stopped_lifecycle(&fixture);
+    assert!(reconcile_stopped_pointer(&fixture, &mut donor).unwrap());
+    assert!(dependent.needs_retirement_from(&donor));
+    let foreign = Fixture::new();
+    let mut independent = None;
+    foreign.press(272, &mut independent);
+    let independent = independent.unwrap();
+    assert!(
+        !independent.needs_retirement_from(&donor),
+        "colliding numeric stamps from another native origin are unrelated"
+    );
+    // Labelled component custody: move these actual source-owned obligations
+    // into preallocated terminal slots to exercise the bounded donor scan.
+    for hold in [donor, dependent, independent] {
+        let incarnation = hold.incarnation().unwrap();
+        let grant = hold.grant();
+        fixture.private.terminal.holds.push(PrivateHoldRecord {
+            incarnation,
+            reached: PrivateReachedResources {
+                client: hold.client(),
+                window: window(),
+                surface: Some(surface()),
+                namespace: namespace(),
+                seat: seat(),
+                grant,
+            },
+            custody: PrivateDeliveryCustody::new(1, None),
+            native: Some(PrivateNativeHold::Pointer(hold)),
+        });
+    }
+    let mut cursor = PrivateTerminalDriveCursor::default();
+    for _ in 0..4 {
+        assert!(!fixture.private.terminal.native_disposal_ready(&mut cursor));
+    }
+    assert_eq!(
+        cursor.recipient, 1,
+        "an unresolved dependent keeps its donor but other candidates receive a turn"
+    );
+    let controller = fixture.private.controller.clone();
+    let owner = fixture.owner.clone();
+    let hold = fixture.private.terminal.holds[1]
+        .native
+        .as_mut()
+        .unwrap()
+        .pointer_mut()
+        .unwrap();
+    let connection = hold.connection();
+    controller
+        .under_common_as_origin(|authority, issuer| {
+            let permit = authority
+                .native_reconciliation(issuer, Some(hold.grant()), hold.incarnation().unwrap())
+                .unwrap();
+            owner
+                .lock_for_release(&connection)
+                .unwrap()
+                .reconcile_pointer(&permit, hold)
+                .unwrap();
+        })
+        .unwrap();
+    cursor.next_recipient(0);
+    for _ in 0..3 {
+        assert!(!fixture.private.terminal.native_disposal_ready(&mut cursor));
+    }
+    assert!(
+        fixture.private.terminal.native_disposal_ready(&mut cursor),
+        "the exact dependent consumed its proof; an unrelated residual does not retain this donor"
+    );
+}

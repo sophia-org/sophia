@@ -196,3 +196,27 @@ impl KeyHold {
         self.grant
     }
 }
+
+impl Hold {
+    pub(super) fn needs_retirement_from(&self, donor: &Self) -> bool {
+        self.proof.is_none()
+            && donor.activation_retirement.as_ref().is_some_and(|receipt| {
+                Arc::ptr_eq(&self.origin, &receipt.origin)
+                    && self
+                        .activation
+                        .is_some_and(|activation| activation.stamp() == receipt.stamp)
+            })
+    }
+}
+
+impl KeyHold {
+    pub(super) fn needs_retirement_from(&self, donor: &Self) -> bool {
+        self.proof.is_none()
+            && donor.activation_retirement.as_ref().is_some_and(|receipt| {
+                Arc::ptr_eq(&self.origin, &receipt.origin)
+                    && self
+                        .activation
+                        .is_some_and(|activation| activation.stamp() == receipt.stamp)
+            })
+    }
+}

@@ -46,6 +46,7 @@ enum PrivateTerminalVisit {
     Recipient { settled: bool },
     Disposed { records: usize },
     Request { disposed: bool },
+    Transient { disposed: bool },
 }
 
 #[cfg(unix)]
@@ -82,6 +83,10 @@ impl std::fmt::Debug for PrivateTerminalVisit {
             Self::Disposed { records } => formatter
                 .debug_struct("Disposed")
                 .field("records", records)
+                .finish(),
+            Self::Transient { disposed } => formatter
+                .debug_struct("Transient")
+                .field("disposed", disposed)
                 .finish(),
         }
     }
@@ -253,7 +258,7 @@ impl PrivateRetainedExecutionResources {
             .as_mut()
             .expect("the unwind guard owns the inventory");
         let phase = cursor.phase;
-        cursor.phase = (phase + 1) % 6;
+        cursor.phase = (phase + 1) % 7;
         match phase {
             0 => inventory
                 .lifecycle
@@ -270,7 +275,10 @@ impl PrivateRetainedExecutionResources {
             }
             3 => inventory.record_terminal_native_one(&mut cursor.recording),
             4 => inventory.retire_native_one(service_owner, collected, cursor),
-            _ => inventory.retire_request_one(&mut cursor.requests),
+            5 => inventory.retire_request_one(&mut cursor.requests),
+            _ => Ok(PrivateTerminalVisit::Transient {
+                disposed: inventory.transients.observe_one().unwrap_or(false),
+            }),
         }
     }
 }

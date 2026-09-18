@@ -26,10 +26,6 @@ pub(super) struct ObservedStep {
     pub(super) native_records: Option<usize>,
 }
 
-#[expect(
-    dead_code,
-    reason = "The shared stopped-service fixture also exposes producer endpoints for native cleanup controls"
-)]
 pub(super) struct MaintainedService {
     pub(super) path: std::path::PathBuf,
     pub(super) registry: XServerFrontendRouteRegistry,

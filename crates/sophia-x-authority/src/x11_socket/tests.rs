@@ -1225,4 +1225,6 @@ include!("tests/private_native.rs");
 include!("tests/private_xkb_selection.rs");
 include!("tests/private_keyboard_preparation.rs");
 
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/private_terminal_service.rs"));
+
 include!("tests/ordered_codec.rs");
