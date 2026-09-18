@@ -117,3 +117,80 @@ fn native_probe_requires_existing_wm_launcher_key_without_inventing_one() {
     assert_eq!(before, fs::read(&path).unwrap());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn explicit_components_replace_only_the_inherited_provider_selection() {
+    let root = std::env::temp_dir().join(format!("sophia-component-probe-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+    let base = root.join("wm.kdl");
+    let overrides = root.join("probe.kdl");
+    let output = root.join("prepared.kdl");
+    write(
+        &overrides,
+        r#"schema 1
+        shell { enabled #true; content #true; content-input #true; panel 24; gpu "denied"; }
+        session {
+            shell-component "panel" "bar" { executable "/new/lom"; config "/new/lom.kdl"; gpu "direct"; }
+            shell-component "menu" "application-launcher" { executable "/new/bemenu"; }
+            startup
+        }
+    "#,
+    );
+    for previous in [
+        r#"shell-client "/old/narthex"; shell-config "/private/narthex.kdl";"#,
+        r#"shell-component "old-bar" "bar" { executable "/old/bar"; }; shell-component "old-menu" "application-launcher" { executable "/old/menu"; };"#,
+    ] {
+        write(
+            &base,
+            &format!(
+                r#"schema 1
+            policy {{ layout "scroller"; view-count 6; }}
+            shortcut {{ profile "operator"; bind "Super+Space" "session:application-launcher"; }}
+            shell {{ enabled #true; panel 32; }}
+            session {{ {previous} window-manager "/old/hagia"; application "browser" {{ exec "/usr/bin/browser"; }}; startup "browser"; }}
+        "#
+            ),
+        );
+        let before = fs::read(&base).unwrap();
+        let original =
+            load_prepared_desktop_profile(Some(&base), ConfigGeneration::INITIAL).unwrap();
+        write(&output, &probe::compose(&base, &overrides).unwrap());
+        let derived =
+            load_prepared_desktop_profile(Some(&output), ConfigGeneration::INITIAL).unwrap();
+        assert_eq!(before, fs::read(&base).unwrap());
+        assert_eq!(
+            original.candidates.shortcut.bindings,
+            derived.candidates.shortcut.bindings
+        );
+        assert_eq!(
+            original.candidates.session.components.window_manager,
+            derived.candidates.session.components.window_manager
+        );
+        assert_eq!(
+            original.candidates.session.applications[0].command,
+            derived.candidates.session.applications[0].command
+        );
+        let components = derived.candidates.session.components;
+        assert!(components.shell_client.is_none() && components.shell_config.is_none());
+        assert_eq!(
+            components
+                .shell_components
+                .iter()
+                .map(|v| v.id.as_str())
+                .collect::<Vec<_>>(),
+            ["panel", "menu"]
+        );
+        assert_eq!(
+            components.shell_components[0].config.as_deref(),
+            Some(Path::new("/new/lom.kdl"))
+        );
+        assert_eq!(derived.candidates.session.startup, Some(Vec::new()));
+        assert!(
+            !fs::read_to_string(&output)
+                .unwrap()
+                .contains("/private/narthex")
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}

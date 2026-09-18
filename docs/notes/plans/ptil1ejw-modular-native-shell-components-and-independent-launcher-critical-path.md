@@ -1399,3 +1399,26 @@ before tests and remains under the unsuffixed artifact directory. Neither run
 executed a real display, GPU, VT or installed launcher. Final canonical/build and
 readiness manifests must identify their exact successor; no current-source
 canonical claim is borrowed from 20bb3353 or a prior checkpoint.
+
+### Exact operator-profile provider replacement, 2026-09-18
+
+The operator's actual WM profile still declares Narthex and its private config.
+The readiness audit caught that these incompatible legacy settings survived the
+old per-key composition alongside the probe's new component set. The composer now
+treats an explicit component selection as one provider set: replace inherited
+legacy shell-client/shell-config and old component identities in the generated
+probe, preserving WM/policy/bindings/applications and the original file. This does
+not relax Session's rejection of an ambiguous user profile.
+
+`.artifacts/native-launcher-readiness/profile-check/result.json` records a private,
+device-hidden run of the actual release CLI, updated release composer and Session
+preparation against the selected operator profile. Actual expansion/composition,
+known catalog, independent role permissions and empty startup all pass. Three
+real composer controls pass; restoring the old composition behavior in a separate
+archive compiles and fails the new legacy-provider control for the actual schema
+conflict (`.artifacts/native-launcher-composer-mutant/result.json`). The control
+also covers replacing differently named old roles without retaining their private
+configuration. Strict config Clippy/fmt/layout pass. The prior exact canonical
+`19591816` completed PASS, but it predates this final provider-composition fix and
+is not relabelled as validation of the successor. No user config was rewritten,
+no live/native endpoint was contacted, and physical acceptance remains pending.

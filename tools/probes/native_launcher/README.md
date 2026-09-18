@@ -14,6 +14,8 @@ target and profile overrides retain their previous meanings.
 
 The generated profile selects two roles with distinct process/config/GPU grants,
 content and input enabled, 24-pixel panel allowance and no startup applications.
+An explicit component probe replaces the inherited shell-provider set (legacy
+shell-client/private config or old component names) in the generated profile only.
 It neither replaces nor adds WM shortcuts or policy. The real profile composer
 refuses a selected WM profile without an application-launcher key binding. The
 operator's current profile uses **Super+Space**. The probe catalog explicitly

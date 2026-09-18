@@ -24,6 +24,22 @@ pub fn compose(base: &Path, probe: &Path) -> Result<String, DesktopProfileError>
             .candidates
             .get_mut(&authority)
             .expect("complete profile");
+        // Provider selection is one explicit set. Do not combine a native
+        // probe's roles with an inherited legacy provider/private config or
+        // differently named old roles. This affects the generated probe only.
+        if authority == DesktopAuthority::Session
+            && replacement
+                .values
+                .iter()
+                .any(|value| value.key.starts_with("session.shell-component."))
+        {
+            original.values.retain(|value| {
+                !matches!(
+                    value.key.as_str(),
+                    "session.shell-client" | "session.shell-config"
+                ) && !value.key.starts_with("session.shell-component.")
+            });
+        }
         original
             .values
             .retain(|value| !replacement.values.iter().any(|next| next.key == value.key));
