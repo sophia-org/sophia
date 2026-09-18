@@ -38,6 +38,22 @@ pub struct PrivateInputAdmissionRecord {
     /// instance. Not "carried evidence": evidence for another instance leaves
     /// this false, and so does none at all.
     pub instance_verified: bool,
+    /// The admission exactly as this policy minted it.
+    ///
+    /// RETAINED SO NOBODY HAS TO REBUILD IT. Issuance and revocation take a
+    /// whole context, and the parts a caller can otherwise see -- a namespace
+    /// id and an admission id -- are not enough to reconstruct one: the
+    /// namespace context and the auth provenance carry the session generation
+    /// and the method that was actually used. A caller forced to rebuild those
+    /// would be guessing at the very facts issuance checks, and a caller
+    /// forced to read them off a transaction would consume work before the
+    /// Engine bridge ever saw it.
+    ///
+    /// Reading it grants nothing. It is the same passive identity the boundary
+    /// already reports pieces of, and issuance still validates the exact
+    /// admission against current state and against the live binding inside the
+    /// act that issues.
+    pub context: ClientAdmissionContext,
 }
 
 /// The policy Session installs on the private frontend.
@@ -102,7 +118,10 @@ impl XServerFrontendAdmissionPolicy for PrivateInputAdmissionPolicy {
             .map_err(|_| XServerFrontendAdmissionError::Unavailable)?
             .insert(
                 context.client_id,
-                PrivateInputAdmissionRecord { instance_verified },
+                PrivateInputAdmissionRecord {
+                    instance_verified,
+                    context,
+                },
             );
         Ok(context)
     }
