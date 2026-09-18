@@ -52,6 +52,7 @@ impl PrivateXServerFrontend {
             // that follows must not retain the instance a second time, so
             // this handle carries nothing and does nothing.
             return Some(PrivateSettlement {
+                execution: None,
                 origin,
                 durable: self.durable.clone(),
                 queue: Arc::clone(&self.admission.ready),
@@ -68,6 +69,7 @@ impl PrivateXServerFrontend {
         self.settled = true;
         self.failed = true;
         Some(PrivateSettlement {
+            execution: self.terminal.execution.clone(),
             origin,
             durable: self.durable.clone(),
             queue: Arc::clone(&self.admission.ready),
@@ -93,6 +95,7 @@ impl PrivateXServerFrontend {
         let origin = self.broker.registry.clone();
         if self.settled {
             return PrivateSettlement {
+                execution: None,
                 origin,
                 durable: self.durable.clone(),
                 queue: Arc::clone(&self.admission.ready),
@@ -174,6 +177,7 @@ impl PrivateXServerFrontend {
                 // rather than from a log line.
                 self.failed = true;
                 return PrivateSettlement {
+                    execution: self.terminal.execution.clone(),
                     origin,
                     durable: self.durable.clone(),
                     queue: Arc::clone(&self.admission.ready),
@@ -210,6 +214,7 @@ impl PrivateXServerFrontend {
         // leaves with an identity rather than with a command that could be
         // sent again.
         let mut settlement = PrivateSettlement {
+            execution: self.terminal.execution.clone(),
             origin,
             durable: self.durable.clone(),
             queue: Arc::clone(&self.admission.ready),

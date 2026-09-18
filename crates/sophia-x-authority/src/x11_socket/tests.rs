@@ -1248,5 +1248,9 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/private_live_native_disposal.rs"
 ));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_invocation_completion.rs"
+));
 
 include!("tests/ordered_codec.rs");

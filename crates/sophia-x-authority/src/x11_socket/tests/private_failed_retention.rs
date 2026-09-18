@@ -53,6 +53,7 @@ fn ordinary_recovery_beside_a_standing_uncollected_instance_recovers_only_the_or
     // origin and queue (STAGE-ONLY construction of the handle; its Drop is
     // the product's).
     drop(PrivateSettlement {
+        execution: None,
         origin: standing.broker.registry.clone(),
         durable: durable.clone(),
         queue: Arc::clone(&standing.admission.ready),

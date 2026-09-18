@@ -116,6 +116,7 @@ impl PrivateSettlementOwner {
         let Ok(mut held) = self.inner.lock() else {
             return None;
         };
+        held.obligations_changed();
         // Moved into the owner's own in-flight list rather than a local, and
         // taken one at a time, so an unwind part-way through leaves the rest
         // here instead of dropping them with the frame. Appended rather than

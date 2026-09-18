@@ -73,6 +73,8 @@ impl<R> PrivateHomeBorrow<R> {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Borrowed by a driver that is not attached yet.
 struct PrivateOrderedHome {
+    /// Set only by the exact occupied-slot return, never by later absence.
+    storage_returned: AtomicBool,
     /// Both facts under one lock, because nothing reads one without the other:
     /// what may be done with this depends on its standing, and its standing is
     /// only interesting while there is something here.
@@ -110,6 +112,7 @@ impl PrivateOrderedHome {
     /// let alone bound, so there is nothing here and nothing has ended.
     fn empty() -> Self {
         Self {
+            storage_returned: AtomicBool::new(false),
             state: Mutex::new(PrivateOrderedHomeState {
                 payload: None,
                 standing: PrivateHomeStanding::Live,

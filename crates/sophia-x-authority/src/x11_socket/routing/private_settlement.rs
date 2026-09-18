@@ -24,6 +24,9 @@ pub struct PrivateSettlementOwner {
 
 #[cfg(unix)]
 struct AbandonedSettlements {
+    /// A scan may conclude only across one stable obligation layout. Exhaustion
+    /// prevents certification; it never wraps into a previously observed epoch.
+    obligation_epoch: Option<u64>,
     held: Vec<(XServerFrontendRouteRegistry, PrivateOperation)>,
     /// Authority egress a private service could not resolve before it
     /// returned or unwound: an observed transaction batch that was never
@@ -273,6 +276,7 @@ impl PrivateSettlementOwner {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             inner: Arc::new(Mutex::new(AbandonedSettlements {
+                obligation_epoch: Some(0),
                 held: Vec::with_capacity(capacity),
                 unresolved_egress: Vec::with_capacity(capacity),
                 next_instance: 1,
@@ -342,9 +346,11 @@ impl PrivateSettlementOwner {
     /// declined, because that is a refusal before acceptance and the caller
     /// keeps what it has.
     fn records_even_if_poisoned(&self) -> std::sync::MutexGuard<'_, AbandonedSettlements> {
-        self.inner
+        let mut held = self.inner
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        held.obligations_changed();
+        held
     }
 
     /// Keep authority egress a service could not resolve, under the
@@ -367,6 +373,7 @@ impl PrivateSettlementOwner {
             held.unresolved_egress.len() < held.unresolved_egress.capacity(),
             "a shelving service holds a failure slot, so the shelf has room"
         );
+        held.obligations_changed();
         held.unresolved_egress.push((instance, envelope));
     }
 
@@ -633,6 +640,7 @@ impl PrivateSettlementOwner {
                 ..DriveProgress::default()
             };
         };
+        held.obligations_changed();
         // Moved between two owned places rather than into a local, and taken
         // one at a time, so an unwind part-way through leaves the rest here
         // rather than dropping them with the frame.
@@ -730,6 +738,7 @@ impl PrivateSettlementOwner {
                 Err(_) => return DriveProgress { readable: false, answered, reclaimed },
             };
         }
+        held.obligations_changed();
         held.terminal.retain(|terminal| !terminal.is_empty());
         DriveProgress {
             readable: lifecycle_readable,

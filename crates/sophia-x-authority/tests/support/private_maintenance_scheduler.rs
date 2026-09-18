@@ -12,6 +12,7 @@ pub(super) enum Exit {
 pub(super) enum Maintain {
     Step,
     InterruptBudget,
+    ReleaseSettlement,
     Finish,
 }
 
@@ -24,6 +25,9 @@ pub(super) struct ObservedStep {
     pub(super) allowance: Option<sophia_input_authority::ServiceStartRefusal>,
     pub(super) modifiers: Option<u16>,
     pub(super) native_records: Option<usize>,
+    pub(super) handed_off: bool,
+    pub(super) completed: bool,
+    pub(super) completion_class: u8,
 }
 
 pub(super) struct MaintainedService {
@@ -47,6 +51,18 @@ pub(super) struct MaintainedService {
 
 impl MaintainedService {
     pub(super) fn launch(exit: Exit) -> Self {
+        Self::launch_owned(
+            exit,
+            Arc::new(service_owner(&PrivateSettlementOwner::default(), 4)),
+            false,
+        )
+    }
+
+    pub(super) fn launch_owned(
+        exit: Exit,
+        owner: Arc<PrivateServiceOwner>,
+        keep_settlement: bool,
+    ) -> Self {
         let path = private_service_socket(&format!("maintain-{exit:?}"));
         let config = private_service_config(&path, NamespaceId::from_raw(9871), 4);
         let (commands, service_commands) = sync_channel(4);
@@ -66,7 +82,6 @@ impl MaintainedService {
         );
         let (parts, acks, deliveries) = producing_parts(4);
         let (port, access) = PrivateProducerAccess::for_service();
-        let owner = Arc::new(service_owner(&PrivateSettlementOwner::default(), 4));
         let service_owner = Arc::clone(&owner);
         let thread = std::thread::spawn(move || {
             let owner = service_owner;
@@ -99,7 +114,10 @@ impl MaintainedService {
             // This is the real returned settlement (or the unwind's original
             // guard handoff). It enters the independently owned store before
             // any explicit post-collection maintenance call.
-            drop(result);
+            let mut result = Some(result);
+            if !keep_settlement {
+                drop(result.take());
+            }
             let collected = keeper.resources.as_ref().is_some_and(|resources| {
                 resources
                     .collected
@@ -114,6 +132,7 @@ impl MaintainedService {
             while let Ok(command) = maintenance.recv_timeout(Duration::from_secs(5)) {
                 match command {
                     Maintain::Finish => break,
+                    Maintain::ReleaseSettlement => drop(result.take()),
                     Maintain::InterruptBudget => {
                         // Labelled fault: abandon one run of the original
                         // retained budget. Neither subsequent phase may reset it.
@@ -132,6 +151,8 @@ impl MaintainedService {
                     Maintain::Step => {
                         let step = keeper.maintain_step(&owner.lease());
                         let resources = keeper.resources.as_ref().unwrap();
+                        let handed_off = resources.lifetime.0.handed_off.load(Ordering::Acquire);
+                        let completed = resources.lifetime.0.completed.load(Ordering::Acquire);
                         let modifiers = resources.keyboards.modifiers(resources.seat);
                         // Readout only, after the bounded visit and its guards
                         // have finished. This test inventory scan authorizes
@@ -149,6 +170,9 @@ impl MaintainedService {
                         });
                         steps
                             .send(ObservedStep {
+                                completion_class: keeper.maintenance.terminal.completion.class,
+                                handed_off,
+                                completed,
                                 phase: step.phase(),
                                 status: step.status(),
                                 charged: step.charge().is_some_and(Result::is_ok),

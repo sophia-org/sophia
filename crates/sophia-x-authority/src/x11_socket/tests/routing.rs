@@ -11017,6 +11017,7 @@ fn a_transfer_guard_pays_out_when_the_attempt_unwinds() {
     let mut settling = None;
     let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let transfer = SettlementTransfer {
+            execution: None,
             origin: &origin,
             durable: &durable,
             pending: &mut pending,

@@ -18,6 +18,8 @@
 #[cfg(unix)]
 #[must_use = "unsettled work is owed an answer; retry or record the failure"]
 pub struct PrivateSettlement {
+    /// Kept even when the terminal inventory has already become empty.
+    execution: Option<Arc<PrivateExecutionWitness>>,
     /// The capability that can answer the work, retained from the instance
     /// that accepted it. Not supplied by a caller: an external authority
     /// argument would let one instance's obligations be settled against
@@ -309,6 +311,7 @@ fn attempt_each(
 /// path where they would otherwise be destroyed.
 #[cfg(unix)]
 struct SettlementTransfer<'a> {
+    execution: Option<&'a Arc<PrivateExecutionWitness>>,
     origin: &'a XServerFrontendRouteRegistry,
     durable: &'a PrivateSettlementOwner,
     pending: &'a mut Vec<PrivateOperation>,
@@ -339,6 +342,9 @@ impl Drop for SettlementTransfer<'_> {
         // Those are still owed an answer and can still be driven.
         while let Some(operation) = self.pending.pop() {
             self.durable.take_one(self.origin, operation);
+        }
+        if let Some(execution) = self.execution {
+            execution.handed_off.store(true, Ordering::Release);
         }
     }
 }
@@ -376,6 +382,9 @@ impl Drop for PrivateSettlement {
             );
         }
         if self.pending.is_empty() {
+            if let Some(execution) = &self.execution {
+                execution.handed_off.store(true, Ordering::Release);
+            }
             return;
         }
         // What the attempt cannot answer moves to the durable owner rather
@@ -388,6 +397,7 @@ impl Drop for PrivateSettlement {
         // attempt instead put the transfer on the one path that never runs
         // when it is needed.
         let mut transfer = SettlementTransfer {
+            execution: self.execution.as_ref(),
             origin: &self.origin,
             durable: &self.durable,
             pending: &mut self.pending,

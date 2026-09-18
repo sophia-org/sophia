@@ -1,6 +1,19 @@
 {
   "schema": 1,
   "suites": {
+    "final-custody": [
+      "x11_socket::routing_tests::final_custody_waits_for_actual_settlement_handoff_and_original_storage_return",
+      "x11_socket::routing_tests::final_custody_reuses_original_slots_across_more_invocations_than_capacity",
+      "x11_socket::routing_tests::completion_scan_restarts_for_a_same_invocation_obligation_moved_behind_its_cursor",
+      "x11_socket::routing_tests::final_custody_preserves_foreign_custody_and_indeterminate_rows_in_the_same_store",
+      "x11_socket::routing_tests::final_custody_preserves_unreadable_store_without_completion_or_capacity_return",
+      "x11_socket::routing_tests::stopped_service_held_modifier_waits_for_exact_termination_then_disposes",
+      "x11_socket::routing_tests::stopped_service_held_pointer_reconciles_and_disposes_exact_native_record",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_normal_stop_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_service_error_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_unwind_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_without_resources_and_with_foreign_lease_cannot_visit"
+    ],
     "live-native-disposal": [
       "x11_socket::routing_tests::live_native_disposal_waits_for_the_original_press_completion_and_native_source",
       "x11_socket::routing_tests::live_native_disposal_is_charged_before_observing_and_returns_only_the_exact_record",

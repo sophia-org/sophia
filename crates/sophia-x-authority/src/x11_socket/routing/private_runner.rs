@@ -324,6 +324,8 @@ impl PrivateXServerFrontend {
         let witness = Arc::new(PrivateExecutionWitness {
             instance: self.instance,
             state: std::sync::atomic::AtomicU8::new(0),
+            handed_off: AtomicBool::new(false),
+            completed: AtomicBool::new(false),
         });
         self.terminal.execution = Some(witness.clone());
         let watch = self.pending_watch.take();
