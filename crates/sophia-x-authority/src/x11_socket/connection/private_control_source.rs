@@ -14,6 +14,8 @@ struct PrivateControlClientSource {
     fail_after_effect: AtomicBool,
     #[cfg(all(test, unix))]
     fail_before_write: AtomicBool,
+    #[cfg(all(test, unix))]
+    before_dependent: Mutex<Option<(SyncSender<()>, Receiver<()>)>>,
 }
 
 #[cfg(unix)]
@@ -100,6 +102,8 @@ impl XServerFrontendRouteRegistry {
             fail_after_effect: AtomicBool::new(false),
             #[cfg(all(test, unix))]
             fail_before_write: AtomicBool::new(false),
+            #[cfg(all(test, unix))]
+            before_dependent: Mutex::new(None),
         });
         registration
             .connection_state

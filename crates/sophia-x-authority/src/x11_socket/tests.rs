@@ -1265,3 +1265,7 @@ mod private_control_effect_groups;
 #[cfg(unix)]
 #[path = "../../tests/support/private_control_peers.rs"]
 mod private_control_peers;
+
+#[cfg(unix)]
+#[path = "../../tests/support/private_control_protocol.rs"]
+mod private_control_protocol;

@@ -1,7 +1,7 @@
 use super::private_maintenance_scheduler::MaintainedService;
 use super::*;
 
-fn peer_window(
+pub(super) fn peer_window(
     service: &MaintainedService,
 ) -> (UnixStream, SurfaceId, Arc<PrivateControlClientSource>) {
     let mut client = connect_private_client(&service.path);
@@ -28,7 +28,7 @@ fn peer_window(
     (client, surface, source)
 }
 
-fn submit_focus(
+pub(super) fn submit_focus(
     service: &MaintainedService,
     source: &PrivateControlClientSource,
     surface: SurfaceId,

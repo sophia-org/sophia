@@ -2,6 +2,7 @@
 /// reserved completion record before the first native effect.
 #[cfg(unix)]
 struct PrivateControlExecution {
+    token: ControlCompletionToken,
     source: Arc<PrivateControlClientSource>,
     surface: SurfaceId,
     window: XResourceId,
@@ -15,6 +16,8 @@ struct PrivateControlExecution {
     generated_events: Vec<(Option<XServerFrontendClientId>, XClientEvent)>,
     focus_peers: Vec<PrivateControlFocusPeer>,
     dependent_records: Vec<Vec<u8>>,
+    protocol_receipts: Vec<Arc<PrivateControlProtocolReceipt>>,
+    protocol_cursor: usize,
 }
 
 #[cfg(unix)]
@@ -24,12 +27,27 @@ struct PrivateControlFocusPeer {
     time: u32,
     claim: Option<PrivateFocusClaim>,
     flushed: bool,
+    superseded: bool,
+}
+
+#[cfg(unix)]
+enum PrivateFocusPeerResolution {
+    Flushed,
+    Superseded,
 }
 
 #[cfg(unix)]
 impl PrivateControlExecution {
     fn peer_debt_pending(&self) -> bool {
-        self.peer_generation_begun || self.focus_peers.iter().any(|peer| !peer.flushed)
+        self.peer_generation_begun
+            || self
+                .focus_peers
+                .iter()
+                .any(|peer| !peer.flushed && !peer.superseded)
+            || self
+                .protocol_receipts
+                .iter()
+                .any(|receipt| !receipt.settled())
     }
 }
 
@@ -116,6 +134,7 @@ impl ControlCompletionRegistry {
             return Ok(execution.clone());
         }
         let execution = Arc::new(Mutex::new(PrivateControlExecution {
+            token,
             source: source.clone(),
             surface: command.command.surface(),
             window,
@@ -126,6 +145,8 @@ impl ControlCompletionRegistry {
             generated_events: Vec::new(),
             focus_peers: Vec::new(),
             dependent_records: Vec::new(),
+            protocol_receipts: Vec::new(),
+            protocol_cursor: 0,
         }));
         record.source = Some(execution.clone());
         Ok(execution)
@@ -182,6 +203,16 @@ impl ControlCompletionRegistry {
                     .ok_or(Refusal::MissingSource)?,
             )
         };
+        if visit_control_protocol_receipt(
+            &execution,
+            origin,
+            service,
+            collected,
+            place,
+            *custody == 0,
+        )? {
+            return Ok(false);
+        }
         {
             let operation = execution.lock().map_err(|_| Refusal::Unavailable)?;
             let source = &operation.source;
@@ -286,23 +317,22 @@ fn retain_private_control_events(
             .lock()
             .map_err(|_| X11SetupSocketError::new("control event custody unavailable"))?;
         for (target, event) in events {
-            if target.is_some_and(|target| target != operation.source.endpoint.client) {
-                operation.peer_generation_begun = true;
-            }
             operation.generated_events.push((target, event));
         }
     }
     Ok(())
 }
 
-/// Called only by the original dependent writer after its native projection
-/// step and its actual socket write/flush returned successfully.
+/// Called by the original dependent writer after actual projection and flush,
+/// or the source's exact claim comparison established supersession. A missing
+/// or unreadable claim never produces either disposition.
 #[cfg(unix)]
-fn record_private_focus_peer_flush(
+fn record_private_focus_peer_resolution(
     dependent: Option<&ControlDependent>,
     claim: Option<&PrivateFocusClaim>,
     window: XResourceId,
     time: u32,
+    resolution: PrivateFocusPeerResolution,
 ) -> Result<(), X11SetupSocketError> {
     let Some(held) = dependent.and_then(|dependent| dependent.held.as_ref()) else {
         return Ok(());
@@ -334,7 +364,15 @@ fn record_private_focus_peer_flush(
                 })
         })
         .ok_or_else(|| X11SetupSocketError::new("dependent flush names another original focus"))?;
-    peer.flushed = true;
+    match resolution {
+        PrivateFocusPeerResolution::Flushed if !peer.superseded => peer.flushed = true,
+        PrivateFocusPeerResolution::Superseded if !peer.flushed => peer.superseded = true,
+        _ => {
+            return Err(X11SetupSocketError::new(
+                "dependent focus source disposition conflicts",
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -396,6 +434,7 @@ impl XServerFrontendRouteRegistry {
                 time,
                 claim: claim.cloned(),
                 flushed: false,
+                superseded: false,
             });
         }
         Ok(())

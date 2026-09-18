@@ -156,11 +156,23 @@ fn spawn_x11_control_writer(
                     origin,
                     claim,
                 } => {
+                    #[cfg(all(test, unix))]
+                    if let Some((arrived, resume)) = control_source.as_ref()
+                        .and_then(|source| source.before_dependent.lock().unwrap().take())
+                    {
+                        let _ = arrived.send(());
+                        resume.recv_timeout(Duration::from_secs(5))
+                            .map_err(|_| X11SetupSocketError::client_failure("dependent source stage did not resume"))?;
+                    }
                     let disposition = x11_apply_dependent_focus_out(
                         namespace, client, window, &focused_surface_window,
                         protocol_routing.as_ref(), claim.as_ref(),
                     ).map_err(|cause| X11SetupSocketError::new(format!("private FocusOut unavailable: {cause:?}")))?;
                     if disposition != X11DependentFocusEffect::ProjectionCleared {
+                        if disposition == X11DependentFocusEffect::Superseded {
+                            record_private_focus_peer_resolution(origin.as_ref(), claim.as_ref(), window, time_msec,
+                                PrivateFocusPeerResolution::Superseded)?;
+                        }
                         // A stale generationless FocusOut would undo the
                         // newer FocusIn at the client even if our atomic were
                         // preserved. End only this dependency's quiescence.
@@ -197,7 +209,8 @@ fn spawn_x11_control_writer(
                         &sequence,
                         records,
                     )?;
-                    record_private_focus_peer_flush(origin.as_ref(), claim.as_ref(), window, time_msec)?;
+                    record_private_focus_peer_resolution(origin.as_ref(), claim.as_ref(), window, time_msec,
+                        PrivateFocusPeerResolution::Flushed)?;
                     // Run, so it can no longer happen, and its origin is told
                     // by the same guard that would have told it had this queue
                     // gone instead. Not an outcome for that operation: only

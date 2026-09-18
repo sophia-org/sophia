@@ -147,7 +147,7 @@ struct XServerFrontendClientRouteSenders {
     connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
     input: SyncSender<XAuthorityClientInputEvent>,
     control: SyncSender<X11RoutedControl>,
-    protocol: SyncSender<XClientEvent>,
+    protocol: X11ProtocolSender,
     admission: Option<ClientAdmissionContext>,
     /// Where ordered deliveries go, kept apart from the ordinary input queue.
     ///
@@ -177,7 +177,7 @@ struct XServerFrontendClientRouteSenders {
 struct XServerFrontendClientRouteChannels {
     input: Receiver<XAuthorityClientInputEvent>,
     control: Receiver<X11RoutedControl>,
-    protocol: Receiver<XClientEvent>,
+    protocol: X11ProtocolReceiver,
     #[allow(dead_code)]
     ordered: XAuthorityOrderedReceiver,
 }
@@ -466,7 +466,7 @@ impl XServerFrontendRouteRegistry {
             connection_state: connection_state.clone(),
             input: input_sender,
             control: control_sender,
-            protocol: protocol_sender,
+            protocol: X11ProtocolSender(protocol_sender),
             admission,
             ordered: ordered_sender,
             control_writer_gone: Arc::new(AtomicBool::new(false)),
@@ -574,7 +574,7 @@ impl XServerFrontendRouteRegistry {
             XServerFrontendClientRouteChannels {
                 input,
                 control,
-                protocol,
+                protocol: X11ProtocolReceiver::Tracked { receiver: protocol, registration: connection_state.clone() },
                 ordered: XAuthorityOrderedReceiver {
                     receiver: ordered,
                     registration: connection_state,

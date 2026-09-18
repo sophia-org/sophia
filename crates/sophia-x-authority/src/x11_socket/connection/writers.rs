@@ -343,17 +343,20 @@ fn spawn_x11_protocol_event_writer(
     byte_order: XByteOrder,
     sequence: Arc<AtomicU16>,
     client: XServerFrontendClientId,
-    receiver: Receiver<XClientEvent>,
+    receiver: impl Into<X11ProtocolReceiver>,
 ) -> Result<X11ProtocolEventWriter, X11SetupSocketError> {
+    let receiver = receiver.into();
     let stop = Arc::new(AtomicBool::new(false));
     let writer_stop = stop.clone();
     let thread = std::thread::spawn(move || {
         while !writer_stop.load(Ordering::Acquire) {
-            let mut event = match receiver.recv_timeout(Duration::from_millis(10)) {
+            let envelope = match receiver.receive(Duration::from_millis(10)) {
                 Ok(event) => event,
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
             };
+            receiver.validate(&envelope)?;
+            let mut event = envelope.event;
             let Some(mut stream) =
                 lock_x11_non_control_output(
                     &stream,
@@ -362,12 +365,13 @@ fn spawn_x11_protocol_event_writer(
                     Some(&writer_stop),
                 )?
             else {
-                // Told to stop while waiting for control output. Nothing was
-                // written, so nothing is owed for this event.
+                // The writer stopped before emission. A governed envelope's
+                // original journal retains its unresolved payload and receipt.
                 return Ok(());
             };
             set_x11_protocol_event_sequence(&mut event, sequence.load(Ordering::Acquire));
             let record = encode_x_client_event(byte_order, event);
+            receiver.retain_wire_record(&envelope, &record)?;
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
                 tracing::trace!(
                     "sophia_x11_socket_write schema=1 writer=protocol bytes={} payload_redacted=true",
@@ -385,6 +389,12 @@ fn spawn_x11_protocol_event_writer(
             stream.flush().map_err(|error| {
                 x11_peer_write_error("failed to flush X11 protocol event", error)
             })?;
+            receiver.record_flushed(&envelope)?;
+            // Giving up the dependency may enter the completion registry.
+            // Release wire first: source retirement takes completion before
+            // operation, while an originating control holds operation/wire.
+            drop(stream);
+            drop(envelope);
             trace_written_selection_event(client, event);
         }
         Ok(())

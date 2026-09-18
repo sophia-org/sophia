@@ -21,6 +21,7 @@ fn x11_surface_geometry_records(
     protocol_routing: Option<&XServerFrontendRouteRegistry>,
     execution: Option<&Arc<Mutex<PrivateControlExecution>>>,
 ) -> Result<Vec<Vec<u8>>, X11SetupSocketError> {
+    control_generation_pending(execution, true)?;
     let width = u16::try_from(geometry.width)
         .map_err(|_| X11SetupSocketError::new("X11 control geometry width is invalid"))?;
     let height = u16::try_from(geometry.height)
@@ -127,6 +128,7 @@ fn x11_surface_geometry_records(
             .into_iter()
             .map(|event| encode_x_client_event(byte_order, event)),
     );
+    control_generation_pending(execution, false)?;
     Ok(records)
 }
 
@@ -141,6 +143,7 @@ fn x11_presentation_property_records(
     protocol_routing: Option<&XServerFrontendRouteRegistry>,
     execution: Option<&Arc<Mutex<PrivateControlExecution>>>,
 ) -> Result<Vec<Vec<u8>>, X11SetupSocketError> {
+    control_generation_pending(execution, true)?;
     const PROPERTY_CHANGE_MASK: u32 = 1 << 22;
     let mut records = Vec::with_capacity(changed.len());
     retain_private_control_events(execution, changed.iter().map(|atom| (None, XClientEvent::PropertyNotify {
@@ -162,7 +165,7 @@ fn x11_presentation_property_records(
             })?;
             for target in subscribers.iter().copied().filter(|target| *target != client) {
                 retain_private_control_events(execution, [(Some(target), event)])?;
-                routing.route_protocol(target, event).map_err(|error| {
+                routing.route_control_protocol(target, event, execution).map_err(|error| {
                     X11SetupSocketError::new(format!(
                         "failed to route presentation property notification: {error:?}"
                     ))
@@ -176,5 +179,6 @@ fn x11_presentation_property_records(
             records.push(encode_x_client_event(byte_order, event));
         }
     }
+    control_generation_pending(execution, false)?;
     Ok(records)
 }

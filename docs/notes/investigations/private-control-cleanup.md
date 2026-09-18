@@ -74,6 +74,26 @@ Origin ACK publication and both delayed retirement paths require readable
 discharged source debt. An actual failed peer write retains its endpoint and
 original bytes despite a successful origin ACK; ordinary successful peer flush
 returns the carried credit and permits repeated focus cycles.
+An exact superseded focus claim has its own successful no-effect disposition;
+it does not claim that obsolete output was flushed. Missing or unproved claims
+remain outstanding. The control pauses an actual queued FocusOut, establishes a
+newer focus through a real core SetInputFocus request, then resumes its original
+writer and verifies exact supersession without emitted FocusOut bytes.
+
+Generic Present, core lifecycle and property events now carry an original
+receipt and completion dependency in the existing per-connection protocol
+queue. The source retains the event before enqueue and its sequence-encoded
+wire record before writing. Only the original receiver's actual write and
+flush marks that receipt delivered. A failed or stopped writer gives up only
+quiescence; it does not supply delivery proof. Post-collection maintenance can
+settle that recipient duty from its exact original endpoint termination, then
+independently check the origin's native teardown and publication. A withheld
+custody slot or replacement registration cannot borrow that proof. Interrupted
+event generation and unclassified routing failures retain a separate unknown
+publication debt, so an earlier recipient's success cannot erase later payloads.
+The healthy two-client control repeats Configure and presentation changes over
+the small credit capacity, reading actual Present, core and property bytes and
+requiring the original carried credits to return each cycle.
 Actual metadata candidates are retained before publication and kept on failure.
 Actual local wire bytes are retained before write and can be discharged only by
 the original recipient's independently established termination. Actual cancelled
@@ -105,8 +125,8 @@ Source resource removal is recorded immediately after
 `release_client_resource_range` returns successfully, before later property or
 publication failure. Incremental recovery from a failure inside that native
 release itself remains outside this receipt; the command and unknown effect
-debt remain retained, rather than being treated as cleaned up. Unknown generic
-peer publication and cancelled teardown publication likewise remain unresolved.
+debt remain retained, rather than being treated as cleaned up. Unknown partial
+peer generation and cancelled teardown publication likewise remain unresolved.
 
 The milestone's aggregate acceptance and execution order remain in
 [the existing task ledger](../../../todo.md); this investigation is evidence,

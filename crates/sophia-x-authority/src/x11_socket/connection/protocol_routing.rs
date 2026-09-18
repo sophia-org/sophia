@@ -112,7 +112,7 @@ fn route_core_lifecycle_events_with_control(
             })?;
         for recipient in subscribers.iter().copied().filter(|recipient| *recipient != client) {
             retain_private_control_events(execution, [(Some(recipient), event)])?;
-            routing.route_protocol(recipient, event).map_err(|error| {
+            routing.route_control_protocol(recipient, event, execution).map_err(|error| {
                 X11SetupSocketError::new(format!(
                     "failed to route X11 lifecycle event: {error}"
                 ))
@@ -148,7 +148,7 @@ fn route_core_lifecycle_events_with_control(
             if recipient == client {
                 output.outputs.push(crate::XClientOutput::Event(parent_event));
             } else {
-                routing.route_protocol(recipient, parent_event).map_err(|error| {
+                routing.route_control_protocol(recipient, parent_event, execution).map_err(|error| {
                     X11SetupSocketError::new(format!(
                         "failed to route X11 parent lifecycle event: {error}"
                     ))
@@ -348,7 +348,7 @@ fn route_x11_present_configure_with_control(
             local_events.push(event);
         } else {
             set_x11_protocol_event_sequence(&mut event, 0);
-            routing.route_protocol(target, event).map_err(|error| {
+            routing.route_control_protocol(target, event, execution).map_err(|error| {
                 X11SetupSocketError::new(format!(
                     "failed to route Present ConfigureNotify: {error}"
                 ))
