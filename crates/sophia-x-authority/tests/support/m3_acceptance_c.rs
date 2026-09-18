@@ -1546,8 +1546,30 @@ fn finish_labelled(
     service.finish(custodies)
 }
 
-/// What one retained release still says about its own transmission.
-fn retained_dispatch(service: &LifecycleService) -> Vec<(String, bool, bool)> {
+/// One retained release, named by what identifies it rather than summarised.
+///
+/// EQUAL SUMMARIES ARE NOT THE SAME RECORD. A phase, a pending flag and an
+/// answered flag compare equal across a replacement, and across an attempted
+/// resend that was afterwards put back. The delivery, the incarnation, the
+/// attempt token, the recipient it reached and the address of the completion
+/// it was admitted with do not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RetainedRelease {
+    dispatch: String,
+    delivery: Option<u64>,
+    incarnation: String,
+    attempt: Option<String>,
+    /// The completion this release has carried since its debt was recorded,
+    /// by address. Holding it is holding that exact admission's completion.
+    completion: Option<usize>,
+    pending_capsule: bool,
+    answered: bool,
+    reached_client: u64,
+    reached_window: u64,
+}
+
+/// Every release this invocation's own origin still holds in the store.
+fn retained_dispatch(service: &LifecycleService) -> Vec<RetainedRelease> {
     let held = service
         .owner
         .store
@@ -1559,12 +1581,18 @@ fn retained_dispatch(service: &LifecycleService) -> Vec<(String, bool, bool)> {
         .iter()
         .filter(|inventory| Arc::ptr_eq(&inventory.origin.clients, &service.registry.clients))
         .flat_map(|inventory| {
-            inventory.settling.iter().map(|release| {
-                (
-                    format!("{:?}", release.custody.dispatch),
-                    release.custody.pending.is_some(),
-                    release.completion().is_some_and(|cell| cell.answer().is_some()),
-                )
+            inventory.settling.iter().map(|release| RetainedRelease {
+                dispatch: format!("{:?}", release.custody.dispatch),
+                delivery: release.delivery().map(|id| id.raw()),
+                incarnation: format!("{:?}", release.incarnation()),
+                attempt: release.attempt().map(|token| format!("{token:?}")),
+                completion: release
+                    .completion()
+                    .map(|cell| Arc::as_ptr(cell) as usize),
+                pending_capsule: release.custody.pending.is_some(),
+                answered: release.completion().is_some_and(|cell| cell.answer().is_some()),
+                reached_client: release.reached().client().0,
+                reached_window: release.reached().window().local.raw(),
             })
         })
         .collect();
@@ -1878,7 +1906,26 @@ fn blocked_recipient_attempt(
     // of this capsule on the wire again, and because the attempt is recorded
     // before the write, a retry of a frame already committed is visible
     // whether or not a closed socket would have taken it.
-    let visit = blocked.step();
+    // A CHARGED VISIT IS WAITED FOR, NOT ASSUMED, and not manufactured. The
+    // row has to establish what a charged retained visit does with a frame it
+    // still holds, so a charged visit has to happen; the traffic above spent
+    // this budget's starts, so the first one after it can legitimately yield
+    // with a retry window. Waiting that window out is reading the budget's own
+    // answer. Nothing here is done to produce send observations: the visit
+    // making no attempt at all is the expected result, and is asserted as one.
+    let mut visit = blocked.step();
+    let mut visits = vec![format!("{visit:?}")];
+    let visit_deadline = std::time::Instant::now() + Duration::from_secs(8);
+    while !visit.charged && std::time::Instant::now() < visit_deadline {
+        let Some(sophia_input_authority::ServiceStartRefusal::StartsExhausted { retry_after }) =
+            visit.allowance_refusal
+        else {
+            break;
+        };
+        std::thread::sleep(retry_after.min(Duration::from_millis(50)));
+        visit = blocked.step();
+        visits.push(format!("{visit:?}"));
+    }
     let drive = store.drive();
     let after = retained_dispatch(&blocked);
     let (observed_frames, send_entries) = take_observations();
@@ -1892,14 +1939,6 @@ fn blocked_recipient_attempt(
         .skip(attempts_after_traffic)
         .filter(|entry| entry.delivery == wanted)
         .collect();
-    let resent_committed = attempts_after_the_stall
-        .iter()
-        .filter(|entry| entry.frame_index < advanced)
-        .count();
-    let touched_this_capsule: Vec<_> = observed_frames
-        .iter()
-        .filter(|step| step.delivery == wanted && step.attempted.is_some())
-        .collect();
     // The exact frame sequence this capsule's own send attempts walked, so a
     // prefix is read from the order of attempts and not only from counting
     // how many reports came back advanced.
@@ -1908,17 +1947,48 @@ fn blocked_recipient_attempt(
         .filter(|entry| entry.delivery == wanted)
         .map(|entry| entry.frame_index)
         .collect();
+    let resent_committed = attempts_after_the_stall
+        .iter()
+        .filter(|entry| entry.frame_index < advanced)
+        .count();
+    // THE RECORDER DEMONSTRABLY SAW THIS CAPSULE. A count of zero attempts in
+    // the maintenance interval means nothing unless the same armed recorder
+    // is shown to have caught this exact capsule's own frames going out; it
+    // did, in the order the capsule owed them.
+    let first_attempt = attempted_frame_sequence.first().copied();
+    let reached_second_frame = attempted_frame_sequence.iter().any(|frame| *frame == 1);
+    let returned_to_committed = attempted_frame_sequence
+        .iter()
+        .skip_while(|frame| **frame == 0)
+        .any(|frame| *frame == 0);
+    let touched_this_capsule: Vec<_> = observed_frames
+        .iter()
+        .filter(|step| step.delivery == wanted && step.attempted.is_some())
+        .collect();
     assert!(
         visit.charged,
-        "{label}: the visit actually ran and was charged rather than yielding: {visit:?}"
+        "{label}: a charged visit was reached within the budget's own retry window: {visits:?}"
     );
     assert!(
         visit.detail.contains("FramePreserved"),
         "{label}: the charged visit reported preserving the frame it still held, in its own words, rather than rebuilding it: {visit:?}"
     );
     assert_eq!(
+        first_attempt,
+        Some(0),
+        "{label}: the armed recorder caught this capsule's own first frame going out: {attempted_frame_sequence:?}"
+    );
+    assert!(
+        reached_second_frame,
+        "{label}: and its second frame being tried, which is the one that stalled: {attempted_frame_sequence:?}"
+    );
+    assert!(
+        !returned_to_committed,
+        "{label}: the writer never went back to a frame this capsule had already committed: {attempted_frame_sequence:?}"
+    );
+    assert_eq!(
         resent_committed, 0,
-        "{label}: no frame this capsule had already committed was tried again: {touched_this_capsule:?}"
+        "{label}: and nothing after the stall tried one either: {attempts_after_the_stall:?}"
     );
     assert_eq!(
         after, before,
@@ -1987,6 +2057,7 @@ fn blocked_recipient_attempt(
         "retained_after_exit": format!("{before:?}"),
         "maintenance_visit": format!("{visit:?}"),
         "what_the_visit_reported": visit.detail.clone(),
+        "visits_until_charged": visits,
         "send_attempts_for_this_capsule_after_the_stall": attempts_after_the_stall
             .iter()
             .map(|entry| json!({
@@ -1997,6 +2068,12 @@ fn blocked_recipient_attempt(
             }))
             .collect::<Vec<_>>(),
         "attempted_frame_sequence_for_this_capsule": attempted_frame_sequence,
+        "recorder_saw_this_capsules_own_frames": json!({
+            "first_attempt": first_attempt,
+            "reached_the_second_frame": reached_second_frame,
+            "ever_returned_to_a_committed_frame": returned_to_committed,
+            "note": "a maintenance interval with no attempt at all is the expected result; it means something only because the same armed recorder caught these.",
+        }),
         "send_attempts_before_close": attempts_after_traffic,
         "send_attempts_by_close": attempts_after_close,
         "send_attempts_total": send_entries.len(),
@@ -2387,7 +2464,7 @@ pub(super) mod diagnostics {
         // handover was begun and its result never written down, and that is the
         // one state this subcase is about.
         assert!(
-            phases.iter().any(|(phase, _, _)| phase == "Indeterminate"),
+            phases.iter().any(|seen| seen.dispatch == "Indeterminate"),
             "the retained release says its handover was begun and never reported: {phases:?}"
         );
         // AND IT KEEPS NOTHING TO SEND AGAIN. The capsule left; no replayable
@@ -2396,7 +2473,7 @@ pub(super) mod diagnostics {
         assert!(
             phases
                 .iter()
-                .all(|(phase, replayable, _)| phase != "Indeterminate" || !*replayable),
+                .all(|seen| seen.dispatch != "Indeterminate" || !seen.pending_capsule),
             "and keeps no replayable copy of what it handed over: {phases:?}"
         );
         // The debt is the retained release itself, not an accepted-item credit:
