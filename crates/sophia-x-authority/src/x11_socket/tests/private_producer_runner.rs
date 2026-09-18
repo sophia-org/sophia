@@ -45,15 +45,25 @@ fn a_key_through_the_service_requires_a_native_pointer_observation() {
         mode: XAuthorityRoutedInputMode::Deliver,
     };
     ingress.submit(&lease, key).expect("the order accepts the key");
+    let original = delivery_cell(&launched.registry, 97010).expect("the original admitted cell");
     let on_wire = read_event(&mut client, 2);
     let cell = delivery_cell(&launched.registry, 97010);
+    let answer = cell.as_ref().and_then(|cell| cell.answer());
+    let registry = launched.registry.clone();
     launched.commands.send(XServerFrontendServiceCommand::StopAndDisconnect).expect("listening");
     let outcome = produced_outcome(launched, "key diagnostic");
     let order = outcome.order.expect("the tally");
     assert_eq!(focus, Some(XAuthorityControlOutcome::Delivered), "the applied focus was established");
     assert_eq!(focus_in, Some(expected_focus_in(sequence, window)), "and seen by the window");
     assert_eq!(on_wire, None, "no key reached the client");
-    assert!(cell.is_some_and(|cell| cell.answer().is_none()), "its completion is unanswered");
+    assert!(Arc::ptr_eq(cell.as_ref().unwrap(), &original));
+    assert_eq!(answer, Some(XAuthorityClientInputDelivery {
+        client: client_id,
+        delivery: XAuthorityInputDeliveryId::from_raw(97010),
+        outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
+    }), "the actual common refusal answers the original admission before stop");
+    assert_eq!(cell.unwrap().answer(), answer, "service exit cannot rewrite the original answer");
+    assert_collected_running(&observe_worker(&custody, &registry), "key refusal");
     assert_eq!(order.taken, 2, "the control and the key were taken: {order:?}");
     assert_eq!(order.refused, 1);
     assert_eq!(

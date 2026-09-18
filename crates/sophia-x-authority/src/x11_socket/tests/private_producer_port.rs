@@ -436,9 +436,13 @@ fn two_origins_each_over_its_own_owner_issue_producers_only_for_their_own_connec
     let crossed_submission = crossed
         .submit(&lease_a, button_to(surface_b, XAuthorityInputDeliveryId::from_raw(96520), 272, true))
         .map_err(|refusal| format!("{refusal:?}"));
+    let crossed_cell = delivery_cell(&origin_a.registry, 96520).expect("A's original admission");
     let crossed_on_a = read_event(&mut client_a, 1);
     let crossed_on_b = read_event(&mut client_b, 1);
     let crossed_answer = delivery_cell(&origin_a.registry, 96520).and_then(|cell| cell.answer());
+    let exact_crossed_cell = delivery_cell(&origin_a.registry, 96520)
+        .is_some_and(|cell| Arc::ptr_eq(&cell, &crossed_cell));
+    let absent_from_b = delivery_cell(&origin_b.registry, 96520).is_none();
     let ports_live = (origin_a.access.standing(), origin_b.access.standing());
     let frames_live = (custody_a.cleanup_record().destruction_standing(), custody_b.cleanup_record().destruction_standing());
     let writers_live = (control_a.routing.control_writer_present(id_a), control_b.routing.control_writer_present(id_b));
@@ -456,7 +460,13 @@ fn two_origins_each_over_its_own_owner_issue_producers_only_for_their_own_connec
     assert!(crossed_submission.is_ok(), "crossed admission: {crossed_submission:?}");
     assert_eq!(crossed_on_a, None, "the foreign surface is not re-addressed to A's window");
     assert_eq!(crossed_on_b, None, "nothing reaches B's live wire");
-    assert_eq!(crossed_answer, None, "execution refusal is not a delivery receipt");
+    assert_eq!(crossed_answer, Some(XAuthorityClientInputDelivery {
+        client: id_a,
+        delivery: XAuthorityInputDeliveryId::from_raw(96520),
+        outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
+    }), "A publishes the actual common refusal only to its original admission");
+    assert!(exact_crossed_cell && absent_from_b, "the original cell belongs only to A");
+    assert_eq!(crossed_cell.answer(), crossed_answer, "collection preserves A's original answer");
     assert_eq!(ports_live, (PrivatePortStanding::Ready, PrivatePortStanding::Ready));
     assert_eq!(frames_live, (PrivateDestructionStanding::NotRequested, PrivateDestructionStanding::NotRequested));
     assert_eq!(writers_live, (true, true), "both wires still had their live connection writers");
