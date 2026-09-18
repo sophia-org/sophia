@@ -807,10 +807,25 @@ impl XServerFrontendRouteRegistry {
 
 #[cfg(unix)]
 impl Drop for XServerFrontendClientRouteRegistration {
-    /// STILL THE ONLY PRODUCTION TRIGGER, at the same point and in the same
-    /// order. What moved is where the responsibility is kept; when it runs is
-    /// the next boundary's question, not this one's.
+    /// STILL THE ONLY PRODUCTION TRIGGER, at the same point. What it runs is
+    /// now decided rather than assumed.
+    ///
+    /// A REGISTRATION WITH NO PRIVATE SOURCE RUNS WHAT IT ALWAYS RAN: the
+    /// public path, and a private connection that holds no place, have no
+    /// registered start to close and nothing that could have been started,
+    /// so the synchronous body runs here in the same order as before.
+    ///
+    /// A REGISTRATION WITH ONE DECIDES FIRST. Its startup admission is closed
+    /// and an admitted start is told to stop before anything is waited for;
+    /// the synchronous body runs only if that decision establishes that
+    /// nothing was ever started. Otherwise the duty and the number stay with
+    /// the custody's keeper, recorded as deferred, and this frame returns
+    /// without touching the home, the gate, the place or the tables. Nothing
+    /// here joins.
     fn drop(&mut self) {
-        self.cleanup.run_synchronous_cleanup();
+        match self.ordered_custody.as_ref() {
+            None => self.cleanup.run_synchronous_cleanup(),
+            Some(registered) => self.destroy_registered(registered),
+        }
     }
 }

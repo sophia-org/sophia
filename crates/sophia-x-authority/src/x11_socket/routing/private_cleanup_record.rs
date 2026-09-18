@@ -92,6 +92,15 @@ struct PrivateCleanupRecord {
     /// SET WHEN THE ROW IS PUBLISHED, and once. A record whose connection was
     /// never exposed established nothing under its number and has none.
     number: std::sync::OnceLock<PrivateNumberRight>,
+    /// What this connection's destruction decided, once it was requested.
+    ///
+    /// RESERVED HERE, WITH THE RECORD, AND EMPTY UNTIL THE REGISTRATION GOES.
+    /// The registration's `Drop` writes it before it runs anything, so what
+    /// it decided -- to run the synchronous body, or to leave the duty and
+    /// the number with the custodian -- is kept by whoever holds this record
+    /// after that frame has returned. One cell, set once: a second request
+    /// finds the first decision and does nothing.
+    destruction: std::sync::OnceLock<PrivateDestructionDecision>,
 }
 
 #[cfg(unix)]
@@ -113,6 +122,7 @@ impl PrivateCleanupRecord {
     ) -> Self {
         Self {
             number: std::sync::OnceLock::new(),
+            destruction: std::sync::OnceLock::new(),
             lifecycle: Mutex::new(None),
             ordered_continuation: Mutex::new(continuation),
             ordered_home: home,

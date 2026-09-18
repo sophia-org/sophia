@@ -1143,6 +1143,8 @@ include!("tests/routing.rs");
 include!("tests/private_runner.rs");
 include!("tests/private_service.rs");
 include!("tests/private_service_egress.rs");
+include!("tests/private_destruction.rs");
+include!("tests/private_destruction_deferral.rs");
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),

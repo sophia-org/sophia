@@ -21811,7 +21811,7 @@ fn a_connections_own_reservation_keeps_the_store_it_must_dispose_into() {
     // find, at teardown, that the place it was promised had gone.
     let capability;
     let client = XServerFrontendClientId(8341);
-    let (registration, cell, frames, wire_weak) = {
+    let (registration, cell, frames, wire_weak, keeper) = {
         let durable = PrivateSettlementOwner::default();
         capability = durable.settlement_ref();
         let service_keeper = service_owner(&durable, 2);
@@ -21841,10 +21841,14 @@ fn a_connections_own_reservation_keeps_the_store_it_must_dispose_into() {
         let frames = order_pass_frames(&capsule);
         gated_send(&sender, capsule).expect("an open endpoint");
         let wire_weak = Arc::downgrade(&wire);
-        (registration, cell, frames, wire_weak)
+        (registration, cell, frames, wire_weak, service_keeper)
     };
     // EVERY HOLDER OUTSIDE THE CONNECTION IS NOW GONE -- the caller's own
     // binding and the instance that cloned it -- and the connection is live.
+    // The one exception is the service keeper, kept because the private
+    // service guarantees it around every connection: a registration destroyed
+    // after its keeper can establish nothing about its worker and defers, and
+    // this control is about the teardown that runs when nothing was started.
     assert!(
         capability.owner().is_some(),
         "an exposed connection's reservation is a legitimate owner of its store"
@@ -21883,9 +21887,9 @@ fn a_connections_own_reservation_keeps_the_store_it_must_dispose_into() {
     );
 
     // AND THIS IS ONE END OF A LIFETIME, NOT A RING. The connection has gone
-    // and disposed of its place; when the last reader lets go, so does the
-    // store, and the binding it retained goes with it.
-    drop((survived, cell, kept));
+    // and disposed of its place; when the last reader and the keeper let go,
+    // so does the store, and the binding it retained goes with it.
+    drop((survived, cell, kept, keeper));
     assert!(capability.owner().is_none());
     assert!(wire_weak.upgrade().is_none());
 }
@@ -23835,6 +23839,7 @@ fn a_closure_someone_else_made_is_carried_as_already_established() {
 /// readable. The conversion that would build one of these in production is not
 /// wired; this stands in for its hand-in, and for nothing after it -- the
 /// teardown that follows is the real one, and is the subject.
+// The service keeper comes back too, for the reason `bound_connection` gives.
 fn serving_custody_for(
     f: PreparedOrderedFixture,
 ) -> (
@@ -23843,6 +23848,7 @@ fn serving_custody_for(
     PrivatePreparedRunner,
     PrivateSettlementOwner,
     Arc<Mutex<UnixStream>>,
+    crate::PrivateServiceOwner,
 ) {
     let (socket, _peer) = UnixStream::pair().expect("a socket pair");
     let output = Arc::new(Mutex::new(socket));
@@ -23853,6 +23859,7 @@ fn serving_custody_for(
         runner,
         channels,
         durable,
+        keeper,
         ..
     } = f;
     let transport = XAuthorityOrderedTransport::bind(
@@ -23870,7 +23877,7 @@ fn serving_custody_for(
         transport,
     )
     .unwrap_or_else(|(refusal, _)| panic!("an owner for this registration: {refusal:?}"));
-    (owner, registration, runner, durable, output)
+    (owner, registration, runner, durable, output, keeper)
 }
 
 #[test]
@@ -23880,7 +23887,7 @@ fn teardown_records_its_actual_close_on_a_serving_record_too() {
     // the registration -- so a serving record left unwritten could never
     // settle however finished it was, and its place would never come back.
     let f = prepared_ordered_fixture(XServerFrontendClientId(8441));
-    let (owner, registration, runner, durable, _output) = serving_custody_for(f);
+    let (owner, registration, runner, durable, _output, _keeper) = serving_custody_for(f);
     registration
         .retain_ordered_setup(PrivateOrderedContinuation::Serving {
             owner: home_holding(owner),
@@ -23916,7 +23923,7 @@ fn teardown_records_an_unreadable_close_on_a_serving_record() {
     // gate, so teardown's close establishes nothing, and the record says so
     // rather than defaulting to success.
     let f = prepared_ordered_fixture(XServerFrontendClientId(8451));
-    let (owner, registration, runner, durable, _output) = serving_custody_for(f);
+    let (owner, registration, runner, durable, _output, _keeper) = serving_custody_for(f);
     registration
         .retain_ordered_setup(PrivateOrderedContinuation::Serving {
             owner: home_holding(owner),
@@ -23953,7 +23960,7 @@ fn teardown_records_an_already_established_close_on_a_serving_record() {
     // The third outcome through the same seam: the endpoint was closed by a
     // caller before teardown reached it, and teardown says what it found.
     let f = prepared_ordered_fixture(XServerFrontendClientId(8461));
-    let (owner, registration, runner, durable, _output) = serving_custody_for(f);
+    let (owner, registration, runner, durable, _output, _keeper) = serving_custody_for(f);
     registration
         .retain_ordered_setup(PrivateOrderedContinuation::Serving {
             owner: home_holding(owner),
@@ -25194,6 +25201,11 @@ fn home_holding(owner: X11OrderedServingOwner) -> PrivateServingHome {
 /// Built on the ordered fixture because promotion asks the frontend for this
 /// connection's endpoint, and that is answerable only for a connection the
 /// instance has actually admitted and published.
+// THE SERVICE KEEPER COMES BACK WITH THE REGISTRATION. It is the outer owner
+// whose lifetime the private service guarantees around every connection, and
+// a registration destroyed after it is gone can establish nothing about its
+// worker and defers instead of tearing down. A caller that wants the
+// never-started teardown to run at its drop holds the keeper across it.
 fn bound_connection(
     client: XServerFrontendClientId,
 ) -> (
@@ -25202,6 +25214,7 @@ fn bound_connection(
     PrivateSettlementOwner,
     Arc<Mutex<UnixStream>>,
     UnixStream,
+    crate::PrivateServiceOwner,
 ) {
     let f = prepared_ordered_fixture(client);
     let PreparedOrderedFixture {
@@ -25209,6 +25222,7 @@ fn bound_connection(
         runner,
         channels,
         durable,
+        keeper,
         ..
     } = f;
     let (stream, peer) = UnixStream::pair().expect("a socket pair");
@@ -25219,7 +25233,7 @@ fn bound_connection(
     registration
         .bind_ordered_output(channels.ordered, &output, &wire, &pending)
         .unwrap_or_else(|_| panic!("a fresh registration holds no custody"));
-    (registration, runner, durable, output, peer)
+    (registration, runner, durable, output, peer, keeper)
 }
 
 /// What this registration's ordered payload is, by shape.
@@ -25422,7 +25436,7 @@ fn a_promoted_connection_is_ready_and_serves_nothing() {
     // start a worker, receive anything, write anything or answer anything, and
     // this checks each of those rather than the absence of a thread.
     let client = XServerFrontendClientId(8681);
-    let (registration, runner, _durable, _output, peer) = bound_connection(client);
+    let (registration, runner, _durable, _output, peer, _keeper) = bound_connection(client);
     let private = runner.frontend.as_ref().expect("a live runner");
 
     // A capsule is accepted for it before promotion, so there is something a
@@ -25510,7 +25524,7 @@ fn a_second_promotion_leaves_the_first_owner_exactly_as_it_was() {
     // reset what it has been through: identity, close state, attempt budget
     // and held admissions are the ones it had.
     let client = XServerFrontendClientId(8691);
-    let (registration, runner, _durable, _output, _peer) = bound_connection(client);
+    let (registration, runner, _durable, _output, _peer, _keeper) = bound_connection(client);
     let private = runner.frontend.as_ref().expect("a live runner");
     assert_eq!(
         registration.promote_ordered_serving(private),
@@ -25579,7 +25593,7 @@ fn a_closed_endpoint_starts_nothing() {
     // history. An eligibility check reading it admitted an owner onto an
     // endpoint that was already closed.
     let client = XServerFrontendClientId(8701);
-    let (registration, runner, _durable, _output, _peer) = bound_connection(client);
+    let (registration, runner, _durable, _output, _peer, _keeper) = bound_connection(client);
     let private = runner.frontend.as_ref().expect("a live runner");
 
     assert_eq!(
@@ -25622,7 +25636,7 @@ fn an_endpoint_whose_gate_cannot_be_read_starts_nothing_either() {
     // says cannot be trusted. Neither is a reason to start an owner, and
     // reporting one as the other would send a reader to the wrong question.
     let client = XServerFrontendClientId(8731);
-    let (registration, runner, _durable, _output, _peer) = bound_connection(client);
+    let (registration, runner, _durable, _output, _peer, _keeper) = bound_connection(client);
     let private = runner.frontend.as_ref().expect("a live runner");
 
     let gate = registration.ordered_gate.clone();
@@ -25655,7 +25669,7 @@ fn a_promoted_connection_torn_down_without_a_worker_retains_what_it_is() {
     // by its own quiet path: nothing waits for a join nobody can perform, and
     // no successful join is manufactured to make the account look complete.
     let client = XServerFrontendClientId(8711);
-    let (registration, runner, durable, _output, _peer) = bound_connection(client);
+    let (registration, runner, durable, _output, _peer, _keeper) = bound_connection(client);
     assert_eq!(
         registration.promote_ordered_serving(runner.frontend.as_ref().expect("live")),
         PrivateOrderedPromotion::Ready
@@ -25696,7 +25710,7 @@ fn a_home_a_holder_panicked_in_stays_unreadable_rather_than_reading_as_ordinary(
     // is no longer what carries it, and this control no longer reads it back:
     // the value is inside the storage whose unreadability it describes.
     let client = XServerFrontendClientId(8721);
-    let (registration, runner, durable, _output, _peer) = bound_connection(client);
+    let (registration, runner, durable, _output, _peer, _keeper) = bound_connection(client);
 
     // A holder panics inside this connection's payload storage.
     let storage = Arc::clone(&registration.ordered_home);
@@ -25960,7 +25974,7 @@ fn a_promoted_owner_keeps_the_notice_its_senders_publish_to() {
     // way to be told: every disappearance would be published to a notice
     // nothing was holding.
     let client = XServerFrontendClientId(8791);
-    let (registration, runner, _durable, _output, _peer) = bound_connection(client);
+    let (registration, runner, _durable, _output, _peer, _keeper) = bound_connection(client);
     let private = runner.frontend.as_ref().expect("a live runner");
 
     // The notice the senders were counted against, taken from the row.
@@ -34975,6 +34989,13 @@ fn a_commitment_whose_place_moved_on_leaves_the_successor_alone() {
         stand_in_client,
     );
     let sender = std::mem::replace(&mut c.g.f.sender, spare_sender);
+    // STAGE-ONLY: THE DEFERRED DUTY, EXECUTED BY THE CONTROL. This
+    // registration's worker was joined above, so its destruction defers
+    // rather than tearing down, and the place this control needs to move on
+    // would stay held. The executor a later boundary attaches is stood in
+    // for here by running the record's synchronous body directly; the drop
+    // below then records a deferral and runs nothing.
+    registration.cleanup.run_synchronous_cleanup();
     drop((registration, sender));
     // This connection's place is back; the stand-in above holds one of its
     // own, so the store's total is not zero and nothing here claims it is.
