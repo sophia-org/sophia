@@ -12,6 +12,9 @@ use std::process::{Command, Stdio};
 pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
     match arguments {
         [] => all(repo),
+        [subject, rest @ ..] if subject == "m3-acceptance" => {
+            crate::m3_acceptance::run(repo, rest)
+        }
         [subject] if subject == "layout" => layout(repo).map(|()| Vec::new()),
         [subject] => Err(format!("unknown check subject {subject:?}")),
         _ => Err("check accepts at most one subject".to_owned()),
