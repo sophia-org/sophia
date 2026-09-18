@@ -152,4 +152,36 @@ impl NativeLauncherContentService {
         transport.service_closed_native_input(opening)?;
         Ok(transport.closed_native_owners_settled(opening)?)
     }
+    /// Open a successor only after exact old pixels and local owners settle.
+    /// The transport retains its closed identity and refuses late old records;
+    /// local settlement is not used as evidence of peer receipt or silence.
+    pub fn reopen(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        transaction: TransactionId,
+        next: NativeLauncherOpening,
+    ) -> Result<bool, ShellTransportError> {
+        self.validate(transport)?;
+        let close = self
+            .closing
+            .as_ref()
+            .ok_or(ShellTransportError::WrongActivation)?;
+        if next.grant != self.grant || next.opening <= close.opening.opening {
+            return Err(ShellTransportError::WrongActivation);
+        }
+        if !close.pixels_absent
+            || !self.content.pending.is_empty()
+            || !transport.closed_native_owners_settled(close.opening)?
+        {
+            return Ok(false);
+        }
+        transport.publish_native_launcher_opening(transaction, next)?;
+        // Nothing fallible after FIFO transfer. Keep connection-wide counters
+        // and published output facts; only the closed presentation is obsolete.
+        self.content.presented.remove(&close.opening.output);
+        self.opening = Some(next);
+        self.submitted = None;
+        self.closing = None;
+        Ok(true)
+    }
 }

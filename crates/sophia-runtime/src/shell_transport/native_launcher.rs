@@ -6,6 +6,7 @@ use sophia_protocol::*;
 mod closed_content;
 mod closed_input;
 mod settlement;
+mod reopening;
 mod content;
 pub(crate) mod control;
 

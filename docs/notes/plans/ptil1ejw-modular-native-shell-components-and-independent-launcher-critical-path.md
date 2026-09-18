@@ -644,3 +644,38 @@ service with one transaction allocation total and still refuses open service.
 The disposable compiled resource-check omission fails that held-owner assertion;
 source restoration and logs are in `.artifacts/bemenu-close-settlement-mutant/`.
 These tests do not execute native rendering, a supervised child or hardware.
+
+### Same-connection successor with late closed-opening records (2026-09-18)
+
+The live native parser now retains the last closed opening as refusal provenance.
+Old allocation requests and Begin records use the existing high-water/terminal
+owners; consumed tails cannot enter the new assembly. A tail of the actual
+current assembly still takes its ordinary path. Late demand for an absent old
+allocation is cancelled without replacing the successor's demand/permit; a
+cancel tries exact current ownership first, with only known consumed identities
+accepted as stale afterward. Refusals use the same bounded record/byte visit
+and reserved aggregate response capacity. Resources continue through the real
+connection-scoped store, not an opening-local fake inventory.
+
+Session `reopen` waits for exact pixel absence, no pending presentation, and the
+actual local-settlement predicate before publishing the successor. Publication
+refusal retains the old close; successful FIFO transfer clears only the obsolete
+presentation/close state and preserves connection-wide counters and facts.
+Late input continues to use the existing exact binding/activation validation.
+The retained tombstone is refusal authority, not permission to accept arbitrary
+older identities or assume the peer stopped sending. Unknown/future malformed
+records still refuse. Live Session orchestration remains unjoined.
+
+`.artifacts/bemenu-native-reopening/`: device-hidden 533 PASS / 14 Session ignored,
+strict Runtime/Session Clippy and layout PASS. A real private-socket control owns
+a successor permit before receiving the old allocation, demand, Begin, chunk,
+End and cancellation. It verifies exact refusals, intact successor permit, then
+assembles/submits the successor and supplies Prepared/Presented to finish the
+fixture. An initial fixture omitted those terminal completions and correctly
+retained its submitted epoch; the corrected final run is `tests-final.log`.
+Session's no-pixel fixture refuses reopening while an allocation remains, then
+reopens after settlement and refuses the old close against its successor.
+The compiled mutation bypassing only the old-Begin refusal fails with Stale;
+restored-source evidence is in `.artifacts/bemenu-native-reopening-mutant/`.
+These are component/socket controls, not protected-process/native close/reopen,
+GPU/KMS, full canonical or physical acceptance. No publication or installation.

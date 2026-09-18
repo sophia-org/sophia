@@ -668,6 +668,13 @@ fn borrowed_native_content_places_real_wire_request_without_granting_early_focus
                 assert_eq!(t.content_grant(), Some(key.grant));
             }
             assert!(!t.closed_native_owners_settled(opening).unwrap());
+            let mut next = opening;
+            next.opening += 1;
+            assert!(
+                !service
+                    .reopen(t, TransactionId::from_raw(930), next)
+                    .unwrap()
+            );
             let mut invalidations = 0;
             for _ in 0..2 {
                 assert!(
@@ -699,6 +706,30 @@ fn borrowed_native_content_places_real_wire_request_without_granting_early_focus
                     )
                     .is_err()
             );
+            assert!(
+                service
+                    .reopen(t, TransactionId::from_raw(930), next)
+                    .unwrap()
+            );
+            assert_eq!(t.native_launcher_state().unwrap().0, next);
+            assert!(
+                service
+                    .begin_close(t, opening, close_tx, ContentReason::Cancelled)
+                    .is_err()
+            );
+            service
+                .service_open(
+                    t,
+                    &catalog,
+                    &mut runtime,
+                    &scene,
+                    None,
+                    &outputs,
+                    &[(outputs[0].id, root)],
+                    root,
+                    &mut || Ok(TransactionId::from_raw(931)),
+                )
+                .unwrap();
         })
         .unwrap();
     h.owner.close(key).unwrap();

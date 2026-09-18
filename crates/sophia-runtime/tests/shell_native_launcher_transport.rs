@@ -676,3 +676,148 @@ fn late_closed_begin_gets_one_terminal_and_tails_cannot_reenter_submission() {
     r.collect();
     assert_eq!(r.accounting().retired_epochs, 0);
 }
+
+#[test]
+fn reopened_native_fifo_refuses_old_begin_without_consuming_new_permit() {
+    let mut r = empty();
+    let mut peer = Peer::connected(&mut r);
+    peer.allocation(&mut r);
+    peer.upload(&mut r);
+    peer.permit(&mut r);
+    peer.transport
+        .close_native_launcher(&mut r, opening(), tx(800), ContentReason::Cancelled)
+        .unwrap();
+    peer.transport
+        .invalidate_content_allocation(&mut r, tx(801), ALLOCATION, ContentReason::Revoked)
+        .unwrap();
+    peer.transport.poll_io(&mut r).unwrap();
+    for _ in 0..3 {
+        peer.read();
+    } // cancelled permit, Closed, invalidation
+    let mut next = opening();
+    next.opening += 1;
+    peer.transport
+        .publish_native_launcher_opening(&r, tx(802), next)
+        .unwrap();
+    peer.transport.poll_io(&mut r).unwrap();
+    peer.read();
+    let c = catalog();
+    let current = NativeLauncherCandidateContext {
+        opening: next,
+        state_revision: 1,
+        catalog: &c,
+    };
+    let mut allocation_request = request(2);
+    allocation_request.opening = next.opening;
+    peer.send(ShellNativeLauncherRecord::AllocationRequest(
+        allocation_request,
+    ));
+    peer.transport
+        .service_native_launcher_content(&mut r, context(&[]), current, 0)
+        .unwrap();
+    let mut new_allocation = allocation();
+    new_allocation.allocation.id = 2;
+    new_allocation.native_opening = Some(next.opening);
+    peer.transport
+        .grant_content_allocation(&mut r, 2, new_allocation.clone(), &[])
+        .unwrap();
+    peer.transport.poll_io(&mut r).unwrap();
+    peer.read();
+    let allocations = [new_allocation];
+    peer.send_content(ShellContentRecord::FrameDemand(ContentFrameDemand {
+        grant: GRANT,
+        output: OUTPUT,
+        allocation: allocations[0].allocation,
+        demand_id: 2,
+        reason: 1,
+    }));
+    peer.transport
+        .service_native_launcher_content(&mut r, context(&allocations), current, 0)
+        .unwrap();
+    peer.transport
+        .grant_content_demand(&mut r, tx(803), OUTPUT, 2, 0)
+        .unwrap();
+    peer.transport.poll_io(&mut r).unwrap();
+    peer.read();
+    // Delayed old Begin and tails arrive after the successor owns a permit.
+    peer.send(ShellNativeLauncherRecord::AllocationRequest(request(3)));
+    peer.send_content(ShellContentRecord::FrameDemand(ContentFrameDemand {
+        grant: GRANT,
+        output: OUTPUT,
+        allocation: ALLOCATION,
+        demand_id: 3,
+        reason: 1,
+    }));
+    peer.send(ShellNativeLauncherRecord::CandidateBegin(begin()));
+    peer.send(ShellNativeLauncherRecord::CandidateChunk(chunk()));
+    peer.send_content(ShellContentRecord::CandidateEnd(end()));
+    peer.send_content(ShellContentRecord::FrameDemandCancel(
+        ContentFrameDemandCancel {
+            grant: GRANT,
+            output: OUTPUT,
+            demand_id: 1,
+            permit_id: 1,
+        },
+    ));
+    assert_eq!(
+        peer.transport
+            .service_native_launcher_content(&mut r, context(&allocations), current, 0)
+            .unwrap(),
+        6
+    );
+    peer.transport.poll_io(&mut r).unwrap();
+    assert!(
+        matches!(decode_shell_content_frame(&peer.read()).unwrap().1,
+        ShellContentRecord::AllocationResult(v) if v.allocation_request_id == 3 && v.status == 2)
+    );
+    assert!(
+        matches!(decode_shell_content_frame(&peer.read()).unwrap().1,
+        ShellContentRecord::FramePermit(v) if v.demand_id == 3 && v.permit_id == 0 && v.state == 3)
+    );
+    assert!(
+        matches!(decode_shell_content_frame(&peer.read()).unwrap().1,
+        ShellContentRecord::CandidateOutcome(v) if v.candidate_generation == 1 && v.kind == 3)
+    );
+    assert_eq!(r.accounting().permits, 1);
+    let mut b = begin();
+    b.opening = next.opening;
+    b.content.candidate_generation = 2;
+    b.content.pacing_permit = 2;
+    let mut chunk = chunk();
+    chunk.candidate_generation = 2;
+    chunk.surfaces[0].allocation = allocations[0].allocation;
+    let mut end = end();
+    end.candidate_generation = 2;
+    peer.send(ShellNativeLauncherRecord::CandidateBegin(b));
+    peer.send(ShellNativeLauncherRecord::CandidateChunk(chunk));
+    peer.send_content(ShellContentRecord::CandidateEnd(end));
+    assert_eq!(
+        peer.transport
+            .service_native_launcher_content(&mut r, context(&allocations), current, 0)
+            .unwrap(),
+        3
+    );
+    let bundle = peer
+        .transport
+        .begin_native_launcher_submission(&mut r, 2, context(&allocations), current, 0)
+        .unwrap();
+    assert_eq!(bundle.native_launcher.unwrap().opening, next.opening);
+    assert_eq!(bundle.candidate_generation, 2);
+    peer.transport
+        .content_prepared(&mut r, GRANT, OUTPUT, 2, 1, 1, 0)
+        .unwrap();
+    peer.transport
+        .content_presented(&mut r, GRANT, OUTPUT, 2, 10, 1, 1)
+        .unwrap();
+    peer.transport.poll_io(&mut r).unwrap();
+    for kind in [1, 2] {
+        assert!(
+            matches!(decode_shell_content_frame(&peer.read()).unwrap().1,
+            ShellContentRecord::CandidateOutcome(v) if v.candidate_generation == 2 && v.kind == kind)
+        );
+    }
+    peer.transport.disconnect(&mut r).unwrap();
+    drop(bundle);
+    r.collect();
+    assert_eq!(r.accounting().retired_epochs, 0);
+}

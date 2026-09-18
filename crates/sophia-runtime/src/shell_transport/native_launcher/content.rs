@@ -63,6 +63,11 @@ impl ShellComponentTransport {
             }
             let credit = match &record {
                 NativeContentRecord::Allocation(_) | NativeContentRecord::Demand(_) => 1,
+                NativeContentRecord::Begin(v) => usize::from(
+                    self.native_control
+                        .closed
+                        .is_some_and(|closed| v.opening == closed.opening),
+                ),
                 NativeContentRecord::Resource(v) => epochs
                     .resources(self.store_grant)
                     .ok_or(ShellTransportError::MissingCapability)?
@@ -74,6 +79,12 @@ impl ShellComponentTransport {
             }
             remaining -= payload_bytes;
             self.inbox.remove(index);
+            if self.service_previous_native_record(epochs, transaction, &record, context)? {
+                processed += 1;
+                self.flush_content_candidate_events(epochs)?;
+                self.flush_content_allocation_events(epochs)?;
+                continue;
+            }
             match record {
                 NativeContentRecord::Resource(v) => {
                     self.apply_content_resource_record(epochs, transaction, v, now_msec)?
@@ -85,10 +96,19 @@ impl ShellComponentTransport {
                         .demand(transaction, v, &[context.output], context.allocations)?;
                 }
                 NativeContentRecord::Cancel(v) => {
-                    epochs
+                    let candidates = epochs
                         .active_candidates_mut(self.store_grant)
-                        .ok_or(ShellTransportError::MissingCapability)?
-                        .cancel_demand(transaction, v)?;
+                        .ok_or(ShellTransportError::MissingCapability)?;
+                    match candidates.cancel_demand(transaction, v.clone()) {
+                        Ok(()) => {}
+                        Err(ContentCandidateError::Stale)
+                            if self.native_control.closed.is_some() =>
+                        {
+                            candidates
+                                .closed_native_cancel(v, self.native_control.closed.unwrap())?;
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
                 }
                 NativeContentRecord::Allocation(request) => {
                     let outcome = epochs
