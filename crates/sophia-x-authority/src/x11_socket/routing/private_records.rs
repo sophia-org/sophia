@@ -267,7 +267,7 @@ pub struct PrivateSettlingRelease {
     /// it is what makes that work possible at all, because the alternative is
     /// not "unread" but "gone". Donor holds stay here until those visits are
     /// complete.
-    native: Option<private_native::Hold>,
+    native: Option<PrivateNativeHold>,
     /// Why this release's event could not be built, when it could not.
     ///
     /// Kept as its own cause rather than folded into an absent event. A
@@ -329,7 +329,7 @@ impl PrivateSettlingRelease {
     /// Borrowed, never taken: whoever retires it has to be the terminal
     /// continuation that owns this release, not a reader passing through.
     #[cfg_attr(not(test), allow(dead_code))]
-    fn native(&self) -> Option<&private_native::Hold> {
+    fn native(&self) -> Option<&PrivateNativeHold> {
         self.native.as_ref()
     }
 
@@ -436,7 +436,7 @@ impl PrivateSettlingRelease {
         self.custody.attempt = None;
     }
 
-    fn native_mut(&mut self) -> Option<&mut private_native::Hold> {
+    fn native_mut(&mut self) -> Option<&mut PrivateNativeHold> {
         self.native.as_mut()
     }
 
@@ -454,7 +454,7 @@ impl PrivateSettlingRelease {
         if !self.owes_native_recording() {
             return false;
         }
-        let Some(proof) = self.native.as_ref().and_then(private_native::Hold::proof) else {
+        let Some(proof) = self.native.as_ref().and_then(PrivateNativeHold::proof) else {
             return false;
         };
         self.native_attempts = self.native_attempts.saturating_add(1);
@@ -484,7 +484,7 @@ impl PrivateSettlingRelease {
     fn owes_native_recording(&self) -> bool {
         !self.native_recorded
             && self.native_attempts < PRIVATE_NATIVE_RECORDING_ATTEMPTS
-            && self.native.as_ref().and_then(private_native::Hold::proof).is_some()
+            && self.native.as_ref().and_then(PrivateNativeHold::proof).is_some()
     }
 
 
@@ -561,9 +561,10 @@ struct PrivateHoldRecord {
     /// complete, and a second copy would let two holders each believe they
     /// were the one completing it.
     ///
-    /// `None` where no native operation produced one, which is every record
-    /// today: the press that installs one is the next step, and the slot is
-    /// here first so that the record it travels in is not reshaped twice.
+    /// `None` while the destination record has been installed but the source
+    /// obligation has not yet moved from the inventory's pending slot. Either
+    /// native kind uses the same transfer; no obligation lives only in a local
+    /// across its source operation.
     #[allow(dead_code)]
-    native: Option<private_native::Hold>,
+    native: Option<PrivateNativeHold>,
 }

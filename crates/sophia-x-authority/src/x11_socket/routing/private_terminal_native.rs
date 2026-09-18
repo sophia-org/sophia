@@ -324,7 +324,7 @@ fn dispatch_custody(
                     let taken = record
                         .native
                         .as_mut()
-                        .and_then(private_native::Hold::take_press_emission);
+                        .and_then(PrivateNativeHold::take_press_emission);
                     let Some(emission) = taken else {
                         return Some(false);
                     };
@@ -346,7 +346,7 @@ fn dispatch_custody(
                 {
                     let taken = release
                         .native_mut()
-                        .and_then(private_native::Hold::take_press_emission);
+                        .and_then(PrivateNativeHold::take_press_emission);
                     let Some(emission) = taken else {
                         return Some(false);
                     };
@@ -468,7 +468,7 @@ fn dispatch_custody(
         if self.terminal.settling[index].custody.pending.is_none() {
             let taken = self.terminal.settling[index]
                 .native_mut()
-                .and_then(private_native::Hold::take_release_emission);
+                .and_then(PrivateNativeHold::take_release_emission);
             let Some(emission) = taken else {
                 self.relinquish_outstanding_attempt(claim.token);
                 return Some(false);

@@ -191,7 +191,7 @@ fn resolve_and_apply(
     grant: sophia_input_authority::GrantId,
     capability: sophia_input_authority::DeviceCapability,
     native: &private_native::Owner,
-    native_pending: &mut Option<private_native::Hold>,
+    native_pending: &mut PrivateNativePending,
     pending_custody: &mut Option<PrivateDeliveryCustody>,
     next_event_order: &mut u64,
     notes: &mut PrivateTransactionNotes<'_>,
@@ -315,7 +315,7 @@ fn resolve_and_apply(
                         .as_mut()
                         .expect("selected by the hold it carries");
                     let (outcome, built) = guards
-                        .release(permit, hold, route, notes.may_have_applied)
+                        .release(permit, hold.pointer_mut().expect("a button obligation"), route, notes.may_have_applied)
                         .map_err(|refusal| {
                             notes.native_refusal = Some(refusal);
                             unavailable
@@ -552,7 +552,7 @@ fn resolve_and_apply(
                 // it exactly where it was, with the work already accepted
                 // still owned here rather than replaced by a synthetic one.
                 let applied = guards
-                    .join(permit, hold, notes.may_have_applied)
+                    .join(permit, hold.pointer().expect("a button obligation"), notes.may_have_applied)
                     .map_err(|refusal| {
                         notes.native_refusal = Some(refusal);
                         unavailable
@@ -681,7 +681,10 @@ fn resolve_and_apply(
                     route,
                     surface_route.window,
                     implicit,
-                    native_pending,
+                    native_pending.pointer_slot().map_err(|refusal| {
+                        notes.native_refusal = Some(refusal);
+                        unavailable
+                    })?,
                     notes.may_have_applied,
                     |recipient| {
                         // The recipient's own binding, read from the boundary
@@ -738,7 +741,7 @@ fn resolve_and_apply(
                 // this executor was handed. The recipient is the incarnation's
                 // own; the window is the one the resolution delivered to.
                 let reached_window = native_pending
-                    .as_ref()
+                    .pointer()
                     .map_or(surface_route.window, |hold| hold.plan().delivered_window);
                 let reached = PrivateReachedResources {
                     client: XServerFrontendClientId::from_raw(incarnation.recipient),
@@ -819,7 +822,7 @@ fn resolve_and_apply(
 fn execute_owned(
     watched: &mut private_watchdog::PrivateWatchedExecution,
     native: &private_native::Owner,
-    native_pending: &mut Option<private_native::Hold>,
+    native_pending: &mut PrivateNativePending,
     pending_custody: &mut Option<PrivateDeliveryCustody>,
     next_event_order: &mut u64,
     controller: &PrivateAuthorityController,
