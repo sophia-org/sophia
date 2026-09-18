@@ -241,7 +241,7 @@ SOPHIA_REMOTE_HOST=my-test-machine tools/remote_target.sh qemu
 ```
 
 `SOPHIA_REMOTE_DIR` selects a deployment path below the remote home and defaults
-to `dev/sophia-stack-target`, keeping an existing clone untouched. Synchronizing
+to `dev/sophia-target`, keeping an existing clone untouched. Synchronizing
 does not delete target-only files. `SOPHIA_REMOTE_EVIDENCE_DIR` selects the
 local destination; retrieved logs default to ignored
 `.evidence/remote-target/`.
