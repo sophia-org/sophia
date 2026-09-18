@@ -7,6 +7,8 @@ use sophia_runtime::{ContentCandidateContext, NativeLauncherCandidateContext};
 mod allocation;
 #[path = "native_service/closing.rs"]
 mod closing;
+#[path = "native_service/opening.rs"]
+mod opening;
 
 type ServiceResult<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -19,6 +21,8 @@ pub struct NativeLauncherContentService {
     opening: Option<sophia_protocol::NativeLauncherOpening>,
     submitted: Option<u64>,
     closing: Option<closing::Closing>,
+    open_request: Option<opening::OpenRequest>,
+    focus_pending: bool,
 }
 
 impl NativeLauncherContentService {
@@ -34,6 +38,8 @@ impl NativeLauncherContentService {
             opening: None,
             submitted: None,
             closing: None,
+            open_request: None,
+            focus_pending: false,
         })
     }
 
@@ -49,6 +55,18 @@ impl NativeLauncherContentService {
 
     pub const fn grant(&self) -> ContentGrant {
         self.grant
+    }
+
+    /// Output facts may precede an opening, through the same content FIFO.
+    pub fn publish_outputs(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        outputs: &[HeadlessOutput],
+        transaction: &mut dyn FnMut() -> ServiceResult<sophia_protocol::TransactionId>,
+    ) -> ServiceResult<()> {
+        self.validate(transport)?;
+        self.content
+            .publish_outputs(transport, outputs, transaction)
     }
 
     /// Service only the current opening. Closing/removal is deliberately a
@@ -156,6 +174,31 @@ impl NativeLauncherContentService {
         runtime: &sophia_backend_live::LiveProductionVisualRuntime,
     ) -> Result<bool, ShellTransportError> {
         self.validate(transport)?;
-        self.content.observe_presentation(transport, runtime)
+        let observed = self.content.observe_presentation(transport, runtime)?;
+        self.focus_pending |= observed;
+        Ok(observed)
+    }
+
+    /// Retry focus from the transport's actual Presented owner. A newer state
+    /// revision may await another candidate; Prepared never establishes focus.
+    pub fn service_focus(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        transaction: sophia_protocol::TransactionId,
+    ) -> Result<bool, ShellTransportError> {
+        self.validate(transport)?;
+        if !self.focus_pending || self.closing.is_some() {
+            return Ok(false);
+        }
+        match transport.install_native_launcher_focus(transaction) {
+            Ok(_) => {
+                self.focus_pending = false;
+                Ok(true)
+            }
+            Err(
+                ShellTransportError::ContentQueueSaturated | ShellTransportError::WrongCandidate,
+            ) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 }

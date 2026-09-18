@@ -169,3 +169,155 @@ fn catalog_transfer_requires_exact_current_grant_not_just_connection_epoch() {
         Err(ShellTransportError::WrongContentGrant)
     ));
 }
+
+#[test]
+fn opening_waits_for_publication_and_retains_exact_transfer_under_saturation() {
+    use sophia_session::shell_native_launcher::NativeLauncherContentService;
+    let mut epochs = empty();
+    let mut peer = connected(&mut epochs, limits());
+    let mut publication = NativeCatalogPublication::new(
+        &peer.transport.connection(&mut epochs),
+        tx(50),
+        publication(GRANT.connection_epoch, 0),
+    )
+    .unwrap();
+    let mut content =
+        NativeLauncherContentService::new(&peer.transport.connection(&mut epochs)).unwrap();
+    let outputs = [sophia_engine::HeadlessOutput {
+        id: OutputId::from_raw(2),
+        size: Size {
+            width: 800,
+            height: 600,
+        },
+        scale: 1,
+    }];
+    let mut serial = 100;
+    let mut next = || {
+        serial += 1;
+        Ok(tx(serial))
+    };
+    assert!(content.request_open(outputs[0].id, 7));
+    assert!(!content.request_open(outputs[0].id, 8));
+    assert!(
+        !content
+            .service_open_request(
+                &mut peer.transport.connection(&mut epochs),
+                &publication,
+                &outputs,
+                &mut next
+            )
+            .unwrap()
+    );
+    assert!(peer.transport.native_launcher_state().is_none());
+    assert!(
+        publication
+            .service(&mut peer.transport.connection(&mut epochs))
+            .unwrap()
+    );
+    content
+        .publish_outputs(
+            &mut peer.transport.connection(&mut epochs),
+            &outputs,
+            &mut next,
+        )
+        .unwrap();
+    peer.transport.poll_io(&mut epochs).unwrap();
+    let frames = vec![peer.read(), peer.read()];
+    assert_eq!(
+        decode_shell_application_catalog(&frames)
+            .unwrap()
+            .1
+            .entries
+            .len(),
+        0
+    );
+    assert!(matches!(
+        decode_shell_content_frame(&peer.read()).unwrap().1,
+        ShellContentRecord::OutputFacts(_)
+    ));
+    let filler = publication
+        .published()
+        .unwrap()
+        .frames(tx(99))
+        .unwrap()
+        .remove(0);
+    let mut queued = 0;
+    loop {
+        match peer.transport.enqueue_async(&epochs, filler.clone()) {
+            Ok(()) => queued += 1,
+            Err(ShellTransportError::ActivationQueueSaturated) => break,
+            Err(e) => panic!("{e}"),
+        }
+        assert!(queued <= 1024);
+    }
+    assert!(queued > 0);
+    assert!(
+        !content
+            .service_open_request(
+                &mut peer.transport.connection(&mut epochs),
+                &publication,
+                &outputs,
+                &mut next
+            )
+            .unwrap()
+    );
+    assert!(
+        !content
+            .service_open_request(
+                &mut peer.transport.connection(&mut epochs),
+                &publication,
+                &outputs,
+                &mut next
+            )
+            .unwrap()
+    );
+    assert!(peer.transport.native_launcher_state().is_none());
+    for group in (0..queued).collect::<Vec<_>>().chunks(32) {
+        peer.transport.poll_io(&mut epochs).unwrap();
+        for _ in group {
+            assert_eq!(peer.read(), filler);
+        }
+    }
+    assert!(
+        content
+            .service_open_request(
+                &mut peer.transport.connection(&mut epochs),
+                &publication,
+                &outputs,
+                &mut next
+            )
+            .unwrap()
+    );
+    assert!(
+        !content
+            .service_open_request(
+                &mut peer.transport.connection(&mut epochs),
+                &publication,
+                &outputs,
+                &mut next
+            )
+            .unwrap()
+    );
+    assert!(
+        !content
+            .service_focus(&mut peer.transport.connection(&mut epochs), tx(200))
+            .unwrap()
+    );
+    assert!(peer.transport.native_launcher_focus().is_none());
+    peer.transport.poll_io(&mut epochs).unwrap();
+    let (transaction, record) = decode_shell_native_launcher_frame(&peer.read()).unwrap();
+    assert_eq!(
+        transaction,
+        tx(102),
+        "facts once, opening transfer once despite retries"
+    );
+    assert_eq!(serial, 102);
+    assert!(
+        matches!(record, ShellNativeLauncherRecord::Opening(v) if v.opening == 7
+        && v.output.id == outputs[0].id.raw() && v.catalog_generation == 8)
+    );
+    assert!(
+        !content.request_open(outputs[0].id, 9),
+        "active opening is not replaced by another request"
+    );
+}

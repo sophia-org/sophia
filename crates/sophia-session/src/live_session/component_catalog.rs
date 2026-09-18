@@ -1,5 +1,7 @@
 //! Catalog worker custody outside the owner loop and independent peer epochs.
 use super::*;
+use sophia_protocol::OutputId;
+mod opening;
 use crate::application_catalog::{
     ApplicationCatalog, ApplicationCatalogEnvironment, ApplicationLaunchCommand,
     CatalogProcessEnvironment, NativeCatalogPublication, NativeCatalogService,
@@ -15,6 +17,8 @@ pub(super) struct ComponentCatalog {
     started: Option<Instant>,
     publication: Option<NativeCatalogPublication>,
     next_transaction: u64,
+    queued_open: Option<(OutputId, Instant)>,
+    next_opening: u64,
 }
 impl ComponentCatalog {
     /// Initial scan only. Native peer publication and execution are joined by
@@ -130,6 +134,13 @@ impl ComponentCatalog {
         let grant = transport
             .content_grant()
             .ok_or("native catalog has no connected grant")?;
+        if self
+            .publication
+            .as_ref()
+            .is_some_and(|p| p.grant() != grant)
+        {
+            self.queued_open = None;
+        }
         if self.publication.as_ref().is_none_or(|p| p.grant() != grant) {
             let (generation, source) = self.snapshot.as_ref().ok_or("native catalog absent")?;
             let catalog = PublishedApplicationCatalog::new(

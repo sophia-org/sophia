@@ -17,9 +17,9 @@ mod scheduling;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub enum ShellComponentService {
-    Bar(PanelComponentService),
+    Bar(Box<PanelComponentService>),
     Launcher {
-        content: NativeLauncherContentService,
+        content: Box<NativeLauncherContentService>,
         actions: NativeLauncherActionService,
     },
 }
@@ -227,11 +227,11 @@ impl ShellComponentSession {
                 .processes
                 .with_connection(key, |transport| match role {
                     ShellComponentRole::Bar => PanelComponentService::new(transport, limit, input)
-                        .map(ShellComponentService::Bar),
+                        .map(|service| ShellComponentService::Bar(Box::new(service))),
                     ShellComponentRole::ApplicationLauncher => {
                         NativeLauncherContentService::new(transport).map(|content| {
                             ShellComponentService::Launcher {
-                                content,
+                                content: Box::new(content),
                                 actions: NativeLauncherActionService::default(),
                             }
                         })

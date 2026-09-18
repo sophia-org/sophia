@@ -882,3 +882,52 @@ exact wire-prefix assertion; restored evidence is in
 `.artifacts/bemenu-native-catalog-publication-mutant/`. Saturation is deliberately
 filled FIFO capacity, not observed kernel backpressure. No hardware, native
 presentation, canonical gate, push, installation or lom-test readiness claim.
+
+### WM request to retained native Opening and content service (2026-09-18)
+
+The committed Session launcher request now queues an output-specific native UI
+request when independent components are selected. It does not execute an app.
+The outer catalog owner cancels untransferred requests on presentation pause or
+connection replacement and expires requests still awaiting handoff after five
+seconds. On the actual native connection it publishes current output facts,
+then lends the retained catalog to the native content owner's Opening transition.
+Opening IDs and transaction IDs have separate checked counters.
+
+The native content service retains one exact request and, once constructed, its
+exact transaction and Opening payload through queue refusal. It requires the
+actual catalog publication's FIFO completion and exact grant before using its
+generation. Current output identity comes from the same published content facts
+as allocation validation. Success transfers Opening to the shared FIFO before
+clearing the request. Existing active openings cannot be retargeted by another
+request. A request during close uses the existing exact `reopen` boundary; close
+orchestration itself remains unjoined. Output-facts backpressure defers service
+instead of treating a healthy saturated peer as failed.
+
+The connected caller then runs the existing native allocation/demand/candidate
+service, observes actual runtime presentation, and retries focus using the
+transport's retained Presented identity. Prepared grants no focus. A retained
+focus-service flag is only scheduling state: the transport validates the exact
+opening/revision/presented source before installing focus. Beginning close clears
+that scheduling flag. Both large role payloads now have one connection-lifetime
+box so the role enum stays compact; no per-frame service reconstruction occurs.
+
+`.artifacts/bemenu-native-opening/`: final device-hidden Session 474 PASS/14
+ignored, catalog/opening sockets 3 PASS, connection controls 7 PASS; strict
+Session Clippy, layout and formatting PASS (`*-final2` logs). The new actual
+socket control withholds catalog completion, fills the real aggregate FIFO,
+retries Opening twice, drains it, and receives the original transaction exactly
+once after catalog and output facts. It asserts no early focus and no active
+replacement. It does not submit/render a native candidate or induce physical
+WM input. Existing connection tests retain their prior supplied/headless scope.
+The initial test forgot the separate I/O visit after output-facts enqueue and
+failed at a read; this is not protocol failure evidence. Initial enum-size Clippy
+failures are retained, followed by the compact role-owner correction. The final
+compiled drop-request-on-refusal mutation fails the successful-retry assertion;
+restored evidence is `.artifacts/bemenu-native-opening-mutant-final/`. That mutant
+precedes only the final bar boxing; helper/control bytes match exactly. The first
+mutation against the broken read fixture is not discrimination evidence.
+
+Keyboard/pointer semantic input, execution, full close/reopen, successful
+protected native-client composition and physical harness enablement remain
+unfinished. The public configuration refusal stays closed. No canonical gate,
+hardware, native display, push, installation or lom-test readiness claim.

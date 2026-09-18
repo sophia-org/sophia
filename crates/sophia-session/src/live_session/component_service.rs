@@ -14,6 +14,9 @@ pub(super) fn service_components(
     wm: &mut Option<LiveWmSession>,
     available: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if !available {
+        catalog.cancel_open_request();
+    }
     components.set_presentation_available(available)?;
     match components.poll(64 * 1024) {
         Ok(visit) => {
@@ -66,9 +69,24 @@ pub(super) fn service_components(
     let active_output = wm.as_ref().and_then(LiveWmSession::active_output);
     for (key, role) in components.connected_roles().into_iter().flatten() {
         if role == sophia_config::ShellComponentRole::ApplicationLauncher {
-            let result = components.with_service(key, |_, transport| {
+            let result = components.with_service(key, |service, transport| {
+                let ShellComponentService::Launcher { content, .. } = service else {
+                    return Err("native component role mismatch".into());
+                };
                 let complete = catalog.publish(transport)?;
                 transport.poll_io_bounded(64 * 1024)?;
+                if complete {
+                    catalog.service_open_content(
+                        content,
+                        transport,
+                        runtime,
+                        scene,
+                        native.as_deref_mut(),
+                        outputs,
+                        &bounds,
+                        root,
+                    )?;
+                }
                 Ok::<_, Box<dyn std::error::Error>>(complete)
             })?;
             if let Err(error) = result {

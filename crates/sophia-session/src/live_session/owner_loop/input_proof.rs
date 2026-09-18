@@ -266,6 +266,9 @@
             },
             &mut committed_session_actions,
         )?;
+        if session_requests.open_launcher && shell_components.is_some() {
+            component_catalog.queue_open(wm_session.as_ref().and_then(LiveWmSession::reference_output).unwrap_or(output.id));
+        }
         if session_requests.open_launcher && let Some(shell)=metadata_shell.as_mut()
             && shell.queue_launcher(wm_session.as_ref().and_then(LiveWmSession::reference_output).unwrap_or(output.id))? {
             reference_capture.present(None);

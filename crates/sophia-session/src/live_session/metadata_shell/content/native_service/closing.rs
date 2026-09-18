@@ -38,6 +38,7 @@ impl NativeLauncherContentService {
                 return Err(ShellTransportError::WrongActivation);
             }
         } else {
+            self.focus_pending = false;
             self.opening = Some(opening);
             self.closing = Some(Closing {
                 opening,
