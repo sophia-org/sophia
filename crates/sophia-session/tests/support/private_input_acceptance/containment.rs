@@ -23,7 +23,7 @@ struct Fixture {
 
 impl Fixture {
     fn prepare() -> (Self, File) {
-        let directory = std::env::temp_dir().join(format!(
+        let directory = PathBuf::from("/work/evidence").join(format!(
             "m4-host-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
@@ -251,12 +251,23 @@ fn forged_entry(fixture: &Fixture, control: &File) {
         .unwrap();
     rustix::io::fcntl_setfd(&read, rustix::io::FdFlags::empty()).unwrap();
     let output = File::create(fixture.directory.join("forged.log")).unwrap();
+    let forged_ready = fixture.case.join("forged-ready");
+    let forged_socket = fixture.case.join("forged.sock");
+    let mut arguments = Fixture::arguments(control.as_raw_fd(), &read.as_raw_fd().to_string());
+    for pair in arguments.chunks_mut(2) {
+        let path = match pair[0].as_str() {
+            "--socket" => Some(forged_socket.clone()),
+            "--ready-file" => Some(forged_ready.clone()),
+            "--cookie-file" => Some(fixture.case.join("cookie")),
+            _ => None,
+        };
+        if let Some(path) = path {
+            pair[1] = path.display().to_string();
+        }
+    }
     let mut child = Command::new(LOADER)
         .args(["--library-path", "/usr/lib", HOST])
-        .args(Fixture::arguments(
-            control.as_raw_fd(),
-            &read.as_raw_fd().to_string(),
-        ))
+        .args(arguments)
         .env_clear()
         .envs(ENVIRONMENT)
         .stdin(Stdio::null())
@@ -265,7 +276,15 @@ fn forged_entry(fixture: &Fixture, control: &File) {
         .spawn()
         .unwrap();
     let deadline = Instant::now() + WAIT;
+    let mut forbidden_ready = false;
     let status = loop {
+        if forged_ready.exists() && !forbidden_ready {
+            forbidden_ready = true;
+            // Even a negative that starts the forbidden service must collect
+            // it before failing the assertion. The original control pipe is
+            // valid, so the omission mutant has no unrelated setup excuse.
+            (&fixture.control).write_all(b"stop\n").unwrap();
+        }
         if let Some(status) = child.try_wait().unwrap() {
             break status;
         }
@@ -276,6 +295,10 @@ fn forged_entry(fixture: &Fixture, control: &File) {
         }
         std::thread::sleep(Duration::from_millis(2));
     };
+    assert!(
+        !forbidden_ready && !forged_socket.exists(),
+        "forged activation started a real service"
+    );
     assert!(!status.success());
     let text = std::fs::read_to_string(fixture.directory.join("forged.log")).unwrap();
     assert!(text.contains("did not cross the kernel"), "{text}");
