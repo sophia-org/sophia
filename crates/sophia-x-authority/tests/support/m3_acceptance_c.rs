@@ -637,9 +637,8 @@ struct Interrupted {
     origin_retained: bool,
     charged: Option<usize>,
     /// What the retained inventory of this service's own origin still carries.
-    holds: usize,
-    /// Whose window each retained hold reached, so the retained work is
-    /// compared by identity and not only counted.
+    /// Whose window each retained hold reached. Identity rather than a
+    /// count: a count cannot say the retained work is this connection's.
     hold_identities: Vec<(u64, u64)>,
     settling: usize,
     current: bool,
@@ -668,7 +667,6 @@ fn interrupted_custody(service: &LifecycleService) -> Interrupted {
         terminal_inventories: held.terminal.len(),
         origin_retained: mine.is_some(),
         charged: None,
-        holds: mine.map_or(0, |inventory| inventory.holds.len()),
         hold_identities: mine.map_or_else(Vec::new, |inventory| {
             inventory
                 .holds
@@ -2209,10 +2207,14 @@ pub(super) mod diagnostics {
             "stalling_outcome": stalling_outcome,
             "retained_phases_after_exit": format!("{blocked_phases:?}"),
             "closed_error": blocked_closed.error.clone(),
-            "prefix_on_wire": if flushed_before_stall > 0 {
-                "this recipient took earlier whole frames, so the wire holds committed bytes before the stall"
-            } else {
-                "no frame was established as taken before the stall, so no prefix is claimed"
+            "prefix_of_the_stalling_capsule": match &same_capsule {
+                Some(seen) if seen["same_capsule_whole_frame_prefix"] == json!(true) => {
+                    "some but not all of this capsule's own frames went out"
+                }
+                Some(_) => {
+                    "none of this capsule's own frames went out: the writer blocked before committing any of it, which is not a prefix"
+                }
+                None => "no delivery was identified as the one that stalled",
             },
             "limitation": "the seam reports whole frames of the exact watched invocation, never a byte offset. A same-capsule whole-frame prefix is established when one delivery owed more than one frame and fewer than all of them went out; a partial-byte prefix is not claimed at all.",
         });
@@ -2244,7 +2246,7 @@ pub(super) mod diagnostics {
                 "schema": 1,
                 "case": "C.indeterminate_send",
                 "bound": false,
-                "why_unbound": "partial_send_not_replayed is not established: it needs one capsule that owed more than one frame, of which some but not all went out, and no delivery driven here owed more than one. unknown_send_not_replayed is exercised by an actual post-handover interruption. The earlier claim that such an interruption leaves a connection worker unjoined was a fixture-ordering error in this control and is withdrawn.",
+                "why_unbound": "partial_send_not_replayed is not established. The recipient does stop the writer and the declared blocked limit does produce a real TimedOut, but the stall observed lands before any byte of the stalling capsule has gone, so what is established is a blocked-before-any-byte send and not a prefix of that delivery. unknown_send_not_replayed is exercised by an actual post-handover interruption. Two earlier claims of mine are withdrawn: that interrupting the handover leaves a connection worker unjoined, which was a fixture-ordering error here, and that the writer's blocked limit is unreachable in production, which this control disproves.",
                 "partial_send_blocked_recipient": partial,
                 "unknown_send_interval": unknown_fact,
                 "enqueued_observation_only": enqueued,
