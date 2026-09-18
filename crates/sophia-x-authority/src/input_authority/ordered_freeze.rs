@@ -220,7 +220,42 @@ impl OrderedOwnerFreezeReceipt {
     }
 }
 
+/// Every synchronous contribution of this exact surviving activation was
+/// cleared by an actual persistent Async operation. It says nothing about
+/// another grab, a writer, or the authority instance that must retain it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct OrderedKeyboardThaw {
+    stamp: KeyboardActivationStamp,
+}
+
+impl OrderedKeyboardThaw {
+    pub(crate) fn answers(&self, stamp: KeyboardActivationStamp) -> bool {
+        self.stamp == stamp
+    }
+}
+
 impl XInputAuthorityState {
+    pub(crate) fn ordered_keyboard_thaw(
+        &self,
+        namespace: NamespaceId,
+        stamp: KeyboardActivationStamp,
+    ) -> Option<OrderedKeyboardThaw> {
+        let state = self.namespaces.get(&namespace)?;
+        if state.keyboard_activation != KeyboardActivationState::Applied(stamp) {
+            return None;
+        }
+        let grab = state.keyboard?;
+        let contribution = state.freeze.keyboard?;
+        let required = (u8::from(grab.pointer_mode == 0) * FREEZE_POINTER)
+            | (u8::from(grab.keyboard_mode == 0) * FREEZE_KEYBOARD);
+        (stamp.namespace == namespace
+            && contribution.source == Some(OrderedFreezeSource::Keyboard(stamp))
+            && contribution.owner == grab.owner
+            && contribution.pending == 0
+            && contribution.asynchronous & required == required)
+            .then_some(OrderedKeyboardThaw { stamp })
+    }
+
     /// Bounded inspection under the caller's retained native authority guard;
     /// neither method allocates or selects an event recipient.
     pub(crate) fn ordered_pointer_freeze(

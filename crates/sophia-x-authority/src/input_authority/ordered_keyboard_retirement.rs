@@ -33,6 +33,8 @@ impl XInputAuthorityState {
         if stamp.namespace != namespace {
             return R::Replaced;
         }
+        let thawed = self.ordered_keyboard_thaw(namespace, stamp)
+            .is_some_and(|receipt| receipt.answers(stamp));
         let Some(state) = self.namespaces.get_mut(&namespace) else {
             return R::Unavailable;
         };
@@ -52,8 +54,7 @@ impl XInputAuthorityState {
         if grab.route_lease.is_some() {
             return R::LeaseUnproved;
         }
-        if grab.pointer_mode == 0
-            || grab.keyboard_mode == 0
+        if ((grab.pointer_mode == 0 || grab.keyboard_mode == 0) && !thawed)
             || state.freeze.frozen(FREEZE_POINTER | FREEZE_KEYBOARD)
         {
             return R::SynchronousUnproved;

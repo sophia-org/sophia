@@ -1188,7 +1188,10 @@ include!(concat!(
     "/tests/support/private_item_credit.rs"
 ));
 
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/private_refused_request.rs"));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_refused_request.rs"
+));
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -1201,6 +1204,10 @@ include!(concat!(
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/private_frozen_runner.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_frozen_service.rs"
 ));
 
 include!(concat!(
@@ -1233,7 +1240,13 @@ include!("tests/private_native.rs");
 include!("tests/private_xkb_selection.rs");
 include!("tests/private_keyboard_preparation.rs");
 
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/private_terminal_service.rs"));
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/private_live_native_disposal.rs"));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_terminal_service.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_live_native_disposal.rs"
+));
 
 include!("tests/ordered_codec.rs");

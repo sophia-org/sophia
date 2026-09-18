@@ -77,6 +77,12 @@ impl Guards<'_> {
         {
             return Err(Refusal::InvalidKey);
         }
+        // Captured from the exact surviving native activation under this
+        // same guard, before a passive trigger release may retire it. Source
+        // absence later is never substituted for its actual Async receipt.
+        let thaw = hold.activation.and_then(|activation| {
+            self.authority.ordered_keyboard_thaw(self.origin.namespace, activation.stamp())
+        });
         hold.status = Status::ReleaseEntered;
         may_have_applied.set(true);
         let outcome = permit.release(hold.input).map_err(Refusal::Authority)?;
@@ -158,7 +164,8 @@ impl Guards<'_> {
         {
             Some(Residual::ExternalLease)
         } else if hold.activation.is_some_and(|activation| {
-            activation.recipient().pointer_mode == 0 || activation.recipient().keyboard_mode == 0
+            (activation.recipient().pointer_mode == 0 || activation.recipient().keyboard_mode == 0)
+                && thaw.as_ref().is_none_or(|receipt| !receipt.answers(activation.stamp()))
         }) {
             Some(Residual::Synchronous)
         } else {
