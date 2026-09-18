@@ -1,5 +1,5 @@
-//! No live display/device. Preparation and failed-spawn process custody controls;
-//! successful protected dual-peer negotiation is a separate integration gate.
+//! No live display/device. Preparation/failed-spawn controls plus explicitly
+//! selected, device-hidden protected-process negotiation controls.
 use sophia_config::ShellComponentRole;
 use sophia_runtime::{
     ProcessLaunchSpec, ProtectionDomainRole, ProtectionDomainSpec, ShellContentAdmissionPolicy,
@@ -183,6 +183,81 @@ mod peer;
 #[ignore = "child entry invoked only by protected parent fixture"]
 fn protected_component_peer() {
     peer::run();
+}
+
+#[cfg(feature = "native-session")]
+#[test]
+#[ignore = "requires explicit Bemenu executable and nested device-hidden namespaces"]
+fn selected_bemenu_negotiates_through_production_protection() {
+    use sophia_session::shell_component_launch::ShellComponentLaunch;
+    use std::time::{Duration, Instant};
+    let executable = std::env::var_os("SOPHIA_TEST_BEMENU")
+        .expect("provide the exact standalone Bemenu executable");
+    let directory = std::env::temp_dir().join(format!("protected-bemenu-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let mut owner = ShellComponentProcesses::new().unwrap();
+    let slot = owner
+        .add(
+            "menu",
+            ShellComponentRole::ApplicationLauncher,
+            &directory.join("menu"),
+            rustix::process::geteuid().as_raw(),
+        )
+        .unwrap();
+    let plan = ShellComponentLaunch::new(
+        sophia_config::ShellComponentConfig {
+            id: "menu".into(),
+            role: ShellComponentRole::ApplicationLauncher,
+            executable: executable.into(),
+            config: None,
+            gpu: sophia_config::ShellGpuMode::Denied,
+        },
+        None,
+        None,
+    )
+    .unwrap();
+    let key = owner
+        .start(
+            slot,
+            |key, socket| {
+                let (spec, gpu) = plan.prepare(key, socket).map_err(|e| e.to_string())?;
+                assert!(gpu.is_none());
+                Ok(spec)
+            },
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: true,
+            },
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while owner.phase(key).unwrap() != ComponentConnectionPhase::Connected {
+        let visit = owner.visit(64 * 1024);
+        for (_, result) in visit.negotiations.into_iter().flatten() {
+            result.unwrap();
+        }
+        assert!(
+            owner.process_retained(key),
+            "Bemenu exited before negotiation"
+        );
+        assert!(Instant::now() < deadline, "Bemenu negotiation timed out");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(owner.process_retained(key));
+    owner
+        .with_connection(key, |connection| {
+            assert!(connection.supports_native_launcher());
+            assert_eq!(connection.content_grant(), Some(key.grant));
+        })
+        .unwrap();
+    owner.request_stop(key).unwrap();
+    while owner.process_retained(key) {
+        owner.visit(1024);
+        assert!(Instant::now() < deadline, "Bemenu stop timed out");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(owner.finish_after_backend_drop(()).unwrap().1.quiescent());
+    drop(owner);
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 #[cfg(feature = "native-session")]

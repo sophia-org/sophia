@@ -1162,3 +1162,38 @@ The public configuration guard remains. Still required: joined protected
 Bemenu/bar protocol execution, final configuration/harness enablement, exact-source
 canonical checks and physical-run preparation. This checkpoint makes no first
 window, hardware, GPU, VT, install, push or lom-test readiness claim.
+
+### Protected executable admission, 2026-09-18
+
+Bemenu `36863b9` links the existing menu core into its optional native executable;
+upstream shared/plugin targets are preserved. The old selected binary failed in
+production protection before negotiation because its sibling libbemenu.so.0 was
+not exposed. Do not fix that by granting its whole build directory. The repaired
+binary negotiates native capabilities and the exact reserved content grant using
+ShellComponentLaunch and ShellComponentProcesses in nested production bwrap.
+The control receives an explicit test executable; no live display is contacted.
+
+Device-hidden controls: five ordinary component process tests, the explicit
+protected dual-Rust-peer lifecycle test, and the actual protected Bemenu
+negotiation test pass. The dual-peer test retains old pixel owners across exact
+stop/replacement and keeps the other process connected. It does not substitute
+for actual Bemenu/bar content integration. The Bemenu test stops immediately
+after negotiation; its resulting EOF may produce service code 4, so this is not
+a graceful native UI-close or catalog/raster claim. Full Bemenu check-sophia with
+warnings as errors passes, including relocated executable private-socket tests.
+Strict scoped Session Clippy, layout and formatting pass.
+
+Evidence: `.artifacts/bemenu-protected-join/summary.json`, `final-execution.log`,
+`final/result.json`, old binary/refusal log `actual-before-2.log`, and
+`.artifacts/bemenu-standalone-link/result.json`. Initial fixture setup failures
+(missing private loader cache, then precreated endpoint directory) are retained
+separately and are not runtime evidence. The successful runner generates its
+loader cache inside the private namespace; it mounts no host /etc or devices.
+The first direct-core build failed because Make expanded prerequisites before
+the shared source-list definition; the definition now precedes the optional
+include. That compiler failure is not a protocol control.
+
+Still required before lom-test: actual protected catalog/content/close/reopen,
+configuration and harness enablement, exact-source canonical validation. No
+hardware, GPU, native presentation, installation, push or physical readiness is
+claimed by this checkpoint.
