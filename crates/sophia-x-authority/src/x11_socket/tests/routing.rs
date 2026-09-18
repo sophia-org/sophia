@@ -13506,12 +13506,18 @@ fn a_retained_custody_refuses_the_next_operation_rather_than_being_replaced() {
     };
 
     run(private, keyboards, 2561, 272, true);
-    run(private, keyboards, 2562, 272, false);
-    assert_eq!(private.terminal.settling.len(), 1, "a release is owed");
-
-    // A re-press of the same button, barred by the open release debt. The
-    // source refuses after taking context, so custody stays held.
+    // STAGED INVENTORY MISMATCH: keep the actual original native obligation
+    // alive outside inventory while common still owns its press. The next
+    // source call discovers the disagreement after entering common and keeps
+    // its new context. A returned ReleaseBarrier is a pre-effect refusal and
+    // correctly leaves no such context to retain.
+    let original = private.terminal.holds.pop().expect("the actual original hold");
+    let original_cell = original.custody.completion.as_ref().unwrap().clone();
     run(private, keyboards, 2563, 272, true);
+    assert!(matches!(
+        private.terminal.native_pending.pointer().map(|hold| hold.status()),
+        Some(private_native::Status::Retained(private_native::Residual::IncarnationMismatch))
+    ));
     let retained = private
         .terminal
         .pending_custody
@@ -13562,6 +13568,13 @@ fn a_retained_custody_refuses_the_next_operation_rather_than_being_replaced() {
 
     // And an instance holding it does not report itself empty.
     assert!(!private.terminal.is_empty());
+    // Restore the withheld row without surrendering either source obligation.
+    private.terminal.holds.push(original);
+    assert!(Arc::ptr_eq(
+        private.terminal.holds[0].custody.completion.as_ref().unwrap(),
+        &original_cell,
+    ));
+    assert_eq!(retained.answer(), None);
 }
 
 /// Run one real request through the fixture's own producer and observe its
@@ -16166,6 +16179,52 @@ fn a_refusal_is_retained_by_delivery_rather_than_discarded() {
         matches!(custody.observe(), Ok(None)),
         "no outcome was taken, which is a different answer from a stale request"
     );
+
+    // A finite turn must still reach a publishable tail behind an unresolved
+    // head. These are actual prepared/common refusals; removing their original
+    // tickets is a staged publication fault, not a replacement completion.
+    let durable = PrivateSettlementOwner::with_capacity(4);
+    let ready_client = XServerFrontendClientId::from_raw(872);
+    let mut fixture = prepared_ordered_fixture_with_store(ready_client, durable.clone());
+    let recovery = fixture.runner.frontend().broker.registry.input_recovery.clone();
+    let mut retained = Vec::new();
+    for raw in [8721, 8722] {
+        let id = XAuthorityInputDeliveryId::from_raw(raw);
+        fixture.ingress.submit(&fixture.keeper.lease(), motion_to(fixture.surface, id)).unwrap();
+        step_refused_request(&mut fixture);
+        let entry = recovery.state.lock().unwrap().tickets.remove(&id).unwrap();
+        retained.push((id, entry));
+        assert!(fixture.runner.frontend.as_mut().unwrap().deliver_turn(Vec::new()).is_empty());
+    }
+    assert_eq!(durable.reserved(), Some(2));
+    let (tail_id, tail) = retained.pop().unwrap();
+    let tail_cell = tail.completion.clone();
+    assert!(recovery.state.lock().unwrap().tickets.insert(tail_id, tail).is_none());
+    let (head_id, head) = retained.pop().unwrap();
+    let head_cell = head.completion.clone();
+    let private = fixture.runner.frontend.as_mut().unwrap();
+    let PrivateOrderedItem::Refused { custody, .. } = &private.terminal.undelivered[0].item else {
+        panic!("the unresolved head is first before the finite retry pass");
+    };
+    assert!(Arc::ptr_eq(&custody.input_completion().unwrap().cell, &head_cell));
+    assert!(private.deliver_turn(Vec::new()).is_empty());
+    assert_eq!(private.terminal.undelivered.len(), 1);
+    let PrivateOrderedItem::Refused { custody, .. } = &private.terminal.undelivered[0].item else {
+        panic!("the unresolved original head remains owned");
+    };
+    assert!(Arc::ptr_eq(&custody.input_completion().unwrap().cell, &head_cell));
+    assert_eq!(head_cell.answer(), None);
+    assert_eq!(tail_cell.answer(), Some(XAuthorityClientInputDelivery {
+        client: ready_client,
+        delivery: tail_id,
+        outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
+    }));
+    assert_eq!(durable.reserved(), Some(1), "only the tail returned its original credit");
+    assert!(recovery.state.lock().unwrap().tickets.insert(head_id, head).is_none());
+    assert!(private.deliver_turn(Vec::new()).is_empty());
+    assert!(private.terminal.undelivered.is_empty());
+    assert_eq!(head_cell.answer().unwrap().outcome, XAuthorityInputDeliveryOutcome::RouteRejected);
+    assert_eq!(durable.reserved(), Some(0));
 }
 
 #[test]
@@ -17201,6 +17260,8 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
     ingress
         .submit(&lease, button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
+    let cell = admitted_cell(private, delivery.raw());
+    let reserved = keeper.store().reserved().unwrap();
     assert!(
         private
             .broker
@@ -17224,10 +17285,22 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
         revoked[0].delivery, delivery,
         "and it is the one this control submitted"
     );
+    let cancelled = cell.answer().expect("the original cancellation was published");
+    assert_eq!(cancelled, XAuthorityClientInputDelivery {
+        client: XServerFrontendClientId::from_raw(0),
+        delivery,
+        outcome: XAuthorityInputDeliveryOutcome::EpochRevoked,
+    });
 
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
+    let [PrivateOrderedItem::Refused { refusal, custody, .. }] = turn.as_slice() else {
+        panic!("the ended delivery was refused before terminal retirement");
+    };
+    assert_eq!(*refusal, PrivateExecutionRefusal::DeliveryEnded);
+    assert!(Arc::ptr_eq(&custody.input_completion().unwrap().cell, &cell));
+    assert_eq!(cell.answer(), Some(cancelled));
     let delivered = private.deliver_turn(turn);
     assert!(
         delivered.is_empty(),
@@ -17241,25 +17314,15 @@ fn an_ordered_press_whose_delivery_ended_does_not_execute() {
         private.terminal.holds.is_empty(),
         "the ledger never moved, so there is no hold for a release to answer"
     );
-    // Refused for what actually happened. Naming it unmappable, or a target
-    // that is gone, would send a reader looking at the route for a cause that
-    // is not in the route at all.
-    assert!(
-        matches!(
-            &private.terminal.undelivered[0].item,
-            PrivateOrderedItem::Refused {
-                refusal: PrivateExecutionRefusal::DeliveryEnded,
-                ..
-            }
-        ),
-        "and the refusal says the delivery ended"
-    );
-    // The request itself is still owed its observation, which is why the
-    // refusal keeps custody rather than dropping it.
+    assert!(private.terminal.undelivered.is_empty(), "the exact common refusal was observed");
+    assert_eq!(cell.answer(), Some(cancelled), "retirement never rewrites the original answer");
+    assert_eq!(keeper.store().reserved(), Some(reserved - 1), "only this request's storage returned");
+    // The no-effect request retired; the independent lifecycle still needs
+    // its own cleanup before this inventory can become empty.
     let mut settlement = frontend.take().expect("a live runner").shutdown();
-    assert_eq!(settlement.terminal_outstanding(), Some(2), "one refusal observation and one pending lifecycle cleanup");
+    assert_eq!(settlement.terminal_outstanding(), Some(1), "one pending lifecycle cleanup");
     for _ in 0..16 { settlement.retry(); }
-    assert_eq!(settlement.terminal_outstanding(), Some(1), "lifecycle cleanup leaves the original refusal observation owned");
+    assert_eq!(settlement.terminal_outstanding(), Some(0), "the lifecycle's own cleanup finished");
 }
 
 /// One admitted client with a real ingress, kept whole.
@@ -17598,6 +17661,8 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     ingress
         .submit(&keeper.lease(), button_to(surface, delivery, 272, true))
         .expect("the order to accept it");
+    let cell = admitted_cell(private, delivery.raw());
+    let reserved = durable.reserved().unwrap();
     assert!(
         private
             .broker
@@ -17611,51 +17676,38 @@ fn a_press_whose_recipient_is_already_gone_leaves_no_hold() {
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(private.deliver_turn(turn).is_empty());
     assert!(
         private.terminal.holds.is_empty(),
         "a press that cannot be delivered must not leave a hold: the release \
          answering it would be owed to a client that was already gone"
     );
-    // OLD CLAIM: the refusal is the authority's WrongConnection, raised by
-    //   this executor's own precheck of the recipient's connection.
-    // NEW CLAIM: the refusal is the source's own Connection(AdmissionClosed).
-    //   The source resolves the recipient's connection inside the press now,
-    //   and that lookup is what finds the admission closed -- so the fact
-    //   belongs to the source and is reported under the source's name.
-    // The claim that matters is unchanged and still asserted: this press
-    // refused BECAUSE the recipient was already gone, not for some other
-    // reason that happens to refuse.
-    assert!(matches!(
-        &private.terminal.undelivered[0].item,
-        PrivateOrderedItem::Refused {
-            refusal: PrivateExecutionRefusal::Native(private_native::Refusal::Connection(
-                PrivateAppliedRegistryRefusal::AdmissionClosed
-            )),
-            ..
-        }
-    ));
+    // Read the exact source refusal before terminal observation retires the
+    // request. A closed recipient establishes no hidden common/native hold.
+    let [PrivateOrderedItem::Refused { refusal, custody, .. }] = turn.as_slice() else {
+        panic!("the closed recipient refused the actual original request");
+    };
+    assert_eq!(*refusal, PrivateExecutionRefusal::Native(private_native::Refusal::Connection(
+        PrivateAppliedRegistryRefusal::AdmissionClosed
+    )));
+    assert!(Arc::ptr_eq(&custody.input_completion().unwrap().cell, &cell));
+    let source_client = custody.client();
     assert!(channels.input.try_recv().is_err());
     assert_eq!(private.broker.registry.input_recovery.ticket(delivery).unwrap().client, None,
         "recipient closure refuses before recovery binding, not through its cancellation path");
     assert!(deliveries.try_recv().is_err());
 
-    // The hold record above is this executor's own bookkeeping. What matters
-    // is the authority's ledger, and it is reachable: this refusal entered the
-    // transaction, so a rejection was recorded in common and the custody it
-    // kept can be observed. Observing frees the grant's completion cell, which
-    // is what lets the same source ask again.
-    let observed = {
-        let PrivateOrderedItem::Refused { custody, .. } = &private.terminal.undelivered[0].item
-        else {
-            panic!("a refusal")
-        };
-        custody.observe().expect("the authority to be readable")
+    assert_eq!(cell.answer(), None, "the source refusal has not been published yet");
+    assert!(private.deliver_turn(turn).is_empty());
+    let rejected = XAuthorityClientInputDelivery {
+        client: source_client,
+        delivery,
+        outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
     };
-    assert!(
-        observed.is_some(),
-        "a refusal that reached the transaction has an outcome recorded for it"
-    );
+    assert_eq!(cell.answer(), Some(rejected));
+    assert_eq!(deliveries.try_recv().unwrap(), rejected);
+    assert!(deliveries.try_recv().is_err(), "the original refusal is published once");
+    assert!(private.terminal.undelivered.is_empty());
+    assert_eq!(durable.reserved(), Some(reserved - 1));
 
     // Now ask the ledger itself. An untouched one reports nothing was held and
     // the release finishes; one that was pressed would end a hold whose plan
@@ -18120,33 +18172,36 @@ fn a_release_whose_delivery_ended_does_not_end_its_hold() {
             false,
         ))
         .expect("the order to accept it");
+    let release_cell = admitted_cell(private, 9982);
+    let reserved = durable.reserved().unwrap();
     private
         .broker
         .registry
         .input_recovery
         .recover(std::time::Instant::now(), true)
         .expect("the ledger to be readable");
+    let cancelled = release_cell.answer().expect("the actual original cancellation");
+    assert_eq!(cancelled.delivery, XAuthorityInputDeliveryId::from_raw(9982));
+    assert_eq!(cancelled.outcome, XAuthorityInputDeliveryOutcome::EpochRevoked);
 
     let turn = private
         .route_pending_ordered(keyboards, watch)
         .expect("a readable order");
-    assert!(private.deliver_turn(turn).is_empty());
 
     // Refused before the ledger moved. This is the case the gate exists for:
     // the press path finds out by binding, but a release binds only after its
     // transition, so without a check beforehand a withdrawn release would end
     // a hold and lift a button on the strength of a request whose outcome was
     // already reported.
-    assert!(
-        matches!(
-            &private.terminal.undelivered[0].item,
-            PrivateOrderedItem::Refused {
-                refusal: PrivateExecutionRefusal::DeliveryEnded,
-                ..
-            }
-        ),
-        "the release is refused for its delivery having ended"
-    );
+    let [PrivateOrderedItem::Refused { refusal, custody, .. }] = turn.as_slice() else {
+        panic!("the ended release was refused before terminal retirement");
+    };
+    assert_eq!(*refusal, PrivateExecutionRefusal::DeliveryEnded);
+    assert!(Arc::ptr_eq(&custody.input_completion().unwrap().cell, &release_cell));
+    assert!(private.deliver_turn(turn).is_empty());
+    assert!(private.terminal.undelivered.is_empty());
+    assert_eq!(release_cell.answer(), Some(cancelled), "the cancellation is immutable");
+    assert_eq!(durable.reserved(), Some(reserved - 1), "only the no-effect release request retired");
     assert_eq!(
         private.terminal.holds.len(),
         1,

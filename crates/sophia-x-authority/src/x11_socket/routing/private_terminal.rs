@@ -894,7 +894,7 @@ impl PrivateXServerFrontend {
         })
     }
 
-    /// Step until the order stops offering terminal work.
+    /// Visit the terminal work present at entry, with one final native probe.
     ///
     /// The unaccounted caller, kept for what already reads a whole turn. A
     /// runner that must charge each step calls `deliver_one` itself.
@@ -931,16 +931,28 @@ impl PrivateXServerFrontend {
     /// A full queue, a disconnected client, a cleared mapper or an observed
     /// completion are none of them receipts, and a debt closed on any of those
     /// would be closed on something that did not happen.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     fn deliver_turn(&mut self, items: Vec<PrivateOrderedItem>) -> Vec<PrivateDelivered> {
         // Taken into storage this instance owns before anything is delivered.
         // Appended rather than assigned, so anything a previous interruption
         // left here is still first in line.
         self.terminal.delivering.extend(items);
         let mut delivered = Vec::with_capacity(self.terminal.delivering.len());
-        while let Ok(PrivateDeliveryStep::Advanced { report, .. }) =
-            self.deliver_one(&mut |_, _| Ok(()))
-        {
+        // Advanced includes an unsuccessful retained-request observation.
+        // Those visits rotate custody, so waiting for a non-Advanced result
+        // would spin forever on an unresolved item. Give every entry-owned
+        // request a visit, including a ready one behind an unresolved head.
+        // The final probe preserves native handover after normal delivery.
+        let visits = self.terminal.delivering.len()
+            + self.terminal.turn.len()
+            + self.terminal.undelivered.len()
+            + 1;
+        for _ in 0..visits {
+            let Ok(PrivateDeliveryStep::Advanced { report, .. }) =
+                self.deliver_one(&mut |_, _| Ok(()))
+            else {
+                break;
+            };
             delivered.extend(report);
         }
         delivered
