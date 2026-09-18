@@ -1821,7 +1821,10 @@ fn c_indeterminate_send_diagnostics() {
     let bounded_buffer =
         rustix::net::sockopt::set_socket_recv_buffer_size(&blocked_peer, 2048).is_ok();
     let buffer_size = rustix::net::sockopt::socket_recv_buffer_size(&blocked_peer).ok();
-    // From here the recipient never reads again.
+    // From here the recipient never reads again, and the writer's own steps
+    // are recorded so a prefix of the delivery that stalls is established by
+    // what the writer did, not by counting frames of the ones before it.
+    observe_frames();
     let mut pairs = 0u64;
     let mut outcomes: Vec<String> = Vec::new();
     let mut stalled = None;
@@ -1878,7 +1881,36 @@ fn c_indeterminate_send_diagnostics() {
         .find(|outcome| outcome.as_str() != "Flushed")
         .cloned();
     let blocked_phases = retained_dispatch(&blocked);
+    let observed = take_observed_frames();
+    let stalled_delivery = stalled.map(|(_, id)| id).filter(|id| *id != 0);
+    let same_capsule = stalled_delivery.map(|id| {
+        let (advanced, owed, failure) =
+            frames_of(&observed, XAuthorityInputDeliveryId::from_raw(id));
+        json!({
+            "delivery": id,
+            "frames_this_delivery_owed": owed,
+            "frames_of_it_that_went_out_whole": advanced,
+            "writer_failure_on_it": failure,
+            "is_a_prefix_of_the_same_delivery": owed > 1 && advanced >= 1 && advanced < owed,
+        })
+    });
+    let multi_frame_deliveries: Vec<_> = observed
+        .iter()
+        .filter(|step| step.frames > 1)
+        .map(|step| json!({"delivery": step.delivery.map(|id| id.raw()), "frames": step.frames, "index": step.index, "advanced": step.advanced}))
+        .take(12)
+        .collect();
+    let writer_failures: Vec<_> = observed
+        .iter()
+        .filter(|step| step.failure.is_some())
+        .map(|step| json!({"delivery": step.delivery.map(|id| id.raw()), "socket": step.socket, "frames": step.frames, "index": step.index, "failure": step.failure.clone()}))
+        .take(8)
+        .collect();
     let partial = json!({
+        "writer_steps_recorded": observed.len(),
+        "same_capsule_prefix": same_capsule,
+        "multi_frame_deliveries_seen": multi_frame_deliveries,
+        "writer_failures": writer_failures,
         "recipient_buffer_bounded": bounded_buffer,
         "recipient_buffer_bytes": buffer_size,
         "pairs_delivered_before_stall": pairs,
@@ -1926,4 +1958,75 @@ fn c_indeterminate_send_diagnostics() {
             "collected_actors": actors,
         })
     );
+}
+
+/// One step of the actual writer, as it happened, for the delivery it was
+/// serving. Recorded only while a case is watching.
+#[derive(Clone, Debug)]
+struct ObservedFrame {
+    socket: i32,
+    delivery: Option<XAuthorityInputDeliveryId>,
+    frames: usize,
+    index: usize,
+    advanced: Option<usize>,
+    failure: Option<String>,
+}
+
+static OBSERVED_FRAMES: Mutex<Vec<ObservedFrame>> = Mutex::new(Vec::new());
+static OBSERVING_FRAMES: AtomicBool = AtomicBool::new(false);
+
+/// Start recording the writer's own progress. Bounded, and cleared here so a
+/// case never reads another case's steps.
+fn observe_frames() {
+    OBSERVED_FRAMES.lock().unwrap().clear();
+    OBSERVING_FRAMES.store(true, Ordering::Release);
+}
+
+fn take_observed_frames() -> Vec<ObservedFrame> {
+    OBSERVING_FRAMES.store(false, Ordering::Release);
+    std::mem::take(&mut OBSERVED_FRAMES.lock().unwrap())
+}
+
+/// Production's entry into that recording. Reads nothing back and changes
+/// nothing; when no case is watching it returns immediately.
+pub(crate) fn observed_ordered_frame(
+    socket: i32,
+    delivery: Option<XAuthorityInputDeliveryId>,
+    frames: usize,
+    index: usize,
+    advanced: Option<usize>,
+    failure: Option<String>,
+) {
+    if !OBSERVING_FRAMES.load(Ordering::Acquire) {
+        return;
+    }
+    let mut seen = OBSERVED_FRAMES.lock().unwrap();
+    if seen.len() < 4096 {
+        seen.push(ObservedFrame {
+            socket,
+            delivery,
+            frames,
+            index,
+            advanced,
+            failure,
+        });
+    }
+}
+
+/// What the writer's own steps say about one delivery: how many of its frames
+/// went out whole, how many it owed, and the failure that ended it if any.
+fn frames_of(
+    observed: &[ObservedFrame],
+    delivery: XAuthorityInputDeliveryId,
+) -> (usize, usize, Option<String>) {
+    let mine: Vec<_> = observed
+        .iter()
+        .filter(|step| step.delivery == Some(delivery))
+        .collect();
+    let advanced = mine.iter().filter(|step| step.advanced.is_some()).count();
+    let owed = mine.iter().map(|step| step.frames).max().unwrap_or(0);
+    let failure = mine
+        .iter()
+        .find_map(|step| step.failure.clone());
+    (advanced, owed, failure)
 }
