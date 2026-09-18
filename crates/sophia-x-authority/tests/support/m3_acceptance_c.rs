@@ -2581,13 +2581,23 @@ fn blocked_recipient_attempt(
         && std::time::Instant::now() < visit_deadline
     {
         match visit.allowance_refusal {
-            Some(sophia_input_authority::ServiceStartRefusal::StartsExhausted { retry_after }) => {
+            None => {}
+            // Every refusal that names a delay is waited out for it; the two
+            // that name none are what waiting cannot fix.
+            Some(
+                sophia_input_authority::ServiceStartRefusal::StartsExhausted { retry_after }
+                | sophia_input_authority::ServiceStartRefusal::TimeExhausted { retry_after }
+                | sophia_input_authority::ServiceStartRefusal::CleanupStartsReserved { retry_after }
+                | sophia_input_authority::ServiceStartRefusal::CleanupTimeReserved { retry_after },
+            ) => {
                 std::thread::sleep(retry_after.min(Duration::from_millis(50)));
             }
-            Some(other) => panic!(
+            Some(
+                other @ (sophia_input_authority::ServiceStartRefusal::ClockRegressed
+                | sophia_input_authority::ServiceStartRefusal::Interrupted),
+            ) => panic!(
                 "{label}: the retained visit refused for something waiting cannot fix: {other:?} in {visits:?}"
             ),
-            None => {}
         }
         visit = blocked.step();
         // A charged terminal visit is a real answer, recorded as what it was
@@ -3513,11 +3523,28 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                 // reports. Every other refusal is answered by stopping and
                 // reporting it, never by going round again.
                 match progress.allowance {
-                    Some(sophia_input_authority::ServiceStartRefusal::StartsExhausted {
-                        retry_after,
-                    }) => std::thread::sleep(retry_after.min(Duration::from_millis(50))),
                     None => {}
-                    Some(other) => {
+                    // EVERY REFUSAL THAT NAMES A DELAY IS WAITED OUT for the
+                    // delay it names. These are the budget saying "not now",
+                    // and which of the four it is does not change the answer.
+                    Some(
+                        sophia_input_authority::ServiceStartRefusal::StartsExhausted {
+                            retry_after,
+                        }
+                        | sophia_input_authority::ServiceStartRefusal::TimeExhausted { retry_after }
+                        | sophia_input_authority::ServiceStartRefusal::CleanupStartsReserved {
+                            retry_after,
+                        }
+                        | sophia_input_authority::ServiceStartRefusal::CleanupTimeReserved {
+                            retry_after,
+                        },
+                    ) => std::thread::sleep(retry_after.min(Duration::from_millis(50))),
+                    // AND THE TWO THAT NAME NONE STOP THIS. Waiting cannot fix
+                    // either, so the loop ends and the case fails on it.
+                    Some(
+                        other @ (sophia_input_authority::ServiceStartRefusal::ClockRegressed
+                        | sophia_input_authority::ServiceStartRefusal::Interrupted),
+                    ) => {
                         reading.unexpected_allowance = Some(format!("{other:?}"));
                         break;
                     }
@@ -3721,11 +3748,23 @@ fn refused_publication(namespace: u64, window: u32) -> (Value, Vec<String>) {
                 turns_taken += 1;
                 supervised = supervised && !progress.watch_failed;
                 match progress.allowance {
-                    Some(sophia_input_authority::ServiceStartRefusal::StartsExhausted {
-                        retry_after,
-                    }) => std::thread::sleep(retry_after.min(Duration::from_millis(50))),
                     None => {}
-                    Some(other) => {
+                    Some(
+                        sophia_input_authority::ServiceStartRefusal::StartsExhausted {
+                            retry_after,
+                        }
+                        | sophia_input_authority::ServiceStartRefusal::TimeExhausted { retry_after }
+                        | sophia_input_authority::ServiceStartRefusal::CleanupStartsReserved {
+                            retry_after,
+                        }
+                        | sophia_input_authority::ServiceStartRefusal::CleanupTimeReserved {
+                            retry_after,
+                        },
+                    ) => std::thread::sleep(retry_after.min(Duration::from_millis(50))),
+                    Some(
+                        other @ (sophia_input_authority::ServiceStartRefusal::ClockRegressed
+                        | sophia_input_authority::ServiceStartRefusal::Interrupted),
+                    ) => {
                         unexpected = Some(format!("{other:?}"));
                         break;
                     }
