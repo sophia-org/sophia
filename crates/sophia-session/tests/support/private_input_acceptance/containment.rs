@@ -5,6 +5,7 @@ use sophia_conformance::private_instance::{Child, ENVIRONMENT, Launch, Mount, NA
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::{AsFd, AsRawFd};
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -218,6 +219,7 @@ pub fn containment() {
     assert!(text.contains("\"outside_connected\":false"), "{text}");
     drop(probe);
     assert!(outside.exists()); // denial was not caused by removing the positive endpoint
+    rustix::io::fcntl_setfd(&authorized, rustix::io::FdFlags::CLOEXEC).unwrap();
     forged_entry(&fixture, &read);
     emit(
         "containment",
@@ -246,10 +248,22 @@ fn forged_entry(fixture: &Fixture, control: &File) {
         .map(|(name, file)| format!("\"{name}\":{}", file.as_raw_fd()))
         .collect::<Vec<_>>()
         .join(",");
+    let identity = control.metadata().unwrap();
+    let delegated = format!(
+        "\"{}\":[{},{},{}]",
+        control.as_raw_fd(),
+        identity.dev(),
+        identity.ino(),
+        identity.mode() & 0o170000
+    );
     File::from(write)
-        .write_all(format!("{{\"namespaces\":{{{entries}}},\"descriptors\":{{}}}}").as_bytes())
+        .write_all(
+            format!("{{\"namespaces\":{{{entries}}},\"descriptors\":{{{delegated}}}}}").as_bytes(),
+        )
         .unwrap();
     rustix::io::fcntl_setfd(&read, rustix::io::FdFlags::empty()).unwrap();
+    let control_flags = rustix::io::fcntl_getfd(control).unwrap();
+    rustix::io::fcntl_setfd(control, rustix::io::FdFlags::empty()).unwrap();
     let output = File::create(fixture.directory.join("forged.log")).unwrap();
     let forged_ready = fixture.case.join("forged-ready");
     let forged_socket = fixture.case.join("forged.sock");
@@ -275,6 +289,7 @@ fn forged_entry(fixture: &Fixture, control: &File) {
         .stderr(output)
         .spawn()
         .unwrap();
+    rustix::io::fcntl_setfd(control, control_flags).unwrap();
     let deadline = Instant::now() + WAIT;
     let mut forbidden_ready = false;
     let status = loop {
