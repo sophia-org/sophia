@@ -255,7 +255,9 @@ fn committed_routing() {
             .issue(context, support::device(1))
             .unwrap();
         let window = peer.create_map_and_draw();
+        peer.confirm_geometry(window);
         let deadline = Instant::now() + support::WAIT;
+        let mut visits = Vec::new();
         let admitted = loop {
             let committed = instance
                 .handle_mut()
@@ -283,9 +285,19 @@ fn committed_routing() {
                 assert!(admission.committed_transaction().is_valid());
                 break *admission;
             }
+            if committed.batches_observed > 0
+                || committed.commits > 0
+                || !committed.effects.is_empty()
+            {
+                assert!(
+                    visits.len() < 16,
+                    "unexpected repeated commit activity: {visits:?}"
+                );
+                visits.push(committed);
+            }
             assert!(
                 Instant::now() < deadline,
-                "real draw never committed and admitted"
+                "real draw never committed and admitted; observed visits: {visits:?}"
             );
         };
         let mapped = admitted

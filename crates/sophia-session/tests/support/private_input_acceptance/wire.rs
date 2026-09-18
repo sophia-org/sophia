@@ -115,6 +115,20 @@ impl Peer {
         self.size
     }
 
+    /// A reply orders the preceding create/map/draw requests. An X error must
+    /// fail here rather than become an unexplained Engine-commit timeout.
+    pub fn confirm_geometry(&mut self, window: u32) {
+        self.request(14, 0, &self.order.u32(window));
+        let mut reply = [0; 32];
+        read_exact_until(&mut self.stream, &mut reply, Instant::now() + super::WAIT).unwrap();
+        assert_eq!(reply[0], 1, "expected GetGeometry reply, got {reply:?}");
+        assert_eq!(self.order.read16(&reply[2..]), self.sequence);
+        assert_eq!(self.order.read32(&reply[4..]), 0);
+        assert_eq!(self.order.read32(&reply[8..]), self.root);
+        assert_eq!(self.order.read16(&reply[16..]), 8);
+        assert_eq!(self.order.read16(&reply[18..]), 8);
+    }
+
     pub fn create_map_and_draw(&mut self) -> u32 {
         let window = self.base | 1;
         let gc = self.base | 2;
