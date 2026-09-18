@@ -14740,7 +14740,7 @@ fn a_release_that_cannot_build_does_not_hide_another_recipients() {
     // is what an unwrappable or already-consumed emission amounts to here.
     let stolen = private.terminal.settling[0]
         .native_mut()
-        .and_then(private_native::Hold::take_release_emission);
+        .and_then(PrivateNativeHold::take_release_emission);
     assert!(stolen.is_some(), "the first release did have an event to lose");
     drop(stolen);
 

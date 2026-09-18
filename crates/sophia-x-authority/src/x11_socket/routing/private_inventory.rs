@@ -72,7 +72,7 @@ struct PrivateTerminalInventory {
     ///
     /// Empty between operations. What lands here moves into the record for its
     /// hold as soon as that record exists, and nothing else reads it.
-    native_pending: Option<private_native::Hold>,
+    native_pending: PrivateNativePending,
     /// Where a debt's custody is prepared before the effect that creates it.
     ///
     /// INSTANCE-OWNED BEFORE THE SOURCE IS ENTERED, for the same reason
@@ -171,7 +171,20 @@ struct PrivateTerminalInventory {
 
 #[cfg(unix)]
 impl PrivateTerminalInventory {
-    /// Storage for the fixed-size records is reserved up front. The turn and
+    /// Bytes for the inline inventory and its two native record buffers.
+    /// `size_of` includes the largest Pointer/Key variant and every inline
+    /// emission/custody slot; it is not a count times a pointer-only estimate.
+    /// This is an allocation bound, not a resource budget or an accounting of
+    /// the turn/delivery buffers and allocations retained through shared owners.
+    fn native_storage_bytes(holds: usize, settling: usize) -> Option<usize> {
+        std::mem::size_of::<Self>()
+            .checked_add(holds.checked_mul(std::mem::size_of::<PrivateHoldRecord>())?)?
+            .checked_add(settling.checked_mul(std::mem::size_of::<PrivateSettlingRelease>())?)
+    }
+
+    /// Storage for the full fixed-size native records is reserved up front,
+    /// before the frontend can expose producers. Key custody therefore needs
+    /// no allocation to replace a Pointer variant later. The turn and
     /// delivery lists are reserved to the service budget and can still grow
     /// past it, which is open preallocation work rather than a guarantee.
     fn with_capacity(
@@ -180,12 +193,20 @@ impl PrivateTerminalInventory {
         lifecycle: PrivateLifecycleOwner,
         capacity: usize,
     ) -> Self {
+        let holds = Vec::with_capacity(PRIVATE_HOLD_RECORDS);
+        let settling = Vec::with_capacity(PRIVATE_HOLD_RECORDS);
+        let native_bytes = Self::native_storage_bytes(holds.capacity(), settling.capacity())
+            .expect("the complete native custody storage has a representable byte size");
+        assert!(
+            native_bytes <= isize::MAX as usize,
+            "the complete native custody storage fits the allocator byte bound"
+        );
         Self {
             origin,
             controller,
             lifecycle,
-            holds: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
-            native_pending: None,
+            holds,
+            native_pending: PrivateNativePending::default(),
             pending_custody: None,
             next_event_order: 0,
             press_stall: 0,
@@ -195,7 +216,7 @@ impl PrivateTerminalInventory {
             attempt_custody: None,
             native_class_debt: 0,
             native_turn_debt: 0,
-            settling: Vec::with_capacity(PRIVATE_HOLD_RECORDS),
+            settling,
             current: None,
             turn: Vec::with_capacity(capacity),
             delivering: Vec::with_capacity(capacity),
@@ -269,7 +290,7 @@ impl PrivateTerminalInventory {
                 controller: self.controller.clone(),
                 lifecycle: self.lifecycle.clone(),
                 holds: Vec::new(),
-                native_pending: None,
+                native_pending: PrivateNativePending::default(),
                 pending_custody: None,
                 next_event_order: 0,
                 press_stall: 0,

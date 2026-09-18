@@ -923,4 +923,5 @@ mod keys {
         }
     }
     include!("private_native_key_routing.rs");
+    include!("../../../tests/support/private_native_custody.rs");
 }

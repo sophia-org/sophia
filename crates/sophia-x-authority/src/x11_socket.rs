@@ -101,6 +101,7 @@ include!("x11_socket/routing/private_maintenance_identity.rs");
 include!("x11_socket/routing/private_maintenance_commitment.rs");
 include!("x11_socket/routing/private_focus_runtime.rs");
 include!("x11_socket/routing/private_native.rs");
+include!("x11_socket/routing/private_native_custody.rs");
 #[cfg(unix)]
 #[allow(unused_imports)] // Ordered queue integration takes this sealed payload.
 pub(crate) use private_native::PrivateOrderedEmission;
