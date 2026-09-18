@@ -130,6 +130,9 @@ pub(crate) enum PrivateExecutionRefusal {
     /// Ordered native StateOnly/thaw custody is not implemented. This mode
     /// cannot be treated as an ordinary delivery.
     StateOnlyUnsupported,
+    /// Repetition is a delivery policy, not another aggregate press or join.
+    /// The private source does not yet own an ordered repeat operation.
+    RepeatUnsupported,
     /// This executor already holds as many records as it may.
     ///
     /// Refused before the effect, so nothing is applied that could not then be

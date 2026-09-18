@@ -868,6 +868,9 @@ fn execute_owned(
         if route.mode == XAuthorityRoutedInputMode::StateOnly {
             return Err(PrivateExecutionRefusal::StateOnlyUnsupported);
         }
+        if route.mode == XAuthorityRoutedInputMode::Repeat {
+            return Err(PrivateExecutionRefusal::RepeatUnsupported);
+        }
 
         // Claimed, not consulted. Accepted work waits its turn in the shared
         // order, and a delivery can end during that wait: its epoch revoked,

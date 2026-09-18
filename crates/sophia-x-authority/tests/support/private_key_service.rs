@@ -247,7 +247,28 @@ fn service_shift_a_chord_uses_one_history_and_settles_exact_native_and_writer_ob
 
 #[test]
 fn service_state_only_key_is_explicitly_refused_before_native_application() {
-    let (launched, socket_path) = launch_producing("producer-key-state-only", 9621, 4);
+    assert_unsupported_key_service_mode(
+        XAuthorityRoutedInputMode::StateOnly,
+        PrivateExecutionRefusal::StateOnlyUnsupported,
+        "producer-key-state-only",
+    );
+}
+
+#[test]
+fn service_repeat_key_is_explicitly_refused_before_native_application() {
+    assert_unsupported_key_service_mode(
+        XAuthorityRoutedInputMode::Repeat,
+        PrivateExecutionRefusal::RepeatUnsupported,
+        "producer-key-repeat",
+    );
+}
+
+fn assert_unsupported_key_service_mode(
+    mode: XAuthorityRoutedInputMode,
+    expected: PrivateExecutionRefusal,
+    tag: &str,
+) {
+    let (launched, socket_path) = launch_producing(tag, 9621, 4);
     launched
         .access
         .await_ready(Duration::from_secs(15))
@@ -262,20 +283,17 @@ fn service_state_only_key_is_explicitly_refused_before_native_application() {
         .ingress_for(&lease, client_id, DeviceId::from_raw(1))
         .unwrap();
     let mut route = key_service_route(surface, 98310, 42, true);
-    route.mode = XAuthorityRoutedInputMode::StateOnly;
+    route.mode = mode;
     ingress.submit(&lease, route).unwrap();
     assert_eq!(read_event(&mut client, 2), None);
     launched
         .commands
         .send(XServerFrontendServiceCommand::StopAndDisconnect)
         .unwrap();
-    let outcome = produced_outcome(launched, "unsupported state-only key");
+    let outcome = produced_outcome(launched, "unsupported key mode");
     let order = outcome.order.unwrap();
     assert_eq!((order.taken, order.refused, order.dispatched), (1, 1, 0));
-    assert_eq!(
-        order.last_refusal,
-        Some(PrivateExecutionRefusal::StateOnlyUnsupported)
-    );
+    assert_eq!(order.last_refusal, Some(expected));
     assert!(outcome.retained_holds.is_empty() && outcome.store_holds.is_empty());
     assert!(outcome.key_releases.is_empty());
     let _ = std::fs::remove_file(socket_path);
