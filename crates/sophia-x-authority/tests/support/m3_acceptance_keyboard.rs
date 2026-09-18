@@ -10,6 +10,30 @@ fn b_applied_focus() {
         .lock()
         .unwrap()
         .push((Arc::as_ptr(&service.registry.clients) as usize, pause));
+    let (route_focus, allow_focus_route) = Pause::pair();
+    let (try_key, allow_key) = Pause::pair();
+    let (pending_done, pending_observed) = sync_channel(1);
+    arm_runner(
+        &service.registry,
+        Box::new(move |runner, lease| {
+            route_focus.wait();
+            // Stay inside the already-entered real runner while the control
+            // writer retains outer runtime. The ordinary outer service loop
+            // also uses that runtime and cannot itself enter a second turn.
+            runner.service_turn(lease).unwrap();
+            try_key.wait();
+            for _ in 0..100 {
+                runner.service_turn(lease).unwrap();
+                let cell = delivery_cell(&runner.frontend().broker.registry, 112001).unwrap();
+                if cell.answer().is_some() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            pending_done.send(()).unwrap();
+        }),
+    );
+    allow_focus_route.entered();
     let control = service
         .access
         .control_producer(&service.owner.lease())
@@ -26,7 +50,9 @@ fn b_applied_focus() {
             },
         )
         .unwrap();
+    allow_focus_route.release();
     let focus_worker = release.entered();
+    allow_key.entered();
     assert!(
         !service
             .registry
@@ -45,6 +71,10 @@ fn b_applied_focus() {
         )
         .unwrap();
     let refused = delivery_cell(&service.registry, 112001).unwrap();
+    allow_key.release();
+    pending_observed
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap();
     assert!(waited_for(|| refused.answer().is_some()));
     assert_eq!(
         refused.answer().unwrap().outcome,

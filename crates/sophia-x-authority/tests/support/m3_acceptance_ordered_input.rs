@@ -129,11 +129,15 @@ fn b_ordered_input() {
             wait_thaw.wait();
             // Exercise only the real accounted source visits here. Its original
             // terminal owns each decided emission until normal delivery resumes.
-            for _ in 0..32 {
+            for _ in 0..200 {
                 if runner.frontend().terminal.frozen.is_empty() {
                     break;
                 }
                 runner.execute_accounted_step().unwrap();
+                // Frozen polling may have consumed the current allowance.
+                // Wait for the original budget's own interval to advance;
+                // no replacement budget, history, request or clock is made.
+                std::thread::sleep(Duration::from_millis(1));
             }
             assert!(runner.frontend().terminal.frozen.is_empty());
             let after: Vec<_> = runner
