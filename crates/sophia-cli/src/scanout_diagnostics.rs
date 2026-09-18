@@ -8,7 +8,12 @@ use tracing_subscriber::{Layer, Registry, filter::filter_fn, layer::Context};
 const SCANOUT_TARGET: &str = "sophia_scanout_evidence";
 
 pub(crate) fn layer() -> impl Layer<Registry> {
-    ScanoutDiagnostics.with_filter(filter_fn(|metadata| metadata.target() == SCANOUT_TARGET))
+    ScanoutDiagnostics.with_filter(filter_fn(|metadata| {
+        matches!(
+            metadata.target(),
+            SCANOUT_TARGET | "sophia_application_evidence"
+        )
+    }))
 }
 
 struct ScanoutDiagnostics;
@@ -21,15 +26,26 @@ impl<S: Subscriber> Layer<S> for ScanoutDiagnostics {
         let mut message = Message::new();
         event.record(&mut message);
         let line = message.as_str();
-        if matches!(
-            line.split_whitespace().next(),
-            Some(
-                "sophia_live_atomic_test"
-                    | "sophia_live_layout_probe"
-                    | "sophia_shell_native_binding"
-                    | "sophia_shell_native_completion"
-            )
-        ) {
+        if (event.metadata().target() == "sophia_application_evidence"
+            && matches!(
+                line.split_whitespace().next(),
+                Some(
+                    "sophia_x_window_lifecycle"
+                        | "sophia_x_present_submission"
+                        | "sophia_x_present_delivery"
+                )
+            ))
+            || (event.metadata().target() == SCANOUT_TARGET
+                && matches!(
+                    line.split_whitespace().next(),
+                    Some(
+                        "sophia_live_atomic_test"
+                            | "sophia_live_layout_probe"
+                            | "sophia_shell_native_binding"
+                            | "sophia_shell_native_completion"
+                    )
+                ))
+        {
             capture_line(line);
         }
     }

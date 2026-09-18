@@ -450,10 +450,23 @@ impl XServerFrontendRouteRegistry {
     ) -> Result<(), XServerFrontendRouteError> {
         let sender = match self.client_senders(client) {
             Ok(senders) => senders.protocol,
-            Err(XServerFrontendRouteError::UnknownClient { .. }) => return Ok(()),
+            Err(XServerFrontendRouteError::UnknownClient { .. }) => {
+                crate::evidence::present_event(client, None, "peer_gone", event);
+                return Ok(());
+            }
             Err(error) => return Err(error),
         };
-        match self.route_to_client(client, sender, event) {
+        let result = self.route_to_client(client, sender, event);
+        let status = match &result {
+            Ok(()) => "queued",
+            Err(
+                XServerFrontendRouteError::UnknownClient { .. }
+                | XServerFrontendRouteError::ClientQueueDisconnected { .. },
+            ) => "peer_gone",
+            Err(_) => "queue_failed",
+        };
+        crate::evidence::present_event(client, None, status, event);
+        match result {
             Err(
                 XServerFrontendRouteError::UnknownClient { .. }
                 | XServerFrontendRouteError::ClientQueueDisconnected { .. },

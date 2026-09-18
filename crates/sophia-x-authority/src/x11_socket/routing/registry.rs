@@ -612,6 +612,14 @@ impl XServerFrontendRouteRegistry {
                 allocation_subject: None,
             },
         );
+        crate::evidence::present_accepted(
+            client,
+            transaction,
+            window,
+            pixmap,
+            serial,
+            pending.len(),
+        );
         Ok(())
     }
 
@@ -737,26 +745,25 @@ impl XServerFrontendRouteRegistry {
                 layout_comparison,
             });
         }
-            // A Present subscription belongs to whoever took it, not to
-            // whoever presents. A browser subscribes from its GPU process for a
-            // window its browser process created, which X permits and Mesa
-            // relies on: it blocks in xcb_wait_for_special_event until an idle
-            // notify arrives, so an event withheld here is not an error the
-            // client can see -- it is a client that never draws again.
+        // A Present subscription belongs to whoever took it, not to
+        // whoever presents. A browser subscribes from its GPU process for a
+        // window its browser process created, which X permits and Mesa
+        // relies on: it blocks in xcb_wait_for_special_event until an idle
+        // notify arrives, so an event withheld here is not an error the
+        // client can see -- it is a client that never draws again.
         for (target, subscription) in subscriptions {
-            self.route_protocol(
-                target,
-                XClientEvent::PresentCompleteNotify {
-                    sequence: 0,
-                    event_id: subscription.event_id,
-                    window: presentation.window,
-                    serial: presentation.serial,
-                    ust,
-                    msc,
-                    kind: 0,
-                    mode: mode as u8,
-                },
-            )?;
+            let event = XClientEvent::PresentCompleteNotify {
+                sequence: 0,
+                event_id: subscription.event_id,
+                window: presentation.window,
+                serial: presentation.serial,
+                ust,
+                msc,
+                kind: 0,
+                mode: mode as u8,
+            };
+            crate::evidence::present_event(target, Some(transaction), "ready", event);
+            self.route_protocol(target, event)?;
         }
         Ok(crate::XPresentCompleteRouteOutcome {
             routed: true,
@@ -816,17 +823,16 @@ impl XServerFrontendRouteRegistry {
             return Ok(false);
         }
         for (target, subscription) in subscriptions {
-            self.route_protocol(
-                target,
-                XClientEvent::PresentIdleNotify {
-                    sequence: 0,
-                    event_id: subscription.event_id,
-                    window: presentation.window,
-                    serial: presentation.serial,
-                    pixmap: presentation.pixmap,
-                    idle_fence: presentation.idle_fence,
-                },
-            )?;
+            let event = XClientEvent::PresentIdleNotify {
+                sequence: 0,
+                event_id: subscription.event_id,
+                window: presentation.window,
+                serial: presentation.serial,
+                pixmap: presentation.pixmap,
+                idle_fence: presentation.idle_fence,
+            };
+            crate::evidence::present_event(target, Some(transaction), "ready", event);
+            self.route_protocol(target, event)?;
         }
         Ok(true)
     }

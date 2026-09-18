@@ -6,6 +6,32 @@ use std::sync::Arc;
 use sophia_session::diagnostics::{Capture, Retention, Store, capture_line, reduced_record};
 
 #[test]
+fn x_lifecycle_records_keep_bounded_identity_and_exact_delivery_stage() {
+    for record in [
+        "sophia_x_window_lifecycle schema=1 client=2 transaction=9 sequence=4 major=1 surface=5 generation=1 window_token=99 requested_kind=input_only role=ClientPositioned mapped=false width=1 height=1",
+        "sophia_x_present_submission schema=1 client=3 transaction=10 window_token=99 pixmap_token=88 serial=1 pending_count=3 status=accepted",
+        "sophia_x_present_delivery schema=1 client=3 transaction=0 sequence=4 window_token=99 subscription_token=77 pixmap_token=88 serial=1 kind=idle status=written",
+    ] {
+        assert_eq!(
+            reduced_record(&format!("{record} xid=123 title=secret payload=456 x=321")),
+            Some(record.into())
+        );
+    }
+    assert_eq!(
+        reduced_record(
+            "sophia_x_present_delivery serial=4294967296 window_token=18446744073709551616 status=private_text kind=private_text sequence=-1"
+        ),
+        Some("sophia_x_present_delivery".into())
+    );
+    assert_eq!(
+        reduced_record(
+            "sophia_x_window_lifecycle status=written requested_kind=private_text width=65536"
+        ),
+        Some("sophia_x_window_lifecycle".into())
+    );
+}
+
+#[test]
 fn launch_and_reload_diagnostics_keep_only_bounded_refusal_vocabulary() {
     let record = reduced_record("sophia_application_launch schema=1 status=failed launch_id=19 transaction=22 reason=not_found executable=/secret args=secret env=secret").unwrap();
     assert!(record.contains("reason=not_found"));

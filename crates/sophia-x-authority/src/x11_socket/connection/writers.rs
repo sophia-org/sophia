@@ -84,6 +84,7 @@ fn spawn_x11_protocol_event_writer(
                 lock_x11_non_control_output(&stream, &output_control_pending)?;
             set_x11_protocol_event_sequence(&mut event, sequence.load(Ordering::Acquire));
             let record = encode_x_client_event(byte_order, event);
+            crate::evidence::present_event(client, None, "write_started", event);
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some() {
                 tracing::trace!(
                     "sophia_x11_socket_write schema=1 writer=protocol bytes={} payload_redacted=true",
@@ -101,6 +102,7 @@ fn spawn_x11_protocol_event_writer(
             stream.flush().map_err(|error| {
                 x11_peer_write_error("failed to flush X11 protocol event", error)
             })?;
+            crate::evidence::present_event(client, None, "written", event);
             trace_written_selection_event(client, event);
         }
         Ok(())

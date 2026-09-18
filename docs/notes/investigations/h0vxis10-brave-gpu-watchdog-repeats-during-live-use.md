@@ -153,7 +153,53 @@ has not occurred.
 The repair and its installed acceptance belong to the existing t066 redraw
 work; task status remains in [todo.md](../../../todo.md).
 
-## Connections
+## September 18: bounded stderr and three mapped windows
+
+Session `00000001789758977436-af9db2f8-2d13-4251-bf37-4bae3d66b43c`
+runs installed `7a56c3e6`. Its launch recorder contains one browser launch,
+transaction 19, followed by three additional surface admissions. The operator
+reports two browser windows and a blank column the width of a normal window.
+The retained records do not identify which surface was blank or distinguish
+a helper window from a legitimate browser window. Changing gaps or suppressing
+windows would not be a demonstrated repair.
+
+The private bounded stderr log records GPU exits at 19:17:30, 19:18:00 and
+19:18:30 UTC. Selective annotations from the three corresponding existing
+Crashpad dumps identify `gpu_watchdog_thread.cc:691`, a hung GPU main thread,
+and neither initialization nor resume as the trigger. Raw stack-address
+inspection finds `xcb_wait_for_special_event` and the same libgallium return
+chain in each dump. Matching disassembly and Mesa's DRI3 back-buffer wait loop
+make a withheld Present completion/idle notification a concrete lead. This is
+not a symbolized unwind or identification of an exact stranded transaction.
+No dump memory payloads, page contents or URLs are included in normal evidence.
+
+The frontend decoder also omits CreateWindow's InputOnly/InputOutput class.
+That is a separate conformance gap; this capture does not establish that one
+of these three surfaces was an InputOnly window. Requested class is therefore
+recorded before translation in the diagnostic candidate, without using it to
+change admission policy.
+
+The diagnostic candidate correlates lifecycle transactions with process-local
+opaque resource tokens and records Present acceptance, readiness, actual queue
+admission/refusal, write start and successful write/flush separately. Successful
+socket write is not proof of peer consumption. The existing bounded recorder
+filters application strings and raw XIDs; overload remains counted, so a missing
+record alone cannot establish a missing protocol effect.
+
+A headless control drives the actual frontend registry and socket writer with
+three windows, a separate subscriber, alternating buffers and both feedback
+orders. It completes 1,000 cycles per window in each byte order while retaining
+one earlier presentation, then releases that exact presentation. This passes;
+completions are supplied, so it does not exercise native rendering or reproduce
+the browser hang. Evidence is private under
+`.artifacts/brave-multiple-windows-7a56c3e6/`.
+
+Remaining work is exact backend-to-wire correlation and a failing ownership
+control before changing presentation behavior. The isolated SelectionNotify
+sequence repair belongs to the integration owner and is not bundled into this
+diagnostic slice. Brave usability and physical acceptance remain open.
+
+## Related work
 
 - [t003](../plans/queue-02-cp-14-3-development-session-readiness-and-milestone-14-c.md#t003)
   still requires usable Brave typing; Ghostty's accepted startup remains valid.

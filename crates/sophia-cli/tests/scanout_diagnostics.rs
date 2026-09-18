@@ -19,6 +19,7 @@ const LAYOUT_TESTED: &str = "sophia_live_layout_probe schema=1 output=2 scene_ge
 const SHELL_BINDING: &str = "sophia_shell_native_binding schema=1 connection_epoch=1 content_grant_epoch=2 output=3 candidate_generation=4 native_owner=5 native_frame=6 head=7 target_generation=8 heads=1";
 const SHELL_COMPLETION: &str = "sophia_shell_native_completion schema=1 output=3 native_owner=5 native_frame=6 heads=1 monotonic_usec=12345 timestamp_source=kernel missing_kernel_timestamp=0";
 const FORMATTER_MARKER: &str = "unrelated formatter output remains visible";
+const PRESENT_WRITTEN: &str = "sophia_x_present_delivery schema=1 client=2 transaction=0 sequence=7 window_token=11 subscription_token=12 pixmap_token=13 serial=4 kind=idle status=written";
 
 struct Fixture(PathBuf);
 
@@ -74,6 +75,9 @@ fn capture_child(path: &Path) {
 
     tracing::info!(target: EXPORTER_TARGET, "{} payload=private", SHELL_BINDING);
     tracing::info!(target: EXPORTER_TARGET, "{}", SHELL_COMPLETION);
+    tracing::debug!(target: "sophia_application_evidence", "{} title=secret xid=123", PRESENT_WRITTEN);
+    tracing::debug!(target: EXPORTER_TARGET, "{}", PRESENT_WRITTEN);
+    tracing::debug!(target: "sophia_application_evidence", "{}", SHELL_COMPLETION);
     tracing::info!(target: "another_backend", "{}", SHELL_COMPLETION);
     tracing::info!(target: EXPORTER_TARGET, "sophia_shell_native_completion_extra native_frame=6");
 
@@ -182,6 +186,7 @@ fn scanout_records_reach_capture_independently_of_console_logging() {
             LAYOUT_TESTED,
             SHELL_BINDING,
             SHELL_COMPLETION,
+            PRESENT_WRITTEN,
             "sophia_live_atomic_test schema=1 scene_generation=12 status=Submitted errno=none output=2",
         ],
         "only approved messages should persist, once each and without private fields"

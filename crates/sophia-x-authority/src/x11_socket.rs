@@ -339,5 +339,9 @@ include!("x11_socket/connection/io.rs");
 mod present_layout_comparison_tests;
 
 #[cfg(all(test, unix))]
+#[path = "../tests/support/present_progress.rs"]
+mod present_progress_tests;
+
+#[cfg(all(test, unix))]
 #[path = "x11_socket/tests/input_recovery.rs"]
 mod input_recovery_tests;
