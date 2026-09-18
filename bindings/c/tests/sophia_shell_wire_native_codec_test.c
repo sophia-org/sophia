@@ -139,7 +139,8 @@ static void refusal(void)
 }
 static void content_bounds(void)
 {
-    uint8_t out[4096], saved[4096];
+    /* Fixed test storage must not inflate the optimized caller stack. */
+    static uint8_t out[4096], saved[4096];
     memset(out, 0xa5, sizeof(out)); memcpy(saved, out, sizeof(out));
     size_t n = 99;
     struct sophia_shell_native_candidate c = {{2,3},10,{5,6},17,18,12,1,4,9,13,2,33,{2}};
@@ -166,6 +167,18 @@ static void content_bounds(void)
         chunk.targets[i] = (struct sophia_shell_native_target){22+i,23,(uint16_t)(i+1),0,(int32_t)(24*i),640,24};
     assert(sophia_shell_native_chunk_encode(out, sizeof(out), 25, &chunk, &n) == SOPHIA_SHELL_OK);
     assert(n == 24+40+48*32);
+    chunk.surface_count = 1;
+    chunk.surface.allocation = (struct sophia_shell_native_id){7,8};
+    chunk.surface.scale_generation = 19; chunk.surface.edge = 1;
+    chunk.placement_count = 32;
+    for (unsigned i=0; i<32; ++i)
+        chunk.placements[i].resource = (struct sophia_shell_native_id){20+i,21};
+    assert(sophia_shell_native_chunk_encode(out, sizeof(out), 25, &chunk, &n) == SOPHIA_SHELL_OK);
+    assert(n == 24+40+64+80*32);
+    memcpy(saved, out, sizeof(out));
+    size_t written = 99;
+    assert(sophia_shell_native_chunk_encode(out, n-1, 25, &chunk, &written) == SOPHIA_SHELL_INVALID);
+    assert(written == 99 && !memcmp(out, saved, sizeof(out)));
 }
 int main(int argc, char **argv)
 {
