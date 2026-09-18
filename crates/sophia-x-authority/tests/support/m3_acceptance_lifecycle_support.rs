@@ -133,7 +133,7 @@ impl Pause {
         )
     }
 
-    fn wait(self) {
+    pub(super) fn wait(self) {
         self.entered.send(std::thread::current().id()).unwrap();
         self.release
             .recv_timeout(Duration::from_secs(5))
