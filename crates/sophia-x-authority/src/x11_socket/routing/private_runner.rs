@@ -552,11 +552,22 @@ impl PrivatePreparedRunner {
         // Reap only a supervisor already known to have returned. This never
         // waits for a running supervisor or a client worker, and its result
         // cannot reopen the admission gate or settle accepted work.
-        let _ = self
+        #[cfg(all(test, unix))]
+        let supervisor = self.watch.as_ref().expect("prepared supervisor").supervisor_thread();
+        #[cfg(all(test, unix))]
+        if let Some(thread) = supervisor {
+            routing_tests::m3_acceptance::actor_started(&self.frontend().broker.registry, thread, "watchdog");
+        }
+        let reaped = self
             .watch
             .as_mut()
             .expect("prepared supervisor")
             .reap_finished();
+        #[cfg(all(test, unix))]
+        if reaped.is_some() {
+            routing_tests::m3_acceptance::actor_joined(supervisor.expect("actual supervisor handle was joined"));
+        }
+        drop(reaped);
         let mut progress = PrivateRunnerProgress::default();
         // Even if an owner-loop turn crosses several interval boundaries,
         // producers cannot keep this call open by continuously replenishing.

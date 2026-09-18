@@ -178,5 +178,7 @@ impl RoutedBrokerAccess for LeasedPrivateBroker<'_, '_> {
     fn close_private_producers(&mut self) {
         self.port.close();
         self.runner.close_admission();
+        #[cfg(all(test, unix))]
+        routing_tests::stage_after_admission_closed(&self.runner.frontend().broker.registry);
     }
 }

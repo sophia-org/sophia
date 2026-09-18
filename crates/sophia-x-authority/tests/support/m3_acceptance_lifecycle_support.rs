@@ -549,22 +549,23 @@ impl LifecycleService {
                 }
             }
             let watch = keeper.resources.as_mut().unwrap().watch.as_mut().unwrap();
-            let watchdog = watch
-                .request_shutdown()
-                .expect("retained original supervisor handle");
-            actor_started(&registry, watchdog, "watchdog");
-            let deadline = std::time::Instant::now() + Duration::from_secs(3);
-            loop {
-                if let Some(result) = watch.reap_finished() {
-                    actor_joined(watchdog);
-                    result.expect("original watchdog supervisor returned");
-                    break;
+            // An earlier real service turn may already have reaped a failed
+            // supervisor; that source also records its actual join.
+            if let Some(watchdog) = watch.request_shutdown() {
+                actor_started(&registry, watchdog, "watchdog");
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                loop {
+                    if let Some(result) = watch.reap_finished() {
+                        actor_joined(watchdog);
+                        result.expect("original watchdog supervisor returned");
+                        break;
+                    }
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "watchdog did not return in test bound"
+                    );
+                    std::thread::sleep(Duration::from_millis(1));
                 }
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "watchdog did not return in test bound"
-                );
-                std::thread::sleep(Duration::from_millis(1));
             }
             drop(keeper);
             done_tx.send(()).unwrap();

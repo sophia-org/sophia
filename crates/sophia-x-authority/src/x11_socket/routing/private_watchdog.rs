@@ -312,6 +312,10 @@ impl PrivateWatchdogOwner {
         Some(self.supervisor.take().expect("finished supervisor").join())
     }
 
+    pub(crate) fn supervisor_thread(&self) -> Option<std::thread::ThreadId> {
+        self.supervisor.as_ref().map(|thread| thread.thread().id())
+    }
+
     /// End this supervisor while retaining its handle for nonblocking reaping.
     /// This never joins or waits for an execution worker.
     pub(crate) fn request_shutdown(&self) -> Option<std::thread::ThreadId> {
@@ -323,7 +327,7 @@ impl PrivateWatchdogOwner {
         inventory.stop = true;
         self.shared.closed.store(true, Ordering::Release);
         self.shared.changed.notify_all();
-        self.supervisor.as_ref().map(|thread| thread.thread().id())
+        self.supervisor_thread()
     }
 }
 

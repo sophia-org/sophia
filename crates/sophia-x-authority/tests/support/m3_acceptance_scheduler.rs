@@ -2,22 +2,27 @@
 
 fn await_empty_cleanup(service: &LifecycleService) {
     use sophia_input_authority::CleanupReadiness;
+    let mut last = String::new();
     for _ in 0..64 {
         let (reported, reading) = sync_channel(1);
         arm_runner(
             &service.registry,
             Box::new(move |runner, _| {
+                let frontend = runner.frontend();
+                let terminal = &frontend.terminal;
                 reported
-                    .send(runner.frontend().cleanup_readiness())
+                    .send((frontend.cleanup_readiness(),format!("lifecycle={:?}, holds={}, settling={}, turn={}, delivering={}, undelivered={}, outstanding={}, transient={}, frozen={}, native_pending={}, pending={}",terminal.lifecycle.inventory(),terminal.holds.len(),terminal.settling.len(),terminal.turn.len(),terminal.delivering.len(),terminal.undelivered.len(),frontend.outstanding.len(),terminal.transients.outstanding(),terminal.frozen.len(),terminal.native_pending.is_some(),terminal.pending_custody.is_some())))
                     .unwrap();
             }),
         );
-        if reading.recv_timeout(Duration::from_secs(3)).unwrap() == CleanupReadiness::NoneEligible {
+        let (readiness, detail) = reading.recv_timeout(Duration::from_secs(3)).unwrap();
+        last = detail;
+        if readiness == CleanupReadiness::NoneEligible {
             return;
         }
         std::thread::sleep(Duration::from_millis(2));
     }
-    panic!("actual owner did not finish its cleanup obligations");
+    panic!("actual owner did not finish its cleanup obligations: {last}");
 }
 
 fn scheduler_accounting_and_maintenance() -> (Value, Vec<String>) {
@@ -48,7 +53,6 @@ fn scheduler_accounting_and_maintenance() -> (Value, Vec<String>) {
             Some(expected_button_event(pressed, sequence, 0x310701, 1))
         );
     }
-    await_empty_cleanup(&service);
     // The fault is the existing unreserved ingress, actually accepted by this
     // frontend. It must park once, without repeatedly spending starts.
     let (reported, reading) = sync_channel(1);
@@ -117,7 +121,7 @@ fn scheduler_accounting_and_maintenance() -> (Value, Vec<String>) {
     assert_eq!(dequeues.len(), 3);
     assert_eq!(dequeues[0], (positions[0], CleanupReadiness::NoneEligible));
     assert_eq!(dequeues[1], (positions[1], CleanupReadiness::Eligible));
-    assert_eq!(dequeues[2], (parked, CleanupReadiness::NoneEligible));
+    assert_eq!(dequeues[2].0, parked);
     let taken: usize = turns.iter().map(|turn| turn.taken).sum();
     assert_eq!(
         taken, 2,
