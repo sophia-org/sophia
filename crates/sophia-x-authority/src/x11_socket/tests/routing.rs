@@ -20992,10 +20992,16 @@ struct PreparedOrderedFixture {
 }
 
 fn prepared_ordered_fixture(client: XServerFrontendClientId) -> PreparedOrderedFixture {
+    prepared_ordered_fixture_with_store(client, PrivateSettlementOwner::default())
+}
+
+fn prepared_ordered_fixture_with_store(
+    client: XServerFrontendClientId,
+    durable: PrivateSettlementOwner,
+) -> PreparedOrderedFixture {
     let namespace = NamespaceId::from_raw(client.raw());
     let surface = SurfaceId::new(u32::try_from(client.raw()).unwrap(), 1);
     let window = XResourceId::new(0x200000 | client.raw(), 1);
-    let durable = PrivateSettlementOwner::default();
     let (ack_sender, acks) = sync_channel(8);
     let (delivery_sender, deliveries) = channel();
     let (authority, issuer, submit) = private_authority();

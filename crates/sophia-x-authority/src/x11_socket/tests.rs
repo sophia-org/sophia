@@ -1180,6 +1180,11 @@ include!(concat!(
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_item_credit.rs"
+));
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/tests/support/dispatch_ticket_failure.rs"
 ));
 
