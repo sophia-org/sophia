@@ -229,6 +229,7 @@ pub struct LivePresentedInputProjection {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum LiveShellContentLayer {
     Shell,
+    Dock,
     Launcher,
 }
 

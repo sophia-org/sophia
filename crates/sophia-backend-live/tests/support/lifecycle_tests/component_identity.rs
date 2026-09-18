@@ -1,6 +1,121 @@
 use super::*;
 
 #[test]
+fn three_components_keep_independent_sources_and_dock_removal_preserves_neighbors() {
+    let outputs = outputs();
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(outputs[0].size);
+    let mut target = Target::new(&outputs);
+    let layers = [
+        LiveShellContentLayer::Shell,
+        LiveShellContentLayer::Dock,
+        LiveShellContentLayer::Launcher,
+    ];
+    // Deliberately unrelated epoch ordering; trusted layers determine stacking.
+    let grants = [100, 200, 2].map(|epoch| ContentGrant {
+        connection_epoch: epoch,
+        content_grant_epoch: epoch,
+    });
+    let mut stores = grants.map(|grant| {
+        sophia_runtime::ContentResourceStore::new(ContentLimits::prototype(grant)).unwrap()
+    });
+    let resource = ContentResourceId {
+        id: 1,
+        generation: 1,
+    };
+    for (index, layer) in layers.into_iter().enumerate() {
+        let frame = shell_frame(
+            outputs[0],
+            1,
+            upload(&mut stores[index], grants[index], resource),
+        );
+        runtime
+            .set_shell_component_content_on_target(frame, layer, &scene, Some(&mut target))
+            .unwrap();
+        target.complete(outputs[0].id);
+        runtime.publish_presented_input_layers(&target);
+        assert_eq!(runtime.input_projections[0].content.len(), index + 1);
+    }
+    assert_eq!(
+        runtime.tab_frames[&outputs[0].id]
+            .content_images()
+            .map(|v| v.resource.grant)
+            .collect::<Vec<_>>(),
+        grants
+    );
+    let before = runtime.shell_content.clone();
+    let epochs = grants.map(|grant| {
+        runtime
+            .shell_content_presentation_epoch(outputs[0].id, grant, 1)
+            .unwrap()
+    });
+    let replacement = shell_frame(
+        outputs[0],
+        2,
+        upload(
+            &mut stores[1],
+            grants[1],
+            ContentResourceId {
+                id: 2,
+                generation: 1,
+            },
+        ),
+    );
+    target.reject_output = Some(outputs[0].id);
+    assert!(
+        runtime
+            .set_shell_component_content_on_target(
+                replacement,
+                LiveShellContentLayer::Dock,
+                &scene,
+                Some(&mut target)
+            )
+            .is_err()
+    );
+    assert_eq!(runtime.shell_content, before);
+    assert!(runtime.retained_projection_retirements.is_empty());
+    target.reject_output = None;
+    let receipt = runtime
+        .remove_shell_component_content_on_target(
+            outputs[0].id,
+            LiveShellContentLayer::Dock,
+            grants[1],
+            1,
+            &scene,
+            Some(&mut target),
+        )
+        .unwrap()
+        .unwrap();
+    assert!(!runtime.shell_component_removal_presented(receipt));
+    // Logical removal is not yet a physical replacement. Neighbor custody is
+    // unchanged; completion is supplied only at the simulated native edge.
+    for index in [0, 2] {
+        assert_eq!(
+            runtime.shell_content[&(outputs[0].id, layers[index])],
+            before[&(outputs[0].id, layers[index])]
+        );
+    }
+    target.complete(outputs[0].id);
+    runtime.publish_presented_input_layers(&target);
+    assert_eq!(
+        runtime.input_projections[0]
+            .content
+            .iter()
+            .map(|v| v.grant)
+            .collect::<Vec<_>>(),
+        vec![grants[0], grants[2]]
+    );
+    for index in [0, 2] {
+        assert_eq!(
+            runtime.shell_content_presentation_epoch(outputs[0].id, grants[index], 1),
+            Some(epochs[index])
+        );
+    }
+    assert_eq!(receipt.grant, grants[1]);
+    assert!(runtime.shell_component_removal_presented(receipt));
+}
+
+#[test]
 fn foreign_node_or_resource_grant_refuses_before_real_queue_admission() {
     let outputs = outputs();
     let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();

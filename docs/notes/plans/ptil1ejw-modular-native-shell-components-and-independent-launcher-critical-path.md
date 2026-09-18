@@ -1547,3 +1547,20 @@ library, 11 ordinary allocation, 10 transient and seven persistent controls pass
 with strict runtime Clippy. The new control supplies Engine allocation decisions;
 it does not exercise physical work-area reservation. Initial Clippy rejected a
 redundant Boolean expression, replaced with an explicit profile match.
+
+### Three retained component layers (2026-09-18)
+
+The backend now has three Session-selected layers ordered Shell, Dock, Launcher.
+Grant epochs do not select stacking. A dock no longer has to share the panel's
+output/layer key; the existing exact grant, retirement, queue-refusal and removal
+owners apply without a separate resource registry.
+
+The new production-intake control retains three real pixel leases, supplies
+native completion, checks stacking independent of epoch order, refuses a dock
+replacement without altering neighbors, and verifies exact dock removal only
+after replacement presentation. Bar and launcher presentation identities survive.
+All 154 backend library tests and strict library/test Clippy pass device-hidden;
+a compiled mutation aliasing Dock to Shell fails the new control. Evidence:
+`.artifacts/dock-three-layers`. This is actual queue/projection ownership with
+simulated completion, not worker/GPU/KMS or three supervised clients. Dock
+negotiation remains disabled until the Session catalog-action join is complete.
