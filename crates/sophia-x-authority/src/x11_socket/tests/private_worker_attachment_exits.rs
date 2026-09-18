@@ -502,6 +502,97 @@ fn a_worker_whose_handle_went_elsewhere_leaves_the_service_unfinalised_and_repor
     assert_eq!(seen.life, PrivateWorkerLife::HandedToJoiner);
     assert_eq!(seen.join_phase, PrivateReapingPhase::NotBegun, "no custody join was published");
     assert_eq!(outcome.after.custodies_kept, 1, "the actor stays admitted in the owner's custody");
+    // THE RETURN WAS DROPPED INSIDE THE SCOPE, and the instance was retained
+    // rather than settled: one failed instance in the store, its failure
+    // slot still charged.
+    assert_eq!(outcome.after.failed_instances, Some(1), "retained as a failed instance");
+    assert_eq!(outcome.after.failure_slots, Some(1), "with its instance charge kept");
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+#[test]
+fn shutting_down_an_uncollected_frontend_retains_it_rather_than_settling() {
+    let socket_path = private_service_socket("attach-uncollected-shutdown");
+    let launched = launch_attached_with(
+        socket_path.clone(),
+        NamespaceId::from_raw(9415),
+        64,
+        Arc::new(|_| {}),
+        Arc::new(Mutex::new(None)),
+        false,
+        UncollectedDisposal::Shutdown,
+    );
+    let mut client = connect_private_client(&socket_path);
+    handshake(&mut client);
+    let custody = wait_attached(&launched.handles.registry);
+    // STAGE-ONLY: a joiner elsewhere takes the handle before the service
+    // collects.
+    let handle = hand_worker_to_joiner(custody.worker_slot())
+        .handle
+        .expect("the handle was in the slot");
+    launched
+        .commands
+        .send(XServerFrontendServiceCommand::StopAndDisconnect)
+        .expect("the service is listening for commands");
+    let client_ended = eof_within(&mut client, 3);
+    let outcome = launch_outcome(launched.handle, &launched.finished, false, "uncollected shutdown");
+    handle.join().expect("the worker returned");
+    assert!(client_ended);
+    assert_eq!(outcome.uncollected, vec![custody.identity().index]);
+    assert_eq!(
+        outcome.shutdown_retained,
+        Some(vec![custody.identity().index]),
+        "shutdown answered with a retention naming the uncollected place"
+    );
+    assert_eq!(outcome.after.failed_instances, Some(1));
+    assert_eq!(outcome.after.failure_slots, Some(1));
+    assert_eq!(outcome.after.custodies_kept, 1);
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+#[test]
+fn an_unwind_over_an_uncollected_actor_retains_the_instance_rather_than_settling() {
+    let namespace = NamespaceId::from_raw(9416);
+    let socket_path = private_service_socket("attach-uncollected-unwind");
+    let service_thread = Arc::new(Mutex::new(None));
+    let seen_telemetry = Arc::new(Mutex::new(Vec::new()));
+    let observer = recording_observer(
+        Arc::clone(&seen_telemetry),
+        Some(XAuthorityBackpressureTelemetryKind::Wait),
+        Arc::clone(&service_thread),
+    );
+    let launched = launch_attached(socket_path.clone(), namespace, 1, observer, service_thread);
+    let mut client = connect_private_client(&socket_path);
+    handshake(&mut client);
+    let custody = wait_attached(&launched.handles.registry);
+    // STAGE-ONLY: a joiner elsewhere takes the handle before the unwind.
+    let handle = hand_worker_to_joiner(custody.worker_slot())
+        .handle
+        .expect("the handle was in the slot");
+    let surface = draw_and_learn_surface(&mut client, &launched.transactions);
+    assert!(waited_for(|| saw_kind(
+        &seen_telemetry,
+        XAuthorityBackpressureTelemetryKind::Wait,
+        true
+    )));
+    launched
+        .handles
+        .raster
+        .try_route(raster_requirement_for(surface))
+        .expect("the requirement is queued");
+    let client_ended = eof_within(&mut client, 3);
+    let outcome = launch_outcome(launched.handle, &launched.finished, false, "uncollected unwind");
+    handle.join().expect("the worker returned");
+    let seen = observe_worker(&custody, &launched.handles.registry);
+    assert!(outcome.unwound, "the injected panic unwound the operation");
+    assert!(client_ended, "the guard's Drop stopped and interrupted the connection");
+    assert_eq!(seen.life, PrivateWorkerLife::HandedToJoiner);
+    assert_eq!(seen.join_phase, PrivateReapingPhase::NotBegun, "the guard could not join it");
+    // NOTHING WAS RETURNED, AND STILL NOTHING WAS SETTLED OVER THE ACTOR: the
+    // unwinding frontend's own disposal retained the instance.
+    assert_eq!(outcome.after.failed_instances, Some(1), "retained as a failed instance");
+    assert_eq!(outcome.after.failure_slots, Some(1), "with its instance charge kept");
+    assert_eq!(outcome.after.custodies_kept, 1);
     let _ = std::fs::remove_file(&socket_path);
 }
 
@@ -515,6 +606,7 @@ fn two_connections_on_one_origin_each_get_their_own_worker_and_are_both_collecte
         Arc::new(|_| {}),
         Arc::new(Mutex::new(None)),
         true,
+        UncollectedDisposal::Drop,
     );
     let mut first = connect_private_client(&socket_path);
     handshake(&mut first);

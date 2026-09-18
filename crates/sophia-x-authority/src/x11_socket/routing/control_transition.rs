@@ -252,6 +252,16 @@ pub struct PrivateXServerFrontend {
     /// The one place runnable work is accepted, shared with every producer
     /// handle this frontend hands out.
     admission: Arc<SharedAdmission>,
+    /// Places whose registered worker this instance's service collection
+    /// could not join.
+    ///
+    /// WRITTEN BY THE COLLECTION, READ BY DISPOSAL. Shared with the service's
+    /// collection guard so that an unwind, which returns nothing, still
+    /// leaves the fact here; and consulted by `shutdown` and `Drop`, so an
+    /// instance whose actor was not collected is retained as a failed
+    /// instance -- queue, terminal and instance charge kept by the store --
+    /// rather than settled over that actor.
+    uncollected: Arc<Mutex<Vec<usize>>>,
     /// The most this will run in one turn.
     service_budget: usize,
     /// Where obligations go if a settlement handle is abandoned.
@@ -605,6 +615,7 @@ impl PrivateXServerFrontend {
             outstanding: Vec::with_capacity(capacity),
             settled: false,
             failed: false,
+            uncollected: Arc::new(Mutex::new(Vec::new())),
             instance,
             failure_slot_held: true,
             participant,

@@ -190,6 +190,12 @@ impl PrivateXServerFrontend {
     /// once, for the service's own namespace, and attaches no producer,
     /// runner or executor. Connections that arrive afterwards bind their
     /// selections to it as they attach their state.
+    /// Where this instance's service collection records the places it could
+    /// not join, for disposal to consult.
+    fn uncollected_mark(&self) -> Arc<Mutex<Vec<usize>>> {
+        Arc::clone(&self.uncollected)
+    }
+
     pub(crate) fn prepare_applied_for_service(
         &self,
         namespace: NamespaceId,

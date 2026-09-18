@@ -220,6 +220,10 @@ struct AfterService {
     standing: Option<PrivateDestructionStanding>,
     /// Whether that custody's worker was joined, read while the owner lives.
     join_phase: Option<PrivateReapingPhase>,
+    /// The store's failed-instance retention and its charged failure slots,
+    /// read while the owner lives.
+    failed_instances: Option<usize>,
+    failure_slots: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -278,6 +282,8 @@ fn inspect_after(owner: &PrivateServiceOwner, durable: &PrivateSettlementOwner) 
         attachment: first.and_then(|custody| custody.attachment()),
         standing: first.map(|custody| custody.cleanup_record().destruction_standing()),
         join_phase: first.map(|custody| custody.join().phase()),
+        failed_instances: durable.failed_instances(),
+        failure_slots: durable.failure_slots_charged(),
     }
 }
 

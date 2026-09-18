@@ -205,7 +205,19 @@ struct AttachedOutcome {
     error: Option<String>,
     workers: Vec<PrivateWorkerCollection>,
     uncollected: Vec<usize>,
+    /// What an explicit `shutdown()` of an `Uncollected` frontend answered
+    /// (its retained places), when the launch chose to call it.
+    shutdown_retained: Option<Vec<usize>>,
     after: AfterService,
+}
+
+/// How a launch disposes of an `Uncollected` return, inside the scope.
+#[derive(Clone, Copy)]
+enum UncollectedDisposal {
+    /// Drop the returned failure, frontend and all.
+    Drop,
+    /// Call the returned frontend's `shutdown()` and keep its answer.
+    Shutdown,
 }
 
 struct AttachedLaunch {
@@ -233,6 +245,7 @@ fn launch_attached(
         observer,
         service_thread,
         false,
+        UncollectedDisposal::Drop,
     )
 }
 
@@ -244,6 +257,7 @@ fn launch_attached_with(
     observer: Arc<XAuthorityBackpressureObserver>,
     service_thread: Arc<Mutex<Option<std::thread::ThreadId>>>,
     distinct_admissions: bool,
+    disposal: UncollectedDisposal,
 ) -> AttachedLaunch {
     let (transaction_sender, transactions) = sync_channel(transport_capacity);
     let (commands, service_commands) = sync_channel(4);
@@ -273,6 +287,7 @@ fn launch_attached_with(
             )
         }));
         let unwound = outcome.is_err();
+        let mut shutdown_retained = None;
         let (ok, error, workers, uncollected) = match outcome.ok() {
             Some(Ok(ret)) => (Some(true), None, ret.workers, Vec::new()),
             Some(Err(PrivateServiceFailure::Failed { error, workers, .. })) => {
@@ -282,13 +297,25 @@ fn launch_attached_with(
                 error,
                 workers,
                 uncollected,
+                frontend,
+                collection_failures,
                 ..
-            })) => (
-                Some(false),
-                Some(format!("uncollected: {error:?}")),
-                workers,
-                uncollected,
-            ),
+            })) => {
+                // THE RETURNED FRONTEND IS DISPOSED OF HERE, inside the scope,
+                // with the owner alive: dropped, or shut down explicitly.
+                match disposal {
+                    UncollectedDisposal::Drop => drop(frontend),
+                    UncollectedDisposal::Shutdown => {
+                        shutdown_retained = Some(frontend.shutdown().uncollected().to_vec());
+                    }
+                }
+                (
+                    Some(false),
+                    Some(format!("uncollected: {error:?} {collection_failures:?}")),
+                    workers,
+                    uncollected,
+                )
+            }
             Some(Err(failure)) => (Some(false), Some(format!("{failure:?}")), Vec::new(), Vec::new()),
             None => (None, None, Vec::new(), Vec::new()),
         };
@@ -299,6 +326,7 @@ fn launch_attached_with(
             error,
             workers,
             uncollected,
+            shutdown_retained,
             after,
         }
     });

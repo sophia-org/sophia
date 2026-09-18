@@ -380,6 +380,9 @@ pub enum PrivateServiceFailure {
         unresolved_egress: Vec<PrivateUnresolvedEgress>,
         workers: Vec<PrivateWorkerCollection>,
         uncollected: Vec<usize>,
+        /// What cancellation, interruption and reporting failed with, kept
+        /// beside the service's own error rather than folded into it.
+        collection_failures: Vec<String>,
     },
 }
 
@@ -437,6 +440,10 @@ struct PrivateServiceCollection<'s, 'o> {
     workers: Vec<PrivateWorkerCollection>,
     /// Places whose worker this collection could not join.
     uncollected: Vec<usize>,
+    /// The instance's own record of the same, written here so that disposal
+    /// -- after a return the caller drops, or after an unwind that returns
+    /// nothing -- retains the instance rather than settling over the actor.
+    uncollected_mark: Arc<Mutex<Vec<usize>>>,
 }
 
 #[cfg(unix)]
@@ -501,6 +508,7 @@ impl PrivateServiceCollection<'_, '_> {
         // connection threads have ended. A connection thread ending is not
         // its worker ending; only this join is.
         let (workers, uncollected) = collect_attached_workers(&self.service, &self.registry);
+        self.note_uncollected(&uncollected);
         self.workers = workers;
         self.uncollected = uncollected;
         // MARKED DONE ONLY AT THE END. A collection that unwound part-way
@@ -508,6 +516,18 @@ impl PrivateServiceCollection<'_, '_> {
         // is not a collection, and the guard below must still stop and wait.
         self.collected = true;
         (failures, unresolved)
+    }
+
+    /// Leave the uncollected places with the instance itself.
+    fn note_uncollected(&self, uncollected: &[usize]) {
+        if uncollected.is_empty() {
+            return;
+        }
+        let mut mark = match self.uncollected_mark.lock() {
+            Ok(mark) => mark,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        mark.extend_from_slice(uncollected);
     }
 
     /// The two steps that can never be skipped, in order.
@@ -546,6 +566,7 @@ impl Drop for PrivateServiceCollection<'_, '_> {
             let _ = self.stop_and_wait();
             let (workers, uncollected) =
                 collect_attached_workers(&self.service, &self.registry);
+            self.note_uncollected(&uncollected);
             self.workers = workers;
             self.uncollected = uncollected;
             let _ = self.retain_pending();
@@ -706,6 +727,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
         registry: private.broker.registry.clone(),
         workers: Vec::new(),
         uncollected: Vec::new(),
+        uncollected_mark: private.uncollected_mark(),
     };
     let service_result = {
         let mut broker = LeasedPrivateBroker {
@@ -760,12 +782,17 @@ pub(crate) fn serve_private_frontend_until_stopped(
     if !uncollected.is_empty() {
         // NOT FINALISED OVER AN UNCOLLECTED ACTOR. The frontend goes back
         // unsettled with the service's own outcome beside the collection's.
+        let mut collection_failures = cleanup_failures;
+        if let Err(error) = report {
+            collection_failures.push(format!("authority egress report failed: {error}"));
+        }
         return Err(PrivateServiceFailure::Uncollected {
             error: service_result.err(),
             frontend: Box::new(private),
             unresolved_egress,
             workers,
             uncollected,
+            collection_failures,
         });
     }
     let settlement = private.shutdown();

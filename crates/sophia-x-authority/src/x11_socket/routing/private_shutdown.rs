@@ -15,9 +15,69 @@ impl PrivateXServerFrontend {
     /// it.
     pub fn shutdown(mut self) -> PrivateSettlement {
         drop(self.pending_watch.take());
+        if let Some(retained) = self.retain_over_uncollected() {
+            return retained;
+        }
         self.terminal.lifecycle.close_all();
         let _lifecycle_progress = self.terminal.lifecycle.drive(NonZeroUsize::new(1).unwrap());
         self.settle_accepted()
+    }
+
+    /// Refuse to settle over a registered worker nobody collected, and keep
+    /// the instance instead.
+    ///
+    /// NOT A SETTLEMENT, AND NOT A DISCARD. An actor the service's collection
+    /// could not join may still act on this instance's state, so settling --
+    /// closing admission, answering stranded operations, reclaiming -- would
+    /// finalise over it, and dropping the state would lose what it acts on.
+    /// This takes the third path the store already has for an instance that
+    /// could not finish: the instance is marked failed, so its charge stays
+    /// with the store; its queue and origin are retained as a failed
+    /// instance with the slot held; its terminal inventory is handed over
+    /// to the same retention; and the places left uncollected travel with
+    /// the handle so the caller sees why. It runs once, from `shutdown` or
+    /// from `Drop`, whichever comes first; the caller cannot make either
+    /// settle over the actor by dropping the return or by unwinding.
+    fn retain_over_uncollected(&mut self) -> Option<PrivateSettlement> {
+        let places = match self.uncollected.lock() {
+            Ok(places) => places.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+        if places.is_empty() {
+            return None;
+        }
+        let origin = self.broker.registry.clone();
+        if self.settled {
+            // Retained already, by the shutdown that consumed this. The Drop
+            // that follows must not retain the instance a second time, so
+            // this handle carries nothing and does nothing.
+            return Some(PrivateSettlement {
+                origin,
+                durable: self.durable.clone(),
+                queue: Arc::clone(&self.admission.ready),
+                pending: Vec::new(),
+                outstanding: Vec::new(),
+                queue_unreadable: false,
+                settling: None,
+                terminal: None,
+                uncollected: Vec::new(),
+            });
+        }
+        // Retention forgoes settlement; it does not perform it. The flag
+        // says only that neither will run again.
+        self.settled = true;
+        self.failed = true;
+        Some(PrivateSettlement {
+            origin,
+            durable: self.durable.clone(),
+            queue: Arc::clone(&self.admission.ready),
+            pending: Vec::new(),
+            outstanding: std::mem::take(&mut self.outstanding),
+            queue_unreadable: false,
+            settling: None,
+            terminal: Some(self.terminal.hand_over()),
+            uncollected: places,
+        })
     }
 
     /// Close and answer what was accepted, keeping what is still owed.
@@ -41,6 +101,7 @@ impl PrivateXServerFrontend {
                 queue_unreadable: false,
                 settling: None,
                 terminal: None,
+                uncollected: Vec::new(),
             };
         }
         self.settled = true;
@@ -112,6 +173,7 @@ impl PrivateXServerFrontend {
                     queue_unreadable: true,
                     settling: None,
                     terminal: Some(self.terminal.hand_over()),
+                    uncollected: Vec::new(),
                 };
             }
         };
@@ -147,6 +209,7 @@ impl PrivateXServerFrontend {
             queue_unreadable: false,
             settling: None,
             terminal: Some(self.terminal.hand_over()),
+            uncollected: Vec::new(),
         };
         let _answered = settlement.settle_pending();
         // Records still unexecuted after the queue was answered belong to
@@ -192,8 +255,13 @@ impl Drop for PrivateXServerFrontend {
         drop(self.pending_watch.take());
         // The fallback for an owner that never called shutdown. The handle
         // this produces is dropped immediately, and its own Drop makes one
-        // final attempt with the capability still in hand.
-        drop(self.settle_accepted());
+        // final attempt with the capability still in hand. An instance with
+        // an uncollected actor is retained, not settled, by the same rule
+        // `shutdown` applies.
+        match self.retain_over_uncollected() {
+            Some(retained) => drop(retained),
+            None => drop(self.settle_accepted()),
+        }
         if self.failure_slot_held && !self.failed {
             // Closed without failing, so the slot belongs to whoever needs it
             // next rather than to an instance that has gone.

@@ -52,10 +52,22 @@ pub struct PrivateSettlement {
     /// handle settles in place and leaves what it could not answer where it
     /// was, so position is what identifies the one being attempted.
     settling: Option<usize>,
+    /// Places whose registered worker was not collected when this was made.
+    ///
+    /// NON-EMPTY MEANS THIS IS A RETENTION, NOT A SETTLEMENT: nothing was
+    /// answered or reclaimed, and dropping it retains the instance's queue
+    /// and origin as a failed instance with the slot held.
+    uncollected: Vec<usize>,
 }
 
 #[cfg(unix)]
 impl PrivateSettlement {
+    /// Places whose registered worker was not collected; non-empty means
+    /// this handle retains the instance rather than settling it.
+    pub fn uncollected(&self) -> &[usize] {
+        &self.uncollected
+    }
+
     /// Whether nothing is owed at all.
     ///
     /// Includes what the instance still owed for work it accepted. A hold
@@ -334,7 +346,7 @@ impl Drop for PrivateSettlement {
         while let Some(identity) = self.outstanding.pop() {
             self.durable.take_one_outstanding(&self.origin, identity);
         }
-        if self.queue_unreadable {
+        if self.queue_unreadable || !self.uncollected.is_empty() {
             // Owned by something that outlives this rather than surviving as a
             // boolean on a handle that is going away.
             self.durable
