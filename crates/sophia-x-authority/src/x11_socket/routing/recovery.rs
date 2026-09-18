@@ -31,6 +31,7 @@ pub(crate) enum PrivateCompletionMismatch {
 struct PrivateAcceptedInputCompletion {
     delivery: XAuthorityInputDeliveryId,
     cell: Arc<PrivateDeliveryCompletion>,
+    recovery: InputRecovery,
 }
 
 #[cfg(unix)]
@@ -269,7 +270,11 @@ impl InputRecovery {
                 routing_finished: false,
             },
         );
-        Ok(Some(PrivateAcceptedInputCompletion { delivery, cell: completion }))
+        Ok(Some(PrivateAcceptedInputCompletion {
+            delivery,
+            cell: completion,
+            recovery: self.clone(),
+        }))
     }
 
     fn abort_enqueue(&self, delivery: Option<XAuthorityInputDeliveryId>) {

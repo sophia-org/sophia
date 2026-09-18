@@ -1188,6 +1188,8 @@ include!(concat!(
     "/tests/support/private_item_credit.rs"
 ));
 
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/private_refused_request.rs"));
+
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/private_frozen_completion.rs"

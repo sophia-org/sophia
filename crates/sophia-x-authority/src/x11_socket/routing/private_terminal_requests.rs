@@ -22,13 +22,60 @@ impl PrivateOrderedItem {
             None => custody.observe()?,
         };
         let disposable = match completion {
-            Some(Completion::Cancelled | Completion::Refused(_)) => true,
+            Some(Completion::Cancelled | Completion::Refused(_)) => {
+                // Common's refusal establishes no source effect, but the
+                // original accepted delivery still owes its typed outcome.
+                // Publish against the carried cell; an id reused by another
+                // admission must not receive this answer.
+                custody.input_completion().is_none_or(|held| {
+                    matches!(
+                        held.recovery.adjudicate_for_held(
+                            &held.cell,
+                            custody.client(),
+                            held.delivery,
+                            XAuthorityInputDeliveryOutcome::RouteRejected,
+                        ),
+                        PrivateAdjudication::Answered | PrivateAdjudication::AlreadyAnswered
+                    )
+                })
+            }
             // Ran recorded the transfer into pre-reserved native/output
             // custody. A refused adapter result does not establish that.
-            Some(Completion::Processed) => ran && custody.phase.get() == PrivateRequestPhase::Settled,
+            Some(Completion::Processed) => {
+                ran && custody.phase.get() == PrivateRequestPhase::Settled
+            }
             Some(Completion::FailedAfterApplication(_)) | None => false,
         };
         Ok(disposable && custody.finish_item())
+    }
+}
+
+#[cfg(unix)]
+impl PrivateXServerFrontend {
+    /// A previously refused publication gets one charged retry. Rotation
+    /// keeps an unreadable or indeterminate item from hiding later outcomes.
+    fn revisit_undelivered_request(
+        &mut self,
+        start: &mut dyn FnMut(
+            Option<crate::ReadySequence>,
+            std::time::Instant,
+        ) -> Result<(), XServerFrontendRouteError>,
+    ) -> Result<PrivateDeliveryStep, XServerFrontendRouteError> {
+        let Some(front) = self.terminal.undelivered.first() else {
+            return Ok(PrivateDeliveryStep::Idle);
+        };
+        let sequence = front.item.sequence();
+        start(Some(sequence), std::time::Instant::now())?;
+        let disposed = self.terminal.undelivered[0].item.retire_request();
+        if matches!(disposed, Ok(true)) {
+            self.terminal.undelivered.remove(0);
+        } else {
+            self.terminal.undelivered.rotate_left(1);
+        }
+        Ok(PrivateDeliveryStep::Advanced {
+            sequence,
+            report: None,
+        })
     }
 }
 
@@ -46,7 +93,11 @@ impl PrivateTerminalInventory {
         let index = *cursor % count;
         *cursor = (index + 1) % count;
         let disposed = if index < current {
-            let disposed = self.current.as_mut().expect("counted above").retire_request();
+            let disposed = self
+                .current
+                .as_mut()
+                .expect("counted above")
+                .retire_request();
             if matches!(disposed, Ok(true)) {
                 self.current = None;
             }
@@ -72,7 +123,8 @@ impl PrivateTerminalInventory {
                 self.undelivered.remove(index);
             }
             disposed
-        }.map_err(PrivateTerminalDriveRefusal::Common)?;
+        }
+        .map_err(PrivateTerminalDriveRefusal::Common)?;
         Ok(PrivateTerminalVisit::Request { disposed })
     }
 }

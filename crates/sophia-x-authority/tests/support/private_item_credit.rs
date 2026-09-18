@@ -173,6 +173,11 @@ fn refused_ordered_item_keeps_its_charge_through_retained_handover() {
         private.terminal.turn.first(),
         Some(PrivateOrderedItem::Refused { .. })
     ));
+    // Fault seam: the accepted recovery entry vanished without an answer.
+    // Common's actual refusal cannot stand in for its missing delivery cell.
+    private.broker.registry.input_recovery.abort_enqueue(Some(
+        XAuthorityInputDeliveryId::from_raw(99822),
+    ));
     private.deliver_one(&mut |_, _| Ok(())).unwrap();
     assert_eq!(private.terminal.undelivered.len(), 1);
     let settlement = fixture.runner.shutdown();

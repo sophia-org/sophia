@@ -743,6 +743,9 @@ impl PrivateXServerFrontend {
                 None => PrivateDeliveryStep::Idle,
             });
         }
+        if self.terminal.turn.is_empty() && self.terminal.delivering.is_empty() {
+            return self.revisit_undelivered_request(start);
+        }
         {
             // Between two places this inventory owns, with nothing that can
             // fail in between.
@@ -773,12 +776,14 @@ impl PrivateXServerFrontend {
         // first put the obligation in a local, so the phase on this
         // instance survived an unwind while the work it described did not.
         let PrivateOrderedItem::Ran { sequence, .. } = &self.terminal.delivering[0] else {
+            let disposed = self.terminal.delivering[0].retire_request();
             let item = self.terminal.delivering.remove(0);
-            // Retained without being observed here. A refusal still has a
-            // request completion -- owing no event is not the same as owing no
-            // outcome -- and this path does not take it; the item is what
-            // keeps it takeable.
-            self.terminal.undelivered.push(PrivateUndelivered { item });
+            // An actual common refusal and exact delivery answer permit
+            // disposal. Missing outcomes, failed effects and refused receipt
+            // publication stay owned for a later charged visit.
+            if !matches!(disposed, Ok(true)) {
+                self.terminal.undelivered.push(PrivateUndelivered { item });
+            }
             return Ok(PrivateDeliveryStep::Advanced { sequence, report: None });
         };
         let sequence = *sequence;
