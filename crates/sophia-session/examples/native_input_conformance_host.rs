@@ -24,6 +24,7 @@ struct Options {
     cookie: PathBuf,
     instance: u64,
     namespace: u64,
+    session_generation: u64,
     width: i32,
     height: i32,
     grants: PrivateInputGrantPolicy,
@@ -49,6 +50,7 @@ impl Options {
             "--cookie-file",
             "--instance",
             "--namespace",
+            "--session-generation",
             "--width",
             "--height",
             "--grants",
@@ -76,8 +78,9 @@ impl Options {
         }
         let instance = number("--instance")?;
         let namespace = number("--namespace")?;
-        if instance == 0 || namespace == 0 {
-            return Err("instance and namespace must be nonzero".into());
+        let session_generation = number("--session-generation")?;
+        if instance == 0 || namespace == 0 || session_generation == 0 {
+            return Err("instance, namespace and session generation must be nonzero".into());
         }
         let options = Self {
             activation: positive("--activation-fd")?,
@@ -86,6 +89,7 @@ impl Options {
             cookie: values["--cookie-file"].into(),
             instance,
             namespace,
+            session_generation,
             width: positive("--width")?,
             height: positive("--height")?,
             grants: match values["--grants"] {
@@ -141,6 +145,7 @@ impl Options {
         Ok(PrivateInputConfig {
             socket_path: self.socket.clone(),
             namespace: NamespaceId::from_raw(self.namespace),
+            session_generation: self.session_generation,
             binding: SeatBinding::new(instance, SeatId::from_raw(1)),
             cookie: PrivateInputInstanceCookie { instance, cookie },
             grants: self.grants,

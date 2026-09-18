@@ -29,6 +29,7 @@ pub fn config(socket: &Path, grants: PrivateInputGrantPolicy) -> PrivateInputCon
     let instance = InstanceId::new(731);
     let output = OutputId::from_raw(1);
     PrivateInputConfig {
+        session_generation: 1,
         socket_path: socket.to_owned(),
         namespace: NamespaceId::from_raw(731),
         binding: SeatBinding::new(instance, SeatId::from_raw(1)),

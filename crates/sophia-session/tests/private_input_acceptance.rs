@@ -82,19 +82,14 @@ fn authorization() {
         drop(peer);
         evidence.collect(disabled.finish(), false);
 
-        let foreign = Instance::start_foreign_evidence();
-        match foreign {
-            Ok(foreign) => {
-                let (peer, context) = foreign.connect(order, Some(support::COOKIE));
-                assert!(matches!(
-                    foreign.handle().issue(context, support::device(1)),
-                    Err(PrivateInputIssueRefusal::NotInstanceVerified)
-                ));
-                drop(peer);
-                evidence.collect(foreign.finish(), false);
-            }
-            Err(_) => {} // Construction itself may reject the foreign binding.
-        }
+        let foreign = Instance::start_foreign_evidence().unwrap();
+        let (peer, context) = foreign.connect(order, Some(support::COOKIE));
+        assert!(matches!(
+            foreign.handle().issue(context, support::device(1)),
+            Err(PrivateInputIssueRefusal::NotInstanceVerified)
+        ));
+        drop(peer);
+        evidence.collect(foreign.finish(), false);
     }
     evidence.emit(
         "authorization",
