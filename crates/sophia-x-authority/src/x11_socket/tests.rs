@@ -1152,6 +1152,8 @@ include!("tests/private_deferred_cleanup.rs");
 include!("tests/private_deferred_cleanup_service.rs");
 #[path = "../../tests/support/private_retained_drive.rs"]
 mod private_retained_drive;
+#[path = "../../tests/support/private_maintenance_scheduler.rs"]
+mod private_maintenance_scheduler;
 include!("tests/private_producer_service.rs");
 include!("tests/private_producer_port.rs");
 include!("tests/private_producer_exits.rs");

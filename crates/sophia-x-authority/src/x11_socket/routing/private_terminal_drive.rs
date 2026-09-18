@@ -199,10 +199,6 @@ impl PrivateRetainedExecutionResources {
         }
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "split borrows retain one original budget, watch, and native history"
-    )]
     fn visit_terminal(
         witness: &Arc<PrivateExecutionWitness>,
         origin: &XServerFrontendRouteRegistry,

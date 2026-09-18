@@ -69,10 +69,17 @@ impl Drop for PrivateExecutionLifetimeOwner {
 #[derive(Default)]
 pub struct PrivateServiceExecutionKeeper {
     resources: Option<PrivateRetainedExecutionResources>,
+    maintenance: PrivateMaintenanceCursor,
 }
 
 #[cfg(unix)]
-#[allow(dead_code)] // Original resources retained for the authorized maintenance driver.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "Original running-loop preference and cursor remain retained for future cleanup work"
+    )
+)]
 struct PrivateRetainedExecutionResources {
     // Publish abandonment before destroying the watch or native history.
     lifetime: PrivateExecutionLifetimeOwner,
@@ -116,7 +123,6 @@ impl PrivateServiceExecutionKeeper {
 
     /// Provenance check only: the maintenance caller must independently
     /// prove its eligibility and charge the original budget and supervisor.
-    #[allow(dead_code)] // The authorized retained driver borrows this boundary.
     fn resources_for(
         &mut self,
         registry: &XServerFrontendRouteRegistry,
@@ -134,7 +140,13 @@ impl PrivateServiceExecutionKeeper {
         Ok(resources)
     }
 
-    #[allow(dead_code)] // Native cleanup must also name its original inventory.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Inventory-specific borrowing remains a separate checked boundary"
+        )
+    )]
     fn resources_for_inventory(
         &mut self,
         inventory: &PrivateTerminalInventory,
@@ -226,7 +238,11 @@ impl PrivateSettlementOwner {
                         .as_ref()
                         .map(|witness| witness.reading())
                 })
-                .chain(held.terminal_in_flight.iter().map(|witness| witness.reading()))
+                .chain(
+                    held.terminal_in_flight
+                        .iter()
+                        .map(|witness| witness.reading()),
+                )
                 .collect()
         })
     }

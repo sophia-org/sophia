@@ -50,7 +50,6 @@ enum PrivateRetainedVisit {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by the maintenance-loop integration.
 #[derive(Debug)]
 enum PrivateRetainedDriveStep {
     Refused(PrivateRetainedDriveRefusal),
@@ -269,7 +268,6 @@ impl PrivateRetainedExecutionResources {
     /// allowance and uses the original supervisor before taking any guard.
     /// The original token stays in this occupied invocation's keeper; callers
     /// cannot supply a replacement registry, collection claim or budget.
-    #[allow(dead_code)] // Called by the closed invocation's maintenance loop.
     fn drive_retained_output_step(
         &mut self,
         service_owner: &PrivateServiceLease<'_>,

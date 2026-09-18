@@ -107,6 +107,7 @@ include!("x11_socket/routing/private_retained_drive.rs");
 include!("x11_socket/routing/private_terminal_drive.rs");
 include!("x11_socket/routing/private_terminal_reconcile.rs");
 include!("x11_socket/routing/private_terminal_recipient.rs");
+include!("x11_socket/routing/private_maintenance_scheduler.rs");
 include!("x11_socket/routing/private_focus_runtime.rs");
 include!("x11_socket/routing/private_native.rs");
 include!("x11_socket/routing/private_native_custody.rs");
