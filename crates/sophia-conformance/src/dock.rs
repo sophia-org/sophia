@@ -72,6 +72,9 @@ pub fn verify(text: &str) -> Result<String, String> {
     let mut presented = BTreeMap::<Grant, BTreeMap<u64, BTreeSet<u64>>>::new();
     let mut launched = BTreeMap::<Grant, BTreeSet<u64>>::new();
     let mut transactions = BTreeMap::new();
+    let mut launch_outputs = BTreeMap::new();
+    let mut attributed = BTreeMap::new();
+    let mut placed = BTreeSet::new();
     let mut exited = BTreeSet::new();
     let mut protocol_tally = false;
     let mut retired = BTreeSet::new();
@@ -127,6 +130,36 @@ pub fn verify(text: &str) -> Result<String, String> {
             return Err("component work after shutdown".into());
         }
         match name {
+            "sophia_catalog_placement" => {
+                number(&f, "schema", 1, 1)?;
+                let transaction = number(&f, "transaction", 1, u64::MAX)?;
+                let output = number(&f, "output", 1, u64::MAX)?;
+                let identity = (
+                    number(&f, "surface", 0, u32::MAX.into())?,
+                    number(&f, "surface_generation", 1, u32::MAX.into())?,
+                    output,
+                    number(&f, "output_generation", 1, u64::MAX)?,
+                    number(&f, "wm_epoch", 1, u64::MAX)?,
+                    number(&f, "token", 1, u64::MAX)?,
+                );
+                if launch_outputs.get(&transaction) != Some(&output) {
+                    return Err("placement without exact launch output".into());
+                }
+                if status == "attributed" {
+                    if attributed.insert(transaction, identity).is_some() {
+                        return Err("duplicate launch attribution".into());
+                    }
+                } else if status == "committed" {
+                    if attributed.get(&transaction) != Some(&identity)
+                        || number(&f, "actual_output", 1, u64::MAX)? != output
+                        || !placed.insert(transaction)
+                    {
+                        return Err("wrong/duplicate committed launch placement".into());
+                    }
+                } else {
+                    return Err("launch origin unavailable".into());
+                }
+            }
             "sophia_live_session_protocol_error_tally" => {
                 number(&f, "total", 0, 0)?;
                 if protocol_tally {
@@ -258,12 +291,11 @@ pub fn verify(text: &str) -> Result<String, String> {
                 {
                     return Err("launch before presentation".into());
                 }
-                if transactions
-                    .insert(number(&f, "transaction", 1, u64::MAX)?, g)
-                    .is_some()
-                {
+                let transaction = number(&f, "transaction", 1, u64::MAX)?;
+                if transactions.insert(transaction, g).is_some() {
                     return Err("duplicate launch".into());
                 }
+                launch_outputs.insert(transaction, output);
                 launched.entry(g).or_default().insert(output);
             }
             "sophia_native_launcher" if status != "process_started" => {
@@ -284,6 +316,9 @@ pub fn verify(text: &str) -> Result<String, String> {
     }
     if !protocol_tally || exited.len() != transactions.len() {
         return Err("missing clean child exits or protocol tally".into());
+    }
+    if placed.len() != transactions.len() {
+        return Err("missing committed launch placement".into());
     }
     let mut coverage = None;
     for (role, (g, _)) in &roles {

@@ -16,6 +16,7 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
     capability "launch_origin" bit=14
     capability "output_actions" bit=15
     capability "output_policy_keys" bit=16
+    capability "output_launch_context" bit=17
 
     outcome "committed" value=1
     outcome "rejected_stale" value=2
@@ -131,6 +132,15 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
     extension-record "ProjectionLaunchContext" transfer="projection" kind=65285 gate="launch_origin" max=1024 {
         field "surface_index" type="u32" sample=3
         field "surface_generation" type="u32" sample=1
+        field "epoch" type="u64" sample=1
+        field "token" type="u64" sample=1
+    }
+
+    // Complete committed output bookmark set; omitted outputs cannot admit new
+    // contextual launches. Tokens remain stable for this WM connection epoch.
+    extension-record "ProjectionOutputLaunchContext" transfer="projection" kind=65288 gate="output_launch_context" max=16 {
+        field "output" type="u64" sample=1
+        field "generation" type="u64" sample=1
         field "epoch" type="u64" sample=1
         field "token" type="u64" sample=1
     }

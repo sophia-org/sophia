@@ -117,6 +117,7 @@ impl ReloadFixture {
             launch_classifications: BTreeMap::new(),
             launch_origins: Arc::new(Mutex::new(crate::launch_origin::LaunchOriginRegistry::default())),
             staged_launch_contexts: Vec::new(),
+            staged_output_launch_contexts: Vec::new(),
             in_flight_origin_surfaces: Vec::new(),
             outputs: vec![output],
             output_bounds: bounds.clone(),

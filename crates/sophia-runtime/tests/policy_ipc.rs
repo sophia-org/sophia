@@ -626,3 +626,69 @@ fn snapshot_launch_origins_are_gated_bounded_and_transactional() {
         }
     }
 }
+
+#[test]
+fn output_launch_context_requires_negotiated_origin_and_a_bounded_extension_tail() {
+    use sophia_protocol::*;
+    for capabilities in [
+        0,
+        SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT,
+        SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT | SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN,
+    ] {
+        let mut connection = PolicyConnectionState::default();
+        connection.connect(1).unwrap();
+        let welcome = connection
+            .negotiate(&WmV1ClientHello {
+                minimum_revision: 3,
+                maximum_revision: 3,
+                capabilities,
+            })
+            .unwrap();
+        let enabled = capabilities & SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN != 0;
+        assert_eq!(
+            welcome.capabilities & SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT != 0,
+            enabled
+        );
+        let tx = TransactionId::from_raw(90);
+        connection
+            .begin_projection(tx, projection_begin(1))
+            .unwrap();
+        let extension = |ordinal| WmV1ProjectionChunk {
+            connection_epoch: 1,
+            ordinal,
+            record_kind: PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND,
+            item_count: 1,
+            data: vec![1; 32],
+        };
+        assert!(
+            connection
+                .append_projection_chunk(tx, extension(0))
+                .is_err()
+        );
+        connection
+            .append_projection_chunk(tx, projection_chunk(1, 0, 1, 1))
+            .unwrap();
+        connection
+            .append_projection_chunk(tx, projection_chunk(1, 1, 2, 2))
+            .unwrap();
+        if enabled {
+            let mut oversized = extension(2);
+            oversized.item_count = 17;
+            oversized.data = vec![1; 17 * 32];
+            assert!(connection.append_projection_chunk(tx, oversized).is_err());
+            connection
+                .append_projection_chunk(tx, extension(2))
+                .unwrap();
+            connection.finish_projection(tx, projection_end(1)).unwrap();
+            assert!(matches!(
+                connection.settle_queued(),
+                Some(QueuedPolicyProjection::Admitted(_))
+            ));
+        } else {
+            assert_eq!(
+                connection.append_projection_chunk(tx, extension(2)),
+                Err(PolicyTransferError::UnsupportedCapability)
+            );
+        }
+    }
+}

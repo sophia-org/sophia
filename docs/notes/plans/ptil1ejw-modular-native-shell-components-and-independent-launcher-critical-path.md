@@ -1670,3 +1670,12 @@ records the source repairs, discriminating private-xterm/mutation controls,
 Provlita vector tiles and strengthened child-exit evidence. The command remains
 `lom-test dock`; use shell `exit` for the four terminal launches and keep a
 VT-release test separate. No t107/t108 or physical acceptance is closed here.
+
+## Output-bound catalog placement follow-up
+
+The [dock placement investigation](../investigations/n8r3d6qp-catalog-launch-must-capture-the-clicked-output-workspace.md)
+adds committed per-output WM bookmarks to the shared dock/launcher queue.
+Workspace state stays WM-owned. Smoke acceptance now requires each supervised
+launch's exact first surface to reach a matching committed output, in addition
+to process start/clean exit and independent component lifetimes. Native
+acceptance remains pending; private socket tests cannot close it.

@@ -30,6 +30,7 @@ impl CatalogLaunchCause {
 /// entry and exact origin; a client transaction is never the Session serial.
 #[derive(Clone, Debug)]
 pub struct NativeCatalogLaunch {
+    pub destination: sophia_protocol::PolicyOutputLaunchContext,
     pub transaction: TransactionId,
     pub cause: CatalogLaunchCause,
     pub entry: Arc<ApplicationCatalogEntry>,
@@ -50,6 +51,24 @@ pub(super) struct CatalogDispatch {
 }
 
 impl SessionLaunchQueue {
+    /// Replace the committed context view before a bounded component visit.
+    /// Already queued launches retain their original workspace bookmark.
+    pub fn set_output_launch_contexts(
+        &mut self,
+        contexts: &[sophia_protocol::PolicyOutputLaunchContext],
+    ) {
+        self.output_contexts.clear();
+        if sophia_protocol::encode_wm_output_launch_contexts(
+            contexts,
+            contexts.first().map_or(0, |c| c.epoch),
+            0,
+        )
+        .is_ok()
+        {
+            self.output_contexts.extend_from_slice(contexts);
+        }
+    }
+
     /// Match the managed child against the current admission without treating
     /// numeric transactions from different catalog owners as interchangeable.
     pub fn matches_child_launch(
@@ -122,6 +141,18 @@ impl SessionLaunchQueue {
         {
             return Err(NativeCatalogLaunchRefusal::Unauthorized);
         }
+        let output = match &cause {
+            CatalogLaunchCause::Transient(a) => a.event.binding.output,
+            CatalogLaunchCause::Persistent(a) => a.action.output,
+        };
+        // The caller has validated the full presented content identity. Its
+        // generation is grant-scoped, not the WM's topology generation.
+        let destination = self
+            .output_contexts
+            .iter()
+            .copied()
+            .find(|c| c.output.raw() == output.id && c.epoch != 0 && c.token != 0)
+            .ok_or(NativeCatalogLaunchRefusal::Stale)?;
         if self
             .admitted_native
             .as_ref()
@@ -154,6 +185,7 @@ impl SessionLaunchQueue {
         }
         let transaction = TransactionId::from_raw(serial);
         let payload = Arc::new(NativeCatalogLaunch {
+            destination,
             transaction,
             cause,
             entry,
@@ -182,6 +214,7 @@ impl SessionLaunchQueue {
         self.catalog_admission(launch.transaction)
             && self.admitted_native.as_ref().is_some_and(|current| {
                 current.transaction == launch.transaction
+                    && current.destination == launch.destination
                     && current.cause == launch.cause
                     && Arc::ptr_eq(&current.entry, &launch.entry)
             })
@@ -198,6 +231,11 @@ impl SessionLaunchQueue {
         verified: &crate::application_catalog::ApplicationLaunchCommand,
     ) -> bool {
         if self.native_execution_attempted
+            || !self.output_contexts.iter().any(|c| {
+                c.epoch == launch.destination.epoch
+                    && c.output == launch.destination.output
+                    && c.output_generation == launch.destination.output_generation
+            })
             || !self.native_dispatch_taken
             || !self.native_catalog_admission(launch)
             || current_grant != launch.cause.grant()

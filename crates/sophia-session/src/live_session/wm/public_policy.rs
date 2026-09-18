@@ -232,6 +232,7 @@ struct LivePublicPolicyState {
     launch_classifications: BTreeMap<SurfaceId, u64>,
     launch_origins: Arc<Mutex<crate::launch_origin::LaunchOriginRegistry>>,
     staged_launch_contexts: Vec<sophia_protocol::PolicyLaunchContext>,
+    staged_output_launch_contexts: Vec<sophia_protocol::PolicyOutputLaunchContext>,
     in_flight_origin_surfaces: Vec<SurfaceId>,
     outputs: Vec<sophia_engine::HeadlessOutput>,
     output_bounds: BTreeMap<sophia_protocol::OutputId, Rect>,
@@ -1471,9 +1472,20 @@ impl LivePublicPolicyState {
             && let Ok(mut origins) = self.launch_origins.lock()
         {
             origins.publish(self.connection_epoch, &self.staged_launch_contexts);
+            origins.publish_outputs(self.connection_epoch, &self.staged_output_launch_contexts);
+            for surface in &self.in_flight_origin_surfaces {
+                if let Some((transaction, destination)) = origins.catalog_attribution(*surface) {
+                    let actual = self.reducer.committed().iter().find(|output|
+                        output.placements.iter().any(|p| p.surface == *surface)).map(|o| o.output.raw()).unwrap_or(0);
+                    crate::session_println!("sophia_catalog_placement schema=1 status=committed transaction={} surface={} surface_generation={} output={} output_generation={} actual_output={} wm_epoch={} token={}",
+                        transaction.raw(), surface.index(), surface.generation(), destination.output.raw(),
+                        destination.output_generation, actual, destination.epoch, destination.token);
+                }
+            }
             origins.committed(self.in_flight_origin_surfaces.iter().copied());
         }
         self.staged_launch_contexts.clear();
+        self.staged_output_launch_contexts.clear();
         self.in_flight_origin_surfaces.clear();
 
         if let Some(sophia_protocol::PolicyProjectionRequest {
@@ -2230,6 +2242,7 @@ impl LiveWmSession {
             launch_classifications: BTreeMap::new(),
             launch_origins: Arc::new(Mutex::new(crate::launch_origin::LaunchOriginRegistry::default())),
             staged_launch_contexts: Vec::new(),
+            staged_output_launch_contexts: Vec::new(),
             in_flight_origin_surfaces: Vec::new(),
             outputs: outputs.to_vec(),
             output_bounds,
@@ -2403,7 +2416,8 @@ impl LiveWmSession {
                             reconciliation.adjusted_surfaces,
                         );
                     }
-                    let context_valid = projection.launch_contexts.iter().all(|context| context.epoch == public.connection_epoch && public.reducer.scene().surfaces.iter().any(|s| s.surface == context.surface));
+                    let context_valid = projection.launch_contexts.iter().all(|context| context.epoch == public.connection_epoch && public.reducer.scene().surfaces.iter().any(|s| s.surface == context.surface))
+                        && projection.output_launch_contexts.iter().all(|context| context.epoch == public.connection_epoch && public.reducer.scene().outputs.iter().any(|o| o.output == context.output && o.generation == context.output_generation));
                     match if context_valid { public.reducer.stage_proposal(&reconciliation.policy) } else { Err(sophia_protocol::PolicyProjectionOutcome::RejectedInvalid) } {
                     Ok(staged) => {
                         let expected_operation_slot = match source {
@@ -2427,6 +2441,7 @@ impl LiveWmSession {
                         let projections = staged.projections();
                         let active_output = projection.active_output;
                         public.staged_launch_contexts = projection.launch_contexts.clone();
+                        public.staged_output_launch_contexts = projection.output_launch_contexts.clone();
                         public.staged = Some(staged);
                         let mut live = public_live_proposal(
                             layout,

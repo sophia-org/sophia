@@ -551,6 +551,40 @@ background origin does not switch the active output, view or keyboard focus.
 Debug admission diagnostics report context availability without application or
 process identifiers.
 
+## Output-bound catalog launches
+
+Capability bit 17 (`output_launch_context`) requires `launch_origin` and adds
+`ProjectionOutputLaunchContext` (`0xff08`): output ID, output generation, WM
+connection epoch and token, four little-endian u64 fields. All are nonzero;
+at most sixteen unique outputs are admitted. The complete set replaces the
+previous set only when the corresponding policy projection commits. A missing
+output has no catalog launch destination; rejected projections publish nothing.
+
+Hagia publishes each output's current view/tag destination even when empty.
+Output bookmarks are immutable within the connection epoch, reused for equal
+destinations and protected from eviction within the shared 1024-token budget.
+Capacity exhaustion omits new destinations rather than recycling old tokens.
+Tokens are not checkpointed. Ordinary inherited window bookmarks retain their
+existing bounded eviction behavior.
+
+Session validates a dock/menu event against its exact presented content and
+captures the committed output bookmark at launch-queue admission, before ACKing
+the effect. Shell-content and WM output generations have distinct scopes: the
+current logical output joins them, not numerical generation equality. Pending
+launches retain their captured token while focus or workspace state changes.
+The WM epoch and output generation must still be current before spawning.
+Missing capability/context or stale identity refuses before execution; there is
+no global-focus fallback. No shell wire change or shell-supplied workspace is
+needed.
+
+After exact registered-process attribution, Session echoes the captured token
+through `SnapshotLaunchOrigin` for the first managed top-level. It remains
+pending through policy rejection until committed admission. Existing placement
+precedence and transient-parent behavior remain unchanged. Output removal or WM
+restart after spawn may make the origin unavailable; the application survives
+under ordinary WM placement, with an explicit degraded-placement diagnostic.
+Neither launch admission nor process creation proves committed placement.
+
 ## Explicit output actions and stable policy keys
 
 Revision 3 has two optional capabilities, `output_actions` (bit 15) and

@@ -32,6 +32,14 @@ struct Source {
 
 #[derive(Default, Debug)]
 pub struct LaunchOriginRegistry {
+    catalog_attributions: BTreeMap<
+        SurfaceId,
+        (
+            sophia_protocol::TransactionId,
+            sophia_protocol::PolicyOutputLaunchContext,
+        ),
+    >,
+    output_contexts: Vec<sophia_protocol::PolicyOutputLaunchContext>,
     epoch: u64,
     peers: BTreeMap<u64, Peer>,
     grants: BTreeMap<ProcessIdentity, Option<PolicyLaunchContext>>,
@@ -104,11 +112,71 @@ pub fn process_ancestors(
 }
 
 impl LaunchOriginRegistry {
+    pub fn publish_outputs(
+        &mut self,
+        epoch: u64,
+        contexts: &[sophia_protocol::PolicyOutputLaunchContext],
+    ) {
+        if epoch == self.epoch
+            && sophia_protocol::encode_wm_output_launch_contexts(contexts, epoch, 0).is_ok()
+        {
+            self.output_contexts = contexts.to_vec();
+        }
+    }
+
+    pub fn output_contexts(&self) -> &[sophia_protocol::PolicyOutputLaunchContext] {
+        &self.output_contexts
+    }
+
+    /// Call only after exact registered-process attribution. A token is not
+    /// process authority and cannot authorize an unrelated client's window.
+    pub fn catalog_attribution(
+        &self,
+        surface: SurfaceId,
+    ) -> Option<(
+        sophia_protocol::TransactionId,
+        sophia_protocol::PolicyOutputLaunchContext,
+    )> {
+        self.catalog_attributions.get(&surface).copied()
+    }
+
+    pub fn register_catalog_origin(
+        &mut self,
+        surface: SurfaceId,
+        transaction: sophia_protocol::TransactionId,
+        context: sophia_protocol::PolicyOutputLaunchContext,
+    ) -> bool {
+        if context.epoch != self.epoch
+            || context.token == 0
+            || transaction.raw() == 0
+            || self.epoch == 0
+            || !self.sources.contains_key(&surface)
+            || !self.output_contexts.iter().any(|c| {
+                c.output == context.output && c.output_generation == context.output_generation
+            })
+        {
+            return false;
+        }
+        self.pending.insert(
+            surface,
+            PolicyLaunchContext {
+                surface,
+                epoch: context.epoch,
+                token: context.token,
+            },
+        );
+        self.catalog_attributions
+            .insert(surface, (transaction, context));
+        true
+    }
+
     pub fn set_epoch(&mut self, epoch: u64) {
         if self.epoch == epoch {
             return;
         }
         self.epoch = epoch;
+        self.output_contexts.clear();
+        self.catalog_attributions.clear();
         for source in self.sources.values_mut() {
             source.bookmark = None;
         }
@@ -234,6 +302,7 @@ impl LaunchOriginRegistry {
     }
 
     pub fn withdraw(&mut self, surface: SurfaceId) {
+        self.catalog_attributions.remove(&surface);
         self.sources.remove(&surface);
         self.pending.remove(&surface);
         if self.focused == Some(surface) {
@@ -274,6 +343,7 @@ impl LaunchOriginRegistry {
 
     pub fn committed(&mut self, surfaces: impl IntoIterator<Item = SurfaceId>) {
         for surface in surfaces {
+            self.catalog_attributions.remove(&surface);
             self.pending.remove(&surface);
         }
     }

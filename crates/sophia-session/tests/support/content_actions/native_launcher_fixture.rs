@@ -113,7 +113,16 @@ impl Harness {
             epochs,
             peer,
             service: NativeLauncherActionService::default(),
-            queue: SessionLaunchQueue::default(),
+            queue: {
+                let mut queue = SessionLaunchQueue::default();
+                queue.set_output_launch_contexts(&[sophia_protocol::PolicyOutputLaunchContext {
+                    output: sophia_protocol::OutputId::from_raw(OUTPUT.id),
+                    output_generation: OUTPUT.generation,
+                    epoch: 1,
+                    token: 10,
+                }]);
+                queue
+            },
             catalog,
             focus,
             target,

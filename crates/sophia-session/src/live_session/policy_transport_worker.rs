@@ -333,6 +333,16 @@ fn run_policy_transport(
                         }
                     }
                 };
+                if !proposal.output_launch_contexts.is_empty()
+                    && (transport.selected_capabilities()
+                        & sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT
+                        == 0
+                        || transport.selected_capabilities()
+                            & sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN
+                            == 0)
+                {
+                    return Err("unnegotiated output launch context".to_owned());
+                }
                 if !proposal.launch_contexts.is_empty()
                     && transport.selected_capabilities()
                         & sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN

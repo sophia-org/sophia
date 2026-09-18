@@ -34,7 +34,8 @@ const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | sophia_protocol::SOPHIA_WM_CAPABILITY_POINTER_FOCUS
     | sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN
     | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS;
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyTransferError {
     NotConnected,
@@ -239,6 +240,10 @@ impl PolicyConnectionState {
                 0
             };
         self.selected_capabilities = hello.capabilities & supported;
+        if self.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN == 0 {
+            self.selected_capabilities &=
+                !sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT;
+        }
         Ok(WmV1ServerWelcome {
             selected_revision: selected,
             capabilities: self.selected_capabilities,
@@ -337,6 +342,7 @@ impl PolicyConnectionState {
                 | sophia_protocol::PROJECTION_TRANSLATION_GROUP_RECORD_KIND
                 | sophia_protocol::PROJECTION_TRANSLATION_MEMBER_RECORD_KIND
                 | sophia_protocol::PROJECTION_LAUNCH_CONTEXT_RECORD_KIND
+                | sophia_protocol::PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND
         ) {
             let translation = matches!(
                 chunk.record_kind,
@@ -345,7 +351,11 @@ impl PolicyConnectionState {
             );
             let launch_context =
                 chunk.record_kind == sophia_protocol::PROJECTION_LAUNCH_CONTEXT_RECORD_KIND;
-            let capability = if launch_context {
+            let output_context =
+                chunk.record_kind == sophia_protocol::PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND;
+            let capability = if output_context {
+                sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT
+            } else if launch_context {
                 sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN
             } else if translation {
                 sophia_protocol::SOPHIA_WM_CAPABILITY_TRANSLATION_GROUPS
@@ -360,7 +370,12 @@ impl PolicyConnectionState {
             {
                 return Err(PolicyTransferError::RecordCountMismatch);
             }
-            let (size, maximum) = if launch_context {
+            let (size, maximum) = if output_context {
+                (
+                    sophia_protocol::OUTPUT_LAUNCH_CONTEXT_RECORD_LEN,
+                    sophia_protocol::POLICY_MAX_OUTPUTS,
+                )
+            } else if launch_context {
                 (
                     sophia_protocol::LAUNCH_CONTEXT_RECORD_LEN,
                     sophia_protocol::POLICY_MAX_SURFACES,

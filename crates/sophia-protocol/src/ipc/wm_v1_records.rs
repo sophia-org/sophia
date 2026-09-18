@@ -1228,6 +1228,11 @@ pub fn encode_wm_v1_policy_projection(
         proposal.connection_epoch,
         chunks.len() as u16,
     )?);
+    chunks.extend(super::encode_wm_output_launch_contexts(
+        &proposal.output_launch_contexts,
+        proposal.connection_epoch,
+        chunks.len() as u16,
+    )?);
     let begin = WmV1ProjectionBegin {
         connection_epoch: proposal.connection_epoch,
         request_id: proposal.request_id,
@@ -1302,6 +1307,7 @@ pub fn decode_wm_v1_policy_projection(
             | super::PROJECTION_TRANSLATION_GROUP_RECORD_KIND
             | super::PROJECTION_TRANSLATION_MEMBER_RECORD_KIND
             | super::PROJECTION_LAUNCH_CONTEXT_RECORD_KIND
+            | super::PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND
                 if ordinal >= usize::from(transfer.begin.chunk_count) => {}
             other => return Err(invalid("projection_record_kind", u32::from(other))),
         }
@@ -1332,6 +1338,7 @@ pub fn decode_wm_v1_policy_projection(
     }
     Ok(PolicyProjectionProposal {
         launch_contexts: super::decode_wm_launch_contexts(&transfer.chunks)?,
+        output_launch_contexts: super::decode_wm_output_launch_contexts(&transfer.chunks)?,
         translation_groups: super::decode_wm_translation_groups(&transfer.chunks)?,
         tab_groups: super::decode_wm_tab_groups(&transfer.chunks)?,
         transaction: transfer.transaction,

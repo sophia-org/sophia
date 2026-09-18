@@ -225,6 +225,7 @@ static int record_roundtrip(const char *name, const uint8_t *data, size_t data_l
         status = SOPHIA_WM_V1_OK;
     }
     else if (strcmp(name, "snapshot_output_policy_key") == 0 ||
+             strcmp(name, "projection_output_launch_context") == 0 ||
              strcmp(name, "projection_launch_context") == 0 ||
              strcmp(name, "snapshot_launch_origin") == 0 ||
              strcmp(name, "projection_translation_group") == 0 ||
@@ -232,7 +233,7 @@ static int record_roundtrip(const char *name, const uint8_t *data, size_t data_l
         int origin = strcmp(name, "projection_launch_context") == 0 || strcmp(name, "snapshot_launch_origin") == 0;
         int translation = strcmp(name, "projection_translation_group") == 0;
         int member = strcmp(name, "projection_translation_member") == 0;
-        size_t expected = translation ? 32 : 24;
+        size_t expected = translation || strcmp(name, "projection_output_launch_context") == 0 ? 32 : 24;
         if (data_len != expected) return 0;
         for (size_t offset = 0; offset < expected;) {
             size_t width = (origin && offset < 8) || ((translation || member) && offset >= 16) ? 4 : 8;
@@ -285,7 +286,7 @@ static int check_records(const char *path) {
         ++checked;
     }
     fclose(input);
-    return checked == 16;
+    return checked == 17;
 }
 
 int main(int argc, char **argv) {

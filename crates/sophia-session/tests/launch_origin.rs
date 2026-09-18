@@ -57,6 +57,36 @@ fn delayed_child_freezes_origin_before_focus_and_source_placement_change() {
 }
 
 #[test]
+fn catalog_origin_uses_captured_token_not_new_workspace_and_dies_with_epoch() {
+    let mut registry = LaunchOriginRegistry::default();
+    registry.set_epoch(7);
+    let captured = PolicyOutputLaunchContext {
+        output: OutputId::from_raw(2),
+        output_generation: 3,
+        epoch: 7,
+        token: 99,
+    };
+    registry.publish_outputs(7, &[captured]);
+    host(&mut registry, 10, 101);
+    registry.publish_outputs(
+        7,
+        &[PolicyOutputLaunchContext {
+            token: 100,
+            ..captured
+        }],
+    );
+    assert!(registry.register_catalog_origin(surface(10), TransactionId::from_raw(4), captured));
+    assert_eq!(registry.origins([surface(10)]), vec![context(10, 99)]);
+    assert!(!registry.register_catalog_origin(surface(20), TransactionId::from_raw(4), captured));
+    registry.publish_outputs(6, &[]);
+    assert_eq!(registry.output_contexts().len(), 1);
+    registry.set_epoch(8);
+    assert!(registry.origins([surface(10)]).is_empty());
+    assert!(registry.catalog_attribution(surface(10)).is_none());
+    assert!(!registry.register_catalog_origin(surface(10), TransactionId::from_raw(4), captured));
+}
+
+#[test]
 fn concurrent_children_cannot_exchange_launch_contexts_or_registered_identity() {
     let mut registry = LaunchOriginRegistry::default();
     registry.set_epoch(7);

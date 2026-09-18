@@ -283,6 +283,7 @@ pub struct PolicyProjectionOutputStatus {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolicyProjectionProposal {
+    pub output_launch_contexts: Vec<PolicyOutputLaunchContext>,
     pub launch_contexts: Vec<PolicyLaunchContext>,
     pub translation_groups: Vec<crate::PolicyTranslationGroup>,
     pub tab_groups: Vec<crate::PolicyTabGroup>,
@@ -301,6 +302,16 @@ pub struct PolicyProjectionProposal {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PolicyLaunchContext {
     pub surface: SurfaceId,
+    pub epoch: u64,
+    pub token: u64,
+}
+
+/// A committed WM bookmark for an output's current workspace. Session never
+/// interprets the token or substitutes global focus for the named output.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PolicyOutputLaunchContext {
+    pub output: OutputId,
+    pub output_generation: u64,
     pub epoch: u64,
     pub token: u64,
 }

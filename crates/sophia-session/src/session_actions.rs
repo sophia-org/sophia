@@ -37,6 +37,7 @@ pub struct SessionLaunchIntent {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionLaunchSurfaceObservation {
+    pub destination: Option<sophia_protocol::PolicyOutputLaunchContext>,
     pub intent: SessionLaunchIntent,
     pub surface: SurfaceId,
     /// Present only for the first surface observed from a classified launch.
@@ -69,6 +70,7 @@ pub enum SessionLaunchQueueOutcome {
 
 #[derive(Debug, Default)]
 pub struct SessionLaunchQueue {
+    output_contexts: Vec<sophia_protocol::PolicyOutputLaunchContext>,
     pending: VecDeque<QueuedLaunch>,
     admitted_command: Option<Arc<SessionLaunchCommand>>,
     admission_from_catalog: bool,
@@ -281,6 +283,9 @@ impl SessionLaunchQueue {
             .flatten();
         admission.placement_classification_consumed |= placement_classification.is_some();
         Some(SessionLaunchSurfaceObservation {
+            destination: (admission.observed_surface_count == 1)
+                .then(|| self.admitted_native.as_ref().map(|v| v.destination))
+                .flatten(),
             intent: admission.intent,
             surface,
             placement_classification,

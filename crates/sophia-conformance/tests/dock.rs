@@ -33,6 +33,13 @@ fn positive() -> String {
                     "sophia_catalog_launch schema=1 status=process_started transaction={} cause={cause} connection_epoch={g} content_grant_epoch={g} output={output} event_id={output}\n",
                     g * 10 + output
                 );
+                for status in ["attributed", "committed"] {
+                    log += &format!(
+                        "sophia_catalog_placement schema=1 status={status} transaction={} surface={} surface_generation=1 output={output} output_generation=1 wm_epoch=1 token={output} actual_output={output}\n",
+                        g * 10 + output,
+                        g * 10 + output
+                    );
+                }
                 log += &format!(
                     "sophia_catalog_launch schema=1 status=process_exited transaction={} connection_epoch={g} content_grant_epoch={g} success=true\n",
                     g * 10 + output
@@ -78,6 +85,10 @@ fn three_component_smoke_requires_exact_independent_lifetimes_and_real_launch_re
         ("output=2", "output=0"),
         ("sophia_catalog_launch", "client_claimed_launch"),
         ("success=true", "success=false"),
+        ("actual_output=2", "actual_output=1"),
+        ("sophia_catalog_placement", "client_placement"),
+        ("status=attributed", "status=origin_unavailable"),
+        ("wm_epoch=1", "wm_epoch=0"),
         ("total=0", "total=4"),
         ("status=process_exited", "status=unknown"),
     ] {

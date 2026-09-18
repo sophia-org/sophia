@@ -133,7 +133,16 @@ impl Harness {
             ledger,
             publication,
             presented: vec![presented(target)],
-            queue: SessionLaunchQueue::default(),
+            queue: {
+                let mut queue = SessionLaunchQueue::default();
+                queue.set_output_launch_contexts(&[sophia_protocol::PolicyOutputLaunchContext {
+                    output: sophia_protocol::OutputId::from_raw(action.output.id),
+                    output_generation: action.output.generation,
+                    epoch: 1,
+                    token: 10,
+                }]);
+                queue
+            },
             activation: CatalogActivation {
                 action,
                 catalog_generation: 8,
@@ -223,6 +232,11 @@ fn catalog_click_admits_exact_queue_origin_once_in_both_ack_orders() {
             CatalogLaunchCause::Persistent(h.activation.clone())
         );
         assert_eq!(launch.entry.identity, "registered:terminal");
+        assert_eq!(
+            launch.destination.output.raw(),
+            h.activation.action.output.id
+        );
+        assert_eq!(launch.destination.token, 10);
         assert!(h.queue.take_native_catalog_dispatch().is_none());
         h.queue.cancel_native_catalog(&launch);
         assert!(h.queue.begin_next(true).is_none());

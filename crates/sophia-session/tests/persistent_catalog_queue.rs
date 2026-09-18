@@ -64,6 +64,12 @@ fn enqueue(
     value: CatalogActivation,
     entry: Arc<ApplicationCatalogEntry>,
 ) -> Result<TransactionId, NativeCatalogLaunchRefusal> {
+    queue.set_output_launch_contexts(&[PolicyOutputLaunchContext {
+        output: OutputId::from_raw(2),
+        output_generation: 1,
+        epoch: 1,
+        token: 10,
+    }]);
     queue.enqueue_persistent_catalog(value, entry, SessionApplicationId::from_raw(2), 0)
 }
 fn dispatch(queue: &mut SessionLaunchQueue) -> Arc<NativeCatalogLaunch> {
@@ -73,6 +79,88 @@ fn dispatch(queue: &mut SessionLaunchQueue) -> Arc<NativeCatalogLaunch> {
     let launch = queue.take_native_catalog_dispatch().unwrap();
     assert!(queue.take_native_catalog_dispatch().is_none());
     launch
+}
+
+#[test]
+fn catalog_destination_is_frozen_across_focus_workspace_and_queue_delay() {
+    let mut queue = SessionLaunchQueue::default();
+    let entry = entry();
+    let action = action(1, 10);
+    enqueue(&mut queue, action.clone(), entry.clone()).unwrap();
+    queue.set_output_launch_contexts(&[
+        PolicyOutputLaunchContext {
+            output: OutputId::from_raw(1),
+            output_generation: 1,
+            epoch: 1,
+            token: 999,
+        },
+        PolicyOutputLaunchContext {
+            output: OutputId::from_raw(2),
+            output_generation: 1,
+            epoch: 1,
+            token: 20,
+        },
+    ]);
+    let launch = dispatch(&mut queue);
+    assert_eq!(launch.destination.output.raw(), 2);
+    assert_eq!(launch.destination.token, 10);
+    let mut forged = (*launch).clone();
+    forged.destination.token = 999;
+    assert!(!queue.native_catalog_admission(&forged));
+    assert!(queue.begin_native_catalog_execution(
+        &launch,
+        action.action.grant,
+        entry.command.as_ref().unwrap()
+    ));
+    let first = queue.observe_surface(SurfaceId::new(20, 1)).unwrap();
+    assert_eq!(first.destination, Some(launch.destination));
+    assert!(queue.observe_surface(SurfaceId::new(20, 1)).is_none());
+    assert!(
+        queue
+            .observe_surface(SurfaceId::new(21, 1))
+            .unwrap()
+            .destination
+            .is_none()
+    );
+}
+
+#[test]
+fn catalog_refuses_missing_context_and_replacement_before_execution() {
+    let entry = entry();
+    for replacement in [
+        vec![],
+        vec![PolicyOutputLaunchContext {
+            output: OutputId::from_raw(2),
+            output_generation: 2,
+            epoch: 1,
+            token: 10,
+        }],
+        vec![PolicyOutputLaunchContext {
+            output: OutputId::from_raw(2),
+            output_generation: 1,
+            epoch: 2,
+            token: 10,
+        }],
+    ] {
+        let mut queue = SessionLaunchQueue::default();
+        assert_eq!(
+            queue.enqueue_persistent_catalog(
+                action(1, 10),
+                entry.clone(),
+                SessionApplicationId::from_raw(2),
+                0
+            ),
+            Err(NativeCatalogLaunchRefusal::Stale)
+        );
+        enqueue(&mut queue, action(1, 10), entry.clone()).unwrap();
+        let launch = dispatch(&mut queue);
+        queue.set_output_launch_contexts(&replacement);
+        assert!(!queue.begin_native_catalog_execution(
+            &launch,
+            action(1, 10).action.grant,
+            entry.command.as_ref().unwrap()
+        ));
+    }
 }
 
 #[test]

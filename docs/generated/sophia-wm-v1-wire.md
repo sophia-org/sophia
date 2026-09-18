@@ -426,6 +426,17 @@ Transfer: `projection`; record kind: 0xFF05; gated on capability `launch_origin`
 | 8 | `epoch` | `u64` | little-endian |
 | 16 | `token` | `u64` | little-endian |
 
+## `ProjectionOutputLaunchContext` extension record
+
+Transfer: `projection`; record kind: 0xFF08; gated on capability `output_launch_context`; maximum records: 16; fixed size: 32 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `output` | `u64` | little-endian |
+| 8 | `generation` | `u64` | little-endian |
+| 16 | `epoch` | `u64` | little-endian |
+| 24 | `token` | `u64` | little-endian |
+
 ## `SnapshotLaunchOrigin` extension record
 
 Transfer: `snapshot`; record kind: 0xFF06; gated on capability `launch_origin`; maximum records: 1024; fixed size: 24 bytes.

@@ -1093,6 +1093,14 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 .map(|execution| execution.phase),
             wm_session.as_ref().is_some_and(LiveWmSession::startup_output_topology_pending),
         );
+        // Reconcile against current topology as well as the last committed policy.
+        // A stale publication cannot reopen a removed/replaced output.
+        let contexts = wm_session.as_ref().and_then(|w| w.public.as_ref()).and_then(|p| {
+            p.launch_origins.lock().ok().map(|origins| origins.output_contexts().iter().copied()
+                .filter(|c| p.outputs.iter().any(|o| o.id == c.output)
+                    && p.output_generations.get(&c.output) == Some(&c.output_generation)).collect::<Vec<_>>())
+        }).unwrap_or_default();
+        session_launches.set_output_launch_contexts(&contexts);
         if shell_components.is_some() && shell_presentation_available {
             component_catalog.visit_scan(config, session_launches, xauthority)?;
         }

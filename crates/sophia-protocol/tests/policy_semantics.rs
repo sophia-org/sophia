@@ -87,6 +87,7 @@ fn snapshot_focus_without_its_usable_surface_fails_both_codec_directions() {
 fn complete_output_projection_roundtrips_in_stacking_order() {
     let proposal = PolicyProjectionProposal {
         launch_contexts: Vec::new(),
+        output_launch_contexts: Vec::new(),
         translation_groups: Vec::new(),
         tab_groups: Vec::new(),
         transaction: TransactionId::from_raw(11),
@@ -147,6 +148,7 @@ fn complete_output_projection_roundtrips_in_stacking_order() {
 fn projection_record_count_mismatch_fails_closed() {
     let proposal = PolicyProjectionProposal {
         launch_contexts: Vec::new(),
+        output_launch_contexts: Vec::new(),
         translation_groups: Vec::new(),
         tab_groups: Vec::new(),
         transaction: TransactionId::from_raw(13),

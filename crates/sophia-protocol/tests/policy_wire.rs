@@ -174,6 +174,23 @@ fn generated_rust_record_codec_matches_every_golden_record() {
                 .data
                 .clone()
             }
+            "projection_output_launch_context" => {
+                let chunks = [WmV1ProjectionChunk {
+                    connection_epoch: 1,
+                    ordinal: 0,
+                    record_kind: PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND,
+                    item_count: 1,
+                    data: data.clone(),
+                }];
+                encode_wm_output_launch_contexts(
+                    &decode_wm_output_launch_contexts(&chunks).unwrap(),
+                    1,
+                    0,
+                )
+                .unwrap()[0]
+                    .data
+                    .clone()
+            }
             "projection_launch_context" | "snapshot_launch_origin" => {
                 encode_wm_launch_context_records(
                     &decode_wm_launch_context_records(&data, 1).unwrap(),

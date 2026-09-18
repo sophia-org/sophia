@@ -6,6 +6,7 @@ pub(super) fn record(name: &str) -> bool {
             | "sophia_shell_component_catalog"
             | "sophia_native_launcher"
             | "sophia_catalog_launch"
+            | "sophia_catalog_placement"
             | "sophia_shell_components_shutdown"
     )
 }
@@ -19,6 +20,14 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
         return value == "1";
     }
     match (record, key) {
+        ("sophia_catalog_placement", "status") => {
+            matches!(value, "attributed" | "origin_unavailable" | "committed")
+        }
+        (
+            "sophia_catalog_placement",
+            "transaction" | "surface" | "surface_generation" | "output" | "output_generation"
+            | "actual_output" | "wm_epoch" | "token",
+        ) => number(u64::MAX),
         ("sophia_shell_components_shutdown", "status") => value == "quiescent",
         ("sophia_shell_component", "status") => matches!(
             value,

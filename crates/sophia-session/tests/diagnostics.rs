@@ -18,6 +18,15 @@ fn catalog_exit_evidence_keeps_outcome_and_exact_origin_without_payload() {
     }
 }
 
+#[test]
+fn catalog_placement_evidence_retains_exact_surface_and_committed_destination() {
+    let text = "sophia_catalog_placement schema=1 status=committed transaction=3 surface=0 surface_generation=2 output=4 output_generation=5 actual_output=4 wm_epoch=6 token=7 title=secret";
+    let record = reduced_record(text).unwrap();
+    assert!(record.contains("actual_output=4"));
+    assert!(record.contains("token=7"));
+    assert!(!record.contains("secret"));
+}
+
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {

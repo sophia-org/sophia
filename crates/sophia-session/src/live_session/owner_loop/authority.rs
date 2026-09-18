@@ -529,7 +529,18 @@
                                 launch_origins.lock().is_ok_and(|r| r.belongs_to_process(admission, process))
                             })
                         });
-                        if registered_owner && let Some(observation) = session_launches.observe_surface(surface) {
+                        if registered_owner
+                            && layout.layout_facts(surface).is_some_and(|f| f.kind == sophia_protocol::LayoutNodeKind::Toplevel)
+                            && let Some(observation) = session_launches.observe_surface(surface) {
+                            if let Some(destination) = observation.destination {
+                                let applied = launch_origins.lock().is_ok_and(|mut origins|
+                                    origins.register_catalog_origin(surface, observation.intent.transaction, destination));
+                                crate::session_println!(
+                                    "sophia_catalog_placement schema=1 status={} transaction={} surface={} surface_generation={} output={} output_generation={} wm_epoch={} token={}",
+                                    if applied { "attributed" } else { "origin_unavailable" },
+                                    observation.intent.transaction.raw(), surface.index(), surface.generation(),
+                                    destination.output.raw(), destination.output_generation, destination.epoch, destination.token);
+                            }
                             if let Some(classification) = observation.placement_classification
                                 && let Some(wm_session) = wm_session.as_mut()
                             {

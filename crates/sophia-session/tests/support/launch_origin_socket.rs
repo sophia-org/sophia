@@ -301,6 +301,125 @@ struct PolicyFixture {
     transaction: u64,
     actions: Vec<PolicyActionRegistration>,
 }
+
+#[test]
+#[ignore = "requires explicit freshly built Hagia; private sockets only"]
+fn hagia_output_bookmark_places_empty_output_after_focus_switch_and_rejected_cycle() {
+    let binary = std::env::var_os("SOPHIA_HAGIA_BIN").expect("explicit Hagia binary");
+    for hidden in [false, true] {
+        exercise_output_bookmark(binary.clone(), hidden);
+    }
+}
+
+fn exercise_output_bookmark(binary: std::ffi::OsString, hidden: bool) {
+    let directory =
+        std::env::temp_dir().join(format!("sophia-output-origin-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let origins = Arc::new(Mutex::new(LaunchOriginRegistry::default()));
+    origins.lock().unwrap().set_epoch(1);
+    let mut policy = PolicyFixture::new(binary, &directory, SurfaceId::new(10, 1));
+    let mut empty = policy.reducer.scene().clone();
+    let template = empty.surfaces[0];
+    empty.generation += 1;
+    empty.surfaces.clear();
+    for output in &mut empty.outputs {
+        output.focus = None;
+    }
+    policy.reducer.observe_scene(empty).unwrap();
+    let first = policy.cycle(&origins, PolicyRequestCause::SceneChanged, true);
+    assert_eq!(first.output_launch_contexts.len(), 2);
+    let destination = first
+        .output_launch_contexts
+        .iter()
+        .find(|c| c.output.raw() == 1)
+        .copied()
+        .unwrap();
+    policy.switch_away(&origins, hidden);
+    let surface = SurfaceId::new(20, 1);
+    let admission = ClientAdmissionContext::new(
+        ClientAdmissionId::from_raw(20),
+        NamespaceContext::new(
+            NamespaceId::from_raw(1),
+            NamespaceProfile::ClassicShared,
+            NamespaceCapabilities::NONE,
+        )
+        .unwrap(),
+        ClientAuthProvenance::new(ClientAuthenticationMethod::PeerCredentials, 1).unwrap(),
+    )
+    .unwrap();
+    {
+        let mut registry = origins.lock().unwrap();
+        registry.admit(
+            admission,
+            crate::launch_origin::ProcessIdentity {
+                pid: 20,
+                start_time: 20,
+            },
+            &[],
+        );
+        registry.observe_toplevel(surface, admission);
+        assert!(registry.register_catalog_origin(
+            surface,
+            TransactionId::from_raw(90),
+            destination
+        ));
+    }
+    let mut scene = policy.reducer.scene().clone();
+    scene.generation += 1;
+    let mut child = template;
+    child.surface = surface;
+    child.current_output = None;
+    scene.surfaces.push(child);
+    policy.reducer.observe_scene(scene).unwrap();
+    for commit in [false, true] {
+        let proposal = policy.cycle(&origins, PolicyRequestCause::SceneChanged, commit);
+        assert_eq!(proposal.active_output.raw(), 2);
+        assert_eq!(
+            proposal
+                .outputs
+                .iter()
+                .any(|o| o.output.raw() == 1 && o.placements.iter().any(|p| p.surface == surface)),
+            !hidden
+        );
+        assert!(
+            !proposal
+                .outputs
+                .iter()
+                .any(|o| o.output.raw() == 2 && o.placements.iter().any(|p| p.surface == surface))
+        );
+        assert_eq!(
+            origins.lock().unwrap().origins([surface]).is_empty(),
+            commit
+        );
+    }
+    if hidden {
+        policy.cycle(
+            &origins,
+            PolicyRequestCause::PointerFocus {
+                output: OutputId::from_raw(1),
+                target: None,
+            },
+            true,
+        );
+        let action = policy.action("focus-workspace 1");
+        let proposal = policy.cycle(
+            &origins,
+            PolicyRequestCause::Action {
+                activation_serial: 2,
+                action,
+            },
+            true,
+        );
+        assert!(
+            proposal
+                .outputs
+                .iter()
+                .any(|o| o.output.raw() == 1 && o.placements.iter().any(|p| p.surface == surface))
+        );
+    }
+    drop(policy);
+    std::fs::remove_dir_all(directory).unwrap();
+}
 impl PolicyFixture {
     fn new(binary: std::ffi::OsString, directory: &std::path::Path, parent: SurfaceId) -> Self {
         use std::os::unix::fs::PermissionsExt;
@@ -509,6 +628,7 @@ impl PolicyFixture {
         if commit {
             let mut origins = origins.lock().unwrap();
             origins.publish(1, &proposal.launch_contexts);
+            origins.publish_outputs(1, &proposal.output_launch_contexts);
             origins.committed(pending.iter().map(|c| c.surface));
         }
         self.transport
