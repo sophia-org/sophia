@@ -114,7 +114,13 @@ fn receipt_for(
     while std::time::Instant::now() < deadline {
         match deliveries.recv_timeout(Duration::from_millis(50)) {
             Ok(receipt) if receipt.delivery == wanted => return receipt.outcome,
-            Ok(_) => continue,
+            // NOT DISCARDED. Skipping past a receipt nobody asked for would
+            // swallow exactly the duplicate a case is trying to rule out, and
+            // the case that was waiting would pass on the next one.
+            Ok(other) => panic!(
+                "a receipt arrived for {:?} while {delivery} was owed one; nothing here may discard it",
+                other.delivery
+            ),
             Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => break,
         }
@@ -2274,8 +2280,12 @@ pub(super) mod diagnostics {
             unknown_closed.unwound,
             "the interruption ended the invocation it happened in"
         );
-        // The capsule had already been handed over, so the recipient does hold
-        // the bytes. What no longer exists is anything that knows it.
+        // WHAT THE RECIPIENT GOT IS READ, NOT ASSUMED. The capsule had been
+        // handed to the writer, but the invocation unwound underneath it, so
+        // the bytes may have reached the recipient or the connection may have
+        // ended first. Both are honest outcomes of an interruption and
+        // neither authorises rebuilding the event; what this case establishes
+        // is about the record, not about which of the two happened.
         let release_wire = read_event(&mut unknown_peer, 3);
         let release_cell = delivery_cell(&unknown.registry, 12081)
             .or(release_cell_before)
@@ -2318,10 +2328,13 @@ pub(super) mod diagnostics {
             unknown_after, phases,
             "the retained record is unchanged across the visit: {visit:?}"
         );
+        // AT MOST ONE COPY, whichever way the interruption fell. If the bytes
+        // went, they went once; if they did not, nothing produced them
+        // afterwards. Neither outcome is treated as licence to rebuild.
         let replayed = read_event(&mut unknown_peer, 1);
         assert_eq!(
             replayed, None,
-            "the release reached the recipient once and was not sent again"
+            "no further copy of the release was produced after the interruption"
         );
         let unknown_fact = json!({
             "press_delivery": 12080,
@@ -2330,6 +2343,7 @@ pub(super) mod diagnostics {
             "seam_mode": "one shot, an actual interruption: the result of the handover is never recorded, which is the state the subcase is about",
             "unwound": unknown_closed.unwound,
             "release_bytes_on_wire": release_wire.map(|bytes| bytes.to_vec()),
+        "release_wire_note": "null here means the connection ended before the bytes reached the recipient; a value means they did. Both are honest outcomes of interrupting the invocation, and this case asserts neither.",
             "release_answer": release_cell.map(|answer| format!("{answer:?}")),
             "retained_phases": format!("{phases:?}"),
             "retained_phases_after_actual_maintenance_visit": format!("{unknown_after:?}"),
