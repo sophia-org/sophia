@@ -1,3 +1,31 @@
+impl PrivateXServerFrontend {
+    /// Unaccounted fixture turn. Production uses the original service budget
+    /// around each `deliver_one`; this helper owns only a finite test visit.
+    fn deliver_turn(&mut self, items: Vec<PrivateOrderedItem>) -> Vec<PrivateDelivered> {
+        // Appending preserves custody left by an earlier interruption.
+        self.terminal.delivering.extend(items);
+        let mut delivered = Vec::with_capacity(self.terminal.delivering.len());
+        // Advanced includes an unsuccessful retained-request observation.
+        // Those visits rotate custody, so waiting for a non-Advanced result
+        // would spin forever on an unresolved item. Give every entry-owned
+        // request a visit, including a ready one behind an unresolved head.
+        // The final probe preserves native handover after normal delivery.
+        let visits = self.terminal.delivering.len()
+            + self.terminal.turn.len()
+            + self.terminal.undelivered.len()
+            + 1;
+        for _ in 0..visits {
+            let Ok(PrivateDeliveryStep::Advanced { report, .. }) =
+                self.deliver_one(&mut |_, _| Ok(()))
+            else {
+                break;
+            };
+            delivered.extend(report);
+        }
+        delivered
+    }
+}
+
 #[test]
 fn routed_pointer_grab_reports_sanitized_lease_confirmation_and_release() {
     let namespace = NamespaceId::from_raw(21);
