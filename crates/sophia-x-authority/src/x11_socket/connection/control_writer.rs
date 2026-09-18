@@ -404,7 +404,7 @@ fn spawn_x11_control_writer(
                     // progress, which is the safe reading: it says the effect
                     // may have happened, and nothing is discharged on it.
                     let _ = channels.record_progress(completion, ControlProgress::RuntimeApplied);
-                    #[cfg(test)]
+                    #[cfg(all(test, unix))]
                     if control_source.as_ref().is_some_and(|source| source.fail_after_runtime.load(Ordering::Acquire)) {
                         return Err(X11SetupSocketError::new("staged interruption after actual Configure runtime effect"));
                     }
