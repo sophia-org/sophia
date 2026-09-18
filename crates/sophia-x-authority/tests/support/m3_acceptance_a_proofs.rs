@@ -21,6 +21,8 @@ struct AReleaseReading {
 struct AProofReading {
     held: usize,
     pending_native: bool,
+    pending_detail: Option<String>,
+    unsettled_requests: Vec<String>,
     releases: Vec<AReleaseReading>,
     debts: Vec<(
         sophia_input_authority::HoldIncarnation,
@@ -91,6 +93,32 @@ fn a_read_proofs(service: &LifecycleService) -> AProofReading {
             send.send(AProofReading {
                 held: terminal.holds.len(),
                 pending_native: terminal.native_pending.is_some(),
+                pending_detail: terminal.native_pending.pointer().map(|hold| {
+                    format!(
+                        "status={:?}, incarnation={:?}",
+                        hold.status(),
+                        hold.incarnation()
+                    )
+                }),
+                unsettled_requests: terminal
+                    .turn
+                    .iter()
+                    .chain(terminal.delivering.iter())
+                    .chain(terminal.undelivered.iter().map(|entry| &entry.item))
+                    .filter_map(|item| match item {
+                        PrivateOrderedItem::Refused {
+                            sequence,
+                            refusal,
+                            custody,
+                            ..
+                        } => Some(format!(
+                            "sequence={sequence:?}, refusal={refusal:?}, phase={:?}, observed={:?}",
+                            custody.phase.get(),
+                            custody.observed_outcome.get()
+                        )),
+                        _ => None,
+                    })
+                    .collect(),
                 releases,
                 debts,
             })
@@ -157,10 +185,17 @@ fn a_assert_barrier(
     delivery: u64,
 ) -> (crate::ReadySequence, Arc<PrivateDeliveryCompletion>) {
     let submitted = a_submit_button(service, ingress, surface, delivery, 272, true);
-    assert!(
-        waited_for(|| submitted.1.answer().is_some()),
-        "actual barrier refusal must answer its request"
-    );
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while submitted.1.answer().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    if submitted.1.answer().is_none() {
+        let diagnostic = a_read_proofs(service);
+        panic!(
+            "actual barrier refusal remains unanswered: {diagnostic:?}; pending={:?}; requests={:?}",
+            diagnostic.pending_detail, diagnostic.unsettled_requests
+        );
+    }
     assert_eq!(
         submitted.1.answer().unwrap().outcome,
         XAuthorityInputDeliveryOutcome::RouteRejected
