@@ -147,6 +147,10 @@ fn press_and_release(
     let lease = service.owner.lease();
     let press = XAuthorityInputDeliveryId::from_raw(first_delivery);
     let release = XAuthorityInputDeliveryId::from_raw(first_delivery + 1);
+    // What this grant's store held before either of these, so the wait below
+    // is for the press's own credit and not for a level that happens to look
+    // right.
+    let held_before = service.owner.store.reserved();
     ingress
         .submit(&lease, button_to(surface, press, 272, true))
         .expect("an actual press through the leased producer");
@@ -158,6 +162,20 @@ fn press_and_release(
     );
     let press_receipt = receipt_for(&service.deliveries, first_delivery);
     assert_eq!(press_receipt, XAuthorityInputDeliveryOutcome::Flushed);
+    // A FLUSHED RECEIPT IS NOT A FREED GRANT. The receipt says the bytes went.
+    // The grant's one cell is freed later, when the outcome is observed, and
+    // the accepted-item credit goes back after that; a release submitted in
+    // between meets its own grant still occupied and is refused as saturated.
+    //
+    // So this waits for the press's own credit to come back, which is on the
+    // far side of that observation. It does not consume the completion here --
+    // taking the outcome in the case would free the cell on the service's
+    // behalf and establish nothing about when the service does it -- and it
+    // does not retry the submit until one happens to be accepted.
+    assert!(
+        waited_for(|| service.owner.store.reserved() == held_before),
+        "the press's own item was disposed and its credit returned, which is what frees its grant"
+    );
     ingress
         .submit(&lease, button_to(surface, release, 272, false))
         .expect("an actual release through the same grant, once the press settled");
