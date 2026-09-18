@@ -287,6 +287,10 @@ struct XAuthorityBoundedEgressEnvelope {
     client: Option<XServerFrontendClientId>,
     observed_batch: bool,
     waiting_since: Option<Instant>,
+    /// Whether this envelope's wait was cancelled. A cancelled envelope is
+    /// still unsent work while it holds its batch; it is not resubmitted and
+    /// not reported twice.
+    cancelled: bool,
 }
 
 #[cfg(unix)]
@@ -300,6 +304,7 @@ impl XAuthorityBoundedEgressEnvelope {
             client,
             observed_batch,
             waiting_since: None,
+            cancelled: false,
         }
     }
 }
@@ -470,10 +475,19 @@ impl XAuthorityOrderedEgress {
         Ok(())
     }
 
+    /// Cancel an envelope's wait, in place and once.
+    ///
+    /// CANCELLING A WAIT IS NOT DELIVERING THE BATCH. The envelope keeps its
+    /// batch and stays in its owner's slot; what this reports is that the
+    /// wait ended in shutdown. A second call reports nothing.
     fn cancel_envelope(
         &self,
         envelope: &mut XAuthorityBoundedEgressEnvelope,
     ) -> Result<(), X11SetupSocketError> {
+        if envelope.cancelled {
+            return Ok(());
+        }
+        envelope.cancelled = true;
         self.finish_wait(
             envelope,
             XAuthorityBackpressureTelemetryKind::Shutdown,
@@ -584,8 +598,10 @@ impl XAuthorityOrderedEgress {
             return Ok(());
         };
         if self.cancelled() {
+            // Cancelled between the caller's check and this call: the wait
+            // ends, the envelope STAYS in the slot with its batch. Clearing
+            // the slot here was losing an unsent batch.
             self.cancel_envelope(envelope)?;
-            *slot = None;
             return Ok(());
         }
         let state = self.state()?;

@@ -141,8 +141,12 @@ fn drive_routed_service(
                 accepting = false;
                 if !ordered_egress.cancelled() {
                     ordered_egress.cancel();
-                    if let Some(mut envelope) = pending_raster_egress.take() {
-                        ordered_egress.cancel_envelope(&mut envelope)?;
+                    // IN PLACE. The wait is cancelled; the envelope and its
+                    // batch stay in the caller's slot for the caller to
+                    // account for. Taking it out here destroyed an unsent
+                    // batch on every ordinary stop.
+                    if let Some(envelope) = pending_raster_egress.as_mut() {
+                        ordered_egress.cancel_envelope(envelope)?;
                     }
                     frontend.shutdown_all_client_workers()?;
                     progressed = true;
@@ -276,9 +280,13 @@ fn drive_routed_service(
             ));
         }
 
+        // A cancelled envelope still in the slot is the caller's to account
+        // for; it does not keep this loop open.
         if !accepting
             && frontend.active_client_worker_count() == 0
-            && pending_raster_egress.is_none()
+            && pending_raster_egress
+                .as_ref()
+                .is_none_or(|envelope| envelope.cancelled)
         {
             return Ok(());
         }
@@ -286,6 +294,20 @@ fn drive_routed_service(
             std::thread::sleep(Duration::from_millis(1));
         }
     }
+}
+
+/// What a private service invocation returns when it ran to a stop.
+///
+/// THE UNRESOLVED PART IS EXPLICIT. The settlement accounts for the private
+/// input order this service owns; it says nothing about authority egress the
+/// service was still waiting to send when it stopped. That is here, by exact
+/// transaction, and the envelopes are on the shelf of the store the leased
+/// owner is established over.
+#[cfg(unix)]
+pub struct PrivateServiceReturn {
+    pub settlement: PrivateSettlement,
+    /// The transactions this invocation left unsent on the store's shelf.
+    pub unresolved_egress: Vec<TransactionId>,
 }
 
 /// Why a private service invocation did not return a settlement.
@@ -305,6 +327,8 @@ pub enum PrivateServiceFailure {
         error: X11SetupSocketError,
         /// Boxed only for size; it is the same handle a success returns.
         settlement: Box<PrivateSettlement>,
+        /// The transactions this invocation left unsent on the store's shelf.
+        unresolved_egress: Vec<TransactionId>,
     },
 }
 
@@ -361,12 +385,15 @@ impl PrivateServiceCollection<'_> {
     /// WAY: cancelling a wait (where that is done) publishes that the batch
     /// was not delivered; shelving grants no replay; a reader accounts for
     /// what it takes.
-    fn retain_pending(&mut self) {
+    fn retain_pending(&mut self) -> Vec<TransactionId> {
         if let Some(envelope) = self.pending_raster_egress.take()
             && envelope.batch.is_some()
         {
+            let transaction = envelope.transaction;
             self.store.retain_unresolved_egress(envelope);
+            return vec![transaction];
         }
+        Vec::new()
     }
     /// Stop admission, unblock what a worker could be parked in, stop every
     /// current worker, then wait for every one.
@@ -378,7 +405,7 @@ impl PrivateServiceCollection<'_> {
     /// first; the ordinary stop keeps a draining worker's egress, as the
     /// public path does, while an error or an unwind cancels it so that
     /// collection cannot depend on a receiver anybody drains.
-    fn collect(&mut self, unblock: bool) -> Vec<String> {
+    fn collect(&mut self, unblock: bool) -> (Vec<String>, Vec<TransactionId>) {
         let mut failures = Vec::new();
         if unblock {
             self.egress.cancel();
@@ -387,16 +414,17 @@ impl PrivateServiceCollection<'_> {
             {
                 failures.push(format!("pending raster cancellation failed: {error}"));
             }
-            // Cancelled or not, an unsent batch is unresolved: it goes to
-            // the store, not to the floor.
-            self.retain_pending();
         }
+        // ON EVERY EXIT. An ordinary stop cancelled the envelope's wait in
+        // the loop and left it here; an error cancels it above. Either way an
+        // unsent batch is unresolved and goes to the store, not to the floor.
+        let unresolved = self.retain_pending();
         failures.extend(self.stop_and_wait());
         // MARKED DONE ONLY AT THE END. A collection that unwound part-way
         // (the envelope cancellation reports to an observer that can panic)
         // is not a collection, and the guard below must still stop and wait.
         self.collected = true;
-        failures
+        (failures, unresolved)
     }
 
     /// The two steps that can never be skipped, in order.
@@ -432,7 +460,7 @@ impl Drop for PrivateServiceCollection<'_> {
             // took is not called unsent.
             self.egress.cancel();
             let _ = self.stop_and_wait();
-            self.retain_pending();
+            let _ = self.retain_pending();
             self.collected = true;
         }
     }
@@ -456,7 +484,7 @@ pub fn run_x_server_frontend_private_until_stopped(
     owner: &PrivateServiceOwner,
     service_commands: Receiver<XServerFrontendServiceCommand>,
     backpressure_observer: Arc<XAuthorityBackpressureObserver>,
-) -> Result<PrivateSettlement, PrivateServiceFailure> {
+) -> Result<PrivateServiceReturn, PrivateServiceFailure> {
     let private = match PrivateXServerFrontend::new(parts, owner) {
         Ok(private) => private,
         Err((refusal, parts)) => {
@@ -491,7 +519,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
     transaction_sender: SyncSender<XAuthorityObservedTransactionBatch>,
     service_commands: Receiver<XServerFrontendServiceCommand>,
     backpressure_observer: Arc<XAuthorityBackpressureObserver>,
-) -> Result<PrivateSettlement, PrivateServiceFailure> {
+) -> Result<PrivateServiceReturn, PrivateServiceFailure> {
     // THE LEASE IS CHECKED BEFORE ANYTHING IS BOUND. A foreign lease is not
     // a service that failed; it is a service that never began, and the
     // frontend it was handed is finalised into its own owner's store.
@@ -502,6 +530,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
                 "private service lease is not on the owner that keeps this frontend's registry",
             ),
             settlement: Box::new(settlement),
+            unresolved_egress: Vec::new(),
         });
     }
     let frontend = match XServerFrontend::bind(config) {
@@ -511,6 +540,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             return Err(PrivateServiceFailure::Failed {
                 error,
                 settlement: Box::new(settlement),
+                unresolved_egress: Vec::new(),
             });
         }
     };
@@ -525,9 +555,10 @@ pub(crate) fn serve_private_frontend_until_stopped(
     {
         let settlement = private.shutdown();
         return Err(PrivateServiceFailure::Failed {
-                error,
-                settlement: Box::new(settlement),
-            });
+            error,
+            settlement: Box::new(settlement),
+            unresolved_egress: Vec::new(),
+        });
     }
     let cancellation = Arc::new(AtomicBool::new(false));
     let ordered_egress = Arc::new(XAuthorityOrderedEgress::new(
@@ -585,7 +616,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
 
     // EXPLICIT COLLECTION ON THE ORDINARY AND ERROR PATHS, reported. The
     // guard's Drop is for the unwind that never reaches this line.
-    let cleanup_failures = collection.collect(service_result.is_err());
+    let (cleanup_failures, unresolved_egress) = collection.collect(service_result.is_err());
     drop(observer);
     let report = ordered_egress.report();
     let status = if service_result.is_err() {
@@ -613,15 +644,20 @@ pub(crate) fn serve_private_frontend_until_stopped(
     drop(collection);
     let settlement = private.shutdown();
     match (service_result, report) {
-        (Ok(()), Ok(_)) if cleanup_failures.is_empty() => Ok(settlement),
+        (Ok(()), Ok(_)) if cleanup_failures.is_empty() => Ok(PrivateServiceReturn {
+            settlement,
+            unresolved_egress,
+        }),
         (Ok(()), Ok(_)) => Err(PrivateServiceFailure::Failed {
             error: X11SetupSocketError::new("private service stopped, but collection failed")
                 .with_cleanup_failures(cleanup_failures),
             settlement: Box::new(settlement),
+            unresolved_egress,
         }),
         (Ok(()), Err(error)) => Err(PrivateServiceFailure::Failed {
             error: error.with_cleanup_failures(cleanup_failures),
             settlement: Box::new(settlement),
+            unresolved_egress,
         }),
         (Err(original), report) => {
             let mut cleanup_failures = cleanup_failures;
@@ -631,6 +667,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             Err(PrivateServiceFailure::Failed {
                 error: original.with_cleanup_failures(cleanup_failures),
                 settlement: Box::new(settlement),
+                unresolved_egress,
             })
         }
     }

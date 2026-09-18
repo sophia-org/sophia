@@ -262,7 +262,7 @@ impl PrivateSettlementOwner {
         Self {
             inner: Arc::new(Mutex::new(AbandonedSettlements {
                 held: Vec::with_capacity(capacity),
-                unresolved_egress: Vec::new(),
+                unresolved_egress: Vec::with_capacity(capacity),
                 in_flight: Vec::with_capacity(capacity),
                 outstanding_in_flight: Vec::with_capacity(capacity),
                 failed_in_flight: Vec::with_capacity(capacity),
@@ -333,20 +333,24 @@ impl PrivateSettlementOwner {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// How many operations are waiting for someone to drive them.
-    ///
-    /// Drivable operations only. Inventories handed over by instances that
-    /// closed owing something are not driven and not counted here; ask
-    /// `terminal_inventories` for those.
-    ///
-    /// `None` where the owner cannot be read: nothing owed and nothing
-    /// knowable are different answers.
     /// Keep authority egress a service could not resolve.
+    ///
+    /// NEVER REFUSED, AND NEVER ALLOCATING. The shelf was sized to this
+    /// store's failure capacity when the store was made, and a service
+    /// shelves only while it still holds the failure slot it reserved at
+    /// construction -- so there is always room for what it shelves. From
+    /// then on the shelved envelope keeps that charge: `reserve_failure_slot`
+    /// counts it until a reader takes it. Accepted work is not lost to a
+    /// refusal here; the refusal happens at the next construction instead.
     fn retain_unresolved_egress(&self, envelope: XAuthorityBoundedEgressEnvelope) {
         let mut held = match self.inner.lock() {
             Ok(held) => held,
             Err(poisoned) => poisoned.into_inner(),
         };
+        debug_assert!(
+            held.unresolved_egress.len() < held.unresolved_egress.capacity(),
+            "a shelving service holds a failure slot, so the shelf has room"
+        );
         held.unresolved_egress.push(envelope);
     }
 
@@ -355,15 +359,45 @@ impl PrivateSettlementOwner {
         Some(self.inner.lock().ok()?.unresolved_egress.len())
     }
 
+    /// Which transactions the unresolved egress is for, in the order it was
+    /// shelved: the exact identity of what a service left unsent.
+    pub fn unresolved_egress_transactions(&self) -> Option<Vec<TransactionId>> {
+        Some(
+            self.inner
+                .lock()
+                .ok()?
+                .unresolved_egress
+                .iter()
+                .map(|envelope| envelope.transaction)
+                .collect(),
+        )
+    }
+
+    /// How much unresolved egress this store can keep at once: its failure
+    /// capacity, reserved when the store was made and never grown.
+    pub fn unresolved_egress_capacity(&self) -> Option<usize> {
+        Some(self.inner.lock().ok()?.unresolved_egress.capacity())
+    }
+
     /// Take the unresolved egress out, for a reader that will account for it.
+    /// The charge it held on the failure bound goes with it; the reserved
+    /// space stays.
     #[cfg_attr(not(test), allow(dead_code))] // Read by the controls; production only shelves.
     fn take_unresolved_egress(&self) -> Vec<XAuthorityBoundedEgressEnvelope> {
         match self.inner.lock() {
-            Ok(mut held) => std::mem::take(&mut held.unresolved_egress),
-            Err(poisoned) => std::mem::take(&mut poisoned.into_inner().unresolved_egress),
+            Ok(mut held) => held.unresolved_egress.drain(..).collect(),
+            Err(poisoned) => poisoned.into_inner().unresolved_egress.drain(..).collect(),
         }
     }
 
+    /// How many operations are waiting for someone to drive them.
+    ///
+    /// Drivable operations only. Inventories handed over by instances that
+    /// closed owing something are not driven and not counted here; ask
+    /// `terminal_inventories` for those.
+    ///
+    /// `None` where the owner cannot be read: nothing owed and nothing
+    /// knowable are different answers.
     pub fn owed(&self) -> Option<usize> {
         self.inner.lock().ok().map(|held| held.held.len())
     }
@@ -524,7 +558,16 @@ impl PrivateSettlementOwner {
         let Ok(mut held) = self.inner.lock() else {
             return Err(AdmissionRefusal::Unavailable);
         };
-        if held.failure_slots >= held.failed_capacity {
+        // SHELVED EGRESS KEEPS ITS CHARGE. An envelope a service left unsent
+        // was shelved while that service held a slot; the slot goes back when
+        // the instance closes, but the envelope still counts here until a
+        // reader takes it. Otherwise every bound this store declares would be
+        // reused while its shelf grew without one.
+        if held
+            .failure_slots
+            .saturating_add(held.unresolved_egress.len())
+            >= held.failed_capacity
+        {
             return Err(AdmissionRefusal::Saturated);
         }
         held.failure_slots = held.failure_slots.saturating_add(1);

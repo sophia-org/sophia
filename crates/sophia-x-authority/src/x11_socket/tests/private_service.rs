@@ -166,19 +166,50 @@ fn waited_for_value<T>(mut observed: impl FnMut() -> Option<T>) -> Option<T> {
     None
 }
 
+/// The exact identity of one kept custody: its registered client, its
+/// maintenance place, and the ALLOCATIONS of its cleanup record and its join
+/// and exit evidence homes. Two readings that agree on every one of these
+/// are readings of the same custody; a strong count could never say that.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CustodyIdentity {
+    client: XServerFrontendClientId,
+    place: usize,
+    record: usize,
+    join: usize,
+    exit: usize,
+}
+
+fn custody_identity(custody: &Arc<PrivateEvidenceCustody>) -> CustodyIdentity {
+    CustodyIdentity {
+        client: custody.cleanup_record().client,
+        place: custody.identity().place(),
+        record: Arc::as_ptr(custody.cleanup_record()) as usize,
+        join: Arc::as_ptr(custody.join()) as usize,
+        exit: Arc::as_ptr(custody.exit_sink()) as usize,
+    }
+}
+
+/// The identity of the one live custody, read through the registry's keeper
+/// WHILE the service runs -- the "before" of a before/after comparison.
+fn live_custody_identity(registry: &XServerFrontendRouteRegistry) -> Option<CustodyIdentity> {
+    let keeper = registry.custody_keeper.get()?;
+    let inventory = keeper.inventory.upgrade()?;
+    let kept = inventory.kept.lock().ok()?;
+    kept.places.iter().flatten().next().map(custody_identity)
+}
+
 /// What the ORIGINAL owner shows after the service invocation is over.
 ///
-/// Exact identity, not a count: the kept custody's registered client, its
-/// number right and its maintenance place, its evidence homes, and what the
-/// store retained. The weak handle is how a control watches the custody
-/// graph release once the owners themselves go.
+/// Exact identity, not a count: the kept custody's client, place and
+/// allocations, its number right, and what the store retained. The weak
+/// handle is how a control watches the custody graph release once the
+/// owners themselves go.
 struct AfterService {
     custodies_kept: usize,
-    kept_client: Option<XServerFrontendClientId>,
+    kept: Option<CustodyIdentity>,
     kept_number_right: bool,
-    kept_place: Option<usize>,
-    kept_evidence_homes: bool,
     unresolved_egress: Vec<XAuthorityBoundedEgressEnvelope>,
+    unresolved_transactions: Vec<TransactionId>,
     custody: Option<std::sync::Weak<PrivateEvidenceCustody>>,
 }
 
@@ -187,11 +218,11 @@ fn inspect_after(owner: &PrivateServiceOwner, durable: &PrivateSettlementOwner) 
     let first = kept.places.iter().flatten().next();
     AfterService {
         custodies_kept: kept.taken,
-        kept_client: first.map(|custody| custody.cleanup_record().client),
+        kept: first.map(custody_identity),
         kept_number_right: first.is_some_and(|custody| custody.cleanup_record().number.get().is_some()),
-        kept_place: first.map(|custody| custody.identity().place()),
-        kept_evidence_homes: first
-            .is_some_and(|custody| Arc::strong_count(custody.join()) >= 1 && Arc::strong_count(custody.exit_sink()) >= 1),
+        unresolved_transactions: durable
+            .unresolved_egress_transactions()
+            .expect("a readable store"),
         unresolved_egress: durable.take_unresolved_egress(),
         custody: first.map(Arc::downgrade),
     }
@@ -269,6 +300,16 @@ fn saw_kind(
         .any(|(seen, client)| *seen == kind && (!with_client || client.is_some()))
 }
 
+/// The SERVICE's own raster wait: kind Wait with no client, reported after
+/// `from`. A worker's wait names its client; this is the one that does not.
+fn saw_service_wait(seen: &SeenTelemetry, from: usize) -> bool {
+    seen.lock()
+        .expect("a readable record")
+        .iter()
+        .skip(from)
+        .any(|(kind, client)| *kind == XAuthorityBackpressureTelemetryKind::Wait && client.is_none())
+}
+
 /// The parts of a launch the test thread needs while a pre-built frontend
 /// serves: its registry (to hold a worker's ending open) and its raster router.
 struct Handles {
@@ -278,10 +319,32 @@ struct Handles {
 
 fn assert_kept_exactly_one(after: &AfterService) {
     assert_eq!(after.custodies_kept, 1, "the ended connection's custody is retained by the owner");
-    assert!(after.kept_client.is_some(), "the kept custody names its registered client");
+    let kept = after.kept.expect("the kept custody names its registered client");
     assert!(after.kept_number_right, "and holds that connection's number right");
-    assert_eq!(after.kept_place, Some(0), "at the one place this service used");
-    assert!(after.kept_evidence_homes, "with its join and exit evidence homes in place");
+    assert_eq!(kept.place, 0, "at the one place this service used");
+}
+
+/// The custody read after the invocation is the SAME custody that was
+/// registered while it served: same client, same place, same cleanup record,
+/// join and exit allocations. Not a count.
+fn assert_same_custody(before: CustodyIdentity, after: &AfterService) {
+    assert_eq!(
+        after.kept,
+        Some(before),
+        "the original registered cleanup/join/exit allocations are what the owner keeps"
+    );
+}
+
+/// The service's own account of what it left unsent agrees with the store's
+/// shelf, transaction by transaction.
+fn assert_unresolved_accounted(reported: &[TransactionId], after: &AfterService) {
+    assert_eq!(reported, after.unresolved_transactions.as_slice());
+    let shelved: Vec<TransactionId> = after
+        .unresolved_egress
+        .iter()
+        .map(|envelope| envelope.transaction)
+        .collect();
+    assert_eq!(shelved, after.unresolved_transactions);
 }
 
 fn assert_released(after: &AfterService) {
@@ -307,7 +370,8 @@ fn a_private_service_admits_a_real_connection_and_stops_in_order() {
             service_commands,
             Arc::new(|_| {}),
         );
-        (outcome.is_ok(), inspect_after(owner, durable))
+        let reported = outcome.as_ref().map(|ret| ret.unresolved_egress.clone()).ok();
+        (outcome.is_ok(), reported, inspect_after(owner, durable))
     });
     let mut client = connect_private_client(&socket_path);
     handshake(&mut client);
@@ -315,10 +379,11 @@ fn a_private_service_admits_a_real_connection_and_stops_in_order() {
         .send(XServerFrontendServiceCommand::StopAndDisconnect)
         .expect("the service is listening for commands");
     let client_ended = eof_within(&mut client, 3);
-    let (ok, after) = launch_outcome(handle, &finished, false, "ordinary stop");
+    let (ok, reported, after) = launch_outcome(handle, &finished, false, "ordinary stop");
     assert!(client_ended, "the worker's socket was shut down");
     assert!(ok, "an ordinary stop returns the settlement");
     assert_kept_exactly_one(&after);
+    assert_unresolved_accounted(&reported.expect("returned"), &after);
     assert!(after.unresolved_egress.is_empty());
     assert_released(&after);
     let _ = std::fs::remove_file(&socket_path);
@@ -419,7 +484,7 @@ fn an_error_after_a_connection_exists_collects_a_worker_blocked_on_egress() {
 /// A launched service over a pre-built frontend, with what the test thread
 /// drives it through.
 struct Launched {
-    handle: std::thread::JoinHandle<(bool, Option<String>, AfterService)>,
+    handle: std::thread::JoinHandle<(bool, Option<String>, Vec<TransactionId>, AfterService)>,
     finished: Receiver<()>,
     handles: Handles,
     commands: SyncSender<XServerFrontendServiceCommand>,
@@ -459,10 +524,18 @@ fn launch_held(
             )
         }));
         let unwound = outcome.is_err();
-        let error = outcome
-            .ok()
-            .and_then(|served| served.err().map(|failure| format!("{failure:?}")));
-        (unwound, error, inspect_after(owner, durable))
+        let (error, reported) = match outcome.ok() {
+            Some(Ok(ret)) => (None, ret.unresolved_egress),
+            Some(Err(PrivateServiceFailure::Failed {
+                error,
+                unresolved_egress,
+                ..
+            })) => (Some(error.to_string()), unresolved_egress),
+            Some(Err(failure)) => (Some(format!("{failure:?}")), Vec::new()),
+            None => (None, Vec::new()),
+        };
+        let after = inspect_after(owner, durable);
+        (unwound, error, reported, after)
     });
     let handles = handles_in
         .recv_timeout(Duration::from_secs(15))
@@ -474,290 +547,6 @@ fn launch_held(
         commands,
         transactions,
     }
-}
-
-/// Draw enough that a raster requirement for the window is SATISFIED with an
-/// observed batch, and return that surface. Drains the transport only up to
-/// the batch that names it.
-fn draw_and_learn_surface(
-    client: &mut UnixStream,
-    transactions: &Receiver<XAuthorityObservedTransactionBatch>,
-) -> SurfaceId {
-    let window: u32 = 0x0020_0d01;
-    let gc: u32 = 0x0020_0d02;
-    create_window(client, 0);
-    create_gc(client, gc, window);
-    image_text8(client, window, gc, b"AaZz");
-    let drawn = waited_for_value(|| {
-        transactions
-            .recv_timeout(Duration::from_millis(50))
-            .ok()
-            .filter(|batch| batch.cpu_buffer_updates.len() == 1 && batch.transactions.len() == 1)
-    })
-    .expect("the draw is observed as one CPU buffer update");
-    // Two more draws: one lands and fills the transport, one parks the worker.
-    image_text8(client, window, gc, b"AaZz");
-    image_text8(client, window, gc, b"AaZz");
-    drawn.transactions[0].surface
-}
-
-fn raster_requirement_for(surface: SurfaceId) -> sophia_protocol::SurfaceRasterRequirements {
-    sophia_protocol::SurfaceRasterRequirements {
-        surface,
-        committed_content_generation: 2,
-        requirement_generation: 1,
-        logical_extent: Size {
-            width: 8,
-            height: 8,
-        },
-        classes: vec![sophia_protocol::SurfaceRasterClass {
-            density_millis: 1000,
-            transform: sophia_protocol::SurfaceRasterTransform::Normal,
-        }],
-    }
-}
-
-#[test]
-fn an_unwind_inside_the_private_service_keeps_the_unsent_raster_envelope() {
-    // THE EXACT WORK, THROUGH THE ORIGINAL OWNER. The service thread submits
-    // an observed raster batch behind a parked worker on a full transport; its
-    // wait reports to the observer, which unwinds on that thread. The batch was
-    // never accepted, and after the unwind the store the owner is established
-    // over holds exactly that envelope -- the surface it names -- unsent.
-    let namespace = NamespaceId::from_raw(9304);
-    let socket_path = private_service_socket("unwind-retains");
-    let service_thread = Arc::new(Mutex::new(None));
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let observer = recording_observer(
-        Arc::clone(&seen),
-        Some(XAuthorityBackpressureTelemetryKind::Wait),
-        Arc::clone(&service_thread),
-    );
-    let Launched {
-        handle,
-        finished,
-        handles,
-        commands: _commands,
-        transactions,
-    } = launch_held(socket_path.clone(), namespace, 1, observer, service_thread);
-    let mut client = connect_private_client(&socket_path);
-    handshake(&mut client);
-    let surface = draw_and_learn_surface(&mut client, &transactions);
-    assert!(
-        waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)),
-        "the worker's own wait is reported (and does not unwind: wrong thread)"
-    );
-    handles
-        .raster
-        .try_route(raster_requirement_for(surface))
-        .expect("the requirement is queued");
-    let client_ended = eof_within(&mut client, 3);
-    let (unwound, _error, after) = launch_outcome(handle, &finished, false, "unwind retains");
-    assert!(unwound, "the injected panic unwound the operation");
-    assert!(client_ended, "the guard's Drop stopped the worker");
-    assert_kept_exactly_one(&after);
-    assert_eq!(after.unresolved_egress.len(), 1, "exactly the one unsent envelope is retained");
-    let envelope = &after.unresolved_egress[0];
-    let batch = envelope.batch.as_ref().expect("an unsent envelope still holds its batch");
-    assert!(envelope.observed_batch, "and it is the observed raster batch");
-    assert_eq!(batch.transactions.len(), 1);
-    assert_eq!(batch.transactions[0].surface, surface, "naming the surface the requirement was for");
-    assert!(!batch.raster_responses.is_empty());
-    assert!(
-        transactions.try_recv().is_ok(),
-        "the transport still holds the worker's item, so the raster batch was never accepted"
-    );
-    assert_released(&after);
-    let _ = std::fs::remove_file(&socket_path);
-}
-
-#[test]
-fn an_unwind_after_the_transport_accepted_the_batch_retains_nothing_as_unsent() {
-    // WHAT HAPPENED AT THE EFFECT. The observer unwinds on Resume -- after the
-    // transport has taken the batch and the ticket has advanced. That is
-    // delivered work with an unfinished report, and the store must not be
-    // told it was unsent.
-    let namespace = NamespaceId::from_raw(9305);
-    let socket_path = private_service_socket("unwind-delivered");
-    let service_thread = Arc::new(Mutex::new(None));
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let observer = recording_observer(
-        Arc::clone(&seen),
-        Some(XAuthorityBackpressureTelemetryKind::Resume),
-        Arc::clone(&service_thread),
-    );
-    let Launched {
-        handle,
-        finished,
-        handles,
-        commands: _commands,
-        transactions,
-    } = launch_held(socket_path.clone(), namespace, 1, observer, service_thread);
-    let mut client = connect_private_client(&socket_path);
-    handshake(&mut client);
-    let surface = draw_and_learn_surface(&mut client, &transactions);
-    assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
-    let waits_before = seen.lock().expect("readable").len();
-    handles
-        .raster
-        .try_route(raster_requirement_for(surface))
-        .expect("the requirement is queued");
-    // The raster envelope waits (a Wait with no client: it is the service's).
-    assert!(waited_for(|| seen.lock().expect("readable").len() > waits_before));
-    // Now the transport is drained, bounded, until the launch scope returns:
-    // the parked worker lands its remaining batches in ticket order, then the
-    // service's envelope is accepted and its Resume report unwinds the
-    // service thread. Draining here is the point of this control -- it is the
-    // acceptance being observed -- not a rescue of collection.
-    let mut delivered = Vec::new();
-    let mut launch_finished = false;
-    for _ in 0..500 {
-        delivered.extend(transactions.try_recv());
-        if finished.recv_timeout(Duration::from_millis(10)).is_ok() {
-            launch_finished = true;
-            break;
-        }
-    }
-    let client_ended = eof_within(&mut client, 3);
-    let (unwound, _error, after) =
-        launch_outcome(handle, &finished, launch_finished, "unwind after acceptance");
-    while let Ok(batch) = transactions.try_recv() {
-        delivered.push(batch);
-    }
-    assert!(unwound, "the injected panic unwound the operation after acceptance");
-    assert!(client_ended);
-    assert!(
-        after.unresolved_egress.is_empty(),
-        "a batch the transport took is not shelved as unsent"
-    );
-    assert!(
-        delivered.iter().any(|batch| !batch.raster_responses.is_empty()
-            && batch.transactions.first().is_some_and(|t| t.surface == surface)),
-        "the raster batch really was delivered to the transport"
-    );
-    assert_kept_exactly_one(&after);
-    assert_released(&after);
-    let _ = std::fs::remove_file(&socket_path);
-}
-
-#[test]
-fn an_error_while_a_raster_envelope_waits_cancels_its_wait_and_retains_it() {
-    // THE ERROR RETURN'S HALF OF THE SAME RULE: the pending envelope's wait is
-    // cancelled (reported to the observer as Shutdown) and the unsent batch
-    // still goes to the store, not to the floor.
-    let namespace = NamespaceId::from_raw(9306);
-    let socket_path = private_service_socket("error-retains");
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let observer = recording_observer(Arc::clone(&seen), None, Arc::new(Mutex::new(None)));
-    let Launched {
-        handle,
-        finished,
-        handles,
-        commands,
-        transactions,
-    } = launch_held(socket_path.clone(), namespace, 1, observer, Arc::new(Mutex::new(None)));
-    let mut client = connect_private_client(&socket_path);
-    handshake(&mut client);
-    let surface = draw_and_learn_surface(&mut client, &transactions);
-    assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
-    let waits_before = seen.lock().expect("readable").len();
-    handles
-        .raster
-        .try_route(raster_requirement_for(surface))
-        .expect("the requirement is queued");
-    assert!(waited_for(|| seen.lock().expect("readable").len() > waits_before));
-    let (acknowledgement, acknowledged) = sync_channel(1);
-    drop(acknowledged);
-    commands
-        .send(XServerFrontendServiceCommand::UpdateOutputTopology {
-            snapshot: sophia_protocol::OutputTopologySnapshot {
-                generation: 1,
-                primary: sophia_protocol::OutputId::from_raw(1),
-                outputs: Vec::new(),
-            },
-            acknowledgement,
-        })
-        .expect("the service is listening for commands");
-    let client_ended = eof_within(&mut client, 3);
-    let (unwound, error, after) = launch_outcome(handle, &finished, false, "error retains");
-    assert!(!unwound);
-    assert!(client_ended);
-    assert!(error.is_some_and(|text| text.contains("acknowledgement")));
-    assert!(
-        saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Shutdown, false),
-        "the pending envelope's wait was cancelled and reported"
-    );
-    assert_eq!(after.unresolved_egress.len(), 1);
-    let envelope = &after.unresolved_egress[0];
-    assert!(envelope.batch.is_some(), "cancelling a wait does not deliver the batch");
-    assert_eq!(envelope.batch.as_ref().expect("held").transactions[0].surface, surface);
-    assert_kept_exactly_one(&after);
-    assert_released(&after);
-    let _ = std::fs::remove_file(&socket_path);
-}
-
-#[test]
-fn a_lease_on_a_different_owner_is_refused_before_a_listener_is_bound() {
-    let namespace = NamespaceId::from_raw(9307);
-    let socket_path = private_service_socket("foreign");
-    let durable_a = PrivateSettlementOwner::default();
-    let owner_a = service_owner(&durable_a, 4);
-    let durable_b = PrivateSettlementOwner::default();
-    let owner_b = service_owner(&durable_b, 4);
-    let private = crate::PrivateXServerFrontend::new(private_service_parts(4), &owner_a)
-        .unwrap_or_else(|(refusal, _)| panic!("a frontend over owner A: {refusal:?}"));
-    let (transaction_sender, _transactions) = sync_channel(4);
-    let (_commands, service_commands) = sync_channel::<XServerFrontendServiceCommand>(1);
-    let config = private_service_config(&socket_path, namespace, 4);
-    let refused = serve_private_frontend_until_stopped(
-        private,
-        &owner_b.lease(),
-        config,
-        transaction_sender,
-        service_commands,
-        Arc::new(|_| {}),
-    );
-    let PrivateServiceFailure::Failed { error, settlement } =
-        refused.err().expect("a foreign lease is refused")
-    else {
-        panic!("refused, not unbuilt")
-    };
-    assert!(error.to_string().contains("lease"), "{error}");
-    assert!(!socket_path.exists(), "no listener was bound for a service that never began");
-    drop(settlement);
-    assert_eq!(owner_a.custodies_kept(), 0);
-    assert_eq!(owner_b.custodies_kept(), 0);
-    drop((owner_a, owner_b, durable_a, durable_b));
-}
-
-#[test]
-fn a_refused_private_frontend_returns_its_parts_and_binds_nothing() {
-    let namespace = NamespaceId::from_raw(9308);
-    let socket_path = private_service_socket("refused");
-    let durable = PrivateSettlementOwner::with_capacity(1);
-    let owner = service_owner(&durable, 4);
-    let first = crate::PrivateXServerFrontend::new(private_service_parts(4), &owner)
-        .unwrap_or_else(|(refusal, _)| panic!("the first frontend: {refusal:?}"));
-    let (transaction_sender, _transactions) = sync_channel(4);
-    let (_commands, service_commands) = sync_channel::<XServerFrontendServiceCommand>(1);
-    let config = private_service_config(&socket_path, namespace, 4);
-    let refused = run_x_server_frontend_private_until_stopped(
-        config,
-        transaction_sender,
-        private_service_parts(4),
-        &owner,
-        service_commands,
-        Arc::new(|_| {}),
-    );
-    let PrivateServiceFailure::Refused { refusal, parts } =
-        refused.err().expect("a store with no failure slot left refuses")
-    else {
-        panic!("refused at construction, not later")
-    };
-    assert!(matches!(refusal, AdmissionRefusal::Saturated), "{refusal:?}");
-    assert_eq!(parts.max_concurrent_clients.get(), 4, "the caller's parts come back");
-    assert!(!socket_path.exists(), "no listener was bound");
-    drop((parts, first.shutdown(), owner, durable));
 }
 
 #[test]
@@ -858,7 +647,7 @@ fn an_error_joins_every_worker_before_the_private_frontend_is_finalised() {
     let returned_while_held = finished.recv_timeout(Duration::from_secs(1)).is_ok();
     let accepting_while_held = lifecycle_still_accepting(&handles.registry);
     drop(parents);
-    let (unwound, error, after) =
+    let (unwound, error, _reported, after) =
         launch_outcome(handle, &finished, returned_while_held, "error join order");
     let occupancy_after = handles.registry.occupancy.held.lock().expect("readable").len();
     assert!(client_ended, "the worker was told to stop");
@@ -913,7 +702,7 @@ fn an_unwind_joins_every_worker_before_the_private_frontend_is_finalised() {
     let returned_while_held = finished.recv_timeout(Duration::from_secs(1)).is_ok();
     let accepting_while_held = lifecycle_still_accepting(&handles.registry);
     drop(parents);
-    let (unwound, _error, after) =
+    let (unwound, _error, _reported, after) =
         launch_outcome(handle, &finished, returned_while_held, "unwind join order");
     let occupancy_after = handles.registry.occupancy.held.lock().expect("readable").len();
     assert!(unwound, "the injected panic unwound the operation");
