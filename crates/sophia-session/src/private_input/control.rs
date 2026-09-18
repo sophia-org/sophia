@@ -15,7 +15,7 @@
 //! a committed effect has private fields, so the only way one exists is for
 //! the coordinator to have produced it.
 
-use sophia_protocol::{Rect, SurfaceId, TransactionId};
+use sophia_protocol::{Rect, SurfaceId, TransactionId, TransactionOutcome};
 use sophia_x_authority::XAuthorityControlKind;
 
 /// An action Session decides on its own authority.
@@ -166,6 +166,37 @@ impl PrivateInputCommittedEffect {
     }
 }
 
+/// The most commit results one report keeps.
+///
+/// BOUNDED, BECAUSE A REPORT IS NOT A LOG. A call that committed a great many
+/// batches must not turn its own report into unbounded growth; what is kept is
+/// the head, and the totals beside it stay exact.
+pub const PRIVATE_INPUT_REPORT_BOUND: usize = 64;
+
+/// What one coordinator commit actually returned.
+///
+/// PASSIVE REPORT DATA, AND NOTHING READS IT BACK. It exists so that a commit
+/// which did not become an effect can be told apart from one that never
+/// happened: an outcome that is not `Committed`, a committed transaction that
+/// applied no surface, an applied surface with no mapping fact, and an applied
+/// mapped surface with no committed geometry are four different failures that
+/// an empty effect list renders identical.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrivateInputCommitOutcome {
+    pub transaction: TransactionId,
+    /// The outcome as the coordinator gave it. Never reduced to a boolean:
+    /// rejected-stale, rejected-invalid and timed out are different answers.
+    pub outcome: TransactionOutcome,
+    /// Surfaces this commit applied.
+    pub applied: Vec<SurfaceId>,
+    /// Of those, the ones this service holds a mapping fact for. A surface
+    /// applied but absent here was never mapped as far as this service knows,
+    /// which is the one thing that must never be inferred from committed state.
+    pub mapped: Vec<SurfaceId>,
+    /// Of those mapped, the ones with geometry in committed surface state.
+    pub with_geometry: Vec<SurfaceId>,
+}
+
 /// What one coordinator step did.
 ///
 /// COUNTS OF DIFFERENT THINGS, KEPT APART. Batches observed, commits the
@@ -188,4 +219,14 @@ pub struct PrivateInputCommitted {
     /// Present rather than summarised: a step that committed state and then
     /// failed to apply it is what this path exists to expose.
     pub refused: Vec<PrivateInputControlError>,
+    /// What each commit returned, up to [`PRIVATE_INPUT_REPORT_BOUND`].
+    ///
+    /// The counts above stay exact whether or not this was truncated; this is
+    /// the detail behind them, not a second source for them.
+    pub outcomes: Vec<PrivateInputCommitOutcome>,
+    /// How many commit results did not fit in `outcomes`.
+    ///
+    /// SAID RATHER THAN LEFT TO BE NOTICED. A truncated list that did not
+    /// admit it was truncated would read as a complete one.
+    pub outcomes_elided: usize,
 }

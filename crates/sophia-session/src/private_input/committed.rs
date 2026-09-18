@@ -395,28 +395,56 @@ fn commit_batch(
 
     let mut decisions = Vec::new();
     for commit in &commits {
+        // RECORDED WHATEVER IT SAYS, INCLUDING WHEN IT SAYS NOTHING USEFUL.
+        // Four different failures produce an empty effect list -- an outcome
+        // that is not Committed, a commit that applied no surface, an applied
+        // surface with no mapping fact, and a mapped applied surface with no
+        // committed geometry -- and without this they are indistinguishable.
+        let mut seen_applied = Vec::new();
+        let mut seen_mapped = Vec::new();
+        let mut seen_geometry = Vec::new();
+        if commit.outcome == TransactionOutcome::Committed {
+            report.committed += 1;
+            for surface in &commit.applied_surfaces {
+                seen_applied.push(*surface);
+                if !mapped.contains(surface) {
+                    continue;
+                }
+                seen_mapped.push(*surface);
+                let Some(geometry) = assembly
+                    .committed_surfaces()
+                    .iter()
+                    .find(|held| held.surface == *surface)
+                    .map(|held| held.geometry)
+                else {
+                    continue;
+                };
+                seen_geometry.push(*surface);
+                decisions.push(PrivateInputDecision {
+                    committed_transaction: commit.transaction,
+                    surface: *surface,
+                    geometry: Some(geometry),
+                    withdrawal: false,
+                });
+            }
+        } else {
+            seen_applied.extend(commit.applied_surfaces.iter().copied());
+        }
+        if report.outcomes.len() < crate::private_input::PRIVATE_INPUT_REPORT_BOUND {
+            report
+                .outcomes
+                .push(super::control::PrivateInputCommitOutcome {
+                    transaction: commit.transaction,
+                    outcome: commit.outcome,
+                    applied: seen_applied,
+                    mapped: seen_mapped,
+                    with_geometry: seen_geometry,
+                });
+        } else {
+            report.outcomes_elided += 1;
+        }
         if commit.outcome != TransactionOutcome::Committed {
             continue;
-        }
-        report.committed += 1;
-        for surface in &commit.applied_surfaces {
-            if !mapped.contains(surface) {
-                continue;
-            }
-            let Some(geometry) = assembly
-                .committed_surfaces()
-                .iter()
-                .find(|held| held.surface == *surface)
-                .map(|held| held.geometry)
-            else {
-                continue;
-            };
-            decisions.push(PrivateInputDecision {
-                committed_transaction: commit.transaction,
-                surface: *surface,
-                geometry: Some(geometry),
-                withdrawal: false,
-            });
         }
         // REMOVALS TRAVEL SEPARATELY. A removal-only batch applies no
         // surface, so a withdrawal read out of `applied_surfaces` would
