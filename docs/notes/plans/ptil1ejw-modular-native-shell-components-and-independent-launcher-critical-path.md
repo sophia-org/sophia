@@ -360,3 +360,41 @@ and layout pass. The targetless projection control previously failed with an
 empty allocation list; the repaired real bundle retains its exact logical and
 pixel rectangle. Nested-loader-cache diagnostic scope remains as recorded above;
 these are device-hidden service/geometry controls, not protected-child proof.
+
+### Native content service over ae8a6765
+
+`NativeLauncherContentService` borrows the common component registry connection
+and binds its state to that exact grant. It requires the negotiated native role,
+uses the transport's current opening/revision and checks the supplied catalog
+identity. The bounded native transport visit services the existing resource,
+allocation, demand and candidate stores. Session resolves parentless role-3
+allocations within the selected output, preserving opening provenance and scale,
+with zero reservation. Edge placement centers along the other axis; margins and
+oversized geometry refuse rather than escape the output. Resize generations are
+checked instead of saturating.
+
+The panel and native service now call one `submit_bundle` implementation for
+actual bundle projection, runtime admission, Prepared and retained presentation
+obligations. Session selects the trusted Shell versus Launcher layer. Actual
+presentation still comes from the exact grant/output/candidate runtime query;
+no focus is inferred from allocation, candidate assembly or Prepared.
+
+Evidence `.artifacts/bemenu-native-service-final`: 471 Session library tests pass
+with 14 ignored; seven component-connection tests pass, including a real local
+socket native allocation through this service, exact reply geometry, absent
+focus before presentation, and refusal of the replaced grant. Three pure
+placement controls cover edges/scale, malformed identity/geometry without ID
+minting and resize exhaustion. Strict Session lib/tests Clippy passes; the
+layout-only check passes after placing controls in the existing content test
+module. The initial layout failure is retained separately; no checker or debt
+exception was changed. The nested private loader-cache warning retains the
+previous qualification: supplied protection evidence is not a protected child.
+
+This remains a component service checkpoint. The new socket control sends no
+pixel candidate and does not execute a native frame or application. Close must
+still remove only the exact opening's content, wait for actual source consumers,
+and dispose its allocations before reopening. Live Session component process,
+catalog/focus/keyboard/action service and shutdown orchestration, the `lom-test`
+profile and fresh exact-source canonical validation remain required. Explicit
+component configuration remains refused; no physical readiness, deployment,
+GPU/display/VT activity or M3 integration is claimed.

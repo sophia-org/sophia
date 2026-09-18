@@ -1,7 +1,7 @@
 use super::*;
 mod content;
 mod panel_service;
-pub use content::NativeLauncherActionService;
+pub use content::{NativeLauncherActionService, NativeLauncherContentService};
 pub use panel_service::PanelComponentService;
 mod content_accounting;
 mod content_shutdown;

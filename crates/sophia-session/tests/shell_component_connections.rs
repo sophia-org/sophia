@@ -464,3 +464,139 @@ fn borrowed_panel_service_uses_the_shared_registry_and_refuses_another_attempt()
     h.owner.close(native).unwrap();
     assert!(h.owner.collect().quiescent());
 }
+
+#[cfg(feature = "native-session")]
+#[test]
+fn borrowed_native_content_places_real_wire_request_without_granting_early_focus() {
+    use sophia_backend_live::{LiveProductionCpuScene, LiveProductionVisualRuntime};
+    use sophia_engine::HeadlessOutput;
+    use sophia_session::shell_native_launcher::NativeLauncherContentService;
+    let mut h = Harness::new();
+    let key = h.owner.reserve_attempt(1).unwrap();
+    let mut client = h.connect(key);
+    let outputs = [HeadlessOutput {
+        id: OutputId::from_raw(2),
+        size: Size {
+            width: 800,
+            height: 600,
+        },
+        scale: 1,
+    }];
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(outputs[0].size);
+    let catalog = ShellApplicationCatalog {
+        connection_epoch: key.grant.connection_epoch,
+        generation: 1,
+        entries: vec![],
+    };
+    let opening = NativeLauncherOpening {
+        grant: key.grant,
+        opening: 1,
+        output: ContentOutputId {
+            id: 2,
+            generation: 1,
+        },
+        catalog_generation: 1,
+        state_revision: 1,
+    };
+    let mut service = h
+        .owner
+        .with_connection(key, |t| {
+            let service = NativeLauncherContentService::new(t).unwrap();
+            t.publish_native_launcher_opening(TransactionId::from_raw(1), opening)
+                .unwrap();
+            t.poll_io().unwrap();
+            service
+        })
+        .unwrap();
+    assert_eq!(service.grant(), key.grant);
+    assert_eq!(
+        decode_shell_native_launcher_frame(&read_frame(&mut client))
+            .unwrap()
+            .1,
+        ShellNativeLauncherRecord::Opening(opening)
+    );
+    client
+        .write_all(
+            &encode_shell_native_launcher_frame(
+                TransactionId::from_raw(2),
+                &ShellNativeLauncherRecord::AllocationRequest(NativeLauncherAllocationRequest {
+                    grant: key.grant,
+                    opening: 1,
+                    output: opening.output,
+                    request_id: 1,
+                    prior: ContentAllocationId::default(),
+                    operation: 1,
+                    edge: 1,
+                    desired_width: 300,
+                    desired_height: 100,
+                    margins: ContentMargins::default(),
+                }),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let root = Rect {
+        x: 0,
+        y: 0,
+        width: 800,
+        height: 600,
+    };
+    let mut serial = 10;
+    h.owner
+        .with_connection(key, |t| {
+            service
+                .service_open(
+                    t,
+                    &catalog,
+                    &mut runtime,
+                    &scene,
+                    None,
+                    &outputs,
+                    &[(outputs[0].id, root)],
+                    root,
+                    &mut || {
+                        serial += 1;
+                        Ok(TransactionId::from_raw(serial))
+                    },
+                )
+                .unwrap();
+            assert_eq!(t.native_launcher_focus(), None);
+            assert!(
+                t.install_native_launcher_focus(TransactionId::from_raw(20))
+                    .is_err()
+            );
+            assert!(!service.observe_presentation(t, &runtime).unwrap());
+            let allocations = t.content_allocation_snapshots();
+            assert_eq!(allocations.len(), 1);
+            assert_eq!(allocations[0].native_opening, Some(1));
+            assert_eq!(allocations[0].logical.x, 250);
+            assert_eq!(allocations[0].allowed_reservation_extent, 0);
+            t.poll_io().unwrap();
+        })
+        .unwrap();
+    let (_, facts) = decode_shell_content_frame(&read_frame(&mut client)).unwrap();
+    assert!(matches!(facts, ShellContentRecord::OutputFacts(_)));
+    let (_, result) = decode_shell_content_frame(&read_frame(&mut client)).unwrap();
+    let ShellContentRecord::AllocationResult(result) = result else {
+        panic!("allocation reply missing")
+    };
+    assert_eq!(result.status, 1);
+    assert_eq!(result.grant, key.grant);
+    assert_eq!((result.pixel.x, result.pixel.width), (250, 300));
+    h.owner.close(key).unwrap();
+    h.owner.collect();
+    let replacement = h.owner.reserve_attempt(1).unwrap();
+    let _new_client = h.connect(replacement);
+    h.owner
+        .with_connection(replacement, |t| {
+            assert!(service.observe_presentation(t, &runtime).is_err());
+            assert_eq!(
+                NativeLauncherContentService::new(t).unwrap().grant(),
+                replacement.grant
+            );
+        })
+        .unwrap();
+    h.owner.close(replacement).unwrap();
+    assert!(h.owner.collect().quiescent());
+}

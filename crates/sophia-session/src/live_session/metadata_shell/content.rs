@@ -12,6 +12,12 @@ pub(in crate::live_session) mod actions;
 use actions::ContentActionLedger;
 pub use actions::NativeLauncherActionService;
 
+#[path = "content/native_service.rs"]
+mod native_service;
+#[path = "content/submission.rs"]
+mod submission;
+pub use native_service::NativeLauncherContentService;
+
 const DRM_FORMAT_ARGB8888: u32 = u32::from_le_bytes(*b"AR24");
 
 #[derive(Clone, Copy)]
@@ -210,43 +216,18 @@ impl LiveContentSession {
         }) {
             self.stage = ContentServiceStage::Submission;
             let bundle = transport.begin_content_submission(output, generation, now)?;
-            let descriptor = outputs
-                .iter()
-                .find(|descriptor| descriptor.id.raw() == output.id)
-                .copied()
-                .ok_or("content candidate targets a removed output")?;
-            self.stage = ContentServiceStage::Projection;
-            let frame = project_render_bundle(&bundle, descriptor, output, &allocations)?;
-            let bands = candidate_bands(&bundle, &allocations, output_bounds, root)?;
-            self.stage = ContentServiceStage::Runtime;
-            runtime.set_shell_content(frame, scene, native_scanout.as_deref_mut())?;
-            let grant = transport.content_grant().ok_or("content grant vanished")?;
-            self.stage = ContentServiceStage::Prepared;
-            transport.content_prepared(grant, output, generation, 1, 1, now)?;
-            let usage = transport.content_usage().unwrap_or_default();
-            crate::session_println!(
-                "sophia_live_shell_content schema=1 status=prepared output={} candidate_generation={} staging_bytes={} resident_bytes={} retiring_bytes={} backing_bytes={}",
-                output.id,
-                generation,
-                usage.staging,
-                usage.resident,
-                usage.retiring,
-                usage.backing,
-            );
-            let candidate_allocations = bundle
-                .surfaces
-                .iter()
-                .map(|surface| surface.allocation)
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect();
-            self.pending.push(PendingPresentation {
-                grant,
-                output,
-                candidate_generation: generation,
-                bands,
-                allocations: candidate_allocations,
-            });
+            self.submit_bundle(
+                transport,
+                runtime,
+                scene,
+                native_scanout.as_deref_mut(),
+                outputs,
+                output_bounds,
+                root,
+                bundle,
+                sophia_backend_live::LiveShellContentLayer::Shell,
+                now,
+            )?;
         }
         self.stage = ContentServiceStage::Idle;
         Ok(())

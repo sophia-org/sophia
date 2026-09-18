@@ -346,3 +346,140 @@ fn a_scaled_popout_keeps_the_exact_physical_anchor_origin() {
     assert_eq!(resolved.logical.x, 10);
     assert_eq!(resolved.allowed_reservation_extent, 0);
 }
+
+fn native_allocation_fixture() -> (
+    LiveContentSession,
+    ContentAllocationRequest,
+    NativeLauncherOpening,
+    HeadlessOutput,
+) {
+    let grant = ContentGrant {
+        connection_epoch: 4,
+        content_grant_epoch: 7,
+    };
+    let output = ContentOutputId {
+        id: 2,
+        generation: 1,
+    };
+    (
+        LiveContentSession::new(true, true, None),
+        ContentAllocationRequest {
+            grant,
+            output,
+            allocation_request_id: 1,
+            operation: 1,
+            role: 3,
+            edge: 1,
+            prior: ContentAllocationId::default(),
+            parent: ContentAllocationId::default(),
+            parent_presentation_epoch: 0,
+            anchor_parent_rect: ContentPixelRect::default(),
+            desired_width: 300,
+            desired_height: 100,
+            margins: ContentMargins::default(),
+        },
+        NativeLauncherOpening {
+            grant,
+            opening: 9,
+            output,
+            catalog_generation: 3,
+            state_revision: 1,
+        },
+        HeadlessOutput {
+            id: OutputId::from_raw(2),
+            size: Size {
+                width: 1600,
+                height: 1200,
+            },
+            scale: 2,
+        },
+    )
+}
+
+#[test]
+fn native_allocation_is_bounded_parentless_and_retains_exact_opening() {
+    let (mut state, mut request, opening, output) = native_allocation_fixture();
+    for (edge, x, y) in [(1, 250, 0), (2, 500, 250), (3, 250, 500), (4, 0, 250)] {
+        request.edge = edge;
+        let allocation = state
+            .resolve_native_allocation(&request, opening, &[output])
+            .unwrap();
+        assert_eq!(allocation.native_opening, Some(9));
+        assert_eq!(allocation.role, 3);
+        assert_eq!(allocation.allowed_reservation_extent, 0);
+        assert_eq!(allocation.parent, ContentAllocationId::default());
+        assert_eq!((allocation.logical.x, allocation.logical.y), (x, y));
+        assert_eq!((allocation.pixel.x, allocation.pixel.y), (x * 2, y * 2));
+        assert_eq!(
+            (allocation.pixel.width, allocation.pixel.height),
+            (600, 200)
+        );
+    }
+    assert_eq!(state.next_allocation_id, 5);
+}
+
+#[test]
+fn native_allocation_refusals_do_not_mint_ids() {
+    let (mut state, request, opening, output) = native_allocation_fixture();
+    let mut variants = Vec::new();
+    let mut wrong = request.clone();
+    wrong.output.generation += 1;
+    variants.push(wrong);
+    let mut wrong = request.clone();
+    wrong.grant.content_grant_epoch += 1;
+    variants.push(wrong);
+    let mut wrong = request.clone();
+    wrong.role = 1;
+    variants.push(wrong);
+    let mut wrong = request.clone();
+    wrong.desired_width = 801;
+    variants.push(wrong);
+    let mut wrong = request.clone();
+    wrong.desired_height = 0;
+    variants.push(wrong);
+    let mut wrong = request.clone();
+    wrong.margins.left = -1;
+    variants.push(wrong);
+    let mut wrong = request.clone();
+    wrong.edge = 0;
+    variants.push(wrong);
+    for wrong in variants {
+        assert!(
+            state
+                .resolve_native_allocation(&wrong, opening, &[output])
+                .is_err()
+        );
+    }
+    assert!(
+        state
+            .resolve_native_allocation(&request, opening, &[])
+            .is_err()
+    );
+    assert_eq!(state.next_allocation_id, 1);
+}
+
+#[test]
+fn native_resize_keeps_id_and_refuses_generation_exhaustion() {
+    let (mut state, mut request, opening, output) = native_allocation_fixture();
+    request.operation = 2;
+    request.prior = ContentAllocationId {
+        id: 20,
+        generation: 5,
+    };
+    assert_eq!(
+        state
+            .resolve_native_allocation(&request, opening, &[output])
+            .unwrap()
+            .allocation,
+        ContentAllocationId {
+            id: 20,
+            generation: 6
+        }
+    );
+    request.prior.generation = u64::MAX;
+    assert_eq!(
+        state.resolve_native_allocation(&request, opening, &[output]),
+        Err(sophia_runtime::ContentAllocationError::Budget)
+    );
+    assert_eq!(state.next_allocation_id, 1);
+}

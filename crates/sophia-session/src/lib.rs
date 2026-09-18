@@ -56,7 +56,9 @@ pub mod shell_panel_service {
 
 #[cfg(feature = "native-session")]
 pub mod shell_native_launcher {
-    pub use crate::live_session::metadata_shell::NativeLauncherActionService;
+    pub use crate::live_session::metadata_shell::{
+        NativeLauncherActionService, NativeLauncherContentService,
+    };
 }
 pub mod support;
 

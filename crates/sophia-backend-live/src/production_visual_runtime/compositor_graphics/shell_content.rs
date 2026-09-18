@@ -12,6 +12,18 @@ impl LiveProductionVisualRuntime {
         self.set_shell_content_on_target(frame, scene, native_scanout)
     }
 
+    /// Installs content in a Session-assigned component layer. The layer is not
+    /// supplied by the peer; exact grant ownership is validated by the intake.
+    pub fn set_shell_component_content(
+        &mut self,
+        frame: LiveShellContentFrame,
+        layer: LiveShellContentLayer,
+        scene: &LiveProductionCpuScene,
+        native_scanout: Option<&mut LiveProductionNativeScanout>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        self.set_shell_component_content_on_target(frame, layer, scene, native_scanout)
+    }
+
     pub(in crate::production_visual_runtime) fn set_shell_content_on_target<
         T: NativeCompositionTarget,
     >(
