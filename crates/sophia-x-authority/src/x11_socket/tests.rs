@@ -1153,6 +1153,7 @@ include!("tests/private_deferred_cleanup_service.rs");
 include!("tests/private_producer_service.rs");
 include!("tests/private_producer_port.rs");
 include!("tests/private_producer_exits.rs");
+include!("../../tests/support/private_producer_exit_controls.rs");
 include!("tests/private_producer_runner.rs");
 
 include!(concat!(

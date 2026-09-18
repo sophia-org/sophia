@@ -10,30 +10,36 @@
 // is not that inventory and is not described as one.
 //
 // THE SAME LOOP AS THE PUBLIC SERVICE, REACHED THROUGH THE LEASE. The routed
-// loop is factored out of the public entry point unchanged and driven here
-// against the private frontend's own broker, but every reach to that broker
+// loop is shared with the public entry point and driven here against the
+// private frontend's own broker, but every reach to that broker
 // goes through the checked service lease: a frontend whose registry is not
-// kept by the leased owner refuses before a listener is bound. No producer
-// or runner is exposed by this path; the ordered worker a ready connection
-// gets is started by this loop's own visit (`attach_ready`), stopped and
-// collected by its collection, and its deferred cleanup discharged after.
+// kept by the leased owner refuses before a listener is bound. The runner is
+// prepared after binding and stays owned by the collection guard on this
+// thread. Producers are issued through its port. The ordered worker a ready
+// connection gets is started by this loop's own visit (`attach_ready`),
+// stopped and collected by its collection, and its deferred cleanup
+// discharged after.
 //
-// EXIT ORDER IS CONTROL FLOW, NOT CONVENTION. On ordinary stop, on loss of
-// the command channel, on an error after a connection exists, and on an
-// unwind inside the operation: admission stops, the egress paths a worker can
-// be blocked in are cancelled, every current legacy client worker is told to
+// EXIT ORDER IS CONTROL FLOW, NOT CONVENTION. A cancelling stop or loss of
+// the command channel closes producer issuance and acceptance at the loop's
+// decision, before reporting cancellation or stopping sockets. The guard
+// repeats that closure at collection, including after an error or unwind:
+// admission stops, the egress paths a worker can be blocked in are cancelled,
+// every current legacy client worker is told to
 // stop and then waited for, and only then is the private frontend finalised.
 // The ordinary and error paths do this explicitly and report each cleanup
 // failure without letting one skip the next or replace the original error;
 // the unwind path does it through the collection guard's `Drop`, which the
-// existing public frontend has no equivalent of. The private frontend is
-// declared before that guard so that it is dropped after it.
+// existing public frontend has no equivalent of. The guard owns the runner
+// and its private frontend, so they drop after the guard's collection body.
+// Graceful draining keeps its existing egress and execution policy until
+// collection; StopAccepting only stops accepting new connections.
 
 /// The routed service loop, shared by the public and private entry points.
 ///
-/// MOVED, NOT REWRITTEN, from the public entry point: the body is the same
-/// and the public path's behaviour is preserved. What differs between the two
-/// callers is only how `broker` is reached, which is the trait above.
+/// The adapter preserves the public path's behavior while giving the private
+/// path its leased runner, producer handoff, and admission closure at a
+/// cancelling stop decision.
 #[cfg(unix)]
 fn drive_routed_service(
     frontend: &mut XServerFrontend,
@@ -77,6 +83,10 @@ fn drive_routed_service(
             Ok(XServerFrontendServiceCommand::StopAndDisconnect)
             | Err(TryRecvError::Disconnected) => {
                 accepting = false;
+                // Close even if a worker already cancelled egress: nothing
+                // may be issued or accepted into an order this loop stopped
+                // serving. The guard repeats this before later collection.
+                broker.close_private_producers();
                 if !ordered_egress.cancelled() {
                     ordered_egress.cancel();
                     // IN PLACE. The wait is cancelled; the envelope and its
@@ -537,8 +547,8 @@ impl Drop for PrivateServiceCollection<'_, '_> {
         // Reached with `collected` false only when the operation unwound
         // before its explicit collection. Nothing here can report, so it
         // cancels and collects and says nothing; what it guarantees is that
-        // the private frontend, declared before this guard and therefore
-        // dropped after it, is not finalised over a worker still running.
+        // the private frontend owned inside this guard's runner is not
+        // finalised over a worker still running: fields drop after this body.
         if !self.collected {
             self.close_producer_admission();
             // Cancel first, so a worker parked in an egress wait can end;

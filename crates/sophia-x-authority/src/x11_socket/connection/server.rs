@@ -687,9 +687,8 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
         Ok(receipt)
     });
     let mut pending_raster_egress = None::<XAuthorityBoundedEgressEnvelope>;
-    // THE LOOP LIVES IN private_service.rs NOW, shared with the private
-    // service and reached here through the owned broker. Its body is moved,
-    // not rewritten.
+    // Shared with the private service through the owned public broker. Its
+    // private producer hooks are no-ops on this public path.
     let service_result = drive_routed_service(
         &mut frontend,
         &mut broker,

@@ -87,7 +87,7 @@ fn a_routing_attempt_lost_before_its_effect_is_owned_unattempted_and_handed_over
         outstanding_after,
     } = interrupted_routing(PrivateRoutingPoint::AfterAdmitted);
     assert_eq!(attempt.map(|(_, _, attempted)| attempted), Some(false), "un-attempted");
-    assert_eq!(outstanding, 0, "owing nothing yet");
+    assert_eq!(outstanding, 0, "no newly attempted effect; the accepted operation and its credit remain owed");
     assert!(
         matches!(next, Err(XServerFrontendRouteError::OrderedItemUnresolved)),
         "the order is blocked on it: {}",
@@ -371,8 +371,8 @@ fn producers_refuse_during_collection(unwind: bool) {
     } else {
         // The error path: the loop returns with the frame alive, so the
         // guard's explicit collection is what stops and waits for it. (An
-        // ordinary stop winds the frames down inside the loop itself, before
-        // the collection; it has no such window.)
+        // ordinary stop waits for the frames inside the loop instead, before
+        // the post-loop collection; its closure is tested separately.)
         let (acknowledgement, acknowledged) = sync_channel(1);
         drop(acknowledged);
         launched

@@ -363,12 +363,16 @@ fn an_interrupted_reclamation_visit_closes_the_budget_and_leaves_the_list_exactl
     route_one_control(&mut runner, &lease, &channels, 98202).expect("accepted");
     retire_control(&runner, 98201);
     let before: Vec<PrivateIdentity> = runner.frontend().outstanding.clone();
+    let reserved_before = owner.store().reserved();
+    // The seam is inside the charged, watched visit, before its first
+    // observation. This establishes interruption at entry, not after any
+    // partial sequence of removals.
     stage_reclaim_visit_with(|| panic!("the reclamation visit is lost inside its interval"));
     let lost = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| runner.service_turn(&lease)));
     assert!(lost.is_err());
     assert!(runner.service.is_interrupted(), "the dropped run closed the budget");
     assert_eq!(runner.frontend().outstanding, before, "the list is exactly as it was");
-    assert_eq!(owner.store().reserved(), owner.store().reserved(), "nothing released");
+    assert_eq!(owner.store().reserved(), reserved_before, "nothing released");
     drop(registration);
     drop((runner.shutdown(), owner));
 }
