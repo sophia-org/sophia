@@ -467,6 +467,30 @@ impl LifecycleService {
         unwind: bool,
         capacity: usize,
     ) -> Self {
+        Self::launch_over_store(
+            tag,
+            namespace,
+            fault,
+            unwind,
+            capacity,
+            PrivateSettlementOwner::default(),
+        )
+    }
+
+    /// The same launch over a settlement store the caller keeps.
+    ///
+    /// The store declares the accepted-item bound every producer reserves
+    /// against, so a case that must meet an exact bound states it here rather
+    /// than inferring one from the default capacity. The caller's clone is
+    /// the same owner the service runs over, not an observer beside it.
+    pub(super) fn launch_over_store(
+        tag: &str,
+        namespace: u64,
+        fault: Option<AttachFault>,
+        unwind: bool,
+        capacity: usize,
+        durable: PrivateSettlementOwner,
+    ) -> Self {
         let path = private_service_socket(tag);
         let config = if capacity > 1 {
             distinct_config(&path, NamespaceId::from_raw(namespace), capacity)
@@ -476,7 +500,7 @@ impl LifecycleService {
         let (commands, command_rx) = sync_channel(8);
         let (transaction_tx, transactions) = sync_channel(if unwind { 1 } else { 64 });
         let (parts, acks, deliveries) = producing_parts(capacity);
-        let owner = Arc::new(service_owner(&PrivateSettlementOwner::default(), capacity));
+        let owner = Arc::new(service_owner(&durable, capacity));
         let service_owner = Arc::clone(&owner);
         let (port, access) = PrivateProducerAccess::for_service();
         let (begin, begun) = sync_channel(1);
