@@ -18,6 +18,13 @@
       "x11_socket::routing_tests::transient_full_queue_preserves_exact_pair_token_and_accumulator_without_reselection",
       "x11_socket::routing_tests::transient_axis_smooth_and_emulated_selections_are_independent_and_accumulate_once"
     ],
+    "live-recipient": [
+      "x11_socket::routing_tests::live_endpoint_termination_settles_failed_receipt_without_rewriting_it",
+      "x11_socket::routing_tests::live_termination_keeps_original_pending_capsule_until_its_authority_accepts",
+      "x11_socket::routing_tests::live_termination_visits_charge_once_and_leave_other_native_classes_a_turn",
+      "x11_socket::routing_tests::live_native_disposal_waits_for_the_original_press_completion_and_native_source",
+      "x11_socket::routing_tests::live_native_disposal_is_charged_before_observing_and_returns_only_the_exact_record"
+    ],
     "final-custody": [
       "x11_socket::routing_tests::final_completion_keeps_original_internal_home_when_external_custody_is_withheld",
       "x11_socket::routing_tests::final_custody_waits_for_actual_settlement_handoff_and_original_storage_return",

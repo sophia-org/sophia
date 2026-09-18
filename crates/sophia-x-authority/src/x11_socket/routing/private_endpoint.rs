@@ -40,6 +40,16 @@ pub(crate) struct PrivateEndpointIdentity {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 impl PrivateEndpointIdentity {
+    fn record_ordered_termination(&self) {
+        if let Some(original) = self.registration.get() {
+            let _ = original.ordered_termination.set(());
+        }
+    }
+
+    fn ordered_termination(&self) -> bool {
+        self.registration.get().is_some_and(|original| original.ordered_termination.get().is_some())
+    }
+
     /// Captured from the recipient's own client-table entry and the admission
     /// binding held over it.
     ///

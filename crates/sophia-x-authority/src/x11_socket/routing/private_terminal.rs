@@ -688,6 +688,16 @@ impl PrivateXServerFrontend {
                     relinquished,
                 });
             }
+            // A terminated endpoint may still have an unanswerable original
+            // capsule. Its bounded visits must leave turns for healthy work.
+            self.terminal.recipient_termination_turn =
+                (self.terminal.recipient_termination_turn + 1) % 3;
+            if self.terminal.recipient_termination_turn == 0
+                && self.owes_terminated_recipient()
+            {
+                let step = self.settle_one_terminated_recipient();
+                return Ok(PrivateDeliveryStep::Receipt { step });
+            }
             // Completed records receive alternating native turns even under
             // continuing deliveries. Their original custody remains installed
             // until both source facts and every receipt dependency agree.

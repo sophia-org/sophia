@@ -25,12 +25,13 @@ impl PrivateLiveNativeDisposal {
 impl PrivateDeliveryCustody {
     fn writer_settled(&self) -> bool {
         self.attempt.is_none()
+            && self.pending.is_none()
             && self
                 .completion
                 .as_ref()
                 .and_then(|cell| cell.answer())
                 .is_some_and(|answer| {
-                    matches!(
+                    self.recipient_termination || matches!(
                         answer.outcome,
                         XAuthorityInputDeliveryOutcome::Flushed
                             | XAuthorityInputDeliveryOutcome::ClientDisconnected
@@ -47,13 +48,13 @@ impl PrivateTerminalInventory {
         self.settling.iter().any(|release| {
             release.native_recorded
                 && release.custody.attempt.is_none()
-                && matches!(
+                && (release.custody.recipient_termination || matches!(
                     release.custody.outcome_seen,
                     Some(
                         XAuthorityInputDeliveryOutcome::Flushed
                             | XAuthorityInputDeliveryOutcome::ClientDisconnected
                     )
-                )
+                ))
         })
     }
 

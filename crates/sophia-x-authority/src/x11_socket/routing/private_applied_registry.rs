@@ -12,6 +12,9 @@ struct PrivateAppliedClientState {
     focused_projection: Arc<AtomicU64>,
     queued_focus: Mutex<Option<PrivateFocusIssued>>,
     applied_focus_generation: AtomicU64,
+    /// Published by the exact ordered serving owner after its owned socket
+    /// shutdown establishes termination. Independent of any delivery receipt.
+    ordered_termination: std::sync::OnceLock<()>,
 }
 
 #[cfg(unix)]
@@ -117,6 +120,7 @@ impl XServerFrontendRouteRegistry {
                 focused_projection,
                 queued_focus: Mutex::new(None),
                 applied_focus_generation: AtomicU64::new(0),
+                ordered_termination: std::sync::OnceLock::new(),
             })
             .map_err(|_| PrivateAppliedRegistryRefusal::DifferentConnectionState)
     }

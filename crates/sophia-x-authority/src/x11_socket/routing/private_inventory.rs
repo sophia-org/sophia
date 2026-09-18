@@ -172,6 +172,8 @@ struct PrivateTerminalInventory {
     /// work unbounded and, worse, make it incidental to whatever else was
     /// happening rather than something the service can be asked for.
     native_recording_cursor: usize,
+    recipient_termination_cursor: usize,
+    recipient_termination_turn: u8,
     /// The item currently being executed.
     ///
     /// Owned before the execution that could fail, so an interruption leaves
@@ -255,6 +257,8 @@ impl PrivateTerminalInventory {
             press_stall: 0,
             last_offered: None,
             native_recording_cursor: 0,
+            recipient_termination_cursor: 0,
+            recipient_termination_turn: 0,
             attempt_cursor: 0,
             attempt_custody: None,
             native_class_debt: 0,
@@ -389,6 +393,8 @@ impl PrivateTerminalInventory {
                 press_stall: 0,
                 last_offered: None,
                 native_recording_cursor: 0,
+                recipient_termination_cursor: 0,
+                recipient_termination_turn: 0,
                 attempt_cursor: 0,
                 attempt_custody: None,
                 native_class_debt: 0,

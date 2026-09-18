@@ -542,6 +542,7 @@ impl X11OrderedServingOwner {
             drop(socket);
             if attempted && refused.is_none() {
                 self.ending_established = true;
+                self.served.endpoint().record_ordered_termination();
             }
             if let Some(kind) = refused {
                 self.unterminated = true;
@@ -577,6 +578,7 @@ impl X11OrderedServingOwner {
                 }
             ) {
                 self.ending_established = true;
+                self.served.endpoint().record_ordered_termination();
             }
             return step;
         };
@@ -594,6 +596,7 @@ impl X11OrderedServingOwner {
             // the close paths meant an owner whose wire this ended read as
             // never having attempted one.
             self.ending_established = true;
+            self.served.endpoint().record_ordered_termination();
         }
         if let Some(kind) = refused {
             // The same reason contract as the stop exits: a wire left
@@ -676,6 +679,7 @@ impl X11OrderedServingOwner {
         }
         closing.termination = X11OrderedTermination::Established;
         self.ending_established = true;
+        self.served.endpoint().record_ordered_termination();
         // A capsule already classified as another endpoint's moves into this
         // owner's keeping, still unanswered. Room for it was reserved when the
         // owner was built.
@@ -873,9 +877,13 @@ impl X11OrderedServingOwner {
     /// waiting for the rest of an event that is not coming.
     fn end_partial_frame(&mut self) {
         match self.shutdown.shutdown(Shutdown::Both) {
-            Ok(()) => self.ending_established = true,
+            Ok(()) => {
+                self.ending_established = true;
+                self.served.endpoint().record_ordered_termination();
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotConnected => {
                 self.ending_established = true;
+                self.served.endpoint().record_ordered_termination();
             }
             Err(error) => {
                 self.unterminated = true;

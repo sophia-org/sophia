@@ -109,6 +109,7 @@ include!("x11_socket/routing/private_maintenance_commitment.rs");
 include!("x11_socket/routing/private_retained_drive.rs");
 include!("x11_socket/routing/private_terminal_drive.rs");
 include!("x11_socket/routing/private_terminal_requests.rs");
+include!("x11_socket/routing/private_live_recipient.rs");
 include!("x11_socket/routing/private_terminal_reconcile.rs");
 include!("x11_socket/routing/private_terminal_recipient.rs");
 include!("x11_socket/routing/private_terminal_dependency.rs");
