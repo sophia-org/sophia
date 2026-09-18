@@ -5,6 +5,10 @@ fn b_applied_focus() {
     service.start();
     let mut connection = BConnection::open(&service, 0x0d01);
     let ingress = connection.ingress(&service, 1);
+    let control = service
+        .access
+        .control_producer(&service.owner.lease())
+        .unwrap();
     let (pause, release) = Pause::pair();
     FOCUS_PAUSES
         .lock()
@@ -34,10 +38,6 @@ fn b_applied_focus() {
         }),
     );
     allow_focus_route.entered();
-    let control = service
-        .access
-        .control_producer(&service.owner.lease())
-        .unwrap();
     control
         .submit(
             &service.owner.lease(),
