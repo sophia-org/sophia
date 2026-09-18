@@ -1656,6 +1656,218 @@ fn frames_of(
     (advanced, owed, failure)
 }
 
+/// Focus this connection's window and leave the notification it produced
+/// sitting unread in the recipient's buffer.
+///
+/// THE ACKNOWLEDGEMENT IS THE PROOF THE WRITE HAPPENED, so nothing is assumed
+/// by not reading it. What the unread notification buys is an odd number of
+/// whole frame writes already outstanding when a stream of two-frame capsules
+/// starts, which is the difference between stalling before a capsule and
+/// stalling inside one. The shared helper drains it, which is right for every
+/// case that wants to compare bytes and wrong for this one.
+fn focus_leaving_notification_unread(
+    service: &LifecycleService,
+    peer: &mut UnixStream,
+    window: u32,
+    transaction: u64,
+) -> (SurfaceId, u16, PrivateIngress) {
+    let (surface, sequence) = selecting_window(
+        peer,
+        &service.transactions,
+        window,
+        (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 6) | (1 << 21),
+    );
+    let custody = wait_attached(&service.registry);
+    let client = custody.cleanup_record().client;
+    let lease = service.owner.lease();
+    let control = service
+        .access
+        .control_producer(&lease)
+        .expect("the service's own control producer");
+    control
+        .submit(
+            &lease,
+            XAuthorityClientControlCommand {
+                client,
+                command: XAuthorityControlCommand::FocusSurface {
+                    transaction: TransactionId::from_raw(transaction),
+                    surface,
+                },
+            },
+        )
+        .expect("the order accepts the focus control");
+    assert_eq!(
+        ack_for(&service.acks, transaction)
+            .expect("the writer published its own outcome")
+            .acknowledgement
+            .outcome,
+        XAuthorityControlOutcome::Delivered,
+        "the focus write actually happened, which is what the unread notification is"
+    );
+    let ingress = service
+        .access
+        .ingress_for(&lease, client, DeviceId::from_raw(1))
+        .expect("an actual leased producer");
+    (surface, sequence, ingress)
+}
+
+/// One bounded attempt at stopping a real writer between the two frames of
+/// one capsule.
+///
+/// Everything here is the production path: the producer, the order, the
+/// runner, the writer and the receipts. What the attempt arranges is its own
+/// end of the connection -- how much the recipient may hold, and whether it
+/// has already left a whole frame unread -- and then it stops reading.
+/// Returns what was observed, whether a same-capsule whole-frame prefix was
+/// established, and the actors it collected.
+fn blocked_recipient_attempt(
+    label: &'static str,
+    leave_notification_unread: bool,
+    requested_buffer: u32,
+    namespace: u64,
+    window: u32,
+) -> (Value, bool, Vec<String>) {
+    let store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+    let mut blocked =
+        LifecycleService::launch_over_store(label, namespace, None, false, 1, store.clone());
+    blocked.start();
+    let (mut peer, custody) = blocked.connect();
+    let (surface, _sequence, ingress) = if leave_notification_unread {
+        focus_leaving_notification_unread(&blocked, &mut peer, window, namespace)
+    } else {
+        focus_window(&blocked, &mut peer, window, namespace)
+    };
+    let bounded =
+        rustix::net::sockopt::set_socket_recv_buffer_size(&peer, requested_buffer as usize).is_ok();
+    let effective = rustix::net::sockopt::socket_recv_buffer_size(&peer).ok();
+    assert!(
+        bounded,
+        "{label}: the attempt could bound its own end of the real connection"
+    );
+    // From here this recipient never reads again.
+    observe_frames(&blocked.registry);
+    let mut delivered = 0u64;
+    let mut outcomes: Vec<String> = Vec::new();
+    let mut stalled: Option<(&'static str, u64)> = None;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    'blocking: for round in 0..4_000u64 {
+        if std::time::Instant::now() >= deadline {
+            stalled = Some(("the writer was never stopped within this attempt's bound", 0));
+            break 'blocking;
+        }
+        // ONE MULTI-FRAME CAPSULE AT A TIME, its receipt awaited before the
+        // next, so a stall belongs to a delivery this attempt can name.
+        let id = 12600 + namespace * 1_000 + round;
+        if ingress
+            .submit(
+                &blocked.owner.lease(),
+                axis_to(surface, XAuthorityInputDeliveryId::from_raw(id), 30 + round),
+            )
+            .is_err()
+        {
+            stalled = Some(("the source would take no further work", id));
+            break 'blocking;
+        }
+        match blocked.deliveries.recv_timeout(Duration::from_secs(9)) {
+            Ok(receipt) => {
+                let name = format!("{receipt:?}", receipt = receipt.outcome);
+                if receipt.outcome != XAuthorityInputDeliveryOutcome::Flushed {
+                    outcomes.push(name);
+                    stalled = Some((
+                        "an outcome that establishes nothing",
+                        receipt.delivery.raw(),
+                    ));
+                    break 'blocking;
+                }
+                outcomes.push(name);
+                delivered += 1;
+            }
+            Err(_) => {
+                stalled = Some(("no receipt within the bound", id));
+                break 'blocking;
+            }
+        }
+    }
+    let observed = take_observed_frames();
+
+    blocked.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    let closed = blocked.closed();
+    let before = retained_dispatch(&blocked);
+    // AN ACTUAL MAINTENANCE VISIT AND DURABLE DRIVE BETWEEN THE READINGS, so
+    // what is established is that a real visit does not rebuild or re-offer a
+    // capsule whose send was stopped, rather than that nothing happened.
+    let visit = blocked.step();
+    let drive = store.drive();
+    let after = retained_dispatch(&blocked);
+    assert_eq!(
+        after, before,
+        "{label}: an actual maintenance visit did not rebuild or re-offer the stalled capsule: {visit:?}"
+    );
+
+    let stalled_delivery = stalled.map(|(_, id)| id).filter(|id| *id != 0);
+    let (advanced, owed, failure) = stalled_delivery
+        .map(|id| frames_of(&observed, XAuthorityInputDeliveryId::from_raw(id)))
+        .unwrap_or((0, 0, None));
+    let is_prefix = owed > 1 && advanced >= 1 && advanced < owed;
+    let stalling_outcome = outcomes
+        .iter()
+        .rev()
+        .find(|outcome| outcome.as_str() != "Flushed")
+        .cloned();
+    assert!(
+        stalling_outcome
+            .as_deref()
+            .is_none_or(|outcome| outcome != "Flushed"),
+        "{label}: whatever ended the run was not a flush"
+    );
+    let seen = json!({
+        "attempt": label,
+        "focus_notification_left_unread": leave_notification_unread,
+        "requested_recipient_buffer": requested_buffer,
+        "effective_recipient_buffer": effective,
+        "capsules_flushed_before_the_stall": delivered,
+        "stalled": stalled.map(|(why, id)| json!({"why": why, "delivery": id})),
+        "stalling_outcome": stalling_outcome,
+        "stalling_capsule": stalled_delivery.map(|id| json!({
+            "delivery": id,
+            "frames_this_delivery_owed": owed,
+            "whole_frames_of_it_that_went_out": advanced,
+            "writer_failure_on_it": failure,
+            "same_capsule_whole_frame_prefix": is_prefix,
+        })),
+        "writer_steps_recorded": observed.len(),
+        "multi_frame_deliveries_seen": observed
+            .iter()
+            .filter(|step| step.frames > 1)
+            .map(|step| json!({
+                "delivery": step.delivery.map(|id| id.raw()),
+                "frames_owed": step.frames,
+                "frame_index": step.index,
+                "whole_frame_that_went": step.advanced,
+            }))
+            .take(8)
+            .collect::<Vec<_>>(),
+        "writer_failures": observed
+            .iter()
+            .filter(|step| step.failure.is_some())
+            .map(|step| json!({
+                "delivery": step.delivery.map(|id| id.raw()),
+                "frames_owed": step.frames,
+                "frame_index": step.index,
+                "failure": step.failure.clone(),
+            }))
+            .take(4)
+            .collect::<Vec<_>>(),
+        "retained_after_exit": format!("{before:?}"),
+        "maintenance_visit": format!("{visit:?}"),
+        "durable_drive": format!("{drive:?}"),
+        "closed_error": closed.error.clone(),
+        "what_a_prefix_means_here": "one whole frame of a capsule that owed more than one, with the rest stopped. The seam reports whole frames of the exact watched invocation and no byte offset, so nothing below claims a split inside a frame.",
+    });
+    let collected = finish_labelled(label, blocked, &[custody]);
+    (seen, is_prefix, collected)
+}
+
 /// Controls that measure rather than accept.
 ///
 /// Nothing here is an acceptance case and nothing here may be bound to a
@@ -2078,167 +2290,44 @@ pub(super) mod diagnostics {
             &[unknown_custody],
         ));
 
-        // A RECIPIENT THAT STOPS TAKING ITS BYTES. The peer's receive buffer is
-        // bounded to a real, small size and then never read, so the writer's own
-        // send blocks against an actual socket rather than a simulated one. What
-        // the declared limit then produces is an outcome that establishes
-        // nothing, and a capsule that is never rebuilt from it.
-        let blocked_store = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
-        let mut blocked = LifecycleService::launch_over_store(
-            "c-blocked-send",
-            12052,
-            None,
-            false,
-            1,
-            blocked_store.clone(),
-        );
-        blocked.start();
-        let (mut blocked_peer, blocked_custody) = blocked.connect();
-        let (blocked_surface, blocked_sequence, blocked_ingress) =
-            focus_window(&blocked, &mut blocked_peer, 0x320b01, 12052);
-        // Fixture setup on the case's own end of the real connection: a bound on
-        // what this recipient can hold. Nothing about the service is simulated.
-        let bounded_buffer =
-            rustix::net::sockopt::set_socket_recv_buffer_size(&blocked_peer, 2048).is_ok();
-        let buffer_size = rustix::net::sockopt::socket_recv_buffer_size(&blocked_peer).ok();
-        // From here the recipient never reads again, and the writer's own steps
-        // are recorded so a prefix of the delivery that stalls is established by
-        // what the writer did, not by counting frames of the ones before it.
-        observe_frames(&blocked.registry);
-        let mut pairs = 0u64;
-        let mut outcomes: Vec<String> = Vec::new();
-        let mut stalled = None;
-        // Bounded well inside the harness's own per-case allowance: this case
-        // must report what it found, never run into a deadline.
-        let blocking_deadline = std::time::Instant::now() + Duration::from_secs(25);
-        'blocking: for round in 0..2_000u64 {
-            if std::time::Instant::now() >= blocking_deadline {
-                stalled = Some(("the recipient never stopped the writer within the bound", 0));
-                break 'blocking;
+        // A RECIPIENT THAT STOPS TAKING ITS BYTES, tried a few ways. What has
+        // to be caught is a stall between the two frames of one capsule, and
+        // whether that happens depends on how many whole frame writes are
+        // already outstanding when the axis stream starts. Each arrangement
+        // below is a real connection driven to a real stall; the matrix is
+        // bounded, and what is reported is what the writer's own steps show,
+        // never arithmetic over a requested buffer size.
+        let mut attempts = Vec::new();
+        let mut partial = None;
+        for (index, (label, leave_notification_unread, requested_buffer)) in [
+            ("focus-notification-left-unread", true, 2048u32),
+            ("focus-notification-left-unread-wider", true, 3072),
+            ("focus-notification-drained", false, 2048),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (seen, is_prefix, collected) = blocked_recipient_attempt(
+                label,
+                leave_notification_unread,
+                requested_buffer,
+                12052 + index as u64,
+                0x320b01 + index as u32 * 0x100,
+            );
+            attempts.push(seen.clone());
+            actors.extend(collected);
+            if is_prefix {
+                partial = Some(seen);
+                break;
             }
-            // ONE MULTI-FRAME CAPSULE AT A TIME, its receipt awaited before
-            // the next is submitted. A stall then belongs to a known delivery
-            // rather than to whichever of several was in flight, and the
-            // writer's own steps say how much of that one had gone.
-            let id = 12600 + round;
-            if blocked_ingress
-                .submit(
-                    &blocked.owner.lease(),
-                    axis_to(
-                        blocked_surface,
-                        XAuthorityInputDeliveryId::from_raw(id),
-                        30 + round,
-                    ),
-                )
-                .is_err()
-            {
-                stalled = Some(("submission refused while the recipient is full", id));
-                break 'blocking;
-            }
-            match blocked.deliveries.recv_timeout(Duration::from_secs(9)) {
-                Ok(receipt) => {
-                    let name = format!("{:?}", receipt.outcome);
-                    if receipt.outcome != XAuthorityInputDeliveryOutcome::Flushed {
-                        outcomes.push(name.clone());
-                        stalled = Some(("an outcome that establishes nothing", id));
-                        break 'blocking;
-                    }
-                    outcomes.push(name);
-                }
-                Err(_) => {
-                    stalled = Some(("no receipt within the bound", id));
-                    break 'blocking;
-                }
-            }
-            pairs += 1;
         }
-        let flushed_before_stall = outcomes
-            .iter()
-            .filter(|outcome| outcome.as_str() == "Flushed")
-            .count();
-        let stalling_outcome = outcomes
-            .iter()
-            .rev()
-            .find(|outcome| outcome.as_str() != "Flushed")
-            .cloned();
-        let observed = take_observed_frames();
-        // PRE-STOP FACTS ARE ALREADY IN HAND above: what the recipient took, what
-        // ended the run, and the writer's own steps. Only now is this invocation
-        // asked to stop, and only after it has actually exited is its retained
-        // inventory a thing that exists to be read. Finishing it before that
-        // would be asking a live service for evidence its own exit produces.
-        blocked.command(XServerFrontendServiceCommand::StopAndDisconnect);
-        let blocked_closed = blocked.closed();
-        let blocked_phases = retained_dispatch(&blocked);
-        let stalled_delivery = stalled.map(|(_, id)| id).filter(|id| *id != 0);
-        let same_capsule = stalled_delivery.map(|id| {
-            let (advanced, owed, failure) =
-                frames_of(&observed, XAuthorityInputDeliveryId::from_raw(id));
+        let partial = partial.unwrap_or_else(|| {
             json!({
-                "delivery": id,
-                "frames_this_delivery_owed": owed,
-                "frames_of_it_that_went_out_whole": advanced,
-                "writer_failure_on_it": failure,
-                "is_a_prefix_of_the_same_delivery": owed > 1 && advanced >= 1 && advanced < owed,
+                "established": false,
+                "why": "no arrangement stopped the writer between the two frames of one capsule",
+                "attempts": attempts.clone(),
             })
         });
-        let multi_frame_deliveries: Vec<_> = observed
-            .iter()
-            .filter(|step| step.frames > 1)
-            .map(|step| json!({"delivery": step.delivery.map(|id| id.raw()), "frames_owed": step.frames, "frame_index": step.index, "whole_frame_that_went": step.advanced}))
-            .take(12)
-            .collect();
-        let writer_failures: Vec<_> = observed
-            .iter()
-            .filter(|step| step.failure.is_some())
-            .map(|step| json!({"delivery": step.delivery.map(|id| id.raw()), "frames_owed": step.frames, "frame_index": step.index, "failure": step.failure.clone()}))
-            .take(8)
-            .collect();
-        let partial = json!({
-            "writer_steps_recorded": observed.len(),
-            "same_capsule_prefix": same_capsule,
-            "multi_frame_deliveries_seen": multi_frame_deliveries,
-            "writer_failures": writer_failures,
-            "recipient_buffer_bounded": bounded_buffer,
-            "recipient_buffer_bytes": buffer_size,
-            "axis_capsules_delivered_before_stall": pairs,
-            "flushed_before_stall": flushed_before_stall,
-            "stalled": stalled.map(|(why, id)| json!({"why": why, "delivery": id})),
-            "stalling_outcome": stalling_outcome,
-            "retained_phases_after_exit": format!("{blocked_phases:?}"),
-            "closed_error": blocked_closed.error.clone(),
-            "prefix_of_the_stalling_capsule": match &same_capsule {
-                Some(seen) if seen["same_capsule_whole_frame_prefix"] == json!(true) => {
-                    "some but not all of this capsule's own frames went out"
-                }
-                Some(_) => {
-                    "none of this capsule's own frames went out: the writer blocked before committing any of it, which is not a prefix"
-                }
-                None => "no delivery was identified as the one that stalled",
-            },
-            "limitation": "the seam reports whole frames of the exact watched invocation, never a byte offset. A same-capsule whole-frame prefix is established when one delivery owed more than one frame and fewer than all of them went out; a partial-byte prefix is not claimed at all.",
-        });
-        assert!(
-            bounded_buffer,
-            "the case could bound its own end of the real connection"
-        );
-        assert!(
-            stalling_outcome
-                .as_deref()
-                .is_none_or(|outcome| outcome != "Flushed"),
-            "whatever ended the run was not a flush: {partial}"
-        );
-        let blocked_after = retained_dispatch(&blocked);
-        assert_eq!(
-            blocked_after, blocked_phases,
-            "nothing rebuilt or re-offered the stalled capsule"
-        );
-        let _ = blocked_sequence;
-        actors.extend(finish_labelled(
-            "blocked-recipient invocation",
-            blocked,
-            &[blocked_custody],
-        ));
 
         println!(
             "sophia_m3_indeterminate_send_diagnostics {}",
@@ -2248,6 +2337,7 @@ pub(super) mod diagnostics {
                 "bound": false,
                 "why_unbound": "partial_send_not_replayed is not established. The recipient does stop the writer and the declared blocked limit does produce a real TimedOut, but the stall observed lands before any byte of the stalling capsule has gone, so what is established is a blocked-before-any-byte send and not a prefix of that delivery. unknown_send_not_replayed is exercised by an actual post-handover interruption. Two earlier claims of mine are withdrawn: that interrupting the handover leaves a connection worker unjoined, which was a fixture-ordering error here, and that the writer's blocked limit is unreachable in production, which this control disproves.",
                 "partial_send_blocked_recipient": partial,
+                "blocked_recipient_attempts": attempts,
                 "unknown_send_interval": unknown_fact,
                 "enqueued_observation_only": enqueued,
                 "refused_publication_retained": refused,
