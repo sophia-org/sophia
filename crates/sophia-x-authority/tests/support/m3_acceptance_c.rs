@@ -2416,6 +2416,7 @@ pub(super) mod diagnostics {
         let (mut unknown_peer, unknown_custody) = unknown.connect();
         let (unknown_surface, unknown_sequence, unknown_ingress) =
             focus_window(&unknown, &mut unknown_peer, 0x320a01, 12051);
+        let unknown_client = unknown_custody.cleanup_record().client;
         let press = XAuthorityInputDeliveryId::from_raw(12080);
         let release = XAuthorityInputDeliveryId::from_raw(12081);
         unknown_ingress
@@ -2432,7 +2433,6 @@ pub(super) mod diagnostics {
             receipt_for(&unknown.deliveries, 12080),
             XAuthorityInputDeliveryOutcome::Flushed
         );
-        let release_cell_before = delivery_cell(&unknown.registry, 12081);
         arm_handover(
             &unknown.registry,
             release,
@@ -2444,6 +2444,13 @@ pub(super) mod diagnostics {
                 button_to(unknown_surface, release, 272, false),
             )
             .expect("an actual release, whose handover this case interrupts");
+        // THE ORIGINAL COMPLETION, CAPTURED ONCE IT EXISTS. Taking it before
+        // the release was submitted would have witnessed nothing: the cell is
+        // minted by the admission this request was given, so only a reading
+        // after that admission is a witness of the exact one it carries.
+        let original_release_cell = waited_for_value(|| delivery_cell(&unknown.registry, 12081))
+            .expect("the release's own completion, minted by its own admission");
+        let original_release_cell = Arc::as_ptr(&original_release_cell) as usize;
         let unknown_closed = unknown.closed();
         assert!(
             unknown_closed.unwound,
@@ -2457,7 +2464,6 @@ pub(super) mod diagnostics {
         // is about the record, not about which of the two happened.
         let release_wire = read_event(&mut unknown_peer, 3);
         let release_cell = delivery_cell(&unknown.registry, 12081)
-            .or(release_cell_before)
             .and_then(|cell| cell.answer());
         let phases = retained_dispatch(&unknown);
         // THE RECORD SAYS WHAT HAPPENED TO IT, which is that nobody knows. The
@@ -2476,6 +2482,39 @@ pub(super) mod diagnostics {
                 .all(|seen| seen.dispatch != "Indeterminate" || !seen.pending_capsule),
             "and keeps no replayable copy of what it handed over: {phases:?}"
         );
+        // THE EXACT RELEASE, BY IDENTITY. Not one release in an indeterminate
+        // phase: this connection's own, carrying the completion its own
+        // admission minted, with no copy of the capsule left to send again.
+        let retained_release = phases
+            .iter()
+            .find(|seen| seen.delivery == Some(12081))
+            .unwrap_or_else(|| panic!("the release this case submitted is retained: {phases:?}"));
+        assert_eq!(
+            retained_release.dispatch, "Indeterminate",
+            "its handover was begun and never reported: {retained_release:?}"
+        );
+        assert_eq!(
+            retained_release.completion,
+            Some(original_release_cell),
+            "and it still carries the completion its own admission minted: {retained_release:?}"
+        );
+        assert!(
+            !retained_release.pending_capsule,
+            "with nothing kept to send again: {retained_release:?}"
+        );
+        assert_eq!(
+            (
+                retained_release.reached_client,
+                retained_release.reached_window
+            ),
+            (u64::from(unknown_client.0), u64::from(0x320a01u32)),
+            "reaching this connection's own window: {retained_release:?}"
+        );
+        assert!(
+            retained_release.attempt.is_some(),
+            "under the attempt it was dispatched with: {retained_release:?}"
+        );
+
         // The debt is the retained release itself, not an accepted-item credit:
         // that credit is returned when the item is disposed of and its event
         // moves into separately reserved storage, which had already happened.
@@ -2492,6 +2531,29 @@ pub(super) mod diagnostics {
         // visit terminal dispatch. Both are recorded as they came.
         let visit = unknown.step();
         let unknown_drive = unknown_store.drive();
+        // TYPED, NOT FORMATTED. The interruption closed this invocation's own
+        // budget permanently, so its retained visit refuses before authorizing
+        // custody or entering the home. That refusal is the guarantee this
+        // half rests on, and it is asserted as the value it is.
+        assert_eq!(
+            visit.phase,
+            PrivateMaintenancePhase::Output,
+            "the visit after the interruption is the retained output visit: {visit:?}"
+        );
+        assert_eq!(
+            visit.status,
+            PrivateMaintenanceStatus::Yielded,
+            "which yields rather than running: {visit:?}"
+        );
+        assert_eq!(
+            visit.allowance_refusal,
+            Some(sophia_input_authority::ServiceStartRefusal::Interrupted),
+            "because the original budget was interrupted and never reopens: {visit:?}"
+        );
+        assert!(
+            !visit.charged,
+            "so nothing was charged for it: {visit:?}"
+        );
         let unknown_after = retained_dispatch(&unknown);
         assert_eq!(
             unknown_after, phases,
@@ -2515,7 +2577,9 @@ pub(super) mod diagnostics {
         "release_wire_note": "null here means the connection ended before the bytes reached the recipient; a value means they did. Both are honest outcomes of interrupting the invocation, and this case asserts neither.",
             "release_answer": release_cell.map(|answer| format!("{answer:?}")),
             "retained_phases": format!("{phases:?}"),
-            "retained_phases_after_actual_maintenance_visit": format!("{unknown_after:?}"),
+            "retained_release": format!("{retained_release:?}"),
+        "original_release_completion": original_release_cell,
+        "retained_phases_after_actual_maintenance_visit": format!("{unknown_after:?}"),
             "maintenance_visit": format!("{visit:?}"),
             "durable_drive": format!("{unknown_drive:?}"),
             "what_the_visit_reached": "not the retained source decision. The unwind interrupted this invocation's cleanup budget and it stays closed, so the visit yields before that decision and the durable drive does not visit terminal dispatch. This is therefore NOT evidence that a retry path looked at the handover and declined to resend it. What is established here is the actual interruption, the record that says the handover was begun and never reported, and that no replayable payload was kept.",
