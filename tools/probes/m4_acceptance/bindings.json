@@ -1,4 +1,7 @@
 {
   "schema": 1,
-  "cases": {}
+  "cases": {
+    "M4.construction": "construction",
+    "M4.authorization": "authorization"
+  }
 }

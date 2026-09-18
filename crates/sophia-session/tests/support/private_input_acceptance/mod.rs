@@ -184,17 +184,14 @@ impl Evidence {
         if !failed_setup {
             assert!(outcome.failure.is_none(), "{outcome:?}");
         }
-        assert!(
-            outcome.workers.iter().all(|worker| worker.joined),
-            "{outcome:?}"
-        );
-        assert!(!outcome.interrupted, "{outcome:?}");
-        self.started += 1 + outcome.workers.len();
-        self.collected += 1 + outcome
+        let workers = outcome
             .workers
-            .iter()
-            .filter(|worker| worker.joined)
-            .count();
+            .as_ref()
+            .expect("ordinary invocation returns collection evidence");
+        assert!(workers.iter().all(|worker| worker.joined), "{outcome:?}");
+        assert!(!outcome.interrupted, "{outcome:?}");
+        self.started += 1 + workers.len();
+        self.collected += 1 + workers.iter().filter(|worker| worker.joined).count();
         self.invocations += 1;
     }
 
@@ -207,7 +204,7 @@ impl Evidence {
         assert_eq!(self.started, self.collected);
         assert!(self.invocations > 0);
         println!(
-            "sophia_m4_acceptance {{\"schema\":1,\"case\":\"M4.{case}\",\"subcases\":{{{subcases}}},\"cleanup\":{{\"actors_started\":{},\"actors_collected\":{},\"pending_actors\":0,\"complete\":true}},\"observations\":{{\"real_session_invocations\":{}}}}}",
+            "sophia_m4_acceptance {{\"schema\":1,\"case\":\"M4.{case}\",\"subcases\":{{{subcases}}},\"cleanup\":{{\"actors_started\":{},\"actors_collected\":{},\"pending_actors\":0,\"complete\":true}},\"observations\":{{\"real_session_invocations\":{},\"actor_scope\":\"service_threads_and_registered_ordered_workers\"}}}}",
             self.started, self.collected, self.invocations
         );
     }

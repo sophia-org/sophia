@@ -210,18 +210,18 @@ fn run() -> Result<(), String> {
     };
     let outcome = service.stop();
     let service_joined = outcome.service_thread == PrivateInputThreadJoin::Joined;
-    let workers_joined = outcome
+    let workers = outcome
         .workers
-        .iter()
-        .filter(|worker| worker.joined)
-        .count();
+        .as_ref()
+        .ok_or("invocation returned no collection report")?;
+    let workers_joined = workers.iter().filter(|worker| worker.joined).count();
     println!(
         "sophia_m4_host stopped service_joined={service_joined} workers={} workers_joined={workers_joined} committed={commits} interrupted={} settlement_readable={}",
-        outcome.workers.len(),
+        workers.len(),
         outcome.interrupted,
         outcome.settlement.readable,
     );
-    if !service_joined || workers_joined != outcome.workers.len() || outcome.failure.is_some() {
+    if !service_joined || workers_joined != workers.len() || outcome.failure.is_some() {
         return Err(format!("private service collection failed: {outcome:?}"));
     }
     result

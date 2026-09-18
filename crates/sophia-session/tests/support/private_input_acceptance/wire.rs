@@ -23,11 +23,28 @@ impl Order {
             Self::Big => u16::from_be_bytes(bytes),
         }
     }
+    fn u32(self, value: u32) -> [u8; 4] {
+        match self {
+            Self::Little => value.to_le_bytes(),
+            Self::Big => value.to_be_bytes(),
+        }
+    }
+    fn read32(self, bytes: &[u8]) -> u32 {
+        let bytes = bytes[..4].try_into().unwrap();
+        match self {
+            Self::Little => u32::from_le_bytes(bytes),
+            Self::Big => u32::from_be_bytes(bytes),
+        }
+    }
 }
 
 pub struct Peer {
-    _stream: UnixStream,
+    stream: UnixStream,
     size: (u16, u16),
+    order: Order,
+    root: u32,
+    base: u32,
+    sequence: u16,
 }
 
 impl Peer {
@@ -86,12 +103,106 @@ impl Peer {
             order.read16(&body[screen + 22..]),
         );
         Ok(Self {
-            _stream: stream,
+            stream,
             size,
+            order,
+            root: order.read32(&body[screen..]),
+            base: order.read32(&body[4..]),
+            sequence: 0,
         })
     }
     pub fn root_size(&self) -> (u16, u16) {
         self.size
+    }
+
+    pub fn create_map_and_draw(&mut self) -> u32 {
+        let window = self.base | 1;
+        let gc = self.base | 2;
+        let mut create = Vec::new();
+        create.extend(self.order.u32(window));
+        create.extend(self.order.u32(self.root));
+        for value in [0, 0, 8, 8, 0, 1] {
+            create.extend(self.order.u16(value));
+        }
+        create.extend(self.order.u32(0)); // CopyFromParent visual.
+        create.extend(self.order.u32(1 << 11)); // CWEventMask.
+        create.extend(
+            self.order
+                .u32((1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 21)),
+        );
+        self.request(1, 0, &create);
+        let mut create_gc = Vec::new();
+        for value in [gc, window, 0] {
+            create_gc.extend(self.order.u32(value));
+        }
+        self.request(55, 0, &create_gc);
+        self.request(8, 0, &self.order.u32(window));
+        let mut rectangle = Vec::new();
+        rectangle.extend(self.order.u32(window));
+        rectangle.extend(self.order.u32(gc));
+        for value in [0, 0, 8, 8] {
+            rectangle.extend(self.order.u16(value));
+        }
+        self.request(70, 0, &rectangle);
+        window
+    }
+
+    fn request(&mut self, opcode: u8, detail: u8, payload: &[u8]) {
+        assert_eq!(payload.len() % 4, 0);
+        let mut bytes = vec![opcode, detail];
+        bytes.extend(
+            self.order
+                .u16(u16::try_from(1 + payload.len() / 4).unwrap()),
+        );
+        bytes.extend(payload);
+        self.stream.write_all(&bytes).unwrap();
+        self.sequence = self.sequence.checked_add(1).unwrap();
+    }
+
+    pub fn focus_event(&mut self, window: u32) {
+        let mut expected = [0; 32];
+        expected[0] = 9;
+        expected[1] = 3; // FocusIn, NotifyNonlinear.
+        expected[2..4].copy_from_slice(&self.order.u16(self.sequence));
+        expected[4..8].copy_from_slice(&self.order.u32(window));
+        self.exact_event(expected);
+    }
+
+    pub fn input_event(&mut self, window: u32, kind: u8, detail: u8, time: u32, state: u16) {
+        let mut expected = [0; 32];
+        expected[0] = kind;
+        expected[1] = detail;
+        expected[2..4].copy_from_slice(&self.order.u16(self.sequence));
+        expected[4..8].copy_from_slice(&self.order.u32(time));
+        expected[8..12].copy_from_slice(&self.order.u32(self.root));
+        expected[12..16].copy_from_slice(&self.order.u32(window));
+        expected[28..30].copy_from_slice(&self.order.u16(state));
+        expected[30] = 1;
+        self.exact_event(expected);
+    }
+
+    fn exact_event(&mut self, expected: [u8; 32]) {
+        let mut bytes = [0; 32];
+        read_exact_until(&mut self.stream, &mut bytes, Instant::now() + super::WAIT).unwrap();
+        assert_eq!(
+            bytes, expected,
+            "independent {:?} wire expectation",
+            self.order
+        );
+    }
+
+    pub fn empty_tail(&mut self) {
+        self.stream
+            .set_read_timeout(Some(std::time::Duration::from_millis(30)))
+            .unwrap();
+        match self.stream.read(&mut [0; 32]) {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            other => panic!("unexpected wire tail: {other:?}"),
+        }
     }
 }
 
