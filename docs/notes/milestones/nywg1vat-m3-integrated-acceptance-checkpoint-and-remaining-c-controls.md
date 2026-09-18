@@ -15,8 +15,10 @@ together on one signed source and one binary, in containment, with every actor
 collected, and the full contained workspace regression passes on that same
 source. Those two results are stated below with their identities.
 
-That is the gate, and it is not the whole of t093. The candidate still has to
-be integrated into the finish branch, which follows the coordinator's review.
+Review and local integration are complete. On 2026-09-18, `codex/m3-finish`
+fast-forwarded from `563d5a1a` to the reviewed signed handoff `30ac8940`.
+The code is unchanged from tested source `4fcc9f02`; later changes update only
+these records. M3 is complete locally, while t093 remains open.
 Nothing here claims physical or hardware acceptance; hardware checks are
 NOT_RUN throughout. M4 to M6, public XTEST discovery and Session integration
 are untouched by this and remain open. This note changes no acceptance
@@ -226,7 +228,7 @@ X-authority Clippy with warnings denied, workspace formatting, layout and the
 diff check. Their exact commands, exit codes and logs are in
 `.artifacts/m3-finish/final-strict-4fcc9f02/result.json`.
 
-A twenty-of-twenty contained aggregate is still not the whole of t093. What
-remains on this candidate is integration into the finish branch. No physical or
-hardware acceptance is claimed, and none of the live-session, Session
-integration or public XTEST discovery work is touched by this.
+A twenty-of-twenty contained aggregate is still not the whole of t093. Local
+finish-branch integration is complete; root master and the Session/dock tree
+have not imported it, and nothing was pushed. M4–M6, Session integration,
+public XTEST discovery and physical acceptance remain outside this result.

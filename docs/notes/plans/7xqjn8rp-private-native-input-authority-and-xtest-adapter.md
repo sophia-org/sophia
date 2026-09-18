@@ -19,11 +19,11 @@ Neither UID matching nor knowledge of a socket pathname authorizes injection.
 
 ## Current integration state
 
-**M3 is open and implementation is proceeding in parallel.** Claude owns the
-writer, recovery and terminal stream; Codex owns the applied-state producers,
-runner, native proof and lifecycle integration, with independent review across
-the boundary. t093 remains the recording home. M4–M6 and physical task t094
-remain separate; no partial path enables discovery.
+**M3 is complete on the local `codex/m3-finish` branch.** The reviewed signed
+chain through `30ac8940` was integrated by fast-forward on 2026-09-18. Its code
+is unchanged from tested source `4fcc9f02`; the subsequent commits update only
+the plan and milestone record. t093 stays open for M4–M6. Physical task t094
+remains separate, and discovery remains disabled.
 
 The isolated `codex/m3-finish` branch now joins registered worker attachment,
 collection, deferred namespace cleanup, the continuing runner, source-bound
@@ -38,9 +38,8 @@ further contained runs on that same source repeat it, each attesting the same
 commit, source content digest and binary digest. The full contained workspace
 regression passes on the same source, and so do the strict all-target,
 all-feature Clippy, formatting and layout checks. **The integrated acceptance
-aggregate is PASS.** That is the gate and not the whole milestone: the
-candidate still has to be integrated into `codex/m3-finish`, and no physical or
-hardware acceptance is claimed.
+aggregate is PASS.** Review and local finish-branch integration are complete.
+No physical or hardware acceptance is claimed.
 
 An earlier contained run on signed `a2bc967c` passed 18 of 20 with no failures,
 with C.indeterminate_send and C.control_cleanup then unbound and that aggregate
