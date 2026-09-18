@@ -205,10 +205,23 @@ struct AttachedOutcome {
     error: Option<String>,
     workers: Vec<PrivateWorkerCollection>,
     uncollected: Vec<usize>,
-    /// What an explicit `shutdown()` of an `Uncollected` frontend answered
-    /// (its retained places), when the launch chose to call it.
-    shutdown_retained: Option<Vec<usize>>,
+    /// What an explicit `shutdown()` of an `Uncollected` frontend answered,
+    /// when the launch chose to call it.
+    shutdown_retained: Option<RetentionSeen>,
     after: AfterService,
+}
+
+/// What the retention handle an uncollected frontend's `shutdown()` returns
+/// answers, asked inside the launch scope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RetentionSeen {
+    uncollected: Vec<usize>,
+    settled_before: bool,
+    retried: usize,
+    reclaimed: usize,
+    republished: usize,
+    settled_after: bool,
+    terminal_outstanding: Option<usize>,
 }
 
 /// How a launch disposes of an `Uncollected` return, inside the scope.
@@ -306,7 +319,20 @@ fn launch_attached_with(
                 match disposal {
                     UncollectedDisposal::Drop => drop(frontend),
                     UncollectedDisposal::Shutdown => {
-                        shutdown_retained = Some(frontend.shutdown().uncollected().to_vec());
+                        let mut handle = frontend.shutdown();
+                        let settled_before = handle.is_settled();
+                        let retried = handle.retry();
+                        let reclaimed = handle.reclaim_outstanding();
+                        let republished = handle.republish_owed_acknowledgements();
+                        shutdown_retained = Some(RetentionSeen {
+                            uncollected: handle.uncollected().to_vec(),
+                            settled_before,
+                            retried,
+                            reclaimed,
+                            republished,
+                            settled_after: handle.is_settled(),
+                            terminal_outstanding: handle.terminal_outstanding(),
+                        });
                     }
                 }
                 (

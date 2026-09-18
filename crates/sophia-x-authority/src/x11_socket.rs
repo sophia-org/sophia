@@ -106,6 +106,7 @@ include!("x11_socket/routing/private_terminal.rs");
 include!("x11_socket/routing/private_terminal_native.rs");
 include!("x11_socket/routing/private_inventory.rs");
 include!("x11_socket/routing/private_settlement.rs");
+include!("x11_socket/routing/private_settlement_failed.rs");
 include!("x11_socket/routing/private_ordered_home.rs");
 include!("x11_socket/routing/private_ordered_continuation.rs");
 include!("x11_socket/routing/private_ordered_lease.rs");

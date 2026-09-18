@@ -162,12 +162,18 @@ impl PrivateEvidenceCustody {
     /// THE SLOT'S OWN WORD, NOT THE ATTACHMENT'S. A start refused its permit
     /// after the spawn still left a handle here, and a worker started through
     /// this custody by anything other than the service visit is still a
-    /// worker in this custody. Every one of those is collected; an
-    /// unreadable slot is treated as one that may hold a worker.
+    /// worker in this custody. Every one of those is collected.
+    ///
+    /// AN UNREADABLE SLOT IS SELECTED, WHATEVER ITS RECOVERED FIELDS SAY. A
+    /// life read through a poisoned guard is not an established absence: the
+    /// holder that unwound may have been the start itself. Selecting it puts
+    /// it in front of the reaping, which reports what it could establish
+    /// (`slot_poisoned`, and a reaping that did not join) instead of this
+    /// selector deciding silently that there was nothing to collect.
     fn ever_started(&self) -> bool {
         match self.worker_slot().lock() {
             Ok(slot) => slot.life != PrivateWorkerLife::NeverStarted,
-            Err(poisoned) => poisoned.into_inner().life != PrivateWorkerLife::NeverStarted,
+            Err(_) => true,
         }
     }
 

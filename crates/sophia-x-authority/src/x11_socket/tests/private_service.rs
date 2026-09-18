@@ -224,6 +224,8 @@ struct AfterService {
     /// read while the owner lives.
     failed_instances: Option<usize>,
     failure_slots: Option<usize>,
+    /// The store's retained instances whose actor is uncollected, by places.
+    uncollected_instances: Option<Vec<Vec<usize>>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -284,6 +286,7 @@ fn inspect_after(owner: &PrivateServiceOwner, durable: &PrivateSettlementOwner) 
         join_phase: first.map(|custody| custody.join().phase()),
         failed_instances: durable.failed_instances(),
         failure_slots: durable.failure_slots_charged(),
+        uncollected_instances: durable.uncollected_instances(),
     }
 }
 

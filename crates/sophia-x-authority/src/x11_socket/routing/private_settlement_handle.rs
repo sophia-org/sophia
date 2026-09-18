@@ -78,7 +78,18 @@ impl PrivateSettlement {
         self.pending.is_empty()
             && self.outstanding.is_empty()
             && !self.queue_unreadable
+            && self.uncollected.is_empty()
             && self.terminal_outstanding() == Some(0)
+    }
+
+    /// Whether this handle retains its instance over an uncollected actor.
+    ///
+    /// WHILE THIS STANDS, NOTHING HERE DRIVES, RECLAIMS OR SETTLES: `retry`,
+    /// `reclaim_outstanding` and `republish_owed_acknowledgements` answer
+    /// zero and change nothing, and `is_settled` is false. Collecting the
+    /// actor is not this handle's to do.
+    pub fn retains_uncollected(&self) -> bool {
+        !self.uncollected.is_empty()
     }
 
     /// How many commands are waiting to be answered.
@@ -120,6 +131,9 @@ impl PrivateSettlement {
     /// Republishing only: the effects already happened, so nothing here is
     /// re-run. Returns how many reached the receiver.
     pub fn republish_owed_acknowledgements(&self) -> usize {
+        if self.retains_uncollected() {
+            return 0;
+        }
         let Some(owner) = self.origin.control_completion() else {
             return 0;
         };
@@ -136,6 +150,9 @@ impl PrivateSettlement {
     /// The same rule as on a live instance: ended releases, live and
     /// unreadable do not.
     pub fn reclaim_outstanding(&mut self) -> usize {
+        if self.retains_uncollected() {
+            return 0;
+        }
         // Applied here too, not only while the instance was live. A frontend
         // is consumed by shutting down, and a proof that only it could apply
         // would stop being applied exactly when the work outlives it.
@@ -188,6 +205,9 @@ impl PrivateSettlement {
     }
 
     pub fn retry(&mut self) -> usize {
+        if self.retains_uncollected() {
+            return 0;
+        }
         if let Some(terminal) = &self.terminal { let _ = terminal.lifecycle.drive(NonZeroUsize::new(1).unwrap()); }
         self.park_interrupted();
         self.settle_pending()
@@ -349,8 +369,11 @@ impl Drop for PrivateSettlement {
         if self.queue_unreadable || !self.uncollected.is_empty() {
             // Owned by something that outlives this rather than surviving as a
             // boolean on a handle that is going away.
-            self.durable
-                .take_failed_instance(&self.origin, &self.queue);
+            self.durable.take_failed_instance(
+                &self.origin,
+                &self.queue,
+                std::mem::take(&mut self.uncollected),
+            );
         }
         if self.pending.is_empty() {
             return;

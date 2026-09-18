@@ -11114,6 +11114,7 @@ fn an_emptied_failed_record_cannot_release_a_second_instances_slot() {
         held.failed.push(FailedInstance {
             origin: failing_origin,
             queue: failing_queue,
+            uncollected: Vec::new(),
             slot: FailureSlot::Released,
         });
     }

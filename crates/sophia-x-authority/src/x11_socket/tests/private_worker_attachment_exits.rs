@@ -507,6 +507,11 @@ fn a_worker_whose_handle_went_elsewhere_leaves_the_service_unfinalised_and_repor
     // slot still charged.
     assert_eq!(outcome.after.failed_instances, Some(1), "retained as a failed instance");
     assert_eq!(outcome.after.failure_slots, Some(1), "with its instance charge kept");
+    assert_eq!(
+        outcome.after.uncollected_instances,
+        Some(vec![vec![custody.identity().index]]),
+        "and with its reason in the store"
+    );
     let _ = std::fs::remove_file(&socket_path);
 }
 
@@ -539,11 +544,21 @@ fn shutting_down_an_uncollected_frontend_retains_it_rather_than_settling() {
     handle.join().expect("the worker returned");
     assert!(client_ended);
     assert_eq!(outcome.uncollected, vec![custody.identity().index]);
+    let place = custody.identity().index;
     assert_eq!(
         outcome.shutdown_retained,
-        Some(vec![custody.identity().index]),
-        "shutdown answered with a retention naming the uncollected place"
+        Some(RetentionSeen {
+            uncollected: vec![place],
+            settled_before: false,
+            retried: 0,
+            reclaimed: 0,
+            republished: 0,
+            settled_after: false,
+            terminal_outstanding: Some(0),
+        }),
+        "shutdown answered with a retention that names the place, is not settled, and drives, reclaims and republishes nothing"
     );
+    assert_eq!(outcome.after.uncollected_instances, Some(vec![vec![place]]));
     assert_eq!(outcome.after.failed_instances, Some(1));
     assert_eq!(outcome.after.failure_slots, Some(1));
     assert_eq!(outcome.after.custodies_kept, 1);
@@ -592,6 +607,11 @@ fn an_unwind_over_an_uncollected_actor_retains_the_instance_rather_than_settling
     // unwinding frontend's own disposal retained the instance.
     assert_eq!(outcome.after.failed_instances, Some(1), "retained as a failed instance");
     assert_eq!(outcome.after.failure_slots, Some(1), "with its instance charge kept");
+    assert_eq!(
+        outcome.after.uncollected_instances,
+        Some(vec![vec![custody.identity().index]]),
+        "and with its reason in the store"
+    );
     assert_eq!(outcome.after.custodies_kept, 1);
     let _ = std::fs::remove_file(&socket_path);
 }
@@ -759,5 +779,145 @@ fn a_visit_refuses_a_readiness_whose_stop_is_not_the_homes() {
         custody.worker_slot().lock().expect("a readable slot").life,
         PrivateWorkerLife::NeverStarted
     );
+    drop(custody);
+}
+
+/// The launch for the recovery probe: drop the `Uncollected` return, then
+/// ask the store's public recovery before the external joiner joins, and
+/// again after.
+/// (first recovery, store before the join, second recovery, store after).
+type RecoveryProbe = (Option<usize>, AfterService, Option<usize>, AfterService);
+
+fn launch_recovering(
+    socket_path: std::path::PathBuf,
+    namespace: NamespaceId,
+    joined: Arc<AtomicBool>,
+) -> (
+    std::thread::JoinHandle<RecoveryProbe>,
+    Receiver<()>,
+    Handles,
+    SyncSender<XServerFrontendServiceCommand>,
+) {
+    let (transaction_sender, _transactions) = sync_channel(64);
+    let (commands, service_commands) = sync_channel(4);
+    let (handles_out, handles_in) = channel();
+    let (handle, finished) = launch(4, move |durable, owner| {
+        let private = crate::PrivateXServerFrontend::new(private_service_parts(4), owner)
+            .unwrap_or_else(|(refusal, _)| panic!("a frontend over this owner: {refusal:?}"));
+        let _ = handles_out.send(Handles {
+            registry: private.broker.registry.clone(),
+            raster: private.broker.raster_router(),
+        });
+        let lease = owner.lease();
+        let config = private_service_config(&socket_path, namespace, 4);
+        let outcome = serve_private_frontend_until_stopped(
+            private,
+            &lease,
+            config,
+            transaction_sender,
+            service_commands,
+            Arc::new(|_| {}),
+        );
+        assert!(
+            matches!(outcome, Err(PrivateServiceFailure::Uncollected { .. })),
+            "the staged handoff leaves the actor uncollected"
+        );
+        // THE RETURN IS DROPPED HERE, frontend and all.
+        drop(outcome);
+        // Ordinary recovery, asked while the actor is still uncollected.
+        let first = durable.recover_failed();
+        let before = inspect_after(owner, durable);
+        // The external joiner joins now (the control does it); then ordinary
+        // recovery is asked again. A join elsewhere is not collection through
+        // the custody, so the retention still stands.
+        assert!(
+            waited_for(|| joined.load(std::sync::atomic::Ordering::Acquire)),
+            "the control joins the handle"
+        );
+        let second = durable.recover_failed();
+        let after = inspect_after(owner, durable);
+        (first, before, second, after)
+    });
+    let handles = handles_in
+        .recv_timeout(Duration::from_secs(15))
+        .expect("the launch scope built its frontend");
+    (handle, finished, handles, commands)
+}
+
+#[test]
+fn ordinary_recovery_leaves_an_instance_retained_over_an_uncollected_actor_standing() {
+    let socket_path = private_service_socket("attach-uncollected-recover");
+    let joined = Arc::new(AtomicBool::new(false));
+    let (handle, finished, handles, commands) =
+        launch_recovering(socket_path.clone(), NamespaceId::from_raw(9417), Arc::clone(&joined));
+    let mut client = connect_private_client(&socket_path);
+    handshake(&mut client);
+    let custody = wait_attached(&handles.registry);
+    let place = custody.identity().index;
+    // STAGE-ONLY: a joiner elsewhere takes the handle before the service
+    // collects.
+    let taken = hand_worker_to_joiner(custody.worker_slot())
+        .handle
+        .expect("the handle was in the slot");
+    commands
+        .send(XServerFrontendServiceCommand::StopAndDisconnect)
+        .expect("the service is listening for commands");
+    let client_ended = eof_within(&mut client, 3);
+    // The launch scope has asked recovery once by now (or will, before it
+    // waits on this); join the external handle and let it ask again.
+    taken.join().expect("the worker returned");
+    joined.store(true, std::sync::atomic::Ordering::Release);
+    let (first, before, second, after) =
+        launch_outcome(handle, &finished, false, "recovery over uncollected");
+    assert!(client_ended);
+    assert_eq!(first, Some(0), "recovery recovered nothing from the standing instance");
+    assert_eq!(before.failed_instances, Some(1), "the instance still stands");
+    assert_eq!(before.failure_slots, Some(1), "its charge is still held");
+    assert_eq!(before.uncollected_instances, Some(vec![vec![place]]), "with its reason");
+    assert_eq!(second, Some(0), "a join elsewhere does not make it recoverable");
+    assert_eq!(after.failed_instances, Some(1));
+    assert_eq!(after.failure_slots, Some(1));
+    assert_eq!(after.uncollected_instances, Some(vec![vec![place]]));
+    assert_eq!(after.custodies_kept, 1);
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+#[test]
+fn an_unreadable_slot_is_collected_as_uncollected_rather_than_skipped() {
+    let f = worker_fixture(XServerFrontendClientId(9418));
+    f.permit();
+    visitable(&f);
+    let custody = custody_for(&f, &f.fixture.keeper);
+    // STAGE-ONLY: a holder unwinds inside the worker slot before the service
+    // visits, so the startup transaction cannot read it.
+    let poisoner = std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let _inside = custody.worker_slot().lock().expect("a readable slot");
+                panic!("a holder unwound inside the worker slot");
+            })
+            .join()
+    });
+    assert!(poisoner.is_err());
+    let lease = f.fixture.keeper.lease();
+    let frontend = fixture_frontend(&f);
+    let registry = &frontend.broker.registry;
+    let started = attach_ready_workers(frontend, &lease);
+    let attachment = custody.attachment();
+    let failures = stop_attached_workers(&lease, registry);
+    let (workers, uncollected) = collect_attached_workers(&lease, registry);
+    assert_eq!(started, 0);
+    assert_eq!(
+        attachment,
+        Some(PrivateAttachment::Refused(PrivateAttachmentRefusal::Startup(
+            PrivateStartupOutcome::Unreadable
+        )))
+    );
+    assert!(failures.is_empty(), "{failures:?}");
+    assert_eq!(workers.len(), 1, "the unreadable slot was selected, not skipped");
+    assert!(!workers[0].joined);
+    assert!(workers[0].slot_poisoned, "and the reaping says why nothing was established");
+    assert_eq!(workers[0].reaped, PrivateReaped::NothingStarted);
+    assert_eq!(uncollected, vec![custody.identity().index], "so finalisation is not authorised");
     drop(custody);
 }
