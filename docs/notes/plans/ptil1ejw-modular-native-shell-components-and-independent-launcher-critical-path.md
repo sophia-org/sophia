@@ -1595,3 +1595,25 @@ they do not execute queued applications or establish native presentation. No
 full canonical gate, GPU/display run, installation or publication is claimed.
 Provlita's retained GPU protocol client, the three-client physical wrapper and
 their integrated gates remain before attended acceptance. Tasks remain open.
+
+### Generic persistent client adapter (2026-09-18)
+
+The shell-client library now offers bounded revision-8 catalog assembly over its
+sole FIFO, exact catalog candidate enqueue using the existing ContentLifecycle,
+and paired ACK/activation admission using reserved control capacity. Partial or
+replayed catalogs never become current. A candidate enqueue refusal changes
+neither the lifecycle watermark nor the output FIFO. The app still owns the
+catalog-to-presented-view relationship; these methods grant no launch authority.
+
+The device-hidden shell-client suite and strict Clippy pass in
+`.artifacts/dock-client-catalog/socket-check.log`; layout passes. Six new controls
+cover incomplete/malformed catalogs, a 128-entry real-socket publication spanning
+the 64-record inbox, preserved wire order, candidate saturation and exact paired
+response refusal/retry. Supplied welcome/presentation metadata is not supervised
+client or native evidence. An initial fixture used a nonzero Limits transaction
+and failed codec validation; its corrected run is retained separately.
+
+Lom `2b79103` and Provlita `7816142` share the extracted client-side GPU owner;
+both full project checks pass device-hidden. Sophia has no Vello dependency.
+Provlita's native worker, output/resource scheduler and attended wrapper remain
+unfinished. No physical readiness, install, push or canonical PASS is claimed.

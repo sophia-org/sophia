@@ -2,6 +2,9 @@ use super::*;
 use crate::*;
 use sophia_protocol::*;
 
+#[path = "catalog.rs"]
+mod catalog;
+
 fn grant() -> ContentGrant {
     ContentGrant {
         connection_epoch: 7,

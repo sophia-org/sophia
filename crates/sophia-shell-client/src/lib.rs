@@ -4,6 +4,8 @@
 //! renders no pixels and opens no X11 or Wayland connection.
 
 mod candidate;
+mod catalog;
+pub use catalog::{CatalogInbox, CatalogObservation};
 mod lifecycle;
 mod outbox;
 pub use lifecycle::*;
