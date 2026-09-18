@@ -1,6 +1,17 @@
 {
   "schema": 1,
   "suites": {
+    "ordered-state": [
+      "x11_socket::routing_tests::state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions",
+      "x11_socket::routing_tests::state_only_frozen_release_retains_original_request_then_applies_once_after_exact_thaw",
+      "x11_socket::routing_tests::service_state_only_release_suppresses_wire_output_and_keeps_recipient_debt",
+      "x11_socket::routing_tests::service_state_only_press_is_refused_before_native_application",
+      "x11_socket::routing_tests::service_keyboard_async_thaw_keeps_original_shift_request_and_exact_writer_order",
+      "x11_socket::routing_tests::service_pointer_async_thaw_keeps_original_motion_axis_cells_and_output_order",
+      "x11_socket::routing_tests::service_motion_and_axis_use_the_original_request_and_reclaim_exact_writer_receipts",
+      "x11_socket::routing_tests::transient_full_queue_preserves_exact_pair_token_and_accumulator_without_reselection",
+      "x11_socket::routing_tests::transient_axis_smooth_and_emulated_selections_are_independent_and_accumulate_once"
+    ],
     "transient-thaw": [
       "x11_socket::routing_tests::service_pointer_async_thaw_keeps_original_motion_axis_cells_and_output_order",
       "x11_socket::routing_tests::service_motion_and_axis_use_the_original_request_and_reclaim_exact_writer_receipts",
