@@ -46,13 +46,21 @@ pub(super) struct PrivateInputRuntime {
     /// own and are untouched by this.
     pub(super) started: std::time::Instant,
     pub(super) next_delivery: AtomicU64,
-    /// This Session's own committed-state coordinator.
+    /// This Session's own headless backend assembly.
     ///
-    /// THE REAL ONE, held here rather than by a caller or an example. Its
+    /// THE REAL ONE, held here rather than by a caller or an example, built
+    /// from the configured topology with the configured frame clock. Its
     /// committed surface state is the only source of the geometry a map or a
     /// configure carries, so a caller cannot supply one and cannot seed
     /// applied state without a real transaction going through it.
-    pub(super) coordinator: Mutex<sophia_engine::ProductionSessionCoordinator>,
+    pub(super) assembly: Mutex<sophia_engine::QueuedHeadlessCompositorBackendAssembly>,
+    /// Committed decisions waiting to reach the order, in the order they were
+    /// decided.
+    ///
+    /// ORDERED AND POPPED ONLY ON TRANSFER. A later effect must not overtake
+    /// an earlier one that the order refused: accepting a configure before its
+    /// own admission would apply an update to a window that was never mapped.
+    pub(super) bridge: Mutex<std::collections::VecDeque<super::committed::PrivateInputBridgeEntry>>,
     /// Surfaces this service has already admitted, with the exact connection
     /// each was admitted for. Keyed by the whole SurfaceId, whose own
     /// generation is the incarnation, so a surface destroyed and created again
@@ -62,12 +70,6 @@ pub(super) struct PrivateInputRuntime {
     pub(super) admitted_surfaces: Mutex<
         std::collections::BTreeMap<sophia_protocol::SurfaceId, super::PrivateInputConnection>,
     >,
-    /// Committed effects the order refused, kept whole for a later retry.
-    ///
-    /// RETAINED RATHER THAN RECOMMITTED. Rebuilding one would put the same
-    /// transaction through the coordinator twice; dropping it would lose
-    /// committed state that was never applied.
-    pub(super) pending_effects: Mutex<Vec<super::committed::PrivateInputPendingEffect>>,
     pub(super) owner: Arc<PrivateServiceOwner>,
     pub(super) store: PrivateSettlementOwner,
     pub(super) participant: PrivateAdmissionParticipant,
@@ -135,6 +137,7 @@ impl PrivateInputRuntime {
             input_capacity,
             advertised_buttons,
             output_topology,
+            frame_clock,
             session_generation,
         } = config;
 
@@ -178,12 +181,40 @@ impl PrivateInputRuntime {
             .find(|entry| entry.output == output_topology.primary)
             .or_else(|| output_topology.outputs.first())
             .ok_or(PrivateInputRefusal::Topology)?;
-        let coordinator = sophia_engine::ProductionSessionCoordinator::new(
-            sophia_engine::HeadlessEngine::new(sophia_engine::HeadlessOutput {
-                id: primary.output,
-                size: primary.pixel_size,
-                scale: primary.scale,
-            }),
+        // THE PLANNED ASSEMBLY, NOT A COORDINATOR ON ITS OWN. Building the
+        // coordinator directly would quietly narrow the plan to the one part
+        // of it this path happens to call, and would leave the frame clock
+        // whichever the convenience constructor chose.
+        let output = sophia_engine::HeadlessOutput {
+            id: primary.output,
+            size: primary.pixel_size,
+            scale: primary.scale,
+        };
+        // BUILT FROM THE ENTRY, INCLUDING ITS REFRESH. The assembly's own
+        // convenience path fixes the head at sixty hertz; the topology this
+        // service was given says what its output actually refreshes at, and
+        // discarding that would make the head disagree with the topology the
+        // frontend advertises.
+        let mut heads = sophia_engine::EngineHeadRegistry::new();
+        let _ = heads.admit(sophia_engine::HeadRenderTarget {
+            head: sophia_engine::RenderHeadId::from_raw(primary.output.raw()),
+            output: primary.output,
+            target_generation: 1,
+            native_size: primary.pixel_size,
+            scale: primary.scale,
+            refresh_millihz: primary.refresh_millihz,
+            transform: sophia_protocol::OutputTransform::Normal,
+            mapping: sophia_protocol::OutputHeadMapping::Fit,
+        });
+        let assembly = sophia_engine::QueuedHeadlessCompositorBackendAssembly::from_parts(
+            output,
+            heads,
+            frame_clock,
+            sophia_engine::LibinputPhysicalInputAdapter::new(
+                sophia_engine::QueuedInputPoller::default(),
+                sophia_engine::LibinputEventSource::new(),
+            ),
+            sophia_engine::RendererSelection::default(),
         );
 
         let frontend_config = XServerFrontendConfig::new(&socket_path, namespace)
@@ -367,9 +398,9 @@ impl PrivateInputRuntime {
             deliveries: Mutex::new(deliveries),
             transactions: Mutex::new(transactions),
             closed: Mutex::new(closed),
-            coordinator: Mutex::new(coordinator),
+            assembly: Mutex::new(assembly),
+            bridge: Mutex::new(std::collections::VecDeque::new()),
             admitted_surfaces: Mutex::new(std::collections::BTreeMap::new()),
-            pending_effects: Mutex::new(Vec::new()),
             seat: binding.seat(),
             started: std::time::Instant::now(),
             next_delivery: AtomicU64::new(1),
@@ -465,9 +496,14 @@ impl PrivateInputRuntime {
             None => PrivateInputThreadJoin::NeverStarted,
         };
         let settlement = self.settlement();
+        // COMMITTED WORK THE ORDER NEVER TOOK. The X store has never seen it,
+        // so it appears in no settlement reading; counting it here is what
+        // stops a stop from looking finished while this is still owed.
+        let bridge_undelivered = self.bridge.lock().map(|held| held.len()).unwrap_or(0);
         let mut outcome = PrivateInputOutcome {
             service_thread,
             settlement,
+            bridge_undelivered,
             ..PrivateInputOutcome::default()
         };
         if let Some(closed) = closed {
