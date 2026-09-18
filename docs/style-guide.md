@@ -16,6 +16,28 @@ Sophia user-space components are Rust by default.
 
 Do not mix languages inside one component without a concrete boundary reason.
 
+### Repository tooling
+
+Use Rust through the existing `xtask` for new maintained tooling: test harnesses,
+isolation orchestration, protocol validation, evidence collection and release
+automation. Keep typed identities, explicit errors and bounded subprocess work
+in the owning modules rather than accumulating one-off scripts.
+
+Use shell for short launchers and straightforward command sequences. Python is
+appropriate for disposable analysis and experiments, not the default for new
+reusable infrastructure. Prefer direct patches for source edits; use scripted
+transformations only when their repetition warrants it, and inspect the diff.
+Independent C or other language protocol checks retain their interoperability
+purpose; do not replace them with a second call to the Rust codec.
+
+Migrate recurring Python or complex shell tooling incrementally when its owner
+is already being changed. Existing working tools remain supported; this policy
+does not require a rewrite before shipping the dock. Preserve device-hidden
+execution, fail-closed prerequisites, timeouts, evidence formats and negative
+controls during migration. Prove equivalent behavior before replacing a gate;
+changing its implementation language does not authorize GPU or live-session
+access. Ordinary checks must not acquire hardware through autodetection.
+
 ## Rust Layout
 
 Prefer subsystem directories over large files:
