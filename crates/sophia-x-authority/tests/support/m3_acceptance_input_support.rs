@@ -292,7 +292,10 @@ fn b_history_refusals(
                 &runner.keyboards.seats[&runner.seat] as *const crate::XkbKeyboardState as usize,
                 original
             );
-            send.send(json!({"refusal":"ForeignKeyboards","replacement":"AlreadyIssued","sequence":format!("{sequence:?}"),"token":format!("{:?}",custody.token()),"original_history":original,"modifiers":modifiers})).unwrap();
+            send.send(json!({
+                "factory":{"entry":"frontend.keyboards","refusal":"AlreadyIssued","replacement_issued":false,"replacement_entered_executor":false,"original_history":original},
+                "foreign":{"refusal":"ForeignKeyboards","accepted_request":true,"sequence":format!("{sequence:?}"),"token":format!("{:?}",custody.token()),"original_history":original,"modifiers":modifiers}
+            })).unwrap();
         }),
     );
     release.entered();

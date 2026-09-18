@@ -17,7 +17,7 @@ fn b_pointer_grab(connection: &mut BConnection, synchronous: bool) {
     );
 }
 
-fn b_protocol_barrier(connection: &mut BConnection) {
+fn b_protocol_barrier(connection: &mut BConnection) -> [u8; 32] {
     use std::io::Write;
     connection.peer.write_all(&[43, 0, 1, 0]).unwrap();
     connection.sequence += 1;
@@ -27,6 +27,21 @@ fn b_protocol_barrier(connection: &mut BConnection) {
         u16::from_le_bytes([reply[2], reply[3]]),
         connection.sequence
     );
+    reply
+}
+
+fn b_no_input_tail(connection: &mut BConnection, focus: u32) -> [u8; 32] {
+    let reply = b_protocol_barrier(connection);
+    let mut expected = [0u8; 32];
+    expected[0] = 1;
+    expected[1] = 1; // The actual FocusSurface source uses revert-to parent.
+    expected[2..4].copy_from_slice(&connection.sequence.to_le_bytes());
+    expected[8..12].copy_from_slice(&focus.to_le_bytes());
+    assert_eq!(
+        reply, expected,
+        "no extra event after the final original receipt"
+    );
+    reply
 }
 
 #[test]

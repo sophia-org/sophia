@@ -149,8 +149,8 @@ fn b_applied_focus() {
                 "applied_focus_permits",
                 json!({"window":connection.window,"frames":frames}),
             ),
-            ("foreign_history_refuses", histories.clone()),
-            ("replacement_history_refuses", histories),
+            ("foreign_history_refuses", histories["foreign"].clone()),
+            ("replacement_history_refuses", histories["factory"].clone()),
         ],
         &actors,
     );
@@ -209,6 +209,8 @@ fn b_keyboard_history() {
         histories.push(history);
     }
     b_empty_debt(&service);
+    let focus_window = connection.window;
+    let tail = b_no_input_tail(&mut connection, focus_window);
     let refused = b_history_refusals(&service, &ingress, connection.surface, 112017);
     let actors = b_finish(service, &[Arc::clone(&connection.custody)]);
     emit_case(
@@ -220,10 +222,10 @@ fn b_keyboard_history() {
             ),
             (
                 "exact_key_and_state_notify_bytes",
-                json!({"window":connection.window,"sequence":connection.sequence,"frames":frames}),
+                json!({"window":connection.window,"event_sequence":connection.sequence-1,"frames":frames,"final_barrier":tail}),
             ),
-            ("recreated_history_refuses", refused.clone()),
-            ("foreign_history_refuses", refused),
+            ("recreated_history_refuses", refused["factory"].clone()),
+            ("foreign_history_refuses", refused["foreign"].clone()),
         ],
         &actors,
     );
@@ -314,6 +316,7 @@ fn b_shared_hold() {
     let receipt = b_flushed(&service, 112030, first.client());
     assert_eq!(read_event(&mut second.peer, 1), None);
     b_empty_debt(&service);
+    let tail = b_no_input_tail(&mut first, second.window);
     let actors = b_finish(
         service,
         &[Arc::clone(&first.custody), Arc::clone(&second.custody)],
@@ -328,7 +331,7 @@ fn b_shared_hold() {
             ("survivor_release_no_repeat", survivor),
             (
                 "final_release_original_recipient",
-                json!({"original":first.client().raw(),"new_focus":second.client().raw(),"frame":released,"receipt":receipt}),
+                json!({"original":first.client().raw(),"new_focus":second.client().raw(),"frame":released,"receipt":receipt,"final_barrier":tail}),
             ),
         ],
         &actors,
