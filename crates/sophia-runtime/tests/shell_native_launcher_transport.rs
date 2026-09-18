@@ -24,6 +24,13 @@ struct Peer {
 }
 impl Peer {
     fn new(r: &mut ContentEpochRegistry, profile: ContentStoreProfile) -> Self {
+        Self::with_limits(r, profile, limits())
+    }
+    fn with_limits(
+        r: &mut ContentEpochRegistry,
+        profile: ContentStoreProfile,
+        limits: ContentLimits,
+    ) -> Self {
         let directory = std::env::temp_dir().join(format!(
             "native-wire-{}-{}",
             std::process::id(),
@@ -43,7 +50,7 @@ impl Peer {
             })
             .unwrap();
         transport
-            .reserve_content_with_profile(r, limits(), profile)
+            .reserve_content_with_profile(r, limits, profile)
             .unwrap();
         let client = UnixStream::connect(transport.socket_path()).unwrap();
         client
@@ -79,7 +86,10 @@ impl Peer {
         panic!("negotiation did not finish within bounded visits")
     }
     fn connected(r: &mut ContentEpochRegistry) -> Self {
-        let mut peer = Self::new(r, ContentStoreProfile::NativeLauncher);
+        Self::connected_with_limits(r, limits())
+    }
+    fn connected_with_limits(r: &mut ContentEpochRegistry, limits: ContentLimits) -> Self {
+        let mut peer = Self::with_limits(r, ContentStoreProfile::NativeLauncher, limits.clone());
         let welcome = peer.negotiate(r, hello(), granted()).unwrap();
         assert_eq!(welcome.selected_revision, 7);
         assert_eq!(welcome.capabilities, CAPS);
@@ -92,7 +102,7 @@ impl Peer {
         );
         assert_eq!(
             decode_shell_content_frame(&peer.read()).unwrap().1,
-            ShellContentRecord::Limits(limits())
+            ShellContentRecord::Limits(limits)
         );
         peer.transport
             .publish_native_launcher_opening(r, tx(2), opening())

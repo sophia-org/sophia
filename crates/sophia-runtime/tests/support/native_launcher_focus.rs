@@ -2,6 +2,8 @@ use super::*;
 
 #[path = "native_launcher_deadlines.rs"]
 mod deadlines;
+#[path = "native_launcher_input_limits.rs"]
+mod input_limits;
 
 fn setup() -> (
     ContentEpochRegistry,

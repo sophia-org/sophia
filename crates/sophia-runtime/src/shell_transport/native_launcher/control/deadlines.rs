@@ -2,7 +2,7 @@ use super::*;
 
 impl ShellComponentTransport {
     /// Visit before servicing input/ACKs at the Session monotonic boundary.
-    /// True means the exact opening was disarmed for timeout, not that its
+    /// True means the exact opening is closing or expired, not that its
     /// pixels were withdrawn or its resource consumers have retired. New input
     /// also calls this boundary; idle expiration requires the owner's visits.
     pub fn service_native_launcher_deadlines(

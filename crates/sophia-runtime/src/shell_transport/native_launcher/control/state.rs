@@ -61,6 +61,9 @@ impl Default for NativeControl {
     }
 }
 impl NativeControl {
+    pub(in crate::shell_transport) fn input_occupancy(&self) -> usize {
+        self.inputs.iter().flatten().count() + usize::from(self.accept.is_some())
+    }
     pub(in crate::shell_transport) fn credits(&self) -> usize {
         usize::from(self.opening.is_some())
             + usize::from(self.focus.is_some())
@@ -78,7 +81,10 @@ impl NativeControl {
         self.inputs = [None; 16];
         self.revision = 0;
     }
-    pub(super) fn slot(&self) -> Option<usize> {
+    pub(super) fn slot(&self, maximum: usize) -> Option<usize> {
+        if self.inputs.iter().flatten().count() >= maximum {
+            return None;
+        }
         self.inputs.iter().position(Option::is_none)
     }
 }

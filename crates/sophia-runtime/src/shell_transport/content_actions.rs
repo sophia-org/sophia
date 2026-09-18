@@ -9,7 +9,8 @@ impl ShellComponentTransport {
     /// Admission requires two real aggregate credits: Action and cancellation.
     pub fn content_action_capacity_available(&self, epochs: &crate::ContentEpochRegistry) -> bool {
         self.content_limits.as_ref().is_some_and(|limits| {
-            self.action_cancellations.len() < limits.max_pending_actions as usize
+            self.action_cancellations.len() + self.native_control.input_occupancy()
+                < limits.max_pending_actions as usize
                 && self.action_cancellations.len() < self.action_cancellations.capacity()
                 && self.control_capacity_available(epochs, 2)
         })

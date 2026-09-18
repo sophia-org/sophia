@@ -6,6 +6,12 @@ pub(crate) use state::NativePresented;
 use state::{AcceptIntent, InputReceipt};
 
 impl ShellComponentTransport {
+    fn native_input_slot(&self) -> Option<usize> {
+        let maximum = (self.content_limits.as_ref()?.max_pending_actions as usize)
+            .saturating_sub(self.action_cancellations.len());
+        self.native_control.slot(maximum)
+    }
+
     /// Caller supplies the exact current state to candidate intake; incoming
     /// client bytes never select the authoritative issued revision.
     pub fn native_launcher_state(&self) -> Option<(NativeLauncherOpening, u64)> {
@@ -164,7 +170,7 @@ impl ShellComponentTransport {
         if kind == NativeLauncherInputKind::Accept && focus.state_revision != revision {
             if !text.is_empty()
                 || self.native_control.accept.is_some()
-                || self.native_control.slot().is_none()
+                || self.native_input_slot().is_none()
             {
                 return Err(ShellTransportError::WrongActivation);
             }
@@ -205,8 +211,7 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::WrongActivation);
         }
         let slot = self
-            .native_control
-            .slot()
+            .native_input_slot()
             .ok_or(ShellTransportError::ContentQueueSaturated)?;
         let revision = if kind == NativeLauncherInputKind::Accept {
             self.native_control.revision
@@ -235,6 +240,11 @@ impl ShellComponentTransport {
                 text: text.to_owned(),
             }),
         )?;
+        if self.content_limits.as_ref().is_none_or(|limits| {
+            frame.len() - SOPHIA_IPC_HEADER_LEN > limits.max_frame_payload as usize
+        }) {
+            return Err(ShellTransportError::WrongContentRecord);
+        }
         if frame.len() > self.control_frame_bytes()
             || !self.frame_capacity_available(epochs, frame.len(), true, transfer)
         {

@@ -279,3 +279,14 @@ counts all successfully queued bulk records, including those already written to
 the kernel, before checking the two reserved terminal notifications. It is not
 a latency or owner-loop fairness test. No physical input, supervised launcher,
 catalog execution, native display or Bemenu backend has run in these controls.
+
+The limit follow-up also constrains native receipts and unsent Enter by the
+negotiated pending-action limit, shared with pointer cancellation obligations.
+The sixteen-element array is only a storage ceiling. A smaller or zero grant
+does not inherit that ceiling, and retiring a pointer cancellation or exact ACK
+frees only its own slot. Native text also checks the negotiated frame-payload
+bound before receipt/revision transfer, independently of its 512-byte control
+credit. Four additional private-socket controls exercise zero/one-action grants,
+shared pointer/native occupancy and an exact 304-byte payload boundary. The
+pointer control supplies Session's target decision; it proves shared transport
+accounting, not pointer authority. Evidence: `.artifacts/bemenu-native-input-limits/`.
