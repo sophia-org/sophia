@@ -432,16 +432,24 @@ impl BaseGuards<'_> {
             release_xkb_applied: false,
             release_disposition: KeyReleaseDisposition::Unapplied,
         });
-        may_have_applied.set(true);
-        let applied = permit
-            .press(
-                input,
-                Recipient {
-                    recipient: recipient.client.raw(),
-                    connection_generation: recipient._admission.generation,
-                },
-            )
-            .map_err(Refusal::Authority)?;
+        let prior_application = may_have_applied.replace(true);
+        let applied = match permit.press(
+            input,
+            Recipient {
+                recipient: recipient.client.raw(),
+                connection_generation: recipient._admission.generation,
+            },
+        ) {
+            Ok(applied) => applied,
+            Err(cause) => {
+                // A returned common refusal applied no press. Dispose only
+                // this unused installed slot; an unwind never reaches here
+                // and retains its possibly applied source custody.
+                *storage = None;
+                may_have_applied.set(prior_application);
+                return Err(Refusal::Authority(cause));
+            }
+        };
         let hold = storage
             .as_mut()
             .expect("source key context installed before effect");

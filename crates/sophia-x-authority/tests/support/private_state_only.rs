@@ -309,6 +309,17 @@ fn service_state_only_release_suppresses_wire_output_and_keeps_recipient_debt() 
     .expect("the real native proof leaves the recipient half owed");
     assert!(!debt.1.recipient_settled);
     assert!(delivery_cell(&launched.registry, 997834).is_none());
+    // The missing recipient half still bars this exact key, but its explicit
+    // no-effect refusal must not pin native custody or the producer's cell.
+    ingress
+        .submit(&lease, key_service_route(surface, 997838, 42, true))
+        .unwrap();
+    let barred = delivery_cell(&launched.registry, 997838).unwrap();
+    assert!(waited_for(|| barred.answer().is_some()));
+    assert_eq!(
+        barred.answer().unwrap().outcome,
+        XAuthorityInputDeliveryOutcome::RouteRejected
+    );
     let following = control
         .submit(&lease, configure(client_id, surface, 997835))
         .unwrap();
@@ -350,7 +361,7 @@ fn service_state_only_release_suppresses_wire_output_and_keeps_recipient_debt() 
     assert_eq!(outcome.ok, Some(true), "{:?}", outcome.error);
     assert!(outcome.execution_inventory_matches && outcome.execution_collected);
     let order = outcome.order.unwrap();
-    assert_eq!((order.refused, order.dispatched), (0, 5), "{order:?}");
+    assert_eq!((order.refused, order.dispatched), (1, 5), "{order:?}");
     let release = outcome
         .key_releases
         .iter()
