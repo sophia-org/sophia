@@ -13065,6 +13065,7 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
                 }
                 PrivateDeliveryStep::Idle => panic!("traffic was ready, so no step is idle"),
                 PrivateDeliveryStep::SharedActivation { .. } => {}
+                PrivateDeliveryStep::TransientReceipt { .. } => {}
                 PrivateDeliveryStep::Blocked(_) => panic!("no entry is indeterminate here"),
             }
         }
@@ -27390,7 +27391,7 @@ fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
     );
     assert_eq!(
         retried.emission().incarnation(),
-        incarnation,
+        Some(incarnation),
         "still named by the hold it came from"
     );
     assert!(

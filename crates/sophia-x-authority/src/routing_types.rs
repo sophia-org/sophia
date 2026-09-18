@@ -761,7 +761,7 @@ impl XAuthorityOrderedDelivery {
     pub(crate) fn delivery(&self) -> crate::XAuthorityInputDeliveryId {
         self.delivery
     }
-    pub(crate) fn incarnation(&self) -> sophia_input_authority::HoldIncarnation {
+    pub(crate) fn incarnation(&self) -> Option<sophia_input_authority::HoldIncarnation> {
         self.emission.incarnation()
     }
     pub(crate) fn recipient(&self) -> sophia_input_authority::ConnectionIdentity {

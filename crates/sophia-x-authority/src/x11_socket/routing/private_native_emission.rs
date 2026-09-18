@@ -3,19 +3,37 @@
 /// assertion that any byte was sent or any debt settled.
 pub(crate) struct PrivateOrderedEmission {
     origin: Arc<Origin>,
-    incarnation: HoldIncarnation,
+    identity: PrivateEmissionIdentity,
     delivery: Option<XAuthorityInputDeliveryId>,
     connection: RetainedConnection,
     payload: OrderedPayload,
 }
 
+/// Source provenance is either a common hold or one validated request effect.
+/// Motion and axis effects never manufacture a hold incarnation.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PrivateEmissionIdentity {
+    Hold(HoldIncarnation),
+    Request {
+        token: sophia_input_authority::RequestToken,
+        context: sophia_input_authority::ExecutionContext,
+    },
+}
+
 // Both kinds use fixed inline storage. Capacity accounting must charge the
 // full enum size; boxing would allocate while the source guards are held.
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "fixed inline source storage is reserved before exposure; boxing would allocate under native guards"
+)]
 enum OrderedPayload {
     Pointer {
         event: XAuthorityPointerEvent,
         plan: PrivateResolvedPointer,
+    },
+    PointerPair {
+        first: Option<(XAuthorityPointerEvent, PrivateResolvedPointer)>,
+        second: Option<(XAuthorityPointerEvent, PrivateResolvedPointer)>,
     },
     Key(KeyEmission),
 }
@@ -37,7 +55,7 @@ impl PrivateOrderedEmission {
     ) -> Self {
         Self {
             origin: hold.origin.clone(),
-            incarnation: hold.incarnation.expect("known source commit"),
+            identity: PrivateEmissionIdentity::Hold(hold.incarnation.expect("known source commit")),
             delivery,
             connection: hold.connection(),
             payload: OrderedPayload::Pointer { event, plan },
@@ -48,8 +66,15 @@ impl PrivateOrderedEmission {
         self.delivery
     }
 
-    pub(crate) fn incarnation(&self) -> HoldIncarnation {
-        self.incarnation
+    pub(crate) fn incarnation(&self) -> Option<HoldIncarnation> {
+        match self.identity {
+            PrivateEmissionIdentity::Hold(incarnation) => Some(incarnation),
+            PrivateEmissionIdentity::Request { .. } => None,
+        }
+    }
+
+    pub(crate) fn identity(&self) -> PrivateEmissionIdentity {
+        self.identity
     }
 
     /// Exactly which endpoint this emission was minted for.
@@ -88,6 +113,14 @@ impl PrivateOrderedEmission {
     pub(crate) fn frame_count(&self) -> usize {
         match &self.payload {
             OrderedPayload::Pointer { plan, .. } => pointer_records(plan).count(),
+            OrderedPayload::PointerPair { first, second } => {
+                first
+                    .as_ref()
+                    .map_or(0, |(_, plan)| pointer_records(plan).count())
+                    + second
+                        .as_ref()
+                        .map_or(0, |(_, plan)| pointer_records(plan).count())
+            }
             OrderedPayload::Key(key) => key.frame_count(),
         }
     }
@@ -105,6 +138,24 @@ impl PrivateOrderedEmission {
             OrderedPayload::Pointer { event, plan } => pointer_records(plan)
                 .nth(index)
                 .map(|record| record.encode(*event, byte_order, sequence)),
+            OrderedPayload::PointerPair { first, second } => {
+                let first_count = first
+                    .as_ref()
+                    .map_or(0, |(_, plan)| pointer_records(plan).count());
+                if index < first_count {
+                    first.as_ref().and_then(|(event, plan)| {
+                        pointer_records(plan)
+                            .nth(index)
+                            .map(|record| record.encode(*event, byte_order, sequence))
+                    })
+                } else {
+                    second.as_ref().and_then(|(event, plan)| {
+                        pointer_records(plan)
+                            .nth(index - first_count)
+                            .map(|record| record.encode(*event, byte_order, sequence))
+                    })
+                }
+            }
             OrderedPayload::Key(key) => key.encode_frame(index, byte_order, sequence),
         }
     }

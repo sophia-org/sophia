@@ -25,6 +25,7 @@ enum PrivateOutputSite {
     CarriedPress(usize),
     /// A settling release's own event.
     Release(usize),
+    Transient(usize),
 }
 
 #[cfg(unix)]
@@ -160,6 +161,8 @@ fn dispatch_custody(
     /// Whether the custody at this site may have a handover attempted for it.
     fn head_permits_handover(&self, site: PrivateOutputSite) -> bool {
         match site {
+            PrivateOutputSite::Transient(index) => self.terminal.transients.records[index]
+                .custody.handover_permitted(),
             PrivateOutputSite::HeldPress(index) => {
                 self.terminal.holds[index].custody.handover_permitted()
             }
@@ -209,7 +212,11 @@ fn dispatch_custody(
                 release.reached().client() == recipient && release.custody_handover_unfinished()
             })
             .map(|(index, release)| (release.custody_order(), PrivateOutputSite::Release(index)));
-        held.chain(carried).chain(releases).min_by_key(|(order, _)| *order)
+        let transients = self.terminal.transients.records.iter().enumerate()
+            .filter(|(_, record)| record.source.reached().0 == recipient
+                && record.custody.handover_unfinished())
+            .map(|(index, record)| (record.custody.order, PrivateOutputSite::Transient(index)));
+        held.chain(carried).chain(releases).chain(transients).min_by_key(|(order, _)| *order)
     }
 
     /// How far a connection sits after the one served last, cyclically.
@@ -283,6 +290,13 @@ fn dispatch_custody(
                 );
             }
         }
+        for (index, record) in self.terminal.transients.records.iter().enumerate() {
+            if record.custody.handover_unfinished() {
+                let client = record.source.reached().0;
+                consider(record.custody.order, client, PrivateOutputSite::Transient(index),
+                    self.cyclic_position(client));
+            }
+        }
         best.map(|(_, _, client, site)| (client, site))
     }
 
@@ -318,6 +332,16 @@ fn dispatch_custody(
 
         let recovery = self.broker.registry.input_recovery.clone();
         let custody = match site {
+            PrivateOutputSite::Transient(index) => {
+                let record = &mut self.terminal.transients.records[index];
+                if record.custody.pending.is_none() {
+                    let Some(emission) = record.source.take_emission() else {
+                        return Some(false);
+                    };
+                    Self::stow_press_capsule(&mut record.custody, emission, &recovery, recipient);
+                }
+                &mut record.custody
+            }
             PrivateOutputSite::HeldPress(index) => {
                 let record = &mut self.terminal.holds[index];
                 if record.custody.pending.is_none() {
@@ -834,6 +858,7 @@ fn dispatch_custody(
     /// own job -- this only says whether there is one to choose.
     fn owes_native_recording(&self) -> bool {
         self.owes_receipt_settlement()
+            || self.terminal.transients.owes_visit()
             || (self.terminal.settling.len() > 1 && self.terminal.shared_activation.pending())
             || self.owes_attempt_return()
             || self

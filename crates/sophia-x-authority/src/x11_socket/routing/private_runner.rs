@@ -104,6 +104,8 @@ pub struct PrivateRunnerProgress {
     pub recorded: usize,
     pub activation_pairs_observed: usize,
     pub activations_joined: usize,
+    pub transient_observed: usize,
+    pub transient_disposed: usize,
     /// Whether the supervisor failed during this turn.
     ///
     /// Separate from `unwatched`, which names an entry: native work has none,
@@ -733,6 +735,15 @@ impl PrivatePreparedRunner {
                                 if overran || unwatched.is_some() {
                                     break;
                                 }
+                                continue;
+                            }
+                            PrivateDeliveryStep::TransientReceipt { disposed } => {
+                                progress.terminal_steps += 1;
+                                progress.transient_observed += 1;
+                                progress.transient_disposed += usize::from(disposed);
+                                if watch_failed { break; }
+                                self.prefer_cleanup = false;
+                                if overran || unwatched.is_some() { break; }
                                 continue;
                             }
                             PrivateDeliveryStep::Recorded { recorded } => {

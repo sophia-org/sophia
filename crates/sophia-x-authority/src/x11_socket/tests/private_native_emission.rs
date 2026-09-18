@@ -27,7 +27,7 @@ fn emission_keeps_source_identity_and_bytes_after_selection_and_geometry_change(
     let emission = hold.take_press_emission().unwrap();
     assert!(hold.take_press_emission().is_none());
     assert_eq!(emission.delivery(), route.delivery);
-    assert_eq!(emission.incarnation(), hold.incarnation().unwrap());
+    assert_eq!(emission.incarnation(), hold.incarnation());
     assert_eq!(emission.connection(), fixture.role.connection());
     assert!(emission.answers_for(&fixture.private.broker.registry));
     assert!(!emission.answers_for(&Fixture::new().private.broker.registry));
@@ -349,7 +349,7 @@ fn capsule_assembly_derives_every_identity_and_returns_missing_delivery_whole() 
         cause,
         crate::routing_types::XAuthorityOrderedAssemblyRefusal::DeliveryMissing
     );
-    assert_eq!(retained.incarnation(), hold.incarnation().unwrap());
+    assert_eq!(retained.incarnation(), hold.incarnation());
     assert!(retained.answers_for(&fixture.private.broker.registry));
     assert_eq!(encoded(&retained, XByteOrder::LittleEndian, 3), before);
 }

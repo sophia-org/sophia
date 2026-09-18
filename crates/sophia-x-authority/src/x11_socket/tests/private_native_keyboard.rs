@@ -243,7 +243,7 @@ mod keys {
             emission.delivery(),
             Some(XAuthorityInputDeliveryId::from_raw(701))
         );
-        assert_eq!(emission.incarnation(), hold.incarnation().unwrap());
+        assert_eq!(emission.incarnation(), hold.incarnation());
         assert_eq!(
             f.base
                 .private

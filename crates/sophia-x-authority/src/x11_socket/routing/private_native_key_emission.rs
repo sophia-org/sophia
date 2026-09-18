@@ -175,7 +175,7 @@ impl PrivateOrderedEmission {
     ) -> Self {
         Self {
             origin: hold.origin.clone(),
-            incarnation: hold.incarnation.expect("known source key commit"),
+            identity: PrivateEmissionIdentity::Hold(hold.incarnation.expect("known source key commit")),
             delivery,
             connection: hold.connection(),
             payload: OrderedPayload::Key(payload),

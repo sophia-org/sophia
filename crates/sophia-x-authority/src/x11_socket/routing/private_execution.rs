@@ -64,6 +64,7 @@ impl PrivateXServerFrontend {
             native_pending,
             pending_custody,
             next_event_order,
+            transients,
             ..
         } = terminal;
         let Some(PrivateOrderedItem::Refused { custody, route, .. }) = current.as_ref() else {
@@ -75,6 +76,7 @@ impl PrivateXServerFrontend {
             native_pending,
             pending_custody,
             next_event_order,
+            transients,
             controller,
             participant,
             broker,
@@ -140,6 +142,7 @@ impl PrivateXServerFrontend {
             native_pending,
             pending_custody,
             next_event_order,
+            transients,
             ..
         } = terminal;
         let outcome = execute_owned(
@@ -148,6 +151,7 @@ impl PrivateXServerFrontend {
             native_pending,
             pending_custody,
             next_event_order,
+            transients,
             controller,
             participant,
             broker,
@@ -196,6 +200,7 @@ fn resolve_and_apply(
     native_pending: &mut PrivateNativePending,
     pending_custody: &mut Option<PrivateDeliveryCustody>,
     next_event_order: &mut u64,
+    transients: &mut PrivateTransientInventory,
     keyboards: &mut PrivateKeyboards,
     notes: &mut PrivateTransactionNotes<'_>,
 ) -> Result<(), sophia_input_authority::RegistrationError> {
@@ -809,11 +814,9 @@ fn resolve_and_apply(
             permit, bindings, registry, holds, settling, route, grant, capability,
             native, native_pending, pending_custody, next_event_order, keyboards, notes,
         ),
-        // Unsupported kinds were refused before entering the transaction.
-        InputEventKind::PointerMotion
-        | InputEventKind::PointerAxis { .. } => {
-            Err(sophia_input_authority::RegistrationError::StaleExecution)
-        }
+        InputEventKind::PointerMotion | InputEventKind::PointerAxis { .. } =>
+            resolve_and_apply_transient(permit, bindings, registry, route, grant,
+                native, transients, pending_custody, next_event_order, notes),
     }
 }
 
@@ -829,6 +832,7 @@ fn execute_owned(
     native_pending: &mut PrivateNativePending,
     pending_custody: &mut Option<PrivateDeliveryCustody>,
     next_event_order: &mut u64,
+    transients: &mut PrivateTransientInventory,
     controller: &PrivateAuthorityController,
     participant: &PrivateAdmissionParticipant,
     broker: &XServerFrontendRouteBroker,
@@ -850,13 +854,15 @@ fn execute_owned(
             return Err(PrivateExecutionRefusal::SeatUnavailable);
         }
 
-        // Unsupported kinds and modes refuse before the transaction. A key's
-        // applied focus is checked by its source under the native guards.
-        match route.request.kind {
-            InputEventKind::PointerButton { .. } | InputEventKind::Key { .. } => {}
-            InputEventKind::PointerMotion | InputEventKind::PointerAxis { .. } => {
-                return Err(PrivateExecutionRefusal::Unmappable);
-            }
+        // An interrupted source still owns the possibly applied effect. Do
+        // not execute later work over that unresolved original request.
+        if transients.pending.is_some() {
+            return Err(PrivateExecutionRefusal::CustodyRetained);
+        }
+        if matches!(route.request.kind, InputEventKind::PointerAxis {
+            horizontal_v120: 0, vertical_v120: 0,
+        }) {
+            return Err(PrivateExecutionRefusal::Unmappable);
         }
 
         if route.mode == XAuthorityRoutedInputMode::StateOnly {
@@ -912,6 +918,7 @@ fn execute_owned(
                     native_pending,
                     pending_custody,
                     next_event_order,
+                    transients,
                     keyboards,
                     &mut notes,
                 )

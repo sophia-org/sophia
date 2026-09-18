@@ -21,6 +21,7 @@ mod private_native {
         InvalidButton,
         InvalidKey,
         KeyboardUnavailable,
+        PointerFrozen,
         WrongPhase,
         WrongRecipient,
         ActivationMismatch,
@@ -925,6 +926,7 @@ mod private_native {
     include!("private_native_emission.rs");
     include!("private_native_key_emission.rs");
     include!("private_native_keyboard.rs");
+    include!("private_native_transient.rs");
 
     fn pointer_event(
         route: &XAuthorityRoutedInput,

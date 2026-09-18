@@ -85,7 +85,7 @@ fn pending_key_custody_survives_interruption_without_a_local_hold_transfer() {
     let held = carried.native_pending.key_slot().unwrap().as_mut().unwrap();
     assert_eq!(held.incarnation(), Some(incarnation));
     let emission = held.take_press_emission().unwrap();
-    assert_eq!(emission.incarnation(), incarnation);
+    assert_eq!(emission.incarnation(), Some(incarnation));
     assert_eq!(
         emission.delivery(),
         Some(XAuthorityInputDeliveryId::from_raw(8801))

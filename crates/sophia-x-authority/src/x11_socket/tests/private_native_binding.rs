@@ -94,7 +94,7 @@ fn native_press_binds_its_original_delivery_before_applying() {
     assert!(recovery.active(route.delivery, client()));
     let emission = hold.as_mut().unwrap().take_press_emission().unwrap();
     assert_eq!(emission.delivery(), route.delivery);
-    assert_eq!(emission.incarnation(), result.0.incarnation());
+    assert_eq!(emission.incarnation(), Some(result.0.incarnation()));
 }
 
 #[test]

@@ -108,6 +108,8 @@ enum PrivateDeliveryStep {
     /// Source receipt comparisons and exact joins, separate from recording
     /// the resulting native proof or settling a recipient's delivery.
     SharedActivation { observed: usize, joined: usize },
+    /// One exact transient completion observed; no common hold is settled.
+    TransientReceipt { disposed: bool },
     /// The entry at the head cannot be described, so nothing may be done with
     /// it. Not the same as nothing waiting.
     ///
@@ -725,6 +727,10 @@ impl PrivateXServerFrontend {
             }
             if let Some(step) = self.join_shared_activations() {
                 return Ok(step);
+            }
+            if let Some(disposed) = self.terminal.transients.observe_one() {
+                self.terminal.native_class_debt = self.terminal.native_class_debt.saturating_add(1);
+                return Ok(PrivateDeliveryStep::TransientReceipt { disposed });
             }
             return Ok(match self.attempt_one_delivery() {
                 Some(enqueued) => {

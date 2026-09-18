@@ -75,6 +75,7 @@ struct PrivateTerminalInventory {
     /// Empty between operations. What lands here moves into the record for its
     /// hold as soon as that record exists, and nothing else reads it.
     native_pending: PrivateNativePending,
+    transients: PrivateTransientInventory,
     /// Where a debt's custody is prepared before the effect that creates it.
     ///
     /// INSTANCE-OWNED BEFORE THE SOURCE IS ENTERED, for the same reason
@@ -199,7 +200,10 @@ impl PrivateTerminalInventory {
     ) -> Self {
         let holds = Vec::with_capacity(PRIVATE_HOLD_RECORDS);
         let settling = Vec::with_capacity(PRIVATE_HOLD_RECORDS);
+        let transients = PrivateTransientInventory::with_capacity(capacity);
         let native_bytes = Self::native_storage_bytes(holds.capacity(), settling.capacity())
+            .and_then(|bytes| bytes.checked_add(transients.records.capacity()
+                .checked_mul(std::mem::size_of::<PrivateTransientRecord>())?))
             .expect("the complete native custody storage has a representable byte size");
         assert!(
             native_bytes <= isize::MAX as usize,
@@ -212,6 +216,7 @@ impl PrivateTerminalInventory {
             lifecycle,
             holds,
             native_pending: PrivateNativePending::default(),
+            transients,
             pending_custody: None,
             next_event_order: 0,
             press_stall: 0,
@@ -248,6 +253,7 @@ impl PrivateTerminalInventory {
             // holding an activation, a query scope and a selection would be
             // reporting the absence of the record rather than of the debt.
             && self.native_pending.is_none()
+            && self.transients.outstanding() == 0
             // A retained custody is an obligation on its own. It outlives a
             // refusal that left the source holding context, and an instance
             // reporting itself empty while holding one would be reporting the
@@ -270,6 +276,7 @@ impl PrivateTerminalInventory {
         Some(self.holds
             .len()
             .saturating_add(usize::from(self.native_pending.is_some()))
+            .saturating_add(self.transients.outstanding())
             .saturating_add(usize::from(self.pending_custody.is_some()))
             .saturating_add(usize::from(self.attempt_custody.is_some()))
             .saturating_add(self.settling.len())
@@ -299,6 +306,7 @@ impl PrivateTerminalInventory {
                 lifecycle: self.lifecycle.clone(),
                 holds: Vec::new(),
                 native_pending: PrivateNativePending::default(),
+                transients: PrivateTransientInventory::with_capacity(0),
                 pending_custody: None,
                 next_event_order: 0,
                 press_stall: 0,
