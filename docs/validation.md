@@ -72,7 +72,7 @@ negative controls must violate `CoherentPresentation` and `ExactActivation`,
 respectively. Independent tab wire and protected client checks run through
 `tools/check_shell_protocol.sh`; `tools/check_policy_protocol.sh` also verifies
 the frozen revision-3 WM clients against the optional group extension. Hagia and
-Narthex run their own `SOPHIA_STACK_ROOT=/path/to/sophia-stack nimble test` gates.
+Narthex run their own `SOPHIA_ROOT=/path/to/sophia nimble test` gates.
 These offline checks are separate from the [tabbed-layout operator gate](tabbed-layouts.md#verification-and-operator-acceptance).
 
 `tools/check_control_protocol.sh` checks the experimental
@@ -194,7 +194,7 @@ the authenticated Sophia transport and canonical reducer with:
 
 ```sh
 cd ~/dev/hagia
-SOPHIA_STACK_ROOT=~/dev/sophia-stack tools/check_sophia_policy.sh
+SOPHIA_ROOT=~/dev/sophia-stack tools/check_sophia_policy.sh
 ```
 
 The focused live recovery gate runs real Kitty under the public session path,

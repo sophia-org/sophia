@@ -94,11 +94,11 @@ if [ ! -f "$narthex_root/src/narthex.nim" ]; then
     exit 2
 fi
 cd "$narthex_root"
-SOPHIA_STACK_ROOT="$root" nim c -r --hints:off --path:src \
+SOPHIA_ROOT="$root" nim c -r --hints:off --path:src \
     --nimcache:"$build_dir/nimcache-test" \
     -o:"$build_dir/tshell-v1" tests/tshell_v1.nim
-SOPHIA_STACK_ROOT="$root" nim c -r --hints:off --path:src --nimcache:"$build_dir/nimcache-tabs" -o:"$build_dir/tshell-tabs" tests/tshell_tabs.nim
-SOPHIA_STACK_ROOT="$root" nim c -r --hints:off --path:src --nimcache:"$build_dir/nimcache-launcher" -o:"$build_dir/tshell-launcher" tests/tshell_launcher.nim
+SOPHIA_ROOT="$root" nim c -r --hints:off --path:src --nimcache:"$build_dir/nimcache-tabs" -o:"$build_dir/tshell-tabs" tests/tshell_tabs.nim
+SOPHIA_ROOT="$root" nim c -r --hints:off --path:src --nimcache:"$build_dir/nimcache-launcher" -o:"$build_dir/tshell-launcher" tests/tshell_launcher.nim
 nim c --hints:off --path:src --nimcache:"$build_dir/nimcache-client" \
     -o:"$build_dir/narthex" src/narthex.nim
 cd "$root"

@@ -19,7 +19,7 @@ ledger.
   A later Triad change is considered separately and does not move this baseline.
 - Default checkout location: sibling of this repository, `../hagia`. The
   cross-repository conformance gate resolves it through `SOPHIA_HAGIA_ROOT` and
-  runs Hagia's suite with `SOPHIA_STACK_ROOT` pointing back here.
+  runs Hagia's suite with `SOPHIA_ROOT` pointing back here.
 
 ## Completion Rule
 

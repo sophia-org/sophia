@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${SOPHIA_REMOTE_HOST:-}"
-REMOTE_DIR="${SOPHIA_REMOTE_DIR:-dev/sophia-stack-target}"
+REMOTE_DIR="${SOPHIA_REMOTE_DIR:-dev/sophia-target}"
 EVIDENCE_DIR="${SOPHIA_REMOTE_EVIDENCE_DIR:-$ROOT_DIR/.evidence/remote-target}"
 
 usage() {
@@ -20,7 +20,7 @@ Commands:
 
 Environment:
   SOPHIA_REMOTE_HOST          required SSH host or alias
-  SOPHIA_REMOTE_DIR           deployment path (default: dev/sophia-stack-target)
+  SOPHIA_REMOTE_DIR           deployment path (default: dev/sophia-target)
   SOPHIA_REMOTE_EVIDENCE_DIR  local evidence destination
 EOF
 }

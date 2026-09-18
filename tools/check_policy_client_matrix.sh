@@ -14,7 +14,7 @@ tools/check_policy_protocol.sh
 cargo test --offline -q -p sophia-wm-demo
 
 cd "$HAGIA_ROOT"
-SOPHIA_STACK_ROOT="$ROOT_DIR" nimble test -y
+SOPHIA_ROOT="$ROOT_DIR" nimble test -y
 
 printf '%s\n' \
     'sophia_policy_client_matrix schema=8 status=complete public_wire_clients=rust,c,hagia behavior_scenarios=11 sequential=true reconnect_restart=true revision_freeze=false'
