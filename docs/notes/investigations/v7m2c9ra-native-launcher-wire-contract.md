@@ -594,3 +594,54 @@ activation obligations before committing effects. A structural Action cancel
 must not cause an ACK; a valid encoded ACK is not evidence of that owner rule.
 Native client state, live Session dual-component wiring and physical acceptance
 remain required before `lom-test` readiness.
+
+## C outbound ownership and immutable upload slots
+
+The reusable C client now has a sole-writer owned FIFO (`sophia_shell_outbox.h`).
+It copies one complete frame or an atomic ordered pair after validating both
+members and reserving aggregate byte/record capacity. Bulk traffic cannot consume
+the reserved control bytes or records. Both pair allocations finish before any
+FIFO transfer; refusal leaves existing obligations unchanged. Partial writes
+retain the whole record charge through the final byte. I/O failure retains the
+remaining owners for explicit connection disposal. Its bounds are 64 records,
+262,144 bytes, and 32 syscalls per byte-bounded flush; control records are at most
+256 bytes. The caller must select limits within its negotiated connection and
+must not use the older single-frame writer concurrently.
+
+The immutable upload owner (`sophia_shell_upload.h`) reserves at most two slots
+under the negotiated resource/staging/resident/retiring/open-transfer limits. It
+copies validated premultiplied BGRA pixels, records every queued chunk transaction,
+and allocates an ID/generation only when Begin transfers into that same FIFO.
+One round-robin visit queues at most one frame. Replies must name the exact grant,
+resource generation and applicable request. Rejected Begin consumes that enqueued
+generation; rejected Retire preserves the resident pixels. Exact Released permits
+reuse. Pending retirement is conservatively still resident-charged until release.
+Local pixels remain owned through release; disconnect frees only the client copy,
+not Session's retained consumers. These APIs do not mint presentation/focus/input
+or candidate authority and do not implement reconnect or deadline policy.
+
+The current Rust Begin codec validates its prototype chunk count even for a
+negotiated tighter chunk ceiling. This C owner refuses a transfer whose tighter
+layout would require a different count, rather than exceeding the negotiated
+bound. The native prototype profile is compatible. This is an explicit refusal,
+not a claim to repair that existing protocol limitation.
+
+Device-hidden controls use actual private sockets and the real client FIFO. The
+FIFO test reaches kernel backpressure with a partial bulk frame, verifies exact
+ACK/activation bytes/order through 1,000 pairs, exercises both pair allocation
+failures and preserves owners on EPIPE. The upload fixture supplies server replies
+and holds one exact Released while the other slot completes 1,000 reuse cycles.
+Wrapped allocation tracking verifies the old pixel allocation stays live; immutable
+copy bytes, transaction/refusal/cancellation/timeout rules, aggregate limits,
+open-transfer scheduling and no early ID mint are checked. This is not the real
+Session store/rendering chain or native acceptance.
+
+The complete C gate, optimized focused builds and focused Clang ASan/UBSan pass.
+Three compiled FIFO mutations fail (omit reserved bytes, omit reserved records,
+release at first partial write); five upload mutations fail (free on Retire
+refusal, reuse generation, ignore Released transaction, mint before queue
+admission, free pixels at Retire enqueue). Evidence and restored disposable source:
+`.artifacts/bemenu-outbox` and `.artifacts/bemenu-upload-final`. Initial compiler
+invocation named a nonexistent text.c and executed no test; the corrected build
+is retained separately from that failed attempt. Focus/presentation and live
+Session integration remain on the critical path.

@@ -6,14 +6,18 @@ trap 'rm -rf "$build"' EXIT HUP INT TERM
 cd "$root"
 ulimit -c 0
 python3 -B tools/check_shell_c_wire_inventory.py
-for test in test corpus budget_test catalog_test native_test native_codec_test resource_test limits_test feedback_test; do
+for test in test corpus budget_test catalog_test native_test native_codec_test resource_test limits_test feedback_test outbox_test upload_test; do
     if [ "$test" = budget_test ]; then
         set -- -Wl,--wrap=recv -Wl,--wrap=send
+    elif [ "$test" = upload_test ]; then
+        set -- -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=free
+    elif [ "$test" = outbox_test ]; then
+        set -- -Wl,--wrap=malloc -Wl,--wrap=free -Wl,--wrap=send
     else
         set --
     fi
     "${CC:-cc}" -std=c99 -Wall -Wextra -Werror -pedantic \
-        bindings/c/shell_wire/frame.c bindings/c/shell_wire/io.c \
+        bindings/c/shell_wire/frame.c bindings/c/shell_wire/io.c bindings/c/shell_wire/outbox.c bindings/c/shell_wire/upload.c \
         bindings/c/shell_wire/negotiation.c bindings/c/shell_wire/catalog.c \
         bindings/c/shell_wire/native_launcher.c bindings/c/shell_wire/native_launcher_codec.c \
         bindings/c/shell_wire/native_launcher_content.c bindings/c/shell_wire/content_resource.c bindings/c/shell_wire/content_limits.c \
@@ -22,6 +26,8 @@ for test in test corpus budget_test catalog_test native_test native_codec_test r
 done
 "$build/test"
 "$build/budget_test"
+"$build/outbox_test"
+"$build/upload_test" protocol/golden/sophia-shell-content.frames
 "$build/catalog_test" protocol/golden/sophia-shell-launcher.frames
 "$build/native_test" protocol/golden/sophia-shell-native-launcher.frames
 "$build/native_codec_test" protocol/golden/sophia-shell-native-launcher.frames
