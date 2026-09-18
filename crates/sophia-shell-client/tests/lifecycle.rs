@@ -90,6 +90,34 @@ fn dispatch(lifecycle: &mut ContentLifecycle, record: ShellContentRecord) -> Con
 }
 
 #[test]
+fn all_target_classes_match_activation_events_without_promoting_prepared() {
+    for class in 1..=3 {
+        let mut lifecycle = ContentLifecycle::new(ContentLimits::prototype(grant())).unwrap();
+        let mut value = candidate(1);
+        value.targets[0].action_kind = class;
+        lifecycle.register(value).unwrap();
+        lifecycle
+            .dispatch(TransactionId::from_raw(1), outcome(1, 1))
+            .unwrap();
+        assert_eq!(
+            dispatch(&mut lifecycle, action(1, 1, 1)).action,
+            Some(ContentActionDispatch::Rejected)
+        );
+        lifecycle
+            .dispatch(TransactionId::from_raw(1), outcome(1, 2))
+            .unwrap();
+        assert_eq!(
+            dispatch(&mut lifecycle, action(1, 2, 1)).action,
+            Some(ContentActionDispatch::Eligible)
+        );
+        assert_eq!(
+            dispatch(&mut lifecycle, action(1, 2, 1)).action,
+            Some(ContentActionDispatch::Rejected)
+        );
+    }
+}
+
+#[test]
 fn prepared_never_installs_targets_and_presented_does_not_wait_for_release() {
     let mut lifecycle = ContentLifecycle::new(ContentLimits::prototype(grant())).unwrap();
     lifecycle.register(candidate(1)).unwrap();

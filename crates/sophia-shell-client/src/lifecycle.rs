@@ -291,7 +291,10 @@ impl ContentLifecycle {
                     && target.target_id == action.target_id
                     && target.target_generation == action.target_generation
                     && target.action_id == action.action_id
-                    && target.action_kind == action.kind
+                    // Target classes select the activation authority (indicator,
+                    // launcher, catalog); event kinds select activate/dismiss/cancel.
+                    && (1..=3).contains(&target.action_kind)
+                    && action.kind == 1
             })
     }
 }
