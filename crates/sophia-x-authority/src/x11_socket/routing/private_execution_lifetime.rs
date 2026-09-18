@@ -23,6 +23,10 @@ pub struct PrivateExecutionReading {
 struct PrivateExecutionWitness {
     instance: u64,
     state: std::sync::atomic::AtomicU8,
+    /// Published only after the real settlement transferred all its fields.
+    handed_off: AtomicBool,
+    /// Positive same-invocation completion, separate from resource availability.
+    completed: AtomicBool,
 }
 
 #[cfg(unix)]
@@ -91,6 +95,7 @@ struct PrivateRetainedExecutionResources {
     /// The service collection's actual proof of ended connection frames.
     /// Kept only for this closed invocation; never reminted by maintenance.
     collected: Option<PrivateConnectionsCollected>,
+    queue: Arc<Mutex<SharedQueue>>,
     keyboards: PrivateKeyboards,
     namespace: NamespaceId,
     seat: SeatId,
@@ -119,6 +124,14 @@ impl PrivateServiceExecutionKeeper {
         self.resources
             .as_ref()
             .map(|resources| resources.lifetime.0.reading())
+    }
+
+    /// Positive completion of this closed invocation's accepted obligations.
+    /// Output custodies may still await their individually checked retirement.
+    pub fn invocation_completed(&self) -> Option<bool> {
+        self.resources
+            .as_ref()
+            .map(|resources| resources.lifetime.0.completed.load(Ordering::Acquire))
     }
 
     /// Provenance check only: the maintenance caller must independently
@@ -188,6 +201,7 @@ impl PrivateServiceExecutionKeeper {
         } = runner;
         let frontend = frontend.expect("live runner until execution handoff");
         let origin = frontend.broker.registry.clone();
+        let queue = Arc::clone(&frontend.admission.ready);
         let native_owner = frontend
             .native_owner
             .as_ref()
@@ -200,6 +214,7 @@ impl PrivateServiceExecutionKeeper {
             origin,
             native_owner,
             collected,
+            queue,
             keyboards,
             namespace,
             seat,
@@ -216,11 +231,7 @@ impl PrivateServiceExecutionKeeper {
 impl PrivateSettlement {
     /// Read execution availability without settling or changing any debt.
     pub fn execution(&self) -> Option<PrivateExecutionReading> {
-        self.terminal
-            .as_ref()?
-            .execution
-            .as_ref()
-            .map(|witness| witness.reading())
+        self.execution.as_ref().map(|witness| witness.reading())
     }
 }
 

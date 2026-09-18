@@ -261,6 +261,42 @@ fn source_content_hash_detects_changed_bytes_and_modes() {
 }
 
 #[test]
+fn source_targets_separate_mutants_even_with_preserved_timestamps() {
+    use std::os::unix::fs::PermissionsExt;
+    let temporary = Temporary::new();
+    let path = temporary.0.join("source.rs");
+    let timestamp = std::fs::FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_secs(100));
+    std::fs::write(&path, "original").unwrap();
+    std::fs::File::open(&path)
+        .unwrap()
+        .set_times(timestamp)
+        .unwrap();
+    let original = identity::contents(&temporary.0).unwrap();
+    let original_target = host::target_namespace(&original).unwrap();
+    std::fs::write(&path, "mutation").unwrap();
+    std::fs::File::open(&path)
+        .unwrap()
+        .set_times(timestamp)
+        .unwrap();
+    let mutated_target =
+        host::target_namespace(&identity::contents(&temporary.0).unwrap()).unwrap();
+    assert_ne!(original_target, mutated_target);
+    std::fs::write(&path, "original").unwrap();
+    assert_eq!(
+        original_target,
+        host::target_namespace(&identity::contents(&temporary.0).unwrap()).unwrap()
+    );
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_ne!(
+        original_target,
+        host::target_namespace(&identity::contents(&temporary.0).unwrap()).unwrap()
+    );
+    for invalid in ["", "HEAD", "../cache", &"g".repeat(64)] {
+        assert!(host::target_namespace(invalid).is_err());
+    }
+}
+
+#[test]
 fn actual_timeout_kills_and_waits_for_its_child() {
     let _serial = PROCESS_TEST.lock().unwrap();
     process::arm_subreaper().unwrap();
@@ -421,7 +457,8 @@ fn component_config() -> Config {
         "schema":1,"run_id":"synthetic-component-fixture","self_test":false,
         "component_suite":"synthetic","component_tests":["x11_socket::routing_tests::component_control"],
         "build_timeout":1,"case_timeout":1,
-        "source":{"commit":"synthetic","tree":"synthetic","clean":true,"archive_sha256":"synthetic","content_sha256":"synthetic"},
+        "source":{"commit":"synthetic","tree":"synthetic","clean":true,"archive_sha256":"synthetic","content_sha256":"a".repeat(64)},
+        "build_target_namespace":format!("source-{}", "a".repeat(64)),
         "host_namespaces":{},"inventory_sha256":"synthetic","bindings_sha256":"synthetic",
         "xtask_sha256":"synthetic","toolchain_sha256":{}
     })).unwrap()

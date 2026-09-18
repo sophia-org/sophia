@@ -873,6 +873,8 @@ fn dispatch_custody(
     /// own job -- this only says whether there is one to choose.
     fn owes_native_recording(&self) -> bool {
         self.owes_receipt_settlement()
+            || self.owes_terminated_recipient()
+            || self.terminal.owes_live_native_disposal()
             || self.terminal.transients.owes_visit()
             || (self.terminal.settling.len() > 1 && self.terminal.shared_activation.pending())
             || self.owes_attempt_return()

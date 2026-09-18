@@ -167,8 +167,10 @@ impl PrivateServiceExecutionKeeper {
     /// operation; its original accounting guard also latches interruption.
     ///
     /// A visited or settled output home is not whole-invocation completion.
-    /// This scheduler never retires the external custody which may still own
-    /// exact termination evidence needed by terminal/native dependents.
+    /// Its final terminal phase certifies the original invocation only after
+    /// actual settlement handoff and a stable scan of every retained obligation
+    /// class. External custody then retires one place at a time after its own
+    /// settled output and exact storage-return evidence are established.
     pub fn maintain_step(&mut self, service: &PrivateServiceLease<'_>) -> PrivateMaintenanceReport {
         let phase = self.maintenance.next;
         let Some(resources) = self.resources.as_mut() else {

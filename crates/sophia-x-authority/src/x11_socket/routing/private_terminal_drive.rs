@@ -4,6 +4,10 @@
 #[cfg(unix)]
 #[derive(Default)]
 struct PrivateTerminalDriveCursor {
+    completion: PrivateInvocationCompletionCursor,
+    controls: usize,
+    control_credit: usize,
+    control_reclaim: bool,
     inventory: usize,
     native: usize,
     recording: usize,
@@ -19,6 +23,9 @@ struct PrivateTerminalDriveCursor {
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateTerminalDriveRefusal {
+    Control(PrivateControlCleanupRefusal),
+    CompletionEpochExhausted,
+    WorkerFailureRetained,
     ExecutionNotRetained,
     ForeignServiceOwner,
     Uncollected,
@@ -37,6 +44,12 @@ enum PrivateTerminalDriveRefusal {
 #[cfg(unix)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PrivateTerminalVisit {
+    Control { retired: bool },
+    SettlementStillOwned,
+    InvocationScanning,
+    InvocationOutstanding,
+    InvocationCompleted,
+    CustodyRetired { retired: bool },
     EmptyInventory,
     OtherInvocation,
     Lifecycle { completed: usize },
@@ -53,6 +66,15 @@ enum PrivateTerminalVisit {
 impl std::fmt::Debug for PrivateTerminalVisit {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Control { retired } => formatter.debug_struct("Control").field("retired", retired).finish(),
+            Self::SettlementStillOwned => formatter.write_str("SettlementStillOwned"),
+            Self::InvocationScanning => formatter.write_str("InvocationScanning"),
+            Self::InvocationOutstanding => formatter.write_str("InvocationOutstanding"),
+            Self::InvocationCompleted => formatter.write_str("InvocationCompleted"),
+            Self::CustodyRetired { retired } => formatter
+                .debug_struct("CustodyRetired")
+                .field("retired", retired)
+                .finish(),
             Self::Request { disposed } => formatter
                 .debug_struct("Request")
                 .field("disposed", disposed)
@@ -188,15 +210,31 @@ impl PrivateRetainedExecutionResources {
             Ok(mut watched) => match watched.applying() {
                 Err(cause) => (Err(Refusal::Supervisor(cause)), Err(cause)),
                 Ok(()) => {
-                    let outcome = Self::visit_terminal(
-                        &self.lifetime.0,
-                        &self.origin,
-                        &self.native_owner,
-                        &mut self.keyboards,
-                        self.collected.as_ref(),
-                        service_owner,
-                        cursor,
-                    );
+                    let phase = cursor.phase;
+                    cursor.phase = (phase + 1) % 9;
+                    let outcome = if phase == 8 {
+                        Self::visit_control_cleanup(&self.origin, service_owner, self.collected.as_ref(), cursor)
+                    } else if phase == 7 {
+                        Self::visit_invocation_completion(
+                            &self.lifetime.0,
+                            &self.origin,
+                            &self.queue,
+                            self.collected.as_ref(),
+                            service_owner,
+                            &mut cursor.completion,
+                        )
+                    } else {
+                        Self::visit_terminal(
+                            &self.lifetime.0,
+                            &self.origin,
+                            &self.native_owner,
+                            &mut self.keyboards,
+                            self.collected.as_ref(),
+                            service_owner,
+                            cursor,
+                            phase,
+                        )
+                    };
                     let supervision = watched.finish();
                     (outcome, supervision)
                 }
@@ -218,6 +256,7 @@ impl PrivateRetainedExecutionResources {
         collected: Option<&PrivateConnectionsCollected>,
         service_owner: &PrivateServiceLease<'_>,
         cursor: &mut PrivateTerminalDriveCursor,
+        phase: u8,
     ) -> Result<PrivateTerminalVisit, PrivateTerminalDriveRefusal> {
         use PrivateTerminalDriveRefusal as Refusal;
         let mut visit = {
@@ -246,6 +285,7 @@ impl PrivateRetainedExecutionResources {
             }
             // Space is reserved before the original service can admit work.
             assert!(held.terminal_in_flight.len() < held.terminal_in_flight.capacity());
+            held.obligations_changed();
             held.terminal_in_flight.push(witness.clone());
             PrivateTerminalBorrow {
                 store: store.clone(),
@@ -257,8 +297,6 @@ impl PrivateRetainedExecutionResources {
             .inventory
             .as_mut()
             .expect("the unwind guard owns the inventory");
-        let phase = cursor.phase;
-        cursor.phase = (phase + 1) % 7;
         match phase {
             0 => inventory
                 .lifecycle

@@ -22,6 +22,16 @@ exact commands, output logs, collection and the twenty-case verdict. The archive
 has no `.git` link to the host worktree; content is rehashed inside containment
 before and after execution. This is identity attestation, not signature review.
 
+The supplied `--target-dir` is a locked parent directory. Each immutable source
+snapshot builds in its own `source-<content SHA-256>` child, recorded in the
+configuration and report. The key includes every archived path, file's bytes,
+mode and symlink target, including committed fixture/manifest changes and
+mutants. Dirty and untracked candidate files still refuse snapshot creation.
+Identical restored contents can reuse their own cache; different contents never
+reuse a dependency compiled for another snapshot. Archive timestamps are not
+used as source identity. This avoids Cargo mistaking an older-mtime replacement
+at the fixed `/work/source` mount for unchanged source.
+
 The existing `x11_conformance/isolation.py` boundary supplies isolated mount,
 network, PID, user, IPC and UTS namespaces, a private `/dev`, a cleared environment
 and validated descriptor inheritance. No GPU/input node, host runtime socket or

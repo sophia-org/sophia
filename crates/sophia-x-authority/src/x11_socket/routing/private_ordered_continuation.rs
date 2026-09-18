@@ -733,6 +733,7 @@ impl PrivateSettlementOwner {
         // credit's disposal takes the store, and dropping one under this guard
         // would be this thread waiting for itself.
         let retired = Self::retire_holder_for(&mut held, index, record);
+        record.storage_returned.store(true, Ordering::Release);
         drop(held);
         drop(retired);
     }

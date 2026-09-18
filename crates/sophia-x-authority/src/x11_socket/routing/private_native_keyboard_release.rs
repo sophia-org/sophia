@@ -77,6 +77,12 @@ impl Guards<'_> {
         {
             return Err(Refusal::InvalidKey);
         }
+        // Captured from the exact surviving native activation under this
+        // same guard, before a passive trigger release may retire it. Source
+        // absence later is never substituted for its actual Async receipt.
+        let thaw = hold.activation.and_then(|activation| {
+            self.authority.ordered_keyboard_thaw(self.origin.namespace, activation.stamp())
+        });
         hold.status = Status::ReleaseEntered;
         may_have_applied.set(true);
         let outcome = permit.release(hold.input).map_err(Refusal::Authority)?;
@@ -88,6 +94,11 @@ impl Guards<'_> {
             hold.status = Status::Retained(Residual::IncarnationMismatch);
             return Ok((outcome, Err(PrivateAppliedRefusal::Interrupted)));
         }
+        hold.release_disposition = if route.mode == XAuthorityRoutedInputMode::StateOnly {
+            KeyReleaseDisposition::RecipientTerminationRequired
+        } else {
+            KeyReleaseDisposition::Deliver
+        };
         let keyboard = match key_state(self.origin, keyboards) {
             Ok(state) if state.physical_key_state(hold.key) == crate::XkbPhysicalKeyState::Held => {
                 state
@@ -158,7 +169,8 @@ impl Guards<'_> {
         {
             Some(Residual::ExternalLease)
         } else if hold.activation.is_some_and(|activation| {
-            activation.recipient().pointer_mode == 0 || activation.recipient().keyboard_mode == 0
+            (activation.recipient().pointer_mode == 0 || activation.recipient().keyboard_mode == 0)
+                && thaw.as_ref().is_none_or(|receipt| !receipt.answers(activation.stamp()))
         }) {
             Some(Residual::Synchronous)
         } else {
@@ -175,6 +187,12 @@ impl Guards<'_> {
                 grant: hold.grant,
             });
             hold.status = Status::NativeReconciled;
+        }
+        if hold.release_disposition == KeyReleaseDisposition::RecipientTerminationRequired {
+            // Common and the original XKB history have released the key. No
+            // protocol key or StateNotify is constructed; the original
+            // recipient still requires its own exact termination evidence.
+            return Ok((outcome, Ok(None)));
         }
         let built = (|| {
             if !query_present || buttons.is_none() {

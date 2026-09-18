@@ -136,6 +136,7 @@ impl ControlPhase {
 #[cfg(unix)]
 struct ControlRecord {
     token: ControlCompletionToken,
+    source: Option<Arc<Mutex<PrivateControlExecution>>>,
     /// What this operation has actually done, as it reported it.
     steps: ControlSteps,
     /// Effects this operation queued on someone else, not yet ended.
@@ -345,6 +346,7 @@ impl ControlCompletionRegistry {
         inner.next_incarnation = next;
         inner.records.push(ControlRecord {
             token,
+            source: None,
             steps: ControlSteps::default(),
             dependents: 0,
             identity: ControlOperationIdentity::of(&command),

@@ -174,6 +174,9 @@ struct PrivateDeliveryCustody {
     /// The writer's own answer, once there is one, kept apart from what it
     /// settled.
     outcome_seen: Option<XAuthorityInputDeliveryOutcome>,
+    /// The original endpoint's established termination has independently
+    /// supplied the recipient half. The immutable writer outcome is unchanged.
+    recipient_termination: bool,
 }
 
 #[cfg(unix)]
@@ -185,6 +188,7 @@ impl PrivateDeliveryCustody {
     /// tells them apart.
     fn owes_handover(&self) -> bool {
         self.completion.is_some()
+            && !self.recipient_termination
             && matches!(
                 self.dispatch,
                 PrivateDispatchPhase::Untaken | PrivateDispatchPhase::Pending
@@ -200,7 +204,7 @@ impl PrivateDeliveryCustody {
     /// nothing: offering that capsule again is a replay, and its slot holding
     /// bytes is not permission.
     fn handover_permitted(&self) -> bool {
-        matches!(
+        !self.recipient_termination && matches!(
             self.dispatch,
             PrivateDispatchPhase::Untaken | PrivateDispatchPhase::Pending
         )
@@ -212,6 +216,7 @@ impl PrivateDeliveryCustody {
     /// later event of the same hold must not overtake.
     fn handover_unfinished(&self) -> bool {
         self.completion.is_some()
+            && !self.recipient_termination
             && !matches!(self.dispatch, PrivateDispatchPhase::Enqueued)
     }
 
@@ -224,6 +229,7 @@ impl PrivateDeliveryCustody {
             attempt: None,
             completion,
             outcome_seen: None,
+            recipient_termination: false,
         }
     }
 }
@@ -398,7 +404,9 @@ impl PrivateSettlingRelease {
         // ORDER FIRST. A release cannot be handed over while the press it
         // ends is still owed one, or has begun one that never reported: the
         // recipient would see the button come up before it went down.
-        !self.press_handover_unfinished()
+        self.binding != PrivateReleaseBinding::RecipientTerminationRequired
+            && !self.press_handover_unfinished()
+            && !self.custody.recipient_termination
             && self.native_recorded
             && self.custody.attempt.is_none()
             && matches!(
@@ -514,6 +522,9 @@ impl PrivateSettlingRelease {
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateReleaseBinding {
+    /// StateOnly ended the aggregate without producing an event. Only exact
+    /// termination of the inherited endpoint can supply its recipient half.
+    RecipientTerminationRequired,
     /// Bound to the recipient its press reached. An event is owed.
     Reached,
     /// The ledger will not carry it: a terminal outcome is already recorded

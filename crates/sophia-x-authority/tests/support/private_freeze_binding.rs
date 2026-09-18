@@ -61,3 +61,45 @@ fn private_freeze_rejects_identical_replacement_and_colliding_foreign_origin() {
     authority.lock().unwrap().allow_events(fixture.namespace, fixture.client.raw(), 3).unwrap();
     assert!(matches!(check_prepared_freeze(&fixture, Some(&frozen)), Err(private_native::Refusal::FreezeInvalidated)));
 }
+
+#[test]
+fn native_keyboard_thaw_receipt_requires_all_exact_async_contributions() {
+    let fixture = prepared_ordered_fixture(XServerFrontendClientId::from_raw(9773));
+    let mut authority = fixture.runner.frontend().broker.registry.input_authority.lock().unwrap();
+    let mut grab = public_keyboard_grab(fixture.client);
+    grab.keyboard_mode = 0;
+    grab.pointer_mode = 0;
+    authority.grab_keyboard(fixture.namespace, grab).unwrap();
+    let stamp = authority.keyboard_activation(fixture.namespace).unwrap().unwrap().stamp();
+    assert!(authority.ordered_keyboard_thaw(fixture.namespace, stamp).is_none());
+    authority.allow_events(fixture.namespace, fixture.client.raw() + 1, 6).unwrap();
+    assert!(authority.ordered_keyboard_thaw(fixture.namespace, stamp).is_none());
+    authority.allow_events(fixture.namespace, fixture.client.raw(), 3).unwrap();
+    assert!(authority.ordered_keyboard_thaw(fixture.namespace, stamp).is_none(), "pointer freeze is still owed");
+    authority.allow_events(fixture.namespace, fixture.client.raw(), 0).unwrap();
+    let receipt = authority.ordered_keyboard_thaw(fixture.namespace, stamp).unwrap();
+    assert!(receipt.answers(stamp));
+    authority.ungrab_keyboard(fixture.namespace, fixture.client.raw());
+    authority.grab_keyboard(fixture.namespace, grab).unwrap();
+    let replacement = authority.keyboard_activation(fixture.namespace).unwrap().unwrap().stamp();
+    authority.allow_events(fixture.namespace, fixture.client.raw(), 6).unwrap();
+    assert!(!receipt.answers(replacement));
+    assert!(authority.ordered_keyboard_thaw(fixture.namespace, stamp).is_none());
+    assert!(authority.ordered_keyboard_thaw(fixture.namespace, replacement).unwrap().answers(replacement));
+}
+
+#[test]
+fn unsupported_allow_events_cannot_be_upgraded_into_an_async_thaw_receipt() {
+    for mode in [1, 2, 4, 5, 7] {
+        let fixture = prepared_ordered_fixture(XServerFrontendClientId::from_raw(9774 + u64::from(mode)));
+        let mut authority = fixture.runner.frontend().broker.registry.input_authority.lock().unwrap();
+        let mut grab = public_keyboard_grab(fixture.client);
+        grab.pointer_mode = 0;
+        grab.keyboard_mode = 0;
+        authority.grab_keyboard(fixture.namespace, grab).unwrap();
+        let stamp = authority.keyboard_activation(fixture.namespace).unwrap().unwrap().stamp();
+        authority.allow_events(fixture.namespace, fixture.client.raw(), mode).unwrap();
+        authority.allow_events(fixture.namespace, fixture.client.raw(), 6).unwrap();
+        assert!(authority.ordered_keyboard_thaw(fixture.namespace, stamp).is_none(), "mode {mode} cleared without persistent Async evidence");
+    }
+}

@@ -198,6 +198,7 @@ fn stopped_native_service(key: bool, withhold_custody: bool) {
         XAuthorityInputDeliveryOutcome::Flushed,
         "cleanup never fabricates or rewrites a writer receipt"
     );
+    wait_final_custody(&service);
     service.finish();
 }
 

@@ -319,6 +319,87 @@ pub(super) fn take_turns(registry: &XServerFrontendRouteRegistry) -> Vec<Private
     turns.remove(at).1
 }
 
+type DequeueReading = (
+    crate::ReadySequence,
+    sophia_input_authority::CleanupReadiness,
+    Option<sophia_input_authority::ServiceCharge>,
+);
+static DEQUEUES: Mutex<Vec<(usize, Vec<DequeueReading>)>> = Mutex::new(Vec::new());
+static DEQUEUE_DELAYS: Mutex<Vec<(usize, Duration)>> = Mutex::new(Vec::new());
+
+pub(super) fn delay_next_dequeue(registry: &XServerFrontendRouteRegistry) {
+    DEQUEUE_DELAYS.lock().unwrap().push((
+        Arc::as_ptr(&registry.clients) as usize,
+        Duration::from_millis(3),
+    ));
+}
+
+pub(crate) fn dequeue_started(registry: &XServerFrontendRouteRegistry) {
+    let delay = {
+        let mut held = DEQUEUE_DELAYS.lock().unwrap();
+        held.iter()
+            .position(|(key, _)| *key == Arc::as_ptr(&registry.clients) as usize)
+            .map(|index| held.remove(index).1)
+    };
+    if let Some(delay) = delay {
+        // A labelled bounded delay inside the original admitted operation,
+        // without changing its clock, counters, request, or effect.
+        std::thread::sleep(delay);
+    }
+}
+
+pub(crate) fn dequeue_finished(
+    registry: &XServerFrontendRouteRegistry,
+    sequence: crate::ReadySequence,
+    charge: sophia_input_authority::ServiceCharge,
+) {
+    if let Some((_, readings)) = DEQUEUES
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|(key, _)| *key == Arc::as_ptr(&registry.clients) as usize)
+    {
+        let last = readings
+            .iter_mut()
+            .rev()
+            .find(|(at, _, _)| *at == sequence)
+            .expect("actual budget start was recorded");
+        assert!(last.2.replace(charge).is_none());
+    }
+}
+
+pub(crate) fn dequeue_accounting(
+    registry: &XServerFrontendRouteRegistry,
+    sequence: crate::ReadySequence,
+    cleanup: sophia_input_authority::CleanupReadiness,
+) {
+    if let Some((_, readings)) = DEQUEUES
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|(key, _)| *key == Arc::as_ptr(&registry.clients) as usize)
+    {
+        assert!(readings.len() < 4096, "bounded dequeue evidence");
+        readings.push((sequence, cleanup, None));
+    }
+}
+
+pub(super) fn observe_dequeues(registry: &XServerFrontendRouteRegistry) {
+    DEQUEUES
+        .lock()
+        .unwrap()
+        .push((Arc::as_ptr(&registry.clients) as usize, Vec::new()));
+}
+
+pub(super) fn take_dequeues(registry: &XServerFrontendRouteRegistry) -> Vec<DequeueReading> {
+    let mut held = DEQUEUES.lock().unwrap();
+    let index = held
+        .iter()
+        .position(|(key, _)| *key == Arc::as_ptr(&registry.clients) as usize)
+        .unwrap();
+    held.remove(index).1
+}
+
 pub(super) enum Maintenance {
     Step,
     Finish,
@@ -535,22 +616,23 @@ impl LifecycleService {
                 }
             }
             let watch = keeper.resources.as_mut().unwrap().watch.as_mut().unwrap();
-            let watchdog = watch
-                .request_shutdown()
-                .expect("retained original supervisor handle");
-            actor_started(&registry, watchdog, "watchdog");
-            let deadline = std::time::Instant::now() + Duration::from_secs(3);
-            loop {
-                if let Some(result) = watch.reap_finished() {
-                    actor_joined(watchdog);
-                    result.expect("original watchdog supervisor returned");
-                    break;
+            // An earlier real service turn may already have reaped a failed
+            // supervisor; that source also records its actual join.
+            if let Some(watchdog) = watch.request_shutdown() {
+                actor_started(&registry, watchdog, "watchdog");
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                loop {
+                    if let Some(result) = watch.reap_finished() {
+                        actor_joined(watchdog);
+                        result.expect("original watchdog supervisor returned");
+                        break;
+                    }
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "watchdog did not return in test bound"
+                    );
+                    std::thread::sleep(Duration::from_millis(1));
                 }
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "watchdog did not return in test bound"
-                );
-                std::thread::sleep(Duration::from_millis(1));
             }
             drop(keeper);
             done_tx.send(()).unwrap();
@@ -675,7 +757,7 @@ pub(super) fn focus_window(
         peer,
         &service.transactions,
         window,
-        (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 21),
+        (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 6) | (1 << 21),
     );
     let custody = wait_attached(&service.registry);
     let client = custody.cleanup_record().client;

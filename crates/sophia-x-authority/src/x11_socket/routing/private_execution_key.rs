@@ -5,7 +5,7 @@
 #[cfg(unix)]
 fn prepare_key_custody(
     registry: &XServerFrontendRouteRegistry,
-    delivery: Option<XAuthorityInputDeliveryId>,
+    route: &XAuthorityRoutedInput,
     pending: &mut Option<PrivateDeliveryCustody>,
     next_order: &mut u64,
     notes: &mut PrivateTransactionNotes<'_>,
@@ -15,26 +15,32 @@ fn prepare_key_custody(
         notes.custody_retained = true;
         return Err(StaleRequest);
     }
-    let Some(delivery) = delivery else {
-        notes.completion_missing = true;
-        return Err(StaleRequest);
-    };
-    let cell = match registry.input_recovery.completion_for(delivery) {
-        Ok(Some(cell)) => cell,
-        Ok(None) => {
+    let cell = if route.mode == XAuthorityRoutedInputMode::StateOnly {
+        // Reserved before the effect, with no invented delivery identity or
+        // writer cell. The source records its explicit suppression disposition.
+        None
+    } else {
+        let Some(delivery) = route.delivery else {
             notes.completion_missing = true;
             return Err(StaleRequest);
-        }
-        Err(PrivateCompletionUnreadable) => {
-            notes.recovery_unavailable = true;
-            return Err(StaleRequest);
+        };
+        match registry.input_recovery.completion_for(delivery) {
+            Ok(Some(cell)) => Some(cell),
+            Ok(None) => {
+                notes.completion_missing = true;
+                return Err(StaleRequest);
+            }
+            Err(PrivateCompletionUnreadable) => {
+                notes.recovery_unavailable = true;
+                return Err(StaleRequest);
+            }
         }
     };
     let Some(next) = next_order.checked_add(1) else {
         notes.order_exhausted = true;
         return Err(StaleRequest);
     };
-    *pending = Some(PrivateDeliveryCustody::new(*next_order, Some(cell)));
+    *pending = Some(PrivateDeliveryCustody::new(*next_order, cell));
     *next_order = next;
     Ok(())
 }
@@ -128,7 +134,7 @@ fn resolve_and_apply_key(
         if notes.defer_freeze(guards.freeze(bindings, &clients, notes.freeze_witness(), true))? {
             return Ok(());
         }
-        prepare_key_custody(registry, route.delivery, pending_custody, next_event_order, notes)?;
+        prepare_key_custody(registry, route, pending_custody, next_event_order, notes)?;
         notes
             .watched
             .applying()
@@ -145,6 +151,7 @@ fn resolve_and_apply_key(
                 Error::RoutingUnavailable
             })?;
         let keyboard_applied = hold.release_xkb_applied();
+        let disposition = hold.release_disposition();
         notes
             .watched
             .committed()
@@ -173,12 +180,18 @@ fn resolve_and_apply_key(
             Ok(event) => (event.map(XAuthorityInputEvent::Key), None),
             Err(cause) => (None, Some(cause)),
         };
-        let binding = match registry.input_recovery.bind(route.delivery, reached.client) {
-            Ok(true) => PrivateReleaseBinding::Reached,
-            Ok(false) => PrivateReleaseBinding::Ended,
-            Err(_) => {
-                notes.recovery_unavailable = true;
-                PrivateReleaseBinding::Unknown
+        let binding = if disposition
+            == private_native::KeyReleaseDisposition::RecipientTerminationRequired
+        {
+            PrivateReleaseBinding::RecipientTerminationRequired
+        } else {
+            match registry.input_recovery.bind(route.delivery, reached.client) {
+                Ok(true) => PrivateReleaseBinding::Reached,
+                Ok(false) => PrivateReleaseBinding::Ended,
+                Err(_) => {
+                    notes.recovery_unavailable = true;
+                    PrivateReleaseBinding::Unknown
+                }
             }
         };
         // No fallible call remains between removing the hold and installing
@@ -283,7 +296,7 @@ fn resolve_and_apply_key(
     }
     prepare_key_custody(
         registry,
-        route.delivery,
+        route,
         pending_custody,
         next_event_order,
         notes,

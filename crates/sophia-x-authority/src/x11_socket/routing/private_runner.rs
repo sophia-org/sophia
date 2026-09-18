@@ -105,6 +105,9 @@ pub struct PrivateRunnerProgress {
     pub activation_pairs_observed: usize,
     pub activations_joined: usize,
     pub transient_observed: usize,
+    /// Charged live native-custody visits and completed records disposed.
+    pub native_disposal_observed: usize,
+    pub native_disposed: usize,
     pub transient_disposed: usize,
     /// Whether the supervisor failed during this turn.
     ///
@@ -321,6 +324,8 @@ impl PrivateXServerFrontend {
         let witness = Arc::new(PrivateExecutionWitness {
             instance: self.instance,
             state: std::sync::atomic::AtomicU8::new(0),
+            handed_off: AtomicBool::new(false),
+            completed: AtomicBool::new(false),
         });
         self.terminal.execution = Some(witness.clone());
         let watch = self.pending_watch.take();
@@ -447,81 +452,6 @@ impl PrivatePreparedRunner {
         })
     }
 
-    /// Check the allowance before dequeue, and charge only the item actually
-    /// taken. Both accounting guards are local; the work they describe is
-    /// already in the frontend before either can fail or unwind.
-    fn execute_accounted_step(
-        &mut self,
-    ) -> Result<PrivateAccountedStep, XServerFrontendRouteError> {
-        use sophia_input_authority::{CleanupReadiness, ServiceWork};
-        let Self {
-            watch,
-            frontend,
-            keyboards,
-            service_origin,
-            service,
-            ..
-        } = self;
-        // Until every native/recipient cleanup source supplies an eligibility
-        // observation, keep the cleanup reservation. An unavailable scan or
-        // an unwired consumer is not evidence that the allowance can be donated.
-        let cleanup = CleanupReadiness::Eligible;
-        let admission =
-            match service.prepare(service_origin.elapsed(), ServiceWork::NewWork, cleanup) {
-                Ok(admission) => admission,
-                Err(cause) => return Ok(PrivateAccountedStep::Yield { cause, taken: None }),
-            };
-        let mut admission = Some(admission);
-        let mut running = None;
-        let mut refused = None;
-        let mut taken = None;
-        let result = frontend.as_mut().expect("live runner").step_once(
-            keyboards,
-            &mut |sequence, taken_at| {
-                taken = Some(sequence);
-                let admission = admission
-                    .take()
-                    .ok_or(XServerFrontendRouteError::OrderedItemUnresolved)?;
-                let Some(elapsed) = taken_at.checked_duration_since(*service_origin) else {
-                    refused = Some(sophia_input_authority::ServiceStartRefusal::ClockRegressed);
-                    return Err(XServerFrontendRouteError::OrderedItemUnresolved);
-                };
-                // Fresh readiness is deliberately conservative here too; an
-                // earlier empty snapshot must not authorize a later donation.
-                match admission.dequeued(elapsed, CleanupReadiness::Eligible) {
-                    Ok(run) => {
-                        running = Some(run);
-                        Ok(())
-                    }
-                    Err(cause) => {
-                        refused = Some(cause);
-                        Err(XServerFrontendRouteError::OrderedItemUnresolved)
-                    }
-                }
-            },
-            watch.as_ref().expect("prepared supervisor"),
-        );
-        // Idle/Blocked never called the hook. Dropping that admission neither
-        // consumes an interval nor marks an interrupted execution.
-        // Every returned Result finishes accounting, including a refused
-        // execution. An unwind instead drops the ServiceRun and permanently
-        // closes this budget while the accepted item remains instance-owned.
-        let charge = running
-            .map(|run| run.finish(service_origin.elapsed()))
-            .transpose()
-            .map_err(|_| XServerFrontendRouteError::OrderedItemUnresolved)?;
-        if let Some(cause) = refused {
-            if frontend.as_ref().expect("live runner").terminal.current_is_frozen {
-                taken = None;
-            }
-            return Ok(PrivateAccountedStep::Yield { cause, taken });
-        }
-        Ok(PrivateAccountedStep::Step {
-            step: result?,
-            charge,
-        })
-    }
-
     /// Whether this turn moved anything: took, decided, routed, delivered
     /// or settled. An allowance refusal or a blocked order is not progress.
     pub(crate) fn advanced(progress: &PrivateRunnerProgress) -> bool {
@@ -624,11 +554,22 @@ impl PrivatePreparedRunner {
         // Reap only a supervisor already known to have returned. This never
         // waits for a running supervisor or a client worker, and its result
         // cannot reopen the admission gate or settle accepted work.
-        let _ = self
+        #[cfg(all(test, unix))]
+        let supervisor = self.watch.as_ref().expect("prepared supervisor").supervisor_thread();
+        #[cfg(all(test, unix))]
+        if let Some(thread) = supervisor {
+            routing_tests::m3_acceptance::actor_started(&self.frontend().broker.registry, thread, "watchdog");
+        }
+        let reaped = self
             .watch
             .as_mut()
             .expect("prepared supervisor")
             .reap_finished();
+        #[cfg(all(test, unix))]
+        if reaped.is_some() {
+            routing_tests::m3_acceptance::actor_joined(supervisor.expect("actual supervisor handle was joined"));
+        }
+        drop(reaped);
         let mut progress = PrivateRunnerProgress::default();
         // Even if an owner-loop turn crosses several interval boundaries,
         // producers cannot keep this call open by continuously replenishing.
@@ -744,6 +685,15 @@ impl PrivatePreparedRunner {
                                 progress.terminal_steps += 1;
                                 progress.transient_observed += 1;
                                 progress.transient_disposed += usize::from(disposed);
+                                if watch_failed { break; }
+                                self.prefer_cleanup = false;
+                                if overran || unwatched.is_some() { break; }
+                                continue;
+                            }
+                            PrivateDeliveryStep::NativeDisposal { disposed } => {
+                                progress.terminal_steps += 1;
+                                progress.native_disposal_observed += 1;
+                                progress.native_disposed += usize::from(disposed);
                                 if watch_failed { break; }
                                 self.prefer_cleanup = false;
                                 if overran || unwatched.is_some() { break; }

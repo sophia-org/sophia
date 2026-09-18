@@ -655,16 +655,29 @@ mod private_native {
                 activation_retirement: None,
                 release_mapper_applied: false,
             });
-            may_have_applied.set(true);
-            let applied = permit
-                .press(
-                    input,
-                    Recipient {
-                        recipient: client.client.raw(),
-                        connection_generation: client._admission.generation,
-                    },
-                )
-                .map_err(Refusal::Authority)?;
+            let previous_effect = may_have_applied.replace(true);
+            #[cfg(all(test, unix))]
+            super::routing_tests::m3_acceptance::native_press_entered(&self.origin.registry);
+            let applied = match permit.press(
+                input,
+                Recipient {
+                    recipient: client.client.raw(),
+                    connection_generation: client._admission.generation,
+                },
+            ) {
+                Ok(applied) => applied,
+                Err(cause) => {
+                    // ExecutionPermit::press returns an error before applying
+                    // a common press. No native commit below has run either.
+                    // This returned refusal, unlike an interrupted call,
+                    // establishes that our newly installed context owns no
+                    // effect. Restore earlier history rather than asserting
+                    // that the entire transaction was effect-free.
+                    *storage = None;
+                    may_have_applied.set(previous_effect);
+                    return Err(Refusal::Authority(cause));
+                }
+            };
             let hold = storage
                 .as_mut()
                 .expect("source installed context before effect");

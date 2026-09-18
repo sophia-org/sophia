@@ -11017,6 +11017,7 @@ fn a_transfer_guard_pays_out_when_the_attempt_unwinds() {
     let mut settling = None;
     let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let transfer = SettlementTransfer {
+            execution: None,
             origin: &origin,
             durable: &durable,
             pending: &mut pending,
@@ -13066,6 +13067,7 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
                 PrivateDeliveryStep::Idle => panic!("traffic was ready, so no step is idle"),
                 PrivateDeliveryStep::SharedActivation { .. } => {}
                 PrivateDeliveryStep::TransientReceipt { .. } => {}
+                PrivateDeliveryStep::NativeDisposal { .. } => {}
                 PrivateDeliveryStep::Blocked(_) => panic!("no entry is indeterminate here"),
             }
         }

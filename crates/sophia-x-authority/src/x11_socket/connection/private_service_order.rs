@@ -73,6 +73,8 @@ pub struct PrivateOrderTally {
     pub recipient_settled: usize,
     pub activation_pairs_observed: usize,
     pub activations_joined: usize,
+    pub native_disposal_observed: usize,
+    pub native_disposed: usize,
     pub allowance_refusals: usize,
     pub blocked_turns: usize,
     pub unwatched_turns: usize,
@@ -99,6 +101,8 @@ impl PrivateOrderTally {
         self.recipient_settled += progress.recipient_settled;
         self.activation_pairs_observed += progress.activation_pairs_observed;
         self.activations_joined += progress.activations_joined;
+        self.native_disposal_observed += progress.native_disposal_observed;
+        self.native_disposed += progress.native_disposed;
         self.allowance_refusals += usize::from(progress.allowance.is_some());
         self.blocked_turns += usize::from(progress.blocked.is_some());
         self.unwatched_turns += usize::from(progress.unwatched.is_some());
@@ -174,5 +178,7 @@ impl RoutedBrokerAccess for LeasedPrivateBroker<'_, '_> {
     fn close_private_producers(&mut self) {
         self.port.close();
         self.runner.close_admission();
+        #[cfg(all(test, unix))]
+        routing_tests::stage_after_admission_closed(&self.runner.frontend().broker.registry);
     }
 }

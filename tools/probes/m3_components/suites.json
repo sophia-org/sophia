@@ -1,6 +1,78 @@
 {
   "schema": 1,
   "suites": {
+    "ordered-state": [
+      "x11_socket::routing_tests::state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions",
+      "x11_socket::routing_tests::state_only_frozen_release_retains_original_request_then_applies_once_after_exact_thaw",
+      "x11_socket::routing_tests::service_state_only_release_suppresses_wire_output_and_keeps_recipient_debt",
+      "x11_socket::routing_tests::service_state_only_press_is_refused_before_native_application",
+      "x11_socket::routing_tests::service_keyboard_async_thaw_keeps_original_shift_request_and_exact_writer_order",
+      "x11_socket::routing_tests::service_pointer_async_thaw_keeps_original_motion_axis_cells_and_output_order",
+      "x11_socket::routing_tests::service_motion_and_axis_use_the_original_request_and_reclaim_exact_writer_receipts",
+      "x11_socket::routing_tests::transient_full_queue_preserves_exact_pair_token_and_accumulator_without_reselection",
+      "x11_socket::routing_tests::transient_axis_smooth_and_emulated_selections_are_independent_and_accumulate_once"
+    ],
+    "transient-thaw": [
+      "x11_socket::routing_tests::service_pointer_async_thaw_keeps_original_motion_axis_cells_and_output_order",
+      "x11_socket::routing_tests::service_motion_and_axis_use_the_original_request_and_reclaim_exact_writer_receipts",
+      "x11_socket::routing_tests::transient_full_queue_preserves_exact_pair_token_and_accumulator_without_reselection",
+      "x11_socket::routing_tests::transient_axis_smooth_and_emulated_selections_are_independent_and_accumulate_once"
+    ],
+    "live-recipient": [
+      "x11_socket::routing_tests::live_recipient_termination_cannot_supply_the_withheld_native_half",
+      "x11_socket::routing_tests::live_state_only_disposal_requires_its_explicit_source_disposition_and_actual_termination",
+      "x11_socket::routing_tests::live_endpoint_termination_settles_failed_receipt_without_rewriting_it",
+      "x11_socket::routing_tests::live_termination_keeps_original_pending_capsule_until_its_authority_accepts",
+      "x11_socket::routing_tests::live_termination_visits_charge_once_and_leave_other_native_classes_a_turn",
+      "x11_socket::routing_tests::live_native_disposal_waits_for_the_original_press_completion_and_native_source",
+      "x11_socket::routing_tests::live_native_disposal_is_charged_before_observing_and_returns_only_the_exact_record"
+    ],
+    "control-cleanup": [
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_stop_keeps_actual_cancelled_teardown_publication_payload",
+      "x11_socket::routing_tests::final_custody_waits_for_actual_settlement_handoff_and_original_storage_return",
+      "x11_socket::routing_tests::final_custody_reuses_original_slots_across_more_invocations_than_capacity",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_normal_stop_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_unwind_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_replacement_removal_receipt_cannot_answer_original_source",
+      "x11_socket::routing_tests::private_control_cleanup::actual_partial_configure_cleanup_uses_original_removal_and_returns_its_credit",
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_withheld_source_removal_keeps_original_record_and_credit",
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_foreign_source_cannot_retire_an_identically_numbered_operation",
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_missing_teardown_publication_keeps_native_removal_separate"
+    ],
+    "final-custody": [
+      "x11_socket::routing_tests::final_completion_keeps_original_internal_home_when_external_custody_is_withheld",
+      "x11_socket::routing_tests::final_custody_waits_for_actual_settlement_handoff_and_original_storage_return",
+      "x11_socket::routing_tests::final_custody_reuses_original_slots_across_more_invocations_than_capacity",
+      "x11_socket::routing_tests::completion_scan_restarts_for_a_same_invocation_obligation_moved_behind_its_cursor",
+      "x11_socket::routing_tests::final_custody_preserves_foreign_custody_and_indeterminate_rows_in_the_same_store",
+      "x11_socket::routing_tests::final_custody_preserves_unreadable_store_without_completion_or_capacity_return",
+      "x11_socket::routing_tests::stopped_service_held_modifier_waits_for_exact_termination_then_disposes",
+      "x11_socket::routing_tests::stopped_service_held_pointer_reconciles_and_disposes_exact_native_record",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_normal_stop_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_service_error_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_after_unwind_uses_collected_custody_and_surviving_owner",
+      "x11_socket::routing_tests::private_maintenance_scheduler::maintenance_without_resources_and_with_foreign_lease_cannot_visit"
+    ],
+    "live-native-disposal": [
+      "x11_socket::routing_tests::live_native_disposal_waits_for_the_original_press_completion_and_native_source",
+      "x11_socket::routing_tests::live_native_disposal_is_charged_before_observing_and_returns_only_the_exact_record",
+      "x11_socket::routing_tests::service_live_pointer_records_reuse_beyond_the_preallocated_native_bound",
+      "x11_socket::routing_tests::service_live_modifier_records_reuse_beyond_the_preallocated_native_bound",
+      "x11_socket::routing_tests::service_shift_a_chord_uses_one_history_and_settles_exact_native_and_writer_obligations",
+      "x11_socket::routing_tests::service_key_join_survivor_and_focus_move_keep_the_original_history_and_endpoint"
+    ],
+    "state-only": [
+      "x11_socket::routing_tests::state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions",
+      "x11_socket::routing_tests::state_only_frozen_release_retains_original_request_then_applies_once_after_exact_thaw",
+      "x11_socket::routing_tests::service_state_only_release_suppresses_wire_output_and_keeps_recipient_debt",
+      "x11_socket::routing_tests::service_state_only_press_is_refused_before_native_application",
+      "x11_socket::routing_tests::service_keyboard_async_thaw_keeps_original_shift_request_and_exact_writer_order"
+    ],
+    "keyboard-thaw": [
+      "x11_socket::routing_tests::native_keyboard_thaw_receipt_requires_all_exact_async_contributions",
+      "x11_socket::routing_tests::unsupported_allow_events_cannot_be_upgraded_into_an_async_thaw_receipt",
+      "x11_socket::routing_tests::service_keyboard_async_thaw_keeps_original_shift_request_and_exact_writer_order"
+    ],
     "item-credit": [
       "x11_socket::routing_tests::a_press_before_applied_focus_is_answered_refused_and_a_fresh_press_can_follow_focus",
       "x11_socket::routing_tests::actual_refusal_answers_its_original_delivery_and_allows_bounded_grant_reuse",
@@ -29,7 +101,7 @@
       "x11_socket::routing_tests::dropping_a_deferred_private_request_does_not_dispose_its_accepted_cell",
       "x11_socket::routing_tests::an_entered_private_request_cannot_be_relabelled_as_effect_free_deferral",
       "x11_socket::routing_tests::deferred_private_request_rechecks_its_exact_admission_before_the_source",
-      "x11_socket::routing_tests::service_state_only_key_is_explicitly_refused_before_native_application",
+      "x11_socket::routing_tests::service_state_only_press_is_refused_before_native_application",
       "x11_socket::routing_tests::service_repeat_key_is_explicitly_refused_before_native_application",
       "x11_socket::routing_tests::service_shift_a_chord_uses_one_history_and_settles_exact_native_and_writer_obligations",
       "x11_socket::routing_tests::service_key_join_survivor_and_focus_move_keep_the_original_history_and_endpoint"

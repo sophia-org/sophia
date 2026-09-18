@@ -28,6 +28,7 @@ pub(super) fn initial(
         overall: Verdict::NotRun,
         cases: catalog::initial(inventory),
         source: config.source.clone(),
+        build_target_namespace: config.build_target_namespace.clone(),
         config_sha256: identity::digest(path)?,
         containment: None,
         build: None,
@@ -67,6 +68,9 @@ pub(super) fn validate_report(report: &Report, config: &Config, path: &Path) -> 
         || report.config_sha256 != identity::digest(path)?
         || report.source.commit != config.source.commit
         || report.source.content_sha256 != config.source.content_sha256
+        || report.build_target_namespace != config.build_target_namespace
+        || config.build_target_namespace
+            != super::host::target_namespace(&config.source.content_sha256)?
         || !report.source_attested_inside
         || !report.source_unchanged_after
     {
@@ -178,6 +182,8 @@ fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Resul
     }
     if config.schema != 1
         || !config.source.clean
+        || config.build_target_namespace
+            != super::host::target_namespace(&config.source.content_sha256)?
         || identity::contents(Path::new(SOURCE))? != config.source.content_sha256
         || identity::digest(Path::new("/work/xtask"))? != config.xtask_sha256
         || identity::digest(&Path::new(HARNESS).join("inventory.json"))? != config.inventory_sha256

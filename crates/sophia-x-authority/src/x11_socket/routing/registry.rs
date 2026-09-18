@@ -480,6 +480,8 @@ impl XServerFrontendRouteRegistry {
             Some(home) => home,
             None => Arc::new(PrivateOrderedHome::empty()),
         };
+        home.origin.set(Arc::downgrade(&self.clients))
+            .map_err(|_| XServerFrontendRouteError::ContinuationUnavailable { client })?;
         // AND THIS CONNECTION'S EXTERNAL KEEPER, on the same reservation and
         // before the same boundary. The place and the maintenance destination
         // above are storage inside the store; this is the custody outside it
