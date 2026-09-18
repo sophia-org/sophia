@@ -696,15 +696,13 @@ fn focus_then_a_press_and_release_submitted_through_the_services_own_producers_r
 }
 
 #[test]
-fn a_press_before_any_applied_focus_is_refused_by_the_runner_and_keeps_its_credit_held() {
+fn a_press_before_applied_focus_is_answered_refused_and_a_fresh_press_can_follow_focus() {
     // THE PENDING/APPLIED DISTINCTION, FROM THE INPUT SIDE: nothing has
     // published this connection's applied state, so the runner's execution
     // refuses the press (Unpublished) rather than delivering it somewhere
-    // plausible. The refusal is a decided outcome the order keeps: the
-    // delivery's completion stays unanswered, the ingress's one grant cell
-    // stays held so the next submission is refused busy, and no later focus
-    // replays or re-addresses the refused press. Everything is read through
-    // the owner after an ordinary stop.
+    // plausible. The actual refusal answers the original receipt, allowing
+    // a fresh request after focus; applying focus never replays the old one.
+    // Final observations follow ordinary stop and worker collection.
     let (launched, socket_path) = launch_producing("producer-unpublished", 9602, 4);
     launched
         .access
@@ -732,9 +730,6 @@ fn a_press_before_any_applied_focus_is_refused_by_the_runner_and_keeps_its_credi
         .expect("the order accepts the press");
     let nothing = read_event(&mut client, 2);
     let cell = delivery_cell(&launched.registry, 96110);
-    let busy = ingress
-        .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96111), 272, true))
-        .map_err(|refusal| format!("{refusal:?}"));
     // The applied state arrives afterwards; the refused press is not replayed.
     control
         .submit(
@@ -752,6 +747,14 @@ fn a_press_before_any_applied_focus_is_refused_by_the_runner_and_keeps_its_credi
     let focus_in = read_event(&mut client, 5);
     let still_nothing = read_event(&mut client, 2);
     let answered_after_focus = cell.as_ref().and_then(|cell| cell.answer());
+    let fresh = ingress
+        .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96111), 272, true))
+        .map_err(|refusal| format!("{refusal:?}"));
+    let new_press = read_event(&mut client, 3);
+    let fresh_answer = delivery_cell(&launched.registry, 96111).and_then(|cell| {
+        waited_for(|| cell.answer().is_some());
+        cell.answer()
+    });
     launched
         .commands
         .send(XServerFrontendServiceCommand::StopAndDisconnect)
@@ -762,20 +765,19 @@ fn a_press_before_any_applied_focus_is_refused_by_the_runner_and_keeps_its_credi
     let seen = observe_worker(&custody, &registry);
     let order = outcome.order.expect("the tally");
     assert_eq!(nothing, None, "nothing was delivered for the refused press");
-    assert!(
-        matches!(busy.as_ref(), Err(refusal) if refusal.starts_with("Saturated")),
-        "the grant's one cell is held by the refused press: {busy:?}"
-    );
+    assert!(fresh.is_ok(), "the answered refusal allows a fresh request: {fresh:?}");
     assert_eq!(
         focus_ack.map(|ack| ack.acknowledgement.outcome),
         Some(XAuthorityControlOutcome::Delivered)
     );
     assert_eq!(focus_in, Some(expected_focus_in(sequence, window)));
     assert_eq!(still_nothing, None, "the applied focus replays nothing");
-    assert_eq!(answered_after_focus, None, "and answers nothing for the refused press");
+    assert_eq!(answered_after_focus.map(|receipt| receipt.outcome), Some(XAuthorityInputDeliveryOutcome::RouteRejected));
+    assert_eq!(new_press, Some(expected_button_event(true, sequence, window, 1)));
+    assert_eq!(fresh_answer.map(|receipt| receipt.outcome), Some(XAuthorityInputDeliveryOutcome::Flushed));
     assert!(client_ended);
     assert_eq!(outcome.ok, Some(true), "{:?}", outcome.error);
-    assert_eq!(order.taken, 2, "the press and the control: {order:?}");
+    assert_eq!(order.taken, 3, "two presses and the control: {order:?}");
     assert_eq!(order.refused, 1, "{order:?}");
     assert_eq!(
         order.last_refusal,

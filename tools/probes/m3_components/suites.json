@@ -2,6 +2,7 @@
   "schema": 1,
   "suites": {
     "item-credit": [
+      "x11_socket::routing_tests::a_press_before_applied_focus_is_answered_refused_and_a_fresh_press_can_follow_focus",
       "x11_socket::routing_tests::actual_refusal_answers_its_original_delivery_and_allows_bounded_grant_reuse",
       "x11_socket::routing_tests::refused_receipt_publication_keeps_the_item_and_retries_only_its_actual_outcome",
       "x11_socket::routing_tests::refused_request_never_answers_a_replacement_delivery_with_the_same_number",
