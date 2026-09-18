@@ -228,6 +228,7 @@ impl ShellComponentTransport {
                 self.output.clear();
                 self.action_cancellations.clear();
                 self.indicator_response = None;
+                self.catalog_response = None;
                 self.native_control = super::native_launcher::control::NativeControl::default();
                 self.inbox.clear();
                 self.capabilities = welcome.capabilities;

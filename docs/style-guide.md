@@ -183,6 +183,12 @@ re-exports are recorded individually in the layout exceptions. All fixture
 bodies remain under `tests/support`; their scope does not imply hardware or
 full owner-loop acceptance.
 
+The persistent catalog response fixture, `tests/support/shell_catalog_responses.rs`,
+uses the same narrow exception: supplied negotiated state, exact private credit
+accounting, forced returned refusal and partial FIFO drain. It does not enable
+dock negotiation or claim kernel backpressure. Its bodies remain outside `src`;
+only its individual module mount is listed, with no checker or legacy-debt change.
+
 ## TEA Policy Style
 
 Use TEA-style structure for policy components:

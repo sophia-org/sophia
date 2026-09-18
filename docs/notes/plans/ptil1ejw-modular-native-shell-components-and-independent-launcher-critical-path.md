@@ -1494,3 +1494,26 @@ allocation and renderer completions. They prove store custody and refusal, not
 socket negotiation, launch authorization, native rendering or dock readiness.
 Transport/Session persistent service integration remains open and admission
 remains refused; no hardware, installation or publication occurred.
+
+### Persistent activation response owner (2026-09-18)
+
+Typed persistent intake now reserves one aggregate control credit before removing
+the exact request. Completion validates the full activation and transaction,
+retains the first outcome across FIFO refusal, and clears the fixed-field pending
+record only after enqueue. FIFO ownership retains the charge through the final
+byte. Disconnect and fresh negotiation clear that connection's old obligation.
+This is response custody, not authorization or permission to replay launch work.
+
+Seventeen device-hidden runtime library controls pass, including three new
+persistent response controls. Strict runtime library/test Clippy passes. A compiled
+credit-omission mutant fails the aggregate-capacity assertion. Positive restoration
+uses a fresh dedicated target: an initial shared-target retry reused the mutant
+binary because of older archive timestamps, and is explicitly non-evidence.
+Artifacts: `.artifacts/dock-catalog-response`, `fresh-positive.log`,
+`fresh-clippy.log`, and `credit-mutant.log`. The fixtures supply negotiated state
+and simulate FIFO drain; they do not exercise kernel backpressure or a revision-8
+handshake. Dock service construction and negotiation remain refused pending the
+presentation/action integration. No physical run or install was performed.
+The combined candidate/response source also passes all 477 Session library tests
+with 15 ignored in the same device-hidden fresh-target run; layout passes with
+one documented external private-fixture mount, without changing the checker.

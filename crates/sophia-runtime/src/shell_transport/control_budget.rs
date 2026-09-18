@@ -27,6 +27,7 @@ impl ShellComponentTransport {
         let reserved = epochs.control_occupancy(self.store_grant)
             + self.action_cancellations.len()
             + usize::from(self.indicator_response.is_some())
+            + usize::from(self.catalog_response.is_some())
             + self.native_control.credits();
         let controls = reserved - bulk_records + self.output.controls() + additional;
         let records = reserved + self.output.records() + additional;
@@ -55,6 +56,7 @@ impl ShellComponentTransport {
         let reserved = epochs.control_occupancy(self.store_grant)
             + self.action_cancellations.len()
             + usize::from(self.indicator_response.is_some())
+            + usize::from(self.catalog_response.is_some())
             + self.native_control.credits();
         let Some(records) = reserved.checked_sub(usize::from(transfer)) else {
             return false;

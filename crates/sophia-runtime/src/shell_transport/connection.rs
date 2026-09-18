@@ -14,16 +14,21 @@ impl ShellTransportConnection<'_> {
     /// Observe existing admission; this never enables negotiation or changes a
     /// store profile. Persistent launch cannot inherit a transient menu grant.
     pub fn supports_persistent_catalog(&self) -> bool {
+        self.state.supports_persistent_catalog(self.content_epochs)
+    }
+}
+
+impl ShellComponentTransport {
+    pub(super) fn supports_persistent_catalog(&self, epochs: &ContentEpochRegistry) -> bool {
         use sophia_protocol::*;
         let required = SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
             | SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
             | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
             | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
             | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT;
-        self.state.content_grant().is_some_and(|grant| {
-            self.state.capabilities & required == required
-                && self.content_epochs.profile(grant)
-                    == Some(crate::ContentStoreProfile::PersistentCatalog)
+        self.content_grant().is_some_and(|grant| {
+            self.capabilities & required == required
+                && epochs.profile(grant) == Some(crate::ContentStoreProfile::PersistentCatalog)
         })
     }
 }
