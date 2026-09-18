@@ -4,6 +4,7 @@ use super::*;
 use sophia_protocol::*;
 
 mod closed_content;
+mod closed_input;
 mod content;
 pub(crate) mod control;
 
@@ -164,6 +165,9 @@ impl super::ShellTransportConnection<'_> {
 impl super::ShellTransportConnection<'_> {
     pub fn native_launcher_state(&self) -> Option<(NativeLauncherOpening, u64)> {
         self.state.native_launcher_state()
+    }
+    pub fn native_launcher_closed_opening(&self) -> Option<NativeLauncherOpening> {
+        self.state.native_launcher_closed_opening()
     }
     pub fn native_launcher_focus(&self) -> Option<NativeLauncherBinding> {
         self.state.native_launcher_focus()

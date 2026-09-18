@@ -55,7 +55,7 @@ impl ShellComponentTransport {
         self.take_native_launcher_request(epochs)
     }
 
-    fn take_native_launcher_request(
+    pub(in crate::shell_transport::native_launcher) fn take_native_launcher_request(
         &mut self,
         epochs: &crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, NativeLauncherActivation)>, ShellTransportError> {

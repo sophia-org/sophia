@@ -476,3 +476,171 @@ fn old_focus_and_opening_callbacks_cannot_act_on_replacements() {
         wrong_opening
     );
 }
+
+#[test]
+fn closed_input_drain_refuses_late_activation_in_both_ack_orders() {
+    for ack_first in [true, false] {
+        let (mut r, mut p, allocations, c) = setup();
+        initial_focus(&mut r, &mut p, &allocations, &c);
+        let event = input(&mut p, &mut r, NativeLauncherInputKind::Accept, "", 100).event;
+        let activate = NativeLauncherActivation {
+            event,
+            slot: 2,
+            cause: 1,
+        };
+        let acknowledgement = NativeLauncherInputAck {
+            event,
+            disposition: 1,
+        };
+        if ack_first {
+            p.send(ShellNativeLauncherRecord::InputAck(acknowledgement));
+        }
+        p.send(ShellNativeLauncherRecord::Activate(activate));
+        if !ack_first {
+            p.send(ShellNativeLauncherRecord::InputAck(acknowledgement));
+        }
+        p.transport
+            .close_native_launcher(&mut r, opening(), tx(80), ContentReason::Cancelled)
+            .unwrap();
+        p.transport.poll_io(&mut r).unwrap();
+        assert!(matches!(
+            decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+            ShellNativeLauncherRecord::FocusRevoked(_)
+        ));
+        assert!(matches!(
+            decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+            ShellNativeLauncherRecord::Closed(_)
+        ));
+        let mut wrong = opening();
+        wrong.opening += 1;
+        assert!(
+            p.transport
+                .service_closed_native_input(&mut r, wrong)
+                .is_err()
+        );
+        assert_eq!(
+            p.transport
+                .service_closed_native_input(&mut r, opening())
+                .unwrap(),
+            2
+        );
+        p.transport.poll_io(&mut r).unwrap();
+        let (transaction, ShellNativeLauncherRecord::ActivationOutcome(outcome)) =
+            decode_shell_native_launcher_frame(&p.read()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(transaction, tx(20));
+        assert_eq!(outcome.activation, activate);
+        assert_eq!(
+            (outcome.status, outcome.reason),
+            (2, ContentReason::Stale as u16)
+        );
+        assert_eq!(p.transport.native_launcher_focus(), None);
+        assert_eq!(
+            p.transport
+                .service_closed_native_input(&mut r, opening())
+                .unwrap(),
+            0
+        );
+        no_frame(&mut p, &mut r);
+        p.transport.disconnect(&mut r).unwrap();
+    }
+}
+
+#[test]
+fn closed_input_drain_does_not_guess_outcome_of_already_handed_request() {
+    let (mut r, mut p, allocations, c) = setup();
+    initial_focus(&mut r, &mut p, &allocations, &c);
+    let event = input(&mut p, &mut r, NativeLauncherInputKind::Accept, "", 100).event;
+    let activation = NativeLauncherActivation {
+        event,
+        slot: 2,
+        cause: 1,
+    };
+    p.send(ShellNativeLauncherRecord::Activate(activation));
+    assert_eq!(
+        p.transport.poll_native_launcher_activation(&mut r).unwrap(),
+        Some((tx(20), activation))
+    );
+    p.transport
+        .close_native_launcher(&mut r, opening(), tx(80), ContentReason::Cancelled)
+        .unwrap();
+    p.transport.poll_io(&mut r).unwrap();
+    assert!(matches!(
+        decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+        ShellNativeLauncherRecord::FocusRevoked(_)
+    ));
+    assert!(matches!(
+        decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+        ShellNativeLauncherRecord::Closed(_)
+    ));
+    assert_eq!(
+        p.transport
+            .service_closed_native_input(&mut r, opening())
+            .unwrap(),
+        0
+    );
+    no_frame(&mut p, &mut r);
+    // The original caller supplies its completed decision. This is response
+    // custody evidence, not execution of a real application/Session queue.
+    p.transport
+        .finish_native_launcher_activation(
+            &r,
+            tx(20),
+            &activation,
+            NativeLauncherActivationDecision::Admitted,
+        )
+        .unwrap();
+    assert_eq!(
+        p.transport
+            .service_closed_native_input(&mut r, opening())
+            .unwrap(),
+        0
+    );
+    let (_, ShellNativeLauncherRecord::ActivationOutcome(outcome)) =
+        decode_shell_native_launcher_frame(&p.read()).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(outcome.activation, activation);
+    assert_eq!(outcome.status, 1);
+    assert!(
+        p.transport
+            .finish_native_launcher_activation(
+                &r,
+                tx(20),
+                &activation,
+                NativeLauncherActivationDecision::Stale
+            )
+            .is_err()
+    );
+    no_frame(&mut p, &mut r);
+    p.transport.disconnect(&mut r).unwrap();
+}
+
+#[test]
+fn closed_input_drain_reports_departed_peer_without_disposing_the_grant() {
+    let mut r = empty();
+    let mut p = Peer::connected(&mut r);
+    assert_eq!(p.transport.native_launcher_closed_opening(), None);
+    p.transport
+        .close_native_launcher(&mut r, opening(), tx(80), ContentReason::Cancelled)
+        .unwrap();
+    p.transport.poll_io(&mut r).unwrap();
+    assert!(matches!(
+        decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+        ShellNativeLauncherRecord::Closed(_)
+    ));
+    assert_eq!(
+        p.transport.native_launcher_closed_opening(),
+        Some(opening())
+    );
+    p.client.shutdown(std::net::Shutdown::Both).unwrap();
+    assert_eq!(
+        p.transport.service_closed_native_input(&mut r, opening()),
+        Err(ShellTransportError::NotConnected)
+    );
+    assert_eq!(p.transport.content_grant(), Some(GRANT));
+    p.transport.disconnect(&mut r).unwrap();
+}

@@ -24,6 +24,16 @@ impl ShellComponentTransport {
             )
         })
     }
+    /// Exact Closed already transferred to the owned FIFO. This is not peer
+    /// receipt, pixel removal, resource settlement or permission to reopen.
+    pub fn native_launcher_closed_opening(&self) -> Option<NativeLauncherOpening> {
+        self.native_control
+            .opening
+            .is_none()
+            .then_some(self.native_control.closed)
+            .flatten()
+    }
+
     pub fn native_launcher_focus(&self) -> Option<NativeLauncherBinding> {
         let focus = self.native_control.focus?;
         let shown = self.native_control.presented?;
@@ -318,6 +328,12 @@ impl ShellComponentTransport {
     ) -> Result<Option<(TransactionId, NativeLauncherInputAck, bool)>, ShellTransportError> {
         self.require_native_launcher(epochs)?;
         self.poll_io_bounded(epochs, 64 * 1024)?;
+        self.take_native_launcher_input_ack()
+    }
+
+    pub(in crate::shell_transport::native_launcher) fn take_native_launcher_input_ack(
+        &mut self,
+    ) -> Result<Option<(TransactionId, NativeLauncherInputAck, bool)>, ShellTransportError> {
         let Some(index) = self
             .inbox
             .iter()

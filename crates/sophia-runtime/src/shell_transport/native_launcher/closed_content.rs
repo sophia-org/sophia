@@ -10,8 +10,7 @@ impl ShellComponentTransport {
         now_msec: u64,
     ) -> Result<usize, ShellTransportError> {
         self.require_native_launcher(epochs)?;
-        if self.native_control.opening.is_some()
-            || self.native_control.closed != Some(expected)
+        if self.native_launcher_closed_opening() != Some(expected)
             || expected.grant != self.store_grant
         {
             return Err(ShellTransportError::WrongActivation);

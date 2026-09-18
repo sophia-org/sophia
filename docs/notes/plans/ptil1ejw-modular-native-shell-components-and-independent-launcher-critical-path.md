@@ -558,3 +558,37 @@ removal, resource/allocation settlement and reopen boundary, rather than treatin
 a temporarily empty inbox as peer acknowledgement. Those live owner duties,
 component startup/shutdown and the final canonical/`lom-test` gate remain open.
 No device, display, VT, install, push or M3 import occurred.
+
+### Closed input visits over 52a4a732
+
+The closed-input visit reuses the production ACK decoder and typed activation
+request/response owner. It polls I/O once with the existing 64 KiB bound and
+services at most 32/the negotiated lower number of records, choosing ACK or
+activation in their relative FIFO order. Exact closed-opening validation prevents
+using it on an active successor. Valid late ACKs are stale; newly handed late
+activations receive an owned Stale outcome with their original transaction and
+complete identity. No launch callback runs in this path.
+
+An activation previously handed to Session is not reclassified or guessed.
+Its owner must finish the actual decision; an already recorded Admitted outcome
+remains Admitted. Zero serviced records therefore does not establish complete
+close quiescence. Peer EOF reports NotConnected without disposing the registry
+grant. The shared `native_launcher_closed_opening` observation means only that
+Closed transferred to the FIFO, not peer receipt, pixel absence or resource
+settlement.
+
+Device-hidden `.artifacts/bemenu-closed-input-checkpoint`: 14 runtime library,
+30 native transport and 10 native content tests pass; runtime/Session strict
+lib/tests Clippy and layout pass. New actual-socket controls cover both ACK/
+activation orders, exact Stale response, retained unknown outcome followed by
+its caller-supplied Admitted response, duplicate finish refusal, and remote EOF.
+That supplied decision proves response custody, not application execution.
+The compiled Stale-to-Admitted reply mutant fails the expected outcome assertion
+and its disposable source is restored (`.artifacts/bemenu-closed-input-mutant`).
+This is a false-reply control, not a reproduced launch after close.
+
+Session still must combine these visits with the retained presentation/removal
+receipt, allocation invalidation, resource consumption and reopen gating. The
+live component process/catalog/keyboard/launch/shutdown join, exact canonical and
+`lom-test` readiness remain open. No display/device/VT run, installation, push or
+M3 import occurred.
