@@ -1,5 +1,6 @@
 use super::*;
 mod content;
+pub use content::NativeLauncherActionService;
 mod content_accounting;
 mod content_shutdown;
 mod gpu;

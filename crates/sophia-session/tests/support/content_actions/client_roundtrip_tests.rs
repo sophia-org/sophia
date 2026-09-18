@@ -738,7 +738,7 @@ fn owner_decision_finishes_refusals_without_replaying_wm_admission() {
         assert!(h.transport.poll_indicator_activation().unwrap().is_none());
         assert_eq!(invoked, calls);
         if expected == Status::Accepted {
-            assert_eq!(h.ledger.live[0].activation, ActivationState::WmAdmitted);
+            assert_eq!(h.ledger.live[0].activation, ActivationState::EffectAdmitted);
         }
     }
 }

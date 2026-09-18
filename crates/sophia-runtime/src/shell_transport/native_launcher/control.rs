@@ -1,5 +1,7 @@
 use super::*;
+mod activation;
 mod deadlines;
+pub use activation::{NativeLauncherActivationDecision, NativeLauncherActivationEligibility};
 mod state;
 pub(in crate::shell_transport) use state::NativeControl;
 pub(crate) use state::NativePresented;
@@ -26,6 +28,7 @@ impl ShellComponentTransport {
         let focus = self.native_control.focus?;
         let shown = self.native_control.presented?;
         (self.native_control.active()
+            && !self.native_control.launch_admitted
             && focus.grant == shown.grant
             && focus.output == shown.output
             && focus.allocation == shown.allocation
@@ -46,6 +49,9 @@ impl ShellComponentTransport {
         transaction: TransactionId,
     ) -> Result<NativeLauncherBinding, ShellTransportError> {
         self.require_native_launcher(epochs)?;
+        if self.native_control.launch_admitted {
+            return Err(ShellTransportError::WrongActivation);
+        }
         let (opening, revision) = self
             .native_launcher_state()
             .ok_or(ShellTransportError::WrongCandidate)?;
@@ -255,7 +261,8 @@ impl ShellComponentTransport {
             event,
             kind,
             ack: None,
-            issued,
+            ack_started: issued.max(self.native_control.last_service),
+            activation_attempted: false,
         });
         self.native_control.next_event = next_event;
         self.native_control.revision = revision;

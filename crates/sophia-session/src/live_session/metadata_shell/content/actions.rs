@@ -1,3 +1,6 @@
+#[path = "actions/native_launcher.rs"]
+mod native_launcher;
+pub use native_launcher::NativeLauncherActionService;
 use sophia_engine::PresentedContentTarget;
 use sophia_protocol::{
     ContentAction, ContentActionAck, ContentReason, ShellIndicatorActivation, TransactionId,
@@ -19,7 +22,7 @@ enum AckState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ActivationState {
     Awaiting,
-    WmAdmitted,
+    EffectAdmitted,
     Rejected,
 }
 
@@ -27,6 +30,7 @@ enum ActivationState {
 struct PendingAction {
     action: ContentAction,
     target: PresentedContentTarget,
+    native_binding: Option<sophia_protocol::NativeLauncherBinding>,
     deadline_msec: u64,
     ack: AckState,
     activation: ActivationState,
@@ -87,6 +91,19 @@ impl ContentActionLedger {
         transaction: TransactionId,
         transport: &mut ShellTransportConnection<'_>,
     ) -> Result<Option<u64>, ShellTransportError> {
+        self.issue_bound(target, now_msec, limits, transaction, transport, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn issue_bound(
+        &mut self,
+        target: PresentedContentTarget,
+        now_msec: u64,
+        limits: &sophia_protocol::ContentLimits,
+        transaction: TransactionId,
+        transport: &mut ShellTransportConnection<'_>,
+        native_binding: Option<sophia_protocol::NativeLauncherBinding>,
+    ) -> Result<Option<u64>, ShellTransportError> {
         if self.live.len() >= limits.max_pending_actions as usize
             || self.live.len() >= self.live.capacity()
             || !transport.content_action_capacity_available()
@@ -108,6 +125,7 @@ impl ContentActionLedger {
         self.live.push(PendingAction {
             action,
             target,
+            native_binding,
             deadline_msec,
             ack: AckState::Awaiting,
             activation: ActivationState::Awaiting,
@@ -312,7 +330,7 @@ impl ContentActionLedger {
             .iter_mut()
             .find(|pending| pending.action.event_id == event_id)
         {
-            pending.activation = ActivationState::WmAdmitted;
+            pending.activation = ActivationState::EffectAdmitted;
         }
         self.collect_terminal(now_msec);
     }
@@ -322,7 +340,7 @@ impl ContentActionLedger {
             .live
             .iter_mut()
             .find(|pending| pending.action.event_id == event_id)
-            && pending.activation != ActivationState::WmAdmitted
+            && pending.activation != ActivationState::EffectAdmitted
         {
             pending.activation = ActivationState::Rejected;
         }
@@ -345,13 +363,13 @@ impl ContentActionLedger {
                         && sophia_engine::content_target_continues(target, &pending.target)
                 })
             });
-            if !expired && (pending.activation == ActivationState::WmAdmitted || current) {
+            if !expired && (pending.activation == ActivationState::EffectAdmitted || current) {
                 continue;
             }
             if pending.ack == AckState::Awaiting && !pending.cancel_sent {
                 return Some(index);
             }
-            if pending.activation != ActivationState::WmAdmitted {
+            if pending.activation != ActivationState::EffectAdmitted {
                 pending.activation = ActivationState::Rejected;
             }
         }
@@ -377,7 +395,7 @@ impl ContentActionLedger {
     fn cancellation_queued(&mut self, index: usize) {
         let pending = &mut self.live[index];
         pending.cancel_sent = true;
-        if pending.activation != ActivationState::WmAdmitted {
+        if pending.activation != ActivationState::EffectAdmitted {
             pending.activation = ActivationState::Rejected;
         }
     }
@@ -385,7 +403,7 @@ impl ContentActionLedger {
     pub(super) fn expire(&mut self, now_msec: u64) {
         for pending in self.live.iter_mut() {
             if now_msec >= pending.deadline_msec
-                && pending.activation != ActivationState::WmAdmitted
+                && pending.activation != ActivationState::EffectAdmitted
             {
                 pending.activation = ActivationState::Rejected;
             }

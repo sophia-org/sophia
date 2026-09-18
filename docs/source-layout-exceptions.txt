@@ -31,3 +31,6 @@ inline-tests crates/sophia-renderer-native-egl/src/gbm_platform/scanout/types.rs
 
 # External publisher/shutdown channel fixture; rationale in docs/style-guide.md.
 inline-tests crates/sophia-session/src/live_session/window_allocation.rs
+
+# External exact native activation response/FIFO ownership controls.
+inline-tests crates/sophia-runtime/src/shell_transport/native_launcher/control/activation.rs

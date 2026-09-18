@@ -10,6 +10,7 @@ use sophia_runtime::{ShellTransportConnection, ShellTransportError};
 #[path = "content/actions.rs"]
 pub(in crate::live_session) mod actions;
 use actions::ContentActionLedger;
+pub use actions::NativeLauncherActionService;
 
 const DRM_FORMAT_ARGB8888: u32 = u32::from_le_bytes(*b"AR24");
 

@@ -1,5 +1,46 @@
 use super::*;
 
+#[test]
+fn retained_enter_ack_deadline_starts_at_dispatch_but_keeps_original_timestamp() {
+    let (mut r, mut p, a, c) = setup();
+    let focus = initial_focus(&mut r, &mut p, &a, &c);
+    let edit = input(&mut p, &mut r, NativeLauncherInputKind::Text, "x", 10);
+    assert!(ack(&mut p, &mut r, edit.event, 1));
+    assert_eq!(
+        p.transport
+            .issue_native_launcher_input(&r, focus, tx(90), NativeLauncherInputKind::Accept, "", 11)
+            .unwrap(),
+        None
+    );
+    let delivery = 1_500_000;
+    assert!(
+        !p.transport
+            .service_native_launcher_deadlines(&r, opening(), tx(91), delivery)
+            .unwrap()
+    );
+    present(&mut r, &mut p, &a, &c, 2, 2, true);
+    let newer = p
+        .transport
+        .install_native_launcher_focus(&mut r, tx(92))
+        .unwrap();
+    p.transport.poll_io(&mut r).unwrap();
+    p.read(); // old FocusRevoked
+    p.read(); // new Focus
+    let (_, ShellNativeLauncherRecord::Input(enter)) =
+        decode_shell_native_launcher_frame(&p.read()).unwrap()
+    else {
+        panic!();
+    };
+    assert_eq!(enter.event.binding, newer);
+    assert_eq!(enter.issued_mono_usec, 11);
+    assert!(
+        !p.transport
+            .service_native_launcher_deadlines(&r, opening(), tx(93), delivery + 1)
+            .unwrap()
+    );
+    assert!(ack(&mut p, &mut r, enter.event, 1));
+}
+
 fn timed_out(p: &mut Peer, r: &mut ContentEpochRegistry, focus: NativeLauncherBinding) {
     assert!(p.transport.native_launcher_state().is_none());
     assert!(p.transport.native_launcher_focus().is_none());

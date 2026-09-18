@@ -67,6 +67,7 @@ fn ledger(ack: AckState) -> ContentActionLedger {
         next_event_id: 15,
         issued_high_water: 14,
         live: [PendingAction {
+            native_binding: None,
             action,
             target,
             deadline_msec: 100,
@@ -148,7 +149,7 @@ fn rejected_or_late_ack_cannot_undo_wm_admission() {
         ledger
             .acknowledge(&acknowledgement(disposition), now)
             .unwrap();
-        assert_eq!(ledger.live[0].activation, ActivationState::WmAdmitted);
+        assert_eq!(ledger.live[0].activation, ActivationState::EffectAdmitted);
         assert_eq!(
             ledger.indicator_admission(&activation(14), 50),
             LinkedIndicatorAdmission::Stale
@@ -176,7 +177,7 @@ fn a_later_rejection_cannot_retract_an_already_admitted_wm_effect() {
     let mut ledger = ledger(AckState::Awaiting);
     ledger.wm_admitted(14, 40);
     ledger.wm_rejected(14, 50);
-    assert_eq!(ledger.live[0].activation, ActivationState::WmAdmitted);
+    assert_eq!(ledger.live[0].activation, ActivationState::EffectAdmitted);
     assert_eq!(ledger.live[0].ack, AckState::Awaiting);
     assert_eq!(
         ledger.indicator_admission(&activation(14), 50),
@@ -185,7 +186,7 @@ fn a_later_rejection_cannot_retract_an_already_admitted_wm_effect() {
     ledger
         .acknowledge(&acknowledgement(ACK_REJECTED_STALE), 51)
         .unwrap();
-    assert_eq!(ledger.live[0].activation, ActivationState::WmAdmitted);
+    assert_eq!(ledger.live[0].activation, ActivationState::EffectAdmitted);
 }
 
 #[test]
@@ -222,7 +223,7 @@ fn timeout_cancellation_does_not_retract_an_irreversible_wm_effect() {
     assert_eq!(ledger.next_cancellation(&[], 50), None);
     assert_eq!(ledger.next_cancellation(&[], 100), Some(0));
     ledger.cancellation_queued(0);
-    assert_eq!(ledger.live[0].activation, ActivationState::WmAdmitted);
+    assert_eq!(ledger.live[0].activation, ActivationState::EffectAdmitted);
     assert_eq!(
         ledger.indicator_admission(&activation(14), 101),
         LinkedIndicatorAdmission::Stale

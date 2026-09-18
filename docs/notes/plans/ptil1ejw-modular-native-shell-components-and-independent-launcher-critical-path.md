@@ -231,6 +231,8 @@ with supplied renderer completions; physical keyboard/capture routing, idle
 deadline visits in Session, application admission and Bemenu remain to be joined.
 See the [focus ownership record](../investigations/v7m2c9ra-native-launcher-wire-contract.md#native-focus-and-input-over-6c65ccad).
 
+The [activation ownership slice](../investigations/v7m2c9ra-native-launcher-wire-contract.md#native-activation-queue-ownership-over-c274f7ad) now joins private request intake to the actual Session launch queue, with retained exact response credit and independent ACK state. Worker verification/execution, dual protected supervision, live placement/input and the Bemenu client remain required before `lom-test` readiness.
+
 ## Dependencies and boundaries
 
 Sequence: t104 → t105 → t106 → t107 → t108. t106 also depends on existing anchored

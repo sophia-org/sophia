@@ -429,3 +429,10 @@ private pending acknowledgement and applied metadata. It drives the same passive
 publisher and quiescence entry as production through real channels, without a
 native scanout constructor. The exception permits that test mount only; it is
 not a device, frontend-worker or full owner-loop execution.
+
+The native launcher activation owner mounts an external fixture beside its
+private pending reply and FIFO. It checks reservation before intake, exact
+outcome retention through returned refusal/close, and partial-write charges.
+Connection/request facts and write completion are supplied; this is not kernel
+backpressure or launch execution. The Session queue tests use the public native
+service with actual private sockets and need no private production test mount.

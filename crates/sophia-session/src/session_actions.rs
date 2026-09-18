@@ -4,6 +4,10 @@ use std::sync::Arc;
 
 use sophia_protocol::{SessionApplicationId, SurfaceId, TransactionId};
 
+mod native_catalog;
+use native_catalog::CatalogDispatch;
+pub use native_catalog::{NativeCatalogLaunch, NativeCatalogLaunchRefusal};
+
 pub const SESSION_ACTION_APPLICATION_CAPACITY: usize = 16;
 pub const SESSION_ACTION_SURFACE_CAPACITY: usize = 16;
 
@@ -20,6 +24,7 @@ pub struct SessionLaunchCommand {
 struct QueuedLaunch {
     intent: SessionLaunchIntent,
     catalog: bool,
+    native: Option<Arc<NativeCatalogLaunch>>,
     command: Option<Arc<SessionLaunchCommand>>,
 }
 
@@ -67,7 +72,9 @@ pub struct SessionLaunchQueue {
     pending: VecDeque<QueuedLaunch>,
     admitted_command: Option<Arc<SessionLaunchCommand>>,
     admission_from_catalog: bool,
-    catalog_dispatch: Option<TransactionId>,
+    catalog_dispatch: Option<CatalogDispatch>,
+    admitted_native: Option<Arc<NativeCatalogLaunch>>,
+    next_native_transaction: u64,
     admission: Option<SessionLaunchAdmission>,
     peak_depth: usize,
     rejected: usize,
@@ -102,19 +109,30 @@ impl SessionLaunchQueue {
         if !self.catalog_admission(transaction) || self.catalog_dispatch.is_some() {
             return false;
         }
-        self.catalog_dispatch = Some(transaction);
+        self.catalog_dispatch = Some(CatalogDispatch {
+            transaction,
+            native: self.admitted_native.as_ref().map(|owner| owner.activation),
+        });
         true
     }
     pub fn take_catalog_dispatch(&mut self) -> Option<TransactionId> {
-        self.catalog_dispatch.take()
+        let dispatch = self.catalog_dispatch?;
+        if dispatch.native.is_some() {
+            return None;
+        }
+        self.catalog_dispatch = None;
+        Some(dispatch.transaction)
     }
     pub fn cancel_catalog(&mut self, transaction: TransactionId) {
-        self.pending
-            .retain(|launch| !launch.catalog || launch.intent.transaction != transaction);
-        if self.catalog_dispatch == Some(transaction) {
+        self.pending.retain(|launch| {
+            !launch.catalog || launch.native.is_some() || launch.intent.transaction != transaction
+        });
+        if self.catalog_dispatch.is_some_and(|dispatch| {
+            dispatch.transaction == transaction && dispatch.native.is_none()
+        }) {
             self.catalog_dispatch = None;
         }
-        if self.catalog_admission(transaction) {
+        if self.admitted_native.is_none() && self.catalog_admission(transaction) {
             self.take_admission();
         }
     }
@@ -133,6 +151,7 @@ impl SessionLaunchQueue {
         self.pending.push_back(QueuedLaunch {
             intent,
             catalog: false,
+            native: None,
             command: None,
         });
         self.peak_depth = self.peak_depth.max(self.pending.len());
@@ -206,6 +225,8 @@ impl SessionLaunchQueue {
 
     fn take_admission(&mut self) -> Option<SessionLaunchAdmission> {
         self.admitted_command = None;
+        self.admitted_native = None;
+        self.catalog_dispatch = None;
         self.admission.take()
     }
 
@@ -219,6 +240,7 @@ impl SessionLaunchQueue {
         let intent = queued.intent;
         self.admission_from_catalog = queued.catalog;
         self.admitted_command = queued.command;
+        self.admitted_native = queued.native;
         self.admission = Some(SessionLaunchAdmission {
             intent,
             observed_surfaces: [None; SESSION_ACTION_SURFACE_CAPACITY],

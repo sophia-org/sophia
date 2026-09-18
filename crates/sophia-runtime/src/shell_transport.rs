@@ -30,6 +30,9 @@ mod connection;
 pub use connection::ShellTransportConnection;
 mod legacy;
 pub(crate) mod native_launcher;
+pub use native_launcher::control::{
+    NativeLauncherActivationDecision, NativeLauncherActivationEligibility,
+};
 mod negotiation;
 mod negotiation_policy;
 mod negotiation_service;
@@ -505,6 +508,7 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::NotConnected);
         }
         self.flush_indicator_response(epochs)?;
+        self.flush_native_activation(epochs)?;
         self.flush_native_close(epochs)?;
         self.flush_native_accept(epochs)?;
         let stream = self

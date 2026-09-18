@@ -47,6 +47,11 @@ pub mod session_keyboard;
 pub mod session_shutdown;
 pub mod session_startup;
 pub mod shell_component_connections;
+
+#[cfg(feature = "native-session")]
+pub mod shell_native_launcher {
+    pub use crate::live_session::metadata_shell::NativeLauncherActionService;
+}
 pub mod support;
 
 #[cfg(feature = "native-session")]

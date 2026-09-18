@@ -16,7 +16,8 @@ pub(super) struct InputReceipt {
     pub event: NativeLauncherEvent,
     pub kind: NativeLauncherInputKind,
     pub ack: Option<u16>,
-    pub issued: u64,
+    pub ack_started: u64,
+    pub activation_attempted: bool,
 }
 #[derive(Clone, Copy)]
 pub(super) struct AcceptIntent {
@@ -39,6 +40,8 @@ pub(in crate::shell_transport) struct NativeControl {
     pub last_issued: u64,
     pub last_service: u64,
     pub closing: Option<(TransactionId, u16)>,
+    pub(super) launch_admitted: bool,
+    pub(super) activation_response: Option<super::activation::PendingNativeActivation>,
     pub(super) inputs: [Option<InputReceipt>; 16],
     pub(super) accept: Option<AcceptIntent>,
 }
@@ -55,6 +58,8 @@ impl Default for NativeControl {
             last_issued: 0,
             last_service: 0,
             closing: None,
+            launch_admitted: false,
+            activation_response: None,
             inputs: [None; 16],
             accept: None,
         }
@@ -68,6 +73,7 @@ impl NativeControl {
         usize::from(self.opening.is_some())
             + usize::from(self.focus.is_some())
             + usize::from(self.accept.is_some())
+            + usize::from(self.activation_response.is_some())
     }
     pub(super) fn active(&self) -> bool {
         self.opening.is_some() && self.closing.is_none()
@@ -80,6 +86,7 @@ impl NativeControl {
         self.closing = None;
         self.inputs = [None; 16];
         self.revision = 0;
+        self.launch_admitted = false;
     }
     pub(super) fn slot(&self, maximum: usize) -> Option<usize> {
         if self.inputs.iter().flatten().count() >= maximum {

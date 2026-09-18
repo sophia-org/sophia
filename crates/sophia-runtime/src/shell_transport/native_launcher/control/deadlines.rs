@@ -26,7 +26,7 @@ impl ShellComponentTransport {
             .ok_or(ShellTransportError::MissingCapability)?;
         let expired_input = self.native_control.inputs.iter().flatten().any(|receipt| {
             receipt.ack.is_none()
-                && now_mono_usec.saturating_sub(receipt.issued)
+                && now_mono_usec.saturating_sub(receipt.ack_started)
                     >= u64::from(limits.action_ack_timeout_ms) * 1000
         });
         let expired_accept = self.native_control.accept.is_some_and(|intent| {

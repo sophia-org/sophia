@@ -290,3 +290,46 @@ credit. Four additional private-socket controls exercise zero/one-action grants,
 shared pointer/native occupancy and an exact 304-byte payload boundary. The
 pointer control supplies Session's target decision; it proves shared transport
 accounting, not pointer authority. Evidence: `.artifacts/bemenu-native-input-limits/`.
+
+## Native activation queue ownership over c274f7ad
+
+The native request now reserves a response credit before leaving the transport
+inbox. Its exact first outcome survives FIFO refusal and launcher dismissal;
+transfer clears the Copy producer record only after the FIFO owns the encoded
+frame. The shared aggregate record/byte budget includes this reservation through
+its final written byte. A new opening cannot inherit the old reply's admitted
+state. This is response ownership, not permission to replay a launch effect.
+
+Session pairs the published descriptor catalog with its immutable source entries.
+Keyboard activation requires the actually issued Accept and current presented
+selection. Pointer activation uses the actual content-action ledger, including
+its exact native binding; transport cancellation capacity is not input authority.
+Both paths insert into the existing Session launch queue and retain the exact
+catalog entry and activation origin. ACK order or rejection does not undo queue
+admission. A refusal consumes the attempted Accept. Legacy catalog dispatch and
+cancellation cannot consume the native dispatch. Revoking a grant removes its
+queue authority while a previously borrowed worker payload can remain alive.
+
+Retained Enter keeps its original issuance timestamp on the wire. Its ACK clock
+starts when dispatched after the matching presentation, using the last serviced
+monotonic time; time spent waiting for presentation is not charged again as peer
+ACK delay. The live scheduler must still visit deadline service before dispatch.
+
+Device-hidden affected runs in `.artifacts/bemenu-native-activation` pass 731
+tests with zero failures and 14 ignored; strict affected Clippy and layout pass.
+The six public Session controls use real private sockets, actual transport and
+ledger decisions, immutable publication and the real launch queue. Presentation
+and policy dispatch are supplied by the fixture. A socket saturation control
+counts valid filler frames, drains them, and checks one queue admission/outcome.
+Private response tests additionally simulate final-byte drain and defensively
+reduce limits to test retained refusal; that limit change is not normal policy.
+
+This slice does not execute an application, supervise a native launcher, service
+physical input, or exercise GPU/KMS. Queue admission is not worker verification,
+spawn, first-window admission, or physical readiness. Execution must revalidate
+the exact connected grant and retained entry at the actual spawn boundary.
+
+Five separately compiled mutations fail their intended controls: omitted reply
+credit, lost reply on close, overwritten first outcome, replay after capacity
+refusal, and bypassed selected-row validation. Disposable source hashes were
+restored exactly; no mutation was applied to the live checkout.

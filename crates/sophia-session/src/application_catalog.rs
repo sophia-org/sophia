@@ -1,7 +1,9 @@
 mod desktop_entry;
+mod publication;
 mod types;
 mod worker;
 pub use desktop_entry::desktop_exec_arguments;
+pub use publication::PublishedApplicationCatalog;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read as _;
 use std::path::Path;
