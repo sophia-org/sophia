@@ -1628,19 +1628,47 @@ fn held_capsule(
 /// resend that was afterwards put back. The delivery, the incarnation, the
 /// attempt token, the recipient it reached and the address of the completion
 /// it was admitted with do not.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 struct RetainedRelease {
-    dispatch: String,
-    delivery: Option<u64>,
-    incarnation: String,
-    attempt: Option<String>,
+    dispatch: PrivateDispatchPhase,
+    delivery: Option<XAuthorityInputDeliveryId>,
+    incarnation: sophia_input_authority::HoldIncarnation,
+    attempt: Option<sophia_input_authority::AttemptToken>,
     /// The completion this release has carried since its debt was recorded,
-    /// by address. Holding it is holding that exact admission's completion.
-    completion: Option<usize>,
+    /// kept as the original handle. Holding it is holding that exact
+    /// admission's completion; an address could be reused by anything.
+    completion: Option<Arc<PrivateDeliveryCompletion>>,
     pending_capsule: bool,
     answered: bool,
-    reached_client: u64,
-    reached_window: u64,
+    reached_client: XServerFrontendClientId,
+    reached_window: XResourceId,
+}
+
+impl RetainedRelease {
+    /// Whether two readings are of the same release, compared by what
+    /// identifies it: its completion by handle, everything else by value.
+    fn same_as(&self, other: &Self) -> bool {
+        self.dispatch == other.dispatch
+            && self.delivery == other.delivery
+            && self.incarnation == other.incarnation
+            && self.attempt == other.attempt
+            && self.pending_capsule == other.pending_capsule
+            && self.answered == other.answered
+            && self.reached_client == other.reached_client
+            && self.reached_window == other.reached_window
+            && match (&self.completion, &other.completion) {
+                (Some(ours), Some(theirs)) => Arc::ptr_eq(ours, theirs),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+
+    /// Whether this release carries that exact completion.
+    fn carries(&self, cell: &Arc<PrivateDeliveryCompletion>) -> bool {
+        self.completion
+            .as_ref()
+            .is_some_and(|held| Arc::ptr_eq(held, cell))
+    }
 }
 
 /// Every release this invocation's own origin still holds in the store.
@@ -1657,17 +1685,15 @@ fn retained_dispatch(service: &LifecycleService) -> Vec<RetainedRelease> {
         .filter(|inventory| Arc::ptr_eq(&inventory.origin.clients, &service.registry.clients))
         .flat_map(|inventory| {
             inventory.settling.iter().map(|release| RetainedRelease {
-                dispatch: format!("{:?}", release.custody.dispatch),
-                delivery: release.delivery().map(|id| id.raw()),
-                incarnation: format!("{:?}", release.incarnation()),
-                attempt: release.attempt().map(|token| format!("{token:?}")),
-                completion: release
-                    .completion()
-                    .map(|cell| Arc::as_ptr(cell) as usize),
+                dispatch: release.custody.dispatch,
+                delivery: release.delivery(),
+                incarnation: release.incarnation(),
+                attempt: release.attempt(),
+                completion: release.completion().cloned(),
                 pending_capsule: release.custody.pending.is_some(),
                 answered: release.completion().is_some_and(|cell| cell.answer().is_some()),
-                reached_client: release.reached().client().0,
-                reached_window: release.reached().window().local.raw(),
+                reached_client: release.reached().client(),
+                reached_window: release.reached().window(),
             })
         })
         .collect();
@@ -2265,8 +2291,12 @@ fn blocked_recipient_attempt(
         resent_committed, 0,
         "{label}: and nothing after the stall tried one either: {attempts_after_the_stall:?}"
     );
-    assert_eq!(
-        after, before,
+    assert!(
+        after.len() == before.len()
+            && after
+                .iter()
+                .zip(before.iter())
+                .all(|(after, before)| after.same_as(before)),
         "{label}: the retained reading is unchanged across the visit"
     );
     // THE EXACT CAPSULE, and exactly what it still owes. One of its two
@@ -3038,7 +3068,7 @@ pub(super) mod diagnostics {
         // after that admission is a witness of the exact one it carries.
         let original_release_cell = waited_for_value(|| delivery_cell(&unknown.registry, 12081))
             .expect("the release's own completion, minted by its own admission");
-        let original_release_cell = Arc::as_ptr(&original_release_cell) as usize;
+
         let unknown_closed = unknown.closed();
         assert!(
             unknown_closed.unwound,
@@ -3058,7 +3088,9 @@ pub(super) mod diagnostics {
         // handover was begun and its result never written down, and that is the
         // one state this subcase is about.
         assert!(
-            phases.iter().any(|seen| seen.dispatch == "Indeterminate"),
+            phases
+                .iter()
+                .any(|seen| seen.dispatch == PrivateDispatchPhase::Indeterminate),
             "the retained release says its handover was begun and never reported: {phases:?}"
         );
         // AND IT KEEPS NOTHING TO SEND AGAIN. The capsule left; no replayable
@@ -3067,7 +3099,8 @@ pub(super) mod diagnostics {
         assert!(
             phases
                 .iter()
-                .all(|seen| seen.dispatch != "Indeterminate" || !seen.pending_capsule),
+                .all(|seen| seen.dispatch != PrivateDispatchPhase::Indeterminate
+                    || !seen.pending_capsule),
             "and keeps no replayable copy of what it handed over: {phases:?}"
         );
         // THE EXACT RELEASE, BY IDENTITY. Not one release in an indeterminate
@@ -3075,16 +3108,16 @@ pub(super) mod diagnostics {
         // admission minted, with no copy of the capsule left to send again.
         let retained_release = phases
             .iter()
-            .find(|seen| seen.delivery == Some(12081))
+            .find(|seen| seen.delivery == Some(XAuthorityInputDeliveryId::from_raw(12081)))
             .unwrap_or_else(|| panic!("the release this case submitted is retained: {phases:?}"));
         assert_eq!(
-            retained_release.dispatch, "Indeterminate",
+            retained_release.dispatch,
+            PrivateDispatchPhase::Indeterminate,
             "its handover was begun and never reported: {retained_release:?}"
         );
-        assert_eq!(
-            retained_release.completion,
-            Some(original_release_cell),
-            "and it still carries the completion its own admission minted: {retained_release:?}"
+        assert!(
+            retained_release.carries(&original_release_cell),
+            "and it still carries the very completion its own admission minted: {retained_release:?}"
         );
         assert!(
             !retained_release.pending_capsule,
@@ -3093,9 +3126,9 @@ pub(super) mod diagnostics {
         assert_eq!(
             (
                 retained_release.reached_client,
-                retained_release.reached_window
+                retained_release.reached_window.local.raw()
             ),
-            (unknown_client.0, u64::from(0x320a01u32)),
+            (unknown_client, u64::from(0x320a01u32)),
             "reaching this connection's own window: {retained_release:?}"
         );
         assert!(
@@ -3143,9 +3176,13 @@ pub(super) mod diagnostics {
             "so nothing was charged for it: {visit:?}"
         );
         let unknown_after = retained_dispatch(&unknown);
-        assert_eq!(
-            unknown_after, phases,
-            "the retained record is unchanged across the visit: {visit:?}"
+        assert!(
+            unknown_after.len() == phases.len()
+                && unknown_after
+                    .iter()
+                    .zip(phases.iter())
+                    .all(|(after, before)| after.same_as(before)),
+            "the retained record is the same release across the visit, by its own completion: {visit:?}"
         );
         // AT MOST ONE COPY, whichever way the interruption fell. If the bytes
         // went, they went once; if they did not, nothing produced them
@@ -3166,7 +3203,7 @@ pub(super) mod diagnostics {
             "release_answer": release_cell.map(|answer| format!("{answer:?}")),
             "retained_phases": format!("{phases:?}"),
             "retained_release": format!("{retained_release:?}"),
-        "original_release_completion": original_release_cell,
+        "original_release_completion": Arc::as_ptr(&original_release_cell) as usize,
         "retained_phases_after_actual_maintenance_visit": format!("{unknown_after:?}"),
             "maintenance_visit": format!("{visit:?}"),
             "durable_drive": format!("{unknown_drive:?}"),
