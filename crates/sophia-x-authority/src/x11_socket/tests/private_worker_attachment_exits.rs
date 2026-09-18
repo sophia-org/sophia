@@ -1,8 +1,11 @@
 // Controls for the harder exits of registered ordered-output worker
-// attachment: a worker blocked in a wire write after its connection thread
-// has gone, a second service origin and a sibling under one owner, the visit's
-// refusals at the registered startup transaction, and a worker collection
-// could not join. Harness in `private_worker_attachment.rs`.
+// attachment: a worker blocked in a wire write, a second service origin and a
+// sibling under one owner, the visit's refusals at the registered startup
+// transaction, a worker collection could not join, and the retention that
+// follows. Harness in `private_worker_attachment.rs`. The controls that call
+// `attach_ready_workers` / `stop_attached_workers` / `collect_attached_workers`
+// directly run them over a fixture registration, not the service; the
+// service-level controls say which entry point they use.
 
 /// Whether the home is held right now -- by the worker's serving visit,
 /// which holds it across the blocked write. Read with `try_lock`, never by

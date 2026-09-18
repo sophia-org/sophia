@@ -1,8 +1,11 @@
 // Controls for registered ordered-output worker attachment and collection in
-// the private routed service. Every control here runs the real private entry
-// point (or its crate-internal serve over a real private frontend) on a real
-// listening socket with real Unix connections; the original owner is kept by
-// the launch scope through release and collection and inspected afterwards.
+// the private routed service. The service-exit controls run the crate-internal
+// serve over a real private frontend on a real listening socket with real
+// Unix connections, the original owner kept by the launch scope through
+// release and collection and inspected afterwards. The startup-transaction
+// and interrupt controls in `private_worker_attachment_exits.rs` call the
+// attachment and collection functions directly over a fixture registration;
+// each says so.
 //
 // SUPPLIED CAPSULES ARE A LABELLED SEAM. The private producer that would
 // address an ordered capsule to a connection is not attached yet, so a
@@ -435,7 +438,9 @@ fn a_real_connections_worker_delivers_supplied_capsules_on_its_own_wire_and_is_c
     let on_the_wire = read_within(&mut client, expected.len(), 5);
     let answered = waited_for(|| completion.answer().is_some());
     let live = observe_worker(&custody, &launched.handles.registry);
-    if on_the_wire.is_none() {
+    // The no-wire diagnostic is gathered here and raised only after the
+    // service has been stopped and collected below.
+    let no_wire_diagnostic = if on_the_wire.is_none() {
         let refusal = custody
             .cleanup_record()
             .ordered_home
@@ -452,8 +457,10 @@ fn a_real_connections_worker_delivers_supplied_capsules_on_its_own_wire_and_is_c
             PrivateHomeBorrow::Acted(found) => format!("{found:?}"),
             _ => "home not readable".to_owned(),
         };
-        panic!("nothing on the wire: worker={live:?} home={refusal}");
-    }
+        Some(format!("nothing on the wire: worker={live:?} home={refusal}"))
+    } else {
+        None
+    };
     launched
         .commands
         .send(XServerFrontendServiceCommand::StopAndDisconnect)
@@ -461,6 +468,9 @@ fn a_real_connections_worker_delivers_supplied_capsules_on_its_own_wire_and_is_c
     let client_ended = eof_within(&mut client, 3);
     let outcome = launch_outcome(launched.handle, &launched.finished, false, "attached stop");
     let seen = observe_worker(&custody, &launched.handles.registry);
+    if let Some(diagnostic) = no_wire_diagnostic {
+        panic!("{diagnostic}");
+    }
     assert_eq!(on_the_wire.as_deref(), Some(expected.as_slice()), "the exact frames arrived");
     assert!(answered, "and the worker answered the capsule's completion");
     assert_eq!(live.life, PrivateWorkerLife::Running, "the worker was live while it served");
@@ -574,5 +584,94 @@ fn an_unwind_after_a_worker_started_collects_it_through_the_guard() {
     // the custody the owner still keeps.
     assert_collected_running(&seen, "unwind");
     assert_eq!(outcome.after.custodies_kept, 1);
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+/// A big-endian setup request, and the reply read in that order.
+fn handshake_big_endian(client: &mut UnixStream) {
+    use std::io::{Read, Write};
+    client
+        .write_all(&[b'B', 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0])
+        .expect("the setup request is sent");
+    let mut prefix = [0u8; 8];
+    client.read_exact(&mut prefix).expect("a setup reply prefix");
+    assert_eq!(prefix[0], 1, "setup succeeded");
+    let mut body = vec![0u8; usize::from(u16::from_be_bytes([prefix[6], prefix[7]])) * 4];
+    client.read_exact(&mut body).expect("the setup reply body");
+}
+
+/// GetInputFocus in big-endian order; its reply carries the request's
+/// sequence number, read from the wire.
+fn get_input_focus_big_endian(client: &mut UnixStream) -> u16 {
+    use std::io::{Read, Write};
+    client
+        .write_all(&[43, 0, 0, 1])
+        .expect("a GetInputFocus request is sent");
+    let mut reply = [0u8; 32];
+    client.read_exact(&mut reply).expect("a GetInputFocus reply");
+    assert_eq!(reply[0], 1, "a reply, not an error");
+    u16::from_be_bytes([reply[2], reply[3]])
+}
+
+#[test]
+fn a_big_endian_connection_with_an_established_sequence_gets_frames_the_wire_itself_predicts() {
+    let (launched, socket_path) = quiet_launch("attach-big-endian", 9419);
+    let mut client = connect_private_client(&socket_path);
+    handshake_big_endian(&mut client);
+    // THE SEQUENCE IS ESTABLISHED ON THE WIRE: three requests with replies,
+    // the last reply naming its own sequence number in the negotiated order.
+    let mut last_sequence = 0;
+    for _ in 0..3 {
+        last_sequence = get_input_focus_big_endian(&mut client);
+    }
+    let custody = wait_attached(&launched.handles.registry);
+    let client_id = custody.cleanup_record().client;
+    let (capsule, completion, _recovery, _receipts) = supplied_capsule(94190, &custody);
+    // THE EXPECTATION IS INDEPENDENT OF THE READINESS: the order the
+    // handshake asked for and the sequence the wire reported.
+    let emission = capsule.emission();
+    let expected: Vec<u8> = (0..emission.frame_count())
+        .flat_map(|index| {
+            emission
+                .encode_frame(index, XByteOrder::BigEndian, last_sequence)
+                .expect("an encodable frame")
+                .as_bytes()
+                .to_vec()
+        })
+        .collect();
+    let little_endian_shape: Vec<u8> = (0..emission.frame_count())
+        .flat_map(|index| {
+            emission
+                .encode_frame(index, XByteOrder::LittleEndian, last_sequence)
+                .expect("an encodable frame")
+                .as_bytes()
+                .to_vec()
+        })
+        .collect();
+    let sender = registry_sender(&launched.handles.registry, client_id);
+    let notice = sender.arm_wake();
+    gated_send(&sender, capsule).expect("the connection's open endpoint");
+    drop(notice);
+    let on_the_wire = read_within(&mut client, expected.len(), 5);
+    let answered = waited_for(|| completion.answer().is_some());
+    launched
+        .commands
+        .send(XServerFrontendServiceCommand::StopAndDisconnect)
+        .expect("the service is listening for commands");
+    let client_ended = eof_within(&mut client, 3);
+    let outcome = launch_outcome(launched.handle, &launched.finished, false, "big-endian stop");
+    let seen = observe_worker(&custody, &launched.handles.registry);
+    assert_eq!(last_sequence, 3, "the wire reported the third request's sequence");
+    assert_ne!(expected, little_endian_shape, "the two orders encode differently");
+    assert_eq!(
+        on_the_wire.as_deref(),
+        Some(expected.as_slice()),
+        "the frames arrived in the handshake's order at the wire's sequence"
+    );
+    assert!(answered);
+    assert!(client_ended);
+    assert_eq!(outcome.ok, Some(true), "{:?}", outcome.error);
+    one_collected(&outcome, "big-endian stop");
+    assert_collected_running(&seen, "big-endian stop");
     let _ = std::fs::remove_file(&socket_path);
 }

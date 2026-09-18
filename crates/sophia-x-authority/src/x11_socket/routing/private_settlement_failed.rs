@@ -55,14 +55,14 @@ impl PrivateSettlementOwner {
     /// Each is retained with its queue and its registry, so it can be examined
     /// rather than merely counted.
     /// `None` where the owner cannot be read.
+    pub fn failed_instances(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.failed.len())
+    }
+
     /// How many instance failure slots are charged right now, live and
     /// retained together.
     pub fn failure_slots_charged(&self) -> Option<usize> {
         self.inner.lock().ok().map(|held| held.failure_slots)
-    }
-
-    pub fn failed_instances(&self) -> Option<usize> {
-        self.inner.lock().ok().map(|held| held.failed.len())
     }
 
     fn take_failed_instance(

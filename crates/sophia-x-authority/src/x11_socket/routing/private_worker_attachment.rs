@@ -88,7 +88,11 @@ enum PrivateAttachmentRefusal {
 enum PrivateAttachment {
     /// A worker was started through this custody's registered startup.
     Started,
-    /// No worker was started, and why.
+    /// The visit did not start a worker, and why.
+    ///
+    /// NOT A CLAIM THAT NO THREAD EXISTS. A startup refused its permit after
+    /// its spawn leaves that thread's handle in the custody's slot; the
+    /// collection selects by the slot, not by this record, and reaches it.
     Refused(PrivateAttachmentRefusal),
 }
 
@@ -111,10 +115,15 @@ pub enum PrivateJoinKind {
 pub struct PrivateWorkerCollection {
     /// The place in the owner's inventory the custody occupies.
     pub place: usize,
-    /// Whether this collection joined the thread. `join` is `Some` exactly
-    /// when it did.
+    /// Whether THIS collection joined the thread.
     pub joined: bool,
     pub slot_poisoned: bool,
+    /// What the custody's join evidence holds, whoever published it.
+    ///
+    /// DISTINCT FROM `joined`. A reaping this collection was refused (the
+    /// handle handed elsewhere, the publication right spent) can still read
+    /// a result an earlier join published; `Some` here with `joined == false`
+    /// is exactly that, and is not this collection's evidence.
     pub join: Option<PrivateJoinKind>,
     /// The reaping's own answer, whole.
     reaped: PrivateReaped,
@@ -185,6 +194,12 @@ impl PrivateEvidenceCustody {
 
 #[cfg(unix)]
 impl PrivateXServerFrontend {
+    /// Where this instance's service collection records the places it could
+    /// not join, for disposal to consult.
+    fn uncollected_mark(&self) -> Arc<Mutex<Vec<usize>>> {
+        Arc::clone(&self.uncollected)
+    }
+
     /// Prepare this instance's applied registry for the service's namespace,
     /// so a promoted home can establish the endpoint identity it serves.
     ///
@@ -196,12 +211,6 @@ impl PrivateXServerFrontend {
     /// once, for the service's own namespace, and attaches no producer,
     /// runner or executor. Connections that arrive afterwards bind their
     /// selections to it as they attach their state.
-    /// Where this instance's service collection records the places it could
-    /// not join, for disposal to consult.
-    fn uncollected_mark(&self) -> Arc<Mutex<Vec<usize>>> {
-        Arc::clone(&self.uncollected)
-    }
-
     pub(crate) fn prepare_applied_for_service(
         &self,
         namespace: NamespaceId,

@@ -673,8 +673,8 @@ pub(crate) fn serve_private_frontend_until_stopped(
             workers: Vec::new(),
         });
     }
-    // THE APPLIED REGISTRY IS PREPARED FOR THIS SERVICE'S NAMESPACE before any
-    // connection can be admitted: promotion establishes each connection's
+    // THE APPLIED REGISTRY IS PREPARED FOR THIS SERVICE'S NAMESPACE after the
+    // listener is bound and before any connection can be admitted: promotion establishes each connection's
     // served endpoint through it, and an instance that never prepared it
     // could promote nothing. This is the owner alone; the private input
     // pipeline stays unattached.
