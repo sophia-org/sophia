@@ -126,6 +126,9 @@ owns the host, containment and acceptance runner. Work shares one M4 branch
 with disjoint paths and serialized signed checkpoints. No XTEST request,
 public discovery, hardware acceptance or t094 completion belongs to this slice.
 
+The [M4 ownership investigation](../investigations/znh5pw3b-m4-private-session-ownership-and-contained-acceptance.md)
+records source findings, failed runs and the limits of each contained result.
+
 ### M3 closure gates (all required under t093)
 
 | Gate | Remaining implementation | Required production evidence |
