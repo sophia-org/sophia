@@ -504,7 +504,7 @@ macro_rules! drain_physical_input {
             }
             if let (Some(components), Some(runtime)) = (shell_components.as_mut(), runtime.as_ref()) {
                 for target in report.content_activations.iter().cloned() {
-                    if component_service::issue_panel_activation(components, target, runtime)?.is_none() {
+                    if component_service::issue_component_activation(components, target, runtime, component_catalog)?.is_none() {
                         crate::session_eprintln!("sophia_shell_component schema=1 status=input_rejected reason=inactive_or_capacity");
                     }
                 }
@@ -1295,7 +1295,7 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         }
         if let (Some(components), Some(runtime)) = (shell_components.as_mut(), runtime.as_mut()) {
             component_service::service_components(components, component_catalog, runtime, scene, native_scanout.as_mut(),
-                &outputs, wm_session, shell_presentation_available)?;
+                &outputs, wm_session, shell_presentation_available, session_launches, secondary_children.len())?;
             shell_work_area_bands = Some(components.work_area_bands());
         }
         if let Some(wm) = wm_session.as_mut() {

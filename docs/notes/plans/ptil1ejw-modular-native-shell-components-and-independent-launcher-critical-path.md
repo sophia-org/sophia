@@ -1078,3 +1078,40 @@ queue deadline bypass fails this test; source is restored in
 activation diagnostics remain in the retained successful test log. No canonical
 or hardware evidence, push, install or lom-test readiness. Pointer action and
 connected catalog execution remain next; configuration stays guarded.
+
+## Connected pointer action and launch admission join
+
+Physical content activation now selects the exact connected component grant. Bar
+activation retains its existing service; native activation uses the native action
+ledger, shared transaction mint and catalog-owner time origin. The connected
+native visit lends its exact FIFO-published immutable catalog and the actual
+Session launch queue to the shared action visit: at most 32 ACKs, one retained
+cancellation and 32 activation requests. Current presented targets come from the
+runtime input projections, not a client-provided list. Admission remains Session
+queue insertion and does not mean an application has executed.
+
+`.artifacts/bemenu-native-actions-join/final3/`: device-hidden Session 475 PASS/14
+ignored, native admission 13 PASS and native worker/execution 4 PASS. Strict
+Session Clippy and layout/formatting pass. The new control uses the same connected
+visit as production, actual private socket/action ledger and actual launch queue.
+It checks one current pointer activation admission, no replay, and cancellation
+of a removed target before a launch can be queued. It invokes the real Engine
+continuity reconciler for its supplied projection; it does not run native display
+publication or physical routing. Existing explicit process tests run only their
+device-hidden short-lived /bin/true child, not a GUI application.
+
+Two earlier fixture failures remain retained: its initial target lacked the
+continuity token required by publication, and its cancel-kind assertion used 2
+rather than protocol ActionCancel=3. Both fixture corrections preserve production
+policy. The final compiled cancellation-omission mutation admits one forbidden
+launch where zero is required and fails that queue assertion; source restoration
+is recorded in `.artifacts/bemenu-native-actions-join-mutant/`. Optional missing
+loader-cache activation diagnostics remain separate from completed hidden tests.
+
+Connected worker execution, immediate exact child adoption, post-admission close
+and revocation/replacement reconciliation remain next. Terminal worker results
+must not close a new opening merely because an old verification completed.
+Pending input after an admitted activation must receive an explicit disposition,
+not accidentally become a connection failure. Configuration remains refused
+until the full join/protected integration/canonical is checked. No push, live
+endpoint, installation, GPU, native/VT run or lom-test readiness claim.

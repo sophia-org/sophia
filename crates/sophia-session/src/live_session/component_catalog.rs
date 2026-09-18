@@ -1,6 +1,7 @@
 //! Catalog worker custody outside the owner loop and independent peer epochs.
 use super::*;
 use sophia_protocol::OutputId;
+mod actions;
 mod opening;
 use crate::application_catalog::{
     ApplicationCatalog, ApplicationCatalogEnvironment, ApplicationLaunchCommand,

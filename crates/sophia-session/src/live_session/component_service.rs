@@ -15,6 +15,8 @@ pub(super) fn service_components(
     outputs: &[sophia_engine::HeadlessOutput],
     wm: &mut Option<LiveWmSession>,
     available: bool,
+    launches: &mut SessionLaunchQueue,
+    active_children: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !available {
         catalog.cancel_open_request();
@@ -72,12 +74,19 @@ pub(super) fn service_components(
     for (key, role) in components.connected_roles().into_iter().flatten() {
         if role == sophia_config::ShellComponentRole::ApplicationLauncher {
             let result = components.with_service(key, |service, transport| {
-                let ShellComponentService::Launcher { content, .. } = service else {
+                let ShellComponentService::Launcher { content, actions } = service else {
                     return Err("native component role mismatch".into());
                 };
                 let complete = catalog.publish(transport)?;
                 transport.poll_io_bounded(64 * 1024)?;
                 if complete {
+                    catalog.service_actions(
+                        actions,
+                        transport,
+                        runtime,
+                        launches,
+                        active_children,
+                    )?;
                     catalog.service_open_content(
                         content,
                         transport,
@@ -153,12 +162,13 @@ pub(super) fn service_components(
     Ok(())
 }
 
-pub(super) fn issue_panel_activation(
+pub(super) fn issue_component_activation(
     components: &mut ShellComponentSession,
     target: sophia_engine::PresentedContentTarget,
     runtime: &LiveProductionVisualRuntime,
+    catalog: &mut component_catalog::ComponentCatalog,
 ) -> Result<Option<u64>, Box<dyn std::error::Error>> {
-    let Some((key, role)) = components
+    let Some((key, _role)) = components
         .connected_roles()
         .into_iter()
         .flatten()
@@ -166,14 +176,13 @@ pub(super) fn issue_panel_activation(
     else {
         return Ok(None);
     };
-    if role != sophia_config::ShellComponentRole::Bar {
-        return Ok(None);
-    }
-    let result = components.with_service(key, |service, transport| {
-        let ShellComponentService::Bar(bar) = service else {
-            return Ok(None);
-        };
-        bar.issue_activation(transport, target, runtime)
+    let result = components.with_service(key, |service, transport| match service {
+        ShellComponentService::Bar(bar) => bar.issue_activation(transport, target, runtime),
+        ShellComponentService::Launcher { actions, .. } => {
+            let transaction = catalog.mint_transaction()?;
+            let now = catalog.action_now_msec()?;
+            Ok(actions.issue(transport, target, transaction, now)?)
+        }
     })?;
     match result {
         Ok(event) => Ok(event),

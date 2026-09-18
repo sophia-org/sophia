@@ -481,3 +481,111 @@ fn native_spawn_error_settles_exact_attempt_without_retry() {
     ));
     assert!(!h.queue.native_catalog_admission(&payload));
 }
+
+#[test]
+fn connected_visit_joins_real_pointer_ledger_cancellation_and_launch_queue() {
+    for current in [true, false] {
+        let mut h = Harness::new();
+        let mut binding = sophia_engine::PresentedContentBinding {
+            grant: h.focus.grant,
+            output: h.focus.output,
+            candidate_generation: h.focus.candidate_generation,
+            presentation_epoch: h.focus.presentation_epoch,
+            interaction_generation: h.focus.interaction_generation,
+            transform: sophia_engine::PresentedContentTransform {
+                viewport: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 100,
+                },
+                layout_generation: 1,
+            },
+            authority_current: true,
+            targets: vec![h.target.clone()],
+            allocations: vec![(
+                h.target.allocation,
+                h.target.allocation_logical,
+                h.target.allocation_pixel,
+            )],
+        };
+        sophia_engine::reconcile_content_continuity(None, &mut binding);
+        h.target = binding.targets[0].clone();
+        let presented = if current { vec![binding] } else { vec![] };
+        let event_id = h
+            .service
+            .issue(
+                &mut h.peer.transport.connection(&mut h.epochs),
+                h.target.clone(),
+                tx(30),
+                1,
+            )
+            .unwrap()
+            .unwrap();
+        h.peer.transport.poll_io(&mut h.epochs).unwrap();
+        assert!(matches!(
+            decode_shell_content_frame(&h.peer.read()).unwrap().1,
+            ShellContentRecord::Action(_)
+        ));
+        let activation = NativeLauncherActivation {
+            event: NativeLauncherEvent {
+                binding: h.focus,
+                event_id,
+                state_revision: 1,
+            },
+            cause: 2,
+            slot: 1,
+        };
+        h.peer.send(ShellNativeLauncherRecord::Activate(activation));
+        assert_eq!(
+            h.service
+                .service_connected(
+                    &mut h.peer.transport.connection(&mut h.epochs),
+                    &h.catalog,
+                    &presented,
+                    tx(31),
+                    &mut h.queue,
+                    SessionApplicationId::from_raw(2),
+                    0,
+                    1001,
+                    1
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(h.queue.pending_len(), usize::from(current));
+        h.peer.transport.poll_io(&mut h.epochs).unwrap();
+        if !current {
+            let (_, ShellContentRecord::Action(cancel)) =
+                decode_shell_content_frame(&h.peer.read()).unwrap()
+            else {
+                panic!("cancel")
+            };
+            assert_eq!(cancel.kind, 3); // protocol ActionCancel
+            assert_eq!(cancel.event_id, event_id);
+        }
+        let outcome = h.outcome();
+        assert_eq!(outcome.activation, activation);
+        assert_eq!(outcome.status, if current { 1 } else { 2 });
+        assert_eq!(h.queue.pending_len(), usize::from(current));
+        h.peer.send(ShellNativeLauncherRecord::Activate(activation));
+        assert_eq!(
+            h.service
+                .service_connected(
+                    &mut h.peer.transport.connection(&mut h.epochs),
+                    &h.catalog,
+                    &presented,
+                    tx(32),
+                    &mut h.queue,
+                    SessionApplicationId::from_raw(2),
+                    0,
+                    1002,
+                    2
+                )
+                .unwrap(),
+            1
+        );
+        assert_ne!(h.outcome().status, 1);
+        assert_eq!(h.queue.pending_len(), usize::from(current));
+    }
+}

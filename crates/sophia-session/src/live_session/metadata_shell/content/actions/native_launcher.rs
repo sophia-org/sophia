@@ -95,6 +95,46 @@ impl NativeLauncherActionService {
             ledger_now_msec,
         )
     }
+    /// Shared connected visit: exact ACKs and stale-target cancellation precede
+    /// bounded activation intake. Admission means queue insertion, not execution.
+    #[allow(clippy::too_many_arguments)]
+    pub fn service_connected(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        publication: &PublishedApplicationCatalog,
+        presented: &[sophia_engine::PresentedContentBinding],
+        cancellation_transaction: TransactionId,
+        launches: &mut SessionLaunchQueue,
+        application: SessionApplicationId,
+        active_children: usize,
+        now_mono_usec: u64,
+        ledger_now_msec: u64,
+    ) -> Result<usize, ShellTransportError> {
+        self.service_acks(transport, ledger_now_msec, 32)?;
+        self.service_cancellation(
+            transport,
+            presented,
+            cancellation_transaction,
+            ledger_now_msec,
+        )?;
+        let mut processed = 0;
+        for _ in 0..32 {
+            if !self.service_request(
+                transport,
+                publication,
+                launches,
+                application,
+                active_children,
+                now_mono_usec,
+                ledger_now_msec,
+            )? {
+                break;
+            }
+            processed += 1;
+        }
+        Ok(processed)
+    }
+
     pub fn reset_disconnected(
         &mut self,
         transport: &ShellTransportConnection<'_>,
