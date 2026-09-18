@@ -3,7 +3,8 @@
   "suites": {
     "transient-service": [
       "x11_socket::routing_tests::service_motion_and_axis_use_the_original_request_and_reclaim_exact_writer_receipts",
-      "x11_socket::routing_tests::transient_full_queue_preserves_exact_pair_token_and_accumulator_without_reselection"
+      "x11_socket::routing_tests::transient_full_queue_preserves_exact_pair_token_and_accumulator_without_reselection",
+      "x11_socket::routing_tests::transient_axis_smooth_and_emulated_selections_are_independent_and_accumulate_once"
     ],
     "retained-maintenance": [
       "x11_socket::routing_tests::private_retained_drive::retained_drive_uses_one_original_cleanup_start_and_exact_settled_disposal",
