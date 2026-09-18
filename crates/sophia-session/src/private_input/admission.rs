@@ -97,22 +97,36 @@ impl XServerFrontendAdmissionPolicy for PrivateInputAdmissionPolicy {
         let instance_verified = request
             .verified_private_input
             .is_some_and(|verified| verified.instance() == self.instance);
-        let context = self
+        // EVERYTHING FALLIBLE IS ACQUIRED BEFORE THE REGISTRY IS CHANGED. An
+        // earlier version admitted first and then reached for the record map,
+        // so a poisoned map turned a completed admission into a returned
+        // `Unavailable`: the caller was told nothing had been admitted while
+        // the registry held an admission it had never been given a context for
+        // and therefore could not revoke. Taking both locks first means a lock
+        // that cannot be had refuses before anything has been changed, and the
+        // insert that follows a successful admit cannot itself fail.
+        //
+        // The record map is taken first. `revoke` touches the same two, but
+        // releases the record map before reaching for the registry, so nothing
+        // nests them the other way round.
+        let mut admitted = self
+            .admitted
+            .lock()
+            .map_err(|_| XServerFrontendAdmissionError::Unavailable)?;
+        let mut registry = self
             .registry
             .lock()
-            .map_err(|_| XServerFrontendAdmissionError::Unavailable)?
+            .map_err(|_| XServerFrontendAdmissionError::Unavailable)?;
+        let context = registry
             .admit(self.namespace, request.setup_authentication)
             .map_err(|_| XServerFrontendAdmissionError::Unavailable)?;
-        self.admitted
-            .lock()
-            .map_err(|_| XServerFrontendAdmissionError::Unavailable)?
-            .insert(
-                context.client_id,
-                PrivateInputAdmissionRecord {
-                    instance_verified,
-                    context,
-                },
-            );
+        admitted.insert(
+            context.client_id,
+            PrivateInputAdmissionRecord {
+                instance_verified,
+                context,
+            },
+        );
         Ok(context)
     }
 

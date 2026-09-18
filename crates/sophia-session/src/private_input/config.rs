@@ -64,9 +64,10 @@ pub struct PrivateInputConfig {
     pub capabilities: sophia_protocol::NamespaceCapabilities,
     /// The session generation this service's namespace registry runs under.
     ///
-    /// Stated rather than derived from the authority instance: they are
-    /// different clocks, and deriving one from the other would make a
-    /// replacement admission for one client look current under the wrong one.
+    /// Stated rather than derived from the authority instance. The registry's
+    /// generation is what decides whether an admission is the current one for a
+    /// client, and taking it from whatever an instance happened to report would
+    /// make that decision a side effect of construction order.
     pub session_generation: u64,
     /// The seat this service's authority is bound to, with its instance.
     pub binding: sophia_input_authority::SeatBinding,

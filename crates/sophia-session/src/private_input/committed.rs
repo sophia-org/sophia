@@ -87,6 +87,21 @@ pub(super) struct PrivateInputBridge {
     staged: Option<PrivateInputStagedBatch>,
     /// Minted, awaiting the order.
     entries: VecDeque<PrivateInputBridgeEntry>,
+    /// Which surfaces are currently mapped, carried across batches.
+    ///
+    /// DURABLE, BECAUSE THE FACT IS. A drawing transaction arrives with no
+    /// presentation observations at all: the runtime's apply path pushes the
+    /// transaction without republishing surface state. Rebuilding the mapped
+    /// set from each batch alone therefore found it empty on exactly the batch
+    /// that applies the surface, and every applied surface was skipped, so a
+    /// create/map/draw sequence never produced an admission.
+    ///
+    /// A map that arrived in an earlier FIFO batch is still true when a later
+    /// batch commits, and this carries it. It does not let a later map
+    /// authorise an earlier effect: batches are committed strictly in order and
+    /// this is updated from a batch before that same batch's commits are
+    /// routed, so a map arriving after an effect cannot reach back to it.
+    mapped: BTreeSet<SurfaceId>,
 }
 
 impl PrivateInputBridge {
@@ -227,7 +242,7 @@ impl PrivateInputHandle {
                 let Some(batch) = bridge.intake.pop_front() else {
                     return Ok(());
                 };
-                let decisions = commit_batch(&mut assembly, &batch, report);
+                let decisions = commit_batch(&mut assembly, &batch, &mut bridge.mapped, report);
                 drop(assembly);
                 bridge.staged = Some(PrivateInputStagedBatch {
                     batch,
@@ -326,14 +341,28 @@ impl PrivateInputHandle {
 fn commit_batch(
     assembly: &mut sophia_engine::QueuedHeadlessCompositorBackendAssembly,
     batch: &XAuthorityObservedTransactionBatch,
+    mapped: &mut BTreeSet<SurfaceId>,
     report: &mut PrivateInputCommitted,
 ) -> Vec<PrivateInputDecision> {
-    // THIS BATCH'S OWN MAPPING FACTS. A map in a later batch must not
-    // authorise an earlier commit.
-    let mut mapped = BTreeSet::new();
+    // THE LEDGER IS UPDATED FROM THIS BATCH BEFORE THIS BATCH IS ROUTED, and
+    // only from facts the batch actually carries. A batch with no presentation
+    // observations says nothing about mapping and therefore changes nothing,
+    // which is what lets a drawing transaction be routed against a map that
+    // arrived earlier.
+    //
+    // An observation is the runtime's current state for that surface, so it
+    // both sets and clears. A deferred policy map is the exception and is
+    // applied after: while policy maps are deferred the surface is recorded as
+    // pending rather than mapped, so `mapped` stays false and the batch carries
+    // a Request instead. That Request is what authorises the admission, and
+    // `mapped` becomes true only once the admission succeeds -- requiring the
+    // observation for that branch would wait on a fact the admission itself
+    // produces.
     for seen in &batch.surface_presentations {
         if seen.mapped {
             mapped.insert(seen.surface);
+        } else {
+            mapped.remove(&seen.surface);
         }
     }
     let mut withdrawn = BTreeSet::new();
@@ -348,6 +377,12 @@ fn commit_batch(
         }
     }
     withdrawn.extend(batch.removed_surfaces.iter().copied());
+    // A withdrawn surface is no longer mapped. Its own incarnation is in its
+    // `SurfaceId`, so a successor surface starts unmapped rather than
+    // inheriting this one's fact.
+    for surface in &withdrawn {
+        mapped.remove(surface);
+    }
 
     let intake = sophia_engine::AuthorityTransactionIntake::new(
         batch.transaction,
@@ -421,10 +456,13 @@ fn decide(
         .iter()
         .find(|route| route.surface == surface)?;
     let admission = route.admission?;
-    // THE BOUNDARY'S OWN ROW FOR THIS ADMISSION. The route carries an admission
-    // context whose auth provenance is the session generation, which is a
-    // different clock from a connection's generation; taking one for the other
-    // names a connection that never existed.
+    // THE BOUNDARY'S OWN ROW FOR THIS ADMISSION. The boundary currently
+    // initialises a binding's generation from the admission's auth provenance,
+    // so that number would agree; what makes this the right source is not a
+    // disagreement between clocks but that the row is the record of an
+    // admission the boundary actually holds. The exact admission is what
+    // separates a reconnecting client from the one that went, and a row read
+    // here cannot describe a connection the boundary has no binding for.
     let seen = live.iter().find(|seen| {
         seen.client == route.client && seen.admission == admission.client_id && !seen.closed
     })?;

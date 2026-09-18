@@ -459,11 +459,12 @@ impl PrivateInputHandle {
             .participant
             .admitted()
             .map_err(|_| PrivateInputIssueRefusal::Unavailable)?;
-        // THE ROW THE BOUNDARY MATCHED, not a generation read off the
-        // admission context. Those are different clocks: the auth provenance
-        // carries the session generation and a connection's generation is the
-        // boundary's own, so reporting one as the other would name a
-        // connection that never existed.
+        // THE ROW THE BOUNDARY MATCHED, rather than fields assembled from the
+        // admission context. The boundary initialises a binding's generation
+        // from that context's auth provenance, so the number would agree; what
+        // the row adds is that the boundary is actually holding this admission.
+        // The exact admission is what separates a reconnecting client from the
+        // one that went.
         let seen = super::admission::may_issue(
             self.runtime.grants,
             &self.runtime.admitted,
