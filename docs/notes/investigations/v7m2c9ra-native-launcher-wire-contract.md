@@ -407,3 +407,31 @@ managed-exit control pass. This is actual short-lived process execution without
 a display connection, not a native graphical application or attended run. The
 verification result is supplied in the spawn control; actual worker verification
 is tested separately. No joined live-supervisor/worker/first-window claim follows.
+
+## Joined native catalog service
+
+`NativeCatalogService` now retains a dedicated existing catalog worker and one
+pending verification. A bounded visit takes at most one native dispatch and one
+worker result. It checks the current connection/queue, deadline and shutdown
+state before passing the exact result to the shared spawn function. Shutdown
+rejects pending authority but retains the worker/result until serviced and joined;
+a stopped owner cannot return a newly started child. The role scheduler must
+still own this service and adopt each returned child/origin immediately.
+
+The joined private-socket control executes actual catalog filesystem verification
+and an isolated `/bin/true` spawn. It separately tests shutdown, disconnected
+grant, five-second verification deadline, queue revocation and monotonic-time
+regression between submission and completion. All six schedules pass within one
+parameterized test; this is not six independently counted test functions.
+Renderer/protection/policy dispatch remain supplied by the socket fixture. The
+control drains and joins the actual worker; no display endpoint is opened.
+A compiled deadline-omission mutation fails the expired-result schedule.
+The standalone service is not yet the live dual-component owner loop.
+
+A second service control stops during catalog refresh: new requests are refused,
+the outstanding result prevents early join, and draining it publishes neither a
+catalog nor a child. Normal channel closure after intentional stop is idle;
+worker panic is still reported by join. Final focused service evidence is two
+test functions (the execution test contains six schedules), not a full Session
+or graphical run. Initial strict-lint failures and their corrected run are
+retained separately in the service artifact directory.
