@@ -25,8 +25,8 @@ mod submission;
 pub use admission::{PrivateInputAdmissionRecord, PrivateInputIssueRefusal};
 pub use config::{PrivateInputConfig, PrivateInputGrantPolicy, PrivateInputInstanceCookie};
 pub use control::{
-    PrivateInputCommitted, PrivateInputControl, PrivateInputControlAccepted,
-    PrivateInputControlError, PrivateInputControlTarget,
+    PrivateInputAction, PrivateInputCommitted, PrivateInputCommittedEffect,
+    PrivateInputControlError, PrivateInputSubmitted,
 };
 pub use handle::{
     PrivateInputHandle, PrivateInputOutcome, PrivateInputReadiness, PrivateInputRefusal,

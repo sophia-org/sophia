@@ -11,8 +11,7 @@ use std::time::Duration;
 
 use super::admission::PrivateInputIssueRefusal;
 use super::control::{
-    PrivateInputCommitted, PrivateInputControl, PrivateInputControlAccepted,
-    PrivateInputControlError,
+    PrivateInputAction, PrivateInputCommitted, PrivateInputControlError, PrivateInputSubmitted,
 };
 use super::submission::{PrivateInputConnection, PrivateInputSubmission};
 
@@ -231,28 +230,38 @@ impl PrivateInputHandle {
         unimplemented!("service thread lands with the keeper work")
     }
 
-    /// Submit one Engine-committed control for a named connection.
+    /// Submit one focus action Session decided on its own authority.
     ///
-    /// SESSION MINTS THE TRANSACTION. The returned value carries it, so the
-    /// real acknowledgement that later arrives on the drain is matched against
-    /// this exact control rather than against a number the caller guessed.
-    /// Nothing here reaches the control producer, the broker or the registry.
-    pub fn submit_control(
+    /// POLICY, NOT COMMITTED STATE. Focus is Session's to choose, so it is
+    /// submitted here and its real acknowledgement checked on the drain. Map
+    /// and configure are deliberately absent: those belong to a commit, and
+    /// `apply_committed` is the only thing that emits them.
+    ///
+    /// Session mints the transaction, so the acknowledgement is matched
+    /// against this exact submission rather than a number the caller guessed.
+    pub fn submit_action(
         &self,
         _connection: PrivateInputConnection,
-        _control: PrivateInputControl,
-    ) -> Result<PrivateInputControlAccepted, PrivateInputControlError> {
+        _action: PrivateInputAction,
+    ) -> Result<PrivateInputSubmitted, PrivateInputControlError> {
         unimplemented!("service thread lands with the keeper work")
     }
 
-    /// Take the transactions the frontend has observed, commit them through
-    /// the headless coordinator, and submit the controls that commit calls for.
+    /// Take the transaction batches the frontend observed, commit them through
+    /// this Session's own coordinator, and submit exactly the effects that
+    /// commit called for.
     ///
-    /// ONE STEP, REPORTED AS THREE NUMBERS. Observed, committed and applied
-    /// only agree when nothing was refused, and a step that committed state it
-    /// could not then apply is exactly what this reports rather than hides.
-    /// The coordinator belongs to the Session owner, not to a caller: there is
-    /// no way from here to seed applied state without a real transaction.
+    /// THE COMMIT IS THE AUTHORITY FOR THE EFFECT. Batches are converted to
+    /// authority intakes and put through `ProductionSessionCoordinator`; only a
+    /// `TransactionCommit` whose outcome is `Committed` produces an effect, and
+    /// each effect's geometry is read from the coordinator's committed surface
+    /// state. Nothing here accepts a geometry from a caller, and a caller
+    /// cannot construct a committed effect at all.
+    ///
+    /// Reported as four numbers that agree only when nothing was rejected or
+    /// refused: batches observed, commits returned, commits that committed,
+    /// and effects the order took. Counting observed batches would establish
+    /// nothing about commitment, which is why the committed count is separate.
     pub fn apply_committed(
         &self,
         _within: Duration,
