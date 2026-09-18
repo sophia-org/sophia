@@ -1789,15 +1789,21 @@ fn blocked_recipient_attempt(
     blocked.command(XServerFrontendServiceCommand::StopAndDisconnect);
     let closed = blocked.closed();
     let before = retained_dispatch(&blocked);
-    // AN ACTUAL MAINTENANCE VISIT AND DURABLE DRIVE BETWEEN THE READINGS, so
-    // what is established is that a real visit does not rebuild or re-offer a
-    // capsule whose send was stopped, rather than that nothing happened.
+    // AN ACTUAL CHARGED OUTPUT VISIT AFTER THE STALL. This invocation exited
+    // normally, so its budget is not the interrupted one: the visit runs, is
+    // charged, and reports what it did with the frame it still holds. That
+    // report is the no-replay evidence. The retained readings either side are
+    // recorded as they came and are not what establishes it.
     let visit = blocked.step();
     let drive = store.drive();
     let after = retained_dispatch(&blocked);
+    assert!(
+        visit.charged,
+        "{label}: the visit actually ran and was charged rather than yielding: {visit:?}"
+    );
     assert_eq!(
         after, before,
-        "{label}: an actual maintenance visit did not rebuild or re-offer the stalled capsule: {visit:?}"
+        "{label}: the retained reading is unchanged across the visit"
     );
 
     let stalled_delivery = stalled.map(|(_, id)| id).filter(|id| *id != 0);
@@ -1856,6 +1862,8 @@ fn blocked_recipient_attempt(
             .collect::<Vec<_>>(),
         "retained_after_exit": format!("{before:?}"),
         "maintenance_visit": format!("{visit:?}"),
+        "what_the_visit_reported": visit.detail.clone(),
+        "no_replay_rests_on": "this invocation's own charged output visit and what it reported doing with the frame it still held, not on the retained readings either side, which are recorded as they came and may be empty.",
         "durable_drive": format!("{drive:?}"),
         "closed_error": closed.error.clone(),
         "what_a_prefix_means_here": "one whole frame of a capsule that owed more than one, with the rest stopped. The seam reports whole frames of the exact watched invocation and no byte offset, so nothing below claims a split inside a frame.",
@@ -2247,17 +2255,18 @@ pub(super) mod diagnostics {
             !phases.is_empty(),
             "the release is retained by the store that outlived the invocation"
         );
-        // AN ACTUAL RETAINED MAINTENANCE VISIT BETWEEN THE TWO READINGS.
-        // Reading the same store twice establishes nothing about retrying;
-        // this asks the original keeper for a real visit, and what it answers
-        // is recorded as it comes, refusal included. What must not happen is
-        // that a visit rebuilds or re-offers a handover nobody can describe.
+        // A REAL VISIT IS DRIVEN, AND WHAT IT REACHED IS NOT OVERSTATED. The
+        // interruption closed this invocation's own cleanup budget, and that
+        // budget stays closed: nothing here resets or rebuilds it, and no
+        // recovery policy is invented to reach further. So this visit yields
+        // before the retained source decision and the durable drive does not
+        // visit terminal dispatch. Both are recorded as they came.
         let visit = unknown.step();
         let unknown_drive = unknown_store.drive();
         let unknown_after = retained_dispatch(&unknown);
         assert_eq!(
             unknown_after, phases,
-            "an actual maintenance visit did not re-offer or rebuild it: {visit:?}"
+            "the retained record is unchanged across the visit: {visit:?}"
         );
         let replayed = read_event(&mut unknown_peer, 1);
         assert_eq!(
@@ -2276,6 +2285,7 @@ pub(super) mod diagnostics {
             "retained_phases_after_actual_maintenance_visit": format!("{unknown_after:?}"),
             "maintenance_visit": format!("{visit:?}"),
             "durable_drive": format!("{unknown_drive:?}"),
+            "what_the_visit_reached": "not the retained source decision. The unwind interrupted this invocation's cleanup budget and it stays closed, so the visit yields before that decision and the durable drive does not visit terminal dispatch. This is therefore NOT evidence that a retry path looked at the handover and declined to resend it. What is established here is the actual interruption, the record that says the handover was begun and never reported, and that no replayable payload was kept.",
             "second_copy_on_wire": replayed.map(|bytes| bytes.to_vec()),
             "writer_receipt_is_the_writers_own": "the recipient half may be answered by the writer that flushed; the executor still cannot join it, and does not resend",
             "charged": unknown_store.reserved(),
