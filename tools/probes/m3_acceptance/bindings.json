@@ -1,4 +1,6 @@
 {
   "schema": 1,
-  "cases": {}
+  "cases": {
+    "C.capacity": "x11_socket::routing_tests::m3_acceptance::c_capacity"
+  }
 }
