@@ -20,11 +20,11 @@ pub(crate) struct XPointerQueryState {
 
 impl XInputAuthorityState {
     pub(crate) fn register_query_client(&mut self, namespace: NamespaceId, client: u64) {
-        self.namespaces
-            .entry(namespace)
-            .or_default()
-            .query_clients
-            .insert(client);
+        let state = self.namespaces.entry(namespace).or_default();
+        if state.query_scope.0.load(std::sync::atomic::Ordering::Acquire) {
+            state.query_scope = OrderedQueryScope::default();
+        }
+        state.query_clients.insert(client);
     }
 
     pub(crate) fn query_namespace_active(&self, namespace: NamespaceId) -> bool {
@@ -64,6 +64,22 @@ impl XInputAuthorityState {
     pub(crate) fn observe_query_modifiers(&mut self, namespace: NamespaceId, modifiers: u16) {
         let query = &mut self.namespaces.entry(namespace).or_default().query;
         query.mask = (query.mask & !0xff) | (modifiers & 0xff);
+    }
+
+    /// The actual aggregate-release producer clears only this button's query
+    /// contribution. Motion, modifiers and other held buttons may have changed
+    /// since its press; none are restored from that older observation. Missing
+    /// namespace state is unavailable and is never created by cleanup.
+    pub(crate) fn observe_query_button_release(
+        &mut self,
+        namespace: NamespaceId,
+        button: u8,
+    ) -> Result<(), ()> {
+        let state = self.namespaces.get_mut(&namespace).ok_or(())?;
+        if (1..=5).contains(&button) {
+            state.query.mask &= !(1 << (button + 7));
+        }
+        Ok(())
     }
 
     pub(crate) fn observe_query_input(

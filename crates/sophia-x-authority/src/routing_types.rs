@@ -286,6 +286,23 @@ pub struct XAuthorityClientMetadataCandidate {
     pub candidate: sophia_protocol::ReducedMetadataCandidate,
 }
 
+/// Why an operation could not take responsibility for work queued elsewhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlDependentRefusal {
+    /// This registry did not issue the registration.
+    Foreign,
+    /// No record is held for it, so there is nothing for the work to be
+    /// counted against.
+    NoLongerHeld,
+    /// The operation is not being applied, so it is not in a position to be
+    /// starting anything.
+    NotApplying,
+    /// The count cannot be advanced.
+    Exhausted,
+    /// The registry cannot be reached, so nothing can be established.
+    Unavailable,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XAuthorityControlOutcome {
     Delivered,
@@ -341,6 +358,27 @@ pub enum XServerFrontendServiceCommand {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XServerFrontendRouteError {
+    /// Private focus provenance could not be reserved before routing effects.
+    FocusClaimRefused {
+        client: XServerFrontendClientId,
+        refusal: XFocusClaimRefusal,
+    },
+    /// An item an earlier turn took is still owned and unresolved, so the
+    /// order does not run.
+    ///
+    /// Its application is unknown, and dequeuing into the same slot would
+    /// overwrite the only record of it.
+    OrderedItemUnresolved,
+    LifecycleUnavailable,
+    /// This instance is being drained by the ordered consumer, so the older
+    /// route may not also drain it.
+    ///
+    /// Two consumers on one order is not a slower version of one: the older
+    /// route takes an operation, discards the reservation made for it, and
+    /// applies it without the execution the reservation exists for -- so work
+    /// the ordered path was accepted for would be applied behind its back,
+    /// with its request left unanswerable.
+    OrderedRunnerEngaged,
     RecoveryShutdownFailed {
         client: XServerFrontendClientId,
     },
@@ -371,10 +409,47 @@ pub enum XServerFrontendRouteError {
     DuplicateClient {
         client: XServerFrontendClientId,
     },
+    /// No place could be reserved for what this connection might hand over.
+    ///
+    /// Refused BEFORE anything is published, because a connection whose
+    /// accepted work would have nowhere to go must not be exposed at all.
+    ContinuationUnavailable {
+        client: XServerFrontendClientId,
+    },
+    /// No evidence custody could be reserved for this connection.
+    ///
+    /// Refused BEFORE anything is published, and for the same reason as the
+    /// place above: a connection exposed first would be one that discovered
+    /// afterwards that nothing outside it can keep what its worker leaves.
+    ///
+    /// DISTINCT FROM A MISSING PLACE. The place is storage inside the store;
+    /// this is the keeper outside it, and a caller told the wrong one would
+    /// look in the wrong direction.
+    EvidenceCustodyUnavailable {
+        client: XServerFrontendClientId,
+    },
     DuplicateSurface {
         surface: SurfaceId,
     },
     RegistryPoisoned,
+    /// The service owner offered for this act is not the one keeping this
+    /// service's connections' evidence.
+    ///
+    /// Refused before anything is taken or advanced. Not a fact about any
+    /// connection: what is refused is the association.
+    ForeignServiceOwner,
+    /// This client number is still held by the connection that had it.
+    ///
+    /// ITS ENDING IS RUNNING THE EFFECTS THAT ACT BY THAT NUMBER, or ended
+    /// without establishing that reusing it is safe. Refusing here is
+    /// deliberately stricter than the old behaviour, which let a successor
+    /// take a number whose predecessor could still reach it.
+    ///
+    /// NOT A COMPLETED CLEANUP AND NOT A SETTLEMENT. It says the number is
+    /// somebody's.
+    ClientNumberExcluded {
+        client: XServerFrontendClientId,
+    },
     /// The XKB worker's command queue is full. Distinct from a poisoned lock:
     /// the worker is alive and behind, not broken.
     XkbWorkerSaturated,
@@ -382,6 +457,33 @@ pub enum XServerFrontendRouteError {
     /// A keyboard translation that never returns would stall the whole routing
     /// thread, so the wait is bounded and this is what a timeout becomes.
     XkbWorkerUnavailable,
+    /// A control could not claim execution, so none of its effects happened.
+    ///
+    /// Its outcome and cleanup belong to whatever refused the claim -- the
+    /// completion record that still holds it, or whoever the record was
+    /// handed to. Nothing is owed from here, and nothing may be applied.
+    ControlNotClaimable {
+        client: XServerFrontendClientId,
+    },
+    /// An effect a control was about to queue on another client could not be
+    /// counted against the operation that would have caused it.
+    ///
+    /// Refused rather than queued: work nothing is counting lets its origin be
+    /// settled while that work can still happen.
+    DependentNotTracked {
+        client: XServerFrontendClientId,
+        refusal: ControlDependentRefusal,
+    },
+}
+
+/// Why an origin could not reserve a private focus intent. This is neither
+/// an applied receipt nor permission to retry an already accepted command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum XFocusClaimRefusal {
+    Unreachable,
+    Unprepared,
+    ForeignOrigin,
+    IdentityExhausted,
 }
 
 /// Tracks the two independently ordered lifecycle phases of one X Present.
@@ -420,6 +522,22 @@ impl XPresentFeedbackPhases {
 impl core::fmt::Display for XServerFrontendRouteError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::LifecycleUnavailable => {
+                write!(formatter, "private connection lifecycle unavailable")
+            }
+            Self::FocusClaimRefused { client, refusal } => write!(
+                formatter,
+                "private focus claim refused for client {}: {refusal:?}",
+                client.raw()
+            ),
+            Self::OrderedItemUnresolved => write!(
+                formatter,
+                "X11 ordered input consumer holds an unresolved item"
+            ),
+            Self::OrderedRunnerEngaged => write!(
+                formatter,
+                "X11 ordered input consumer already drains this order"
+            ),
             Self::RecoveryShutdownFailed { client } => write!(
                 formatter,
                 "X11 recovery could not shut down client {}",
@@ -460,6 +578,16 @@ impl core::fmt::Display for XServerFrontendRouteError {
                 "X11 route queue disconnected for client {}",
                 client.raw()
             ),
+            Self::ControlNotClaimable { client } => write!(
+                formatter,
+                "X11 control for client {} could not claim execution",
+                client.raw()
+            ),
+            Self::DependentNotTracked { client, refusal } => write!(
+                formatter,
+                "X11 control could not track the effect it would queue on client {}: {refusal:?}",
+                client.raw()
+            ),
             Self::MetadataQueueFull => formatter.write_str("X11 reduced metadata queue is full"),
             Self::MetadataQueueDisconnected => {
                 formatter.write_str("X11 reduced metadata queue disconnected")
@@ -468,6 +596,33 @@ impl core::fmt::Display for XServerFrontendRouteError {
                 write!(
                     formatter,
                     "X11 route client {} is already registered",
+                    client.raw()
+                )
+            }
+            Self::ContinuationUnavailable { client } => {
+                write!(
+                    formatter,
+                    "no retained place is available for X11 route client {}",
+                    client.raw()
+                )
+            }
+            Self::ForeignServiceOwner => {
+                write!(
+                    formatter,
+                    "this X11 route service is kept by a different owner"
+                )
+            }
+            Self::ClientNumberExcluded { client } => {
+                write!(
+                    formatter,
+                    "X11 route client {} is still held by the connection that had it",
+                    client.raw()
+                )
+            }
+            Self::EvidenceCustodyUnavailable { client } => {
+                write!(
+                    formatter,
+                    "no evidence custody is available for X11 route client {}",
                     client.raw()
                 )
             }
@@ -488,3 +643,139 @@ impl core::fmt::Display for XServerFrontendRouteError {
 }
 
 impl std::error::Error for XServerFrontendRouteError {}
+
+/// A source-resolved emission with its original admitted delivery. The
+/// constructor accepts no replacement recipient, origin or incarnation.
+/// Neither this capsule nor its emission can be copied into another owner.
+#[cfg(unix)]
+#[derive(Debug)]
+#[allow(dead_code)] // The ordered writer/consumer integration supplies production calls.
+pub(crate) struct XAuthorityOrderedDelivery {
+    delivery: crate::XAuthorityInputDeliveryId,
+    emission: crate::x11_socket::PrivateOrderedEmission,
+    /// How this delivery's writer answers it.
+    ///
+    /// CARRIED, NOT LOOKED UP, and origin-bound. The writer answers the
+    /// admission these bytes came from, through the one authority that owns
+    /// the answer -- a delivery id fetched again at publication time would
+    /// find whatever admission holds that number by then, and writing into a
+    /// cell directly would leave the ledger's own account saying something
+    /// else.
+    finalizer: Option<std::sync::Arc<crate::x11_socket::PrivateDeliveryFinalizer>>,
+}
+
+/// Exactly which connection a writer serves.
+///
+/// RETAINED AT WORKER ADMISSION, never resolved per delivery. A writer that
+/// looked its own identity up while serving would be comparing each capsule
+/// against whatever the registry says at that moment -- which is the same
+/// answer a stale capsule would already have been admitted by, so the
+/// comparison would establish nothing.
+///
+/// A newtype rather than the identity itself, so what "exactly this
+/// connection" means is decided in one place. Widening it later changes
+/// `retained` and `admits`, not the writer.
+#[cfg(unix)]
+#[derive(Clone, Debug)]
+#[allow(dead_code)] // The per-connection loop is not attached yet.
+pub(crate) struct XAuthorityServedConnection {
+    endpoint: crate::x11_socket::PrivateEndpointIdentity,
+}
+
+#[cfg(unix)]
+#[allow(dead_code)] // The per-connection loop is not attached yet.
+impl XAuthorityServedConnection {
+    /// The endpoint this writer was started for.
+    ///
+    /// Taken from the registration that created this writer's receiver, not
+    /// from a capsule and not from a later lookup by client id. A writer whose
+    /// expectation came from either would be checking a capsule against
+    /// something the capsule itself, or a replacement registration, decided.
+    pub(crate) fn retained(endpoint: crate::x11_socket::PrivateEndpointIdentity) -> Self {
+        Self { endpoint }
+    }
+
+    pub(crate) fn endpoint(&self) -> &crate::x11_socket::PrivateEndpointIdentity {
+        &self.endpoint
+    }
+
+    /// Whether this capsule was minted for exactly the endpoint served.
+    ///
+    /// Asked before any byte of it is encoded or written, because writing is
+    /// the thing that cannot be taken back: a frame put on a wire for another
+    /// endpoint has been read by the time anyone could notice.
+    pub(crate) fn admits(&self, delivery: &XAuthorityOrderedDelivery) -> bool {
+        self.endpoint.matches(delivery.endpoint())
+    }
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XAuthorityOrderedAssemblyRefusal {
+    DeliveryMissing,
+}
+
+#[cfg(unix)]
+#[allow(dead_code)] // The source-only assembly is consumed by the ordered consumer.
+impl XAuthorityOrderedDelivery {
+    #[allow(clippy::result_large_err)] // Return the exact owned emission without allocating on refusal.
+    pub(crate) fn from_emission(
+        emission: crate::x11_socket::PrivateOrderedEmission,
+    ) -> Result<
+        Self,
+        (
+            XAuthorityOrderedAssemblyRefusal,
+            crate::x11_socket::PrivateOrderedEmission,
+        ),
+    > {
+        let Some(delivery) = emission.delivery() else {
+            return Err((XAuthorityOrderedAssemblyRefusal::DeliveryMissing, emission));
+        };
+        Ok(Self {
+            delivery,
+            emission,
+            finalizer: None,
+        })
+    }
+
+    /// Give this capsule the finalizer its writer will answer through.
+    ///
+    /// Bound to the debt's own admission, so the writer and the executor are
+    /// answering one admission rather than two lookups of one number.
+    pub(crate) fn carry_finalizer(
+        &mut self,
+        finalizer: std::sync::Arc<crate::x11_socket::PrivateDeliveryFinalizer>,
+    ) {
+        self.finalizer = Some(finalizer);
+    }
+
+    pub(crate) fn finalizer(
+        &self,
+    ) -> Option<&std::sync::Arc<crate::x11_socket::PrivateDeliveryFinalizer>> {
+        self.finalizer.as_ref()
+    }
+
+    pub(crate) fn client(&self) -> XServerFrontendClientId {
+        XServerFrontendClientId::from_raw(self.emission.connection().recipient)
+    }
+    pub(crate) fn delivery(&self) -> crate::XAuthorityInputDeliveryId {
+        self.delivery
+    }
+    pub(crate) fn incarnation(&self) -> Option<sophia_input_authority::HoldIncarnation> {
+        self.emission.incarnation()
+    }
+    pub(crate) fn recipient(&self) -> sophia_input_authority::ConnectionIdentity {
+        self.emission.connection()
+    }
+    /// Exactly which endpoint these bytes are owed to.
+    ///
+    /// Source-derived and carried: no constructor here accepts one, so a
+    /// capsule cannot be given an identity by whoever is about to be checked
+    /// against it.
+    pub(crate) fn endpoint(&self) -> &crate::x11_socket::PrivateEndpointIdentity {
+        self.emission.endpoint()
+    }
+    pub(crate) fn emission(&self) -> &crate::x11_socket::PrivateOrderedEmission {
+        &self.emission
+    }
+}

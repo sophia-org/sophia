@@ -1,0 +1,732 @@
+// A place-reference the store itself keeps, and the conversion that makes one.
+//
+// Split from the reservation by subject: a lease held OUTSIDE the store and a
+// credit held INSIDE it are different shapes with different lifetime rules,
+// and the step between them is a transaction of its own.
+
+/// A place in the store, named by a holder the store itself keeps.
+///
+/// NO STRONG ROUTE BACK, AND THAT IS THE WHOLE POINT. This lives inside the
+/// store -- inside a holder that is one of the store's own entries -- so an
+/// owner here would close a ring with itself: store, holder, credit, store.
+/// Nothing would ever drop, and the obligations inside would stay readable for
+/// ever, which reads as a store still settling rather than as a leak.
+///
+/// A CREDIT IS NOT CUSTODY. The work this names is in the place, which is in
+/// the same store; the credit carries a name, not a payload. That is why a
+/// store that has gone costs this nothing to say: the place went with it, and
+/// so did everything in it. An external lease may not reason that way, because
+/// what it holds at teardown is work the store has not got yet.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Named by a holder whose driver is not attached yet.
+struct PrivateInternalCredit {
+    /// The store this place is in, held the only way an inside holder may.
+    owner: PrivateSettlementRef,
+    /// Which place. The same index the external lease named: a conversion
+    /// carries the place across, it does not take another one.
+    index: usize,
+    /// WHOSE PLACE, not merely which one.
+    ///
+    /// An index is not an identity. A place is returned when the work in it is
+    /// settled and handed to the next connection that reserves one, so a
+    /// credit that named only a number would, from that moment, be naming
+    /// somebody else's connection -- reading its queue, and freeing its place
+    /// out from under it. The record this credit was made for is held here and
+    /// compared against what is in the place at every use, return and
+    /// abandonment. It is the same comparison the settlement's own return path
+    /// makes, for the same reason.
+    ///
+    /// AN IDENTITY, NOT CUSTODY. Weak, because a credit carries a name and
+    /// the work itself stays in the place: holding the record strongly would
+    /// make a holder keep retained work alive after the store that was
+    /// responsible for it had gone, which is the opposite of what this whole
+    /// component is for. It is enough for the comparison -- a weak handle
+    /// keeps the allocation alive, so its address stays this record's and
+    /// nothing else can be allotted it while this credit exists.
+    record: std::sync::Weak<PrivateOrderedHome>,
+    /// Whether this credit still has to be disposed of.
+    ///
+    /// Cleared by whichever disposal actually happens, so a credit cannot
+    /// release and then be counted abandoned, or be counted twice.
+    armed: bool,
+}
+
+/// What a credit found when it went to its place.
+///
+/// FOUR ANSWERS, NOT ONE ABSENCE. A store that has gone, a place that has
+/// moved on to another connection and a record with nothing in it are
+/// different facts about different things, and a caller acts on them
+/// differently. Collapsing them into `None` would let "this is not mine any
+/// more" read as "there is nothing to do".
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a driver that is not attached yet.
+enum PrivateCreditReach<R> {
+    /// The place held this credit's record, and it held a continuation.
+    Reached(R),
+    /// This credit's record is in its place and holds nothing.
+    Empty,
+    /// The place is not this credit's any more. Nothing was touched.
+    Moved,
+    /// The store has gone, and the place went with it.
+    StoreGone,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a driver that is not attached yet.
+impl<R> PrivateCreditReach<R> {
+    /// What the act returned, if it ran at all.
+    ///
+    /// For a caller that has already decided the other three answers mean the
+    /// same thing to it. Kept separate from the enum so that decision is made
+    /// where it is made, rather than by the shape of what is returned.
+    fn reached(self) -> Option<R> {
+        match self {
+            Self::Reached(value) => Some(value),
+            Self::Empty | Self::Moved | Self::StoreGone => None,
+        }
+    }
+}
+
+/// What a credit's release did.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a driver that is not attached yet.
+#[must_use]
+enum PrivateCreditRelease {
+    /// The place is free again, and this credit is disposed of.
+    Released,
+    /// The record still owes work. Nothing is freed and nothing is destroyed.
+    StillOwed,
+    /// The place holds nothing yet: the hand-over it was reserved for has not
+    /// happened. Nothing is freed -- work that is still on its way would lose
+    /// its destination.
+    NotHandedOver,
+    /// The place is not this credit's any more, so it is not this credit's to
+    /// free. Nothing was touched.
+    NotOurs,
+    /// The store has gone, and so has the place and everything in it.
+    StoreGone,
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Named by a holder whose driver is not attached yet.
+impl PrivateInternalCredit {
+    /// Which place this credit names.
+    fn place(&self) -> usize {
+        self.index
+    }
+
+    /// Whether the place still holds the record this credit was made for.
+    ///
+    /// Asked under the store, and about the PLACE only: reading the record
+    /// here would take one beneath the aggregate, which is the order the
+    /// drive relies on being the other way round.
+    fn ours(&self, held: &AbandonedSettlements) -> bool {
+        matches!(
+            held.continuations.get(self.index),
+            Some(PrivateOrderedContinuationPlace::Taken(home))
+                if std::ptr::eq(Arc::as_ptr(home), self.record.as_ptr())
+        )
+    }
+
+    /// Act on the continuation in the place this credit names.
+    ///
+    /// THE UPGRADED OWNER IS PINNED FOR THE WHOLE OPERATION. A credit holds no
+    /// owner, so every operation begins by upgrading; a lookup that clones the
+    /// record handle and lets the owner go before acting leaves an interval in
+    /// which the last outside holder can drop. The record survives in the
+    /// clone, so the operation would finish and report success into storage
+    /// nobody can reach -- the failure looks exactly like the success. The
+    /// owner is a local here, so it outlives the borrow, the act and the
+    /// return. (The pin is the local, not the absence of a chain: a temporary
+    /// in a method chain also lives to the end of its statement.)
+    fn with_place<R>(
+        &self,
+        act: impl FnOnce(&mut PrivateOrderedContinuation) -> R,
+    ) -> PrivateCreditReach<R> {
+        let Some(owner) = self.owner.owner() else {
+            return PrivateCreditReach::StoreGone;
+        };
+        // Upgraded under the store, where the place is holding it: a record
+        // that is in its place is there to be taken hold of, and finding
+        // otherwise would mean the place did not hold what it says it does.
+        let Some(home) = ({
+            let held = owner.records_even_if_poisoned();
+            if !self.ours(&held) {
+                return PrivateCreditReach::Moved;
+            }
+            self.record.upgrade()
+        }) else {
+            return PrivateCreditReach::Moved;
+        };
+        match home.borrow(act) {
+            Some(value) => PrivateCreditReach::Reached(value),
+            None => PrivateCreditReach::Empty,
+        }
+    }
+
+    /// Give the place back, if there is nothing left owed in it.
+    ///
+    /// IT ASKS RATHER THAN TRUSTING ITS CALLER. The external lease's `finish`
+    /// documents this as a precondition and leaves it to whoever calls; here
+    /// the record is right there and the question is one lock away, and a
+    /// place freed over a queue that still holds capsules destroys them
+    /// unanswered -- which is the failure the precondition was supposed to
+    /// prevent. So it is checked, and a caller that was wrong gets its place
+    /// back untouched instead of a silent loss.
+    ///
+    /// AN EMPTY RECORD IS NOT A FINISHED ONE. A place whose record holds
+    /// nothing is a hand-over that has not happened -- and one of the moments
+    /// it has not happened yet is between this credit being published and the
+    /// work arriving in the place it names. Reading that as "nothing owed"
+    /// frees the place out from under work that is still on its way, and the
+    /// next connection to reserve one takes it. So it is refused, and the
+    /// credit says which of the two it is rather than making them one answer.
+    ///
+    /// THE CHECK AND THE FREE ARE NOT ONE STEP, and they cannot be: settledness
+    /// is read under the record and the place is freed under the store, and
+    /// this file takes those in that order everywhere. The identity is checked
+    /// again under the store before anything is freed, so what a gap could cost
+    /// is a release refused or a place already moved on -- not another
+    /// connection's place freed.
+    fn release(&mut self) -> PrivateCreditRelease {
+        let Some(owner) = self.owner.owner() else {
+            // The store has gone, so the place and everything in it went with
+            // it. There is no capacity left to return.
+            self.armed = false;
+            return PrivateCreditRelease::StoreGone;
+        };
+        let Some(home) = ({
+            let held = owner.records_even_if_poisoned();
+            if !self.ours(&held) {
+                return PrivateCreditRelease::NotOurs;
+            }
+            self.record.upgrade()
+        }) else {
+            return PrivateCreditRelease::NotOurs;
+        };
+        let standing = match home.borrow(|continuation| continuation.settled()) {
+            None => PrivateCreditRelease::NotHandedOver,
+            Some(true) => PrivateCreditRelease::Released,
+            Some(false) => PrivateCreditRelease::StillOwed,
+        };
+        if !matches!(standing, PrivateCreditRelease::Released) {
+            return standing;
+        }
+        let mut held = owner.records_even_if_poisoned();
+        if !self.ours(&held) {
+            return PrivateCreditRelease::NotOurs;
+        }
+        held.continuation_slots = held.continuation_slots.saturating_sub(1);
+        held.continuations[self.index] = PrivateOrderedContinuationPlace::Free;
+        PrivateSettlementOwner::release_maintenance_destination(&mut held, self.index);
+        self.armed = false;
+        PrivateCreditRelease::Released
+    }
+}
+
+#[cfg(unix)]
+impl Drop for PrivateInternalCredit {
+    /// A credit dropped over a place that is still its own marks it abandoned.
+    ///
+    /// The same rule the external lease keeps, for the same reason: the place
+    /// holds work nobody accounted for, and handing the capacity out again
+    /// would promise it against that work.
+    ///
+    /// CHECKED, LIKE EVERY OTHER DISPOSAL HERE. A credit whose place was
+    /// returned by the drive that settled it owes nothing, and marking then
+    /// would count an abandonment against a connection that finished -- or
+    /// against whoever holds the place now.
+    ///
+    /// NOT DURING THE STORE'S OWN TEARDOWN. When the store is dropping, this
+    /// credit is inside it and the upgrade fails, so nothing is marked. There
+    /// is no account left to mark and no reader left to read it -- and no work
+    /// is lost by saying so, because the place and its contents are going the
+    /// same way.
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let Some(owner) = self.owner.owner() else {
+            return;
+        };
+        let mut held = owner.records_even_if_poisoned();
+        if !self.ours(&held) {
+            return;
+        }
+        held.continuations_abandoned = held.continuations_abandoned.saturating_add(1);
+    }
+}
+
+/// A holder the store keeps, responsible for one of the store's own places.
+///
+/// This is the entry a ring would run through -- store, holder, credit -- and
+/// the credit is where it is stopped. Nothing else about what a holder does is
+/// decided here; what is decided is that having one cannot keep the store up.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Driven by a maintenance driver that is not attached yet.
+struct PrivateStoreOwnedHolder {
+    /// The place this holder is responsible for finishing.
+    credit: PrivateInternalCredit,
+    /// What this connection is owed, once something has committed it.
+    ///
+    /// `None` MEANS RESPONSIBILITY WITHOUT A COMMITTED OBLIGATION. A
+    /// conversion moves who is responsible for a place; committing states what
+    /// that connection is owed and on what evidence. They are different acts
+    /// and a holder can have had the first without the second.
+    obligation: Option<PrivateCommittedObligation>,
+}
+
+/// A place in the store's holder storage.
+#[cfg(unix)]
+enum PrivateHolderPlace {
+    /// Nobody's.
+    Free,
+    /// Set aside with its connection's place, before that connection was
+    /// published, and not yet asked for.
+    ///
+    /// INERT AND OWED. It is this connection's destination and nobody else's;
+    /// it holds no obligation, names no driver and authorises nothing. What it
+    /// establishes is that when something does commit an obligation for this
+    /// connection, the room for it is already here.
+    Reserved(usize),
+    /// Promised to a preparation that has not committed, for one named place.
+    ///
+    /// CARRIES WHICH PLACE. A holder exists to be responsible for a particular
+    /// place, so two promises against the same live place are two holders for
+    /// one place, and whichever committed second would leave the first naming
+    /// something it does not own. Distinct from free so two preparations
+    /// cannot share a destination, and distinct from taken so a destination
+    /// dropped before it commits is released rather than read as a holder.
+    Promised(usize),
+    /// A holder the store keeps.
+    Taken(PrivateStoreOwnedHolder),
+}
+
+/// Why a holder place was not set aside.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a caller that is not attached yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivateHolderRefusal {
+    /// No holder place free. Every place already has one, promised or made.
+    Saturated,
+    /// The store could not be read.
+    Unavailable,
+    /// This place already has a holder, or a promise of one.
+    ///
+    /// Not a capacity answer: retrying changes nothing until whoever holds
+    /// that one is done with it.
+    AlreadyHeld,
+    /// This lease's place has moved on to another connection.
+    ///
+    /// NOTHING WAS INSPECTED AND NOTHING WAS CHANGED. A lease can outlive its
+    /// place -- the drive returns a place whose work is settled, and the lease
+    /// that reserved it is not consulted -- and the next connection takes the
+    /// same number. Preparing on the strength of that number would take the
+    /// successor's destination and leave the successor unable to prepare its
+    /// own.
+    Stale,
+    /// The lease is not this store's.
+    Foreign,
+}
+
+/// A holder place set aside for one named place, before anything is put in it.
+///
+/// PREPARATION IS THE FALLIBLE HALF. The bound, an unreadable store, a place
+/// that already has a holder and the storage all happen here, while the
+/// connection still holds its external lease and its work is still in its own
+/// slot. A preparation that refuses has touched neither.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Committed by a conversion whose caller is not attached yet.
+struct PrivateHolderDestination {
+    /// The store, held as an owner.
+    ///
+    /// EXTERNAL AND SHORT-LIVED, like the lease it is prepared alongside: this
+    /// exists in a caller's frame between preparation and commitment, and
+    /// nothing inside the store reaches it. It is on no ring.
+    owner: PrivateSettlementOwner,
+    index: usize,
+    /// The place this destination was prepared for. A conversion that arrived
+    /// with a lease on some other place would be using a promise made for
+    /// this one.
+    for_place: usize,
+    /// AND WHOSE RESERVATION IT WAS. The number goes back with the place and
+    /// is handed to the next connection, so a promise that named only the
+    /// number could be committed against a successor's lease -- a holder over
+    /// a connection nobody prepared one for. The record is the identity, and
+    /// it is compared at commitment.
+    for_record: std::sync::Weak<PrivateOrderedHome>,
+    /// Whether this destination still has to be released.
+    armed: bool,
+}
+
+#[cfg(unix)]
+impl Drop for PrivateHolderDestination {
+    /// A destination that never committed gives its place back.
+    ///
+    /// Nothing was ever put in it -- a promised place holds no holder and no
+    /// credit -- so there is no work to account for. It goes back to RESERVED
+    /// rather than free: the connection it was set aside for still has its
+    /// place, and freeing it would let the entry be handed to somebody else
+    /// while a published connection still needed it. This is the refusal
+    /// path's other half: a preparation that is not used must not spend a
+    /// destination, or leave a place looking as though it already had a
+    /// holder, on a holder that was never made.
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let mut held = self.owner.records_even_if_poisoned();
+        // WHOSE PROMISE, AND WHOSE PLACE, IN ONE ACQUISITION. A destination
+        // entry can be reserved again for a successor while an old
+        // preparation is still in a caller's hand -- returning a place frees
+        // its destination now -- so a drop that recognised only the variant
+        // would put the SUCCESSOR's promise back to reserved and give its
+        // count away, and the successor could then be prepared twice.
+        //
+        // The number is not enough on its own: both generations use it
+        // deliberately. What separates them is the home this preparation was
+        // made for still occupying that place. A stale drop changes nothing.
+        let ours = matches!(
+            held.holders.get(self.index),
+            Some(PrivateHolderPlace::Promised(promised)) if *promised == self.for_place
+        ) && matches!(
+            held.continuations.get(self.for_place),
+            Some(PrivateOrderedContinuationPlace::Taken(home))
+                if std::ptr::eq(Arc::as_ptr(home), self.for_record.as_ptr())
+        );
+        if ours {
+            // BACK TO RESERVED, NOT FREE. Nothing was put in it, and the place
+            // it was set aside for is still this connection's: handing it out
+            // to somebody else would leave that connection exposed with
+            // nowhere for its obligation to go.
+            held.holders[self.index] = PrivateHolderPlace::Reserved(self.for_place);
+            held.holders_taken = held.holders_taken.saturating_sub(1);
+        }
+    }
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Prepared by a conversion whose caller is not attached yet.
+impl PrivateSettlementOwner {
+    /// Whether two handles name the same store.
+    fn is_same_store(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
+    /// Set aside a place for a holder responsible for this lease's place.
+    ///
+    /// BOUNDED BY THE PLACES THEMSELVES. A holder exists to be responsible for
+    /// one place, so there can never be more of them than there are places,
+    /// and the bound is the connection bound rather than a pool of its own. A
+    /// store told no connection bound has no places, and therefore no holders.
+    ///
+    /// TIED TO THE LEASE'S PLACE HERE, not at commitment. A promise that named
+    /// no place could be committed against any lease, and two of them against
+    /// the same live place would leave one holder naming something another
+    /// holder owns.
+    ///
+    /// NOTHING IS GROWN HERE ANY MORE. The destination was set aside with this
+    /// connection's place, before that connection was published; this finds it
+    /// and promises it. A preparation that allocated would mean a connection
+    /// could be exposed and only afterwards found to have nowhere for its
+    /// obligation to go.
+    fn prepare_internal_holder(
+        &self,
+        lease: &PrivateOrderedContinuationSlot,
+    ) -> Result<PrivateHolderDestination, PrivateHolderRefusal> {
+        if !self.is_same_store(&lease.owner) {
+            return Err(PrivateHolderRefusal::Foreign);
+        }
+        let Ok(mut held) = self.inner.lock() else {
+            return Err(PrivateHolderRefusal::Unavailable);
+        };
+        // WHOSE PLACE, BEFORE ANYTHING ELSE IS LOOKED AT. A lease carries a
+        // number and the home it was made for, and only the second says the
+        // place is still its own. Asking about preparation state on the
+        // strength of the number alone lets a lease whose place has gone back
+        // take the destination reserved for whoever has it now.
+        let for_place = lease.index;
+        if !lease.holds(&held) {
+            return Err(PrivateHolderRefusal::Stale);
+        }
+        // ASKED NEXT, because it is the answer that is true regardless of
+        // room: a place that already has a holder does not acquire one by
+        // capacity appearing.
+        if held.holders.iter().any(|place| match place {
+            PrivateHolderPlace::Promised(promised) => *promised == for_place,
+            PrivateHolderPlace::Taken(holder) => holder.credit.index == for_place,
+            PrivateHolderPlace::Free | PrivateHolderPlace::Reserved(_) => false,
+        }) {
+            return Err(PrivateHolderRefusal::AlreadyHeld);
+        }
+        // THE DESTINATION IS ALREADY THERE, set aside with this lease's place
+        // before its connection was published. This finds it rather than
+        // making one: growing storage here would mean a connection could be
+        // exposed and only afterwards found to have nowhere for its obligation
+        // to go, which is what reserving it early exists to prevent.
+        let index = match held.holders.iter().position(|place| {
+            matches!(place, PrivateHolderPlace::Reserved(reserved) if *reserved == for_place)
+        }) {
+            Some(index) => index,
+            // A BACKSTOP, AND IT SAYS SO. A lease of this store always has a
+            // destination reserved with its place, so reaching this means the
+            // reservation and this preparation have parted company. A caller
+            // is refused rather than given storage that was nobody's.
+            None => return Err(PrivateHolderRefusal::Saturated),
+        };
+        held.holders[index] = PrivateHolderPlace::Promised(for_place);
+        held.holders_taken = held.holders_taken.saturating_add(1);
+        drop(held);
+        Ok(PrivateHolderDestination {
+            owner: self.clone(),
+            index,
+            for_place,
+            for_record: lease.record.clone(),
+            armed: true,
+        })
+    }
+
+    /// How many holder places are taken, promised and filled together.
+    fn holders_taken(&self) -> Option<usize> {
+        self.inner.lock().ok().map(|held| held.holders_taken)
+    }
+
+    /// Take a holder out of the store, for whoever is going to drive it.
+    ///
+    /// TAKEN, NOT BORROWED, because a driver that has one is responsible for
+    /// disposing of the place it names, and a borrow could not carry that.
+    /// Leaves the holder place free: the holder is out, and the place it named
+    /// is still accounted for by the credit that went with it.
+    fn take_internal_holder(&self, index: usize) -> Option<PrivateStoreOwnedHolder> {
+        let mut held = self.records_even_if_poisoned();
+        if !matches!(held.holders.get(index), Some(PrivateHolderPlace::Taken(_))) {
+            return None;
+        }
+        let taken = std::mem::replace(&mut held.holders[index], PrivateHolderPlace::Free);
+        held.holders_taken = held.holders_taken.saturating_sub(1);
+        let PrivateHolderPlace::Taken(holder) = taken else {
+            unreachable!("just matched as taken")
+        };
+        Some(holder)
+    }
+
+    /// Give up the maintenance destination of a place that has gone.
+    ///
+    /// A DESTINATION BELONGS TO THE CONNECTION ITS PLACE WAS RESERVED FOR. Once
+    /// that place is returned there is no obligation left to commit, and
+    /// leaving it reserved would keep a successor from being given one of its
+    /// own -- the reservation looks for a free entry, and a stale one is not
+    /// free. Nothing is dropped here: a holder that is in it is taken out by
+    /// the caller and disposed of outside the store.
+    fn release_maintenance_destination(held: &mut AbandonedSettlements, index: usize) {
+        let Some(place) = held.holders.get_mut(index) else {
+            return;
+        };
+        if matches!(place, PrivateHolderPlace::Promised(_)) {
+            held.holders_taken = held.holders_taken.saturating_sub(1);
+        }
+        if !matches!(place, PrivateHolderPlace::Taken(_)) {
+            *place = PrivateHolderPlace::Free;
+        }
+    }
+
+    /// Retire the holder responsible for a place that has just been returned.
+    ///
+    /// CALLED BY WHOEVER FREES A PLACE, so a returned place does not leave a
+    /// holder behind naming it. The holder is taken out under the store and
+    /// dropped after the store is released: a credit's own disposal takes the
+    /// store, and dropping one while it is held would be this thread waiting
+    /// for itself.
+    ///
+    /// The credit inside checks its place as it goes, finds the record it was
+    /// made for is no longer there, and accounts for nothing -- which is
+    /// right, because the work it was responsible for was settled by whoever
+    /// returned the place.
+    fn retire_holder_for(
+        held: &mut AbandonedSettlements,
+        index: usize,
+        record: &Arc<PrivateOrderedHome>,
+    ) -> Option<PrivateStoreOwnedHolder> {
+        let found = held.holders.iter().position(|place| match place {
+            PrivateHolderPlace::Taken(holder) => {
+                holder.credit.index == index
+                    && std::ptr::eq(Arc::as_ptr(record), holder.credit.record.as_ptr())
+            }
+            _ => false,
+        })?;
+        let taken = std::mem::replace(&mut held.holders[found], PrivateHolderPlace::Free);
+        held.holders_taken = held.holders_taken.saturating_sub(1);
+        let PrivateHolderPlace::Taken(holder) = taken else {
+            unreachable!("just matched as taken")
+        };
+        Some(holder)
+    }
+}
+
+/// What a conversion did.
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Read by a caller that is not attached yet.
+#[must_use]
+enum PrivateInternalConversion {
+    /// The work is in the place, and the store keeps a holder naming it.
+    Held,
+    /// The place is not this lease's, so there was nothing to be responsible
+    /// for. The holder place is released and the lease comes back.
+    ///
+    /// A LEASE CAN OUTLIVE ITS PLACE, and the ordinary way is not a defect:
+    /// the drive returns a place whose work is settled and does not consult
+    /// the lease that reserved it. An earlier note here said the only route
+    /// was a credit releasing early, which the release rules refuse; that was
+    /// wrong, and a real teardown-and-drive schedule reaches this. Carrying
+    /// the lease back rather than dropping it is what keeps a conversion that
+    /// found nothing from also disposing of whatever the lease does name.
+    NoPlace(#[allow(dead_code)] PrivateOrderedContinuationSlot),
+    /// Refused before anything was touched. The lease comes back armed over
+    /// the same place, and the source still holds its work.
+    Foreign(PrivateOrderedContinuationSlot),
+    /// The place moved on between the lookup and the publication.
+    ///
+    /// NOTHING WAS DISTURBED. The successor keeps its place, its destination
+    /// and its work, and nothing is marked abandoned on its account; the lease
+    /// comes back to say for itself what became of whatever it still names.
+    ///
+    /// NO CONTROL OF MINE REACHES THIS. It is returned by the revalidation in
+    /// the acquisition that publishes, which only fires when the place moves
+    /// between the two acquisitions -- a gap inside one call, which no control
+    /// here can schedule. A place that moved before the conversion was asked
+    /// at all is caught by the first lookup and answered `NoPlace`.
+    Moved(#[allow(dead_code)] PrivateOrderedContinuationSlot),
+}
+
+#[cfg(unix)]
+#[cfg_attr(not(test), allow(dead_code))] // Converted by a caller that is not attached yet.
+impl PrivateOrderedContinuationSlot {
+    /// Hand this connection's work over and leave the store holding the place.
+    ///
+    /// THE OUTER HOLDER IS A PARAMETER, and that is the point of it. The lease
+    /// is what has been keeping the store alive; consuming it inside this call
+    /// while nothing outside the call holds one means an unwind in here drops
+    /// the last owner along with the frame, and takes the work that was just
+    /// installed with it. Returning an owner cannot cover that -- a return
+    /// value exists only once the call has succeeded. So the caller must
+    /// already hold one, in its own frame, and hand it in.
+    ///
+    /// WHO THAT IS: whoever drives these holders. It is not the constructor's
+    /// borrow and not an assumed caller lifetime; it is a live handle that
+    /// outlives this call by construction.
+    ///
+    /// NOTHING IS HANDED OVER HERE, AND NOTHING IS RETAINED. The connection's
+    /// output is in its home and stays there; what changes is who is
+    /// responsible for the place it sits in. A conversion that also said the
+    /// connection had ended would retire a connection that is still running
+    /// and hand its home to a drive that may close its wire underneath it --
+    /// the home's standing is teardown's to write, and only teardown's.
+    ///
+    /// THE SAME PLACE AND THE SAME CREDIT CROSS. The index is carried, not
+    /// re-taken: no capacity is charged for the conversion, none is freed, and
+    /// the lease is not counted abandoned on the way through. What was one
+    /// connection's reservation becomes the store's own responsibility, and it
+    /// was continuously somebody's.
+    fn convert_to_internal(
+        mut self,
+        outer: &PrivateSettlementOwner,
+        mut destination: PrivateHolderDestination,
+    ) -> PrivateInternalConversion {
+        // CHECKED, NOT ASSERTED. A destination prepared against another store
+        // names an index in that store's holders; committing it here would
+        // write into whatever this store happens to have at that index, take
+        // over another connection's promise, and leave the other store's
+        // promise held for ever. A debug assertion says so only in a build
+        // that has them, and the provenance of a place is not a thing to
+        // establish only in testing.
+        if !outer.is_same_store(&self.owner)
+            || !destination.owner.is_same_store(&self.owner)
+            || destination.for_place != self.index
+            || !std::ptr::eq(destination.for_record.as_ptr(), self.record.as_ptr())
+        {
+            return PrivateInternalConversion::Foreign(self);
+        }
+        let index = self.index;
+        let found = {
+            let held = outer.records_even_if_poisoned();
+            match held.continuations.get(index) {
+                Some(PrivateOrderedContinuationPlace::Taken(record))
+                    if std::ptr::eq(Arc::as_ptr(record), self.record.as_ptr()) =>
+                {
+                    Some(record.clone())
+                }
+                _ => None,
+            }
+            // THE GUARD ENDS HERE, before anything is delegated. The hand-over
+            // takes this same lock, so calling it from inside this block would
+            // be this thread waiting for itself.
+        };
+        let Some(record) = found else {
+            // No place of this lease's to be responsible for. The lease comes
+            // back armed over whatever it names, and nothing is accounted for
+            // here: a conversion that cannot find its place has not changed
+            // whose the place is.
+            return PrivateInternalConversion::NoPlace(self);
+        };
+        {
+            let mut held = outer.records_even_if_poisoned();
+            // ASKED AGAIN, IN THE ACQUISITION THAT PUBLISHES. The occupant was
+            // checked in an acquisition of its own further up, and the store
+            // was released in between; a place whose work settled in that gap
+            // goes back, and the next connection takes the number and prepares
+            // a destination of its own. Publishing on the strength of the
+            // earlier check would replace that connection's promise with a
+            // holder naming a home it never had.
+            //
+            // BOTH HALVES. That this place is still this lease's, and that the
+            // destination still holds the promise this preparation made.
+            let current = matches!(
+                held.continuations.get(index),
+                Some(PrivateOrderedContinuationPlace::Taken(home))
+                    if std::ptr::eq(Arc::as_ptr(home), self.record.as_ptr())
+            );
+            let promised = matches!(
+                held.holders.get(destination.index),
+                Some(PrivateHolderPlace::Promised(promised))
+                    if *promised == destination.for_place
+            );
+            if !current || !promised {
+                drop(held);
+                return PrivateInternalConversion::Moved(self);
+            }
+            // AND ONLY NOW IS A CREDIT BUILT. Its own Drop takes the store, so
+            // one that came into existence under this guard and was then
+            // dropped would be this thread waiting for itself; everything that
+            // can refuse has already happened.
+            let holder = PrivateHolderPlace::Taken(PrivateStoreOwnedHolder {
+                credit: PrivateInternalCredit {
+                    owner: outer.settlement_ref(),
+                    index,
+                    record: Arc::downgrade(&record),
+                    armed: true,
+                },
+                // A conversion commits nothing: it moves who is responsible.
+                obligation: None,
+            });
+            held.holders[destination.index] = holder;
+            // THE DUTY MOVES HERE: two assignments, serialized under one
+            // acquisition of the store. Not one write -- they are two -- but
+            // nothing can observe the store between them, and neither can
+            // fail.
+            //
+            // The order matters if they are ever separated. Publishing the
+            // credit armed and then disarming the lease leaves both armed in
+            // between, so one reserved place gets marked twice. Disarming
+            // first and then publishing leaves neither armed, so a place with
+            // work still owed against it gets marked by nobody. Held together,
+            // there is exactly one holder of the duty at every instant.
+            //
+            // The lease is DISARMED, not disposed of: the place is not given
+            // back and not counted abandoned, because it is not going
+            // anywhere. It is the store's now.
+            self.armed = false;
+            destination.armed = false;
+        }
+        PrivateInternalConversion::Held
+    }
+}

@@ -6,9 +6,10 @@ tags: [plan, milestone]
 ---
 # Concrete design for admitted synthetic input
 
-Status: **design approved** at `1bc946d5`. Implementation and deployment are
-not authorized; that is the operator's separate decision, and default XTEST
-absence remains in effect meanwhile.
+Status: **historical design approved** at `1bc946d5`. Its ownership,
+synchronization, shared-seat admission and version choices are superseded by
+[the authorized private-instance implementation](7xqjn8rp-private-native-input-authority-and-xtest-adapter.md).
+Live-seat activation and deployment remain unauthorized.
 
 Authority, principles and the operator's chosen constraints live in
 [htm85gg0](../decisions/htm85gg0-admission-ingress-and-provenance-for-synthetic-input.md).

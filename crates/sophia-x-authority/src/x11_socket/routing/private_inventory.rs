@@ -1,0 +1,429 @@
+// Everything one instance still owes for the work it accepted.
+//
+// Split by subject because the subject is ownership: these are obligations,
+// and an obligation that lives in several places is one that can be answered
+// in several places -- or, when an instance goes, in none.
+
+/// Native record capacity is fixed before producer exposure. It follows the
+/// planned authority's input slots, independently of the supplied authority's
+/// capacity or the queue's size. A completed record returns this storage only
+/// after its native, recipient and dependent-receipt obligations settle.
+#[cfg(unix)]
+const PRIVATE_HOLD_RECORDS: usize = sophia_input_authority::Capacity::PLANNED.input_slots();
+
+/// What an instance still owes, in one place that can be handed on.
+///
+/// Reachable through the live owner, through the settlement handle it returns,
+/// and through the durable owner behind both. That chain is the point: each
+/// entry carries what answering it requires, so whoever holds the inventory
+/// can answer without asking anything that has gone.
+///
+/// Nothing here goes back into the order as a command. Work that has already
+/// applied, or that may already be on a client's queue, is not replayable --
+/// requeueing it would apply an effect twice and no reader downstream could
+/// tell. What is carried is the right to finish answering for it.
+/// Where a claimed attempt has got to, while this executor holds it.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivateAttemptPhase {
+    /// Claimed and not handed to anyone. An unused reservation, safe to give
+    /// back with neither bit.
+    Unplaced,
+    /// The handover to a recipient has begun and did not report.
+    ///
+    /// NOT SAFE TO GIVE BACK. The delivery may be on the queue, and returning
+    /// the attempt as unused would say a delivery that may have happened did
+    /// not. It is resolved by the receipt, not by this phase being tidied.
+    Dispatching,
+}
+
+/// One attempt held by this executor, with where it has got to.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+struct PrivateAttemptCustody {
+    token: sophia_input_authority::AttemptToken,
+    phase: PrivateAttemptPhase,
+}
+
+#[cfg(unix)]
+struct PrivateTerminalInventory {
+    /// All accepted item generations share this store bound. Queue depth or
+    /// the number of currently live grants cannot bound retained items.
+    item_capacity: usize,
+    /// Readable resource loss without ownership of thread-local execution.
+    execution: Option<Arc<PrivateExecutionWitness>>,
+    /// The registry that can answer for everything here.
+    ///
+    /// Inseparable from the obligations rather than held alongside them. A
+    /// hold's plan names a client, a window and a seat's projection, and all
+    /// of those are the registry's to reach -- so an inventory that outlived
+    /// its registry would describe obligations nothing could act on. Custody
+    /// sometimes keeping a capability alive is not a guarantee for the
+    /// inventory as a whole: the last custody can be observed and dropped
+    /// while holds remain.
+    origin: XServerFrontendRouteRegistry,
+    /// The authority these obligations answer to.
+    ///
+    /// Carried for the same reason. A retained hold still names a ledger
+    /// incarnation and a credit, and neither can be reached once the
+    /// controller has gone.
+    controller: PrivateAuthorityController,
+    lifecycle: PrivateLifecycleOwner,
+    /// Holds this executor began, with where each was delivered.
+    ///
+    /// A release answers to what its press reached, so this is what makes a
+    /// later release answerable at all.
+    holds: Vec<PrivateHoldRecord>,
+    /// Where the source installs a native obligation before its effect.
+    ///
+    /// It has to exist before the operation is called, because the source
+    /// refuses to begin one while this is occupied, and it has to be owned
+    /// here rather than by the call: an interruption between the effect and
+    /// the record would otherwise take with it the only thing that can answer
+    /// for the hold the ledger has already begun.
+    ///
+    /// Empty between operations. What lands here moves into the record for its
+    /// hold as soon as that record exists, and nothing else reads it.
+    native_pending: PrivateNativePending,
+    transients: PrivateTransientInventory,
+    /// Where a debt's custody is prepared before the effect that creates it.
+    ///
+    /// INSTANCE-OWNED BEFORE THE SOURCE IS ENTERED, for the same reason
+    /// native_pending is: an interruption between the effect and the record
+    /// would otherwise take with it the only handle that can answer the event
+    /// that effect just owed. It travels beside native_pending through a
+    /// refusal or an unwind, and moves into the record for its debt as soon as
+    /// that record exists.
+    ///
+    /// EMPTIED BY AN EXPLICIT TRANSFER OR DISPOSITION, not by an operation
+    /// merely finishing. It is filled on exactly two paths -- the press that
+    /// begins a hold, and the release of a hold this executor records -- and
+    /// leaves on one of three: moved into the record for its debt, disposed of
+    /// when the result is known to owe no event, or retained when a refusal
+    /// left the source holding context.
+    ///
+    /// A join and a release of no recorded hold never touch it.
+    ///
+    /// While it is retained the next operation on those two paths is refused
+    /// rather than allowed to replace it. Disposal for a retained custody --
+    /// one belonging to a continuation whose fate is still unknown -- is not
+    /// written yet.
+    pending_custody: Option<PrivateDeliveryCustody>,
+    /// The next order stamp, so every event this instance decides can be put
+    /// in the order its recipient must see them.
+    next_event_order: u64,
+    /// How many press handovers in a row have failed to progress.
+    press_stall: u8,
+    /// The connection whose head was offered last.
+    ///
+    /// ARBITRATION HELD ACROSS VISITS. Choosing the globally earliest
+    /// unfinished output afresh each visit re-chooses the same connection
+    /// whenever its head cannot progress -- a full queue restores the very
+    /// capsule and phase that selected it -- so another connection with a
+    /// later stamp never gets a turn. Connections are taken in cyclic order
+    /// from here, and the event stamp decides only within one of them.
+    last_offered: Option<XServerFrontendClientId>,
+
+    /// Releases whose delivery was decided and whose debt is still open.
+    settling: Vec<PrivateSettlingRelease>,
+    shared_activation: PrivateSharedActivationScan,
+    shared_activation_turn: bool,
+    live_disposal: PrivateLiveNativeDisposal,
+    /// How many terminal steps have gone to deliveries since native work last
+    /// had a turn.
+    ///
+    /// Retained, because fairness between two kinds of work cannot be decided
+    /// from a single step: choosing native work only when the queues happen to
+    /// be empty lets a delivery that is always ready starve a proof forever,
+    /// and that is not a rare interleaving -- it is what a busy pointer looks
+    /// like.
+    native_turn_debt: u8,
+    /// The one attempt this executor may hold unplaced at a time.
+    ///
+    /// A PRE-EXISTING SLOT, not storage acquired after the grant. Claiming
+    /// first and finding somewhere to put the token afterwards is a
+    /// reservation whose custody is not yet reserved; this driver places one
+    /// claim at a time, so one slot is the exact storage and it is empty
+    /// before the ledger is asked.
+    ///
+    /// Carries its phase, because an unplaced claim and a claim whose handover
+    /// has begun are opposite things: the first is an unused reservation and
+    /// safe to give back, the second may already be on a recipient's queue.
+    attempt_custody: Option<PrivateAttemptCustody>,
+    /// How many recording visits have passed since dispatch last had a turn.
+    ///
+    /// Recording must come first for any ONE release, because the ledger
+    /// refuses an attempt until that release's native half is in. Preferring
+    /// it across ALL releases is a different thing and starves delivery debt
+    /// that is already native: these are two classes of terminal work, and
+    /// they are arbitrated rather than ranked.
+    native_class_debt: u8,
+    /// The ledger's own fair cursor for claiming delivery attempts.
+    ///
+    /// Retained for the same reason as the recording cursor, and kept apart
+    /// from it: the ledger advances this one itself, over debts rather than
+    /// over this executor's records.
+    attempt_cursor: usize,
+    /// Where the next proof-recording visit starts looking.
+    ///
+    /// Retained rather than restarted, so visits move through the releases
+    /// that owe a recording instead of returning to the same one. One entry
+    /// is chosen per charged visit; sweeping the whole vector would make the
+    /// work unbounded and, worse, make it incidental to whatever else was
+    /// happening rather than something the service can be asked for.
+    native_recording_cursor: usize,
+    recipient_termination_cursor: usize,
+    recipient_termination_turn: u8,
+    /// The item currently being executed.
+    ///
+    /// Owned before the execution that could fail, so an interruption leaves
+    /// the obligation here rather than in a frame that is going.
+    current: Option<PrivateOrderedItem>,
+    /// No native or common input effect has been consumed for these rows.
+    /// Their original accepted-item credit bounds this storage across grants.
+    frozen: std::collections::VecDeque<PrivateFrozenInput>,
+    current_freeze: Option<private_native::Freeze>,
+    current_is_frozen: bool,
+    prefer_frozen: bool,
+    /// The items of the turn in progress.
+    turn: Vec<PrivateOrderedItem>,
+    /// Decided work being handed on right now.
+    delivering: Vec<PrivateOrderedItem>,
+    /// Decided work whose completion could not be observed.
+    undelivered: Vec<PrivateUndelivered>,
+}
+
+#[cfg(unix)]
+impl PrivateTerminalInventory {
+    /// Bytes for the inline inventory and its two native record buffers.
+    /// `size_of` includes the largest Pointer/Key variant and every inline
+    /// emission/custody slot; it is not a count times a pointer-only estimate.
+    /// This is an allocation bound, not a resource budget or an accounting of
+    /// the turn/delivery buffers and allocations retained through shared owners.
+    fn native_storage_bytes(holds: usize, settling: usize) -> Option<usize> {
+        std::mem::size_of::<Self>()
+            .checked_add(holds.checked_mul(std::mem::size_of::<PrivateHoldRecord>())?)?
+            .checked_add(settling.checked_mul(std::mem::size_of::<PrivateSettlingRelease>())?)
+    }
+
+    /// Storage for the full fixed-size native records is reserved up front,
+    /// before the frontend can expose producers. Key custody therefore needs
+    /// no allocation to replace a Pointer variant later. The turn and
+    /// delivery lists are reserved to the service budget and can still grow
+    /// past it, which is open preallocation work rather than a guarantee.
+    fn with_capacity(
+        origin: XServerFrontendRouteRegistry,
+        controller: PrivateAuthorityController,
+        lifecycle: PrivateLifecycleOwner,
+        capacity: usize,
+        item_capacity: usize,
+    ) -> Self {
+        let holds = Vec::with_capacity(PRIVATE_HOLD_RECORDS);
+        let settling = Vec::with_capacity(PRIVATE_HOLD_RECORDS);
+        let transients = PrivateTransientInventory::with_capacity(capacity);
+        let frozen = std::collections::VecDeque::with_capacity(item_capacity);
+        let native_bytes = Self::native_storage_bytes(holds.capacity(), settling.capacity())
+            .and_then(|bytes| {
+                bytes.checked_add(
+                    transients
+                        .records
+                        .capacity()
+                        .checked_mul(std::mem::size_of::<PrivateTransientRecord>())?,
+                )
+            })
+            .and_then(|bytes| {
+                bytes.checked_add(
+                    frozen
+                        .capacity()
+                        .checked_mul(std::mem::size_of::<PrivateFrozenInput>())?,
+                )
+            })
+            .expect("the complete native custody storage has a representable byte size");
+        assert!(
+            native_bytes <= isize::MAX as usize,
+            "the complete native custody storage fits the allocator byte bound"
+        );
+        Self {
+            item_capacity,
+            execution: None,
+            origin,
+            controller,
+            lifecycle,
+            holds,
+            native_pending: PrivateNativePending::default(),
+            transients,
+            pending_custody: None,
+            next_event_order: 0,
+            press_stall: 0,
+            last_offered: None,
+            native_recording_cursor: 0,
+            recipient_termination_cursor: 0,
+            recipient_termination_turn: 0,
+            attempt_cursor: 0,
+            attempt_custody: None,
+            native_class_debt: 0,
+            native_turn_debt: 0,
+            settling,
+            shared_activation: PrivateSharedActivationScan::default(),
+            shared_activation_turn: true,
+            live_disposal: PrivateLiveNativeDisposal::default(),
+            current: None,
+            frozen,
+            current_freeze: None,
+            current_is_frozen: false,
+            prefer_frozen: true,
+            turn: Vec::with_capacity(item_capacity),
+            delivering: Vec::with_capacity(item_capacity),
+            undelivered: Vec::with_capacity(item_capacity),
+        }
+    }
+
+    /// Whether anything is still owed.
+    ///
+    /// An empty inventory is one nobody needs to carry; a non-empty one is an
+    /// obligation, whoever happens to be holding it.
+    fn is_empty(&self) -> bool {
+        self.lifecycle
+            .inventory()
+            .is_ok_and(|inventory| inventory.open == 0 && inventory.closed == 0)
+            && self.local_obligations_empty()
+    }
+
+    /// Open admissions alone owe no runnable cleanup. A busy or unreadable
+    /// lifecycle scan retains the reservation without waiting on that guard.
+    /// This observation never authorizes disposal of the inventory.
+    fn cleanup_is_empty(&self) -> bool {
+        self.local_obligations_empty()
+            && self
+                .lifecycle
+                .inner
+                .records
+                .try_lock()
+                .is_ok_and(|records| {
+                    records.slots.iter().all(|slot| {
+                        slot.record.is_none() || slot.mark.load(Ordering::Acquire) & 1 == 0
+                    })
+                })
+    }
+
+    fn local_obligations_empty(&self) -> bool {
+        self.holds.is_empty()
+            // An attempt this executor holds is the ledger's slot, and an
+            // instance reporting itself empty while holding one is reporting
+            // the absence of its own records rather than of the obligation.
+            && self.attempt_custody.is_none()
+            // A retained source obligation is an obligation. It is normally
+            // empty between operations, but a disagreement leaves one here
+            // deliberately, and an instance reporting itself empty while
+            // holding an activation, a query scope and a selection would be
+            // reporting the absence of the record rather than of the debt.
+            && self.native_pending.is_none()
+            && self.transients.outstanding() == 0
+            // A retained custody is an obligation on its own. It outlives a
+            // refusal that left the source holding context, and an instance
+            // reporting itself empty while holding one would be reporting the
+            // absence of a record rather than of the debt.
+            && self.pending_custody.is_none()
+            && self.settling.is_empty()
+            && self.current.is_none()
+            && self.frozen.is_empty()
+            && self.current_freeze.is_none()
+            && self.turn.is_empty()
+            && self.delivering.is_empty()
+            && self.undelivered.is_empty()
+    }
+
+    /// How many separate obligations are here.
+    ///
+    /// Counted rather than summarised as a boolean, because "some" and "one"
+    /// are different things to whoever has to finish them.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn outstanding(&self) -> Option<usize> {
+        let lifecycle = self.lifecycle.inventory().ok()?;
+        Some(
+            self.holds
+                .len()
+                .saturating_add(usize::from(self.native_pending.is_some()))
+                .saturating_add(self.transients.outstanding())
+                .saturating_add(usize::from(self.pending_custody.is_some()))
+                .saturating_add(usize::from(self.attempt_custody.is_some()))
+                .saturating_add(self.settling.len())
+                .saturating_add(usize::from(self.current.is_some()))
+                .saturating_add(self.frozen.len())
+                .saturating_add(self.turn.len())
+                .saturating_add(self.delivering.len())
+                .saturating_add(self.undelivered.len())
+                .saturating_add(lifecycle.open)
+                .saturating_add(lifecycle.closed),
+        )
+    }
+
+    /// Move everything owed out, storage and capabilities together.
+    ///
+    /// A move, not a copy into fresh buffers. This runs while an instance is
+    /// closing, and building new destinations there allocates during cleanup
+    /// -- the opposite of what reserving them was for. The emptied inventory
+    /// is left with no capacity because nothing records into a closing
+    /// instance; an inventory that had to keep recording would need its
+    /// destination reserved before the work was accepted, which is a different
+    /// arrangement from this one.
+    fn hand_over(&mut self) -> Self {
+        debug_assert!(
+            self.turn.len()
+                + self.delivering.len()
+                + self.undelivered.len()
+                + self.frozen.len()
+                + usize::from(self.current.is_some())
+                <= self.item_capacity,
+            "accepted item custody cannot exceed its pre-exposure storage bound"
+        );
+        std::mem::replace(
+            self,
+            Self {
+                item_capacity: 0,
+                execution: None,
+                origin: self.origin.clone(),
+                controller: self.controller.clone(),
+                lifecycle: self.lifecycle.clone(),
+                holds: Vec::new(),
+                native_pending: PrivateNativePending::default(),
+                transients: PrivateTransientInventory::with_capacity(0),
+                pending_custody: None,
+                next_event_order: 0,
+                press_stall: 0,
+                last_offered: None,
+                native_recording_cursor: 0,
+                recipient_termination_cursor: 0,
+                recipient_termination_turn: 0,
+                attempt_cursor: 0,
+                attempt_custody: None,
+                native_class_debt: 0,
+                native_turn_debt: 0,
+                settling: Vec::new(),
+                shared_activation: PrivateSharedActivationScan::default(),
+                shared_activation_turn: true,
+                live_disposal: PrivateLiveNativeDisposal::default(),
+                current: None,
+                frozen: std::collections::VecDeque::new(),
+                current_freeze: None,
+                current_is_frozen: false,
+                prefer_frozen: true,
+                turn: Vec::new(),
+                delivering: Vec::new(),
+                undelivered: Vec::new(),
+            },
+        )
+    }
+
+    /// The registry that can answer for what is here.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn origin(&self) -> &XServerFrontendRouteRegistry {
+        &self.origin
+    }
+
+    /// The authority these obligations answer to.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn controller(&self) -> &PrivateAuthorityController {
+        &self.controller
+    }
+}

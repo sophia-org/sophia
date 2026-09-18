@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod check;
+mod m3_acceptance;
 mod panel;
 
 use sophia_conformance::{
@@ -459,6 +460,10 @@ usage: cargo xtask <command>
 
   check [layout]
       Run the full offline gate, or only the exact source-layout debt gate.
+
+  check m3-acceptance --output=/NEW/DIR --target-dir=/OWNED/TARGET [--self-test]
+  check m3-components --suite=NAME --output=/NEW/DIR --target-dir=/OWNED/TARGET
+      Run only the device-hidden M3 acceptance harness; missing cases fail the gate.
 
   profile args --profile=<name> [--display=<name>] [key=value ...]
       Print the validated live-session argument vector for one profile.

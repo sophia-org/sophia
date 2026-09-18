@@ -82,16 +82,24 @@ impl XServerFrontendRouteRegistry {
     /// is still subscribed while the server quietly stopped telling it things.
     /// A client that cannot keep up has failed as an endpoint, which is what
     /// the input path already concludes for the same failure.
+    ///
+    /// BY THE IDENTITY THAT STALLED, NOT BY THE NUMBER. This runs after the
+    /// route that failed has returned, and in between the stalled connection
+    /// can have ended, given its number back and been succeeded. Both effects
+    /// here compare the captured identity under their own acquisition, so a
+    /// successor's entry and row are left alone; nothing here looks the number
+    /// up afresh to decide whom to act on.
     fn disconnect_saturated_recipient(
         &self,
-        client: XServerFrontendClientId,
+        stalled: XServerFrontendStalledRecipient,
     ) -> Result<(), XServerFrontendRouteError> {
-        self.input_recovery
-            .disconnect(client, XAuthorityInputDeliveryOutcome::ClientDisconnected)?;
-        self.clients
-            .lock()
-            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-            .remove(&client);
+        self.input_recovery.disconnect_exact(
+            stalled.client,
+            &stalled.occupant,
+            XAuthorityInputDeliveryOutcome::ClientDisconnected,
+            None,
+        )?;
+        self.remove_row_of(stalled.client, &stalled.occupant)?;
         Ok(())
     }
 

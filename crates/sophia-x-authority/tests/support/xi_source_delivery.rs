@@ -70,6 +70,7 @@ fn xi_source_and_master_selection_reach_the_wire_without_duplicate_masters() {
                         X11InputWriterState {
                             stream: Arc::new(Mutex::new(socket)),
                             output_control_pending: Arc::new(AtomicUsize::new(0)),
+                            output_wire: Arc::new(X11WirePermission::open()),
                             byte_order: order,
                             sequence: Arc::new(AtomicU16::new(1)),
                             focused_surface_window: Arc::new(AtomicU64::new(window.local.raw())),

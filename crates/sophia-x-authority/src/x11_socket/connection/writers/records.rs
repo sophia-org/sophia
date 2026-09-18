@@ -7,6 +7,7 @@
 // `writers/input.rs` already uses.
 
 #[cfg(unix)]
+#[expect(clippy::too_many_arguments, reason = "the existing geometry projection needs its original control custody through fallible peer routing")]
 fn x11_surface_geometry_records(
     byte_order: XByteOrder,
     event_sequence: u16,
@@ -18,14 +19,16 @@ fn x11_surface_geometry_records(
     present_configure: bool,
     selections: &XCoreEventSelectionState,
     protocol_routing: Option<&XServerFrontendRouteRegistry>,
+    execution: Option<&Arc<Mutex<PrivateControlExecution>>>,
 ) -> Result<Vec<Vec<u8>>, X11SetupSocketError> {
+    control_generation_pending(execution, true)?;
     let width = u16::try_from(geometry.width)
         .map_err(|_| X11SetupSocketError::new("X11 control geometry width is invalid"))?;
     let height = u16::try_from(geometry.height)
         .map_err(|_| X11SetupSocketError::new("X11 control geometry height is invalid"))?;
     let present_events = protocol_routing
         .filter(|_| present_configure)
-        .map(|routing| route_x11_present_configure(routing, client, event_sequence, window, geometry))
+        .map(|routing| route_x11_present_configure_with_control(routing, client, event_sequence, window, geometry, execution))
         .transpose()?
         .unwrap_or_default();
     let mut records = Vec::with_capacity(
@@ -110,7 +113,7 @@ fn x11_surface_geometry_records(
                 .collect(),
             metadata_candidates: Vec::new(),
         };
-        route_core_lifecycle_events(routing, client, &mut output)?;
+        route_core_lifecycle_events_with_control(routing, client, &mut output, execution)?;
         core_events = output
             .outputs
             .into_iter()
@@ -125,6 +128,7 @@ fn x11_surface_geometry_records(
             .into_iter()
             .map(|event| encode_x_client_event(byte_order, event)),
     );
+    control_generation_pending(execution, false)?;
     Ok(records)
 }
 
@@ -137,9 +141,14 @@ fn x11_presentation_property_records(
     changed: &[crate::XAtom],
     selections: &XCoreEventSelectionState,
     protocol_routing: Option<&XServerFrontendRouteRegistry>,
+    execution: Option<&Arc<Mutex<PrivateControlExecution>>>,
 ) -> Result<Vec<Vec<u8>>, X11SetupSocketError> {
+    control_generation_pending(execution, true)?;
     const PROPERTY_CHANGE_MASK: u32 = 1 << 22;
     let mut records = Vec::with_capacity(changed.len());
+    retain_private_control_events(execution, changed.iter().map(|atom| (None, XClientEvent::PropertyNotify {
+        sequence, window, atom: *atom, time: 0, new_value: true,
+    })))?;
     for atom in changed {
         let event = XClientEvent::PropertyNotify {
             sequence,
@@ -155,7 +164,8 @@ fn x11_presentation_property_records(
                 ))
             })?;
             for target in subscribers.iter().copied().filter(|target| *target != client) {
-                routing.route_protocol(target, event).map_err(|error| {
+                retain_private_control_events(execution, [(Some(target), event)])?;
+                routing.route_control_protocol(target, event, execution).map_err(|error| {
                     X11SetupSocketError::new(format!(
                         "failed to route presentation property notification: {error:?}"
                     ))
@@ -169,5 +179,6 @@ fn x11_presentation_property_records(
             records.push(encode_x_client_event(byte_order, event));
         }
     }
+    control_generation_pending(execution, false)?;
     Ok(records)
 }

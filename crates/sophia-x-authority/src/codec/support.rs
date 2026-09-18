@@ -56,6 +56,7 @@ fn encode_runtime_error(error: XAuthorityRuntimeError, out: &mut Vec<u8>) {
             XAuthorityRuntimeError::SameNamespace => 10,
             XAuthorityRuntimeError::PortalRejected => 11,
             XAuthorityRuntimeError::StaleGeneration => 12,
+            XAuthorityRuntimeError::FocusAuthorityUnavailable => 13,
         },
     );
 }
@@ -74,6 +75,7 @@ fn decode_runtime_error(value: u16) -> Result<XAuthorityRuntimeError, IpcCodecEr
         10 => Ok(XAuthorityRuntimeError::SameNamespace),
         11 => Ok(XAuthorityRuntimeError::PortalRejected),
         12 => Ok(XAuthorityRuntimeError::StaleGeneration),
+        13 => Ok(XAuthorityRuntimeError::FocusAuthorityUnavailable),
         other => Err(IpcCodecError::InvalidEnum {
             field: "x_authority_runtime_error",
             value: u32::from(other),

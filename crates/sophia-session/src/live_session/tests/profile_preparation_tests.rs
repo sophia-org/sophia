@@ -11,7 +11,7 @@ fn public_profile_test_config(prefix: &str) -> PersistentXtermSessionConfig {
             .unwrap()
             .as_nanos()
     ));
-    let mut config = PersistentXtermSessionConfig::from_args(&[
+    let mut config = super::session_config_tests::isolated_session_config(&[
         "--wm-process=/usr/bin/true".to_owned(),
         "--wm-interface=sophia_wm_v1".to_owned(),
     ])
@@ -322,7 +322,7 @@ fn hagia_pregraphics_profile_admission_activates_every_owner() {
     )
     .unwrap();
     let socket_path = config.wm_socket_path.clone();
-    config = PersistentXtermSessionConfig::from_args(&[
+    config = super::session_config_tests::isolated_session_config(&[
         format!("--wm-process={}", hagia_bin.to_string_lossy()),
         "--wm-interface=sophia_wm_v1".to_owned(),
         format!("--desktop-profile={}", profile_path.display()),

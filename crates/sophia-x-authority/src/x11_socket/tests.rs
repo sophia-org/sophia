@@ -498,8 +498,12 @@ fn routed_control_discards_another_clients_command_and_labels_its_ack() {
     let channels = X11ControlChannels::Routed {
         receiver: command_receiver,
         acknowledgements: ack_sender,
+        completion: None,
     };
-    assert_eq!(channels.recv_timeout(first), Err(RecvTimeoutError::Timeout));
+    assert!(matches!(
+        channels.recv_timeout(first),
+        Err(RecvTimeoutError::Timeout)
+    ));
     assert_eq!(
         channels.recv_timeout(first).unwrap().authority_command(),
         Some(command)
@@ -510,7 +514,7 @@ fn routed_control_discards_another_clients_command_and_labels_its_ack() {
         surface: command.surface(),
         outcome: XAuthorityControlOutcome::Delivered,
     };
-    channels.send_ack(first, acknowledgement).unwrap();
+    channels.send_ack_for(first, acknowledgement, None).unwrap();
     assert_eq!(
         ack_receiver.recv().unwrap(),
         XAuthorityClientControlAck {
@@ -539,6 +543,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
 
     broker
         .input_sender()
+        .expect("an ungated broker to expose raw ingress")
         .send(XAuthorityClientInputEvent {
             client,
             event: input,
@@ -584,8 +589,11 @@ fn route_broker_delivers_to_the_registered_client_only() {
     let channels = X11ControlChannels::ClientBound {
         receiver: channels.control,
         acknowledgements: broker.registry.acknowledgement_sender.clone(),
+        completion: None,
     };
-    channels.send_ack(client, acknowledgement).unwrap();
+    channels
+        .send_ack_for(client, acknowledgement, None)
+        .unwrap();
     assert_eq!(
         broker
             .recv_control_ack_timeout(Duration::from_millis(1))
@@ -601,6 +609,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
     assert_eq!(broker.registered_client_count(), 0);
     broker
         .input_sender()
+        .expect("an ungated broker to expose raw ingress")
         .send(XAuthorityClientInputEvent {
             client,
             event: input,
@@ -850,6 +859,7 @@ fn client_addressed_input_queue_saturation_does_not_fail_the_broker() {
     for time_msec in [4, 5] {
         broker
             .input_sender()
+            .expect("an ungated broker to expose raw ingress")
             .send(XAuthorityClientInputEvent {
                 client: stalled,
                 event: XAuthorityKeyEvent {
@@ -878,6 +888,7 @@ fn client_addressed_input_queue_saturation_does_not_fail_the_broker() {
     assert_eq!(broker.registered_client_count(), 1);
     broker
         .input_sender()
+        .expect("an ungated broker to expose raw ingress")
         .send(XAuthorityClientInputEvent {
             client: healthy,
             event: XAuthorityKeyEvent {
@@ -1129,6 +1140,83 @@ fn a_notify_msc_ahead_of_the_clock_waits_for_a_completion_to_ripen() {
 }
 
 include!("tests/routing.rs");
+include!("tests/private_runner.rs");
+include!("tests/private_service.rs");
+include!("tests/private_service_egress.rs");
+include!("tests/private_destruction.rs");
+include!("tests/private_destruction_deferral.rs");
+include!("tests/private_worker_attachment.rs");
+include!("tests/private_worker_attachment_exits.rs");
+include!("tests/private_failed_retention.rs");
+include!("tests/private_deferred_cleanup.rs");
+include!("tests/private_deferred_cleanup_service.rs");
+#[path = "../../tests/support/private_maintenance_scheduler.rs"]
+mod private_maintenance_scheduler;
+#[path = "../../tests/support/private_retained_drive.rs"]
+mod private_retained_drive;
+
+#[path = "../../tests/support/m3_acceptance.rs"]
+pub(super) mod m3_acceptance;
+include!("tests/private_producer_service.rs");
+include!("tests/private_producer_port.rs");
+include!("tests/private_producer_exits.rs");
+include!("../../tests/support/private_producer_exit_controls.rs");
+include!("../../tests/support/private_execution_lifetime.rs");
+include!("tests/private_producer_runner.rs");
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_cleanup_supervision.rs"
+));
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_key_service.rs"
+));
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_transient_service.rs"
+));
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_request_deferral.rs"
+));
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_item_credit.rs"
+));
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_refused_request.rs"
+));
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_frozen_completion.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_freeze_binding.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_frozen_runner.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_frozen_service.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_state_only.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_frozen_transient.rs"
+));
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -1149,3 +1237,47 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/peer_write_failure.rs"
 ));
+
+include!("tests/private_applied_state.rs");
+
+include!("tests/private_applied_registry.rs");
+
+include!("tests/private_applied_focus.rs");
+
+include!("tests/private_native.rs");
+include!("tests/private_xkb_selection.rs");
+include!("tests/private_keyboard_preparation.rs");
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_terminal_service.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_live_native_disposal.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_live_recipient.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_invocation_completion.rs"
+));
+
+include!("tests/ordered_codec.rs");
+
+#[path = "../../tests/support/private_control_cleanup.rs"]
+mod private_control_cleanup;
+
+#[cfg(unix)]
+#[path = "../../tests/support/private_control_effect_groups.rs"]
+mod private_control_effect_groups;
+
+#[cfg(unix)]
+#[path = "../../tests/support/private_control_peers.rs"]
+mod private_control_peers;
+
+#[cfg(unix)]
+#[path = "../../tests/support/private_control_protocol.rs"]
+mod private_control_protocol;

@@ -27,21 +27,24 @@ use std::{
 };
 
 #[cfg(unix)]
+use crate::connection_wait::{ConnectionNotifier, ConnectionWait, ConnectionWake};
+#[cfg(unix)]
 use crate::{
-    X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL, X_ATOM_NAME_WM_DELETE_WINDOW,
-    X_ATOM_NAME_WM_PROTOCOLS, X_SETUP_CLIENT_PREFIX_LEN, X_SETUP_DEFAULT_RESOURCE_ID_MASK,
-    X_SETUP_DEFAULT_ROOT, X11DispatchObservation, X11ObservedDispatchFailure,
-    X11ObservedRequestStage, XAtomTable, XAuthorityBackpressureFailure,
+    ControlDependentRefusal, X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL,
+    X_ATOM_NAME_WM_DELETE_WINDOW, X_ATOM_NAME_WM_PROTOCOLS, X_SETUP_CLIENT_PREFIX_LEN,
+    X_SETUP_DEFAULT_RESOURCE_ID_MASK, X_SETUP_DEFAULT_ROOT, X11DispatchObservation,
+    X11ObservedDispatchFailure, X11ObservedRequestStage, XAtomTable, XAuthorityBackpressureFailure,
     XAuthorityBackpressureTelemetry, XAuthorityBackpressureTelemetryKind,
     XAuthorityClientControlAck, XAuthorityClientControlCommand, XAuthorityClientInputDelivery,
     XAuthorityClientInputEvent, XAuthorityClientMetadataCandidate, XAuthorityControlAck,
-    XAuthorityControlCommand, XAuthorityControlOutcome, XAuthorityDri3FenceImport,
-    XAuthorityDri3PixmapImport, XAuthorityInputDeliveryId, XAuthorityInputDeliveryOutcome,
-    XAuthorityInputEvent, XAuthorityKeyEvent, XAuthorityObservedTransactionBatch,
-    XAuthorityPointerEvent, XAuthorityPointerEventKind, XAuthorityPresentSubmission,
-    XAuthorityResponsePacket, XAuthorityRouteLeaseRelease, XAuthorityRouteLeaseUpdate,
-    XAuthorityRouteLeaseUpdateKind, XAuthorityRoutedInput, XAuthorityRoutedInputMode,
-    XAuthorityRuntime, XAuthoritySurfaceRouteObservation, XByteOrder, XClientEvent,
+    XAuthorityControlCommand, XAuthorityControlKind, XAuthorityControlOutcome,
+    XAuthorityDri3FenceImport, XAuthorityDri3PixmapImport, XAuthorityInputDeliveryId,
+    XAuthorityInputDeliveryOutcome, XAuthorityInputEvent, XAuthorityKeyEvent,
+    XAuthorityObservedTransactionBatch, XAuthorityOrderedDelivery, XAuthorityPointerEvent,
+    XAuthorityPointerEventKind, XAuthorityPresentSubmission, XAuthorityResponsePacket,
+    XAuthorityRouteLeaseRelease, XAuthorityRouteLeaseUpdate, XAuthorityRouteLeaseUpdateKind,
+    XAuthorityRoutedInput, XAuthorityRoutedInputMode, XAuthorityRuntime,
+    XAuthorityServedConnection, XAuthoritySurfaceRouteObservation, XByteOrder, XClientEvent,
     XDispatchContext, XDispatchResult, XPresentCompletionMode, XPropertyTable,
     XRasterFallbackCause, XResourceId, XServerFrontendAdmissionError,
     XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest, XServerFrontendClientId,
@@ -63,12 +66,91 @@ use sophia_protocol::{
 };
 
 include!("x11_socket/routing/broker.rs");
+include!("x11_socket/routing/private_admission.rs");
+include!("x11_socket/routing/control_transition.rs");
+include!("x11_socket/routing/private_producer_surface.rs");
+include!("x11_socket/routing/private_shutdown.rs");
+include!("x11_socket/routing/private_authority.rs");
+include!("x11_socket/routing/private_item_credit.rs");
+include!("x11_socket/routing/private_participant.rs");
+include!("x11_socket/routing/private_lifecycle.rs");
+include!("x11_socket/routing/private_records.rs");
+include!("x11_socket/routing/private_execution.rs");
+include!("x11_socket/routing/private_execution_pointer.rs");
+include!("x11_socket/routing/private_execution_key.rs");
+include!("x11_socket/routing/private_execution_transient.rs");
+include!("x11_socket/routing/private_execution_notes.rs");
+include!("x11_socket/routing/private_runner.rs");
+include!("x11_socket/routing/private_runner_accounting.rs");
+include!("x11_socket/routing/private_execution_lifetime.rs");
+include!("x11_socket/routing/private_native_cleanup_receipt.rs");
+include!("x11_socket/routing/private_applied_state.rs");
+include!("x11_socket/routing/private_applied_keyboard.rs");
+include!("x11_socket/routing/private_applied_registry.rs");
+include!("x11_socket/routing/private_endpoint.rs");
+include!("x11_socket/routing/private_handover_gate.rs");
+include!("x11_socket/routing/private_attention.rs");
+include!("x11_socket/routing/private_startup.rs");
+include!("x11_socket/routing/private_worker_body.rs");
+include!("x11_socket/routing/private_evidence_custody.rs");
+include!("x11_socket/routing/private_service_owner.rs");
+include!("x11_socket/routing/private_producer_port.rs");
+include!("x11_socket/routing/private_control_context.rs");
+include!("x11_socket/routing/private_cleanup_record.rs");
+include!("x11_socket/routing/private_departure_arbitration.rs");
+include!("x11_socket/routing/private_destruction.rs");
+include!("x11_socket/routing/private_worker_attachment.rs");
+include!("x11_socket/routing/private_deferred_cleanup.rs");
+include!("x11_socket/routing/private_number_custody.rs");
+include!("x11_socket/routing/private_worker_join.rs");
+include!("x11_socket/routing/private_fence_record.rs");
+include!("x11_socket/routing/private_maintenance_identity.rs");
+include!("x11_socket/routing/private_maintenance_commitment.rs");
+include!("x11_socket/routing/private_retained_drive.rs");
+include!("x11_socket/routing/private_terminal_drive.rs");
+include!("x11_socket/routing/private_terminal_requests.rs");
+include!("x11_socket/routing/private_live_recipient.rs");
+include!("x11_socket/routing/private_terminal_reconcile.rs");
+include!("x11_socket/routing/private_terminal_recipient.rs");
+include!("x11_socket/routing/private_terminal_dependency.rs");
+include!("x11_socket/routing/private_live_native_disposal.rs");
+include!("x11_socket/routing/private_invocation_completion.rs");
+include!("x11_socket/routing/private_maintenance_scheduler.rs");
+include!("x11_socket/routing/private_focus_runtime.rs");
+include!("x11_socket/routing/private_native.rs");
+include!("x11_socket/routing/private_native_custody.rs");
+#[cfg(unix)]
+#[allow(unused_imports)] // Ordered queue integration takes this sealed payload.
+pub(crate) use private_native::PrivateOrderedEmission;
+include!("x11_socket/routing/private_terminal.rs");
+include!("x11_socket/routing/private_terminal_native.rs");
+include!("x11_socket/routing/private_shared_activation.rs");
+include!("x11_socket/routing/private_transient_inventory.rs");
+include!("x11_socket/routing/private_inventory.rs");
+include!("x11_socket/routing/private_frozen.rs");
+include!("x11_socket/routing/private_settlement.rs");
+include!("x11_socket/routing/private_settlement_failed.rs");
+include!("x11_socket/routing/private_ordered_home.rs");
+include!("x11_socket/routing/private_ordered_continuation.rs");
+include!("x11_socket/routing/private_ordered_lease.rs");
+include!("x11_socket/routing/private_internal_credit.rs");
+include!("x11_socket/routing/private_retained_reading.rs");
+include!("x11_socket/routing/private_settlement_handle.rs");
+include!("x11_socket/routing/private_settlement_ownership.rs");
+include!("x11_socket/routing/control_completion.rs");
+include!("x11_socket/routing/control_executors.rs");
+include!("x11_socket/routing/control_progress.rs");
+include!("x11_socket/routing/control_dependents.rs");
+include!("x11_socket/routing/control_publication.rs");
+include!("x11_socket/routing/recovery_completion.rs");
 include!("x11_socket/routing/recovery.rs");
+include!("x11_socket/routing/recovery_connection.rs");
 include!("x11_socket/routing/focus.rs");
 include!("x11_socket/routing/registry.rs");
 include!("x11_socket/routing/subscriptions.rs");
 include!("x11_socket/routing/selection_subscriptions.rs");
 include!("x11_socket/routing/keyboard.rs");
+include!("x11_socket/routing/ordered_codec.rs");
 include!("x11_socket/routing/input.rs");
 include!("x11_socket/frontend/service.rs");
 include!("x11_socket/frontend/clipboard.rs");
@@ -77,12 +159,18 @@ include!("x11_socket/state.rs");
 include!("x11_socket/device_bundles.rs");
 include!("x11_socket/connection/raster_telemetry.rs");
 include!("x11_socket/connection/server.rs");
+include!("x11_socket/connection/private_service_order.rs");
+include!("x11_socket/connection/private_service.rs");
 include!("x11_socket/connection/protocol_routing.rs");
 include!("x11_socket/connection/pixmap_publication.rs");
 include!("x11_socket/connection/dispatch.rs");
 include!("x11_socket/connection/event_state.rs");
 include!("x11_socket/connection/focus.rs");
 include!("x11_socket/connection/writers.rs");
+include!("x11_socket/connection/control_writer.rs");
+include!("x11_socket/connection/private_control_source.rs");
+include!("x11_socket/routing/private_control_cleanup.rs");
+include!("x11_socket/routing/private_control_protocol.rs");
 
 #[cfg(unix)]
 const X11_CLIENT_RESOURCE_RANGE_SIZE: u32 = X_SETUP_DEFAULT_RESOURCE_ID_MASK + 1;
@@ -341,3 +429,10 @@ mod present_layout_comparison_tests;
 #[cfg(all(test, unix))]
 #[path = "x11_socket/tests/input_recovery.rs"]
 mod input_recovery_tests;
+
+#[cfg(unix)]
+#[path = "x11_socket/routing/private_watchdog.rs"]
+// The prepared runner owns this supervisor. Actual connection setup installs
+// independent transports through its registrar; producers share its failure
+// gate without acquiring the execution locks it supervises.
+mod private_watchdog;

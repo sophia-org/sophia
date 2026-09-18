@@ -162,7 +162,11 @@ pub(crate) fn run_x_authority_xterm_two_client_smoke()
         control_ack_sender,
         input_delivery_sender,
     );
-    let input_sender = broker.input_sender();
+    // Raw ingress is refusable, and these smokes drive an ungated broker, so
+    // a refusal here means the harness is not the shape this test assumes.
+    let input_sender = broker
+        .input_sender()
+        .map_err(|refusal| format!("raw X11 ingress refused: {refusal:?}"))?;
     let control_sender = broker.control_sender();
     let (service_command_sender, service_command_receiver) = sync_channel(1);
     let config = XServerFrontendConfig::new(&server_path, NamespaceId::from_raw(53))?

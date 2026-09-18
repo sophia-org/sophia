@@ -7,12 +7,16 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-rustix = { version = "1.1", default-features = false, features = ["fs", "net", "std", "time"] }
+rustix = { version = "1.1", default-features = false, features = ["event", "fs", "net", "std", "time"] }
+sophia-input-authority = { path = "../sophia-input-authority" }
 sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-sysv-shm = { path = "../sophia-sysv-shm" }
 xkbcommon = "0.8"
 tracing.workspace = true
+
+[dev-dependencies]
+serde_json = "1"
 
 [lints]
 workspace = true

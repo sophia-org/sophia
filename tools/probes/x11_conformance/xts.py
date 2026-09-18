@@ -9,13 +9,12 @@ import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
-import sys
 import tempfile
 import time
 
-from run import bounded, clean_environment, digest
+from run import bounded, digest
+from isolation import Mount, launch, validate_entry
 from xts_report import evaluate_journal
 
 
@@ -25,30 +24,32 @@ def dependency_errors(root, bwrap):
         errors.append(f'XTS checkout with check.sh missing: {root}; yserver is not XTS')
     if root and not (root / 'xts5').is_dir():
         errors.append(f'built XTS5 suite directory missing: {root / "xts5"}')
-    if root and not any(p.is_file() and os.access(p, os.X_OK) for p in root.glob('**/tcc')) and not shutil.which('tcc'):
-        errors.append('TET tcc executable missing from the XTS checkout and PATH')
+    if root and not any(p.is_file() and os.access(p, os.X_OK) for p in root.glob('**/tcc')) and not shutil.which('tcc', path='/usr/bin:/bin'):
+        errors.append('TET tcc executable missing from the XTS checkout and contained /usr/bin:/bin')
     if not bwrap:
         errors.append('bubblewrap unavailable: private /tmp, network and device namespaces are required')
     return errors
 
 
-def namespace_command(bwrap, work, host, root):
-    return [bwrap, '--die-with-parent', '--unshare-all', '--new-session',
-            '--ro-bind', '/', '/', '--tmpfs', '/tmp', '--proc', '/proc', '--dev', '/dev',
-            '--bind', str(work), '/tmp/work', '--chdir', '/tmp/work/xts',
-            '--setenv', 'DISPLAY', ':99', '--setenv', 'HOME', '/tmp/home',
-            '--setenv', 'XAUTHORITY', '/tmp/unused-Xauthority',
-            '--setenv', 'TET_ROOT', '/tmp/work/xts',
-            sys.executable, '-B', '/tmp/work/harness/tools/probes/x11_conformance/xts.py', '--inside',
-            '--host', '/tmp/work/host', '--xts-root', '/tmp/work/xts']
+WORK = Path('/work/run')
 
 
-def inside(host):
-    configuration = json.loads(Path('/tmp/work/selection.json').read_text())
+def inner_command():
+    return ['/usr/bin/python3', '-B',
+            str(WORK / 'harness/tools/probes/x11_conformance/xts.py'), '--inside',
+            '--activation-fd', '{activation_fd}', '--host', str(WORK / 'host')]
+
+
+def inside(host, activation_fd):
+    validate_entry(activation_fd)
+    # These values name only endpoints constructed after entry validation.
+    os.environ.update(DISPLAY=':99', XAUTHORITY='/tmp/unused-Xauthority',
+                      TET_ROOT=str(WORK / 'xts'))
+    os.chdir(WORK / 'xts')
+    configuration = json.loads((WORK / 'selection.json').read_text())
     Path('/tmp/.X11-unix').mkdir(mode=0o700)
-    Path('/tmp/home').mkdir()
     sock = Path('/tmp/.X11-unix/X99')
-    with Path('/tmp/work/host.log').open('wb') as log:
+    with (WORK / 'host.log').open('wb') as log:
         server = subprocess.Popen([str(host), str(sock)], stdout=log, stderr=log)
         try:
             deadline = time.monotonic() + 5
@@ -58,15 +59,15 @@ def inside(host):
                 time.sleep(.01)
             # check.sh is supplied by the separate XTS checkout. Its status is
             # insufficient: the complete selected-purpose journal is checked.
-            with Path('/tmp/work/xts.log').open('wb') as output:
+            with (WORK / 'xts.log').open('wb') as output:
                 status, _, _ = bounded(['bash', './check.sh', configuration['scenario']],
                                         configuration['timeout'], stdout=output, stderr=output)
-            journals = list(Path('/tmp/work/xts/results').glob('*/journal'))
+            journals = list((WORK / 'xts/results').glob('*/journal'))
             if len(journals) != 1:
                 raise RuntimeError(f'expected exactly one fresh journal, found {len(journals)}')
-            shutil.copyfile(journals[0], '/tmp/work/journal')
+            shutil.copyfile(journals[0], WORK / 'journal')
             report = evaluate_journal(configuration['purposes'], journals[0].read_text(), status)
-            Path('/tmp/work/report.json').write_text(json.dumps(report, indent=2) + '\n')
+            (WORK / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
             return 0 if report['status'] == 'PASS' else 1
         finally:
             server.terminate()
@@ -86,13 +87,14 @@ def main():
     parser.add_argument('--output', type=Path)
     parser.add_argument('--timeout', type=float, default=120)
     parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--activation-fd', type=int, default=-1, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.inside:
-        return inside(args.host)
+        return inside(args.host, args.activation_fd)
     if not args.output:
         parser.error('--output is required and must be new')
-    if not 0 < args.timeout <= 1800:
-        parser.error('timeout must be in (0, 1800]')
+    if not 0 < args.timeout <= 1785:
+        parser.error('timeout must be in (0, 1785], leaving 15 seconds for contained host cleanup')
     args.output.mkdir(parents=True, exist_ok=False)
     root = args.xts_root.resolve() if args.xts_root else None
     bwrap = shutil.which('bwrap')
@@ -121,9 +123,10 @@ def main():
         shutil.copy2(host, work / 'host')
         (work / 'selection.json').write_text(json.dumps({'scenario': args.scenario,
                                                         'purposes': purposes, 'timeout': args.timeout}))
-        with (args.output / 'adapter.log').open('wb') as log:
-            status, _, _ = bounded(namespace_command(bwrap, work, host, root), args.timeout + 15,
-                                    env=clean_environment(), stdout=log, stderr=log)
+        result = launch(inner_command(), mounts=[Mount(work, str(WORK), writable=True)],
+                        timeout=args.timeout + 15, bwrap=bwrap)
+        status = result.returncode
+        (args.output / 'adapter.log').write_bytes(result.stdout + result.stderr)
         for name in ('report.json', 'journal', 'host.log', 'xts.log', 'selection.json'):
             if (work / name).is_file():
                 shutil.copyfile(work / name, args.output / name)

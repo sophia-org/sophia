@@ -37,6 +37,7 @@ fn peer_failure_writer(
         X11InputWriterState {
             stream: Arc::new(Mutex::new(socket)),
             output_control_pending: Arc::new(AtomicUsize::new(0)),
+            output_wire: Arc::new(X11WirePermission::open()),
             byte_order: XByteOrder::LittleEndian,
             sequence: Arc::new(AtomicU16::new(1)),
             focused_surface_window: Arc::new(AtomicU64::new(window.local.raw())),
@@ -195,6 +196,7 @@ fn peer_write_failure_control_is_not_reported_as_delivered() {
     drop(peer);
     let error = write_x11_control_records(
         &Arc::new(Mutex::new(socket)),
+        &X11WirePermission::open(),
         XByteOrder::LittleEndian,
         &AtomicU16::new(1),
         vec![vec![0; 32]],
@@ -211,6 +213,7 @@ fn peer_write_failure_protocol_writer_exits_cleanly() {
     let writer = spawn_x11_protocol_event_writer(
         Arc::new(Mutex::new(socket)),
         Arc::new(AtomicUsize::new(0)),
+        Arc::new(X11WirePermission::open()),
         XByteOrder::LittleEndian,
         Arc::new(AtomicU16::new(1)),
         XServerFrontendClientId::from_raw(1),
@@ -253,6 +256,7 @@ fn peer_write_failure_does_not_downgrade_other_io_or_poisoned_locks() {
     .join();
     let error = write_x11_control_records(
         &socket,
+        &X11WirePermission::open(),
         XByteOrder::LittleEndian,
         &AtomicU16::new(1),
         vec![vec![0; 32]],

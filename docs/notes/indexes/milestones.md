@@ -7,6 +7,7 @@ They do not revive work, close a current milestone, or change acceptance gates.
 
 ## Milestone records
 
+- 2026-09-18: [M3 integrated acceptance checkpoint and remaining C controls](../milestones/nywg1vat-m3-integrated-acceptance-checkpoint-and-remaining-c-controls.md)
 - 2026-09-09: [Exact copied Present evidence gates reallocation advice](../milestones/urqkkdzp-exact-copied-present-evidence-gates-reallocation-advice.md)
 - 2026-09-09: [Connection-pinned device negotiation and bounded renderer refresh](../milestones/szr8j0rg-connection-pinned-device-negotiation-and-bounded-renderer-refresh.md)
 - 2026-09-04: [2026-09-04 Milestone 14 Exit Retargeted To Development-Session Readiness](../sources/2026-09/legacy-milestone-0001-2026-09-04-milestone-14-exit-retargeted-to-development-session-readiness.md)

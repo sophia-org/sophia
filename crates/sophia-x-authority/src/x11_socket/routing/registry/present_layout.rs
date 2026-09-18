@@ -11,6 +11,10 @@ impl XServerFrontendRouteRegistry {
                 "X11 route registry is already bound to a different authority",
             ));
         }
+        runtime.lock().map_err(|_| {
+            X11SetupSocketError::new("X11 runtime unavailable while binding focus source")
+        })?.bind_private_focus_source(XPrivateFocusRuntimeSource { routing: self.clone() })
+            .map_err(|_| X11SetupSocketError::new("X11 runtime focus source origin mismatch"))?;
         Ok(())
     }
 

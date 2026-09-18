@@ -1,0 +1,208 @@
+{
+  "schema": 1,
+  "scope": "Private-instance XTEST 2.1 behavioral obligations. Neither physical-input acceptance nor namespace effect confinement; native authority, lock, watchdog, provenance and debt negatives require their separate mandatory Rust evidence.",
+  "byte_orders": [
+    "little",
+    "big"
+  ],
+  "cases": [
+    {
+      "id": "xtest_discovery",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_disabled",
+      "mandatory": true,
+      "fixture": "disabled"
+    },
+    {
+      "id": "xtest_unauthorized",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_setup_wrong_name",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_setup_wrong_data",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_setup_missing_name",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_setup_missing_data",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_key_pair",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_button_pair",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_motion",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_padding",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_fake_errors",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_request_errors",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_compare_cursor",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_grab_control",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_delay_order",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_half_close",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_full_delay_disconnect",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_disconnect_release",
+      "mandatory": true,
+      "fixture": "enabled"
+    },
+    {
+      "id": "xtest_two_injectors",
+      "mandatory": true,
+      "fixture": "enabled"
+    }
+  ],
+  "features": [
+    {
+      "name": "GetVersion minor 0: discovery agreement, 2.1 negotiation and higher requested version",
+      "cases": [
+        "xtest_discovery",
+        "xtest_request_errors"
+      ]
+    },
+    {
+      "name": "CompareCursor minor 1: explicit/None/CurrentCursor and invalid resources",
+      "cases": [
+        "xtest_compare_cursor",
+        "xtest_request_errors"
+      ]
+    },
+    {
+      "name": "FakeInput minor 2: core key/button delivery, prior state, pointer motion and clipping",
+      "cases": [
+        "xtest_key_pair",
+        "xtest_button_pair",
+        "xtest_motion"
+      ]
+    },
+    {
+      "name": "FakeInput 2.1 padding, malformed fields and request lengths",
+      "cases": [
+        "xtest_padding",
+        "xtest_fake_errors",
+        "xtest_request_errors"
+      ]
+    },
+    {
+      "name": "FakeInput processing barrier, healthy peer, full CARD32 delay cancellation, half-close",
+      "cases": [
+        "xtest_delay_order",
+        "xtest_half_close",
+        "xtest_full_delay_disconnect"
+      ]
+    },
+    {
+      "name": "Connection source retirement and shared aggregate hold visible to a second client",
+      "cases": [
+        "xtest_disconnect_release",
+        "xtest_two_injectors"
+      ]
+    },
+    {
+      "name": "GrabControl minor 3: real server-grab scheduling and restoration",
+      "cases": [
+        "xtest_grab_control",
+        "xtest_request_errors"
+      ]
+    },
+    {
+      "name": "Intentional policy denial: absent discovery plus guessed-opcode BadAccess",
+      "cases": [
+        "xtest_disabled",
+        "xtest_unauthorized"
+      ]
+    },
+    {
+      "name": "Private mixed anonymous/cookie setup: invalid supplied credentials refuse rather than becoming anonymous; exact credential grants; empty/empty ungranted core access remains healthy",
+      "cases": [
+        "xtest_setup_wrong_name",
+        "xtest_setup_wrong_data",
+        "xtest_setup_missing_name",
+        "xtest_setup_missing_data"
+      ]
+    }
+  ],
+  "extensions": {
+    "XTEST": {
+      "version": "2.1",
+      "mandatory_cases": [
+        "xtest_discovery",
+        "xtest_disabled",
+        "xtest_unauthorized",
+        "xtest_setup_wrong_name",
+        "xtest_setup_wrong_data",
+        "xtest_setup_missing_name",
+        "xtest_setup_missing_data",
+        "xtest_key_pair",
+        "xtest_button_pair",
+        "xtest_motion",
+        "xtest_padding",
+        "xtest_fake_errors",
+        "xtest_request_errors",
+        "xtest_compare_cursor",
+        "xtest_grab_control",
+        "xtest_delay_order",
+        "xtest_half_close",
+        "xtest_full_delay_disconnect",
+        "xtest_disconnect_release",
+        "xtest_two_injectors"
+      ]
+    }
+  },
+  "core_request_inventory": []
+}

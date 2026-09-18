@@ -32,6 +32,7 @@ pub fn session_logout_drain_decision(state: SessionLogoutDrainState) -> SessionL
 
 #[derive(Clone, Copy, Debug)]
 pub struct SessionQuiescence {
+    #[cfg_attr(not(feature = "native-session"), allow(dead_code))]
     pub(crate) reason: &'static str,
     started_at: Instant,
     pub(crate) deadline: Instant,

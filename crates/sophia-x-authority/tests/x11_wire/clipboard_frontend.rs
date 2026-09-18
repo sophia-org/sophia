@@ -448,9 +448,9 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
     use std::{
         io::Write,
         num::NonZeroUsize,
-        sync::{Arc, Mutex},
+        sync::{Arc, Condvar, Mutex},
         thread,
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
     let socket_path = std::env::temp_dir().join(format!(
@@ -465,14 +465,28 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
         .unwrap()
         .with_max_concurrent_clients(NonZeroUsize::new(2).unwrap());
     let observations = Arc::new(Mutex::new(Vec::new()));
+    // WHAT THE SECOND CLIENT ACTUALLY DEPENDS ON. Its requests are about the
+    // first client's window, and the trace this test compares is the order
+    // observations were APPENDED in. Writing first orders neither: two
+    // connections are served by two workers, so a request written earlier can
+    // be dispatched later, and one dispatched earlier can be appended later
+    // still.
+    //
+    // So the fixture waits for the thing it needs -- the first client's
+    // CreateWindow having been observed -- and this is the observer saying so.
+    let first_window_observed = Arc::new((Mutex::new(false), Condvar::new()));
     let server_observations = observations.clone();
+    let server_signal = first_window_observed.clone();
     let server = thread::spawn(move || {
         let mut frontend = XServerFrontend::bind(config).unwrap();
         let observer: Arc<X11CoreTraceObserver> = Arc::new(move |trace| {
-            server_observations
-                .lock()
-                .unwrap()
-                .push((trace.client.raw(), trace.major_opcode));
+            let observation = (trace.client.raw(), trace.major_opcode);
+            server_observations.lock().unwrap().push(observation);
+            if observation == (1, 1) {
+                let (seen, announced) = &*server_signal;
+                *seen.lock().unwrap() = true;
+                announced.notify_all();
+            }
             Ok(None)
         });
         frontend
@@ -508,6 +522,27 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
         ))
         .unwrap();
 
+    // BOUNDED, AND NOT A SLEEP. If this never arrives, the window-dependent
+    // requests below are not sent at all: the test releases both clients,
+    // collects the server, and then reports the dependency it could not
+    // establish.
+    let created = {
+        let (seen, announced) = &*first_window_observed;
+        let mut held = seen.lock().unwrap();
+        let deadline = Duration::from_secs(5);
+        let started = std::time::Instant::now();
+        while !*held && started.elapsed() < deadline {
+            let (next, timeout) = announced
+                .wait_timeout(held, deadline.saturating_sub(started.elapsed()))
+                .unwrap();
+            held = next;
+            if timeout.timed_out() {
+                break;
+            }
+        }
+        *held
+    };
+
     let mut second = connect_x_socket(&socket_path);
     second
         .write_all(&setup_request(XByteOrder::LittleEndian, 11, 0, b"", b""))
@@ -516,20 +551,46 @@ fn x_server_frontend_dispatches_two_live_clients_with_shared_x_state() {
         read_setup_resource_id_base(&mut second, XByteOrder::LittleEndian),
         0x0040_0000
     );
-    second
-        .write_all(&resource_request(XByteOrder::LittleEndian, 8, first_window))
-        .unwrap();
-    second
-        .write_all(&resource_request(XByteOrder::LittleEndian, 3, first_window))
-        .unwrap();
-    let attributes = read_x_reply(&mut second, XByteOrder::LittleEndian);
-    expect_x_reply(&attributes, XByteOrder::LittleEndian);
-    assert_eq!(attributes[26], 2);
+    // THE DEPENDENT WORK ONLY WHEN ITS DEPENDENCY WAS ESTABLISHED. These
+    // requests are about the first client's window; if that window was never
+    // observed to exist, asking about it invites BadWindow -- and failing on
+    // the reply would be failing about the wrong thing, in the wrong place,
+    // with both clients and the server still to collect.
+    //
+    // The second client still connects and completes its setup either way,
+    // because the server accepts twice and this fixture is what it accepts.
+    if created {
+        second
+            .write_all(&resource_request(XByteOrder::LittleEndian, 8, first_window))
+            .unwrap();
+        second
+            .write_all(&resource_request(XByteOrder::LittleEndian, 3, first_window))
+            .unwrap();
+        let attributes = read_x_reply(&mut second, XByteOrder::LittleEndian);
+        expect_x_reply(&attributes, XByteOrder::LittleEndian);
+        assert_eq!(attributes[26], 2);
+    }
 
     drop(first);
     drop(second);
 
-    assert_eq!(server.join().unwrap(), 0);
+    let active = server.join().unwrap();
+
+    // REPORTED AFTER COLLECTION. A missing dependency is this fixture's own
+    // failure and is said here, with both clients released and the server
+    // joined, rather than through whatever the server answers about a window
+    // it has no reason to know.
+    //
+    // WHAT THAT DOES AND DOES NOT COVER. It covers this dependency. The setup
+    // handshakes above assert on their own, and a failure inside one of them
+    // still ends the test before this point; making every helper collect would
+    // be a different and larger change than the one this fixture needed.
+    assert!(
+        created,
+        "the first client's CreateWindow was never observed, so the order \
+         below was never this fixture's to assert"
+    );
+    assert_eq!(active, 0);
     assert_eq!(
         observations.lock().unwrap().as_slice(),
         &[(1, 1), (2, 8), (2, 3), (1, 0)]

@@ -512,6 +512,31 @@ impl XAuthorityRuntime {
          namespace: NamespaceId,
          window: crate::XResourceId,
      ) -> Result<sophia_protocol::SurfaceId, XAuthorityRuntimeError> {
+         // Validate before publication invalidation; an invalid request has no
+         // native effect. Every subtree/teardown destruction reaches this source.
+         self.resources.lookup(namespace, window, XResourceKind::Window)?;
+         #[cfg(unix)]
+         if let Some(source) = self.private_focus_source.clone() {
+             return source.destroy_window(self, namespace, window);
+         }
+         self.destroy_window_effect(namespace, window)
+     }
+
+     #[cfg(unix)]
+     pub(crate) fn destroy_window_private_effect(
+         &mut self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+         _permit: &crate::x11_socket::XPrivateWindowDestructionPermit,
+     ) -> Result<sophia_protocol::SurfaceId, XAuthorityRuntimeError> {
+         self.destroy_window_effect(namespace, window)
+     }
+
+     fn destroy_window_effect(
+         &mut self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+     ) -> Result<sophia_protocol::SurfaceId, XAuthorityRuntimeError> {
          self.resources
              .lookup(namespace, window, XResourceKind::Window)?;
          let surface = self
@@ -543,12 +568,12 @@ impl XAuthorityRuntime {
              // Neither borrows a window, so neither is disturbed by one going.
              XGlxDrawableBacking::Pbuffer(_) | XGlxDrawableBacking::Pixmap { .. } => true,
          });
-         if self
-             .input_focus
-             .get(&namespace)
-             .is_some_and(|(focus, _)| *focus == window)
+         if let Some(focus) = self.input_focus.get_mut(&namespace)
+             && focus.0 == window
          {
-             self.input_focus.remove(&namespace);
+             // Preserve the namespace storage reserved during setup. Removing
+             // it would make the next guarded focus application allocate again.
+             *focus = (crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1), 1);
          }
          Ok(surface)
      }

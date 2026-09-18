@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "cases": {
+    "C.capacity": "x11_socket::routing_tests::m3_acceptance::c_capacity",
+    "C.interrupted_ownership": "x11_socket::routing_tests::m3_acceptance::c_interrupted_ownership",
+    "C.indeterminate_send": "x11_socket::routing_tests::m3_acceptance::c_indeterminate_send",
+    "C.poison": "x11_socket::routing_tests::m3_acceptance::c_poison",
+    "C.control_cleanup": "x11_socket::routing_tests::m3_acceptance::c_control_cleanup",
+    "C.exact_origin": "x11_socket::routing_tests::m3_acceptance::c_exact_origin",
+    "A.press_release_repress": "x11_socket::routing_tests::m3_acceptance::a_press_release_repress",
+    "A.partial_proof": "x11_socket::routing_tests::m3_acceptance::a_partial_proof",
+    "A.recipient_disconnect": "x11_socket::routing_tests::m3_acceptance::a_recipient_disconnect",
+    "D.ready_before_exposure": "x11_socket::routing_tests::m3_acceptance::d_ready_before_exposure",
+    "D.start_failures": "x11_socket::routing_tests::m3_acceptance::d_start_failures",
+    "D.worker_exit": "x11_socket::routing_tests::m3_acceptance::d_worker_exit",
+    "D.registration_destruction": "x11_socket::routing_tests::m3_acceptance::d_registration_destruction",
+    "D.service_exit": "x11_socket::routing_tests::m3_acceptance::d_service_exit",
+    "D.namespace_reuse": "x11_socket::routing_tests::m3_acceptance::d_namespace_reuse",
+    "D.scheduler": "x11_socket::routing_tests::m3_acceptance::d_scheduler",
+    "B.applied_focus": "x11_socket::routing_tests::m3_acceptance::b_applied_focus",
+    "B.keyboard_history": "x11_socket::routing_tests::m3_acceptance::b_keyboard_history",
+    "B.ordered_input": "x11_socket::routing_tests::m3_acceptance::b_ordered_input",
+    "B.shared_hold": "x11_socket::routing_tests::m3_acceptance::b_shared_hold"
+  }
+}

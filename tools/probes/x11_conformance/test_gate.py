@@ -78,13 +78,25 @@ class GateTests(unittest.TestCase):
             evaluate(manifest, self.results)
 
     def test_xts_namespace_hides_live_sockets_and_devices(self):
-        from xts import namespace_command
-        command = namespace_command('/usr/bin/bwrap', Path('/work-source'), Path('/host'), Path('/xts'))
+        from isolation import command as isolated_command
+        from xts import inner_command
+        command = isolated_command('/usr/bin/bwrap', inner_command(), [], 9)
         self.assertIn('--unshare-all', command)
         self.assertIn('--tmpfs', command)
         self.assertIn('--dev', command)
-        self.assertIn(':99', command)
+        self.assertIn('--activation-fd', command)
+        self.assertNotIn(['/', '/'], [command[i+1:i+3] for i, x in enumerate(command)
+                                     if x == '--ro-bind'])
         self.assertNotIn('--share-net', command)
+
+    def test_xts_direct_inner_entry_cannot_create_host(self):
+        from unittest.mock import patch
+        from isolation import IsolationError
+        from xts import inside
+        with patch('xts.subprocess.Popen') as spawn:
+            with self.assertRaises(IsolationError):
+                inside(Path('/fabricated/host'), -1)
+            spawn.assert_not_called()
 
     def test_missing_xts_is_a_dependency_blocker(self):
         from unittest.mock import patch
@@ -92,6 +104,13 @@ class GateTests(unittest.TestCase):
         with patch('shutil.which', return_value=None):
             failures = dependency_errors(Path('/nonexistent-sophia-xts'), None)
         self.assertEqual(len(failures), 4)
+
+    def test_xts_dependency_search_uses_only_the_contained_path(self):
+        from unittest.mock import patch
+        from xts import dependency_errors
+        with patch('shutil.which', return_value=None) as search:
+            dependency_errors(Path('/nonexistent-sophia-xts'), '/usr/bin/bwrap')
+        search.assert_called_once_with('tcc', path='/usr/bin:/bin')
 
     def test_new_accepted_request_cannot_disappear_from_inventory(self):
         from inventory import check_inventory

@@ -322,6 +322,88 @@ impl X11SurfaceGenerationLedger {
     }
 }
 
+/// This client's registration as a query owner for its namespace.
+///
+/// Owned rather than ordered. A standalone client has no route registration
+/// whose drop would clean this up, and the device pin releases only its device
+/// bundle, so an early return after registering left the namespace reporting an
+/// owner that never finished starting. Ordinary teardown takes it back here.
+/// Private teardown requests closure on its exact retained lifecycle owner;
+/// that owner performs cleanup under common and preserves any interruption.
+#[cfg(unix)]
+struct X11QueryOwner<'a> {
+    private: Option<(PrivateLifecycleOwner, PrivateLifecycleGate)>,
+    finished: bool,
+    runtime: &'a Mutex<XAuthorityRuntime>,
+    client: XServerFrontendClientId,
+}
+
+#[cfg(unix)]
+impl<'a> X11QueryOwner<'a> {
+    fn register(
+        runtime: &'a Mutex<XAuthorityRuntime>,
+        namespace: NamespaceId,
+        client: XServerFrontendClientId,
+        private: Option<(PrivateLifecycleOwner, PrivateLifecycleGate)>,
+    ) -> Result<Self, X11SetupSocketError> {
+        if let Some((owner, gate)) = &private {
+            owner.register_query_gate(gate, namespace, client).map_err(|error| X11SetupSocketError::new(format!("private query owner refused: {error:?}")))?;
+            return Ok(Self { runtime, client, private, finished: false });
+        }
+        runtime
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
+            .input_authority_mut()
+            .register_query_client(namespace, client.raw());
+        Ok(Self { runtime, client, private, finished: false })
+    }
+}
+
+/// Everything one client connection owns that has to be given up in order.
+///
+/// An aggregate rather than two locals, because the order is the guarantee and
+/// two `let`s only have it by accident: fields are given up in declaration
+/// order, so the workers stop and join before anything they were serving is
+/// taken back. Locals are given up in reverse, which had the query
+/// registration going first while the writers it served were still running.
+#[cfg(unix)]
+struct X11ClientLifetime<'a> {
+    /// Given up first.
+    writers: X11ClientWriters,
+    /// Kept after every worker stops, including partial startup. Its socket
+    /// is independent of output serialization and belongs to this runner's
+    /// supervisor even when setup completed after that runner was prepared.
+    #[allow(dead_code)]
+    watchdog_transport: Option<private_watchdog::PrivateWatchdogTransport>,
+    /// Given up after them.
+    ///
+    /// Never read: it is held for what losing it does, which is take this
+    /// client's query registration back once nothing is still serving it.
+    #[allow(dead_code)]
+    query_owner: X11QueryOwner<'a>,
+}
+
+#[cfg(unix)]
+impl X11QueryOwner<'_> {
+    fn finish(&mut self) -> Result<(), X11SetupSocketError> {
+        if self.finished { return Ok(()) }
+        if let Some((owner, gate)) = &self.private {
+            gate.close();
+            owner.drive(NonZeroUsize::new(1).unwrap()).map_err(|error| X11SetupSocketError::new(format!("private cleanup unavailable: {error:?}")))?;
+        } else {
+            self.runtime.lock().map_err(|_| X11SetupSocketError::new("X11 runtime unavailable"))?.input_authority_mut().cleanup_owner(self.client.raw());
+        }
+        self.finished = true;
+        Ok(())
+    }
+}
+impl Drop for X11QueryOwner<'_> {
+    fn drop(&mut self) {
+        if let Some((_, gate)) = &self.private { gate.close(); } else { let _ = self.finish(); }
+    }
+}
+
+
 #[cfg(unix)]
 fn serve_x11_core_socket_client_with_trace_observer_and_input(
     stream: &mut UnixStream,
@@ -336,11 +418,33 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         control_channels,
         client_routing,
     } = inputs;
+    // Register before any setup read/write and before a worker can escape.
+    // This local covers setup failure; the aggregate below then keeps it
+    // until all workers have stopped. No output/common/X guard is held here.
+    let watchdog_transport = client_routing
+        .as_ref()
+        .and_then(|routing| routing.input_recovery.watchdog.get())
+        .map(|registrar| {
+            let socket = stream.try_clone().map_err(|error| {
+                X11SetupSocketError::new(format!("failed to clone watchdog socket: {error}"))
+            })?;
+            registrar
+                .attach_transport(socket)
+                .map_err(|(cause, _socket)| {
+                    X11SetupSocketError::client_failure(format!(
+                        "private connection supervisor refused setup: {cause:?}"
+                    ))
+                })
+        })
+        .transpose()?;
     let X11ClientAdmissionContext {
         authorization,
         admission_policy,
         worker_admission,
     } = admission;
+    if admission_policy.is_none() && client_routing.as_ref().is_some_and(|routing| routing.input_recovery.lifecycle.get().is_some()) {
+        return Err(X11SetupSocketError::new("private instance requires a current admission policy"));
+    }
     let peer_credentials = if admission_policy.is_some() {
         x11_peer_credentials(stream)?
     } else {
@@ -355,9 +459,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         stream,
         authorization,
         |setup_request| {
+            let Some((setup_authentication, verified_private_input)) =
+                authorization.verified_authentication(setup_request)
+            else {
+                return Ok(None);
+            };
             if let Some(policy) = admission_policy.as_ref() {
                 let request = XServerFrontendAdmissionRequest {
-                    setup_authentication: authorization.authentication_method(),
+                    setup_authentication,
+                    verified_private_input,
                     peer_credentials,
                 };
                 match policy.admit(request) {
@@ -402,6 +512,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         X11SetupSocketError::new("Sophia X Server Frontend did not retain a setup client lease")
     })?;
     let client = client_lease.client;
+    // Setup allocation, before registry attachment and worker exposure. A
+    // repeated connection preserves the focus already applied in its namespace.
+    state.runtime.lock().map_err(|_| {
+        X11SetupSocketError::new("X11 authority runtime unavailable during focus preparation")
+    })?.prepare_input_focus_namespace(namespace);
     // Publish the window-manager advertisement before the client can ask for it.
     // A toolkit reads it during startup, and one that finds nothing concludes
     // no manager is running and takes an unmanaged path for the rest of its
@@ -450,6 +565,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         X11SetupSocketError::new(format!("failed to clone X11 output socket: {error}"))
     })?));
     let output_control_pending = Arc::new(AtomicUsize::new(0));
+    // One per connection, beside the output it governs. Every post-exposure
+    // writer of this socket is given it, so a wire left holding the beginning
+    // of an event nobody can finish stops all of them and not just whoever
+    // discovered it.
+    let output_wire = Arc::new(X11WirePermission::open());
     let protocol_routing = client_routing.clone();
     let (route_registration, input_receiver, control_channels, protocol_receiver) =
         if let Some(routing) = client_routing {
@@ -469,9 +589,76 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     )));
                 }
             };
+            // BOUND HERE, BEFORE THE FIRST THING THAT CAN REFUSE.
+            //
+            // This is the one place where the accepted stream and the
+            // registration minted for it are both in hand and neither has been
+            // anywhere else, which is what makes the pairing sound rather than
+            // asserted. It is also the first instruction after publication:
+            // the row is live from the line above, so a capsule can already be
+            // on this queue, and every attachment below can refuse. A binding
+            // placed after them left each of those refusals dropping the
+            // receiver -- the place reserved for this connection survived, and
+            // the accepted work it was reserved for did not. An empty place is
+            // not custody of anything.
+            //
+            // What to do with a refused binding is decided in the registry,
+            // beside the other rules about accepted work. NOTHING IS STARTED
+            // HERE: binding is preparation, and no ordered worker exists.
+            // THE AUTHORITATIVE STOP, minted here and given to the binding,
+            // so the serving owner a later promotion makes carries this one
+            // and a registered worker started on it answers to this one.
+            let ordered_stop = Arc::new(AtomicBool::new(false));
+            if registration
+                .bind_ordered_output_stoppable(
+                    channels.ordered,
+                    &output_stream,
+                    &output_wire,
+                    &output_control_pending,
+                    &ordered_stop,
+                )
+                .is_err()
+            {
+                // This registration is new, so it holds no custody and this
+                // cannot happen. It refuses rather than replacing a custody
+                // that may already hold accepted capsules.
+                let _ = state.release_client(client);
+                return Err(X11SetupSocketError::new(
+                    "X11 ordered output was already bound for this client".to_string(),
+                ));
+            }
+            // Keep the actual connection projection with this exact route
+            // registration before any writer can observe or mutate it. Private
+            // preparation may come before or after this setup edge.
+            if let Some(context) = admission { routing.attach_private_lifecycle(&registration, context)?; }
+            routing.attach_connection_state(
+                &registration,
+                namespace,
+                core_event_selections.clone(),
+                focused_surface_window.clone(),
+            ).map_err(|error| X11SetupSocketError::new(format!(
+                "failed to register X11 applied connection state: {error:?}"
+            )))?;
             routing.input_recovery.attach(client, stream.try_clone().map_err(|error|
                 X11SetupSocketError::new(format!("failed to clone recovery socket: {error}")))?)
                 .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
+            // READINESS FOR A REGISTERED ORDERED-OUTPUT WORKER, published once
+            // on this connection's own record, only now that its setup is
+            // complete: the byte order the handshake fixed, the sequence this
+            // dispatch advances, the stop the binding carries, and a second
+            // independent handle on the socket for whoever must interrupt a
+            // blocked write without the output mutex. NOTHING IS STARTED
+            // HERE. A handle that cannot be taken publishes nothing, so no
+            // worker will ever start for this connection and nothing exists
+            // that could not be collected; the accepted work stays retained.
+            if let Ok(interrupt) = stream.try_clone() {
+                let _ = registration.publish_worker_readiness(PrivateWorkerReadiness {
+                    byte_order: setup.byte_order,
+                    sequence: event_sequence.clone(),
+                    stop: ordered_stop,
+                    interrupt,
+                });
+            }
             (
                 Some(registration),
                 Some(X11InputEventReceiver::Routed {
@@ -482,27 +669,71 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 Some(X11ControlChannels::ClientBound {
                     receiver: channels.control,
                     acknowledgements: routing.acknowledgement_sender.clone(),
+                    // Present exactly when this registry belongs to a private
+                    // instance. Without it a writer holds a registration token
+                    // and has nowhere to report its outcome.
+                    completion: routing.control_completion(),
                 }),
                 Some(channels.protocol),
             )
         } else {
             (None, input_receiver, control_channels, None)
         };
+    let control_cleanup_source = match (protocol_routing.as_ref(), route_registration.as_ref()) {
+        (Some(routing), Some(registration)) => routing.prepare_control_source(registration, state, resource_id_range, PrivateControlClientTables {
+            windows: surface_windows.clone(), rules: metadata_rules.clone(), generations: metadata_generations.clone(),
+        })?,
+        _ => None,
+    };
     let mut last_published_observation = None;
     let standalone_query_authority = if protocol_routing.is_none() {
         Some(state.runtime.lock()
             .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
             .shared_input_authority())
     } else { None };
-    state.runtime.lock()
-        .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
-        .input_authority_mut().register_query_client(namespace, client.raw());
-    let input_writer = input_receiver
+    // Declared before the first spawn, so every path out from here owns the
+    // shutdown of whatever has already started, and its own handle on the
+    // socket comes with it -- a writer blocked in a write holds the mutex that
+    // anything else would have to take first. Taken before any worker exists,
+    // so a descriptor that cannot be had refuses the connection rather than
+    // starting workers whose shutdown has no way to reach them.
+    //
+    // And taken before this client is registered as a query owner, so that
+    // refusing leaves nothing registered to roll back. A standalone client has
+    // no route registration whose drop would clean that up, and the device pin
+    // releases only its device bundle, so a refusal after it would leave the
+    // namespace reporting an owner that never finished starting.
+    //
+    // Declared after the route registration on purpose: locals drop in reverse,
+    // so the writers are stopped and joined before the registration they were
+    // serving goes.
+    let writer_transport = X11ClientWriters::take_transport(&output_stream)?;
+    let private_query = if let (Some(routing), Some(registration)) = (protocol_routing.as_ref(), route_registration.as_ref()) {
+        let lease = registration.lifecycle.lock().map_err(|_| X11SetupSocketError::new("private lease unavailable"))?;
+        match lease.as_ref() {
+            Some(lease) => {
+                let owner = routing.input_recovery.lifecycle.get().ok_or_else(|| X11SetupSocketError::new("private lease lost its owner"))?;
+                if !lease.belongs_to(owner) { return Err(X11SetupSocketError::new("private lease belongs to another origin")); }
+                Some((owner.clone(), lease.gate()))
+            }
+            None => None,
+        }
+    } else { None };
+    let mut owned = X11ClientLifetime {
+        // Registered only once the handle that can end a stalled write is in
+        // hand, so a refusal registers nothing that would need taking back.
+        query_owner: X11QueryOwner::register(&state.runtime, namespace, client, private_query)?,
+        writers: X11ClientWriters::owning(writer_transport),
+        watchdog_transport,
+    };
+    let writers = &mut owned.writers;
+    writers.input = input_receiver
         .map(|receiver| {
             spawn_x11_input_event_writer(
                 X11InputWriterState {
                     stream: output_stream.clone(),
                     output_control_pending: output_control_pending.clone(),
+                    output_wire: output_wire.clone(),
                     byte_order: setup.byte_order,
                     sequence: event_sequence.clone(),
                     focused_surface_window: focused_surface_window.clone(),
@@ -521,11 +752,14 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             )
         })
         .transpose()?;
-    let control_writer = control_channels
+    #[cfg(all(test, unix))]
+    routing_tests::m3_acceptance::writers_started(writers, protocol_routing.as_ref());
+    writers.control = control_channels
         .map(|channels| {
             spawn_x11_control_writer(
                 output_stream.clone(),
                 output_control_pending.clone(),
+                output_wire.clone(),
                 setup.byte_order,
                 event_sequence.clone(),
                 focused_surface_window.clone(),
@@ -546,11 +780,14 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             )
         })
         .transpose()?;
-    let protocol_writer = protocol_receiver
+    #[cfg(all(test, unix))]
+    routing_tests::m3_acceptance::writers_started(writers, protocol_routing.as_ref());
+    writers.protocol = protocol_receiver
         .map(|receiver| {
             spawn_x11_protocol_event_writer(
                 output_stream.clone(),
                 output_control_pending.clone(),
+                output_wire.clone(),
                 setup.byte_order,
                 event_sequence.clone(),
                 client,
@@ -558,6 +795,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             )
         })
         .transpose()?;
+    #[cfg(all(test, unix))]
+    routing_tests::m3_acceptance::writers_started(writers, protocol_routing.as_ref());
     state.register_client(client_lease)?;
     if let Some((worker_id, sender)) = worker_admission
         && let Some(lease) = admission_lease.as_ref()
@@ -571,6 +810,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
 
     let mut pending_observation = None::<X11DispatchObservation>;
     let mut dispatch_started = false;
+    let mut pending_focus_publication = None::<X11PendingFocusPublication>;
     let mut dispatch_complete = false;
     let result = (|| {
         // SCM_RIGHTS on a Unix stream is an in-band barrier, but recvmsg can
@@ -579,6 +819,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         // request declares its FD arity instead of binding them to the first
         // header returned by recvmsg.
         let mut pending_request_fds = Vec::new();
+        // Created on the first block rather than per connection: most clients
+        // never wait behind another's server grab, and an eventfd each would
+        // be a descriptor per client for a case that rarely arises.
+        let mut grab_wait_notifier: Option<ConnectionNotifier> = None;
         while let Some(received) = read_x11_core_request(stream, setup.byte_order)? {
             let major_opcode = received.major_opcode;
             let request = received.bytes;
@@ -590,16 +834,78 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let ancillary_fds = received.fds;
             let mut received_fds = Vec::new();
             loop {
-                let server_owner = lock_x11_request_runtime(
-                    &state.runtime,
-                    &state.control_runtime_pending,
-                )?
-                    .input_authority_mut()
-                    .server_owner(namespace);
-                if server_owner.is_none_or(|owner| owner == client.raw()) {
+                let holder_present = {
+                    let runtime = lock_x11_request_runtime(
+                        &state.runtime,
+                        &state.control_runtime_pending,
+                    )?;
+                    let authority = runtime.input_authority_mut();
+                    authority
+                        .server_owner(namespace)
+                        .is_some_and(|owner| owner != client.raw())
+                };
+                if !holder_present {
                     break;
                 }
-                std::thread::sleep(Duration::from_millis(1));
+                // Only now is a wake source worth its descriptor. Creating it
+                // before the check above would have meant an eventfd per
+                // client for a case most clients never reach, and creating it
+                // under the guard would put a syscall inside the lock.
+                if grab_wait_notifier.is_none() {
+                    grab_wait_notifier = Some(ConnectionNotifier::new().map_err(|error| {
+                        X11SetupSocketError::new(format!(
+                            "failed to create a server-grab wait notifier: {error}"
+                        ))
+                    })?);
+                }
+                let notifier = grab_wait_notifier
+                    .as_ref()
+                    .expect("the notifier was just created");
+                let blocked = {
+                    let runtime = lock_x11_request_runtime(
+                        &state.runtime,
+                        &state.control_runtime_pending,
+                    )?;
+                    let mut authority = runtime.input_authority_mut();
+                    if authority
+                        .server_owner(namespace)
+                        .is_none_or(|owner| owner == client.raw())
+                    {
+                        // Released while the notifier was being made.
+                        false
+                    } else {
+                        // Registered under the same guard that read the owner.
+                        // Registering after releasing it would let a release
+                        // in the gap wake nobody, parking this connection
+                        // until some unrelated notification arrived.
+                        authority.await_server_grab(namespace, notifier);
+                        true
+                    }
+                };
+                if !blocked {
+                    break;
+                }
+                // No deadline: the wait ends when the grab is released, the
+                // epoch is revoked, the holder disconnects, or this peer
+                // departs. A backstop timer here would convert a missing wake
+                // into a slow poll, hiding the defect instead of failing on it.
+                // A poll failure over descriptors this server owns is a
+                // local fault, not peer behaviour, so it keeps the
+                // unclassified constructor and reaches the reaper as the
+                // server problem it is.
+                let wake = ConnectionWait::new(stream.as_fd(), notifier)
+                    .wait_until(None)
+                    .map_err(|error| {
+                        X11SetupSocketError::new(format!(
+                            "failed to wait for the server grab to be released: {error}"
+                        ))
+                    })?;
+                match wake {
+                    ConnectionWake::Notified | ConnectionWake::Deadline => continue,
+                    // The peer is gone. Its remaining requests are moot, and
+                    // dispatch ends the same way an ordinary EOF ends it.
+                    ConnectionWake::Departed => return Ok(()),
+                }
             }
             sequence = sequence.wrapping_add(1);
             let transaction = state.allocate_transaction()?;
@@ -942,7 +1248,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     };
                     let selection_property_read = selection_property_read_trace(&request);
                     let requested_input_focus = match &request {
-                        crate::XWireRequest::SetInputFocus { focus, .. } => Some(*focus),
+                        crate::XWireRequest::SetInputFocus { focus, revert_to, .. } => Some((*focus, *revert_to)),
                         _ => None,
                     };
                     let mapped_window = match &request {
@@ -1116,7 +1422,18 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             expected.0.handle == current.0.handle
                         })
                     });
+                    let private_focus_routing = requested_input_focus.and(protocol_routing.as_ref())
+                        .filter(|routing| routing.private_applied.get().is_some());
                     let mut output = match explicit_pointer_preparation {
+                        _ if private_focus_routing.is_some() => {
+                            runtime.begin_dispatch();
+                            let (focus, revert_to) = requested_input_focus.expect("focus guard");
+                            let (output, pending) = x11_dispatch_private_focus(&mut runtime, dispatch_context, client,
+                                &focused_surface_window, private_focus_routing.expect("private owner"), focus, revert_to,
+                                state.runtime.clone(), state.control_runtime_pending.clone(), output_stream.clone(), output_control_pending.clone(), output_wire.clone())?;
+                            pending_focus_publication = pending;
+                            output
+                        }
                         _ if pixmap_export_changed => {
                             runtime.begin_dispatch();
                             XDispatchResult {
@@ -1304,24 +1621,30 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 };
                                 if recipient == client {
                                     output.outputs.push(crate::XClientOutput::Event(event));
-                                } else if let Err(error) =
-                                    routing.route_protocol(recipient, event)
+                                } else if let Err(refusal) =
+                                    routing.route_protocol_to_watcher(recipient, event)
                                 {
-                                    if let XServerFrontendRouteError::ClientQueueFull {
-                                        client: stalled,
-                                    } = error
-                                    {
-                                        routing
-                                            .disconnect_saturated_recipient(stalled)
-                                            .map_err(|error| {
-                                                X11SetupSocketError::new(format!(
-                                                    "failed to end a stalled XFixes watcher: {error}"
-                                                ))
-                                            })?;
-                                    } else if !x11_recipient_is_gone(&error) {
-                                        return Err(X11SetupSocketError::new(format!(
-                                            "failed to route an XFixes selection change: {error}"
-                                        )));
+                                    match refusal {
+                                        // ENDED BY THE IDENTITY THAT STALLED. The
+                                        // number alone could by now be a successor's.
+                                        XServerFrontendWatcherRefusal::Stalled(stalled) => {
+                                            let watcher = stalled.client();
+                                            routing
+                                                .disconnect_saturated_recipient(stalled)
+                                                .map_err(|error| {
+                                                    X11SetupSocketError::new(format!(
+                                                        "failed to end a stalled XFixes watcher {}: {error}",
+                                                        watcher.raw()
+                                                    ))
+                                                })?;
+                                        }
+                                        XServerFrontendWatcherRefusal::Route(error) => {
+                                            if !x11_recipient_is_gone(&error) {
+                                                return Err(X11SetupSocketError::new(format!(
+                                                    "failed to route an XFixes selection change: {error}"
+                                                )));
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1469,7 +1792,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                     })?;
                             }
                         }
-                        if let Some(focus) = requested_input_focus {
+                        if let Some((focus, _)) = requested_input_focus
+                            && private_focus_routing.is_none()
+                        {
                             focused_surface_window.store(focus.local.raw(), Ordering::Release);
                         }
                         let mut selections = core_event_selections.lock().map_err(|_| {
@@ -1596,19 +1921,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 })?;
                         }
                         if let Some((affect_which, clear, select_all, state)) = xkb_selection {
-                            let mut details = xkb_state_details.load(Ordering::Acquire);
-                            if clear & 4 != 0 {
-                                details = 0;
-                            }
-                            if select_all & 4 != 0 {
-                                details = u16::MAX;
-                            }
-                            if affect_which & 4 != 0
-                                && let Some((affect, selected)) = state
-                            {
-                                details = (details & !affect) | (selected & affect);
-                            }
-                            xkb_state_details.store(details, Ordering::Release);
+                            selections.select_xkb_state_notifications(
+                                &xkb_state_details, affect_which, clear, select_all, state,
+                            );
                         }
                     }
                     if queued_present
@@ -2282,11 +2597,26 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let encoded_outputs = output.encoded_outputs(setup.byte_order);
             let receipt = observer(pending_observation.take().expect("one observation per allocated ticket"))?;
             if let Some(receipt) = receipt { last_published_observation = Some(receipt); }
-            {
+            if let Some(pending) = pending_focus_publication.as_mut() {
+                if !server_reply_fds.is_empty() {
+                    return Err(X11SetupSocketError::new("private core focus cannot carry descriptor replies"));
+                }
+                pending.records = Some(encoded_outputs);
+                pending.write_output(&event_sequence, sequence)?;
+                pending_focus_publication = None;
+            } else {
+                // No stop flag: this is the dispatch thread itself, and it is
+                // the thread that will later stop and join the writers. There
+                // is nothing for it to observe being told by, so the wait
+                // stays uncancellable here and is bounded instead by control
+                // output finishing.
                 let mut output_stream = lock_x11_non_control_output(
                     &output_stream,
+                    &output_wire,
                     &output_control_pending,
-                )?;
+                    None,
+                )?
+                .expect("an uncancellable wait yields the socket");
                 if !encoded_outputs.is_empty() || !server_reply_fds.is_empty() {
                     for (index, bytes) in encoded_outputs.into_iter().enumerate() {
                         let fds = if index == 0 {
@@ -2360,40 +2690,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     } else {
         Ok(())
     };
-    let writer_result: Result<(), X11SetupSocketError> = (|| {
-        if let Some(writer) = input_writer {
-            writer.stop.store(true, Ordering::Release);
-            writer.thread.join().map_err(|_| {
-                X11SetupSocketError::new("X11 input event writer thread panicked")
-            })??;
-        }
-        if let Some(writer) = control_writer {
-            writer.stop.store(true, Ordering::Release);
-            writer
-                .thread
-                .join()
-                .map_err(|_| X11SetupSocketError::new("X11 control writer thread panicked"))??;
-        }
-        if let Some(writer) = protocol_writer {
-            writer.stop.store(true, Ordering::Release);
-            writer.thread.join().map_err(|_| {
-                X11SetupSocketError::new("X11 protocol event writer thread panicked")
-            })??;
-        }
-        Ok(())
-    })();
-    state
-        .runtime
-        .lock()
-        .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
-        .input_authority_mut()
-        .cleanup_owner(client.raw());
+    // Every writer is stopped before any is joined, and every one is joined
+    // whatever the others did. Returning on the first failure left the rest
+    // running, never told to stop, against a stream about to close.
+    let writer_result = writers.shut_down().outcome;
+    owned.query_owner.finish()?;
     if let Some(routing) = protocol_routing.as_ref() {
         let mut pointers = routing.pointer_state.lock()
             .map_err(|_| X11SetupSocketError::new("X11 pointer state lock poisoned"))?;
         let authority = routing.input_authority.lock()
             .map_err(|_| X11SetupSocketError::new("X11 input authority lock poisoned"))?;
-        if !authority.query_namespace_active(namespace) {
+        if routing.input_recovery.lifecycle.get().is_none() && !authority.query_namespace_active(namespace) {
             pointers.retain(|(owner, _), _| *owner != namespace);
         }
     }
@@ -2402,12 +2709,20 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         .release_client_device_bundle(client.raw());
     let client_lease = state.release_client(client)?;
     debug_assert_eq!(client_lease.resource_id_range, resource_id_range);
-    let mut release = release_x11_client_lease(state, namespace, client_lease)?;
+    let mut release = if let Some(source) = &control_cleanup_source {
+        release_x11_client_lease_with_control(state, namespace, client_lease, Some(source))?
+    } else {
+        release_x11_client_lease(state, namespace, client_lease)?
+    };
     release.released_dma_bufs.extend(state.runtime.lock()
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
         .take_retired_pixmap_registrations(namespace));
     release.released_dma_bufs.sort_unstable();
     release.released_dma_bufs.dedup();
+    if let Some(source) = &control_cleanup_source {
+        source.teardown.lock().map_err(|_| X11SetupSocketError::new("control teardown unavailable"))?
+            .removed.as_mut().ok_or_else(|| X11SetupSocketError::new("control removal receipt missing"))?.resources = release.clone();
+    }
     // The selections this client owned ended with it, and its watchers are
     // owed that. Drained before the subscriptions are retired below, because
     // those are what name the recipients.
@@ -2432,7 +2747,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 if recipient == client {
                     continue;
                 }
-                if let Err(error) = routing.route_protocol(
+                if let Err(refusal) = routing.route_protocol_to_watcher(
                     recipient,
                     crate::XClientEvent::XfixesSelectionNotify {
                         sequence: 0,
@@ -2444,18 +2759,27 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         selection_time: retired.current.selection_timestamp,
                     },
                 ) {
-                    if let XServerFrontendRouteError::ClientQueueFull { client: stalled } = error {
-                        routing
-                            .disconnect_saturated_recipient(stalled)
-                            .map_err(|error| {
-                                X11SetupSocketError::new(format!(
-                                    "failed to end a stalled XFixes watcher: {error}"
-                                ))
-                            })?;
-                    } else if !x11_recipient_is_gone(&error) {
-                        return Err(X11SetupSocketError::new(format!(
-                            "failed to route a departed peer's selection change: {error}"
-                        )));
+                    match refusal {
+                        // ENDED BY THE IDENTITY THAT STALLED. The number alone
+                        // could by now be a successor's.
+                        XServerFrontendWatcherRefusal::Stalled(stalled) => {
+                            let watcher = stalled.client();
+                            routing
+                                .disconnect_saturated_recipient(stalled)
+                                .map_err(|error| {
+                                    X11SetupSocketError::new(format!(
+                                        "failed to end a stalled XFixes watcher {}: {error}",
+                                        watcher.raw()
+                                    ))
+                                })?;
+                        }
+                        XServerFrontendWatcherRefusal::Route(error) => {
+                            if !x11_recipient_is_gone(&error) {
+                                return Err(X11SetupSocketError::new(format!(
+                                    "failed to route a departed peer's selection change: {error}"
+                                )));
+                            }
+                        }
                     }
                 }
             }
@@ -2546,7 +2870,25 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 })?;
         }
     }
+    // AFTER THE WRITERS ARE JOINED, AND THAT ORDER IS LOAD-BEARING. The input
+    // writer's recovery guard disconnects this client BY NUMBER when its
+    // thread ends. `writers.shut_down()` above stopped and joined every
+    // writer synchronously, so that action has completed here, while this
+    // registration -- and with it the number's claim -- is still alive; it
+    // can therefore reach only this connection's ledger entry. Every early
+    // return and unwind between the writers' spawn and here keeps the same
+    // order for a different reason: `owned` is declared after
+    // `route_registration`, so it is dropped first. Nothing enforces either
+    // by type. A registration dropped before its writers are joined would
+    // release the number under a by-number act still to come.
     drop(route_registration);
+    // STAGE-ONLY SCHEDULING HOOK, TEST BUILDS ONLY: the interval after this
+    // connection's registration has gone and before the rest of its frame --
+    // the disconnect observer, revocation, completion -- has run. A control
+    // that must show that a registration's destruction is not the frame's
+    // completion pauses the frame here; production builds compile nothing.
+    #[cfg(all(test, unix))]
+    routing_tests::stage_after_registration_drop(protocol_routing.as_ref(), client);
     let cleanup_observer_result = if release.removed_surfaces.is_empty()
         && release.released_dma_bufs.is_empty()
         && release.released_fences.is_empty()
@@ -2563,7 +2905,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             metadata_candidates: Vec::new(),
         };
         
-        observer(X11DispatchObservation {
+        let observation = X11DispatchObservation {
             transaction,
             client,
             admission: admission_lease.as_ref().map(|lease| lease.context()),
@@ -2586,8 +2928,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             released_dma_bufs: release.released_dma_bufs,
             released_fences: release.released_fences,
             server_reply_fd_count: 0,
-        }).map(|_| ())
+        };
+        if let Some(source) = &control_cleanup_source {
+            source.retain_teardown_publication(&observation)?;
+        }
+        observer(observation).map(|_| ())
     };
+    if cleanup_observer_result.is_ok() && let Some(source) = &control_cleanup_source {
+        source.finish_teardown()?;
+    }
     let admission_result = admission_lease.as_mut().map_or(Ok(()), |lease| {
         lease.revoke().map_err(|error| {
             X11SetupSocketError::new(format!("failed to revoke X11 client admission: {error}"))

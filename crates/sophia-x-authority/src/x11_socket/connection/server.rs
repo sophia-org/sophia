@@ -192,6 +192,7 @@ pub fn run_x11_core_socket_server_once_session_channels(
             control_channels: Some(X11ControlChannels::Routed {
                 receiver: control_receiver,
                 acknowledgements: control_ack_sender,
+                completion: None,
             }),
             client_routing: None,
         },
@@ -286,6 +287,10 @@ struct XAuthorityBoundedEgressEnvelope {
     client: Option<XServerFrontendClientId>,
     observed_batch: bool,
     waiting_since: Option<Instant>,
+    /// Whether this envelope's wait was cancelled. A cancelled envelope is
+    /// still unsent work while it holds its batch; it is not resubmitted and
+    /// not reported twice.
+    cancelled: bool,
 }
 
 #[cfg(unix)]
@@ -299,6 +304,7 @@ impl XAuthorityBoundedEgressEnvelope {
             client,
             observed_batch,
             waiting_since: None,
+            cancelled: false,
         }
     }
 }
@@ -366,9 +372,25 @@ impl XAuthorityOrderedEgress {
         }
     }
 
+    /// Cancel every submission, present and future.
+    ///
+    /// UNDER THE ORDER LOCK, OR THE WAITER SLEEPS PAST IT. A submitter reads
+    /// the cancellation flag under that lock and then waits on `turn`; a
+    /// store and a notification made outside the lock can land between its
+    /// read and its wait, and the only notification it will ever get has
+    /// gone by. Holding the lock while storing and notifying leaves the
+    /// waiter exactly two places to be: before its read, where it sees the
+    /// flag, or inside the wait, where it is woken. A poisoned lock still
+    /// notifies -- cancellation is what a poisoned service needs most -- and
+    /// nothing here is called with the lock already held.
     fn cancel(&self) {
+        let order = match self.state.lock() {
+            Ok(order) => order,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         self.cancellation.store(true, Ordering::Release);
         self.turn.notify_all();
+        drop(order);
     }
 
     fn cancelled(&self) -> bool {
@@ -453,10 +475,19 @@ impl XAuthorityOrderedEgress {
         Ok(())
     }
 
+    /// Cancel an envelope's wait, in place and once.
+    ///
+    /// CANCELLING A WAIT IS NOT DELIVERING THE BATCH. The envelope keeps its
+    /// batch and stays in its owner's slot; what this reports is that the
+    /// wait ended in shutdown. A second call reports nothing.
     fn cancel_envelope(
         &self,
         envelope: &mut XAuthorityBoundedEgressEnvelope,
     ) -> Result<(), X11SetupSocketError> {
+        if envelope.cancelled {
+            return Ok(());
+        }
+        envelope.cancelled = true;
         self.finish_wait(
             envelope,
             XAuthorityBackpressureTelemetryKind::Shutdown,
@@ -549,13 +580,29 @@ impl XAuthorityOrderedEgress {
         }
     }
 
+    /// Submit the envelope in `slot` without blocking, leaving it there while
+    /// it waits.
+    ///
+    /// IN PLACE, BECAUSE THE OBSERVER IS CALLED FROM HERE. `begin_wait`
+    /// reports to a caller-supplied observer while the envelope is still
+    /// unsent; an envelope moved into a local for that call was destroyed by
+    /// a panic in the observer before any owner could retain it. The envelope
+    /// leaves the slot only once it has been advanced -- sent, or carrying no
+    /// batch -- or cancelled. A slot that still holds it after this returns,
+    /// or after this unwinds, holds exactly the unresolved work.
     fn try_submit(
         &self,
-        mut envelope: XAuthorityBoundedEgressEnvelope,
-    ) -> Result<Option<XAuthorityBoundedEgressEnvelope>, X11SetupSocketError> {
+        slot: &mut Option<XAuthorityBoundedEgressEnvelope>,
+    ) -> Result<(), X11SetupSocketError> {
+        let Some(envelope) = slot.as_mut() else {
+            return Ok(());
+        };
         if self.cancelled() {
-            self.cancel_envelope(&mut envelope)?;
-            return Ok(None);
+            // Cancelled between the caller's check and this call: the wait
+            // ends, the envelope STAYS in the slot with its batch. Clearing
+            // the slot here was losing an unsent batch.
+            self.cancel_envelope(envelope)?;
+            return Ok(());
         }
         let state = self.state()?;
         let ticket = envelope.transaction.raw();
@@ -566,30 +613,32 @@ impl XAuthorityOrderedEgress {
         }
         if ticket > state.next_ticket {
             drop(state);
-            self.begin_wait(&mut envelope)?;
-            return Ok(Some(envelope));
+            self.begin_wait(envelope)?;
+            return Ok(());
         }
         drop(state);
         let Some(batch) = envelope.batch.take() else {
-            self.advance(&mut envelope, false)?;
-            return Ok(None);
+            self.advance(envelope, false)?;
+            *slot = None;
+            return Ok(());
         };
         match self.sender.try_send(batch) {
             Ok(()) => {
-                self.advance(&mut envelope, true)?;
-                Ok(None)
+                self.advance(envelope, true)?;
+                *slot = None;
+                Ok(())
             }
             Err(TrySendError::Full(batch)) => {
                 envelope.batch = Some(batch);
-                self.begin_wait(&mut envelope)?;
-                Ok(Some(envelope))
+                self.begin_wait(envelope)?;
+                Ok(())
             }
             Err(TrySendError::Disconnected(batch)) => {
                 envelope.batch = Some(batch);
                 self.transport_disconnected.store(true, Ordering::Release);
                 self.cancel();
                 self.finish_wait(
-                    &mut envelope,
+                    envelope,
                     XAuthorityBackpressureTelemetryKind::TransportFailure,
                     Some(XAuthorityBackpressureFailure::Disconnected),
                 )?;
@@ -637,186 +686,18 @@ pub fn run_x_server_frontend_routed_until_stopped_with_backpressure_observer(
         worker_egress.submit_blocking(XAuthorityBoundedEgressEnvelope::new(trace.transaction, batch))?;
         Ok(receipt)
     });
-    let mut accepting = true;
     let mut pending_raster_egress = None::<XAuthorityBoundedEgressEnvelope>;
-    let mut raster_fallbacks = XRasterFallbackCoalescer::default();
-    let service_result: Result<(), X11SetupSocketError> = (|| {
-        loop {
-            let mut progressed = false;
-            match service_commands.try_recv() {
-                Ok(XServerFrontendServiceCommand::UpdateWindowAllocationPreferences { snapshot, acknowledgement }) => {
-                    let outcome = frontend.update_window_allocation_preferences(snapshot)?;
-                    let _ = acknowledgement.try_send(outcome);
-                    progressed = true;
-                }
-                Ok(XServerFrontendServiceCommand::InstallDeviceBundle { bundle, acknowledgement }) => {
-                    let _ = acknowledgement.try_send(frontend.install_device_bundle(bundle));
-                    progressed = true;
-                }
-                Ok(XServerFrontendServiceCommand::MarkDeviceGenerationUnavailable { generation, acknowledgement }) => {
-                    let _ = acknowledgement.try_send(frontend.mark_device_generation_unavailable(generation));
-                    progressed = true;
-                }
-                Ok(XServerFrontendServiceCommand::StopAccepting) => {
-                    if accepting {
-                        accepting = false;
-                        progressed = true;
-                    }
-                }
-                Ok(XServerFrontendServiceCommand::DrainAndDisconnect) => {
-                    accepting = false;
-                    // Workers retain cleanup ownership and may still be
-                    // publishing accepted work. Do not cancel their egress.
-                    frontend.shutdown_all_client_workers()?;
-                    progressed = true;
-                }
-                Ok(XServerFrontendServiceCommand::StopAndDisconnect)
-                | Err(TryRecvError::Disconnected) => {
-                    accepting = false;
-                    if !ordered_egress.cancelled() {
-                        ordered_egress.cancel();
-                        if let Some(mut envelope) = pending_raster_egress.take() {
-                            ordered_egress.cancel_envelope(&mut envelope)?;
-                        }
-                        frontend.shutdown_all_client_workers()?;
-                        progressed = true;
-                    }
-                }
-                Ok(XServerFrontendServiceCommand::RevokeAdmission { admission }) => {
-                    progressed |= frontend.revoke_admission(admission)?;
-                }
-                Ok(XServerFrontendServiceCommand::UpdateOutputTopology {
-                    snapshot,
-                    acknowledgement,
-                }) => {
-                    let mut outcome = frontend.update_output_topology(snapshot.clone())?;
-                    if matches!(outcome, XAuthorityOutputUpdateOutcome::Applied { .. }) {
-                        let notifications = broker
-                            .registry
-                            .broadcast_randr_update(&snapshot)
-                            .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
-                        if let XAuthorityOutputUpdateOutcome::Applied {
-                            notifications: delivered,
-                            ..
-                        } = &mut outcome
-                        {
-                            *delivered = notifications;
-                        }
-                    }
-                    acknowledgement.try_send(outcome).map_err(|error| {
-                        X11SetupSocketError::new(format!(
-                            "failed to return Engine output topology acknowledgement: {error}"
-                        ))
-                    })?;
-                    progressed = true;
-                }
-                Err(TryRecvError::Empty) => {}
-            }
+    // Shared with the private service through the owned public broker. Its
+    // private producer hooks are no-ops on this public path.
+    let service_result = drive_routed_service(
+        &mut frontend,
+        &mut broker,
+        &service_commands,
+        &ordered_egress,
+        &observer,
+        &mut pending_raster_egress,
+    );
 
-            if !ordered_egress.cancelled() {
-                if pending_raster_egress.is_none() {
-                    match broker.try_recv_raster_requirements() {
-                        Ok(requirements) => {
-                            let transaction = frontend.state.allocate_transaction()?;
-                            let response = frontend
-                                .state
-                                .runtime
-                                .lock()
-                                .map_err(|_| {
-                                    X11SetupSocketError::new("X11 authority runtime lock poisoned")
-                                })?
-                                .apply_surface_raster_requirements(transaction, &requirements);
-                            match response {
-                                Ok(crate::XSurfaceRasterOutcome::Satisfied(response)) => {
-                                    raster_fallbacks.report_satisfied(
-                                        &requirements,
-                                        response.identity.source_content_generation,
-                                    );
-                                    let batch =
-                                        XAuthorityObservedTransactionBatch::from_raster_response(
-                                            *response,
-                                        );
-                                    pending_raster_egress =
-                                        Some(XAuthorityBoundedEgressEnvelope::new(
-                                            transaction,
-                                            Some(batch),
-                                        ));
-                                }
-                                Ok(crate::XSurfaceRasterOutcome::SampledFallback {
-                                    cause,
-                                    observed_content_generation,
-                                }) => {
-                                    pending_raster_egress = Some(
-                                        XAuthorityBoundedEgressEnvelope::new(transaction, None),
-                                    );
-                                    raster_fallbacks.report(
-                                        &requirements,
-                                        cause,
-                                        observed_content_generation,
-                                    );
-                                }
-                                Err(error) => {
-                                    pending_raster_egress = Some(
-                                        XAuthorityBoundedEgressEnvelope::new(transaction, None),
-                                    );
-                                    tracing::warn!(
-                                        "sophia_x11_raster_requirement schema=1 status=refused surface={:?} content_generation={} requirement_generation={} error={error:?}",
-                                        requirements.surface,
-                                        requirements.committed_content_generation,
-                                        requirements.requirement_generation,
-                                    );
-                                }
-                            }
-                            progressed = true;
-                        }
-                        Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
-                    }
-                }
-                if let Some(envelope) = pending_raster_egress.take() {
-                    let was_waiting = envelope.waiting_since.is_some();
-                    pending_raster_egress = ordered_egress.try_submit(envelope)?;
-                    progressed |= !was_waiting && pending_raster_egress.is_none();
-                }
-            }
-
-            if accepting {
-                while frontend.active_client_worker_count()
-                    < frontend.config().max_concurrent_clients().get()
-                {
-                    if !frontend
-                        .try_serve_next_concurrently_routed_traced(&broker, observer.clone())?
-                    {
-                        break;
-                    }
-                    progressed = true;
-                }
-            }
-            if !ordered_egress.cancelled() {
-                let routed = broker
-                    .route_pending()
-                    .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
-                progressed |= routed != 0;
-            }
-            let workers_before_reap = frontend.active_client_worker_count();
-            frontend.poll_client_workers()?;
-            progressed |= workers_before_reap != frontend.active_client_worker_count();
-            if ordered_egress.transport_disconnected() {
-                return Err(X11SetupSocketError::new(
-                    "X authority observed transaction channel is disconnected",
-                ));
-            }
-
-            if !accepting
-                && frontend.active_client_worker_count() == 0
-                && pending_raster_egress.is_none()
-            {
-                return Ok(());
-            }
-            if !progressed {
-                std::thread::sleep(Duration::from_millis(1));
-            }
-        }
-    })();
 
     let mut cleanup_failures = Vec::new();
     if service_result.is_err() {

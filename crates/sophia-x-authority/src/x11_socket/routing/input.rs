@@ -23,129 +23,8 @@ fn encode_xi_device_event(
     event_y: i16,
     flags: u32,
 ) -> Vec<u8> {
-    let (device, time, detail, root_x, root_y, state) = match event {
-        XAuthorityInputEvent::Key(key) => (
-            3,
-            key.time_msec,
-            u32::from(key.keycode),
-            0,
-            0,
-            key.state,
-        ),
-        XAuthorityInputEvent::Pointer(pointer) => (
-            2,
-            pointer.time_msec,
-            match pointer.kind {
-                XAuthorityPointerEventKind::Button { button, .. } => u32::from(button),
-                XAuthorityPointerEventKind::Axis { button, .. }
-                    if matches!(event_type, 4 | 5) =>
-                {
-                    u32::from(button)
-                }
-                XAuthorityPointerEventKind::Axis { .. } => 0,
-                XAuthorityPointerEventKind::Motion => 0,
-            },
-            pointer.root_x,
-            pointer.root_y,
-            pointer.state,
-        ),
-    };
-    let mut out = vec![0; 80];
-    out[0] = 35;
-    out[1] = crate::X_INPUT_MAJOR_OPCODE;
-    write_xi_u16(byte_order, &mut out[2..4], sequence);
-    write_xi_u16(byte_order, &mut out[8..10], event_type);
-    write_xi_u16(byte_order, &mut out[10..12], device);
-    write_xi_u32(byte_order, &mut out[12..16], time);
-    write_xi_u32(byte_order, &mut out[16..20], detail);
-    write_xi_u32(byte_order, &mut out[20..24], X_SETUP_DEFAULT_ROOT);
-    write_xi_u32(
-        byte_order,
-        &mut out[24..28],
-        u32::try_from(event_window.local.raw()).unwrap_or(0),
-    );
-    write_xi_u32(
-        byte_order,
-        &mut out[28..32],
-        u32::try_from(child_window.local.raw()).unwrap_or(0),
-    );
-    write_xi_u32(
-        byte_order,
-        &mut out[32..36],
-        (i32::from(root_x) << 16) as u32,
-    );
-    write_xi_u32(
-        byte_order,
-        &mut out[36..40],
-        (i32::from(root_y) << 16) as u32,
-    );
-    write_xi_u32(
-        byte_order,
-        &mut out[40..44],
-        (i32::from(event_x) << 16) as u32,
-    );
-    write_xi_u32(
-        byte_order,
-        &mut out[44..48],
-        (i32::from(event_y) << 16) as u32,
-    );
-    write_xi_u16(
-        byte_order,
-        &mut out[52..54],
-        if device == 2 { crate::X_INPUT_POINTER_SOURCE_ID } else { device },
-    );
-    write_xi_u32(byte_order, &mut out[56..60], flags);
-    write_xi_u32(byte_order, &mut out[72..76], u32::from(state & 0xff));
-    let buttons = (1_u8..=5).fold(0_u32, |buttons, button| {
-        let core_mask = 1_u16 << (u32::from(button) + 7);
-        if state & core_mask != 0 {
-            buttons | (1_u32 << button)
-        } else {
-            buttons
-        }
-    });
-    if buttons != 0 {
-        write_xi_u16(byte_order, &mut out[48..50], 1);
-        match byte_order {
-            XByteOrder::LittleEndian => out.extend_from_slice(&buttons.to_le_bytes()),
-            XByteOrder::BigEndian => out.extend_from_slice(&buttons.to_be_bytes()),
-        }
-    }
-    if let XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
-        kind:
-            XAuthorityPointerEventKind::Axis {
-                horizontal_position_v120,
-                vertical_position_v120,
-                ..
-            },
-        ..
-    }) = event
-        && event_type == 6
-        && (horizontal_position_v120.is_some() || vertical_position_v120.is_some())
-    {
-        write_xi_u16(byte_order, &mut out[50..52], 1);
-        let mut mask = 0u8;
-        if horizontal_position_v120.is_some() {
-            mask |= 1u8 << u32::from(crate::X_POINTER_HORIZONTAL_SCROLL_VALUATOR);
-        }
-        if vertical_position_v120.is_some() {
-            mask |= 1u8 << u32::from(crate::X_POINTER_VERTICAL_SCROLL_VALUATOR);
-        }
-        out.extend_from_slice(&[mask, 0, 0, 0]);
-        for position in [horizontal_position_v120, vertical_position_v120]
-            .into_iter()
-            .flatten()
-        {
-            crate::client_output::push_xi_fp3232(
-                byte_order,
-                &mut out,
-                i64::from(position) << 32,
-            );
-        }
-    }
-    let length = u32::try_from((out.len() - 32) / 4).unwrap_or(u32::MAX);
-    write_xi_u32(byte_order, &mut out[4..8], length);
-    out
+    encode_xi_device_frame(byte_order, sequence, event_type, event, event_window,
+        child_window, event_x, event_y, flags).as_bytes().to_vec()
 }
 
 #[cfg(unix)]
@@ -156,63 +35,8 @@ fn encode_xi_crossing_event(
     event: XAuthorityInputEvent,
     event_window: XResourceId,
 ) -> Vec<u8> {
-    let (device, time, root_x, root_y, event_x, event_y, state) = match event {
-        XAuthorityInputEvent::Key(key) => (3, key.time_msec, 0, 0, 0, 0, key.state),
-        XAuthorityInputEvent::Pointer(pointer) => (
-            2,
-            pointer.time_msec,
-            pointer.root_x,
-            pointer.root_y,
-            pointer.event_x,
-            pointer.event_y,
-            pointer.state,
-        ),
-    };
-    let mut out = vec![0; 72];
-    out[0] = 35;
-    out[1] = crate::X_INPUT_MAJOR_OPCODE;
-    write_xi_u16(byte_order, &mut out[2..4], sequence);
-    write_xi_u32(byte_order, &mut out[4..8], 10);
-    write_xi_u16(byte_order, &mut out[8..10], event_type);
-    write_xi_u16(byte_order, &mut out[10..12], device);
-    write_xi_u32(byte_order, &mut out[12..16], time);
-    write_xi_u16(
-        byte_order,
-        &mut out[16..18],
-        if device == 2 { crate::X_INPUT_POINTER_SOURCE_ID } else { device },
-    );
-    out[18] = 0;
-    out[19] = 3;
-    write_xi_u32(byte_order, &mut out[20..24], X_SETUP_DEFAULT_ROOT);
-    write_xi_u32(
-        byte_order,
-        &mut out[24..28],
-        u32::try_from(event_window.local.raw()).unwrap_or(0),
-    );
-    write_xi_u32(
-        byte_order,
-        &mut out[32..36],
-        (i32::from(root_x) << 16) as u32,
-    );
-    write_xi_u32(
-        byte_order,
-        &mut out[36..40],
-        (i32::from(root_y) << 16) as u32,
-    );
-    write_xi_u32(
-        byte_order,
-        &mut out[40..44],
-        (i32::from(event_x) << 16) as u32,
-    );
-    write_xi_u32(
-        byte_order,
-        &mut out[44..48],
-        (i32::from(event_y) << 16) as u32,
-    );
-    out[48] = 1;
-    out[49] = 1;
-    write_xi_u32(byte_order, &mut out[64..68], u32::from(state & 0xff));
-    out
+    encode_xi_crossing_frame(byte_order, sequence, event_type, event, event_window)
+        .as_bytes().to_vec()
 }
 
 #[cfg(unix)]
@@ -321,10 +145,14 @@ enum X11ControlChannels {
     Routed {
         receiver: Receiver<XAuthorityClientControlCommand>,
         acknowledgements: SyncSender<XAuthorityClientControlAck>,
+        /// Present only on a private instance, where every accepted control
+        /// has a registration waiting for its outcome.
+        completion: Option<ControlCompletionRegistry>,
     },
     ClientBound {
         receiver: Receiver<X11RoutedControl>,
         acknowledgements: SyncSender<XAuthorityClientControlAck>,
+        completion: Option<ControlCompletionRegistry>,
     },
 }
 
@@ -340,6 +168,11 @@ impl X11ControlChannels {
                     Ok(route) if route.client == client => Ok(X11RoutedControl::Authority {
                         command: route.command,
                         focus: None,
+                        claim: None,
+                        // This path takes a command straight off the shared
+                        // receiver rather than from a private producer, so
+                        // there is no registration to carry.
+                        completion: None,
                     }),
                     // Drop one misaddressed route, then let the writer
                     // loop observe its stop flag before it receives again.
@@ -351,26 +184,137 @@ impl X11ControlChannels {
         }
     }
 
-    fn send_ack(
-        &self,
-        client: XServerFrontendClientId,
-        acknowledgement: XAuthorityControlAck,
-    ) -> Result<(), X11SetupSocketError> {
+    fn completion(&self) -> Option<&ControlCompletionRegistry> {
+        match self {
+            Self::Routed { completion, .. } | Self::ClientBound { completion, .. } => {
+                completion.as_ref()
+            }
+        }
+    }
+
+    /// Send, and say which of the three things happened.
+    ///
+    /// Delivered, retained because the channel is full, or not published at
+    /// all because the receiver is gone. The last two are different facts and
+    /// neither is a delivery.
+    fn emit_ack(&self, acknowledgement: XAuthorityClientControlAck) -> ControlPublication {
         match self {
             Self::Routed {
                 acknowledgements, ..
             }
             | Self::ClientBound {
                 acknowledgements, ..
-            } => match acknowledgements.try_send(XAuthorityClientControlAck {
-                client,
-                acknowledgement,
-            }) {
-                Ok(()) | Err(TrySendError::Disconnected(_)) => Ok(()),
-                Err(TrySendError::Full(_)) => Err(X11SetupSocketError::new(
-                    "X11 control acknowledgement channel is full",
-                )),
+            } => match acknowledgements.try_send(acknowledgement) {
+                Ok(()) => ControlPublication::Delivered,
+                Err(TrySendError::Disconnected(_)) => ControlPublication::ReceiverGone,
+                Err(TrySendError::Full(_)) => ControlPublication::Retained,
             },
+        }
+    }
+
+    /// Ask whether this writer may go on to apply a control.
+    ///
+    /// A writer is a continuation, not a beginning: routing the command into
+    /// this queue was already an authoritative effect, and the claim was taken
+    /// there. Everything after this can leave the runtime changed with no
+    /// acknowledgement sent, which is exactly the state that must not later be
+    /// reported as unexecuted -- so the answer is checked, not announced.
+    fn resume_execution(
+        &self,
+        token: Option<ControlCompletionToken>,
+    ) -> ControlExecutionClaim {
+        match (self.completion(), token) {
+            (Some(registry), Some(token)) => registry.resume_execution(token),
+            // No registration was made for this operation, so no record
+            // governs it. The ordinary path works exactly as before.
+            (_, None) => ControlExecutionClaim::Ungoverned,
+            // A registration with no registry to answer to. Nothing here can
+            // establish who owns the outcome, so nothing here may produce one.
+            (None, Some(_)) => {
+                ControlExecutionClaim::Refused(ControlClaimRefusal::Unavailable)
+            }
+        }
+    }
+
+    /// Report that this operation has reached one step.
+    ///
+    /// Failing to record that a step is beginning prevents the step: an
+    /// effect nobody recorded the intent for cannot afterwards be told from
+    /// one that never happened.
+    fn record_progress(
+        &self,
+        token: Option<ControlCompletionToken>,
+        progress: ControlProgress,
+    ) -> Result<(), ControlProgressRefusal> {
+        match (self.completion(), token) {
+            (Some(registry), Some(token)) => registry.record_progress(token, progress),
+            // No record governs this operation, so there is nothing to report
+            // to and nothing gating the effect.
+            (_, None) => Ok(()),
+            // A registration whose registry cannot be reached. The effect must
+            // not happen: an effect nothing recorded the intent for cannot be
+            // told afterwards from one that never happened.
+            (None, Some(_)) => Err(ControlProgressRefusal::Unavailable),
+        }
+    }
+
+
+    /// Publish an acknowledgement against a private completion registration.
+    ///
+    /// The registration authorises the send and the send happens under the
+    /// same hold, so an acknowledgement the record refuses is refused before
+    /// anyone outside can see it. Sending first and reporting afterwards
+    /// refused nothing: a contradicting or duplicate acknowledgement was
+    /// already at the receiver, and no later verdict could recall it.
+    ///
+    /// The command is never replayed from here. Whatever its effect was, it
+    /// has already happened; only the acknowledgement is retained.
+    fn send_ack_for(
+        &self,
+        client: XServerFrontendClientId,
+        acknowledgement: XAuthorityControlAck,
+        token: Option<ControlCompletionToken>,
+    ) -> Result<(), X11SetupSocketError> {
+        let owned = XAuthorityClientControlAck {
+            client,
+            acknowledgement,
+        };
+        let publication = match (self.completion(), token) {
+            (Some(registry), Some(token)) => {
+                match registry.publish_with(token, owned, |owned| self.emit_ack(*owned)) {
+                    Ok(publication) => publication,
+                    // Nothing was sent. Another owner holds this operation's
+                    // outcome, so there is nothing here to deliver and nothing
+                    // to retain.
+                    Err(refusal) => {
+                        return Err(X11SetupSocketError::new(format!(
+                            "X11 control acknowledgement refused by its completion record: \
+                             {refusal:?}"
+                        )));
+                    }
+                }
+            }
+            // No registration governs it, exactly as the ordinary path has
+            // always been.
+            (_, None) => self.emit_ack(owned),
+            // A registration whose registry cannot be reached. Nothing here
+            // can establish whether this acknowledgement may be published.
+            (None, Some(_)) => {
+                return Err(X11SetupSocketError::new(
+                    "X11 control acknowledgement has a registration with no registry",
+                ));
+            }
+        };
+        match publication {
+            // A gone receiver has always been tolerated here, and that stays
+            // the ordinary behaviour: the writer is not failed because nobody
+            // is listening. It is reported precisely to the registry above,
+            // because a caller that sees only Ok cannot tell publication from
+            // the receiver having disappeared.
+            ControlPublication::Delivered | ControlPublication::ReceiverGone => Ok(()),
+            ControlPublication::Retained => Err(X11SetupSocketError::new(
+                "X11 control acknowledgement channel is full",
+            )),
         }
     }
 }
@@ -577,9 +521,15 @@ impl XServerFrontendRouteRegistry {
         })
     }
 
+    /// Re-route what a grab had frozen.
+    ///
+    /// Each item is validated again here against the stamp it was given, not
+    /// against whatever is current. A thaw is a second chance to execute, so
+    /// it is also a second place a revoked revision could slip through.
     fn drain_thawed_input(
         &self,
         current_control_epoch: u64,
+        gate: Option<&crate::ControlEpochGate>,
     ) -> Result<usize, XServerFrontendRouteError> {
         let queued = self
             .frozen_input
@@ -620,14 +570,19 @@ impl XServerFrontendRouteRegistry {
                     .push_back(XDeferredRoutedInput {
                         client: deferred.client,
                         control_epoch: deferred.control_epoch,
+                        publication: deferred.publication,
                         route,
                     });
             } else {
-                self.route_engine_input(
-                    route,
-                    deferred.control_epoch,
-                    current_control_epoch,
-                )?;
+                let stamp = crate::ControlStamp {
+                    control_epoch: deferred.control_epoch,
+                    publication: deferred.publication,
+                };
+                let admitted = match gate {
+                    Some(gate) => gate.admits(stamp).is_ok(),
+                    None => deferred.control_epoch == current_control_epoch,
+                };
+                self.route_engine_input_admitted(route, stamp, admitted)?;
                 routed = routed.saturating_add(1);
             }
         }

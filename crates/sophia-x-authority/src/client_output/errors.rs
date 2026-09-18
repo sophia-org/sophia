@@ -142,6 +142,7 @@ pub fn x_error_from_runtime(
         | XAuthorityRuntimeError::SameNamespace
         | XAuthorityRuntimeError::PortalRejected => XErrorCode::BadAccess,
         XAuthorityRuntimeError::UnknownSourceOwner => XErrorCode::BadAtom,
+        XAuthorityRuntimeError::FocusAuthorityUnavailable => XErrorCode::BadImplementation,
     };
 
     XClientError {

@@ -7,6 +7,7 @@ members = [
     "crates/sophia-config",
     "crates/sophia-drm-out-fence",
     "crates/sophia-engine",
+    "crates/sophia-input-authority",
     "crates/sophia-linux-peer",
     "crates/sophia-portal",
     "crates/sophia-protocol",
