@@ -105,9 +105,13 @@ impl ControlCompletionRegistry {
         let record = &mut inner.records[position];
         record.dependents = record.dependents.saturating_sub(1);
         // Answered already, and now nothing it started can still happen. The
+        // original source must also have proved its peer effects discharged;
+        // a failed writer gives up this guard too. The
         // acknowledgement is not sent again: it went out when the outcome was
         // published, and this is only the end of the obligation behind it.
-        if record.dependents == 0 && matches!(record.phase, ControlPhase::Settled(_)) {
+        if record.dependents == 0 && matches!(record.phase, ControlPhase::Settled(_))
+            && record.source_debt_settled()
+        {
             inner.records.remove(position);
         }
     }

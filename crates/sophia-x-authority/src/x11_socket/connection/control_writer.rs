@@ -80,8 +80,19 @@ fn spawn_x11_control_writer(
         .and_then(|senders| senders.connection_state.get()?.control_source.get()?.upgrade());
     let stop = Arc::new(AtomicBool::new(false));
     let writer_stop = stop.clone();
+    macro_rules! interrupt_after_effect {
+        ($execution:expr) => {{
+            #[cfg(all(test, unix))]
+            if let Some(execution) = $execution
+                && execution.lock().map_err(|_| X11SetupSocketError::new("control custody unavailable"))?
+                    .source.fail_after_effect.load(Ordering::Acquire)
+            {
+                return Err(X11SetupSocketError::client_failure("staged interruption after actual control source effect"));
+            }
+        }};
+    }
     macro_rules! terminate_client {
-        ($kind:expr, $transaction:expr, $surface:expr, $completion:expr) => {{
+        ($kind:expr, $transaction:expr, $surface:expr, $completion:expr, $execution:expr) => {{
             let stream = stream
                 .lock()
                 .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
@@ -91,6 +102,7 @@ fn spawn_x11_control_writer(
                 ))
             })?;
             drop(stream);
+            interrupt_after_effect!($execution);
             // The shutdown is the effect, so this acknowledgement is the
             // operation's real outcome and closes its record.
             channels.send_ack_for(
@@ -144,11 +156,23 @@ fn spawn_x11_control_writer(
                     origin,
                     claim,
                 } => {
+                    #[cfg(all(test, unix))]
+                    if let Some((arrived, resume)) = control_source.as_ref()
+                        .and_then(|source| source.before_dependent.lock().unwrap().take())
+                    {
+                        let _ = arrived.send(());
+                        resume.recv_timeout(Duration::from_secs(5))
+                            .map_err(|_| X11SetupSocketError::client_failure("dependent source stage did not resume"))?;
+                    }
                     let disposition = x11_apply_dependent_focus_out(
                         namespace, client, window, &focused_surface_window,
                         protocol_routing.as_ref(), claim.as_ref(),
                     ).map_err(|cause| X11SetupSocketError::new(format!("private FocusOut unavailable: {cause:?}")))?;
                     if disposition != X11DependentFocusEffect::ProjectionCleared {
+                        if disposition == X11DependentFocusEffect::Superseded {
+                            record_private_focus_peer_resolution(origin.as_ref(), claim.as_ref(), window, time_msec,
+                                PrivateFocusPeerResolution::Superseded)?;
+                        }
                         // A stale generationless FocusOut would undo the
                         // newer FocusIn at the client even if our atomic were
                         // preserved. End only this dependency's quiescence.
@@ -172,6 +196,12 @@ fn spawn_x11_control_writer(
                             time_msec,
                         },
                     )?;
+                    if let Some(held) = origin.as_ref().and_then(|origin| origin.held.as_ref())
+                        && let Some(execution) = held.registry.execution_of(held.origin)
+                    {
+                        execution.lock().map_err(|_| X11SetupSocketError::new("dependent control custody unavailable"))?
+                            .dependent_records.extend(records.iter().cloned());
+                    }
                     write_x11_control_records(
                         &stream,
                         &output_wire,
@@ -179,6 +209,8 @@ fn spawn_x11_control_writer(
                         &sequence,
                         records,
                     )?;
+                    record_private_focus_peer_resolution(origin.as_ref(), claim.as_ref(), window, time_msec,
+                        PrivateFocusPeerResolution::Flushed)?;
                     // Run, so it can no longer happen, and its origin is told
                     // by the same guard that would have told it had this queue
                     // gone instead. Not an outcome for that operation: only
@@ -220,7 +252,7 @@ fn spawn_x11_control_writer(
             };
 
             let control_execution = match (completion, control_source.as_ref(), channels.completion()) {
-                (Some(token), Some(source), Some(registry)) if kind == XAuthorityControlKind::ConfigureSurface => {
+                (Some(token), Some(source), Some(registry)) => {
                     Some(registry.retain_execution_source(token, source, window)
                         .map_err(|cause| X11SetupSocketError::new(format!("control custody unavailable: {cause:?}")))?)
                 }
@@ -254,6 +286,7 @@ fn spawn_x11_control_writer(
                             X11SetupSocketError::new("X11 metadata rule lock poisoned")
                         })?
                         .insert(surface, rule);
+                    interrupt_after_effect!(&control_execution);
                     let generation = next_x11_metadata_generation(
                         &metadata_generations,
                         surface,
@@ -276,11 +309,17 @@ fn spawn_x11_control_writer(
                     drop(properties);
                     drop(atoms);
                     if let Some(routing) = protocol_routing.as_ref() {
+                        if let Some(execution) = &control_execution {
+                            execution.lock().map_err(|_| X11SetupSocketError::new("control custody unavailable"))?.pending_metadata = Some(candidate.clone());
+                        }
                         routing.emit_metadata_candidate(candidate).map_err(|error| {
                             X11SetupSocketError::client_failure(format!(
                                 "failed to publish reduced X11 metadata: {error:?}"
                             ))
                         })?;
+                        if let Some(execution) = &control_execution {
+                            execution.lock().map_err(|_| X11SetupSocketError::new("control custody unavailable"))?.pending_metadata = None;
+                        }
                     }
                     Vec::new()
                 }
@@ -306,6 +345,7 @@ fn spawn_x11_control_writer(
                             continue;
                         }
                     };
+                    interrupt_after_effect!(&control_execution);
                     let mut selections = core_event_selections
                         .lock()
                         .map_err(|_| {
@@ -331,6 +371,7 @@ fn spawn_x11_control_writer(
                         true,
                         &selections,
                         protocol_routing.as_ref(),
+                        control_execution.as_ref(),
                     )?
                 }
                 XAuthorityControlCommand::ConfigureSurface { geometry, .. } => {
@@ -408,6 +449,7 @@ fn spawn_x11_control_writer(
                     if control_source.as_ref().is_some_and(|source| source.fail_after_runtime.load(Ordering::Acquire)) {
                         return Err(X11SetupSocketError::new("staged interruption after actual Configure runtime effect"));
                     }
+                    interrupt_after_effect!(&control_execution);
                     channels
                         .record_progress(completion, ControlProgress::ProjectionBegun)
                         .map_err(|refusal| {
@@ -435,9 +477,6 @@ fn spawn_x11_control_writer(
                     if previous_geometry == Some(geometry) {
                         Vec::new()
                     } else {
-                        if let Some(execution) = &control_execution {
-                            execution.lock().map_err(|_| X11SetupSocketError::new("control custody unavailable"))?.peer_generation_begun = true;
-                        }
                         // XLibre's Present hook runs before core event
                         // delivery for every real geometry change, including
                         // a pure move. Clients may merge both streams.
@@ -452,6 +491,7 @@ fn spawn_x11_control_writer(
                             true,
                             &selections,
                             protocol_routing.as_ref(),
+                            control_execution.as_ref(),
                         )?
                     }
                 }
@@ -488,6 +528,7 @@ fn spawn_x11_control_writer(
                     };
                     drop(properties);
                     drop(atoms);
+                    interrupt_after_effect!(&control_execution);
                     let selections = core_event_selections.lock().map_err(|_| {
                         X11SetupSocketError::new("X11 core event selection lock poisoned")
                     })?;
@@ -499,6 +540,7 @@ fn spawn_x11_control_writer(
                         &changed,
                         &selections,
                         protocol_routing.as_ref(),
+                        control_execution.as_ref(),
                     )?
                 }
                 XAuthorityControlCommand::CloseSurface { .. } => {
@@ -506,10 +548,10 @@ fn spawn_x11_control_writer(
                         .lock()
                         .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?;
                     let Some(protocols) = atoms.atom(X_ATOM_NAME_WM_PROTOCOLS) else {
-                        terminate_client!(kind, transaction, surface, completion);
+                        terminate_client!(kind, transaction, surface, completion, &control_execution);
                     };
                     let Some(delete) = atoms.atom(X_ATOM_NAME_WM_DELETE_WINDOW) else {
-                        terminate_client!(kind, transaction, surface, completion);
+                        terminate_client!(kind, transaction, surface, completion, &control_execution);
                     };
                     drop(atoms);
                     let properties = properties.lock().map_err(|_| {
@@ -542,7 +584,7 @@ fn spawn_x11_control_writer(
                     let decision = crate::select_x_close_target(window, &ancestors, &candidates);
                     if decision.protocol_window_count == 0 {
                         drop(properties);
-                        terminate_client!(kind, transaction, surface, completion);
+                        terminate_client!(kind, transaction, surface, completion, &control_execution);
                     }
                     tracing::debug!(
                         "sophia_x11_close_target schema=1 surface_map_hit=true exact_delete={} fallback_used={} protocol_windows={}",
@@ -587,6 +629,7 @@ fn spawn_x11_control_writer(
                     };
                     let previous = applied.previous_authority;
                     let previous_routed = applied.previous_routed;
+                    interrupt_after_effect!(&control_execution);
                     x11_focus_records(
                         byte_order,
                         event_sequence,
@@ -625,6 +668,7 @@ fn spawn_x11_control_writer(
                         Err(cause) => return Err(X11SetupSocketError::new(format!("private focus unavailable: {cause:?}"))),
                     };
                     let previous_routed = applied.previous_routed;
+                    interrupt_after_effect!(&control_execution);
                     x11_focus_records(
                         byte_order,
                         event_sequence,
@@ -664,6 +708,7 @@ fn spawn_x11_control_writer(
                             continue;
                         }
                     };
+                    interrupt_after_effect!(&control_execution);
                     core_event_selections
                         .lock()
                         .map_err(|_| {

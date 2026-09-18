@@ -63,8 +63,31 @@ impl MaintainedService {
         owner: Arc<PrivateServiceOwner>,
         keep_settlement: bool,
     ) -> Self {
+        Self::launch_configured(exit, owner, keep_settlement, false)
+    }
+
+    pub(super) fn launch_distinct() -> Self {
+        Self::launch_configured(
+            Exit::Stop,
+            Arc::new(service_owner(&PrivateSettlementOwner::default(), 2)),
+            false,
+            true,
+        )
+    }
+
+    fn launch_configured(
+        exit: Exit,
+        owner: Arc<PrivateServiceOwner>,
+        keep_settlement: bool,
+        distinct: bool,
+    ) -> Self {
         let path = private_service_socket(&format!("maintain-{exit:?}"));
-        let config = private_service_config(&path, NamespaceId::from_raw(9871), 4);
+        let clients = if distinct { 2 } else { 4 };
+        let config = if distinct {
+            distinct_config(&path, NamespaceId::from_raw(9871), clients)
+        } else {
+            private_service_config(&path, NamespaceId::from_raw(9871), 4)
+        };
         let (commands, service_commands) = sync_channel(4);
         let (transaction_sender, transactions) =
             sync_channel(if matches!(exit, Exit::Unwind) { 1 } else { 64 });
@@ -80,7 +103,7 @@ impl MaintainedService {
             matches!(exit, Exit::Unwind).then_some(XAuthorityBackpressureTelemetryKind::Wait),
             Arc::clone(&service_thread),
         );
-        let (parts, acks, deliveries) = producing_parts(4);
+        let (parts, acks, deliveries) = producing_parts(clients);
         let (port, access) = PrivateProducerAccess::for_service();
         let service_owner = Arc::clone(&owner);
         let thread = std::thread::spawn(move || {

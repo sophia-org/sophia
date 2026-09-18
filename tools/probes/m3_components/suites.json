@@ -37,7 +37,25 @@
       "x11_socket::routing_tests::private_control_cleanup::actual_partial_configure_cleanup_uses_original_removal_and_returns_its_credit",
       "x11_socket::routing_tests::private_control_cleanup::partial_configure_withheld_source_removal_keeps_original_record_and_credit",
       "x11_socket::routing_tests::private_control_cleanup::partial_configure_foreign_source_cannot_retire_an_identically_numbered_operation",
-      "x11_socket::routing_tests::private_control_cleanup::partial_configure_missing_teardown_publication_keeps_native_removal_separate"
+      "x11_socket::routing_tests::private_control_cleanup::partial_configure_missing_teardown_publication_keeps_native_removal_separate",
+      "x11_socket::routing_tests::private_control_effect_groups::metadata_rule_cleanup_uses_actual_insertion_and_original_teardown",
+      "x11_socket::routing_tests::private_control_effect_groups::admit_cleanup_uses_actual_runtime_change_and_original_teardown",
+      "x11_socket::routing_tests::private_control_effect_groups::presentation_cleanup_uses_actual_property_change_and_original_teardown",
+      "x11_socket::routing_tests::private_control_effect_groups::restore_cleanup_uses_actual_property_change_and_original_teardown",
+      "x11_socket::routing_tests::private_control_effect_groups::focus_cleanup_uses_actual_claim_application_and_original_teardown",
+      "x11_socket::routing_tests::private_control_effect_groups::clear_focus_cleanup_uses_actual_claim_application_and_original_teardown",
+      "x11_socket::routing_tests::private_control_effect_groups::close_cleanup_uses_actual_owned_shutdown_and_original_teardown",
+      "x11_socket::routing_tests::private_control_effect_groups::withdraw_cleanup_uses_actual_unmap_and_original_teardown",
+      "x11_socket::routing_tests::private_control_effect_groups::generated_local_control_records_survive_interruption_until_exact_recipient_termination",
+      "x11_socket::routing_tests::private_control_effect_groups::refused_metadata_publication_keeps_its_actual_candidate_after_native_teardown",
+      "x11_socket::routing_tests::private_control_peers::reversed_control_and_custody_order_eventually_visits_each_exact_recipient",
+      "x11_socket::routing_tests::private_control_peers::origin_ack_and_failed_peer_write_keep_exact_source_payload_and_credit",
+      "x11_socket::routing_tests::private_control_peers::origin_ack_and_original_peer_flush_retire_and_return_credit_once",
+      "x11_socket::routing_tests::private_control_protocol::original_generic_peer_flush_reuses_configure_and_presentation_credits",
+      "x11_socket::routing_tests::private_control_protocol::failed_generic_peer_keeps_payload_until_exact_collected_recipient_termination",
+      "x11_socket::routing_tests::private_control_protocol::withheld_generic_recipient_custody_keeps_failed_output_and_control_credit",
+      "x11_socket::routing_tests::private_control_protocol::replacement_protocol_registration_cannot_borrow_original_termination",
+      "x11_socket::routing_tests::private_control_protocol::newer_core_focus_supersedes_exact_queued_focus_out_without_false_flush"
     ],
     "final-custody": [
       "x11_socket::routing_tests::final_completion_keeps_original_internal_home_when_external_custody_is_withheld",
@@ -104,7 +122,8 @@
       "x11_socket::routing_tests::service_state_only_press_is_refused_before_native_application",
       "x11_socket::routing_tests::service_repeat_key_is_explicitly_refused_before_native_application",
       "x11_socket::routing_tests::service_shift_a_chord_uses_one_history_and_settles_exact_native_and_writer_obligations",
-      "x11_socket::routing_tests::service_key_join_survivor_and_focus_move_keep_the_original_history_and_endpoint"
+      "x11_socket::routing_tests::service_key_join_survivor_and_focus_move_keep_the_original_history_and_endpoint",
+      "x11_socket::routing_tests::service_state_only_key_is_explicitly_refused_before_native_application"
     ],
     "transient-service": [
       "x11_socket::routing_tests::service_motion_and_axis_use_the_original_request_and_reclaim_exact_writer_receipts",

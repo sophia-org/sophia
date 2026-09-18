@@ -170,10 +170,13 @@ impl XServerFrontendRouteRegistry {
         time_msec: u32,
         origin: Option<ControlCompletionToken>,
     ) -> Result<(), XServerFrontendRouteError> {
-        let claim = self.private_focus_dependency(previous.client, previous.window)
-            .map_err(|cause| x11_focus_claim_route_error(previous.client, cause))?;
+        // Before touching another connection: a dependent becoming quiescent
+        // does not establish that its native or recipient effects settled.
         let previous_senders = self.client_senders(previous.client)?;
         let previous_incarnation = previous_senders.connection_state.clone();
+        let claim = self.private_focus_dependency(previous.client, previous.window)
+            .map_err(|cause| x11_focus_claim_route_error(previous.client, cause))?;
+        self.retain_control_peer_debt(origin, &previous_incarnation, previous.window, time_msec, claim.as_ref())?;
         let sender = previous_senders.control;
         // Counted against its origin before it is queued, so there is no
         // moment where the effect exists and nothing is waiting for it.

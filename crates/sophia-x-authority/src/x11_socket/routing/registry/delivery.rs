@@ -618,6 +618,7 @@ impl XServerFrontendRouteRegistry {
                 client: route.client,
             });
         }
+        self.retain_control_route_source(route, completion)?;
         if let Some(result) = self.route_focus_control(route, completion) {
             return result;
         }
@@ -694,7 +695,7 @@ impl XServerFrontendRouteRegistry {
             Err(XServerFrontendRouteError::UnknownClient { .. }) => return Ok(()),
             Err(error) => return Err(XServerFrontendWatcherRefusal::Route(error)),
         };
-        match self.route_to_client(client, &incarnation, sender, event) {
+        match self.route_to_client(client, &incarnation, sender.0, X11ProtocolEvent::untracked(event)) {
             Ok(()) => Ok(()),
             Err(
                 XServerFrontendRouteError::UnknownClient { .. }
@@ -732,10 +733,10 @@ impl XServerFrontendRouteRegistry {
         &self,
         client: XServerFrontendClientId,
         incarnation: &Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
-        sender: SyncSender<T>,
+        sender: impl X11RouteSender<T>,
         value: T,
     ) -> Result<(), XServerFrontendRouteError> {
-        match sender.try_send(value) {
+        match sender.try_route_send(value) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => {
                 Err(XServerFrontendRouteError::ClientQueueFull { client })

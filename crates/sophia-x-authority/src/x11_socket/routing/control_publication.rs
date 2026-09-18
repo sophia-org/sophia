@@ -18,7 +18,8 @@ impl ControlCompletionRegistry {
     /// acknowledgement is outside and cannot be recalled. Authorising and
     /// emitting in one step is what makes the refusal mean anything.
     ///
-    /// A delivered acknowledgement retires the record. A full channel keeps
+    /// A delivered acknowledgement retires the record once its original source
+    /// debt and dependent work are discharged. A full channel keeps
     /// the exact acknowledgement to publish later. A gone receiver is neither:
     /// nothing was published, so the record stays owed rather than closed on
     /// the strength of a call that returned success.
@@ -76,7 +77,9 @@ impl ControlCompletionRegistry {
                 // same as everything it started being over, and freeing the
                 // storage here would free a credit while an effect of it is
                 // still queued somewhere.
-                if inner.records[position].dependents == 0 {
+                if inner.records[position].dependents == 0
+                    && inner.records[position].source_debt_settled()
+                {
                     inner.records.remove(position);
                 } else {
                     let client = inner.records[position].phase.client();
