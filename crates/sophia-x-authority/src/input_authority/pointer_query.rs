@@ -20,11 +20,11 @@ pub(crate) struct XPointerQueryState {
 
 impl XInputAuthorityState {
     pub(crate) fn register_query_client(&mut self, namespace: NamespaceId, client: u64) {
-        self.namespaces
-            .entry(namespace)
-            .or_default()
-            .query_clients
-            .insert(client);
+        let state = self.namespaces.entry(namespace).or_default();
+        if state.query_scope.0.load(std::sync::atomic::Ordering::Acquire) {
+            state.query_scope = OrderedQueryScope::default();
+        }
+        state.query_clients.insert(client);
     }
 
     pub(crate) fn query_namespace_active(&self, namespace: NamespaceId) -> bool {

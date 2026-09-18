@@ -10,6 +10,7 @@ pub(super) struct KeyHold {
     /// the obligation is installed and never refreshed. Same reason as the
     /// pointer hold: a release answers the endpoint the key went down under.
     endpoint: PrivateEndpointIdentity,
+    query_scope: Option<crate::OrderedQueryScopeReceipt>,
     input: Input,
     incarnation: Option<HoldIncarnation>,
     grant: GrantId,
@@ -325,6 +326,7 @@ impl BaseGuards<'_> {
         key: u8,
         evdev: u32,
     ) -> Result<(Applied, Option<XAuthorityKeyEvent>), Refusal> {
+        let query_scope = self.authority.ordered_query_scope(self.origin.namespace);
         let topology = PrivateKeyboardTopology::from_applied(
             publication,
             focus.client,
@@ -401,6 +403,7 @@ impl BaseGuards<'_> {
             client: recipient.client,
             generation: recipient._admission.generation,
             endpoint: recipient.endpoint.clone(),
+            query_scope,
             input,
             incarnation: None,
             grant: capability.grant(),

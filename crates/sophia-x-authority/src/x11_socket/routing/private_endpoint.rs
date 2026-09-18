@@ -27,6 +27,7 @@
 #[cfg(unix)]
 #[derive(Clone)]
 pub(crate) struct PrivateEndpointIdentity {
+    lifecycle: Option<PrivateLifecycleGate>,
     client: XServerFrontendClientId,
     admission: sophia_protocol::ClientAdmissionId,
     namespace: NamespaceId,
@@ -52,6 +53,7 @@ impl PrivateEndpointIdentity {
         admission: &PrivateAdmissionBinding,
     ) -> Self {
         Self {
+            lifecycle: admission.lifecycle.clone(),
             client,
             admission: admission.admission,
             namespace: admission.namespace,

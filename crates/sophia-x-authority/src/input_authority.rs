@@ -9,6 +9,7 @@ include!("input_authority/ordered_pointer.rs");
 include!("input_authority/ordered_keyboard.rs");
 include!("input_authority/ordered_freeze.rs");
 include!("input_authority/ordered_keyboard_retirement.rs");
+include!("input_authority/owner_cleanup.rs");
 #[cfg(unix)]
 include!("input_authority/ordered_keyboard_press.rs");
 
@@ -57,6 +58,7 @@ pub struct XPassiveInputGrab {
 #[derive(Clone, Debug, Default)]
 struct XNamespaceInputAuthority {
     query: XPointerQueryState,
+    query_scope: OrderedQueryScope,
     query_clients: std::collections::BTreeSet<u64>,
     pointer: Option<XActiveInputGrab>,
     pointer_activation: PointerActivationState,
@@ -469,9 +471,12 @@ impl XInputAuthorityState {
             .retain(|(_, selection_owner, _, _), _| *selection_owner != owner);
         self.namespaces.retain(|_, state| {
             state.freeze.remove_owner(owner);
-            state.query_clients.remove(&owner);
+            let query_removed = state.query_clients.remove(&owner);
             if state.query_clients.is_empty() {
                 state.query = XPointerQueryState::default();
+                if query_removed {
+                    state.query_scope.0.store(true, std::sync::atomic::Ordering::Release);
+                }
             }
             if state.pointer.is_some_and(|grab| grab.owner == owner) {
                 state.pointer_activation = PointerActivationState::Changing;

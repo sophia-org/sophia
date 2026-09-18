@@ -7,6 +7,8 @@ use attempts::AttemptRecord;
 pub use attempts::{AttemptClaim, AttemptToken};
 pub use control::{AuthorityIdentity, ControlPermit};
 mod execution;
+mod reconciliation;
+pub use reconciliation::NativeReconciliationPermit;
 mod requests;
 use requests::RequestCell;
 pub use requests::{

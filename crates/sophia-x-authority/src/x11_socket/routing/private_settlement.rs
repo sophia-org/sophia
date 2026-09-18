@@ -136,6 +136,9 @@ struct AbandonedSettlements {
     /// queue, so turning it back into commands would replay effects. What is
     /// carried is the right to finish answering for them.
     terminal: Vec<PrivateTerminalInventory>,
+    /// Exact inventories borrowed by a bounded same-thread maintenance visit.
+    /// The visit owns an unwind guard; readers still see its unresolved debt.
+    terminal_in_flight: Vec<Arc<PrivateExecutionWitness>>,
     /// Instances whose queue could not be read when they closed.
     ///
     /// The queue itself is kept, not a tally of how many there were: a counter
@@ -277,6 +280,7 @@ impl PrivateSettlementOwner {
                 outstanding_in_flight: Vec::with_capacity(capacity),
                 failed_in_flight: Vec::with_capacity(capacity),
                 terminal: Vec::with_capacity(capacity),
+                terminal_in_flight: Vec::with_capacity(capacity),
                 settling: false,
                 indeterminate: Vec::with_capacity(capacity),
                 outstanding: Vec::with_capacity(capacity),
@@ -748,7 +752,7 @@ impl PrivateSettlementOwner {
     /// How many instances handed over obligations they could not finish.
     /// `None` where the owner cannot be read.
     pub fn terminal_inventories(&self) -> Option<usize> {
-        self.inner.lock().ok().map(|held| held.terminal.len())
+        self.inner.lock().ok().map(|held| held.terminal.len() + held.terminal_in_flight.len())
     }
 
     /// One at a time, so the handle hands over from a list it still owns. A
@@ -847,4 +851,3 @@ impl PrivateIdentity {
         }
     }
 }
-

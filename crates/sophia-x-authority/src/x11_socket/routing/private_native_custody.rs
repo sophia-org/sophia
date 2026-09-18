@@ -33,13 +33,6 @@ impl PrivateNativeHold {
         }
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "custody controls inspect the retained source identity"
-        )
-    )]
     fn incarnation(&self) -> Option<sophia_input_authority::HoldIncarnation> {
         match self {
             Self::Pointer(hold) => hold.incarnation(),

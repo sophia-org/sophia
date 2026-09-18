@@ -202,13 +202,6 @@ pub(crate) struct OrderedOwnerFreezeReceipt {
     keyboard: Option<KeyboardActivationStamp>,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "The stopped native owner will consume exact freeze removal receipts."
-    )
-)]
 impl OrderedOwnerFreezeReceipt {
     pub(crate) fn answers_pointer(&self, stamp: PointerActivationStamp) -> bool {
         self.pointer == Some(stamp)
@@ -287,13 +280,6 @@ impl XInputAuthorityState {
         )
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The stopped native owner will consume exact freeze removal receipts."
-        )
-    )]
     pub(crate) fn cleanup_ordered_freeze_owner(
         &mut self,
         namespace: NamespaceId,

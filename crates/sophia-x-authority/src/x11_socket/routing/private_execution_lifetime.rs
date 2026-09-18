@@ -226,6 +226,7 @@ impl PrivateSettlementOwner {
                         .as_ref()
                         .map(|witness| witness.reading())
                 })
+                .chain(held.terminal_in_flight.iter().map(|witness| witness.reading()))
                 .collect()
         })
     }

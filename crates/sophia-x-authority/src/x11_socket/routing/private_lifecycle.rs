@@ -38,6 +38,7 @@ enum PrivateLifecycleNative {
 }
 
 struct PrivateLifecycleRecord {
+    cleanup: Arc<std::sync::OnceLock<PrivateNativeOwnerCleanup>>,
     identity: PrivateLifecycleIdentity,
     native: PrivateLifecycleNative,
     grants_pending: bool,
@@ -79,6 +80,7 @@ pub(crate) struct PrivateLifecycleOwner {
 /// holding common may finish; drive linearizes actual retirement under common.
 #[derive(Clone, Debug)]
 pub(crate) struct PrivateLifecycleGate {
+    cleanup: Arc<std::sync::OnceLock<PrivateNativeOwnerCleanup>>,
     mark: Arc<std::sync::atomic::AtomicU64>,
     open: u64,
 }
@@ -204,7 +206,9 @@ impl PrivateLifecycleOwner {
             .ok_or(PrivateLifecycleRefusal::IdentityExhausted)?;
         let open = incarnation << 1;
         slot.incarnation = incarnation;
+        let cleanup = Arc::new(std::sync::OnceLock::new());
         slot.record = Some(PrivateLifecycleRecord {
+            cleanup: cleanup.clone(),
             identity: PrivateLifecycleIdentity {
                 client,
                 admission: bound.admission,
@@ -217,6 +221,7 @@ impl PrivateLifecycleOwner {
         });
         slot.mark.store(open, Ordering::Release);
         let gate = PrivateLifecycleGate {
+            cleanup,
             mark: slot.mark.clone(),
             open,
         };
@@ -268,6 +273,7 @@ impl PrivateLifecycleOwner {
                     return Err(PrivateLifecycleRefusal::AlreadyOwned);
                 }
                 let gate = PrivateLifecycleGate {
+                    cleanup: record.cleanup.clone(),
                     mark: slot.mark.clone(),
                     open: slot.incarnation << 1,
                 };
@@ -391,7 +397,12 @@ impl PrivateLifecycleOwner {
                         // unknown native remainder; blindly replaying it could
                         // clear a newer contribution. There is no done setter.
                         record.native = PrivateLifecycleNative::Started;
-                        native.cleanup_owner(id.client.raw());
+                        let removed = native.cleanup_ordered_owner(id.namespace, id.client.raw());
+                        let _ = record.cleanup.set(PrivateNativeOwnerCleanup {
+                            identity: id,
+                            authority: Arc::downgrade(&self.inner.native),
+                            removed,
+                        });
                         record.native = PrivateLifecycleNative::Complete;
                     }
                     if record.native == PrivateLifecycleNative::Complete && !record.grants_pending {

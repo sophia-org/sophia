@@ -971,4 +971,5 @@ mod private_native_tests {
     include!("private_native_emission.rs");
     include!("private_native_binding.rs");
     include!("private_native_keyboard.rs");
+    include!("../../../tests/support/private_native_reconciliation.rs");
 }

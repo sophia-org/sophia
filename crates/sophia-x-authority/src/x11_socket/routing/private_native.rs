@@ -273,6 +273,7 @@ mod private_native {
         /// went down, and a refreshed identity would let a replacement
         /// registration inherit an emission it never asked for.
         endpoint: PrivateEndpointIdentity,
+        query_scope: Option<crate::OrderedQueryScopeReceipt>,
         input: Input,
         incarnation: Option<HoldIncarnation>,
         grant: GrantId,
@@ -292,6 +293,7 @@ mod private_native {
         status: Status,
         proof: Option<Proof>,
         activation_retirement: Option<ActivationRetirement>,
+        release_mapper_applied: bool,
     }
 
     /// Source evidence for one automatic activation, retained by the hold
@@ -544,6 +546,7 @@ mod private_native {
                 .mask
                 & 0xff;
             let mut event = pointer_event(route, button, true, modifiers | pointer.state());
+            let query_scope = self.authority.ordered_query_scope(self.origin.namespace);
             let prepared = self
                 .authority
                 .prepare_pointer_press(self.origin.namespace, button, modifiers, implicit)
@@ -627,6 +630,7 @@ mod private_native {
                 client: client.client,
                 generation: client._admission.generation,
                 endpoint: client.endpoint.clone(),
+                query_scope,
                 input,
                 incarnation: None,
                 grant: capability.grant(),
@@ -646,6 +650,7 @@ mod private_native {
                 status: Status::PressEntered,
                 proof: None,
                 activation_retirement: None,
+                release_mapper_applied: false,
             });
             may_have_applied.set(true);
             let applied = permit
@@ -821,6 +826,7 @@ mod private_native {
             let (_, before) = pointer
                 .map_evdev_button(hold.evdev, false)
                 .expect("press validated button");
+            hold.release_mapper_applied = true;
             let mut event = pointer_event(route, hold.button, false, modifiers | before);
             event.surface = hold.surface;
             // Root coordinates belong to this accepted release; route-local
@@ -927,6 +933,7 @@ mod private_native {
     include!("private_native_key_emission.rs");
     include!("private_native_keyboard.rs");
     include!("private_native_transient.rs");
+    include!("private_native_reconcile.rs");
 
     fn pointer_event(
         route: &XAuthorityRoutedInput,
