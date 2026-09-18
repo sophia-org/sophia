@@ -99,15 +99,15 @@ impl X11OrderedServingOwner {
     /// home is made now, empty, and committing only writes into it.
     fn prepare_for_registration(
         frontend: &crate::x11_socket::PrivateXServerFrontend,
-        registration: &XServerFrontendClientRouteRegistration,
+        record: &PrivateCleanupRecord,
         transport: &XAuthorityOrderedTransport,
     ) -> Result<PreparedOrderedServing, X11OrderedServingRefusal> {
         // Asked again here, because a transport bound for one registration
         // must not prepare a writer for another even though both are opaque.
-        if !transport.ordered.minted_by(registration) {
+        if !transport.ordered.minted_by(record) {
             return Err(X11OrderedServingRefusal::ForeignReceiver);
         }
-        let endpoint = match frontend.endpoint_for(registration) {
+        let endpoint = match frontend.endpoint_for(record) {
             Ok(endpoint) => endpoint,
             Err(refusal) => return Err(X11OrderedServingRefusal::Unadmitted(refusal)),
         };

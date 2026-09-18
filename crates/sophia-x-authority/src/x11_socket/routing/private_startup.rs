@@ -63,7 +63,7 @@ enum PrivateWorkerLife {
 /// What asking for a worker did.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Nothing starts a worker yet.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateStartupOutcome {
     /// A worker exists, its handle is owned, and it has been permitted.
     Started,

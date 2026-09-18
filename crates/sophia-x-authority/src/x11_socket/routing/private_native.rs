@@ -321,6 +321,24 @@ mod private_native {
         pub(super) fn endpoint(&self) -> &PrivateEndpointIdentity {
             &self.endpoint
         }
+
+        /// STAGE-ONLY SEAM, TEST BUILDS ONLY: re-address this retained
+        /// connection to another admitted endpoint. A control uses it to
+        /// supply a resolved capsule to a real connection while the private
+        /// producer that would address one is not yet attached; production
+        /// builds compile no such re-addressing.
+        #[cfg(all(test, unix))]
+        pub(super) fn readdressed(
+            mut self,
+            client: XServerFrontendClientId,
+            generation: u64,
+            endpoint: PrivateEndpointIdentity,
+        ) -> Self {
+            self.client = client;
+            self.generation = generation;
+            self.endpoint = endpoint;
+            self
+        }
     }
 
     #[derive(Clone)]

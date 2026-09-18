@@ -61,6 +61,19 @@ impl PrivateOrderedEmission {
         self.connection.endpoint()
     }
 
+    /// STAGE-ONLY SEAM, TEST BUILDS ONLY: the same emission, addressed to
+    /// another admitted endpoint (see `RetainedConnection::readdressed`).
+    #[cfg(all(test, unix))]
+    pub(crate) fn readdressed(
+        mut self,
+        client: XServerFrontendClientId,
+        generation: u64,
+        endpoint: PrivateEndpointIdentity,
+    ) -> Self {
+        self.connection = self.connection.readdressed(client, generation, endpoint);
+        self
+    }
+
     pub(crate) fn connection(&self) -> sophia_input_authority::ConnectionIdentity {
         sophia_input_authority::ConnectionIdentity {
             recipient: self.connection.client.raw(),

@@ -60,6 +60,12 @@ struct PrivateWorkerSource {
     /// lived in the frame that made it would be one nothing could recover,
     /// which is the whole reason this is here.
     departure: Mutex<PrivateDepartureState>,
+    /// What the service established when it visited this connection to start
+    /// its worker, recorded once.
+    ///
+    /// ONE ATTEMPT PER SOURCE. A later visit finds this and does not respawn,
+    /// replace or retry. Bounded storage on the source, not a history.
+    attachment: std::sync::OnceLock<PrivateAttachment>,
     /// The gate this connection's queue was minted with.
     ///
     /// THE EXACT ONE, GIVEN TO THIS RESERVATION BEFORE THE ROW WENT IN. Not
@@ -148,6 +154,7 @@ impl PrivateEvidenceCustody {
                 slot: Mutex::new(PrivateWorkerSlot::empty()),
                 exit: Arc::new(PrivateWorkerExit::unstarted()),
                 control: std::sync::OnceLock::new(),
+                attachment: std::sync::OnceLock::new(),
                 cleanup,
                 departure: Mutex::new(PrivateDepartureState {
                     admitted: true,

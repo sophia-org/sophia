@@ -71,8 +71,8 @@ struct XAuthorityOrderedReceiver {
 #[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 impl XAuthorityOrderedReceiver {
     /// Whether this receiver was minted by exactly this registration.
-    fn minted_by(&self, registration: &XServerFrontendClientRouteRegistration) -> bool {
-        Arc::ptr_eq(&self.registration, &registration.connection_state)
+    fn minted_by(&self, record: &PrivateCleanupRecord) -> bool {
+        Arc::ptr_eq(&self.registration, &record.connection_state)
     }
 
     /// Give up the receiver itself, once its provenance has been established.
@@ -120,12 +120,43 @@ impl XServerFrontendClientRouteRegistration {
     /// and the receiver goes back to the caller rather than being replaced
     /// over work that may already be on it.
     #[allow(clippy::result_large_err)] // The receiver travels back rather than being dropped.
+    #[cfg_attr(not(test), allow(dead_code))] // Legacy controls bind without a stop; production binds stoppable.
     pub(crate) fn bind_ordered_output(
         &self,
         ordered: XAuthorityOrderedReceiver,
         output: &Arc<Mutex<UnixStream>>,
         wire: &Arc<X11WirePermission>,
         control_pending: &Arc<AtomicUsize>,
+    ) -> Result<Option<X11OrderedServingRefusal>, XAuthorityOrderedReceiver> {
+        self.bind_ordered_output_with(ordered, output, wire, control_pending, None)
+    }
+
+    /// Bind with the connection's authoritative stop.
+    ///
+    /// THE STOP A WORKER WILL ANSWER TO, given at binding so that the serving
+    /// owner promotion makes carries it and the control association a start
+    /// resolves is the same `Arc`. A transport bound without one is not a
+    /// stoppable worker's, and the service never starts on it.
+    #[allow(clippy::result_large_err)] // The receiver travels back rather than being dropped.
+    pub(crate) fn bind_ordered_output_stoppable(
+        &self,
+        ordered: XAuthorityOrderedReceiver,
+        output: &Arc<Mutex<UnixStream>>,
+        wire: &Arc<X11WirePermission>,
+        control_pending: &Arc<AtomicUsize>,
+        stop: &Arc<AtomicBool>,
+    ) -> Result<Option<X11OrderedServingRefusal>, XAuthorityOrderedReceiver> {
+        self.bind_ordered_output_with(ordered, output, wire, control_pending, Some(stop))
+    }
+
+    #[allow(clippy::result_large_err)] // The receiver travels back rather than being dropped.
+    fn bind_ordered_output_with(
+        &self,
+        ordered: XAuthorityOrderedReceiver,
+        output: &Arc<Mutex<UnixStream>>,
+        wire: &Arc<X11WirePermission>,
+        control_pending: &Arc<AtomicUsize>,
+        stop: Option<&Arc<AtomicBool>>,
     ) -> Result<Option<X11OrderedServingRefusal>, XAuthorityOrderedReceiver> {
         // THE CAUSE IS RECORDED WITH THE CUSTODY, not reconstructed later. A
         // teardown that wrote one reason for every connection would say
@@ -138,7 +169,7 @@ impl XServerFrontendClientRouteRegistration {
             output,
             wire,
             control_pending,
-            None,
+            stop,
         ) {
             // Bound, and no owner has been built on it -- which is what a
             // connection's ordered output is until a worker exists.
@@ -183,7 +214,18 @@ impl XServerFrontendClientRouteRegistration {
             }
         }
     }
+}
 
+/// Promotion is the RECORD's capability, not the handle's.
+///
+/// MOVED HERE SO THE SERVICE CAN PROMOTE. Everything promotion touches -- the
+/// gate, the home, the client and the connection state the receiver was
+/// minted against -- lives on the shared record, and the service frame
+/// reaches that record through the custody without holding the
+/// registration, which is on the connection thread. A registration still
+/// promotes and retains through its record, by deref.
+#[cfg(unix)]
+impl PrivateCleanupRecord {
     /// Turn this connection's bound transport into a serving owner, in place.
     ///
     /// READY, AND DRIVEN BY NOBODY. What this makes is an owner that exists;
@@ -206,7 +248,6 @@ impl XServerFrontendClientRouteRegistration {
     /// not reset its identity, close state, attempt budget, frame progress or
     /// held admissions, and does not start anything: it is refused, and says
     /// that an owner is already there.
-    #[cfg_attr(not(test), allow(dead_code))] // Nothing promotes in production yet.
     pub(crate) fn promote_ordered_serving(
         &self,
         frontend: &crate::x11_socket::PrivateXServerFrontend,
@@ -335,6 +376,10 @@ impl XServerFrontendClientRouteRegistration {
     }
 
 
+}
+
+#[cfg(unix)]
+impl XServerFrontendClientRouteRegistration {
     /// Pin the evidence custody reserved for this connection.
     ///
     /// THE ONE RESERVED BEFORE THIS ROW WAS PUBLISHED, every time. This is not

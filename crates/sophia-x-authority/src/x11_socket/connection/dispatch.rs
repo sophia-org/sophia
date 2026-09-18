@@ -605,12 +605,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // What to do with a refused binding is decided in the registry,
             // beside the other rules about accepted work. NOTHING IS STARTED
             // HERE: binding is preparation, and no ordered worker exists.
+            // THE AUTHORITATIVE STOP, minted here and given to the binding,
+            // so the serving owner a later promotion makes carries this one
+            // and a registered worker started on it answers to this one.
+            let ordered_stop = Arc::new(AtomicBool::new(false));
             if registration
-                .bind_ordered_output(
+                .bind_ordered_output_stoppable(
                     channels.ordered,
                     &output_stream,
                     &output_wire,
                     &output_control_pending,
+                    &ordered_stop,
                 )
                 .is_err()
             {
@@ -637,6 +642,23 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             routing.input_recovery.attach(client, stream.try_clone().map_err(|error|
                 X11SetupSocketError::new(format!("failed to clone recovery socket: {error}")))?)
                 .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
+            // READINESS FOR A REGISTERED ORDERED-OUTPUT WORKER, published once
+            // on this connection's own record, only now that its setup is
+            // complete: the byte order the handshake fixed, the sequence this
+            // dispatch advances, the stop the binding carries, and a second
+            // independent handle on the socket for whoever must interrupt a
+            // blocked write without the output mutex. NOTHING IS STARTED
+            // HERE. A handle that cannot be taken publishes nothing, so no
+            // worker will ever start for this connection and nothing exists
+            // that could not be collected; the accepted work stays retained.
+            if let Ok(interrupt) = stream.try_clone() {
+                let _ = registration.publish_worker_readiness(PrivateWorkerReadiness {
+                    byte_order: setup.byte_order,
+                    sequence: event_sequence.clone(),
+                    stop: ordered_stop,
+                    interrupt,
+                });
+            }
             (
                 Some(registration),
                 Some(X11InputEventReceiver::Routed {

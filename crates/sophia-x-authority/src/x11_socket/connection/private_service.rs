@@ -36,6 +36,12 @@
 trait RoutedBrokerAccess {
     fn broker(&mut self) -> Result<&XServerFrontendRouteBroker, X11SetupSocketError>;
     fn route_pending(&mut self) -> Result<usize, X11SetupSocketError>;
+    /// Start a registered worker for every ready connection that has none.
+    ///
+    /// THE PUBLIC PATH HAS NONE: nothing is registered there and nothing is
+    /// started. The private path visits from the service frame, which is the
+    /// one place holding the checked lease and the frontend together.
+    fn attach_ready(&mut self) -> Result<usize, X11SetupSocketError>;
 }
 
 #[cfg(unix)]
@@ -46,6 +52,9 @@ impl RoutedBrokerAccess for XServerFrontendRouteBroker {
     fn route_pending(&mut self) -> Result<usize, X11SetupSocketError> {
         XServerFrontendRouteBroker::route_pending(self)
             .map_err(|error| X11SetupSocketError::new(error.to_string()))
+    }
+    fn attach_ready(&mut self) -> Result<usize, X11SetupSocketError> {
+        Ok(0)
     }
 }
 
@@ -88,6 +97,10 @@ impl RoutedBrokerAccess for LeasedPrivateBroker<'_, '_> {
             .route_pending(self.service)
             .map(|ran| ran.len())
             .map_err(|error| X11SetupSocketError::new(error.to_string()))
+    }
+    fn attach_ready(&mut self) -> Result<usize, X11SetupSocketError> {
+        self.check()?;
+        Ok(attach_ready_workers(self.frontend, self.service))
     }
 }
 
@@ -270,6 +283,10 @@ fn drive_routed_service(
         if !ordered_egress.cancelled() {
             let routed = broker.route_pending()?;
             progressed |= routed != 0;
+            // AFTER ROUTING, FROM THIS FRAME. A connection that published its
+            // readiness since the last turn gets its worker here; one that
+            // was already visited is not visited again.
+            progressed |= broker.attach_ready()? != 0;
         }
         let workers_before_reap = frontend.active_client_worker_count();
         frontend.poll_client_workers()?;
@@ -321,6 +338,11 @@ pub struct PrivateServiceReturn {
     pub settlement: PrivateSettlement,
     /// The obligations this invocation left unsent on the store's shelf.
     pub unresolved_egress: Vec<PrivateUnresolvedEgress>,
+    /// Every registered worker this invocation started, as its collection
+    /// found it. Collection is not settlement: each of these still leaves
+    /// its destruction request, its number and any deferred duty with the
+    /// owner the caller kept.
+    pub workers: Vec<PrivateWorkerCollection>,
 }
 
 /// Why a private service invocation did not return a settlement.
@@ -342,6 +364,22 @@ pub enum PrivateServiceFailure {
         settlement: Box<PrivateSettlement>,
         /// The obligations this invocation left unsent on the store's shelf.
         unresolved_egress: Vec<PrivateUnresolvedEgress>,
+        workers: Vec<PrivateWorkerCollection>,
+    },
+    /// A registered worker this invocation started was not joined by its
+    /// collection, so private state was NOT finalised over it.
+    ///
+    /// THE FRONTEND COMES BACK UNSETTLED, with the actor still admitted in the
+    /// owner's custody: what to do with an actor nobody could collect is the
+    /// caller's, and finalising over it would say the service ended cleanly
+    /// when it did not. `error` is the service's own outcome, kept separate
+    /// from the collection that failed.
+    Uncollected {
+        error: Option<X11SetupSocketError>,
+        frontend: Box<PrivateXServerFrontend>,
+        unresolved_egress: Vec<PrivateUnresolvedEgress>,
+        workers: Vec<PrivateWorkerCollection>,
+        uncollected: Vec<usize>,
     },
 }
 
@@ -357,6 +395,13 @@ impl std::fmt::Debug for PrivateServiceFailure {
                 .debug_struct("Failed")
                 .field("error", error)
                 .finish_non_exhaustive(),
+            Self::Uncollected {
+                error, uncollected, ..
+            } => formatter
+                .debug_struct("Uncollected")
+                .field("error", error)
+                .field("uncollected", uncollected)
+                .finish_non_exhaustive(),
         }
     }
 }
@@ -370,7 +415,7 @@ impl std::fmt::Debug for PrivateServiceFailure {
 /// explicit sequence runs on those paths and reports its failures, and the
 /// `Drop` below runs it when nothing else did -- which is the unwind case.
 #[cfg(unix)]
-struct PrivateServiceCollection<'s> {
+struct PrivateServiceCollection<'s, 'o> {
     frontend: XServerFrontend,
     egress: Arc<XAuthorityOrderedEgress>,
     /// The one raster envelope that can be waiting to leave. It lives HERE,
@@ -383,10 +428,19 @@ struct PrivateServiceCollection<'s> {
     /// The invocation any retained egress is shelved under.
     instance: u64,
     collected: bool,
+    /// The lease this invocation runs under, for reaching its own custodies.
+    service: PrivateServiceLease<'o>,
+    /// This invocation's registry, by which its custodies are selected.
+    registry: XServerFrontendRouteRegistry,
+    /// What collecting the started workers found, read by the caller after
+    /// the explicit collection and before this is dropped.
+    workers: Vec<PrivateWorkerCollection>,
+    /// Places whose worker this collection could not join.
+    uncollected: Vec<usize>,
 }
 
 #[cfg(unix)]
-impl PrivateServiceCollection<'_> {
+impl PrivateServiceCollection<'_, '_> {
     /// File a pending envelope that still holds its batch, unsent, on the
     /// store's shelf under this invocation; drop one whose batch the
     /// transport already took.
@@ -437,8 +491,18 @@ impl PrivateServiceCollection<'_> {
         // ON EVERY EXIT. An ordinary stop cancelled the envelope's wait in
         // the loop and left it here; an error cancels it above. Either way an
         // unsent batch is unresolved and goes to the store, not to the floor.
+        // EVERY ATTACHED WORKER IS TOLD TO STOP AND MADE INTERRUPTIBLE BEFORE
+        // ANYTHING IS WAITED FOR: the legacy connection threads below wait on
+        // sockets these workers may be blocked writing to.
+        failures.extend(stop_attached_workers(&self.service, &self.registry));
         let unresolved = self.retain_pending();
         failures.extend(self.stop_and_wait());
+        // THEN THE REGISTERED WORKERS, THROUGH THE JOIN CUSTODY, after their
+        // connection threads have ended. A connection thread ending is not
+        // its worker ending; only this join is.
+        let (workers, uncollected) = collect_attached_workers(&self.service, &self.registry);
+        self.workers = workers;
+        self.uncollected = uncollected;
         // MARKED DONE ONLY AT THE END. A collection that unwound part-way
         // (the envelope cancellation reports to an observer that can panic)
         // is not a collection, and the guard below must still stop and wait.
@@ -460,7 +524,7 @@ impl PrivateServiceCollection<'_> {
 }
 
 #[cfg(unix)]
-impl Drop for PrivateServiceCollection<'_> {
+impl Drop for PrivateServiceCollection<'_, '_> {
     fn drop(&mut self) {
         // Reached with `collected` false only when the operation unwound
         // before its explicit collection. Nothing here can report, so it
@@ -478,7 +542,12 @@ impl Drop for PrivateServiceCollection<'_> {
             // work does not go missing, and a batch the transport already
             // took is not called unsent.
             self.egress.cancel();
+            let _ = stop_attached_workers(&self.service, &self.registry);
             let _ = self.stop_and_wait();
+            let (workers, uncollected) =
+                collect_attached_workers(&self.service, &self.registry);
+            self.workers = workers;
+            self.uncollected = uncollected;
             let _ = self.retain_pending();
             self.collected = true;
         }
@@ -550,8 +619,10 @@ pub(crate) fn serve_private_frontend_until_stopped(
             ),
             settlement: Box::new(settlement),
             unresolved_egress: Vec::new(),
+            workers: Vec::new(),
         });
     }
+    let namespace = config.namespace();
     let frontend = match XServerFrontend::bind(config) {
         Ok(frontend) => frontend,
         Err(error) => {
@@ -560,6 +631,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
                 error,
                 settlement: Box::new(settlement),
                 unresolved_egress: Vec::new(),
+                workers: Vec::new(),
             });
         }
     };
@@ -577,6 +649,23 @@ pub(crate) fn serve_private_frontend_until_stopped(
             error,
             settlement: Box::new(settlement),
             unresolved_egress: Vec::new(),
+            workers: Vec::new(),
+        });
+    }
+    // THE APPLIED REGISTRY IS PREPARED FOR THIS SERVICE'S NAMESPACE before any
+    // connection can be admitted: promotion establishes each connection's
+    // served endpoint through it, and an instance that never prepared it
+    // could promote nothing. This is the owner alone; the private input
+    // pipeline stays unattached.
+    if let Err(refusal) = private.prepare_applied_for_service(namespace) {
+        let settlement = private.shutdown();
+        return Err(PrivateServiceFailure::Failed {
+            error: X11SetupSocketError::new(format!(
+                "private applied registry could not be prepared: {refusal:?}"
+            )),
+            settlement: Box::new(settlement),
+            unresolved_egress: Vec::new(),
+            workers: Vec::new(),
         });
     }
     let cancellation = Arc::new(AtomicBool::new(false));
@@ -613,6 +702,10 @@ pub(crate) fn serve_private_frontend_until_stopped(
         store: service.store(),
         instance: private.instance,
         collected: false,
+        service: *service,
+        registry: private.broker.registry.clone(),
+        workers: Vec::new(),
+        uncollected: Vec::new(),
     };
     let service_result = {
         let mut broker = LeasedPrivateBroker {
@@ -637,6 +730,8 @@ pub(crate) fn serve_private_frontend_until_stopped(
     // EXPLICIT COLLECTION ON THE ORDINARY AND ERROR PATHS, reported. The
     // guard's Drop is for the unwind that never reaches this line.
     let (cleanup_failures, unresolved_egress) = collection.collect(service_result.is_err());
+    let workers = std::mem::take(&mut collection.workers);
+    let uncollected = std::mem::take(&mut collection.uncollected);
     drop(observer);
     let report = ordered_egress.report();
     let status = if service_result.is_err() {
@@ -662,22 +757,36 @@ pub(crate) fn serve_private_frontend_until_stopped(
     // above, and the collection guard is disposed of before the frontend it
     // guarded. The settlement goes back on both outcomes.
     drop(collection);
+    if !uncollected.is_empty() {
+        // NOT FINALISED OVER AN UNCOLLECTED ACTOR. The frontend goes back
+        // unsettled with the service's own outcome beside the collection's.
+        return Err(PrivateServiceFailure::Uncollected {
+            error: service_result.err(),
+            frontend: Box::new(private),
+            unresolved_egress,
+            workers,
+            uncollected,
+        });
+    }
     let settlement = private.shutdown();
     match (service_result, report) {
         (Ok(()), Ok(_)) if cleanup_failures.is_empty() => Ok(PrivateServiceReturn {
             settlement,
             unresolved_egress,
+            workers,
         }),
         (Ok(()), Ok(_)) => Err(PrivateServiceFailure::Failed {
             error: X11SetupSocketError::new("private service stopped, but collection failed")
                 .with_cleanup_failures(cleanup_failures),
             settlement: Box::new(settlement),
             unresolved_egress,
+            workers,
         }),
         (Ok(()), Err(error)) => Err(PrivateServiceFailure::Failed {
             error: error.with_cleanup_failures(cleanup_failures),
             settlement: Box::new(settlement),
             unresolved_egress,
+            workers,
         }),
         (Err(original), report) => {
             let mut cleanup_failures = cleanup_failures;
@@ -688,6 +797,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
                 error: original.with_cleanup_failures(cleanup_failures),
                 settlement: Box::new(settlement),
                 unresolved_egress,
+                workers,
             })
         }
     }

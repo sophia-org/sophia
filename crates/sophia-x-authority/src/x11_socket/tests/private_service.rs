@@ -204,6 +204,7 @@ fn live_custody_identity(registry: &XServerFrontendRouteRegistry) -> Option<Cust
 /// allocations, its number right, and what the store retained. The weak
 /// handle is how a control watches the custody graph release once the
 /// owners themselves go.
+#[derive(Debug)]
 struct AfterService {
     custodies_kept: usize,
     kept: Option<CustodyIdentity>,
@@ -213,6 +214,12 @@ struct AfterService {
     /// the surface it names. The work and its charge stay in the store.
     shelf: Vec<ShelvedEgress>,
     custody: Option<std::sync::Weak<PrivateEvidenceCustody>>,
+    /// What the service established for the first kept custody's worker,
+    /// and what its connection's destruction decided.
+    attachment: Option<PrivateAttachment>,
+    standing: Option<PrivateDestructionStanding>,
+    /// Whether that custody's worker was joined, read while the owner lives.
+    join_phase: Option<PrivateReapingPhase>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -268,6 +275,9 @@ fn inspect_after(owner: &PrivateServiceOwner, durable: &PrivateSettlementOwner) 
         kept_number_right: first.is_some_and(|custody| custody.cleanup_record().number.get().is_some()),
         shelf: read_shelf(durable),
         custody: first.map(Arc::downgrade),
+        attachment: first.and_then(|custody| custody.attachment()),
+        standing: first.map(|custody| custody.cleanup_record().destruction_standing()),
+        join_phase: first.map(|custody| custody.join().phase()),
     }
 }
 
@@ -663,11 +673,19 @@ fn an_error_joins_every_worker_before_the_private_frontend_is_finalised() {
     );
     let mut client = connect_private_client(&socket_path);
     handshake(&mut client);
-    let parents = handles
-        .registry
-        .window_parents
+    // The connection's registered ordered worker is attached before the
+    // error is injected, so what this collects is a started worker; its
+    // home is held by the control, so the worker's own ending -- its
+    // departure visit -- cannot finish while the hold stands. A connection
+    // whose destruction defers touches no table by number, so the home is
+    // what stands in for the parent table the legacy control held.
+    let custody = wait_attached(&handles.registry);
+    let held_home = custody
+        .cleanup_record()
+        .ordered_home
+        .state
         .lock()
-        .expect("a readable parent table");
+        .expect("a readable home");
     let (acknowledgement, acknowledged) = sync_channel(1);
     drop(acknowledged);
     commands
@@ -685,7 +703,7 @@ fn an_error_joins_every_worker_before_the_private_frontend_is_finalised() {
     // and reported as what it is.
     let returned_while_held = finished.recv_timeout(Duration::from_secs(1)).is_ok();
     let accepting_while_held = lifecycle_still_accepting(&handles.registry);
-    drop(parents);
+    drop(held_home);
     let (unwound, error, _reported, after) =
         launch_outcome(handle, &finished, returned_while_held, "error join order");
     let occupancy_after = handles.registry.occupancy.held.lock().expect("readable").len();
@@ -700,7 +718,24 @@ fn an_error_joins_every_worker_before_the_private_frontend_is_finalised() {
         "and the private frontend is not finalised before that worker is joined"
     );
     assert!(error.is_some(), "the injected error is preserved");
-    assert_eq!(occupancy_after, 0, "the worker's ending completed before the service returned");
+    // THE NUMBER STAYS WITH THE DEFERRED DUTY. The connection's own
+    // destruction found its registered worker running and deferred, and the
+    // service's collection joined that worker without executing the duty;
+    // the custody's join evidence, not a freed number, is what says the
+    // worker's ending completed before the service returned.
+    assert_eq!(occupancy_after, 1, "{after:?}");
+    assert_eq!(after.attachment, Some(PrivateAttachment::Started));
+    assert_eq!(
+        after.standing,
+        Some(PrivateDestructionStanding::Decided(
+            PrivateDestructionDecision::Deferred(PrivateDestructionDeferral::WorkerRunning)
+        ))
+    );
+    assert_eq!(
+        after.join_phase,
+        Some(PrivateReapingPhase::Joined),
+        "the worker was joined before the service returned"
+    );
     assert_kept_exactly_one(&after);
     drop(transactions);
     let _ = std::fs::remove_file(&socket_path);
@@ -728,11 +763,15 @@ fn an_unwind_joins_every_worker_before_the_private_frontend_is_finalised() {
     handshake(&mut client);
     let surface = draw_and_learn_surface(&mut client, &transactions);
     assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
-    let parents = handles
-        .registry
-        .window_parents
+    // As in the error case: the attached worker's home is held, so its
+    // departure visit cannot finish while the hold stands.
+    let custody = wait_attached(&handles.registry);
+    let held_home = custody
+        .cleanup_record()
+        .ordered_home
+        .state
         .lock()
-        .expect("a readable parent table");
+        .expect("a readable home");
     handles
         .raster
         .try_route(raster_requirement_for(surface))
@@ -740,7 +779,7 @@ fn an_unwind_joins_every_worker_before_the_private_frontend_is_finalised() {
     let client_ended = eof_within(&mut client, 3);
     let returned_while_held = finished.recv_timeout(Duration::from_secs(1)).is_ok();
     let accepting_while_held = lifecycle_still_accepting(&handles.registry);
-    drop(parents);
+    drop(held_home);
     let (unwound, _error, _reported, after) =
         launch_outcome(handle, &finished, returned_while_held, "unwind join order");
     let occupancy_after = handles.registry.occupancy.held.lock().expect("readable").len();
@@ -754,7 +793,21 @@ fn an_unwind_joins_every_worker_before_the_private_frontend_is_finalised() {
         accepting_while_held,
         "and the private frontend's own fallback has not run before that worker is joined"
     );
-    assert_eq!(occupancy_after, 0);
+    // As in the error case: the number stays with the deferred duty, and the
+    // custody's join evidence says the worker was joined.
+    assert_eq!(occupancy_after, 1, "{after:?}");
+    assert_eq!(after.attachment, Some(PrivateAttachment::Started));
+    assert_eq!(
+        after.standing,
+        Some(PrivateDestructionStanding::Decided(
+            PrivateDestructionDecision::Deferred(PrivateDestructionDeferral::WorkerRunning)
+        ))
+    );
+    assert_eq!(
+        after.join_phase,
+        Some(PrivateReapingPhase::Joined),
+        "the worker was joined before the unwinding service returned"
+    );
     assert_eq!(after.shelf.len(), 1, "and the unsent raster envelope is retained");
     drop(transactions);
     let _ = std::fs::remove_file(&socket_path);

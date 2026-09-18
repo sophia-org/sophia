@@ -147,7 +147,7 @@ impl PrivateXServerFrontend {
     /// it is refused rather than described.
     fn endpoint_for(
         &self,
-        registration: &XServerFrontendClientRouteRegistration,
+        registration: &PrivateCleanupRecord,
     ) -> Result<PrivateEndpointIdentity, PrivateAdmissionRefusal> {
         let client = registration.client;
         self.participant.under_boundary(|_authority, _issuer, bindings| {

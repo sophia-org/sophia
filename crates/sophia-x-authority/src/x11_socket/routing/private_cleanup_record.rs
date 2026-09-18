@@ -106,6 +106,14 @@ struct PrivateCleanupRecord {
     /// holds this record after that frame has returned. One claim: a second
     /// request finds the first and does nothing.
     destruction: Mutex<PrivateDestructionStanding>,
+    /// What a worker serving this connection will need, published once by
+    /// the connection after its setup is complete.
+    ///
+    /// RESERVED HERE, ON THE RECORD THE CONNECTION ALREADY HAS, and read by
+    /// the service that starts and collects the worker. Empty means not
+    /// ready: nothing starts for a connection that never published, and
+    /// nothing is reconstructed for it by number.
+    worker_readiness: std::sync::OnceLock<PrivateWorkerReadiness>,
 }
 
 #[cfg(unix)]
@@ -128,6 +136,7 @@ impl PrivateCleanupRecord {
         Self {
             number: std::sync::OnceLock::new(),
             destruction: Mutex::new(PrivateDestructionStanding::NotRequested),
+            worker_readiness: std::sync::OnceLock::new(),
             lifecycle: Mutex::new(None),
             ordered_continuation: Mutex::new(continuation),
             ordered_home: home,

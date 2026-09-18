@@ -94,14 +94,14 @@ impl XAuthorityOrderedTransport {
     /// and a binding that failed is not a licence to destroy them.
     #[allow(clippy::result_large_err)] // The receiver travels out rather than being dropped.
     fn bind(
-        registration: &XServerFrontendClientRouteRegistration,
+        record: &PrivateCleanupRecord,
         ordered: XAuthorityOrderedReceiver,
         output: &Arc<Mutex<UnixStream>>,
         wire: &Arc<X11WirePermission>,
         control_pending: &Arc<AtomicUsize>,
         stop: Option<&Arc<AtomicBool>>,
     ) -> Result<Self, (X11OrderedServingRefusal, XAuthorityOrderedReceiver)> {
-        if !ordered.minted_by(registration) {
+        if !ordered.minted_by(record) {
             return Err((X11OrderedServingRefusal::ForeignReceiver, ordered));
         }
         // Taken before anything is owned, so a descriptor that cannot be had
@@ -368,15 +368,15 @@ impl X11OrderedServingOwner {
     #[cfg_attr(not(test), allow(dead_code))] // Superseded by prepare/commit.
     fn for_registration(
         frontend: &crate::x11_socket::PrivateXServerFrontend,
-        registration: &XServerFrontendClientRouteRegistration,
+        record: &PrivateCleanupRecord,
         transport: XAuthorityOrderedTransport,
     ) -> Result<Self, (X11OrderedServingRefusal, XAuthorityOrderedTransport)> {
         // Asked again here, because a transport bound for one registration
         // must not prepare a writer for another even though both are opaque.
-        if !transport.ordered.minted_by(registration) {
+        if !transport.ordered.minted_by(record) {
             return Err((X11OrderedServingRefusal::ForeignReceiver, transport));
         }
-        let endpoint = match frontend.endpoint_for(registration) {
+        let endpoint = match frontend.endpoint_for(record) {
             Ok(endpoint) => endpoint,
             Err(refusal) => {
                 return Err((X11OrderedServingRefusal::Unadmitted(refusal), transport));
