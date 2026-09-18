@@ -55,6 +55,19 @@ impl core::fmt::Display for PrivateInputWaitExpired {
 
 impl std::error::Error for PrivateInputWaitExpired {}
 
+/// What one maintenance visit reported.
+///
+/// A VISIT, NOT A TALLY. A stop drives a bounded number of attempts, and
+/// reaching that bound means the loop stopped asking rather than that anything
+/// settled. Each visit's own phase, status and allowance refusal are kept so a
+/// reader can see which of those it was.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PrivateInputVisit {
+    pub phase: sophia_x_authority::PrivateMaintenancePhase,
+    pub status: sophia_x_authority::PrivateMaintenanceStatus,
+    pub allowance_refusal: Option<sophia_input_authority::ServiceStartRefusal>,
+}
+
 /// How the invocation itself ended.
 ///
 /// DISTINCT FROM THE THREAD'S FATE. An invocation can unwind while its thread
@@ -163,6 +176,8 @@ pub struct PrivateInputOutcome {
     /// because printing custody is not reporting it.
     pub(super) retained: Option<Arc<super::service::PrivateInputRuntime>>,
     pub maintenance: Vec<PrivateDeferredCleanupOutcome>,
+    /// What each maintenance visit reported, in order.
+    pub visits: Vec<PrivateInputVisit>,
     /// Whether the invocation was interrupted. Reported as itself and never
     /// cleared: an interruption that is later tidied up was still an
     /// interruption, and the budget it closed stays closed.
@@ -186,6 +201,7 @@ impl core::fmt::Debug for PrivateInputOutcome {
             .field("execution", &self.execution)
             .field("service_thread", &self.service_thread)
             .field("maintenance", &self.maintenance)
+            .field("visits", &self.visits)
             .field("interrupted", &self.interrupted)
             .field("settlement", &self.settlement)
             .field("retains_obligations", &self.retains_obligations())
@@ -343,12 +359,176 @@ impl PrivateInputHandle {
     ///
     /// Session mints the transaction, so the acknowledgement is matched
     /// against this exact submission rather than a number the caller guessed.
+    /// Issue a submission handle for one exact admitted connection.
+    ///
+    /// EVERY CONDITION IS CURRENT. Grants must be enabled, the admission must
+    /// have presented evidence for this instance, the registry must still hold
+    /// it as current, and the boundary must still have a live connection for
+    /// it. The expected admission then travels into the act that issues the
+    /// grant, so a number reused between this call and that act is refused
+    /// there rather than served. No Session lock is held across the port wait.
+    ///
+    /// The ingress is issued once and retained, so the grant, the device and
+    /// the completion cell continue across every request the adapter makes.
+    pub fn issue(
+        &self,
+        context: ClientAdmissionContext,
+        device: sophia_protocol::DeviceId,
+    ) -> Result<PrivateInputSubmission, PrivateInputIssueRefusal> {
+        let live = self
+            .runtime
+            .participant
+            .admitted()
+            .map_err(|_| PrivateInputIssueRefusal::Unavailable)?;
+        let client = super::admission::may_issue(
+            self.runtime.grants,
+            &self.runtime.admitted,
+            &self.runtime.registry,
+            context,
+            &live,
+        )?;
+        let ingress = self
+            .runtime
+            .access
+            .ingress_for_admission(
+                &self.runtime.owner.lease(),
+                client,
+                device,
+                context.client_id,
+            )
+            .map_err(|_| PrivateInputIssueRefusal::ConnectionGone)?;
+        Ok(PrivateInputSubmission::new(
+            Arc::clone(&self.runtime),
+            ingress,
+            PrivateInputConnection {
+                client,
+                admission: context.client_id,
+                connection_generation: context.auth_provenance.session_generation,
+            },
+            device,
+        ))
+    }
+
+    /// Revoke one admission and retire exactly the grants it authorised.
+    pub fn revoke(
+        &self,
+        context: ClientAdmissionContext,
+    ) -> Result<PrivateInputConnection, PrivateInputIssueRefusal> {
+        let live = self
+            .runtime
+            .participant
+            .admitted()
+            .map_err(|_| PrivateInputIssueRefusal::Unavailable)?;
+        let seen = live
+            .iter()
+            .find(|seen| seen.admission == context.client_id)
+            .ok_or(PrivateInputIssueRefusal::ConnectionGone)?;
+        self.runtime
+            .participant
+            .revoke_admission(seen.client, context.client_id)
+            .map_err(|_| PrivateInputIssueRefusal::ConnectionGone)?;
+        Ok(PrivateInputConnection {
+            client: seen.client,
+            admission: seen.admission,
+            connection_generation: seen.connection_generation,
+        })
+    }
+
+    /// Take the delivery receipts that have arrived, without waiting.
+    ///
+    /// DRAINED, NEVER PROBED AWAY. Each call returns what is queued and leaves
+    /// nothing behind; asking whether anything is there is the same act as
+    /// taking it, so there is no separate question that consumes.
+    pub fn drain_deliveries(&self) -> Vec<XAuthorityClientInputDelivery> {
+        self.runtime
+            .deliveries
+            .lock()
+            .map(|held| held.try_iter().collect())
+            .unwrap_or_default()
+    }
+
+    /// Take delivery receipts, waiting up to this bound for the first one.
+    pub fn drain_deliveries_within(&self, within: Duration) -> Vec<XAuthorityClientInputDelivery> {
+        let Ok(held) = self.runtime.deliveries.lock() else {
+            return Vec::new();
+        };
+        let mut taken = Vec::new();
+        if let Ok(first) = held.recv_timeout(within) {
+            taken.push(first);
+        }
+        taken.extend(held.try_iter());
+        taken
+    }
+
+    /// Take the control acknowledgements that have arrived, without waiting.
+    ///
+    /// DRAINED, NEVER PROBED AWAY. Each call returns what is queued and leaves
+    /// nothing behind; asking whether anything is there is the same act as
+    /// taking it, so there is no separate question that consumes.
+    pub fn drain_acknowledgements(&self) -> Vec<XAuthorityClientControlAck> {
+        self.runtime
+            .acknowledgements
+            .lock()
+            .map(|held| held.try_iter().collect())
+            .unwrap_or_default()
+    }
+
+    /// Take control acknowledgements, waiting up to this bound for the first one.
+    pub fn drain_acknowledgements_within(
+        &self,
+        within: Duration,
+    ) -> Vec<XAuthorityClientControlAck> {
+        let Ok(held) = self.runtime.acknowledgements.lock() else {
+            return Vec::new();
+        };
+        let mut taken = Vec::new();
+        if let Ok(first) = held.recv_timeout(within) {
+            taken.push(first);
+        }
+        taken.extend(held.try_iter());
+        taken
+    }
+
+    /// Take the observed transaction batches that have arrived, without waiting.
+    ///
+    /// DRAINED, NEVER PROBED AWAY. Each call returns what is queued and leaves
+    /// nothing behind; asking whether anything is there is the same act as
+    /// taking it, so there is no separate question that consumes.
+    pub fn drain_transactions(&self) -> Vec<XAuthorityObservedTransactionBatch> {
+        self.runtime
+            .transactions
+            .lock()
+            .map(|held| held.try_iter().collect())
+            .unwrap_or_default()
+    }
+
+    /// Take observed transaction batches, waiting up to this bound for the first one.
+    pub fn drain_transactions_within(
+        &self,
+        within: Duration,
+    ) -> Vec<XAuthorityObservedTransactionBatch> {
+        let Ok(held) = self.runtime.transactions.lock() else {
+            return Vec::new();
+        };
+        let mut taken = Vec::new();
+        if let Ok(first) = held.recv_timeout(within) {
+            taken.push(first);
+        }
+        taken.extend(held.try_iter());
+        taken
+    }
+
     pub fn submit_action(
         &self,
         connection: PrivateInputConnection,
         action: PrivateInputAction,
     ) -> Result<PrivateInputSubmitted, PrivateInputControlError> {
-        let transaction = self.runtime.next_transaction();
+        // Exhaustion is refused before the command is built, so no control is
+        // ever submitted under an identity another one already holds.
+        let transaction = self
+            .runtime
+            .next_transaction()
+            .ok_or(PrivateInputControlError::Exhausted)?;
         let surface = action.surface();
         let command = sophia_x_authority::XAuthorityClientControlCommand {
             client: connection.client,
@@ -399,143 +579,199 @@ impl PrivateInputHandle {
     /// nothing about commitment, which is why the committed count is separate.
     pub fn apply_committed(
         &self,
-        _within: Duration,
+        within: Duration,
     ) -> Result<PrivateInputCommitted, PrivateInputUnavailable> {
-        unimplemented!("service thread lands with the keeper work")
+        let batches = self.drain_transactions_within(within);
+        let mut report = PrivateInputCommitted {
+            batches_observed: batches.len(),
+            ..PrivateInputCommitted::default()
+        };
+        if batches.is_empty() {
+            return Ok(report);
+        }
+
+        // MAPPING EDGES COME FROM THE BATCH, not from committed presence. A
+        // surface is admissible when the batch says it is mapped, or when a
+        // policy-managed deferred map has raised a Request that this admission
+        // is what satisfies.
+        let mut wants_admission = std::collections::BTreeSet::new();
+        let mut withdrawn = std::collections::BTreeSet::new();
+        let mut intakes = Vec::with_capacity(batches.len());
+        for batch in &batches {
+            for seen in &batch.surface_presentations {
+                if seen.mapped {
+                    wants_admission.insert(seen.surface);
+                }
+            }
+            for intent in &batch.presentation_intents {
+                match intent.kind {
+                    sophia_protocol::SurfacePresentationIntentKind::Request => {
+                        wants_admission.insert(intent.surface);
+                    }
+                    sophia_protocol::SurfacePresentationIntentKind::Withdraw => {
+                        withdrawn.insert(intent.surface);
+                    }
+                }
+            }
+            withdrawn.extend(batch.removed_surfaces.iter().copied());
+            intakes.push(
+                sophia_engine::AuthorityTransactionIntake::new(
+                    batch.transaction,
+                    batch.transactions.clone(),
+                )
+                .with_surface_removals(batch.removed_surfaces.clone()),
+            );
+        }
+
+        let mut coordinator = self
+            .runtime
+            .coordinator
+            .lock()
+            .map_err(|_| PrivateInputUnavailable)?;
+        let commits = coordinator.commit_authority_batches(&intakes);
+        report.commits = commits.len();
+
+        // ONLY A COMMIT WHOSE OUTCOME IS Committed PRODUCES AN EFFECT. A
+        // rejected or timed out transaction is a commit result too, and
+        // treating it as committed is the failure this separation exposes.
+        let mut effects = Vec::new();
+        for commit in &commits {
+            if commit.outcome != sophia_protocol::TransactionOutcome::Committed {
+                continue;
+            }
+            report.committed += 1;
+            for surface in &commit.applied_surfaces {
+                if withdrawn.contains(surface) {
+                    effects.push((
+                        commit.transaction,
+                        *surface,
+                        sophia_x_authority::XAuthorityControlKind::WithdrawSurface,
+                        None,
+                    ));
+                    continue;
+                }
+                if !wants_admission.contains(surface) {
+                    continue;
+                }
+                // GEOMETRY FROM THE COMMITTED STATE, never from a caller.
+                let Some(geometry) = coordinator
+                    .committed_surfaces()
+                    .iter()
+                    .find(|held| held.surface == *surface)
+                    .map(|held| held.geometry)
+                else {
+                    continue;
+                };
+                let first = self
+                    .runtime
+                    .admitted_surfaces
+                    .lock()
+                    .map(|held| !held.contains(surface))
+                    .map_err(|_| PrivateInputUnavailable)?;
+                let kind = if first {
+                    sophia_x_authority::XAuthorityControlKind::AdmitSurface
+                } else {
+                    sophia_x_authority::XAuthorityControlKind::ConfigureSurface
+                };
+                effects.push((commit.transaction, *surface, kind, Some(geometry)));
+            }
+        }
+        drop(coordinator);
+
+        for (committed_transaction, surface, kind, geometry) in effects {
+            let submitted = self.route_committed(&batches, surface, kind, geometry);
+            match submitted {
+                Ok(submitted) => {
+                    if let Ok(mut held) = self.runtime.admitted_surfaces.lock() {
+                        match kind {
+                            sophia_x_authority::XAuthorityControlKind::WithdrawSurface => {
+                                held.remove(&surface);
+                            }
+                            _ => {
+                                held.insert(surface);
+                            }
+                        }
+                    }
+                    report.effects.push(super::PrivateInputCommittedEffect::new(
+                        committed_transaction,
+                        surface,
+                        kind,
+                        geometry,
+                        Some(submitted),
+                    ));
+                }
+                Err(refusal) => {
+                    report.effects.push(super::PrivateInputCommittedEffect::new(
+                        committed_transaction,
+                        surface,
+                        kind,
+                        geometry,
+                        None,
+                    ));
+                    report.refused.push(refusal);
+                }
+            }
+        }
+        Ok(report)
     }
 
-    /// Issue a submission handle for one exact admitted connection.
-    ///
-    /// EVERY CONDITION IS CURRENT. Grants must be enabled, the admission must
-    /// have presented evidence for this instance, the registry must still hold
-    /// it as the current admission, and the boundary must still have a live
-    /// connection for it. The expected admission then travels into the act
-    /// that issues the grant, so a number reused between this call and that
-    /// act is refused there rather than served.
-    ///
-    /// The ingress is issued once and retained inside the returned handle, so
-    /// the grant, the device and the completion cell continue across every
-    /// request the adapter makes.
-    pub fn issue(
+    /// Submit one committed effect to the connection that owns its surface.
+    fn route_committed(
         &self,
-        context: ClientAdmissionContext,
-        device: sophia_protocol::DeviceId,
-    ) -> Result<PrivateInputSubmission, PrivateInputIssueRefusal> {
-        let live = self
+        batches: &[XAuthorityObservedTransactionBatch],
+        surface: sophia_protocol::SurfaceId,
+        kind: sophia_x_authority::XAuthorityControlKind,
+        geometry: Option<sophia_protocol::Rect>,
+    ) -> Result<PrivateInputSubmitted, PrivateInputControlError> {
+        let client = batches
+            .iter()
+            .flat_map(|batch| batch.surface_routes.iter())
+            .find(|route| route.surface == surface)
+            .map(|route| route.client)
+            .ok_or(PrivateInputControlError::ConnectionGone)?;
+        let transaction = self
             .runtime
-            .participant
-            .admitted()
-            .map_err(|_| PrivateInputIssueRefusal::Unavailable)?;
-        // Every current condition, and none of Session's locks held across the
-        // port wait below: this returns a client number and drops what it read.
-        let client = super::admission::may_issue(
-            self.runtime.grants,
-            &self.runtime.admitted,
-            &self.runtime.registry,
-            context,
-            &live,
-        )?;
-        let ingress = self
+            .next_transaction()
+            .ok_or(PrivateInputControlError::Exhausted)?;
+        let command = match (kind, geometry) {
+            (sophia_x_authority::XAuthorityControlKind::AdmitSurface, Some(geometry)) => {
+                sophia_x_authority::XAuthorityControlCommand::AdmitSurface {
+                    transaction,
+                    surface,
+                    geometry,
+                }
+            }
+            (sophia_x_authority::XAuthorityControlKind::ConfigureSurface, Some(geometry)) => {
+                sophia_x_authority::XAuthorityControlCommand::ConfigureSurface {
+                    transaction,
+                    surface,
+                    geometry,
+                }
+            }
+            (sophia_x_authority::XAuthorityControlKind::WithdrawSurface, _) => {
+                sophia_x_authority::XAuthorityControlCommand::WithdrawSurface {
+                    transaction,
+                    surface,
+                }
+            }
+            _ => return Err(PrivateInputControlError::ConnectionGone),
+        };
+        let producer = self
             .runtime
             .access
-            .ingress_for_admission(
+            .control_producer(&self.runtime.owner.lease())
+            .map_err(|_| PrivateInputControlError::Ended)?;
+        producer
+            .submit(
                 &self.runtime.owner.lease(),
-                client,
-                device,
-                context.client_id,
+                sophia_x_authority::XAuthorityClientControlCommand { client, command },
             )
-            .map_err(|_| PrivateInputIssueRefusal::ConnectionGone)?;
-        Ok(PrivateInputSubmission::new(
-            Arc::clone(&self.runtime),
-            ingress,
-            PrivateInputConnection {
-                client,
-                admission: context.client_id,
-                connection_generation: context.auth_provenance.session_generation,
-            },
-            device,
-        ))
-    }
-
-    /// Revoke one admission and retire exactly the grants it authorised.
-    pub fn revoke(
-        &self,
-        _context: ClientAdmissionContext,
-    ) -> Result<PrivateInputConnection, PrivateInputIssueRefusal> {
-        unimplemented!("service thread lands with the keeper work")
-    }
-
-    /// Take the delivery receipts that have arrived, without waiting.
-    ///
-    /// DRAINED, NEVER PROBED AWAY. Each call returns what is queued and
-    /// leaves nothing behind; a caller that wants to wait supplies a bound to
-    /// `drain_deliveries_within`. Asking whether anything is there is the same
-    /// act as taking it, so there is no separate question that consumes.
-    pub fn drain_deliveries(&self) -> Vec<XAuthorityClientInputDelivery> {
-        self.runtime
-            .deliveries
-            .lock()
-            .map(|held| held.try_iter().collect())
-            .unwrap_or_default()
-    }
-
-    /// Take delivery receipts, waiting up to this bound for the first one.
-    pub fn drain_deliveries_within(&self, within: Duration) -> Vec<XAuthorityClientInputDelivery> {
-        let Ok(held) = self.runtime.deliveries.lock() else {
-            return Vec::new();
-        };
-        let mut taken = Vec::new();
-        if let Ok(first) = held.recv_timeout(within) {
-            taken.push(first);
-        }
-        taken.extend(held.try_iter());
-        taken
-    }
-
-    pub fn drain_acknowledgements(&self) -> Vec<XAuthorityClientControlAck> {
-        self.runtime
-            .acknowledgements
-            .lock()
-            .map(|held| held.try_iter().collect())
-            .unwrap_or_default()
-    }
-
-    pub fn drain_acknowledgements_within(
-        &self,
-        within: Duration,
-    ) -> Vec<XAuthorityClientControlAck> {
-        let Ok(held) = self.runtime.acknowledgements.lock() else {
-            return Vec::new();
-        };
-        let mut taken = Vec::new();
-        if let Ok(first) = held.recv_timeout(within) {
-            taken.push(first);
-        }
-        taken.extend(held.try_iter());
-        taken
-    }
-
-    pub fn drain_transactions(&self) -> Vec<XAuthorityObservedTransactionBatch> {
-        self.runtime
-            .transactions
-            .lock()
-            .map(|held| held.try_iter().collect())
-            .unwrap_or_default()
-    }
-
-    pub fn drain_transactions_within(
-        &self,
-        within: Duration,
-    ) -> Vec<XAuthorityObservedTransactionBatch> {
-        let Ok(held) = self.runtime.transactions.lock() else {
-            return Vec::new();
-        };
-        let mut taken = Vec::new();
-        if let Ok(first) = held.recv_timeout(within) {
-            taken.push(first);
-        }
-        taken.extend(held.try_iter());
-        taken
+            .map(|_sequence| PrivateInputSubmitted {
+                transaction,
+                surface,
+                kind,
+            })
+            .map_err(|(refusal, command)| PrivateInputControlError::Refused(refusal, command))
     }
 
     /// Stop the service and collect it.

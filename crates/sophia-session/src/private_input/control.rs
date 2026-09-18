@@ -68,6 +68,10 @@ pub enum PrivateInputControlError {
     ),
     /// The service has ended.
     Ended,
+    /// This service's control transaction identities are used up. Refused
+    /// before anything is submitted, because reusing one would let a single
+    /// acknowledgement answer two different controls.
+    Exhausted,
     /// A lock this needed could not be read. Never reported as a refusal: a
     /// boundary that could not be asked has not declined anything.
     Unavailable,
@@ -95,10 +99,6 @@ pub struct PrivateInputCommittedEffect {
 }
 
 impl PrivateInputCommittedEffect {
-    #[expect(
-        dead_code,
-        reason = "built by apply_committed; the unfulfilled expectation is what removes this"
-    )]
     pub(super) fn new(
         committed_transaction: TransactionId,
         surface: SurfaceId,

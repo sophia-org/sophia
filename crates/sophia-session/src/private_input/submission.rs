@@ -48,6 +48,10 @@ pub enum PrivateInputSubmitError {
     Refused(sophia_x_authority::PrivateSendError),
     /// The service has ended.
     Ended,
+    /// This service's delivery or serial identities are used up. Refused
+    /// before the order sees anything, because a reused delivery would let one
+    /// receipt answer two requests.
+    Exhausted,
 }
 
 /// The only thing an adapter receives.
@@ -142,8 +146,16 @@ impl PrivateInputSubmission {
         local: Point,
         kind: InputEventKind,
     ) -> Result<PrivateInputAccepted, PrivateInputSubmitError> {
-        let (delivery, time_msec) = self.runtime.next_delivery();
-        let serial = self.serial.fetch_add(1, Ordering::AcqRel);
+        let (delivery, time_msec) = self
+            .runtime
+            .next_delivery()
+            .ok_or(PrivateInputSubmitError::Exhausted)?;
+        let serial = self
+            .serial
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |held| {
+                held.checked_add(1)
+            })
+            .map_err(|_| PrivateInputSubmitError::Exhausted)?;
         let route = sophia_x_authority::XAuthorityRoutedInput {
             request: sophia_protocol::RoutedInputRequest {
                 serial,

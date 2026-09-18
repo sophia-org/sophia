@@ -28,7 +28,7 @@ use super::admission::{PrivateInputAdmissionPolicy, PrivateInputAdmissionRecord}
 use super::config::PrivateInputConfig;
 use super::handle::{
     PrivateInputOutcome, PrivateInputReadiness, PrivateInputRefusal, PrivateInputSettlement,
-    PrivateInputThreadJoin,
+    PrivateInputThreadJoin, PrivateInputVisit,
 };
 
 /// Everything Session owns for one private input service.
@@ -46,6 +46,17 @@ pub(super) struct PrivateInputRuntime {
     /// own and are untouched by this.
     pub(super) started: std::time::Instant,
     pub(super) next_delivery: AtomicU64,
+    /// This Session's own committed-state coordinator.
+    ///
+    /// THE REAL ONE, held here rather than by a caller or an example. Its
+    /// committed surface state is the only source of the geometry a map or a
+    /// configure carries, so a caller cannot supply one and cannot seed
+    /// applied state without a real transaction going through it.
+    pub(super) coordinator: Mutex<sophia_engine::ProductionSessionCoordinator>,
+    /// Surfaces this service has already admitted, by their whole SurfaceId.
+    /// The id carries its own incarnation, so a surface destroyed and created
+    /// again is a different entry rather than a stale one.
+    pub(super) admitted_surfaces: Mutex<std::collections::BTreeSet<sophia_protocol::SurfaceId>>,
     pub(super) owner: Arc<PrivateServiceOwner>,
     pub(super) store: PrivateSettlementOwner,
     pub(super) participant: PrivateAdmissionParticipant,
@@ -84,6 +95,8 @@ pub(super) struct ServiceClosed {
     /// What the keeper still held once the invocation ended, however it ended.
     pub(super) execution: Option<sophia_x_authority::PrivateExecutionReading>,
     pub(super) maintenance: Vec<sophia_x_authority::PrivateDeferredCleanupOutcome>,
+    /// What each maintenance visit actually reported.
+    pub(super) visits: Vec<PrivateInputVisit>,
     /// Whether the budget this invocation ran under was interrupted.
     ///
     /// READ FROM A REAL VISIT, not inferred from an unwind. An interrupted
@@ -226,6 +239,7 @@ impl PrivateInputRuntime {
                     workers: None,
                     execution: None,
                     maintenance: Vec::new(),
+                    visits: Vec::new(),
                     interrupted: false,
                 };
                 match result {
@@ -265,6 +279,14 @@ impl PrivateInputRuntime {
                     {
                         report.interrupted = true;
                     }
+                    // EVERY VISIT IS REPORTED AS ITSELF. The count below is a
+                    // bound on attempts and nothing more: reaching it says the
+                    // loop stopped asking, never that anything settled.
+                    report.visits.push(PrivateInputVisit {
+                        phase: visit.phase(),
+                        status: visit.status(),
+                        allowance_refusal: visit.allowance_refusal(),
+                    });
                 }
                 let _ = closed_tx.send(report);
             })
@@ -305,6 +327,10 @@ impl PrivateInputRuntime {
             deliveries: Mutex::new(deliveries),
             transactions: Mutex::new(transactions),
             closed: Mutex::new(closed),
+            coordinator: Mutex::new(sophia_engine::ProductionSessionCoordinator::new(
+                sophia_engine::HeadlessEngine::new(sophia_engine::HeadlessOutput::deterministic()),
+            )),
+            admitted_surfaces: Mutex::new(std::collections::BTreeSet::new()),
             seat: binding.seat(),
             started: std::time::Instant::now(),
             next_delivery: AtomicU64::new(1),
@@ -356,19 +382,24 @@ impl PrivateInputRuntime {
     /// against what it submitted needs the exact time that went into the
     /// request, so it is returned rather than left for the reader to infer or
     /// mask out.
-    pub(super) fn next_delivery(&self) -> (sophia_x_authority::XAuthorityInputDeliveryId, u64) {
-        let delivery = sophia_x_authority::XAuthorityInputDeliveryId::from_raw(
-            self.next_delivery.fetch_add(1, Ordering::AcqRel),
-        );
+    pub(super) fn next_delivery(
+        &self,
+    ) -> Option<(sophia_x_authority::XAuthorityInputDeliveryId, u64)> {
+        // CHECKED, NOT WRAPPING. A counter that wraps hands a second request
+        // the identity of a first one that may still be outstanding, and the
+        // receipt for either would then answer both. Exhaustion is refused
+        // before anything is accepted, which is what the producers already do.
+        let raw = next_identity(&self.next_delivery)?;
         let time_msec = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        (delivery, time_msec)
+        Some((
+            sophia_x_authority::XAuthorityInputDeliveryId::from_raw(raw),
+            time_msec,
+        ))
     }
 
     /// Session's next control transaction.
-    pub(super) fn next_transaction(&self) -> sophia_protocol::TransactionId {
-        sophia_protocol::TransactionId::from_raw(
-            self.next_transaction.fetch_add(1, Ordering::AcqRel),
-        )
+    pub(super) fn next_transaction(&self) -> Option<sophia_protocol::TransactionId> {
+        next_identity(&self.next_transaction).map(sophia_protocol::TransactionId::from_raw)
     }
 
     /// Stop the service and collect it.
@@ -407,6 +438,7 @@ impl PrivateInputRuntime {
             outcome.workers = closed.workers;
             outcome.execution = closed.execution;
             outcome.maintenance = closed.maintenance;
+            outcome.visits = closed.visits;
             outcome.interrupted = closed.interrupted;
         }
         outcome
@@ -419,6 +451,20 @@ impl PrivateInputRuntime {
 /// not allowed to make, and driving until it stops refusing would turn an
 /// interrupted budget into a spin.
 const PRIVATE_INPUT_MAINTENANCE_VISITS: usize = 8;
+
+/// One more identity from a counter that refuses rather than wraps.
+///
+/// `None` is exhaustion, which a caller turns into a typed refusal before it
+/// accepts anything. Reusing an identity would be worse than refusing: the
+/// receipt for the reused one answers whichever request the reader believes
+/// it belongs to.
+fn next_identity(counter: &AtomicU64) -> Option<u64> {
+    counter
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |held| {
+            held.checked_add(1)
+        })
+        .ok()
+}
 
 fn describe_panic(payload: &(dyn std::any::Any + Send)) -> String {
     payload
