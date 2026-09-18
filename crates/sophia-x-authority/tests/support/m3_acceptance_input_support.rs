@@ -199,6 +199,21 @@ fn b_history(service: &LifecycleService) -> (usize, u16) {
     observed.recv_timeout(Duration::from_secs(5)).unwrap()
 }
 
+fn b_execute_ready(
+    runner: &mut PrivatePreparedRunner,
+) -> Result<PrivateAccountedStep, XServerFrontendRouteError> {
+    for _ in 0..100 {
+        let step = runner.execute_accounted_step();
+        if !matches!(step, Ok(PrivateAccountedStep::Yield { taken: None, .. })) {
+            return step;
+        }
+        // No request was taken. Its original accepted custody remains ready;
+        // only the original service budget's interval must advance.
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    runner.execute_accounted_step()
+}
+
 fn b_observed_input(
     service: &LifecycleService,
     ingress: &PrivateIngress,
@@ -210,7 +225,7 @@ fn b_observed_input(
         &service.registry,
         Box::new(move |runner, lease| {
             pause.wait();
-            let step = runner.execute_accounted_step().unwrap();
+            let step = b_execute_ready(runner).unwrap();
             assert!(matches!(
                 step,
                 PrivateAccountedStep::Step {
@@ -267,7 +282,7 @@ fn b_history_refusals(
             assert!(!other.answers_for(runner.frontend().controller.identity().unwrap()));
             pause.wait();
             std::mem::swap(&mut runner.keyboards, &mut other);
-            let step = runner.execute_accounted_step();
+            let step = b_execute_ready(runner);
             std::mem::swap(&mut runner.keyboards, &mut other);
             assert!(matches!(
                 step.unwrap(),
