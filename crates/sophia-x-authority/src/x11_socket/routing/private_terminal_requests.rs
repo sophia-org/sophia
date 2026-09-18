@@ -5,12 +5,20 @@
 #[cfg(unix)]
 impl PrivateOrderedItem {
     fn retire_request(&mut self) -> Result<bool, PrivateAuthorityRefusal> {
-        use sophia_input_authority::RequestCompletion as Completion;
         let (ran, custody) = match self {
             Self::Ran { custody, .. } => (true, custody),
             Self::Refused { custody, .. } => (false, custody),
             Self::Parked { .. } => return Ok(false),
         };
+        custody.retire_completed_item(ran)
+    }
+}
+
+#[cfg(unix)]
+impl PrivateOutstandingRequest {
+    fn retire_completed_item(&mut self, ran: bool) -> Result<bool, PrivateAuthorityRefusal> {
+        use sophia_input_authority::RequestCompletion as Completion;
+        let custody = self;
         // Revocation can publish Cancelled after an interrupted source call.
         // That is not evidence about effects which the lost call may have
         // begun. Keep both its item and its original charge.
@@ -129,7 +137,7 @@ impl PrivateTerminalInventory {
         cursor: &mut usize,
     ) -> Result<PrivateTerminalVisit, PrivateTerminalDriveRefusal> {
         let current = usize::from(self.current.is_some());
-        let count = current + self.turn.len() + self.delivering.len() + self.undelivered.len();
+        let count = current + self.turn.len() + self.delivering.len() + self.undelivered.len() + self.frozen.len();
         if count == 0 {
             return Ok(PrivateTerminalVisit::Request { disposed: false });
         }
@@ -144,6 +152,8 @@ impl PrivateTerminalInventory {
             if matches!(disposed, Ok(true)) {
                 let item = self.current.take().expect("counted above");
                 self.discard_item_unapplied_pending(&item);
+                self.current_freeze = None;
+                self.current_is_frozen = false;
             }
             disposed
         } else if index < current + self.turn.len() {
@@ -162,12 +172,23 @@ impl PrivateTerminalInventory {
                 self.discard_item_unapplied_pending(&item);
             }
             disposed
-        } else {
+        } else if index < current + self.turn.len() + self.delivering.len() + self.undelivered.len() {
             let index = index - current - self.turn.len() - self.delivering.len();
             let disposed = self.undelivered[index].item.retire_request();
             if matches!(disposed, Ok(true)) {
                 let item = self.undelivered.remove(index).item;
                 self.discard_item_unapplied_pending(&item);
+            }
+            disposed
+        } else {
+            let index = index - current - self.turn.len() - self.delivering.len() - self.undelivered.len();
+            let disposed = self.frozen[index].custody.retire_completed_item(false);
+            if matches!(disposed, Ok(true)) {
+                // This driver requires stopped, collected execution. No row
+                // can resume input, so constant-time disposal need not retain
+                // the live before-effect scheduling order.
+                let row = self.frozen.swap_remove_back(index).expect("counted above");
+                self.discard_unapplied_pending(&row.custody);
             }
             disposed
         }

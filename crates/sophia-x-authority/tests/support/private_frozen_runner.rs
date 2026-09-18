@@ -77,12 +77,54 @@ fn frozen_replacement_refuses_original_without_effect_and_handover_retains_waiti
     fixture.runner.execute_accounted_step().unwrap();
     assert_eq!(fixture.runner.frontend().terminal.frozen.len(), 1);
     assert!(fixture.runner.frontend().terminal.frozen.capacity() >= 5);
+    assert!(fixture.runner.frontend().terminal.frozen[0].custody.observe().unwrap().is_none());
     let settlement = fixture.runner.shutdown();
     drop(settlement);
     assert_eq!(durable.reserved(), Some(2));
     let store = durable.inner.lock().unwrap();
     assert_eq!(store.terminal.len(), 1);
     assert_eq!(store.terminal[0].frozen.len(), 1);
-    assert!(store.terminal[0].frozen[0].custody.observe().unwrap().is_none());
+    assert_eq!(store.terminal[0].frozen[0].custody.observe().unwrap(), Some(sophia_input_authority::RequestCompletion::Cancelled));
     assert!(!store.terminal[0].is_empty());
+}
+
+#[test]
+fn frozen_original_cancelled_by_shutdown_is_disposed_only_after_exact_publication() {
+    let durable = PrivateSettlementOwner::with_capacity(5);
+    let mut fixture = prepared_ordered_fixture_with_store(XServerFrontendClientId::from_raw(9770), durable.clone());
+    install_prepared_keyboard_freeze(&fixture);
+    fixture.ingress.submit(&fixture.keeper.lease(), key_service_route(fixture.surface, 997700, 42, false)).unwrap();
+    fixture.runner.execute_accounted_step().unwrap();
+    let original = Arc::clone(&fixture.runner.frontend().terminal.frozen[0].custody.input_completion().unwrap().cell);
+    assert!(original.answer().is_none());
+    let mut settlement = fixture.runner.shutdown();
+    let inventory = settlement.terminal.as_mut().unwrap();
+    assert_eq!(inventory.frozen.len(), 1);
+    assert_eq!(durable.reserved(), Some(1));
+    assert!(matches!(inventory.retire_request_one(&mut 0).unwrap(), PrivateTerminalVisit::Request { disposed: true }));
+    assert!(inventory.frozen.is_empty());
+    assert_eq!(durable.reserved(), Some(0));
+    assert_eq!(original.answer().unwrap().outcome, XAuthorityInputDeliveryOutcome::RouteRejected);
+}
+
+#[test]
+fn recovery_cancellation_of_a_frozen_request_closes_the_same_common_reservation() {
+    let mut fixture = prepared_ordered_fixture(XServerFrontendClientId::from_raw(9771));
+    install_prepared_keyboard_freeze(&fixture);
+    fixture.ingress.submit(&fixture.keeper.lease(), key_service_route(fixture.surface, 997710, 42, false)).unwrap();
+    fixture.runner.execute_accounted_step().unwrap();
+    let token = fixture.runner.frontend().terminal.frozen[0].custody.token();
+    let recovery = fixture.runner.frontend().broker.registry.input_recovery.clone();
+    recovery.recover(std::time::Instant::now(), true).unwrap();
+    fixture.runner.execute_accounted_step().unwrap();
+    let private = fixture.runner.frontend.as_mut().unwrap();
+    let Some(PrivateOrderedItem::Refused { refusal: PrivateExecutionRefusal::DeliveryEnded, custody, .. }) = private.terminal.turn.first() else {
+        panic!("the original recovery cancellation prevents the deferred effect");
+    };
+    assert_eq!(custody.token(), token);
+    assert_eq!(custody.phase.get(), PrivateRequestPhase::Settled);
+    assert_eq!(custody.input_completion().unwrap().cell.answer().unwrap().outcome, XAuthorityInputDeliveryOutcome::EpochRevoked);
+    assert!(private.terminal.holds.is_empty());
+    private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    assert!(private.terminal.turn.is_empty() && private.terminal.undelivered.is_empty());
 }

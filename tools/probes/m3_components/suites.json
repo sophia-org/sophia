@@ -15,6 +15,8 @@
       "x11_socket::routing_tests::retained_failed_application_keeps_item_credit_after_completion_and_revocation"
     ],
     "frozen-requests": [
+      "x11_socket::routing_tests::frozen_original_cancelled_by_shutdown_is_disposed_only_after_exact_publication",
+      "x11_socket::routing_tests::recovery_cancellation_of_a_frozen_request_closes_the_same_common_reservation",
       "x11_socket::routing_tests::frozen_requests_keep_original_custody_allow_controls_and_resume_in_order",
       "x11_socket::routing_tests::frozen_replacement_refuses_original_without_effect_and_handover_retains_waiting_rows",
       "x11_socket::routing_tests::private_freeze_requires_exact_original_source_and_open_admission_for_thaw",

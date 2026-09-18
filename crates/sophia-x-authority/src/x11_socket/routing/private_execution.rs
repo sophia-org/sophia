@@ -901,7 +901,16 @@ fn execute_owned(
         };
         match claim {
             ExecutionClaim::Claimed => {}
-            ExecutionClaim::Ended => return Err(PrivateExecutionRefusal::DeliveryEnded),
+            ExecutionClaim::Ended => {
+                // A recovery cancellation is not the common request outcome.
+                // Complete this original reservation without consuming input;
+                // unreadable/revoked common remains owned for its exact
+                // cancellation/retirement path. No request is re-reserved.
+                let _ = participant.execute_current(custody, custody.client(), |_, _| {
+                    Err(sophia_input_authority::RegistrationError::StaleRequest)
+                });
+                return Err(PrivateExecutionRefusal::DeliveryEnded);
+            }
             ExecutionClaim::Contended => {
                 return Err(PrivateExecutionRefusal::DeliveryClaimedElsewhere);
             }
