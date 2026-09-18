@@ -22,6 +22,7 @@ struct Options {
     control: i32,
     socket: PathBuf,
     cookie: PathBuf,
+    ready: PathBuf,
     instance: u64,
     namespace: u64,
     session_generation: u64,
@@ -48,6 +49,7 @@ impl Options {
             "--control-fd",
             "--socket",
             "--cookie-file",
+            "--ready-file",
             "--instance",
             "--namespace",
             "--session-generation",
@@ -87,6 +89,7 @@ impl Options {
             control: positive("--control-fd")?,
             socket: values["--socket"].into(),
             cookie: values["--cookie-file"].into(),
+            ready: values["--ready-file"].into(),
             instance,
             namespace,
             session_generation,
@@ -99,7 +102,7 @@ impl Options {
             },
             lifetime: Duration::from_millis(lifetime),
         };
-        for path in [&options.socket, &options.cookie] {
+        for path in [&options.socket, &options.cookie, &options.ready] {
             if !path.starts_with("/work/")
                 || path
                     .components()
@@ -183,6 +186,15 @@ fn run() -> Result<(), String> {
     }
     println!("sophia_m4_host ready");
     std::io::stdout().flush().map_err(|e| e.to_string())?;
+    // A private artifact makes readiness observable even when a containing
+    // launcher buffers stdout until exit. It is published only after the
+    // production service reported Ready, never from socket-path existence.
+    std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&options.ready)
+        .and_then(|mut file| file.write_all(b"ready\n"))
+        .map_err(|e| e.to_string())?;
     let deadline = Instant::now() + options.lifetime;
     let mut command = Vec::new();
     let mut commits = 0;

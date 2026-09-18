@@ -53,6 +53,8 @@ impl Fixture {
             "/work/case/private.sock",
             "--cookie-file",
             "/work/case/cookie",
+            "--ready-file",
+            "/work/case/ready",
             "--instance",
             "731",
             "--namespace",
@@ -106,17 +108,20 @@ impl Fixture {
         );
     }
 
-    fn await_bound(&mut self) {
+    fn await_ready(&mut self) {
         let deadline = Instant::now() + WAIT;
-        let socket = self.case.join("private.sock");
-        while !socket.exists() {
+        let ready = self.case.join("ready");
+        while std::fs::read(&ready).ok().as_deref() != Some(b"ready\n") {
             let child = self.child.as_mut().unwrap();
             assert!(
                 child.try_wait().unwrap().is_none(),
                 "{}",
                 std::fs::read_to_string(child.log()).unwrap()
             );
-            assert!(Instant::now() < deadline, "private host never bound");
+            assert!(
+                Instant::now() < deadline,
+                "private host never reported readiness"
+            );
             std::thread::sleep(Duration::from_millis(2));
         }
     }
@@ -184,7 +189,7 @@ pub fn containment() {
     assert_eq!(&answer, b"allowed");
     rustix::io::fcntl_setfd(&authorized, rustix::io::FdFlags::empty()).unwrap();
     fixture.launch(&read, &[]);
-    fixture.await_bound();
+    fixture.await_ready();
     let (report, host_actors) = fixture.stopped();
     // The real host validated its inherited descriptors before starting:
     // only the pipe was delegated, although the connected socket was inheritable.
@@ -295,7 +300,7 @@ pub fn no_ambient_fallback() {
     );
     let (mut fixture, read) = Fixture::prepare();
     fixture.launch(&read, &[]);
-    fixture.await_bound();
+    fixture.await_ready();
     let (_, host_actors) = fixture.stopped();
     // Entry validates absence of DRM/input paths and controlling terminal
     // before it can report Ready; no host-side device enumeration is used.
