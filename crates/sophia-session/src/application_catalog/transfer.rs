@@ -48,6 +48,7 @@ impl NativeCatalogPublication {
         self.grant
     }
 
+    #[cfg(feature = "native-session")]
     pub(crate) const fn is_persistent(&self) -> bool {
         self.persistent
     }
