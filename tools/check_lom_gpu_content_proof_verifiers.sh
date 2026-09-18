@@ -147,4 +147,7 @@ grep -q 'application-catalog "lom-panel-gate" launch-policy="trusted-host"' \
 # These transcript controls launch only Python, never a native/GPU fixture.
 python3 -B -m unittest discover -s "$ROOT_DIR/tools/probes/lom_workload/tests"
 
-echo "lom_gpu_content_verifiers schema=1 status=pass mutations=28 structured_events=true pre_takeover_proof=true sequential_renders=2 workload_verifier=true"
+
+python3 -B -m unittest discover -s "$ROOT_DIR/tools/probes/native_launcher/tests"
+
+echo "lom_gpu_content_verifiers schema=1 status=pass mutations=28 structured_events=true pre_takeover_proof=true sequential_renders=2 workload_verifier=true launcher_smoke_verifier=true"

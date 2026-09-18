@@ -98,3 +98,22 @@ fn probe_preserves_real_wm_bindings_includes_and_commands_without_autostart() {
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn native_probe_requires_existing_wm_launcher_key_without_inventing_one() {
+    let root = std::env::temp_dir().join(format!("sophia-launcher-binding-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+    let path = root.join("wm.kdl");
+    write(&path, "schema 1\nshortcut { profile \"operator\"; }\n");
+    assert!(probe::require_launcher_binding(&path).is_err());
+    write(
+        &path,
+        "schema 1\nshortcut { profile \"operator\"; bind \"Super+Space\" \"session:application-launcher\"; }\n",
+    );
+    probe::require_launcher_binding(&path).unwrap();
+    let before = fs::read(&path).unwrap();
+    probe::require_launcher_binding(&path).unwrap();
+    assert_eq!(before, fs::read(&path).unwrap());
+    fs::remove_dir_all(root).unwrap();
+}

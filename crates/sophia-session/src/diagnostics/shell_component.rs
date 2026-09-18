@@ -2,7 +2,10 @@
 pub(super) fn record(name: &str) -> bool {
     matches!(
         name,
-        "sophia_shell_component" | "sophia_shell_component_catalog" | "sophia_native_launcher"
+        "sophia_shell_component"
+            | "sophia_shell_component_catalog"
+            | "sophia_native_launcher"
+            | "sophia_shell_components_shutdown"
     )
 }
 pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
@@ -15,6 +18,7 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
         return value == "1";
     }
     match (record, key) {
+        ("sophia_shell_components_shutdown", "status") => value == "quiescent",
         ("sophia_shell_component", "status") => matches!(
             value,
             "negotiated"

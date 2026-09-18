@@ -162,3 +162,41 @@ fn component_catalog_scan_is_outer_owned_and_shutdown_cannot_restart_it() {
     owner.stop(&mut queue, &mut failures);
     assert!(failures.is_empty());
 }
+
+#[test]
+#[ignore = "explicit device-hidden generated harness profile required"]
+fn generated_component_probe_prepares_without_starting_processes() {
+    let profile = std::env::var("SOPHIA_TEST_COMPONENT_PROFILE").unwrap();
+    let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/fixtures/native_launcher_core.kdl");
+    let config = PersistentXtermSessionConfig::from_args(&[
+        format!("--config={}", core.display()),
+        format!("--desktop-profile={profile}"),
+        "--session-mode=normal".into(),
+        "--wm-process=/absent/hagia".into(),
+        "--wm-interface=sophia_wm_v1".into(),
+        "--shell-process-default=/absent/narthex".into(),
+    ])
+    .unwrap();
+    assert!(config.shell_process.is_none());
+    assert!(config.shell_config.is_none());
+    assert!(config.applications.startup.is_empty());
+    assert_eq!(config.shell_panel_thickness, Some(24));
+    assert!(config.shell_content_enabled && config.shell_content_input_enabled);
+    let components = &config
+        .session_profile
+        .candidate()
+        .components
+        .shell_components;
+    assert_eq!(components.len(), 2);
+    assert_eq!(components[0].role, sophia_config::ShellComponentRole::Bar);
+    assert_eq!(components[0].gpu, sophia_config::ShellGpuMode::Direct);
+    assert_eq!(
+        components[1].role,
+        sophia_config::ShellComponentRole::ApplicationLauncher
+    );
+    assert_eq!(components[1].gpu, sophia_config::ShellGpuMode::Denied);
+    let catalog = config.application_catalog.as_ref().unwrap();
+    assert_eq!(catalog.name, "native-launcher-gate");
+    assert_eq!(catalog.applications, ["terminal"]);
+}

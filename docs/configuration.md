@@ -706,3 +706,39 @@ The panel gate builds Hagia from the clean signed `SOPHIA_HAGIA_ROOT` checkout
 and records its commit and resulting binary hash. It no longer trusts an older
 prebuilt binary at the same filesystem path. All profile bindings remain WM
 configuration; the gate adds none.
+
+### Independent shell components
+
+A desktop may select a bar and an application launcher independently:
+
+```kdl
+shell { enabled #true; content #true; content-input #true; panel 24; gpu "denied"; }
+session {
+    shell-component "panel" "bar" {
+        executable "/absolute/path/to/lom"
+        config "/absolute/path/to/lom.kdl"
+        gpu "direct"
+    }
+    shell-component "menu" "application-launcher" {
+        executable "/absolute/path/to/bemenu-sophia"
+        gpu "denied"
+    }
+    application-catalog "installed"
+    startup
+}
+```
+
+The core config must explicitly define the selected application catalog and its
+launch policy. Key bindings remain in the WM profile; for example,
+`bind "Super+Space" "session:application-launcher"` belongs inside its existing
+`shortcut` section. This selection requires normal session mode and a Sophia WM.
+A bar requires positive panel allowance; a launcher requires content input and a
+known catalog. Launcher-only selection has no panel reservation. GPU permission
+is per component; the global `gpu "direct"` mode is refused here. Explicit legacy
+`--shell-process` conflicts, while `--shell-process-default` and ambient
+`SOPHIA_SHELL_CONFIG` are not inherited by explicitly selected components.
+
+This is implemented selection/configuration, not completed native acceptance.
+The [attended launcher smoke](../tools/probes/native_launcher/README.md) keeps the
+working single-shell probe available and records independent identities. It does
+not install or migrate the user's normal desktop configuration.

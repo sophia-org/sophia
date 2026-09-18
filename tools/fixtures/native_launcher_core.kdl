@@ -1,0 +1,13 @@
+/- kdl-version 2
+schema 2
+session {
+    // Explicit operator-selected smoke catalog, no automatic application start.
+    // The normal launch owner still validates/executes only an admitted choice.
+    application "terminal" id=1 executable="/usr/bin/xterm" placement-class=1 {
+    }
+    application-catalog "native-launcher-gate" launch-policy="trusted-host" {
+        application "terminal"
+        source "/usr/share/applications"
+        terminal "terminal" { arg "-e"; }
+    }
+}

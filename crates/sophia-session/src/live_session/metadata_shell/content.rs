@@ -274,7 +274,7 @@ impl LiveContentSession {
         let pending = self.pending.remove(index);
         let usage = transport.content_usage().unwrap_or_default();
         crate::session_println!(
-            "sophia_live_shell_content schema=1 status=presented output={} candidate_generation={} presentation_epoch={} staging_bytes={} resident_bytes={} retiring_bytes={} backing_bytes={}",
+            "sophia_live_shell_content schema=1 status=presented output={} candidate_generation={} presentation_epoch={} staging_bytes={} resident_bytes={} retiring_bytes={} backing_bytes={} connection_epoch={} content_grant_epoch={}",
             pending.output.id,
             pending.candidate_generation,
             epoch,
@@ -282,6 +282,8 @@ impl LiveContentSession {
             usage.resident,
             usage.retiring,
             usage.backing,
+            pending.grant.connection_epoch,
+            pending.grant.content_grant_epoch,
         );
         self.presented.insert(
             pending.output,
@@ -321,15 +323,20 @@ impl LiveContentSession {
             .facts_generation
             .checked_add(1)
             .ok_or("shell content facts generation exhausted")?;
+        let grant = transport
+            .content_grant()
+            .ok_or(ShellTransportError::WrongContentGrant)?;
         transport.publish_content_output_facts(
             transaction()?,
             self.facts_generation,
             facts.clone(),
         )?;
         crate::session_println!(
-            "sophia_live_shell_content schema=1 status=outputs facts_generation={} outputs={}",
+            "sophia_live_shell_content schema=1 status=outputs facts_generation={} outputs={} connection_epoch={} content_grant_epoch={}",
             self.facts_generation,
             facts.len(),
+            grant.connection_epoch,
+            grant.content_grant_epoch,
         );
         self.published_facts = facts;
         Ok(())

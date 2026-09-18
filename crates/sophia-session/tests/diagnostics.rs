@@ -325,6 +325,8 @@ fn native_shell_gate_outcomes_survive_sanitization_without_client_payloads() {
         "sophia_live_shell_content schema=1 status=outputs facts_generation=3 outputs=2",
         "sophia_live_shell_content schema=1 status=presented output=2 candidate_generation=9 presentation_epoch=11 resident_bytes=24576 backing_bytes=24576",
         "sophia_live_shell_content schema=2 status=transport_failed stage=runtime",
+        "sophia_live_shell_content schema=1 status=presented output=1 candidate_generation=1 presentation_epoch=1 connection_epoch=2 content_grant_epoch=2",
+        "sophia_live_shell_content schema=1 status=outputs facts_generation=1 outputs=2 connection_epoch=2 content_grant_epoch=2",
     ] {
         assert_eq!(
             reduced_record(&format!(
@@ -728,6 +730,7 @@ fn independent_component_evidence_is_bounded_and_payload_free() {
     for record in [
         "sophia_shell_component schema=1 status=negotiated slot=0 role=bar connection_epoch=1 content_grant_epoch=1 revision=6 gpu_mode=direct gpu_grant_epoch=1 device_major=226 device_minor=129",
         "sophia_shell_component schema=1 status=negotiated slot=1 role=application_launcher connection_epoch=2 content_grant_epoch=2 revision=7 gpu_mode=denied gpu_grant_epoch=0 device_major=0 device_minor=0",
+        "sophia_shell_components_shutdown schema=1 status=quiescent",
         "sophia_shell_component schema=1 status=service_failed slot=1",
         "sophia_shell_component schema=1 status=process_retired slot=1 connection_epoch=2 content_grant_epoch=2 endpoint_released=true",
         "sophia_shell_component schema=1 status=process_failed slot=1 connection_epoch=2 content_grant_epoch=2",

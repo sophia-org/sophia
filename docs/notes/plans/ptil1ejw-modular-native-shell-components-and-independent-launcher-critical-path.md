@@ -1336,3 +1336,40 @@ ordinary process run include four selected parents and the child entry exercised
 only through its parent; 14 library tests remain ignored. Strict affected Clippy,
 layout and formatting pass. No new canonical, installation, push or physical
 readiness claim. The component-aware harness/profile and exact final gate remain.
+
+### Component-aware attended harness, 2026-09-18
+
+`lom-test launcher` now selects independent Lom/Bemenu while preserving plain
+`lom-test` as the established single-shell panel workload. It archives the exact
+signed Bemenu source into the evidence directory for a fresh native-only build,
+records source/config/binary hashes and verifies them before/after the session.
+Generated KDL grants direct GPU only to the bar, selects the explicit
+native-launcher-gate catalog and starts no applications automatically. The core
+fixture admits registered xterm plus /usr/share/applications under trusted-host
+policy. The real profile composer requires an existing WM application-launcher
+key; no probe injects or replaces a binding. Current operator profile already
+binds Super+Space. No user configuration was modified or program installed.
+
+Presentation records now include their exact connection/content grant, preventing
+the two clients' independently numbered candidates from satisfying each other's
+checks. Component shutdown records quiescence only after actual backend disposal
+and the aggregate inventory predicate. The smoke verifier requires stable distinct
+roles, exact per-role GPU policy, WM/catalog preparation, two native presentations
+per output per grant on two shared outputs, one supervised process-start outcome,
+and final quiescence. The wrapper also requires normal exit, TTY/keyd recovery and
+unchanged inputs. This is not a claim about visible application windows, focus,
+placement, kernel timestamps or the separate panel latency workload.
+
+Evidence: `.artifacts/bemenu-launcher-harness/final4/python-result.json` and
+`final4-execution.log`. Device-hidden tests: actual generated-profile Session
+preparation (1), Session library (476; 15 ignored), diagnostics (25), real WM
+profile/binding composition (2); tooling suites (29 existing, 20 new/inherited
+launcher controls). The 20-control suite is also selected independently in that
+run; do not count duplicate executions as additional coverage. The real shell
+verifier gate retains its 28 prior mutants. Commands/builds/VT/native results in
+Python command tests are supplied effects; the generator and transcript verifiers
+are actual production tools. Initial fixture errors (missing shortcut profile
+identity, absent private loader cache and an outdated mocked signature command)
+remain separate logs. No false pass is substituted for them. A frozen canonical
+successor, candidate compatibility/build checks and physical readiness audit
+remain before asking the operator to use the new command.

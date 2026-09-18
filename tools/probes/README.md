@@ -241,3 +241,11 @@ t069 or t070 complete.
 `cargo xtask check` runs the bounded reader/CLI regressions and a private frontend
 test that checks both exact formats without mapping, importing or presenting a
 window. That test uses a render node and does not acquire DRM master.
+
+### Independent native launcher
+
+The [native launcher smoke](native_launcher/README.md) adds `lom-test launcher`
+without changing plain `lom-test`. It retains separate component identities,
+per-role GPU policy and host presentation/accounting evidence. Its offline
+controls substitute builds/VT/native effects; no automated physical run is part
+of those controls. See the linked readiness qualification before an attended run.

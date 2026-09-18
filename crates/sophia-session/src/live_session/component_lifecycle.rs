@@ -138,7 +138,11 @@ pub(super) fn finish(
     }
     if let Some(components) = shell_components.as_mut() {
         match components.finish_after_backend_drop(()) {
-            Ok((_, accounting)) if accounting.quiescent() => {}
+            Ok((_, accounting)) if accounting.quiescent() => {
+                crate::session_println!(
+                    "sophia_shell_components_shutdown schema=1 status=quiescent"
+                );
+            }
             Ok(_) => failures.push("component content owners remain after native shutdown".into()),
             Err(()) => failures.push("component final owner transfer refused".into()),
         }
