@@ -137,6 +137,14 @@ pub enum PrivateInputRefusal {
     /// substituted, because an invented output would commit geometry against a
     /// screen nobody asked for.
     Topology(PrivateInputTopologyRefusal),
+    /// The durable store's place count cannot be formed from the configured
+    /// client bound.
+    ///
+    /// REFUSED BEFORE ANYTHING IS BUILT, not discovered by an arithmetic wrap.
+    /// A bound whose place count overflows would, wrapped, produce a store
+    /// sized smaller than the connections it is meant to hold -- which is the
+    /// one failure a capacity is there to prevent.
+    SettlementCapacity { clients: usize, places_each: usize },
     /// The service thread could not be started.
     Thread(std::io::Error),
 }

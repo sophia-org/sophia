@@ -188,6 +188,19 @@ impl PrivateInputRuntime {
                 },
             ))?;
 
+        // AND THE STORE'S SIZE IS FORMED HERE TOO, where it can still be
+        // refused. Wrapping this multiplication would size the store smaller
+        // than the connections it is meant to hold, which is the one failure a
+        // capacity exists to prevent, and it would be found only once a
+        // connection was turned away by a store that had already been built.
+        let settlement_capacity = max_concurrent_clients
+            .get()
+            .checked_mul(PRIVATE_INPUT_SETTLEMENT_PLACES_PER_CLIENT)
+            .ok_or(PrivateInputRefusal::SettlementCapacity {
+                clients: max_concurrent_clients.get(),
+                places_each: PRIVATE_INPUT_SETTLEMENT_PLACES_PER_CLIENT,
+            })?;
+
         // THE AUTHORITY FIRST, with its issuer and submit handles. They are
         // bound together at construction so the gate the frontend installs is
         // built from this instance rather than paired with it afterwards.
@@ -271,7 +284,7 @@ impl PrivateInputRuntime {
             )
             .with_admission_policy(policy);
 
-        let store = PrivateSettlementOwner::with_capacity(max_concurrent_clients.get() * 4);
+        let store = PrivateSettlementOwner::with_capacity(settlement_capacity);
         let owner = Arc::new(
             PrivateServiceOwner::established_over(&store, max_concurrent_clients).ok_or(
                 PrivateInputRefusal::Construction(
@@ -598,6 +611,14 @@ impl PrivateInputRuntime {
         outcome
     }
 }
+
+/// Durable settlement places reserved for each admitted client.
+///
+/// A CONNECTION IS NOT ONE OBLIGATION. Admission, the grants issued under it,
+/// its deliveries and its departure each leave evidence the store must be able
+/// to hold at once, so a store sized one place per client would refuse a
+/// connection that had done nothing wrong.
+const PRIVATE_INPUT_SETTLEMENT_PLACES_PER_CLIENT: usize = 4;
 
 /// How many maintenance visits a stop drives.
 ///
