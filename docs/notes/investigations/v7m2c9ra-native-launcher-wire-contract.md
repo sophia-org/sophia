@@ -565,3 +565,32 @@ placement field. Disposable sources were restored; evidence is retained at
 `.artifacts/bemenu-content-limits`. The initial runner invocation used an invalid
 Python keyword and executed no checks; only the corrected recorded run counts.
 This is wire validation, not client resource accounting or native acceptance.
+
+## C presentation feedback and control vocabulary
+
+The common content codecs now cover OutputFacts, AllocationResult,
+CandidateOutcome, FramePermit and Action as owned decoded values, plus complete
+CandidateEnd, FrameDemand, FrameDemandCancel and ActionAck frames. Output facts
+are bounded to sixteen distinct output IDs. The structural checks preserve the
+Rust distinctions between rejected, released and revoked allocations; prepared,
+presented and rejected candidates; granted and refused permits; activation,
+dismissal and cancellation. Only Presented has a nonzero presentation epoch.
+Signed geometry/margins are decoded without implementation-defined unsigned
+conversion. Caller output remains untouched on refusal.
+
+The C gate compares all nine records to the Rust golden corpus and exercises
+truncation/trailing data, identities, reserved fields, status-specific geometry,
+all sixteen outputs, duplicate IDs with changed generations, reduced scales,
+permit bounds, exact ACK fields and short destination preservation. Focused
+optimized GCC and Clang ASan/UBSan runs pass under device-hidden isolation. Three
+compiled controls reject omission of the Presented/epoch relation, acceptance of
+same-ID/different-generation duplicate outputs, and omission of the granted TTL
+ceiling. Evidence: `.artifacts/bemenu-content-feedback`; disposable source restored.
+
+These codecs deliberately do not maintain current presented targets, consume
+permits, release resources or dispatch input. The joined client must preserve
+those independent lifetimes, enforce negotiated limits and queue exact ACK and
+activation obligations before committing effects. A structural Action cancel
+must not cause an ACK; a valid encoded ACK is not evidence of that owner rule.
+Native client state, live Session dual-component wiring and physical acceptance
+remain required before `lom-test` readiness.
