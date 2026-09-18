@@ -7,6 +7,7 @@ use sophia_x_authority::{
     XAuthorityClientInputDelivery, XAuthorityObservedTransactionBatch,
 };
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::admission::PrivateInputIssueRefusal;
@@ -54,6 +55,20 @@ impl core::fmt::Display for PrivateInputWaitExpired {
 
 impl std::error::Error for PrivateInputWaitExpired {}
 
+/// How the invocation itself ended.
+///
+/// DISTINCT FROM THE THREAD'S FATE. An invocation can unwind while its thread
+/// goes on to run maintenance and join cleanly, and a thread can fail outside
+/// any invocation. Reporting one as the other makes either story unreadable.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum PrivateInputInvocation {
+    #[default]
+    Returned,
+    Failed,
+    /// It panicked, with the payload kept rather than reduced to a flag.
+    Unwound(String),
+}
+
 /// What became of the thread that served.
 ///
 /// SEPARATE FROM WORKER COLLECTION. Per-connection workers are collected by
@@ -93,6 +108,10 @@ pub enum PrivateInputRefusal {
     Configuration(sophia_x_authority::X11SetupSocketError),
     /// The frontend refused construction and handed its parts back.
     Construction(sophia_x_authority::AdmissionRefusal),
+    /// The serving thread reported its own construction refusal before the
+    /// service began. Kept apart from `Construction`, which is this side's
+    /// reading when the thread said nothing at all.
+    ConstructionRefused(String),
     /// The namespace registry would not admit this service's namespace.
     Namespace(sophia_runtime::NamespaceRegistryError),
     /// The service thread could not be started.
@@ -123,13 +142,26 @@ pub enum PrivateInputReadiness {
 /// afterwards and settlement that is still retained are five different facts.
 /// Folding any of them into a single success flag would let a run that lost
 /// work look like a run that finished it.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct PrivateInputOutcome {
+    /// How the invocation ended, as itself.
+    pub invocation: PrivateInputInvocation,
     /// The service's own failure, when it had one. `None` is a service that
     /// returned, not a service that succeeded at everything it owed.
     pub failure: Option<PrivateServiceFailure>,
     pub unresolved_egress: Vec<PrivateUnresolvedEgress>,
-    pub workers: Vec<PrivateWorkerCollection>,
+    /// The workers this stop actually joined. `None` when the invocation made
+    /// no report, which an unwind does not: an empty vector would claim it
+    /// collected none, and that is a different statement.
+    pub workers: Option<Vec<PrivateWorkerCollection>>,
+    /// What the keeper still held once the invocation ended, however it ended.
+    /// Absent once the keeper is gone; never fabricated from a prior reading.
+    pub execution: Option<sophia_x_authority::PrivateExecutionReading>,
+    /// The durable owner, kept alive by this outcome while anything is still
+    /// owed. Private because it is custody, not a report: a reader can ask
+    /// whether obligations remain, and cannot take them. Skipped in `Debug`
+    /// because printing custody is not reporting it.
+    pub(super) retained: Option<Arc<super::service::PrivateInputRuntime>>,
     pub maintenance: Vec<PrivateDeferredCleanupOutcome>,
     /// Whether the invocation was interrupted. Reported as itself and never
     /// cleared: an interruption that is later tidied up was still an
@@ -141,6 +173,50 @@ pub struct PrivateInputOutcome {
     /// collecting every actor says nothing about whether anything is owed, and
     /// a store that could not be read says less still.
     pub settlement: PrivateInputSettlement,
+}
+
+impl core::fmt::Debug for PrivateInputOutcome {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("PrivateInputOutcome")
+            .field("invocation", &self.invocation)
+            .field("failure", &self.failure)
+            .field("unresolved_egress", &self.unresolved_egress)
+            .field("workers", &self.workers)
+            .field("execution", &self.execution)
+            .field("service_thread", &self.service_thread)
+            .field("maintenance", &self.maintenance)
+            .field("interrupted", &self.interrupted)
+            .field("settlement", &self.settlement)
+            .field("retains_obligations", &self.retains_obligations())
+            .finish()
+    }
+}
+
+impl PrivateInputOutcome {
+    /// Whether anything is still owed, and therefore still held.
+    ///
+    /// AN OUTCOME THAT SAYS YES IS KEEPING THE DURABLE OWNER ALIVE. Stopping a
+    /// service does not discharge what it owed, and letting the store go with
+    /// the facade would destroy the record rather than settle it. An
+    /// unreadable store counts as owed here, because a store that cannot be
+    /// asked has not said it is empty.
+    pub fn retains_obligations(&self) -> bool {
+        self.retained.is_some()
+    }
+
+    pub(super) fn with_retention(
+        mut self,
+        runtime: Arc<super::service::PrivateInputRuntime>,
+    ) -> Self {
+        let settlement = self.settlement;
+        let outstanding = !settlement.readable
+            || settlement.reserved_credits.is_some_and(|held| held > 0)
+            || settlement.owed.is_some_and(|held| held > 0)
+            || settlement.indeterminate.is_some_and(|held| held > 0);
+        self.retained = outstanding.then_some(runtime);
+        self
+    }
 }
 
 /// What the service is holding right now.
@@ -167,15 +243,17 @@ impl PrivateInputService {
     /// connections, issue submissions, drain receipts and stop; it cannot
     /// reach any of those.
     pub fn start(
-        _config: super::PrivateInputConfig,
+        config: super::PrivateInputConfig,
     ) -> Result<PrivateInputHandle, PrivateInputRefusal> {
-        unimplemented!("service thread lands with the keeper work")
+        super::service::PrivateInputRuntime::start(config).map(|runtime| PrivateInputHandle {
+            runtime: Arc::new(runtime),
+        })
     }
 }
 
 /// What Session keeps for one running private input service.
 pub struct PrivateInputHandle {
-    _private: (),
+    runtime: Arc<super::service::PrivateInputRuntime>,
 }
 
 impl PrivateInputHandle {
@@ -187,7 +265,7 @@ impl PrivateInputHandle {
     /// changed. It is the configured path, echoed from the service that bound
     /// it.
     pub fn socket_path(&self) -> &Path {
-        unimplemented!("service thread lands with the keeper work")
+        &self.runtime.socket_path
     }
 
     /// Wait until the service is ready, or until this deadline passes.
@@ -198,18 +276,37 @@ impl PrivateInputHandle {
     /// caller can tell readiness from a refusal that arrived first.
     pub fn await_ready(
         &self,
-        _within: Duration,
+        within: Duration,
     ) -> Result<PrivateInputReadiness, PrivateInputWaitExpired> {
-        unimplemented!("service thread lands with the keeper work")
+        // ONE DEADLINE, COMPUTED ONCE. Recomputing it each turn would let a
+        // service that keeps almost arriving extend the wait indefinitely.
+        let deadline = std::time::Instant::now() + within;
+        loop {
+            let observed = self.runtime.readiness();
+            if observed != PrivateInputReadiness::Binding {
+                return Ok(observed);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(PrivateInputWaitExpired { observed });
+            }
+            std::thread::yield_now();
+        }
     }
 
     /// What the service has got to right now, without waiting.
     pub fn readiness(&self) -> PrivateInputReadiness {
-        unimplemented!("service thread lands with the keeper work")
+        self.runtime.readiness()
     }
 
     pub fn status(&self) -> PrivateInputStatus {
-        unimplemented!("service thread lands with the keeper work")
+        let admitted = self.runtime.participant.admitted().unwrap_or_default();
+        PrivateInputStatus {
+            readiness_is_ready: self.runtime.readiness() == PrivateInputReadiness::Ready,
+            admitted: admitted.len(),
+            grants_issued: admitted.iter().map(|seen| seen.grants).sum(),
+            settlement: self.runtime.settlement(),
+            interrupted: false,
+        }
     }
 
     /// The connections this boundary currently has admitted.
@@ -218,16 +315,23 @@ impl PrivateInputHandle {
     /// the exact admission id and connection generation, so a caller names one
     /// connection rather than a client number a successor may have taken.
     pub fn admitted(&self) -> Result<Vec<PrivateAdmittedConnection>, PrivateInputUnavailable> {
-        unimplemented!("service thread lands with the keeper work")
+        self.runtime
+            .participant
+            .admitted()
+            .map_err(|_| PrivateInputUnavailable)
     }
 
     /// Session's own record for one admission, including whether its setup
     /// carried evidence bound to this instance.
     pub fn admission_record(
         &self,
-        _admission: sophia_protocol::ClientAdmissionId,
+        admission: sophia_protocol::ClientAdmissionId,
     ) -> Result<Option<super::PrivateInputAdmissionRecord>, PrivateInputUnavailable> {
-        unimplemented!("service thread lands with the keeper work")
+        self.runtime
+            .admitted
+            .lock()
+            .map(|held| held.get(&admission).copied())
+            .map_err(|_| PrivateInputUnavailable)
     }
 
     /// Submit one focus action Session decided on its own authority.
@@ -241,10 +345,41 @@ impl PrivateInputHandle {
     /// against this exact submission rather than a number the caller guessed.
     pub fn submit_action(
         &self,
-        _connection: PrivateInputConnection,
-        _action: PrivateInputAction,
+        connection: PrivateInputConnection,
+        action: PrivateInputAction,
     ) -> Result<PrivateInputSubmitted, PrivateInputControlError> {
-        unimplemented!("service thread lands with the keeper work")
+        let transaction = self.runtime.next_transaction();
+        let surface = action.surface();
+        let command = sophia_x_authority::XAuthorityClientControlCommand {
+            client: connection.client,
+            command: match action {
+                PrivateInputAction::FocusSurface { surface } => {
+                    sophia_x_authority::XAuthorityControlCommand::FocusSurface {
+                        transaction,
+                        surface,
+                    }
+                }
+                PrivateInputAction::ClearFocus { surface } => {
+                    sophia_x_authority::XAuthorityControlCommand::ClearFocus {
+                        transaction,
+                        surface,
+                    }
+                }
+            },
+        };
+        let producer = self
+            .runtime
+            .access
+            .control_producer(&self.runtime.owner.lease())
+            .map_err(|_| PrivateInputControlError::Ended)?;
+        producer
+            .submit(&self.runtime.owner.lease(), command)
+            .map(|_sequence| PrivateInputSubmitted {
+                transaction,
+                surface,
+                kind: action.kind(),
+            })
+            .map_err(|(refusal, command)| PrivateInputControlError::Refused(refusal, command))
     }
 
     /// Take the transaction batches the frontend observed, commit them through
@@ -283,10 +418,43 @@ impl PrivateInputHandle {
     /// request the adapter makes.
     pub fn issue(
         &self,
-        _context: ClientAdmissionContext,
-        _device: sophia_protocol::DeviceId,
+        context: ClientAdmissionContext,
+        device: sophia_protocol::DeviceId,
     ) -> Result<PrivateInputSubmission, PrivateInputIssueRefusal> {
-        unimplemented!("service thread lands with the keeper work")
+        let live = self
+            .runtime
+            .participant
+            .admitted()
+            .map_err(|_| PrivateInputIssueRefusal::Unavailable)?;
+        // Every current condition, and none of Session's locks held across the
+        // port wait below: this returns a client number and drops what it read.
+        let client = super::admission::may_issue(
+            self.runtime.grants,
+            &self.runtime.admitted,
+            &self.runtime.registry,
+            context,
+            &live,
+        )?;
+        let ingress = self
+            .runtime
+            .access
+            .ingress_for_admission(
+                &self.runtime.owner.lease(),
+                client,
+                device,
+                context.client_id,
+            )
+            .map_err(|_| PrivateInputIssueRefusal::ConnectionGone)?;
+        Ok(PrivateInputSubmission::new(
+            Arc::clone(&self.runtime),
+            ingress,
+            PrivateInputConnection {
+                client,
+                admission: context.client_id,
+                connection_generation: context.auth_provenance.session_generation,
+            },
+            device,
+        ))
     }
 
     /// Revoke one admission and retire exactly the grants it authorised.
@@ -304,34 +472,70 @@ impl PrivateInputHandle {
     /// `drain_deliveries_within`. Asking whether anything is there is the same
     /// act as taking it, so there is no separate question that consumes.
     pub fn drain_deliveries(&self) -> Vec<XAuthorityClientInputDelivery> {
-        unimplemented!("service thread lands with the keeper work")
+        self.runtime
+            .deliveries
+            .lock()
+            .map(|held| held.try_iter().collect())
+            .unwrap_or_default()
     }
 
     /// Take delivery receipts, waiting up to this bound for the first one.
-    pub fn drain_deliveries_within(&self, _within: Duration) -> Vec<XAuthorityClientInputDelivery> {
-        unimplemented!("service thread lands with the keeper work")
+    pub fn drain_deliveries_within(&self, within: Duration) -> Vec<XAuthorityClientInputDelivery> {
+        let Ok(held) = self.runtime.deliveries.lock() else {
+            return Vec::new();
+        };
+        let mut taken = Vec::new();
+        if let Ok(first) = held.recv_timeout(within) {
+            taken.push(first);
+        }
+        taken.extend(held.try_iter());
+        taken
     }
 
     pub fn drain_acknowledgements(&self) -> Vec<XAuthorityClientControlAck> {
-        unimplemented!("service thread lands with the keeper work")
+        self.runtime
+            .acknowledgements
+            .lock()
+            .map(|held| held.try_iter().collect())
+            .unwrap_or_default()
     }
 
     pub fn drain_acknowledgements_within(
         &self,
-        _within: Duration,
+        within: Duration,
     ) -> Vec<XAuthorityClientControlAck> {
-        unimplemented!("service thread lands with the keeper work")
+        let Ok(held) = self.runtime.acknowledgements.lock() else {
+            return Vec::new();
+        };
+        let mut taken = Vec::new();
+        if let Ok(first) = held.recv_timeout(within) {
+            taken.push(first);
+        }
+        taken.extend(held.try_iter());
+        taken
     }
 
     pub fn drain_transactions(&self) -> Vec<XAuthorityObservedTransactionBatch> {
-        unimplemented!("service thread lands with the keeper work")
+        self.runtime
+            .transactions
+            .lock()
+            .map(|held| held.try_iter().collect())
+            .unwrap_or_default()
     }
 
     pub fn drain_transactions_within(
         &self,
-        _within: Duration,
+        within: Duration,
     ) -> Vec<XAuthorityObservedTransactionBatch> {
-        unimplemented!("service thread lands with the keeper work")
+        let Ok(held) = self.runtime.transactions.lock() else {
+            return Vec::new();
+        };
+        let mut taken = Vec::new();
+        if let Ok(first) = held.recv_timeout(within) {
+            taken.push(first);
+        }
+        taken.extend(held.try_iter());
+        taken
     }
 
     /// Stop the service and collect it.
@@ -341,7 +545,8 @@ impl PrivateInputHandle {
     /// still allowed to perform run. The keeper stays on the thread it was
     /// made on throughout.
     pub fn stop(self) -> PrivateInputOutcome {
-        unimplemented!("service thread lands with the keeper work")
+        let runtime = Arc::clone(&self.runtime);
+        runtime.stop().with_retention(runtime)
     }
 }
 
@@ -353,5 +558,12 @@ impl Drop for PrivateInputHandle {
     /// discards only the report. A channel that has already been lost does not
     /// change that: the owner and the keeper outlive the invocation, so the
     /// stop still reaches them.
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        // Only the last holder stops it, and the report is discarded rather
+        // than the stop skipped. Anything still owed stays owned by the
+        // durable store this runtime keeps, which outlives the facade.
+        if Arc::strong_count(&self.runtime) == 1 {
+            let _ = self.runtime.stop();
+        }
+    }
 }

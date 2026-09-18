@@ -51,6 +51,12 @@ pub struct PrivateInputConfig {
     /// about which socket it means.
     pub socket_path: PathBuf,
     pub namespace: NamespaceId,
+    /// The session generation this service's namespace registry runs under.
+    ///
+    /// Stated rather than derived from the authority instance: they are
+    /// different clocks, and deriving one from the other would make a
+    /// replacement admission for one client look current under the wrong one.
+    pub session_generation: u64,
     /// The seat this service's authority is bound to, with its instance.
     pub binding: sophia_input_authority::SeatBinding,
     /// The evidence a client must present to be granted authority. Required

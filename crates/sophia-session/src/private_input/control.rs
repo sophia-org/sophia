@@ -126,20 +126,30 @@ impl PrivateInputCommittedEffect {
 
     /// Which effect the commit called for.
     ///
-    /// READ FROM THE BATCH'S OWN MAPPING FACTS, never inferred from a surface
-    /// merely being present in committed state. The batch carries
-    /// `surface_presentations`, whose `mapped` flag comes from the runtime's
-    /// surface state via MapWindow and UnmapWindow, and `presentation_intents`
-    /// carrying Request or Withdraw. A surface that is mapped and has no
-    /// admission outstanding for its current `generation` is an admission; a
-    /// committed update to that same mapped incarnation is a configure; a
-    /// withdraw intent or an intake removal is a withdrawal.
+    /// READ FROM THE BATCH'S OWN FACTS, never inferred from presence in
+    /// committed state. Two edges admit, and they are not the same edge.
     ///
-    /// The distinction matters because an unmapped surface can be present and
-    /// committed. The transport already relies on the same separation: only
-    /// mapped surfaces acquire an owner route, and an unmapped passive helper
-    /// acquires none merely by existing. Treating a first commit as a map
-    /// would have admitted those helpers.
+    /// An ordinary map arrives as `mapped` in `surface_presentations`, taken
+    /// from the runtime's surface state. A policy-managed deferred map does
+    /// not: while policy maps are deferred, MapWindow records the surface as
+    /// pending rather than mapped, so `mapped` stays false and the batch
+    /// carries a `Request` intent instead. That Request is what authorises the
+    /// admission, and `mapped` becomes true only once the admission succeeds.
+    /// Requiring `mapped` for that branch would wait for a fact the admission
+    /// itself produces, which is a deadlock rather than a stricter check.
+    ///
+    /// So: `mapped`, or a `Request` intent, with no admission outstanding for
+    /// that surface, is an admission. A later committed update to a surface
+    /// already admitted is a configure. A `Withdraw` intent or an intake
+    /// removal is a withdrawal. A surface with neither a mapping nor a Request
+    /// is never admitted, which is what keeps an unmapped passive helper out:
+    /// the transport makes the same distinction, giving an owner route only to
+    /// mapped surfaces.
+    ///
+    /// The surface is identified by its whole `SurfaceId`, whose own
+    /// generation is the incarnation. The `generation` on a presentation
+    /// observation is the drawing clock and advances with content, so keying
+    /// on it would re-admit a surface on every draw.
     pub fn kind(&self) -> XAuthorityControlKind {
         self.kind
     }

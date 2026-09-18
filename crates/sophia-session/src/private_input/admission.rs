@@ -57,38 +57,28 @@ pub struct PrivateInputAdmissionRecord {
 }
 
 /// The policy Session installs on the private frontend.
-///
-/// Nothing constructs this until the service thread lands in the next change;
-/// the expectation below fails once something does, which is the point.
-#[expect(
-    dead_code,
-    reason = "wired by the service thread; the unfulfilled expectation is what removes this"
-)]
 pub(super) struct PrivateInputAdmissionPolicy {
     registry: Arc<Mutex<NamespaceRegistry>>,
     namespace: sophia_protocol::NamespaceId,
     instance: sophia_input_authority::InstanceId,
-    grants: PrivateInputGrantPolicy,
     admitted: Arc<Mutex<BTreeMap<ClientAdmissionId, PrivateInputAdmissionRecord>>>,
 }
 
 impl PrivateInputAdmissionPolicy {
-    #[expect(
-        dead_code,
-        reason = "called by the service thread; the unfulfilled expectation is what removes this"
-    )]
     pub(super) fn new(
         registry: Arc<Mutex<NamespaceRegistry>>,
         namespace: sophia_protocol::NamespaceId,
         instance: sophia_input_authority::InstanceId,
-        grants: PrivateInputGrantPolicy,
         admitted: Arc<Mutex<BTreeMap<ClientAdmissionId, PrivateInputAdmissionRecord>>>,
     ) -> Self {
+        // The grant policy is deliberately absent. Admission does not depend
+        // on it: a connection with no evidence is still admitted as an
+        // ordinary recipient, and whether authority may ever be issued is
+        // asked later, against current state, by `may_issue`.
         Self {
             registry,
             namespace,
             instance,
-            grants,
             admitted,
         }
     }
@@ -194,10 +184,6 @@ impl std::error::Error for PrivateInputIssueRefusal {}
 /// the registry says whether this admission is still the current one; the
 /// boundary says whether a live connection still holds it. A caller that
 /// satisfied all three a moment ago and none of them now is refused.
-#[expect(
-    dead_code,
-    reason = "called by the service thread; the unfulfilled expectation is what removes this"
-)]
 pub(super) fn may_issue(
     grants: PrivateInputGrantPolicy,
     admitted: &Mutex<BTreeMap<ClientAdmissionId, PrivateInputAdmissionRecord>>,

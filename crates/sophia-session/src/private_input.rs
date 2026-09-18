@@ -20,6 +20,7 @@ mod admission;
 mod config;
 mod control;
 mod handle;
+mod service;
 mod submission;
 
 pub use admission::{PrivateInputAdmissionRecord, PrivateInputIssueRefusal};

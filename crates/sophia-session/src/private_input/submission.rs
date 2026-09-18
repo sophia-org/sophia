@@ -2,6 +2,8 @@
 
 use sophia_protocol::{DeviceId, InputEventKind, Point, SurfaceId};
 use sophia_x_authority::{XAuthorityInputDeliveryId, XServerFrontendClientId};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// One connection, named exactly.
 ///
@@ -21,6 +23,16 @@ pub struct PrivateInputAccepted {
     /// it arrives through the handle's delivery drain.
     pub delivery: XAuthorityInputDeliveryId,
     pub sequence: sophia_x_authority::ReadySequence,
+    /// The serial Session put in the request.
+    ///
+    /// PASSIVE FACTS, NOT AN ENCODER RESULT. A caller checking wire bytes
+    /// against what it submitted needs the exact serial and time that went
+    /// into the request; reporting them here means the timestamp never has to
+    /// be masked out of a comparison to make it pass.
+    pub serial: u64,
+    /// The millisecond Session stamped the request with, measured from this
+    /// service's start.
+    pub time_msec: u64,
 }
 
 /// Why a submission was not accepted.
@@ -48,56 +60,113 @@ pub enum PrivateInputSubmitError {
 /// can do nothing else: there is no accessor here for the lease, the owner,
 /// the issuer, the authority, the broker or any sender, and none is added.
 pub struct PrivateInputSubmission {
-    _private: (),
+    runtime: Arc<super::service::PrivateInputRuntime>,
+    ingress: sophia_x_authority::PrivateIngress,
+    connection: PrivateInputConnection,
+    device: DeviceId,
+    serial: AtomicU64,
 }
 
 impl PrivateInputSubmission {
+    pub(super) fn new(
+        runtime: Arc<super::service::PrivateInputRuntime>,
+        ingress: sophia_x_authority::PrivateIngress,
+        connection: PrivateInputConnection,
+        device: DeviceId,
+    ) -> Self {
+        Self {
+            runtime,
+            ingress,
+            connection,
+            device,
+            serial: AtomicU64::new(1),
+        }
+    }
+
     /// Which connection this handle acts for.
     pub fn connection(&self) -> PrivateInputConnection {
-        unimplemented!("service thread lands with the keeper work")
+        self.connection
     }
 
     pub fn device(&self) -> DeviceId {
-        unimplemented!("service thread lands with the keeper work")
+        self.device
     }
 
     /// Submit one pointer motion to a surface.
     pub fn submit_pointer_motion(
         &self,
-        _target: SurfaceId,
-        _global: Point,
-        _local: Point,
+        target: SurfaceId,
+        global: Point,
+        local: Point,
     ) -> Result<PrivateInputAccepted, PrivateInputSubmitError> {
-        unimplemented!("service thread lands with the keeper work")
+        self.route(target, global, local, InputEventKind::PointerMotion)
     }
 
     /// Submit one pointer button press or release.
     pub fn submit_pointer_button(
         &self,
-        _target: SurfaceId,
-        _button: u32,
-        _pressed: bool,
+        target: SurfaceId,
+        button: u32,
+        pressed: bool,
     ) -> Result<PrivateInputAccepted, PrivateInputSubmitError> {
-        unimplemented!("service thread lands with the keeper work")
+        self.submit(target, InputEventKind::PointerButton { button, pressed })
     }
 
     /// Submit one key press or release.
     pub fn submit_key(
         &self,
-        _target: SurfaceId,
-        _keycode: u32,
-        _pressed: bool,
+        target: SurfaceId,
+        keycode: u32,
+        pressed: bool,
     ) -> Result<PrivateInputAccepted, PrivateInputSubmitError> {
-        unimplemented!("service thread lands with the keeper work")
+        self.submit(target, InputEventKind::Key { keycode, pressed })
     }
 
     /// Submit an already-built event kind, for a caller that needs one this
     /// facade does not name.
     pub fn submit(
         &self,
-        _target: SurfaceId,
-        _kind: InputEventKind,
+        target: SurfaceId,
+        kind: InputEventKind,
     ) -> Result<PrivateInputAccepted, PrivateInputSubmitError> {
-        unimplemented!("service thread lands with the keeper work")
+        self.route(target, Point::default(), Point::default(), kind)
+    }
+
+    /// THE LEASE IS TAKEN HERE AND RELEASED HERE. An adapter never holds one,
+    /// and this never holds one across a wait: the order either takes the
+    /// request or hands it back.
+    fn route(
+        &self,
+        target: SurfaceId,
+        global: Point,
+        local: Point,
+        kind: InputEventKind,
+    ) -> Result<PrivateInputAccepted, PrivateInputSubmitError> {
+        let (delivery, time_msec) = self.runtime.next_delivery();
+        let serial = self.serial.fetch_add(1, Ordering::AcqRel);
+        let route = sophia_x_authority::XAuthorityRoutedInput {
+            request: sophia_protocol::RoutedInputRequest {
+                serial,
+                seat: self.runtime.seat,
+                device: self.device,
+                time_msec,
+                target_surface: target,
+                global_position: global,
+                local_position: local,
+                kind,
+            },
+            route_lease: None,
+            delivery: Some(delivery),
+            mode: sophia_x_authority::XAuthorityRoutedInputMode::Deliver,
+        };
+        match self.ingress.submit(&self.runtime.owner.lease(), route) {
+            Ok(sequence) => Ok(PrivateInputAccepted {
+                delivery,
+                sequence,
+                serial,
+                time_msec,
+            }),
+            Err(refusal) => Err(PrivateInputSubmitError::Refused(refusal)),
+        }
     }
 }
