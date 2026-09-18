@@ -77,6 +77,15 @@ impl LiveProductionVisualRuntime {
         {
             return Err("one content grant cannot occupy multiple component layers".into());
         }
+        if self
+            .shell_content
+            .get(&key)
+            .is_some_and(|owned| owned.interaction_revoked && owned.frame.grant == frame.grant)
+        {
+            return Err(
+                "closing component must be removed before another candidate is admitted".into(),
+            );
+        }
         if self.shell_content.get(&key).map(|owned| &owned.frame) == Some(&frame) {
             return Ok(false);
         }
@@ -107,9 +116,14 @@ impl LiveProductionVisualRuntime {
                 .ok_or("shell content output has no committed viewport")?,
             layout_generation: self.content_layout_generation,
         };
-        let previous = self
-            .shell_content
-            .insert(key, AdmittedShellContent { frame, transform });
+        let previous = self.shell_content.insert(
+            key,
+            AdmittedShellContent {
+                frame,
+                transform,
+                interaction_revoked: false,
+            },
+        );
         let previous_retirement = self.retained_projection_retirements.insert(key, grant);
         if let Err(error) = self.queue_retained_projection(scene, native_scanout) {
             match previous_retirement {
@@ -208,3 +222,6 @@ impl LiveProductionVisualRuntime {
             .flatten()
     }
 }
+
+#[path = "shell_content/removal.rs"]
+mod removal;

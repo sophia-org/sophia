@@ -40,7 +40,8 @@ pub(super) fn content_binding_from_frame(
         presentation_epoch: 0,
         interaction_generation: frame.interaction_generation,
         transform: owned.transform.clone(),
-        authority_current: !viewport.is_empty()
+        authority_current: !owned.interaction_revoked
+            && !viewport.is_empty()
             && layout_generation != 0
             && owned.transform.viewport == viewport
             && owned.transform.layout_generation == layout_generation,
@@ -120,7 +121,7 @@ pub(super) fn presented_content_bindings(
             content_binding_from_frame(current, viewport, layout_generation)
         } else if let Some(old) = old {
             let mut retained = old.clone();
-            retained.authority_current &= current.is_some_and(|owned| owned.frame.content_output == old.output)
+            retained.authority_current &= current.is_some_and(|owned| !owned.interaction_revoked && owned.frame.content_output == old.output)
                 && old.transform.viewport == viewport
                 && old.transform.layout_generation == layout_generation
                 && presented.compositor_display_list.content_images()

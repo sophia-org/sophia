@@ -3,6 +3,8 @@
 use super::*;
 #[path = "lifecycle_tests/component_identity.rs"]
 mod component_identity;
+#[path = "lifecycle_tests/component_removal.rs"]
+mod component_removal;
 #[path = "lifecycle_tests/policy_composition.rs"]
 mod policy_composition;
 #[path = "lifecycle_tests/resources.rs"]

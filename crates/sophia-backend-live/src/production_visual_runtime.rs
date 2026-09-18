@@ -232,6 +232,16 @@ pub enum LiveShellContentLayer {
     Launcher,
 }
 
+/// Receipt for an exact component removal queued after its pixels were
+/// presented. This is not proof of resource release or worker/KMS cleanup.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveShellContentRemoval {
+    output: OutputId,
+    grant: sophia_protocol::ContentGrant,
+    candidate: u64,
+    prior_presentation_epoch: u64,
+}
+
 type ShellContentKey = (OutputId, LiveShellContentLayer);
 
 /// Geometry is captured with admission, never reconstructed from a later layout.
@@ -239,6 +249,7 @@ type ShellContentKey = (OutputId, LiveShellContentLayer);
 #[derive(Clone, Debug, PartialEq)]
 struct AdmittedShellContent {
     frame: LiveShellContentFrame,
+    interaction_revoked: bool,
     transform: sophia_engine::PresentedContentTransform,
 }
 

@@ -398,3 +398,42 @@ catalog/focus/keyboard/action service and shutdown orchestration, the `lom-test`
 profile and fresh exact-source canonical validation remain required. Explicit
 component configuration remains refused; no physical readiness, deployment,
 GPU/display/VT activity or M3 integration is claimed.
+
+### Exact component removal over f34c878c
+
+The backend removal entry names output, trusted layer, grant and candidate. A
+stale close refuses before changing the successor. An exact close immediately
+revokes interaction in both retained admission and current presented bindings;
+old pixels remain occluding. A candidate still awaiting its first presentation
+keeps its existing obligation and returns pending. No missing snapshot is
+interpreted as successful removal.
+
+Once the exact candidate has presented, removal offers a fresh retained
+composition without that component. Returned queue refusal restores its actual
+source owner, keeps interaction revoked, and leaves the neighboring panel
+unchanged. Another same-grant candidate cannot rearm that closing admission.
+The caller retains an exact removal receipt and observes a newer presented
+projection with no pixels/binding from the grant; enqueue alone does not settle
+it. This receipt establishes displayed absence only. It says nothing about held
+pixel consumers, worker/device cleanup or ResourceReleased.
+
+`.artifacts/bemenu-component-removal-checkpoint` records 153 backend library
+tests passing in the device-hidden namespace, strict backend lib/tests Clippy
+and layout. The new actual-intake/Engine/queue control uses simulated completion:
+close before first presentation waits; revoked pixels consume clicks; queue
+refusal retains both actual component sources; retry preserves the bar's exact
+presentation; a receipt remains pending until replacement completion; an old
+close cannot revoke the successor. The control holds a real source lease after
+receipt completion to keep that evidence distinct from resource release.
+The compiled interaction-revocation mutant fails behaviorally and its isolated
+source is restored (`.artifacts/bemenu-component-removal-mutant`); it was run
+before the additional closing-admission guard. Initial fixture failure from a
+missing allocation rectangle and the later compile correction remain retained,
+not counted as positive gate evidence.
+
+Session still must own/retry that removal receipt, cancel unsubmitted opening
+work, retain pending candidate responses and settle allocations/resources before
+reopening. This backend boundary is not the completed close protocol or live
+component owner. The full launcher integration, fresh canonical gate and
+`lom-test` readiness remain open. No KMS/GPU/display action, install, push or M3
+import occurred.
