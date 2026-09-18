@@ -32,16 +32,23 @@ authorized completing this critical path with parallel agents. These changes
 remain local to M3; they have not been imported into the Session/dock tree.
 
 The combined Rust gate exists: `cargo xtask check m3-acceptance`. On signed
-`a2bc967c`, one contained run passed 18 of 20 cases with no failures: all A,
-B and D cases, plus C.capacity, C.interrupted_ownership, C.poison and
-C.exact_origin. The two C fixture assumptions exposed by the earlier combined
-run are corrected: a single production step establishes the current item and
-remainder; interruption checks the retained hold's identity and exact credit.
-C.indeterminate_send and C.control_cleanup remain unbound. **The aggregate is
-NOT_RUN; M3 is not complete.**
+`4fcc9f02`, all twenty cases pass together in containment, on one source and
+one binary, with 336 actors started and 336 collected and none pending. Five
+further contained runs on that same source repeat it, each attesting the same
+commit, source content digest and binary digest. The full contained workspace
+regression passes on the same source, and so do the strict all-target,
+all-feature Clippy, formatting and layout checks. **The integrated acceptance
+aggregate is PASS.** That is the gate and not the whole milestone: the
+candidate still has to be integrated into `codex/m3-finish`, and no physical or
+hardware acceptance is claimed.
+
+An earlier contained run on signed `a2bc967c` passed 18 of 20 with no failures,
+with C.indeterminate_send and C.control_cleanup then unbound and that aggregate
+NOT_RUN. Both are now built and bound.
 The [checkpoint record](../milestones/nywg1vat-m3-integrated-acceptance-checkpoint-and-remaining-c-controls.md)
-preserves the exact report, separate component evidence and remaining limits.
-The earlier failed combined run remains in the evidence record.
+preserves the exact reports, the compiled negatives including the one mutation
+that survived, the separate component evidence and the remaining limits. The
+earlier failed combined runs remain in the evidence record.
 
 The following integration identities and content/GPU observations are earlier
 checkpoints, retained as history rather than current M3 acceptance evidence.
