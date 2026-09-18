@@ -453,6 +453,13 @@ fn serve_one_ordered_delivery(
             Err(X11OrderedTakeRefusal::InFlight) => return X11OrderedServeStep::Advanced,
         }
     }
+    // The frame this visit is about to try, read before the attempt. After it,
+    // a success has advanced the index and a failure has not, so the index
+    // alone cannot say which frame was attempted -- and an attempted resend of
+    // a frame already committed would otherwise be indistinguishable from
+    // never having tried, because a closed socket refuses both alike.
+    #[cfg(all(test, unix))]
+    let attempted_frame = in_flight.as_ref().map(|held| held.frame_index());
     let written = write_one_ordered_frame(socket, in_flight, byte_order, sequence);
     // READ-ONLY ACCEPTANCE OBSERVATION, of the writer's own progress: which
     // delivery this socket was serving, how many frames it owes, how far
@@ -465,6 +472,7 @@ fn serve_one_ordered_delivery(
     #[cfg(all(test, unix))]
     routing_tests::m3_acceptance::observed_ordered_frame(
         in_flight.as_ref().map(|held| held.delivery().emission()),
+        attempted_frame,
         in_flight.as_ref().map_or(0, |held| held.frame_index()),
         match &written {
             Ok(X11OrderedWriteStep::Advanced { frame }) => Some(*frame),

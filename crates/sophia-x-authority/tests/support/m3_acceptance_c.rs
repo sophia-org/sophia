@@ -1577,6 +1577,8 @@ fn retained_dispatch(service: &LifecycleService) -> Vec<(String, bool, bool)> {
 struct ObservedFrame {
     delivery: Option<XAuthorityInputDeliveryId>,
     frames: usize,
+    /// The frame this visit tried, read before it tried it.
+    attempted: Option<usize>,
     index: usize,
     advanced: Option<usize>,
     failure: Option<String>,
@@ -1608,6 +1610,7 @@ fn take_observed_frames() -> Vec<ObservedFrame> {
 /// origin, it returns immediately.
 pub(crate) fn observed_ordered_frame(
     emission: Option<&PrivateOrderedEmission>,
+    attempted: Option<usize>,
     index: usize,
     advanced: Option<usize>,
     failure: Option<String>,
@@ -1626,6 +1629,7 @@ pub(crate) fn observed_ordered_frame(
         seen.push(ObservedFrame {
             delivery: emission.delivery(),
             frames: emission.frame_count(),
+            attempted,
             index,
             advanced,
             failure,
@@ -1785,32 +1789,67 @@ fn blocked_recipient_attempt(
         }
     }
     let observed = take_observed_frames();
-
-    blocked.command(XServerFrontendServiceCommand::StopAndDisconnect);
-    let closed = blocked.closed();
-    let before = retained_dispatch(&blocked);
-    // AN ACTUAL CHARGED OUTPUT VISIT AFTER THE STALL. This invocation exited
-    // normally, so its budget is not the interrupted one: the visit runs, is
-    // charged, and reports what it did with the frame it still holds. That
-    // report is the no-replay evidence. The retained readings either side are
-    // recorded as they came and are not what establishes it.
-    let visit = blocked.step();
-    let drive = store.drive();
-    let after = retained_dispatch(&blocked);
-    assert!(
-        visit.charged,
-        "{label}: the visit actually ran and was charged rather than yielding: {visit:?}"
-    );
-    assert_eq!(
-        after, before,
-        "{label}: the retained reading is unchanged across the visit"
-    );
-
+    // What the writer committed of the stalling capsule, before anything else
+    // touches it.
     let stalled_delivery = stalled.map(|(_, id)| id).filter(|id| *id != 0);
     let (advanced, owed, failure) = stalled_delivery
         .map(|id| frames_of(&observed, XAuthorityInputDeliveryId::from_raw(id)))
         .unwrap_or((0, 0, None));
     let is_prefix = owed > 1 && advanced >= 1 && advanced < owed;
+
+    blocked.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    let closed = blocked.closed();
+    let before = retained_dispatch(&blocked);
+
+    // ARMED AGAIN, AROUND THE VISIT ALONE. Whether the store looks the same
+    // afterwards settles nothing for this capsule: an axis capsule is not a
+    // held release in terminal dispatch, so that comparison is empty either
+    // way. What has to be established is whether the visit tried to put any
+    // of this capsule on the wire again, and because the attempt is recorded
+    // before the write, a retry of a frame already committed is visible
+    // whether or not a closed socket would have taken it.
+    observe_frames(&blocked.registry);
+    let visit = blocked.step();
+    let drive = store.drive();
+    let during_visit = take_observed_frames();
+    let after = retained_dispatch(&blocked);
+
+    let wanted = stalled_delivery.map(XAuthorityInputDeliveryId::from_raw);
+    let touched_this_capsule: Vec<_> = during_visit
+        .iter()
+        .filter(|step| step.delivery == wanted)
+        .collect();
+    let resent_committed = touched_this_capsule
+        .iter()
+        .filter(|step| step.attempted.is_some_and(|frame| frame < advanced))
+        .count();
+    assert!(
+        visit.charged,
+        "{label}: the visit actually ran and was charged rather than yielding: {visit:?}"
+    );
+    assert!(
+        visit.detail.contains("FramePreserved"),
+        "{label}: the charged visit reported preserving the frame it still held, in its own words, rather than rebuilding it: {visit:?}"
+    );
+    assert_eq!(
+        resent_committed, 0,
+        "{label}: no frame this capsule had already committed was tried again: {touched_this_capsule:?}"
+    );
+    assert_eq!(
+        after, before,
+        "{label}: the retained reading is unchanged across the visit"
+    );
+    // ANSWERED ONCE. A resend that did reach the recipient would publish a
+    // second receipt for the same delivery; none arrives.
+    let second_receipt = blocked
+        .deliveries
+        .recv_timeout(Duration::from_millis(300))
+        .ok()
+        .filter(|receipt| Some(receipt.delivery.raw()) == stalled_delivery);
+    assert!(
+        second_receipt.is_none(),
+        "{label}: the stalled delivery was answered once and not again: {second_receipt:?}"
+    );
     let stalling_outcome = outcomes
         .iter()
         .rev()
@@ -1863,7 +1902,18 @@ fn blocked_recipient_attempt(
         "retained_after_exit": format!("{before:?}"),
         "maintenance_visit": format!("{visit:?}"),
         "what_the_visit_reported": visit.detail.clone(),
-        "no_replay_rests_on": "this invocation's own charged output visit and what it reported doing with the frame it still held, not on the retained readings either side, which are recorded as they came and may be empty.",
+        "frames_the_visit_tried_for_this_capsule": touched_this_capsule
+            .iter()
+            .map(|step| json!({
+                "attempted_frame": step.attempted,
+                "frames_owed": step.frames,
+                "whole_frame_that_went": step.advanced,
+                "failure": step.failure.clone(),
+            }))
+            .collect::<Vec<_>>(),
+        "committed_frames_retried": resent_committed,
+        "second_receipt_for_it": second_receipt.map(|receipt| format!("{receipt:?}")),
+        "no_replay_rests_on": "the attempt this invocation's own charged visit made, recorded before the write so a resend cannot hide behind a closed socket; what that visit reported doing with the frame it still held; and the delivery being answered once. It does NOT rest on the retained readings either side, which are empty for an axis capsule because it is not a held release in terminal dispatch.",
         "durable_drive": format!("{drive:?}"),
         "closed_error": closed.error.clone(),
         "what_a_prefix_means_here": "one whole frame of a capsule that owed more than one, with the rest stopped. The seam reports whole frames of the exact watched invocation and no byte offset, so nothing below claims a split inside a frame.",
