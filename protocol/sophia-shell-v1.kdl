@@ -1,4 +1,4 @@
-protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=7 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 max-shortcuts=256 {
+protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=8 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 max-shortcuts=256 {
     capability "descriptor_switcher" bit=0
     capability "work_area_reservation" bit=1
     capability "tab_groups" bit=2 since=2
@@ -14,6 +14,8 @@ protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=
     // Codec support is not runtime admission. The independent launcher role is
     // exclusive: bits 5,7,8,11 only; no descriptor, reservation or device grant.
     capability "native_launcher" bit=11 since=7 requires="application_catalog,content_surface,content_discrete_input"
+
+    capability "persistent_catalog" bit=12 since=8 requires="application_catalog,content_surface,content_discrete_input,work_area_reservation"
 
     outcome "prepared" value=1
     outcome "presented" value=2
@@ -797,5 +799,35 @@ protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=
         field "opening" type="u64"
         field "reason" type="u16"
         field "reserved" type="u16" reserved=#true
+    }
+    // Persistent panels use catalog authority without transient openings or focus.
+    // Every entry has one unique Identity within its ApplicationsBegin/End
+    // transaction. A receiver commits only a complete slot/identity bijection.
+    message "CatalogIdentity" kind=202 direction="session-to-shell" transaction="required" since=8 {
+        field "connection_epoch" type="u64" nonzero=#true
+        field "catalog_generation" type="u64" nonzero=#true
+        field "slot" type="u16" min=1 max=4096
+        field "reserved0" type="u16" reserved=#true
+        field "identity_len" type="u16" min=1 max=256
+        field "reserved1" type="u16" reserved=#true
+        field "identity" type="utf8[identity_len]" namespace="registered: or desktop:"
+    }
+    message "CatalogCandidateBegin" kind=198 direction="shell-to-session" transaction="required" since=8 {
+        payload-ref "content" message="ContentCandidateBegin"
+        field "catalog_generation" type="u64" nonzero=#true
+    }
+    message "CatalogCandidateChunk" kind=199 direction="shell-to-session" transaction="required" since=8 surface-role=1 target-action-kind=3 {
+        payload-ref "content" message="ContentCandidateChunk"
+    }
+    // End, Prepared/Presented, resource release and Action/Ack reuse r5 records.
+    // action_id names a catalog slot in the bound generation, not a command.
+    message "CatalogActivate" kind=200 direction="shell-to-session" transaction="required" since=8 {
+        payload-ref "action" message="ContentAction" kind=1 reason=0
+        field "catalog_generation" type="u64" nonzero=#true
+    }
+    message "CatalogActivationOutcome" kind=201 direction="session-to-shell" transaction="required" since=8 {
+        payload-ref "activation" message="CatalogActivate"
+        field "status" type="u16" min=1 max=5
+        field "reason" type="u16" reserved=#true
     }
 }

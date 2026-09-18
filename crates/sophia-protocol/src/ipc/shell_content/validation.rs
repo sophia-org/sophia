@@ -415,6 +415,24 @@ pub(crate) fn validate_candidate_chunk(
     v: &ContentCandidateChunk,
     native_launcher: bool,
 ) -> Result<(), IpcCodecError> {
+    validate_candidate_chunk_profile(v, native_launcher, if native_launcher { 2 } else { 1 })
+}
+
+pub(crate) fn validate_catalog_candidate_chunk(
+    v: &ContentCandidateChunk,
+) -> Result<(), IpcCodecError> {
+    validate_candidate_chunk_profile(v, false, 3)?;
+    require(
+        v.surfaces.iter().all(|s| s.role == 1) && v.targets.iter().all(|t| t.action_id <= 4096),
+        "persistent catalog rows",
+    )
+}
+
+fn validate_candidate_chunk_profile(
+    v: &ContentCandidateChunk,
+    native_launcher: bool,
+    action_kind: u16,
+) -> Result<(), IpcCodecError> {
     require(v.candidate_generation > 0, "content candidate generation")?;
     require(
         v.surfaces.len() <= 8 && v.placements.len() <= 32 && v.targets.len() <= 64,
@@ -459,7 +477,7 @@ pub(crate) fn validate_candidate_chunk(
     for row in &v.targets {
         require(
             row.surface_index < 8
-                && row.action_kind == if native_launcher { 2 } else { 1 }
+                && row.action_kind == action_kind
                 && row.target_id > 0
                 && row.target_generation > 0
                 && row.action_id > 0,

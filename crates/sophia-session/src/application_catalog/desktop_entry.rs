@@ -300,6 +300,7 @@ pub(super) fn parse(
         Some(command)
     })();
     Some(ApplicationCatalogEntry {
+        identity: String::new(), // Assigned from the source-relative desktop ID by the scanner.
         descriptor: sophia_protocol::ShellApplicationDescriptor {
             slot: 0,
             available: command.is_some(),

@@ -40,6 +40,37 @@ impl PublishedApplicationCatalog {
     pub fn frames(&self, transaction: TransactionId) -> Result<Vec<Vec<u8>>, IpcCodecError> {
         encode_shell_application_catalog(transaction, &self.wire)
     }
+    /// Revision-8 identity records share the catalog transaction and precede End.
+    /// Legacy callers retain the unchanged revision-4 catalog encoding.
+    pub fn persistent_frames(
+        &self,
+        transaction: TransactionId,
+    ) -> Result<Vec<Vec<u8>>, IpcCodecError> {
+        use sophia_protocol::{
+            ShellCatalogActionRecord, ShellCatalogIdentity, encode_shell_catalog_action_frame,
+        };
+        let mut frames = self.frames(transaction)?;
+        let end = frames
+            .pop()
+            .ok_or(IpcCodecError::InvalidRecord("catalog End"))?;
+        let mut seen = std::collections::BTreeSet::new();
+        for entry in &self.source.entries {
+            if !seen.insert(&entry.identity) {
+                return Err(IpcCodecError::InvalidRecord("duplicate catalog identity"));
+            }
+            frames.push(encode_shell_catalog_action_frame(
+                transaction,
+                &ShellCatalogActionRecord::Identity(ShellCatalogIdentity {
+                    connection_epoch: self.wire.connection_epoch,
+                    catalog_generation: self.wire.generation,
+                    slot: entry.descriptor.slot,
+                    identity: entry.identity.clone(),
+                }),
+            )?);
+        }
+        frames.push(end);
+        Ok(frames)
+    }
     pub fn entry(&self, slot: u16) -> Option<Arc<ApplicationCatalogEntry>> {
         let mut entries = self
             .source

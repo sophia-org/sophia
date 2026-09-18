@@ -211,3 +211,69 @@ fn terminal_adapter_is_explicit_and_sources_cannot_escape_via_symlinks_or_fifos(
         vec!["prefix", "--", "/bin/true"]
     );
 }
+
+#[test]
+fn stable_identity_is_not_label_slot_or_locale_and_publication_is_atomic() {
+    use sophia_protocol::*;
+    let dir = Directory::new();
+    dir.entry(
+        "one.desktop",
+        "[Desktop Entry]\nType=Application\nName=Same\nExec=/bin/true\n",
+    );
+    dir.entry(
+        "two.desktop",
+        "[Desktop Entry]\nType=Application\nName=Same\nExec=/bin/true\n",
+    );
+    let source =
+        build_application_catalog(&config(vec![dir.0.clone()]), &[], &environment()).unwrap();
+    assert_eq!(source.entries[0].identity, "desktop:one.desktop");
+    assert_eq!(source.entries[1].identity, "desktop:two.desktop");
+    assert_eq!(
+        source.entries[0].descriptor.label,
+        source.entries[1].descriptor.label
+    );
+    let published = PublishedApplicationCatalog::new(4, 5, source).unwrap();
+    let tx = TransactionId::from_raw(9);
+    let frames = published.persistent_frames(tx).unwrap();
+    let (actual_tx, decoded) = decode_shell_persistent_catalog(&frames).unwrap();
+    assert_eq!(actual_tx, tx);
+    assert_eq!(&decoded.catalog, published.wire());
+    assert_eq!(decoded.identities[&1], "desktop:one.desktop");
+    assert_eq!(decoded.identities[&2], "desktop:two.desktop");
+    assert!(decode_shell_application_catalog(&frames).is_err());
+    assert!(decode_shell_application_catalog(&published.frames(tx).unwrap()).is_ok());
+    for index in 0..frames.len() {
+        let mut incomplete = frames.clone();
+        incomplete.remove(index);
+        assert!(
+            decode_shell_persistent_catalog(&incomplete).is_err(),
+            "missing {index}"
+        );
+    }
+    let identity = |slot, epoch, generation, name: &str, transaction| {
+        encode_shell_catalog_action_frame(
+            transaction,
+            &ShellCatalogActionRecord::Identity(ShellCatalogIdentity {
+                connection_epoch: epoch,
+                catalog_generation: generation,
+                slot,
+                identity: name.into(),
+            }),
+        )
+        .unwrap()
+    };
+    for bad in [
+        identity(1, 4, 5, "desktop:two.desktop", tx), // duplicate slot/name
+        identity(2, 3, 5, "desktop:two.desktop", tx),
+        identity(2, 4, 6, "desktop:two.desktop", tx),
+        identity(3, 4, 5, "desktop:two.desktop", tx),
+        identity(2, 4, 5, "desktop:two.desktop", TransactionId::from_raw(10)),
+    ] {
+        let mut changed = frames.clone();
+        changed[4] = bad;
+        assert!(decode_shell_persistent_catalog(&changed).is_err());
+    }
+    let mut changed = frames.clone();
+    changed.swap(2, 3); // Entry after Identity is not the published transaction order.
+    assert!(decode_shell_persistent_catalog(&changed).is_err());
+}

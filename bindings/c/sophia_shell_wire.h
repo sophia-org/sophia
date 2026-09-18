@@ -6,13 +6,14 @@
 
 #ifdef __cplusplus
 extern "C" {
+
 #endif
 
 #define SOPHIA_SHELL_HEADER_BYTES 24u
 #define SOPHIA_SHELL_MAX_PAYLOAD_BYTES 65536u
 #define SOPHIA_SHELL_MAX_FRAME_BYTES (SOPHIA_SHELL_HEADER_BYTES + SOPHIA_SHELL_MAX_PAYLOAD_BYTES)
 #define SOPHIA_SHELL_MAX_IO_CALLS 32u
-#define SOPHIA_SHELL_WIRE_MAX_REVISION 7u
+#define SOPHIA_SHELL_WIRE_MAX_REVISION 8u
 #define SOPHIA_SHELL_CAP_DESCRIPTOR_SWITCHER (UINT64_C(1) << 0)
 #define SOPHIA_SHELL_CAP_WORK_AREA_RESERVATION (UINT64_C(1) << 1)
 #define SOPHIA_SHELL_CAP_TAB_GROUPS (UINT64_C(1) << 2)
@@ -25,6 +26,7 @@ extern "C" {
 #define SOPHIA_SHELL_CAP_VIEW_INDICATORS (UINT64_C(1) << 9)
 #define SOPHIA_SHELL_CAP_INDICATOR_ACTIVATION (UINT64_C(1) << 10)
 #define SOPHIA_SHELL_CAP_NATIVE_LAUNCHER (UINT64_C(1) << 11)
+#define SOPHIA_SHELL_CAP_PERSISTENT_CATALOG (UINT64_C(1) << 12)
 
 enum sophia_shell_wire_result {
     SOPHIA_SHELL_OK = 0,
@@ -107,5 +109,7 @@ int sophia_shell_welcome_decode(const struct sophia_shell_frame *frame,
 
 #ifdef __cplusplus
 }
+
 #endif
+
 #endif

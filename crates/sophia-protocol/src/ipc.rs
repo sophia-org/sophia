@@ -55,3 +55,9 @@ pub use wm_output_actions::*;
 
 mod shell_native_launcher;
 pub use shell_native_launcher::*;
+
+mod shell_catalog_actions;
+pub use shell_catalog_actions::*;
+
+mod shell_catalog_transaction;
+pub use shell_catalog_transaction::*;

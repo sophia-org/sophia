@@ -9,6 +9,15 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 cd "$root"
 sh tools/check_shell_c_wire.sh
+cargo run --offline -q -p sophia-protocol --example shell_catalog_action_corpus >"$build_dir/catalog-actions.frames"
+cmp "$build_dir/catalog-actions.frames" protocol/golden/sophia-shell-catalog-actions.frames
+cargo run --offline -q -p sophia-protocol --example shell_catalog_action_corpus -- --mutations >"$build_dir/catalog-action-mutations.frames"
+"${CC:-cc}" -std=c99 -Wall -Wextra -Werror -pedantic \
+    bindings/c/shell_wire/frame.c bindings/c/shell_wire/catalog_actions.c \
+    bindings/c/tests/sophia_shell_wire_catalog_actions_test.c -o "$build_dir/catalog-action-decoder"
+"$build_dir/catalog-action-decoder" "$build_dir/catalog-actions.frames"
+"$build_dir/catalog-action-decoder" "$build_dir/catalog-action-mutations.frames"
+cargo test --offline -q -p sophia-protocol --test shell_catalog_actions
 cargo run --offline -q -p sophia-protocol --example shell_native_launcher_corpus >"$build_dir/native-launcher.frames"
 cmp "$build_dir/native-launcher.frames" protocol/golden/sophia-shell-native-launcher.frames
 cargo run --offline -q -p sophia-protocol --example shell_native_launcher_corpus -- --mutations >"$build_dir/native-launcher-mutations.frames"

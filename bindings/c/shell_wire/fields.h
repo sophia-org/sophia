@@ -44,6 +44,7 @@ static inline int shell_direction(uint16_t kind)
     case 163: case 165: case 167: case 168: case 169: case 170: case 172:
     case 173: case 174: case 176: case 178: case 180: case 185:
     case 188: case 189: case 190: case 194: case 195:
+    case 198: case 199: case 200:
         return 1;
     case 97: case 98: case 100: case 101: case 103: case 104: case 105:
     case 106: case 108: case 109: case 110: case 111: case 113: case 114:
@@ -51,6 +52,7 @@ static inline int shell_direction(uint16_t kind)
     case 161: case 162: case 164: case 166: case 171: case 175: case 177:
     case 179: case 181: case 182: case 183: case 184: case 186:
     case 187: case 191: case 192: case 193: case 196: case 197:
+    case 201: case 202:
         return 0;
     default:
         return -1;

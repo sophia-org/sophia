@@ -19,7 +19,7 @@ pub(super) fn validate(text: &str) -> Result<(), String> {
     if string_arg(protocol, 0)? != "sophia_shell_v1"
         || integer_property(protocol, "frame-version")? != 1
         || integer_property(protocol, "interface-major")? != 1
-        || integer_property(protocol, "interface-revision")? != 7
+        || integer_property(protocol, "interface-revision")? != 8
         || integer_property(protocol, "max-descriptors")? != 16
         || integer_property(protocol, "max-label-bytes")? != 128
         || integer_property(protocol, "max-pending-activations")? != 16
@@ -167,6 +167,20 @@ pub(super) fn validate(text: &str) -> Result<(), String> {
             "NativeLauncherClosed",
             (197, "session-to-shell", "required"),
         ),
+        (
+            "CatalogCandidateBegin",
+            (198, "shell-to-session", "required"),
+        ),
+        (
+            "CatalogCandidateChunk",
+            (199, "shell-to-session", "required"),
+        ),
+        ("CatalogActivate", (200, "shell-to-session", "required")),
+        (
+            "CatalogActivationOutcome",
+            (201, "session-to-shell", "required"),
+        ),
+        ("CatalogIdentity", (202, "session-to-shell", "required")),
     ]);
     let expected_count = expected.len();
     let mut actual = BTreeMap::new();
@@ -193,7 +207,7 @@ pub(super) fn validate(text: &str) -> Result<(), String> {
         }
     }
     if actual.len() != expected_count {
-        return Err("shell schema revision-7 message set drifted".into());
+        return Err("shell schema revision-8 message set drifted".into());
     }
     Ok(())
 }

@@ -31,7 +31,7 @@ assert revision == re.search(r"interface-revision=(\d+)", schema).group(1), "C/s
 paths = [root / "bindings/c/sophia_shell_wire.h", root / "bindings/c/sophia_shell_catalog.h", root / "bindings/c/sophia_shell_native_launcher.h", root / "bindings/c/sophia_shell_content_resource.h", root / "bindings/c/sophia_shell_content_types.h"]
 paths += [root / ("bindings/c/" + name) for name in [
     "sophia_shell_content_limits.h", "sophia_shell_content_feedback.h",
-    "sophia_shell_content_control.h", "sophia_shell_outbox.h", "sophia_shell_upload.h", "sophia_shell_native_lifecycle.h",
+    "sophia_shell_content_control.h", "sophia_shell_outbox.h", "sophia_shell_upload.h", "sophia_shell_native_lifecycle.h", "sophia_shell_catalog_actions.h",
 ]]
 paths += list((root / "bindings/c/shell_wire").glob("*.[ch]"))
 paths += list((root / "bindings/c/tests").glob("sophia_shell_wire_*.c"))

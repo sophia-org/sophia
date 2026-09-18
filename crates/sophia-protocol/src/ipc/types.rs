@@ -110,6 +110,11 @@ pub enum IpcMessageKind {
     ShellNativeLauncherActivate = 195,
     ShellNativeLauncherActivationOutcome = 196,
     ShellNativeLauncherClosed = 197,
+    ShellCatalogCandidateBegin = 198,
+    ShellCatalogCandidateChunk = 199,
+    ShellCatalogActivate = 200,
+    ShellCatalogActivationOutcome = 201,
+    ShellCatalogIdentity = 202,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

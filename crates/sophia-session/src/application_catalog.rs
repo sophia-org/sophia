@@ -77,6 +77,7 @@ pub fn build_application_catalog(
             .get(name.as_str())
             .ok_or("unknown registered catalog application")?;
         catalog.entries.push(ApplicationCatalogEntry {
+            identity: format!("registered:{name}"),
             descriptor: sophia_protocol::ShellApplicationDescriptor {
                 slot: 0,
                 label: desktop_entry::label(name, 128),
@@ -128,7 +129,7 @@ pub fn build_application_catalog(
         for (id, path) in files {
             // A hidden or malformed higher-priority entry still masks a lower
             // source; falling through would undo the operator's source order.
-            if !seen.insert(id) {
+            if !seen.insert(id.clone()) {
                 continue;
             }
             let canonical = match path.canonicalize() {
@@ -149,13 +150,14 @@ pub fn build_application_catalog(
             if total_bytes > MAX_CATALOG_SOURCE_BYTES {
                 return Err("catalog bytes exceed limit".into());
             }
-            if let Some(entry) = desktop_entry::parse(
+            if let Some(mut entry) = desktop_entry::parse(
                 &canonical,
                 &bytes,
                 environment,
                 terminal,
                 &config.terminal_arguments,
             ) {
+                entry.identity = format!("desktop:{id}");
                 catalog.entries.push(entry);
             } else {
                 catalog.skipped += 1;
@@ -165,7 +167,14 @@ pub fn build_application_catalog(
             }
         }
     }
+    let mut identities = BTreeSet::new();
     for (index, entry) in catalog.entries.iter_mut().enumerate() {
+        if entry.identity.len() > sophia_protocol::SOPHIA_SHELL_CATALOG_IDENTITY_MAX_BYTES
+            || entry.identity.chars().any(char::is_control)
+            || !identities.insert(entry.identity.clone())
+        {
+            return Err("invalid or duplicate catalog identity".into());
+        }
         entry.descriptor.slot = (index + 1) as u16;
     }
     Ok(catalog)

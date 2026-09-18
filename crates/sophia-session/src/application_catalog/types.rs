@@ -24,6 +24,8 @@ pub struct ApplicationCatalogEnvironment {
 }
 #[derive(Clone, Debug)]
 pub struct ApplicationCatalogEntry {
+    /// Stable Session-owned name, independent of label, slot and locale.
+    pub identity: String,
     pub descriptor: ShellApplicationDescriptor,
     pub command: Option<ApplicationLaunchCommand>,
     pub(super) source: Option<(PathBuf, Vec<u8>)>,
