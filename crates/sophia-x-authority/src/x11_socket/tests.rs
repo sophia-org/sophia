@@ -1194,6 +1194,10 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/private_frozen_completion.rs"
 ));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_freeze_binding.rs"
+));
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),

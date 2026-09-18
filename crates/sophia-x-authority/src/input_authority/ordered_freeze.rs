@@ -180,6 +180,14 @@ pub(crate) struct OrderedFreezeWitness {
     contributors: [Option<(OrderedFreezeSource, u64)>; 2],
 }
 
+impl OrderedFreezeWitness {
+    /// The actual two possible contributors, without selecting an event
+    /// recipient. Private custody binds each to its original registration.
+    pub(crate) fn owners(&self) -> [Option<u64>; 2] {
+        self.contributors.map(|contributor| contributor.map(|(_, owner)| owner))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OrderedFreezeObservation {
     Ready,
@@ -215,13 +223,6 @@ impl OrderedOwnerFreezeReceipt {
 impl XInputAuthorityState {
     /// Bounded inspection under the caller's retained native authority guard;
     /// neither method allocates or selects an event recipient.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The retained private input owner will consume source freeze witnesses."
-        )
-    )]
     pub(crate) fn ordered_pointer_freeze(
         &self,
         namespace: NamespaceId,
@@ -229,13 +230,6 @@ impl XInputAuthorityState {
         self.ordered_freeze(namespace, FREEZE_POINTER)
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The retained private input owner will consume source freeze witnesses."
-        )
-    )]
     pub(crate) fn ordered_keyboard_freeze(
         &self,
         namespace: NamespaceId,
@@ -256,13 +250,6 @@ impl XInputAuthorityState {
             })
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The retained private input owner will consume source freeze witnesses."
-        )
-    )]
     pub(crate) fn check_ordered_freeze(
         &self,
         witness: &OrderedFreezeWitness,

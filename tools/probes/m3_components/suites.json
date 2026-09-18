@@ -15,6 +15,8 @@
       "x11_socket::routing_tests::retained_failed_application_keeps_item_credit_after_completion_and_revocation"
     ],
     "frozen-requests": [
+      "x11_socket::routing_tests::private_freeze_requires_exact_original_source_and_open_admission_for_thaw",
+      "x11_socket::routing_tests::private_freeze_rejects_identical_replacement_and_colliding_foreign_origin",
       "x11_socket::routing_tests::prepared_producer_retains_the_original_completion_through_ordered_execution",
       "x11_socket::routing_tests::prepared_producer_never_reclaims_a_missing_or_replaced_accepted_completion",
       "x11_socket::routing_tests::exact_input_claim_preserves_original_cancellation_across_no_effect_deferral",

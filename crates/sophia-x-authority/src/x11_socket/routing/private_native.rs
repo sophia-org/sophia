@@ -22,6 +22,9 @@ mod private_native {
         InvalidKey,
         KeyboardUnavailable,
         PointerFrozen,
+        KeyboardFrozen,
+        FreezeUnavailable,
+        FreezeInvalidated,
         WrongPhase,
         WrongRecipient,
         ActivationMismatch,
@@ -930,6 +933,7 @@ mod private_native {
     }
 
     include!("private_native_emission.rs");
+    include!("private_native_freeze.rs");
     include!("private_native_key_emission.rs");
     include!("private_native_keyboard.rs");
     include!("private_native_transient.rs");
