@@ -416,6 +416,15 @@ pub(super) struct Maintained {
     /// establish what a visit did with a frame it still held cannot take that
     /// from a formatted report either.
     pub(super) output_refusal: Option<PrivateRetainedDriveRefusal>,
+    /// What a charged terminal visit did, typed. The cleanup row needs this;
+    /// reading it out of a formatted report would be the same mistake twice.
+    pub(super) terminal_visit: Option<PrivateTerminalVisit>,
+    pub(super) terminal_refusal: Option<PrivateTerminalDriveRefusal>,
+    /// Whether a charged visit kept its supervisor, in EITHER phase.
+    ///
+    /// This used to answer only for the output phase, so a successfully
+    /// supervised terminal visit reported false and a caller could read that
+    /// as a failure. It is false now only when no charged visit happened.
     pub(super) supervision_ok: bool,
     pub(super) settled: Option<bool>,
     pub(super) charged: bool,
@@ -620,12 +629,30 @@ impl LifecycleService {
                                     ) => outcome.as_ref().err().copied(),
                                     _ => None,
                                 },
-                                supervision_ok: matches!(
-                                    &report.outcome,
+                                terminal_visit: match &report.outcome {
+                                    PrivateMaintenanceOutcome::Terminal(
+                                        PrivateTerminalDriveStep::Charged { outcome, .. },
+                                    ) => outcome.as_ref().ok().copied(),
+                                    _ => None,
+                                },
+                                terminal_refusal: match &report.outcome {
+                                    PrivateMaintenanceOutcome::Terminal(
+                                        PrivateTerminalDriveStep::Charged { outcome, .. },
+                                    ) => outcome.as_ref().err().copied(),
+                                    PrivateMaintenanceOutcome::Terminal(
+                                        PrivateTerminalDriveStep::Refused(cause),
+                                    ) => Some(*cause),
+                                    _ => None,
+                                },
+                                supervision_ok: match &report.outcome {
                                     PrivateMaintenanceOutcome::Output(
                                         PrivateRetainedDriveStep::Charged { supervision, .. },
-                                    ) if supervision.is_ok()
-                                ),
+                                    )
+                                    | PrivateMaintenanceOutcome::Terminal(
+                                        PrivateTerminalDriveStep::Charged { supervision, .. },
+                                    ) => supervision.is_ok(),
+                                    _ => false,
+                                },
                                 settled: report.output_settled(),
                                 charged: report.charge().is_some_and(Result::is_ok),
                                 modifiers: resources.keyboards.modifiers(resources.seat),
